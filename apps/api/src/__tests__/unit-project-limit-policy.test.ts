@@ -24,6 +24,7 @@ mock.module('../config', () => ({
 }));
 
 mock.module('../billing/repositories/credit-accounts', () => ({
+  upsertCreditAccount: async () => undefined,
   getSubscriptionInfo: async () => (currentTier === null ? null : { tier: currentTier }),
 }));
 

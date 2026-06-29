@@ -21,7 +21,9 @@ import { SkillsView } from '@/features/workspace/customize/sections/view/skills-
 import { useIsMobile } from '@/hooks/utils';
 import { DEFAULT_CUSTOMIZE_SECTION, type CustomizeSection } from '@/lib/customize-sections';
 import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
+import { CUSTOMIZE_SECTION_ACCESS, CUSTOMIZE_SECTION_READ_ACTIONS } from '@/lib/project-actions';
 import { getProjectDetail } from '@/lib/projects-client';
+import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
@@ -41,7 +43,7 @@ import {
   Terminal,
   Webhook,
 } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { LuSettings, LuUsersRound } from 'react-icons/lu';
 import { FilesSection } from './sections/files-section';
 import { ChangesView } from './sections/view/changes-view';
@@ -137,14 +139,50 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   });
   const projectName = detail.data?.project?.name ?? '';
 
+  // IAM visibility gating. One batched probe over every section's read leaf — a
+  // custom role that OMITS a leaf (e.g. project.gitops.read) makes that section
+  // disappear from the rail and blocks its content. NOT a security boundary (the
+  // API re-checks every mutation); this only decides what to show. Feed the
+  // accountId we ALREADY hold from the project-detail query so the probe runs on
+  // first render rather than being disabled while a separate getProject resolves.
+  const caps = useProjectCans(projectId, CUSTOMIZE_SECTION_READ_ACTIONS, {
+    accountId: detail.data?.project?.account_id,
+  });
+  // Treat BOTH "loading" and "errored" as not-yet-resolved — this is a VISIBILITY
+  // layer, not a security boundary, so we fail OPEN (render the full rail) rather
+  // than blank the UI on a transient probe failure or while it's in flight.
+  const capsResolved = useMemo(
+    () =>
+      CUSTOMIZE_SECTION_READ_ACTIONS.every(
+        (action) => caps[action] && !caps[action].isLoading && !caps[action].isError,
+      ),
+    [caps],
+  );
+  // A section is permitted when its read leaf resolved to allowed:true. Until the
+  // probe resolves (or if it errored) we permit everything (optimistic).
+  const isSectionAllowed = useCallback(
+    (s: CustomizeSection) => {
+      if (!capsResolved) return true;
+      const readAction = CUSTOMIZE_SECTION_ACCESS[s].read;
+      return caps[readAction]?.allowed === true;
+    },
+    [caps, capsResolved],
+  );
+
   const tunnelEnabled = detail.data?.project?.experimental?.agent_tunnel ?? false;
   const marketplaceEnabled = detail.data?.project?.experimental?.marketplace ?? false;
   const llmGatewayEnabled = isLlmGatewayEnabled(detail.data?.project);
   const llmGatewayAvailable = isLlmGatewayAvailable(detail.data?.project);
   const meetEnabled = detail.data?.project?.experimental?.meet ?? false;
   const groups = useMemo(
-    () => railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, meetEnabled),
-    [tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, meetEnabled],
+    // Compose flag-gating with IAM visibility: an item shows only if it passes
+    // BOTH its flag check (baked into railGroups) AND its read-leaf probe. Empty
+    // groups drop out so no orphan header renders.
+    () =>
+      railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, meetEnabled)
+        .map((g) => ({ ...g, items: g.items.filter((item) => isSectionAllowed(item.section)) }))
+        .filter((g) => g.items.length > 0),
+    [tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, meetEnabled, isSectionAllowed],
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
   // `llm-management` stands in for every `llm-*` sub-section so deep-links still work.
@@ -159,6 +197,17 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
       setSection(DEFAULT_CUSTOMIZE_SECTION);
     }
   }, [open, sectionVisible, setSection]);
+
+  // If the active section is denied once the probe resolves (e.g. a bookmarked
+  // deep-link into a section this role no longer grants), fall back to the first
+  // permitted section. Only after the probe RESOLVES — never during the
+  // loading/optimistic window, or we'd clobber a valid deep-link.
+  const activeAllowed = isSectionAllowed(section);
+  useEffect(() => {
+    if (!open || !capsResolved || activeAllowed) return;
+    const fallback = allItems[0]?.section ?? DEFAULT_CUSTOMIZE_SECTION;
+    if (fallback !== section) setSection(fallback);
+  }, [open, capsResolved, activeAllowed, allItems, section, setSection]);
 
   return (
     <Modal open={open} onOpenChange={(next) => (next ? undefined : close())}>

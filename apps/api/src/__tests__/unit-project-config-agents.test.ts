@@ -39,6 +39,7 @@ describe('project config agent discovery', () => {
           enabled: true,
           connectors: 'all',
           kortixCli: 'all',
+          env: 'all',
           file: null,
         },
         {
@@ -47,6 +48,7 @@ describe('project config agent discovery', () => {
           enabled: true,
           connectors: [],
           kortixCli: [],
+          env: 'all',
           file: '.kortix/opencode/agents/release-bot.md',
         },
         {
@@ -55,6 +57,7 @@ describe('project config agent discovery', () => {
           enabled: false,
           connectors: [],
           kortixCli: [],
+          env: 'all',
           file: null,
         },
       ],

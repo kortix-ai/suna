@@ -134,7 +134,12 @@ export async function readManifest(
 ): Promise<ParsedManifest | null> {
   let raw: string;
   try {
-    raw = await readRepoFile(project, MANIFEST_FILENAME, project.defaultBranch);
+    // Honor a project's custom manifest_path. Hardcoding kortix.toml here would
+    // silently read the wrong (often missing) file for such projects → no
+    // [[agents]] parsed → per-agent env/connector scoping turns OFF (the grant
+    // resolves to null = unrestricted). Fall back to the canonical name for
+    // legacy projects whose manifest_path is unset.
+    raw = await readRepoFile(project, project.manifestPath || MANIFEST_FILENAME, project.defaultBranch);
   } catch {
     return null;
   }

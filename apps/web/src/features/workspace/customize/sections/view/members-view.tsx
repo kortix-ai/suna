@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Clock, Mail, MessageSquare, RefreshCw, Shield, Users, X } from 'lucide-react';
+import { Bot, Check, Clock, Loader2, Mail, MessageSquare, RefreshCw, Shield, Sparkles, Users, X } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 import {
@@ -26,7 +26,9 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
+import { List, ListRow } from '@/components/ui/list';
 import Loading from '@/components/ui/loading';
+import { SectionCard } from '@/components/ui/section-card';
 import {
   Select,
   SelectContent,
@@ -40,7 +42,18 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useCopy } from '@/hooks/use-copy';
-import { listGroups, removeGroupMember, type AccountGroup } from '@/lib/iam-client';
+import {
+  listGroups,
+  removeGroupMember,
+  listPolicies,
+  createPolicy,
+  deletePolicy,
+  listRoles,
+  listAgentIdentities,
+  type AccountGroup,
+  type IamPolicy,
+  type PrincipalType,
+} from '@/lib/iam-client';
 import {
   approveProjectAccessRequest,
   attachGroupToProject,
@@ -52,6 +65,9 @@ import {
   listProjectAccess,
   listProjectAccessRequests,
   listProjectGroupGrants,
+  listProjectResourceGrants,
+  createProjectResourceGrant,
+  deleteProjectResourceGrant,
   rejectProjectAccessRequest,
   resendPendingProjectInvite,
   revokePendingProjectInvite,
@@ -61,7 +77,9 @@ import {
   type InviteProjectMemberResult,
   type ProjectAccessMember,
   type ProjectGroupGrant,
+  type ProjectResourceGrant,
   type ProjectRole,
+  type ResourceGrantType,
 } from '@/lib/projects-client';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { UsersSolid } from '@mynaui/icons-react';
@@ -144,6 +162,24 @@ export function MembersView({ projectId }: { projectId: string }) {
           projectId={projectId}
           accountId={project.account_id}
           canManage={!!canManage}
+        />
+      )}
+
+      {project?.account_id && (
+        <ResourceAccessCard
+          projectId={projectId}
+          accountId={project.account_id}
+          canManage={!!canManage}
+          members={accessQuery.data?.members ?? []}
+        />
+      )}
+
+      {project?.account_id && (
+        <ProjectRoleAssignmentsCard
+          projectId={projectId}
+          accountId={project.account_id}
+          canManage={!!canManage}
+          members={accessQuery.data?.members ?? []}
         />
       )}
     </div>
@@ -456,7 +492,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <ProjectRoleSelectItem role="viewer" />
+                  <ProjectRoleSelectItem role="user" />
                   <ProjectRoleSelectItem role="editor" />
                   <ProjectRoleSelectItem role="manager" />
                 </SelectContent>
@@ -793,7 +829,7 @@ function ProjectAccessCard({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <ProjectRoleSelectItem role="viewer" />
+                          <ProjectRoleSelectItem role="user" />
                           <ProjectRoleSelectItem role="editor" />
                           <ProjectRoleSelectItem role="manager" />
                         </SelectContent>
@@ -935,7 +971,7 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
   });
 
   const approveMutation = useMutation({
-    mutationFn: (requestId: string) => approveProjectAccessRequest(projectId, requestId, 'viewer'),
+    mutationFn: (requestId: string) => approveProjectAccessRequest(projectId, requestId, 'user'),
     onMutate: (requestId) => markBusy(requestId),
     onSettled: (_data, _error, requestId) => clearBusy(requestId),
     onSuccess: (result) => {
@@ -1408,7 +1444,7 @@ function ProjectGroupGrantsCard({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <ProjectRoleSelectItem role="viewer" />
+                  <ProjectRoleSelectItem role="user" />
                   <ProjectRoleSelectItem role="editor" />
                   <ProjectRoleSelectItem role="manager" />
                 </SelectContent>
@@ -1512,7 +1548,7 @@ function ProjectGroupGrantsCard({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <ProjectRoleSelectItem role="viewer" />
+                          <ProjectRoleSelectItem role="user" />
                           <ProjectRoleSelectItem role="editor" />
                           <ProjectRoleSelectItem role="manager" />
                         </SelectContent>
@@ -1573,5 +1609,510 @@ function ProjectGroupGrantsCard({
         }}
       />
     </>
+  );
+}
+
+// ─── Per-resource scoping (agents/skills → member/department) ──────────────
+
+function ResourceAccessCard({
+  projectId,
+  accountId,
+  canManage,
+  members,
+}: {
+  projectId: string;
+  accountId: string;
+  canManage: boolean;
+  members: ProjectAccessMember[];
+}) {
+  const queryClient = useQueryClient();
+  const grantsKey = ['project-resource-grants', projectId];
+
+  const grantsQuery = useQuery({
+    queryKey: grantsKey,
+    queryFn: () => listProjectResourceGrants(projectId),
+    staleTime: 20_000,
+  });
+  const groupsQuery = useQuery({
+    queryKey: ['account-groups', accountId],
+    queryFn: () => listGroups(accountId),
+    enabled: canManage,
+    staleTime: 60_000,
+  });
+
+  const resources = grantsQuery.data?.resources ?? { agents: [], skills: [] };
+  const grants = useMemo(() => {
+    const raw = grantsQuery.data?.grants ?? [];
+    return [...raw].sort((a, b) => {
+      const t = a.resource_type.localeCompare(b.resource_type);
+      if (t !== 0) return t;
+      const r = a.resource_id.localeCompare(b.resource_id);
+      return r !== 0 ? r : a.principal_label.localeCompare(b.principal_label);
+    });
+  }, [grantsQuery.data]);
+  const groups: AccountGroup[] = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
+
+  // Display name for a resource id (falls back to the id itself).
+  const resourceName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of resources.agents) m.set(`agent:${a.id}`, a.name);
+    for (const s of resources.skills) m.set(`skill:${s.id}`, s.name);
+    return m;
+  }, [resources]);
+
+  const hasResources = resources.agents.length > 0 || resources.skills.length > 0;
+
+  const [resourceValue, setResourceValue] = useState<string>(''); // "agent:id" | "skill:id"
+  const [principalValue, setPrincipalValue] = useState<string>(''); // "member:id" | "group:id"
+  const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
+  const markPending = (id: string) => setPendingIds((prev) => new Set(prev).add(id));
+  const clearPending = (id: string) =>
+    setPendingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: grantsKey });
+    // The agent/skill lists the rest of the UI renders are now filtered, so the
+    // project detail must refetch to reflect what this user can see.
+    queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
+  }
+
+  function splitOnce(v: string): [string, string] {
+    const i = v.indexOf(':');
+    return i < 0 ? [v, ''] : [v.slice(0, i), v.slice(i + 1)];
+  }
+
+  const createMutation = useMutation({
+    mutationFn: () => {
+      const [resourceType, resourceId] = splitOnce(resourceValue);
+      const [principalType, principalId] = splitOnce(principalValue);
+      return createProjectResourceGrant(projectId, {
+        resourceType: resourceType as ResourceGrantType,
+        resourceId,
+        principalType: principalType as 'member' | 'group',
+        principalId,
+      });
+    },
+    onSuccess: () => {
+      successToast('Resource scoped');
+      setResourceValue('');
+      setPrincipalValue('');
+      invalidate();
+    },
+    onError: (err: Error) => errorToast(err.message || 'Failed to scope resource'),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (grantId: string) => deleteProjectResourceGrant(projectId, grantId),
+    onMutate: (grantId) => markPending(grantId),
+    onSettled: (_d, _e, grantId) => clearPending(grantId),
+    onSuccess: () => {
+      successToast('Scope removed');
+      invalidate();
+    },
+    onError: (err: Error) => errorToast(err.message || 'Failed to remove scope'),
+  });
+
+  const canSubmit = !!resourceValue && !!principalValue && !createMutation.isPending;
+
+  return (
+    <SectionCard
+      flush
+      title="Resource access"
+      description="Scope specific agents & skills to a member or department. A resource with no grants stays open to everyone with project access; granting one restricts it to just the people or departments you pick."
+      count={grants.length}
+      action={
+        canManage && hasResources ? (
+          <form
+            className="flex items-center gap-1.5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!canSubmit) return;
+              createMutation.mutate();
+            }}
+          >
+            <Select value={resourceValue} onValueChange={setResourceValue} disabled={createMutation.isPending}>
+              <SelectTrigger className="h-8 w-40 text-xs">
+                <SelectValue placeholder="Agent or skill" />
+              </SelectTrigger>
+              <SelectContent>
+                {resources.agents.map((a) => (
+                  <SelectItem key={`agent:${a.id}`} value={`agent:${a.id}`}>
+                    {a.name} · agent
+                  </SelectItem>
+                ))}
+                {resources.skills.map((s) => (
+                  <SelectItem key={`skill:${s.id}`} value={`skill:${s.id}`}>
+                    {s.name} · skill
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={principalValue} onValueChange={setPrincipalValue} disabled={createMutation.isPending}>
+              <SelectTrigger className="h-8 w-40 text-xs">
+                <SelectValue placeholder="Member or dept" />
+              </SelectTrigger>
+              <SelectContent>
+                {members.map((m) => (
+                  <SelectItem key={`member:${m.user_id}`} value={`member:${m.user_id}`}>
+                    {userLabel(m)}
+                  </SelectItem>
+                ))}
+                {groups.map((g) => (
+                  <SelectItem key={`group:${g.group_id}`} value={`group:${g.group_id}`}>
+                    {g.name} · dept
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button type="submit" size="sm" variant="outline" disabled={!canSubmit}>
+              Grant
+            </Button>
+          </form>
+        ) : null
+      }
+    >
+      {grantsQuery.isLoading && (
+        <div className="px-6 py-5">
+          <Skeleton className="h-8 w-full" />
+        </div>
+      )}
+
+      {!grantsQuery.isLoading && grants.length === 0 && (
+        <div className="text-muted-foreground px-6 py-5 text-xs">
+          {hasResources
+            ? 'No agents or skills are scoped yet — every member with project access can see and use all of them. Grant one above to restrict it to specific people or departments.'
+            : 'This project has no agents or skills to scope yet. Add some in the Agents and Skills sections, then come back here to limit who can use them.'}
+        </div>
+      )}
+
+      {!grantsQuery.isLoading && grants.length > 0 && (
+        <List>
+          {grants.map((g: ProjectResourceGrant) => {
+            const busy = pendingIds.has(g.grant_id);
+            const isAgent = g.resource_type === 'agent';
+            const displayName = resourceName.get(`${g.resource_type}:${g.resource_id}`) ?? g.resource_id;
+            return (
+              <ListRow
+                key={g.grant_id}
+                leading={
+                  <span className="bg-muted/60 flex h-8 w-8 items-center justify-center rounded-full">
+                    {isAgent ? (
+                      <Bot className="text-muted-foreground h-4 w-4" />
+                    ) : (
+                      <Sparkles className="text-muted-foreground h-4 w-4" />
+                    )}
+                  </span>
+                }
+                title={
+                  <span className="flex items-center gap-2">
+                    {displayName}
+                    <Badge variant="outline" size="sm" className="capitalize">
+                      {g.resource_type}
+                    </Badge>
+                    {g.orphaned && (
+                      <Badge
+                        variant="outline"
+                        size="sm"
+                        className="border-amber-300 text-amber-700 dark:border-amber-500/40 dark:text-amber-400"
+                        title={`This ${g.resource_type} no longer exists (renamed or deleted). The grant is inert — the restriction has lapsed. Remove it or re-grant the current ${g.resource_type}.`}
+                      >
+                        renamed / removed
+                      </Badge>
+                    )}
+                  </span>
+                }
+                subtitle={
+                  <InlineMeta>
+                    <span>
+                      {g.principal_type === 'group' ? 'Dept' : 'Member'}: {g.principal_label}
+                    </span>
+                    <span>Granted {formatDate(g.created_at)}</span>
+                  </InlineMeta>
+                }
+                trailing={
+                  busy ? (
+                    <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+                  ) : canManage ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => removeMutation.mutate(g.grant_id)}
+                    >
+                      Remove
+                    </Button>
+                  ) : (
+                    <Badge variant="outline" size="sm" className="capitalize">
+                      {g.principal_type}
+                    </Badge>
+                  )
+                }
+              />
+            );
+          })}
+        </List>
+      )}
+    </SectionCard>
+  );
+}
+
+/**
+ * Custom-role assignments for THIS project — the project-level view of the
+ * account Roles page's bindings. Custom roles are DEFINED on the account Roles
+ * page; here a manager grants one (to a member / department / agent) scoped to
+ * this project, so a project's full access picture lives in one place.
+ */
+function ProjectRoleAssignmentsCard({
+  projectId,
+  accountId,
+  canManage,
+  members,
+}: {
+  projectId: string;
+  accountId: string;
+  canManage: boolean;
+  members: ProjectAccessMember[];
+}) {
+  const queryClient = useQueryClient();
+  const policiesKey = ['project-policies', projectId];
+
+  const policiesQuery = useQuery({
+    queryKey: policiesKey,
+    queryFn: () => listPolicies(accountId, { scopeId: projectId }),
+    staleTime: 20_000,
+  });
+  const rolesQuery = useQuery({
+    queryKey: ['iam-roles', accountId],
+    queryFn: () => listRoles(accountId),
+    enabled: canManage,
+    staleTime: 60_000,
+  });
+  const groupsQuery = useQuery({
+    queryKey: ['account-groups', accountId],
+    queryFn: () => listGroups(accountId),
+    enabled: canManage,
+    staleTime: 60_000,
+  });
+  const agentsQuery = useQuery({
+    queryKey: ['iam-agent-identities', accountId],
+    queryFn: () => listAgentIdentities(accountId),
+    enabled: canManage,
+    staleTime: 60_000,
+  });
+
+  // Only project-scoped bindings for THIS project (account-wide custom roles
+  // apply too, but they're managed on the account page, not per-project).
+  const policies = useMemo(
+    () => (policiesQuery.data ?? []).filter((p) => p.scope_type === 'project' && p.scope_id === projectId),
+    [policiesQuery.data, projectId],
+  );
+  const customRoles = useMemo(() => (rolesQuery.data ?? []).filter((r) => !r.is_system), [rolesQuery.data]);
+  const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
+  const projectAgents = useMemo(
+    () => (agentsQuery.data ?? []).filter((a) => a.project_id === projectId),
+    [agentsQuery.data, projectId],
+  );
+
+  const roleNameById = useMemo(
+    () => new Map((rolesQuery.data ?? []).map((r) => [r.role_id, r.name])),
+    [rolesQuery.data],
+  );
+  const memberLabelById = useMemo(() => new Map(members.map((m) => [m.user_id, userLabel(m)])), [members]);
+  const groupNameById = useMemo(() => new Map(groups.map((g) => [g.group_id, g.name])), [groups]);
+  const agentLabelById = useMemo(
+    () => new Map((agentsQuery.data ?? []).map((a) => [a.service_account_id, a.agent_name ?? a.name])),
+    [agentsQuery.data],
+  );
+
+  function principalLabel(p: IamPolicy): { kind: string; label: string } {
+    if (p.principal_type === 'group') return { kind: 'Dept', label: groupNameById.get(p.principal_id) ?? p.principal_id };
+    if (p.principal_type === 'token') return { kind: 'Agent', label: agentLabelById.get(p.principal_id) ?? p.principal_id };
+    return { kind: 'Member', label: memberLabelById.get(p.principal_id) ?? p.principal_id };
+  }
+
+  const [principalValue, setPrincipalValue] = useState(''); // "member:id" | "group:id" | "token:said"
+  const [roleId, setRoleId] = useState('');
+  const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
+  const markPending = (id: string) => setPendingIds((prev) => new Set(prev).add(id));
+  const clearPending = (id: string) =>
+    setPendingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: policiesKey });
+  }
+  function splitOnce(v: string): [string, string] {
+    const i = v.indexOf(':');
+    return i < 0 ? [v, ''] : [v.slice(0, i), v.slice(i + 1)];
+  }
+
+  const createMutation = useMutation({
+    mutationFn: () => {
+      const [principalType, principalId] = splitOnce(principalValue);
+      return createPolicy(accountId, {
+        principalType: principalType as PrincipalType,
+        principalId,
+        scopeType: 'project',
+        scopeId: projectId,
+        roleId,
+      });
+    },
+    onSuccess: () => {
+      successToast('Role assigned');
+      setPrincipalValue('');
+      setRoleId('');
+      invalidate();
+    },
+    onError: (err: Error) => errorToast(err.message || 'Failed to assign role'),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (policyId: string) => deletePolicy(accountId, policyId),
+    onMutate: (policyId) => markPending(policyId),
+    onSettled: (_d, _e, policyId) => clearPending(policyId),
+    onSuccess: () => {
+      successToast('Assignment removed');
+      invalidate();
+    },
+    onError: (err: Error) => errorToast(err.message || 'Failed to remove assignment'),
+  });
+
+  const canSubmit = !!principalValue && !!roleId && !createMutation.isPending;
+
+  return (
+    <SectionCard
+      flush
+      title="Custom roles"
+      description="Grant a custom role to a member, department, or agent on this project. Custom roles are defined on the account Roles page; here you bind them for this project only."
+      count={policies.length}
+      action={
+        canManage && customRoles.length > 0 ? (
+          <form
+            className="flex items-center gap-1.5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!canSubmit) return;
+              createMutation.mutate();
+            }}
+          >
+            <Select value={principalValue} onValueChange={setPrincipalValue} disabled={createMutation.isPending}>
+              <SelectTrigger className="h-8 w-40 text-xs">
+                <SelectValue placeholder="Member, dept, agent" />
+              </SelectTrigger>
+              <SelectContent>
+                {members.map((m) => (
+                  <SelectItem key={`member:${m.user_id}`} value={`member:${m.user_id}`}>
+                    {userLabel(m)}
+                  </SelectItem>
+                ))}
+                {groups.map((g) => (
+                  <SelectItem key={`group:${g.group_id}`} value={`group:${g.group_id}`}>
+                    {g.name} · dept
+                  </SelectItem>
+                ))}
+                {projectAgents.map((a) => (
+                  <SelectItem key={`token:${a.service_account_id}`} value={`token:${a.service_account_id}`}>
+                    {a.agent_name ?? a.name} · agent
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={roleId} onValueChange={setRoleId} disabled={createMutation.isPending}>
+              <SelectTrigger className="h-8 w-36 text-xs">
+                <SelectValue placeholder="Custom role" />
+              </SelectTrigger>
+              <SelectContent>
+                {customRoles.map((r) => (
+                  <SelectItem key={r.role_id} value={r.role_id}>
+                    {r.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button type="submit" size="sm" variant="outline" disabled={!canSubmit}>
+              Assign
+            </Button>
+          </form>
+        ) : null
+      }
+    >
+      {policiesQuery.isLoading && (
+        <div className="px-6 py-5">
+          <Skeleton className="h-8 w-full" />
+        </div>
+      )}
+
+      {!policiesQuery.isLoading && policies.length === 0 && (
+        <div className="text-muted-foreground px-6 py-5 text-xs">
+          {customRoles.length === 0 ? (
+            <>
+              No custom roles exist yet. Create one on the{' '}
+              <a href={`/accounts/${accountId}?tab=roles`} className="underline">
+                account Roles page
+              </a>
+              , then bind it here for this project.
+            </>
+          ) : (
+            'No custom-role assignments on this project yet. Bind one above to grant a member, department, or agent a custom role here.'
+          )}
+        </div>
+      )}
+
+      {!policiesQuery.isLoading && policies.length > 0 && (
+        <List>
+          {policies.map((p) => {
+            const busy = pendingIds.has(p.policy_id);
+            const { kind, label } = principalLabel(p);
+            return (
+              <ListRow
+                key={p.policy_id}
+                leading={
+                  <span className="bg-muted/60 flex h-8 w-8 items-center justify-center rounded-full">
+                    <Shield className="text-muted-foreground h-4 w-4" />
+                  </span>
+                }
+                title={
+                  <span className="flex items-center gap-2">
+                    {roleNameById.get(p.role_id) ?? p.role_id}
+                    <Badge variant="outline" size="sm">
+                      Custom
+                    </Badge>
+                  </span>
+                }
+                subtitle={
+                  <InlineMeta>
+                    <span>
+                      {kind}: {label}
+                    </span>
+                    {p.expires_at ? <span>Expires {formatDate(p.expires_at)}</span> : null}
+                  </InlineMeta>
+                }
+                trailing={
+                  busy ? (
+                    <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+                  ) : canManage ? (
+                    <Button type="button" size="sm" variant="ghost" onClick={() => removeMutation.mutate(p.policy_id)}>
+                      Remove
+                    </Button>
+                  ) : (
+                    <Badge variant="outline" size="sm" className="capitalize">
+                      {kind}
+                    </Badge>
+                  )
+                }
+              />
+            );
+          })}
+        </List>
+      )}
+    </SectionCard>
   );
 }

@@ -1,6 +1,7 @@
 import { isSessionVisibleTo, loadSessionGrants, resolveShareSubject, type SecretGrant, type ShareSubject } from '../../executor/share';
-import { authorize } from '../../iam';
+import { authorize, assertAuthorized, PROJECT_ACTIONS } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
+import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { auth } from '../../openapi';
 import { preResumeRecentStoppedSessions } from '../routes/shared';
 import { db } from '../../shared/db';
@@ -99,7 +100,9 @@ export async function loadVisibleSession(
 // per statement, revocations lag at most one TTL window, grants are instant.
 const loadProjectMemberRole = ttlMemo({
   ttlMs: 15_000,
-  keyFn: (projectId: string, userId: string) => `${projectId}|${userId}`,
+  // Key is `${userId}|${projectId}` (userId-first) so a single
+  // invalidateByPrefix(`${userId}|`) busts it alongside the engine memos.
+  keyFn: (projectId: string, userId: string) => `${userId}|${projectId}`,
   loader: async (projectId: string, userId: string): Promise<ProjectRole | null> => {
     const [row] = await db
       .select({ projectRole: projectMembers.projectRole })
@@ -110,6 +113,7 @@ const loadProjectMemberRole = ttlMemo({
   },
   shouldCache: (role) => role !== null,
 });
+registerPrincipalScopedMemo(loadProjectMemberRole);
 
 export async function getProjectMemberRole(projectId: string, userId: string): Promise<ProjectRole | null> {
   return loadProjectMemberRole(projectId, userId);
@@ -149,6 +153,9 @@ export async function grantProjectRole(input: {
         ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
       },
     });
+  // The role just changed — drop this user's cached authz so the new role is
+  // effective on their next request, not after the ~15s TTL window.
+  invalidateIamCacheForUser(input.userId);
 }
 
 /**
@@ -217,20 +224,48 @@ async function repairLegacyRequestedAccountMembership(userId: string, accountId:
 }
 
 
-export async function lookupEmailsByUserIds(userIds: string[]): Promise<Map<string, string | null>> {
-  const result = new Map<string, string | null>();
+export interface UserIdentity {
+  /** Email from the auth provider, or null if the user has none. */
+  email: string | null;
+  /**
+   * Whether this user_id resolves to a real auth user. `false` means the auth
+   * provider returned NO user for this id — i.e. it's a shadow/orphan principal
+   * (e.g. an `account_members` row whose user_id is actually an account_id with
+   * no backing user). A transient lookup failure leaves this `true` so a hiccup
+   * never hides a real member.
+   */
+  exists: boolean;
+}
+
+/**
+ * Resolve user_ids to their auth identity (email + existence). Existence lets
+ * callers drop "shadow" members — rows that point at a non-existent user, which
+ * would otherwise render as a raw UUID in member lists.
+ */
+export async function resolveUserIdentities(userIds: string[]): Promise<Map<string, UserIdentity>> {
+  const result = new Map<string, UserIdentity>();
   if (userIds.length === 0) return result;
   const supabase = getSupabase();
   await Promise.all(
     userIds.map(async (uid) => {
       try {
         const { data } = await supabase.auth.admin.getUserById(uid);
-        result.set(uid, data?.user?.email ?? null);
+        // A completed call with no user object = the id is not a real user.
+        const user = data?.user ?? null;
+        result.set(uid, { email: user?.email ?? null, exists: !!user });
       } catch {
-        result.set(uid, null);
+        // Transient (network/5xx) — assume the user exists; don't hide them.
+        result.set(uid, { email: null, exists: true });
       }
     }),
   );
+  return result;
+}
+
+export async function lookupEmailsByUserIds(userIds: string[]): Promise<Map<string, string | null>> {
+  const identities = await resolveUserIdentities(userIds);
+  const result = new Map<string, string | null>();
+  for (const [uid, identity] of identities) result.set(uid, identity.email);
   return result;
 }
 
@@ -273,8 +308,8 @@ export function iamActionForProjectAccess(action: ProjectAccessAction): string {
       return 'project.read';
     case 'session':
       // Starting / running / stopping a session. Granted to every project
-      // role (viewer included) so the default role can actually use Kortix,
-      // while project customization stays behind project.write.
+      // role (a plain `user` included) so the floor role can actually use
+      // Kortix, while project customization stays behind project.write.
       return 'project.session.start';
     case 'write':
       return 'project.write';
@@ -283,8 +318,84 @@ export function iamActionForProjectAccess(action: ProjectAccessAction): string {
       // secrets, snapshots, CLI tokens, etc. Map to project.write (which
       // Project Editor has) so editors aren't accidentally locked out.
       // Routes that need the stricter `project.members.manage` gate add
-      // an explicit assertAuthorized() on top of loadProjectForUser.
+      // an explicit assertProjectCapability() on top of loadProjectForUser.
       return 'project.write';
+  }
+}
+
+/**
+ * Assert a SPECIFIC project capability (a leaf action like project.gitops.push)
+ * for the current request, threading the acting token id off the request context
+ * so the engine's agent-grant fold actually fires — `userRole ∩ agentGrant`. Use
+ * this (not a bare `assertAuthorized`) for every per-capability route gate: a
+ * bare call omits the token and the fold silently no-ops, which is exactly how
+ * the per-route checks leaked the agent grant. 403s on denial.
+ */
+export async function assertProjectCapability(
+  c: Context,
+  userId: string,
+  accountId: string,
+  projectId: string,
+  action: string,
+  // Optional per-RESOURCE narrowing: when supplied, the verdict is additionally
+  // intersected with iam_resource_grants for this specific agent/skill (see
+  // resource-grants.ts). Used by the agent/skill launch gates.
+  resource?: { type: 'agent' | 'skill'; id: string },
+): Promise<void> {
+  const actingTokenId =
+    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as string | undefined) ?? undefined;
+  await assertAuthorized(
+    userId,
+    accountId,
+    action,
+    { type: 'project', id: projectId, ...(resource ? { resource } : {}) },
+    actingTokenId,
+    deriveRequestContext(c),
+  );
+}
+
+/**
+ * The per-capability WRITE leaf that governs editing a given repo path. Agents,
+ * skills and commands live under their own directories; everything else is a
+ * generic project file. Lets an API edit path (e.g. a marketplace install) gate
+ * each touched file on the RIGHT capability — so a custom role that omits
+ * `project.skill.write` can't install/modify skills even though it can touch
+ * other files.
+ */
+export function writeCapabilityForRepoPath(path: string): string {
+  const segments = path.replace(/^\.?\//, '').split('/');
+  if (segments.includes('agent') || segments.includes('agents')) return PROJECT_ACTIONS.PROJECT_AGENT_WRITE;
+  if (segments.includes('skill') || segments.includes('skills')) return PROJECT_ACTIONS.PROJECT_SKILL_WRITE;
+  if (segments.includes('command') || segments.includes('commands')) return PROJECT_ACTIONS.PROJECT_COMMAND_WRITE;
+  return PROJECT_ACTIONS.PROJECT_FILE_WRITE;
+}
+
+/**
+ * Gate an API-mediated commit on the per-capability write leaves of the files it
+ * touches. A commit that adds an agent requires project.agent.write; one that
+ * touches a skill + a generic file requires BOTH project.skill.write AND
+ * project.file.write. Threads the acting token so the agent-grant fold fires.
+ * (Raw `git push` and daemon-side session commits don't pass through here — that
+ * whole-tree boundary is the git-proxy tier.)
+ */
+export async function assertCommitCapabilities(
+  c: Context,
+  userId: string,
+  accountId: string,
+  projectId: string,
+  paths: readonly string[],
+): Promise<void> {
+  // Generated bookkeeping files ride along with every install/remove — they're
+  // not a resource a role edits, so don't couple e.g. "install a skill" to also
+  // needing project.file.write for the lock file.
+  const BOOKKEEPING = new Set(['registry-lock.json', 'skills-lock.json']);
+  const capabilities = new Set(
+    paths
+      .filter((p) => !BOOKKEEPING.has(p.replace(/^\.?\//, '').split('/').pop() ?? ''))
+      .map(writeCapabilityForRepoPath),
+  );
+  for (const action of capabilities) {
+    await assertProjectCapability(c, userId, accountId, projectId, action);
   }
 }
 
@@ -336,11 +447,16 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
     ),
   ]);
 
-  if (!membership) {
+  // A service account has NO account_members row — its access is purely its own
+  // iam_policies, already evaluated by the engine `verdict` above. Don't apply
+  // the human membership hard-gate to it (that would 403 every SA before its
+  // standing role is ever consulted); fall through to the verdict check.
+  const isServiceAccount = ((c as unknown as { get(k: string): unknown }).get('authType') as string | undefined) === 'service_account';
+  if (!membership && !isServiceAccount) {
     throw new HTTPException(403, { message: 'You do not have access to this account' });
   }
 
-  const accountRole = membership.accountRole as AccountRole;
+  const accountRole = membership?.accountRole as AccountRole | undefined;
   if (!verdict.allowed) {
     // Distinguish "no access at all" from "has access but not for this
     // action" so the UI can show a meaningful message. A Viewer can see
@@ -371,10 +487,13 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   // doesn't hand back a role — it answers yes/no. Mirror the prior
   // mapping so any code reading effectiveRole still gets sensible
   // labels: owner/admin → manager, explicit project_members row →
-  // that role, otherwise → 'viewer' (the engine permitted read but
+  // that role, otherwise → 'user' (the engine permitted read but
   // we don't know the exact tier).
+  // For a service account there's no account role; capabilities come purely from
+  // its policies (already enforced by `verdict`). Use the safe-minimum 'user'
+  // label, exactly as for a member granted access via a policy with no role tier.
   const effectiveRole =
-    effectiveProjectRole(accountRole, projectRole) ?? 'viewer';
+    (accountRole ? effectiveProjectRole(accountRole, projectRole) : projectRole) ?? 'user';
   (c as any).set('accountId', row.accountId);
 
   if (action !== 'read' || roleAllows(effectiveRole as ProjectRole, 'write')) {
@@ -386,7 +505,7 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   return {
     row,
     userId,
-    accountRole,
+    accountRole: accountRole ?? null,
     projectRole,
     effectiveRole: effectiveRole as ProjectRole,
   };

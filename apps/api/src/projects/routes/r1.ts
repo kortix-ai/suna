@@ -1,4 +1,4 @@
-import { ACCOUNT_ACTIONS, assertAuthorized, authorize, listAccessibleResources } from '../../iam';
+import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized, authorize, listAccessibleResources } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json } from '../../openapi';
@@ -17,7 +17,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
-import { enforceProjectQuota, grantProjectRole, loadProjectForUser, resolveProjectAccount } from '../lib/access';
+import { enforceProjectQuota, grantProjectRole, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, registerGitHubLinkedProject, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeGitHubRepo, serializeProject } from '../lib/serializers';
@@ -217,7 +217,7 @@ projectsApp.openapi(
   // Heuristic for effective_role label (UI only, NOT auth):
   //   - account-manager → 'manager' (legacy owner/admin gets full label)
   //   - explicit project_members row → that role
-  //   - otherwise → 'viewer' (engine allowed read but we don't know the
+  //   - otherwise → 'user' (engine allowed read but we don't know the
   //     exact role; safe minimum for UI affordances)
   const accountManager = isAccountManager(scope.accountRole);
   return c.json(
@@ -225,7 +225,7 @@ projectsApp.openapi(
       const projectRole = roleByProject.get(row.projectId) ?? null;
       const effectiveRole = accountManager
         ? 'manager'
-        : projectRole ?? 'viewer';
+        : projectRole ?? 'user';
       return serializeProject(row, { projectRole, effectiveRole });
     }),
   );
@@ -576,6 +576,11 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // This endpoint hands back a RAW git push credential. project.write is
+  // fold-exempt, so without a leaf gate a read-scoped agent could mint a push
+  // token and bypass every CR/commit gate. Gate on gitops.push: a custom role
+  // can withhold it, and the agent fold requires it in the token's grant.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
   const connection = await getProjectGitConnection(projectId);
   const remote = getProjectGitRemote(loaded.row, connection);
@@ -626,6 +631,10 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Inviting a git collaborator grants a human standing access to the repo —
+  // membership-tier, not plain write. Gate on members.manage so an editor (or a
+  // scoped agent via the fold) can't add external collaborators.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
   const username = normalizeString(body.github_username ?? body.username ?? body.login);

@@ -115,8 +115,10 @@ describe('kortix enums', () => {
     expect(sessionLifecycleCommandStatusEnum.enumValues).toContain('dead_lettered');
   });
 
-  test('project_role enum is ordered manager, editor, viewer', () => {
-    expect(projectRoleEnum.enumValues).toEqual(['manager', 'editor', 'viewer']);
+  test('project_role enum carries manager, editor, user, and the deprecated viewer', () => {
+    // `viewer` is retired (folded into `user`) but remains in the enum because
+    // Postgres can't drop an enum member — nothing reads or writes it.
+    expect(projectRoleEnum.enumValues).toEqual(['manager', 'editor', 'user', 'viewer']);
   });
 
   test('project_access_request_status enum has the expected values', () => {
@@ -259,11 +261,11 @@ describe('projects table', () => {
 });
 
 describe('project_members table', () => {
-  test('project_role defaults to viewer', () => {
+  test('project_role defaults to user (the floor role)', () => {
     const col = getTableConfig(projectMembers).columns.find(
       (c) => c.name === 'project_role',
     );
-    expect(col?.default).toBe('viewer');
+    expect(col?.default).toBe('user');
   });
 
   test('enforces a unique project/user index', () => {

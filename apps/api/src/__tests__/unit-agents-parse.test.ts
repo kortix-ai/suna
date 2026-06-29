@@ -182,6 +182,7 @@ describe('[[agents]] — round-trip', () => {
       enabled: true,
       connectors: ['github'],
       kortixCli: ['project.deploy'],
+      env: 'all',
       file: null,
     };
     const entry = agentSpecToTomlEntry(spec);
@@ -197,9 +198,27 @@ kortix_cli = ${JSON.stringify(entry.kortix_cli)}
 
   test('minimal spec emits only name', () => {
     const entry = agentSpecToTomlEntry({
-      name: 'kortix', path: '', enabled: true, connectors: [], kortixCli: [], file: null,
+      name: 'kortix', path: '', enabled: true, connectors: [], kortixCli: [], env: 'all', file: null,
     });
     expect(entry).toEqual({ name: 'kortix' });
+  });
+
+  test('env defaults to "all" when omitted; an explicit list narrows + round-trips', () => {
+    const { specs } = parse(`
+[[agents]]
+name = "no-env"
+
+[[agents]]
+name = "scoped"
+env = ["GITHUB_TOKEN", "OPENAI_API_KEY"]
+`);
+    const noEnv = specs.find((s) => s.name === 'no-env');
+    const scoped = specs.find((s) => s.name === 'scoped');
+    expect(noEnv?.env).toBe('all'); // omitted → all (back-compat for the new dimension)
+    expect(scoped?.env).toEqual(['GITHUB_TOKEN', 'OPENAI_API_KEY']);
+    // only the narrowed one emits an `env` key
+    expect(agentSpecToTomlEntry(noEnv!).env).toBeUndefined();
+    expect(agentSpecToTomlEntry(scoped!).env).toEqual(['GITHUB_TOKEN', 'OPENAI_API_KEY']);
   });
 });
 

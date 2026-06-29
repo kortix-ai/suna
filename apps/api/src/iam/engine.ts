@@ -19,7 +19,17 @@
  */
 export type AuthorizeTarget =
   | { type: 'account'; id?: never }
-  | { type: 'project'; id: string }
+  | {
+      type: 'project';
+      id: string;
+      /**
+       * Optional per-RESOURCE narrowing: when set, the project-scope verdict is
+       * additionally intersected with iam_resource_grants for this specific
+       * agent/skill (see resource-grants.ts). Omitted on the vast majority of
+       * calls — only the agent/skill list + launch gates supply it.
+       */
+      resource?: { type: 'agent' | 'skill'; id: string };
+    }
   | { type: 'sandbox'; id: string }
   | { type: 'trigger'; id: string }
   | { type: 'channel'; id: string }

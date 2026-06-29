@@ -72,17 +72,22 @@ async function lookupAuthEmail(userId: string | null): Promise<string | null> {
 // unrelated future code path can't break invite acceptance.
 type ValidatedGrant = {
   project_id: string;
-  role: 'manager' | 'editor' | 'viewer';
+  role: 'manager' | 'editor' | 'user';
   expires_at: string | null;
 };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const VALID_PROJECT_ROLES = new Set(['manager', 'editor', 'viewer']);
+// `viewer` is accepted as a deprecated alias and folded into `user`; anything
+// outside this canonical set is rejected.
+const VALID_PROJECT_ROLES = new Set(['manager', 'editor', 'user']);
 
 function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
   if (!raw || typeof raw !== 'object') return null;
   const g = raw as Record<string, unknown>;
   if (typeof g.project_id !== 'string' || !UUID_RE.test(g.project_id)) return null;
-  if (typeof g.role !== 'string' || !VALID_PROJECT_ROLES.has(g.role)) return null;
+  if (typeof g.role !== 'string') return null;
+  const normalizedRole = g.role.trim().toLowerCase();
+  const role = normalizedRole === 'viewer' ? 'user' : normalizedRole;
+  if (!VALID_PROJECT_ROLES.has(role)) return null;
   // expires_at is optional; when present must parse to a real date.
   let expiresAt: string | null = null;
   if (g.expires_at != null) {
@@ -93,7 +98,7 @@ function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
   }
   return {
     project_id: g.project_id,
-    role: g.role as 'manager' | 'editor' | 'viewer',
+    role: role as 'manager' | 'editor' | 'user',
     expires_at: expiresAt,
   };
 }

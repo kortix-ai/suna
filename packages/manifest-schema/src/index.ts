@@ -175,6 +175,9 @@ export function formatIssues(issues: ManifestIssue[], opts: { color?: boolean } 
  * project.create, …) are deliberately excluded: they are the hard ceiling and
  * can never be granted to an agent.
  */
+// MUST stay in sync with apps/api iam/actions.ts GRANTABLE_KORTIX_CLI (= all
+// PROJECT_ACTIONS + CHANNEL_ACTIONS). The unit-agents-parse drift-guard test
+// fails loudly if these diverge (this package can't import apps/api).
 export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.read', 'project.write', 'project.delete', 'project.deploy',
   'project.cr.open', 'project.cr.merge',
@@ -183,6 +186,17 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.trigger.read', 'project.trigger.create', 'project.trigger.update', 'project.trigger.delete', 'project.trigger.fire',
   'project.gateway.logs.read', 'project.gateway.spend.read', 'project.gateway.routing.edit',
   'project.gateway.budget.set', 'project.gateway.keys.manage',
+  // IAM v1 per-capability leaves.
+  'project.agent.read', 'project.agent.write',
+  'project.skill.read', 'project.skill.write',
+  'project.command.read', 'project.command.write',
+  'project.schedule.read', 'project.schedule.write',
+  'project.webhook.read', 'project.webhook.write',
+  'project.file.read', 'project.file.write',
+  'project.customize.read', 'project.customize.write',
+  'project.gitops.read', 'project.gitops.push', 'project.gitops.merge',
+  'project.secret.read', 'project.secret.write',
+  'project.connector.read', 'project.connector.write',
   'channel.read', 'channel.connect', 'channel.send', 'channel.disconnect',
 ];
 

@@ -1027,9 +1027,7 @@ function AttachToProjectDialog({
                 <SelectItem value="editor">
                   {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextEditor415a1a4b')}
                 </SelectItem>
-                <SelectItem value="viewer">
-                  {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextViewer8a17707f')}
-                </SelectItem>
+                <SelectItem value="user">User</SelectItem>
               </SelectContent>
             </Select>
           </div>

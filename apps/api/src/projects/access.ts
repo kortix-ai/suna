@@ -1,7 +1,9 @@
-export type ProjectRole = 'manager' | 'editor' | 'viewer';
+// `user` is the floor project role. The retired `viewer` tier folded into it
+// (see parseProjectRole, which still accepts `viewer` as a legacy alias).
+export type ProjectRole = 'manager' | 'editor' | 'user';
 export type AccountRole = 'owner' | 'admin' | 'member';
-// 'session' sits between 'read' and 'write': any project member (viewer
-// included) may start and run sessions, but not customize the project.
+// 'session' sits between 'read' and 'write': any project member (a plain
+// `user` included) may start and run sessions, but not customize the project.
 export type ProjectAccessAction = 'read' | 'session' | 'write' | 'manage';
 
 export function isAccountManager(role: AccountRole): boolean {
@@ -11,7 +13,7 @@ export function isAccountManager(role: AccountRole): boolean {
 export function roleAllows(role: ProjectRole | null, action: ProjectAccessAction): boolean {
   if (!role) return false;
   if (action === 'read') return true;
-  // Every project role can use sessions — viewer is the base *usable* role.
+  // Every project role can use sessions — `user` is the base *usable* role.
   if (action === 'session') return true;
   if (action === 'write') return role === 'editor' || role === 'manager';
   return role === 'manager';
@@ -28,7 +30,10 @@ export function effectiveProjectRole(
 export function parseProjectRole(value: unknown): ProjectRole | null {
   if (typeof value !== 'string') return null;
   const normalized = value.trim().toLowerCase();
-  return normalized === 'manager' || normalized === 'editor' || normalized === 'viewer'
+  // `viewer` is a deprecated alias — fold it into `user` so legacy clients and
+  // old rows keep working, but no new `viewer` ever enters the system.
+  if (normalized === 'viewer') return 'user';
+  return normalized === 'manager' || normalized === 'editor' || normalized === 'user'
     ? normalized
     : null;
 }
@@ -63,7 +68,7 @@ export interface EffectiveAccessFold {
 }
 
 const PROJECT_ROLE_RANK: Record<ProjectRole, number> = {
-  viewer: 1,
+  user: 1,
   editor: 2,
   manager: 3,
 };

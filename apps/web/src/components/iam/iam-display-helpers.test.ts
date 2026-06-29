@@ -166,8 +166,8 @@ describe('isInheritedFromGroupOnly', () => {
       isInheritedFromGroupOnly({
         has_implicit_access: false,
         project_role: null,
-        effective_project_role: 'viewer',
-        group_sources: [{ group_name: 'Viewers', role: 'viewer' }],
+        effective_project_role: 'user',
+        group_sources: [{ group_name: 'Users', role: 'user' }],
       }),
     ).toBe(true);
   });
@@ -178,7 +178,7 @@ describe('isInheritedFromGroupOnly', () => {
         has_implicit_access: true,
         project_role: null,
         effective_project_role: 'manager',
-        group_sources: [{ group_name: 'Viewers', role: 'viewer' }],
+        group_sources: [{ group_name: 'Users', role: 'user' }],
       }),
     ).toBe(false);
   });
@@ -189,7 +189,7 @@ describe('isInheritedFromGroupOnly', () => {
         has_implicit_access: false,
         project_role: 'editor',
         effective_project_role: 'editor',
-        group_sources: [{ group_name: 'Viewers', role: 'viewer' }],
+        group_sources: [{ group_name: 'Users', role: 'user' }],
       }),
     ).toBe(false);
   });
@@ -217,15 +217,15 @@ describe('isInheritedFromGroupOnly', () => {
 });
 
 describe('inheritedFromGroupSummary', () => {
-  test('single group: "Inherited Viewer via Viewers"', () => {
+  test('single group: "Inherited User via Users"', () => {
     expect(
       inheritedFromGroupSummary({
         has_implicit_access: false,
         project_role: null,
-        effective_project_role: 'viewer',
-        group_sources: [{ group_name: 'Viewers', role: 'viewer' }],
+        effective_project_role: 'user',
+        group_sources: [{ group_name: 'Users', role: 'user' }],
       }),
-    ).toBe('Inherited Viewer via Viewers');
+    ).toBe('Inherited User via Users');
   });
 
   test('multiple groups: head + "+ N more"', () => {
@@ -236,7 +236,7 @@ describe('inheritedFromGroupSummary', () => {
         effective_project_role: 'editor',
         group_sources: [
           { group_name: 'Engineering', role: 'editor' },
-          { group_name: 'Viewers', role: 'viewer' },
+          { group_name: 'Users', role: 'user' },
         ],
       }),
     ).toBe('Inherited Editor via Engineering + 1 more');
@@ -251,7 +251,7 @@ describe('inheritedFromGroupSummary', () => {
         group_sources: [
           { group_name: 'A', role: 'manager' },
           { group_name: 'B', role: 'editor' },
-          { group_name: 'C', role: 'viewer' },
+          { group_name: 'C', role: 'user' },
         ],
       }),
     ).toBe('Inherited Manager via A + 2 more');
@@ -273,7 +273,7 @@ describe('inheritedFromGroupSummary', () => {
       inheritedFromGroupSummary({
         has_implicit_access: false,
         project_role: null,
-        effective_project_role: 'viewer',
+        effective_project_role: 'user',
       }),
     ).toBeNull();
   });

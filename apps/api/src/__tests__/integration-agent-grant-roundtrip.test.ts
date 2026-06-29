@@ -16,7 +16,11 @@ import { agentMayPerform, agentMayUseConnector } from '../iam/agent-scope';
 let tokenId: string | null = null;
 
 beforeAll(async () => {
+  // Idempotently ensure the columns createAccountToken writes (local DB may be
+  // behind on migrations).
   await db.execute(sql`alter table kortix.account_tokens add column if not exists agent_grant jsonb`);
+  await db.execute(sql`alter table kortix.account_tokens add column if not exists session_id text`);
+  await db.execute(sql`alter table kortix.account_tokens add column if not exists service_account_id uuid`);
 });
 
 afterAll(async () => {

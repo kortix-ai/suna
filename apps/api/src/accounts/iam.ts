@@ -30,5 +30,6 @@ import './iam/scim-tokens'; // SCIM provisioning tokens
 import './iam/sso'; // SAML SSO provider + group mappings
 import './iam/policies'; // session policy, active sessions / revoke, PAT policy
 import './iam/service-accounts'; // service accounts (non-human IAM principals)
+import './iam/custom-roles'; // IAM v1: custom roles + action sets + principal→role policies
 
 export { iamRouter } from './iam/app';
