@@ -1,0 +1,6 @@
+import { DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
+
+export const MANAGED_MODEL_ID_SET = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
+
+export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
+export const LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';

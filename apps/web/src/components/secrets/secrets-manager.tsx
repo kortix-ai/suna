@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { List } from '@/components/ui/list';
 import { useSecrets, useSetSecret, useDeleteSecret } from '@/hooks/secrets/use-secrets';
 import { toast } from '@/lib/toast';

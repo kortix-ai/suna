@@ -1,34 +1,20 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
-import { useMemo, useState } from 'react';
-import {
-  ArrowDownLeft,
-  ArrowUpRight,
-  Check,
-  ChevronsUpDown,
-  GitBranch,
-  Loader2,
-  Search,
-} from 'lucide-react';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { cn } from '@/lib/utils';
-import { useBranches } from '../hooks/use-branches';
-import { useProjectContext } from '../context';
-import { useVersionStore } from '../store/version-store';
+import { Button } from '@/components/ui/button';
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
+import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { ProjectBranch } from '@/lib/projects-client';
+import { cn } from '@/lib/utils';
+import { ChevronsUpDown } from '@mynaui/icons-react';
+import { ArrowDownLeft, ArrowUpRight, Check, GitBranch, Search } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useMemo, useState } from 'react';
+import { useProjectContext } from '../context';
+import { useBranches } from '../hooks/use-branches';
+import { useVersionStore } from '../store/version-store';
 
-/**
- * Version (Git branch) picker — Vercel-style chip trigger.
- *
- * Trigger: pill with branch icon, version name, optional "Main" tag, chevron.
- * Popover: search + list, with the default branch pinned at the top.
- */
 export function VersionSelector() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const ctx = useProjectContext();
@@ -40,8 +26,6 @@ export function VersionSelector() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
 
-  // Fetch lazily — the picker is usually closed, but the trigger needs to
-  // know whether the active version is the default to render the "Main" tag.
   const { data, isLoading, error } = useBranches({ enabled: open || activeRef !== '' });
 
   const defaultBranch = data?.default_branch ?? activeRef;
@@ -51,7 +35,9 @@ export function VersionSelector() {
     const branches = data?.branches ?? [];
     const trimmed = query.trim().toLowerCase();
     if (!trimmed) return branches;
-    return branches.filter((b) => b.name.toLowerCase().includes(trimmed));
+    return branches.filter(
+      (b) => b.name.toLowerCase().includes(trimmed) || b.subject.toLowerCase().includes(trimmed),
+    );
   }, [data?.branches, query]);
 
   const { primary, others } = useMemo(() => {
@@ -79,98 +65,108 @@ export function VersionSelector() {
       }}
     >
       <PopoverTrigger asChild>
-        <button
+        <Button
+          variant="outline-ghost"
           type="button"
-          className={cn(
-            'group inline-flex items-center gap-2 h-8 pl-2 pr-1.5 rounded-2xl',
-            'border border-border/60 bg-background hover:bg-muted/40',
-            'transition-colors',
-            'text-sm font-medium',
-            'shrink-0 min-w-0 max-w-[280px]',
+          size="sm"
+          className={cn('w-30 max-w-[300px] min-w-0 shrink-0 justify-between')}
+          title={tHardcodedUi.raw(
+            'featuresProjectFilesComponentsVersionSelector.line88JsxAttrTitleSwitchVersion',
           )}
-          title={tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line88JsxAttrTitleSwitchVersion')}
         >
-          <GitBranch className="h-3.5 w-3.5 text-muted-foreground/80 shrink-0" />
-          <span className="truncate">{activeRef || 'Version'}</span>
-          {isOnMain && (
-            <span className="hidden sm:inline-flex items-center rounded-full bg-muted px-1.5 py-px text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Main
-            </span>
-          )}
-          <ChevronsUpDown className="h-3 w-3 text-muted-foreground/60 shrink-0 ml-0.5" />
-        </button>
+          <div className="flex items-center gap-2">
+            <GitBranch className="text-muted-foreground size-3.5 shrink-0" />
+            <span className="truncate">{activeRef || 'Version'}</span>
+          </div>
+          <ChevronsUpDown className="text-muted-foreground size-3 shrink-0" />
+        </Button>
       </PopoverTrigger>
       <PopoverContent
         align="start"
         sideOffset={6}
-        className="w-[340px] p-0 overflow-hidden"
+        className="flex w-[340px] flex-col overflow-hidden p-0"
       >
-        {/* Search */}
-        <div className="flex items-center gap-1.5 px-3 h-10 border-b border-border/40">
-          <Search className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+        <div className="border-border flex shrink-0 items-center gap-1.5 border-b px-3 py-2">
+          <Search className="text-muted-foreground/60 h-3.5 w-3.5 shrink-0" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line112JsxAttrPlaceholderFindAVersion')}
-            className="flex-1 min-w-0 h-7 bg-transparent border-0 outline-none px-0 text-sm text-foreground placeholder:text-muted-foreground/50"
+            placeholder={tHardcodedUi.raw(
+              'featuresProjectFilesComponentsVersionSelector.line112JsxAttrPlaceholderFindAVersion',
+            )}
+            className="text-foreground placeholder:text-muted-foreground/50 h-7 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm outline-none"
             autoFocus
           />
         </div>
 
-        <div className="max-h-[380px] overflow-y-auto overscroll-contain">
-          {isLoading && (
-            <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />{tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line122JsxTextLoadingVersions')}</div>
-          )}
+        <div className="h-[520px] max-h-[calc(100vh-8rem)] min-h-0 shrink">
+          <FadedScrollArea fadeColor="from-popover" className="h-full overscroll-contain">
+            {isLoading && (
+              <div className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-xs">
+                <Loading className="size-3.5 animate-spin" />
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsVersionSelector.line122JsxTextLoadingVersions',
+                )}
+              </div>
+            )}
 
-          {error && !isLoading && (
-            <div className="py-8 px-4 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line128JsxTextFailedToLoadVersions')}</div>
-          )}
+            {error && !isLoading && (
+              <div className="text-muted-foreground px-4 py-8 text-center text-xs">
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsVersionSelector.line128JsxTextFailedToLoadVersions',
+                )}
+              </div>
+            )}
 
-          {!isLoading && !error && filtered.length === 0 && (
-            <div className="py-8 px-4 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line134JsxTextNoVersionsMatch')}{' '}{query ? `“${query}”` : ''}
-            </div>
-          )}
+            {!isLoading && !error && filtered.length === 0 && (
+              <div className="text-muted-foreground px-4 py-8 text-center text-xs">
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsVersionSelector.line134JsxTextNoVersionsMatch',
+                )}{' '}
+                {query ? `“${query}”` : ''}
+              </div>
+            )}
 
-          {primary.length > 0 && (
-            <div>
-              <SectionLabel>{tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line140JsxTextMainVersion')}</SectionLabel>
-              {primary.map((b) => (
-                <VersionRow
-                  key={b.name}
-                  branch={b}
-                  isActive={activeRef === b.name}
-                  onClick={() => handleSelect(b.name)}
-                />
-              ))}
-            </div>
-          )}
+            {primary.length > 0 && (
+              <div className={cn('space-y-3 p-3', others.length > 0 ? 'pb-0' : 'pb-3')}>
+                <Label>
+                  {tHardcodedUi.raw(
+                    'featuresProjectFilesComponentsVersionSelector.line140JsxTextMainVersion',
+                  )}
+                </Label>
+                {primary.map((b) => (
+                  <VersionRow
+                    key={b.name}
+                    branch={b}
+                    isActive={activeRef === b.name}
+                    onClick={() => handleSelect(b.name)}
+                  />
+                ))}
+              </div>
+            )}
 
-          {others.length > 0 && (
-            <div className="border-t border-border/30">
-              <SectionLabel>{tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line154JsxTextOtherVersions')}</SectionLabel>
-              {others.map((b) => (
-                <VersionRow
-                  key={b.name}
-                  branch={b}
-                  isActive={activeRef === b.name}
-                  onClick={() => handleSelect(b.name)}
-                />
-              ))}
-            </div>
-          )}
+            {others.length > 0 && (
+              <div className="space-y-3 p-3 pb-3">
+                <Label>
+                  {tHardcodedUi.raw(
+                    'featuresProjectFilesComponentsVersionSelector.line154JsxTextOtherVersions',
+                  )}
+                </Label>
+                {others.map((b) => (
+                  <VersionRow
+                    key={b.name}
+                    branch={b}
+                    isActive={activeRef === b.name}
+                    onClick={() => handleSelect(b.name)}
+                  />
+                ))}
+              </div>
+            )}
+          </FadedScrollArea>
         </div>
       </PopoverContent>
     </Popover>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="px-3 pt-2 pb-1 text-xs uppercase tracking-[0.08em] font-semibold text-muted-foreground/60">
-      {children}
-    </div>
   );
 }
 
@@ -196,32 +192,29 @@ function VersionRow({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex items-start gap-2.5 w-full px-3 py-2 text-left',
-        'hover:bg-muted/40 transition-colors',
-        isActive && 'bg-primary/[0.05]',
+        'border-border bg-popover hover:bg-foreground/4 flex w-full cursor-pointer items-start gap-2.5 rounded-md px-3 py-2 text-left',
+        isActive && 'bg-primary/5',
       )}
     >
-      <div className="mt-0.5 flex w-4 shrink-0 items-center justify-center">
+      <div className="mt-0.5 flex size-4 shrink-0 items-center justify-center">
         {isActive ? (
-          <Check className="h-3.5 w-3.5 text-primary" />
+          <Check className="text-primary size-3.5" />
         ) : (
-          <GitBranch className="h-3.5 w-3.5 text-muted-foreground/50" />
+          <GitBranch className="text-muted-foreground size-3.5" />
         )}
       </div>
 
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="text-sm font-medium text-foreground truncate">
-            {branch.name}
-          </span>
+          <span className="text-foreground truncate text-sm font-medium">{branch.name}</span>
           {branch.is_default && (
-            <span className="inline-flex items-center rounded bg-muted px-1 py-px text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="bg-muted text-muted-foreground inline-flex items-center rounded px-1 py-px text-xs font-semibold tracking-wider uppercase">
               Main
             </span>
           )}
         </div>
 
-        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground/80">
+        <div className="text-muted-foreground/80 mt-0.5 flex items-center gap-1.5 text-xs">
           <span className="font-mono">{branch.tip_short}</span>
           {date && <span className="text-muted-foreground/40">·</span>}
           {date && <span>{date}</span>}
@@ -230,7 +223,9 @@ function VersionRow({
               <span className="text-muted-foreground/40">·</span>
               <span
                 className="inline-flex items-center gap-1"
-                title={tHardcodedUi.raw('featuresProjectFilesComponentsVersionSelector.line234JsxAttrTitleAheadBehindMainVersion')}
+                title={tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsVersionSelector.line234JsxAttrTitleAheadBehindMainVersion',
+                )}
               >
                 <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-500">
                   <ArrowUpRight className="h-2.5 w-2.5" />
@@ -246,9 +241,7 @@ function VersionRow({
         </div>
 
         {branch.subject && (
-          <div className="text-xs text-muted-foreground/70 mt-0.5 truncate">
-            {branch.subject}
-          </div>
+          <div className="text-muted-foreground/70 mt-0.5 truncate text-xs">{branch.subject}</div>
         )}
       </div>
     </button>
