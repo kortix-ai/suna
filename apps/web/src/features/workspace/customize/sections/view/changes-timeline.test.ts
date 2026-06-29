@@ -11,7 +11,15 @@ import {
   isKortixAgent,
 } from './changes-timeline';
 
-const REF = new Date('2026-06-25T15:00:00.000Z');
+function localMidday(year: number, month: number, day: number): number {
+  return new Date(year, month - 1, day, 12).getTime();
+}
+
+function localIso(year: number, month: number, day: number): string {
+  return new Date(year, month - 1, day, 12).toISOString();
+}
+
+const REF = new Date(2026, 5, 25, 15);
 
 function commit(overrides: Partial<ProjectCommit> = {}): ProjectCommit {
   return {
@@ -129,10 +137,10 @@ describe('crTime', () => {
 
 describe('dayLabel', () => {
   test('labels today, yesterday, this week, and older dates', () => {
-    expect(dayLabel(Date.parse('2026-06-25T08:00:00.000Z'), REF)).toBe('Today');
-    expect(dayLabel(Date.parse('2026-06-24T08:00:00.000Z'), REF)).toBe('Yesterday');
-    expect(dayLabel(Date.parse('2026-06-23T08:00:00.000Z'), REF)).toBe('This week');
-    expect(dayLabel(Date.parse('2026-05-10T08:00:00.000Z'), REF)).toMatch(/May 2026/);
+    expect(dayLabel(localMidday(2026, 6, 25), REF)).toBe('Today');
+    expect(dayLabel(localMidday(2026, 6, 24), REF)).toBe('Yesterday');
+    expect(dayLabel(localMidday(2026, 6, 23), REF)).toBe('This week');
+    expect(dayLabel(localMidday(2026, 5, 10), REF)).toMatch(/May 2026/);
   });
 });
 
@@ -152,14 +160,14 @@ describe('groupTimeline', () => {
   test('sorts newest first and buckets by day label order of first appearance', () => {
     const timeline = buildTimeline(
       [
-        commit({ hash: 'old', committed_at: '2026-05-10T08:00:00.000Z' }),
-        commit({ hash: 'today', committed_at: '2026-06-25T08:00:00.000Z' }),
+        commit({ hash: 'old', committed_at: localIso(2026, 5, 10) }),
+        commit({ hash: 'today', committed_at: localIso(2026, 6, 25) }),
       ],
       [
         changeRequest({
           cr_id: 'cr-yesterday',
           status: 'merged',
-          merged_at: '2026-06-24T08:00:00.000Z',
+          merged_at: localIso(2026, 6, 24),
         }),
       ],
     );
