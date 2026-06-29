@@ -14,7 +14,7 @@ import { AccessMemberSchema, AnyObject, projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/git';
 import { readBody, serializeProject } from '../lib/serializers';
 import { applyExperimentalOverride, isExperimentalFeatureKey } from '../../experimental/features';
-import { reconcileComputerConnectors } from '../../executor/sync';
+import { reconcileChannelConnectors, reconcileComputerConnectors } from '../../executor/sync';
 import { propagateLlmGatewayModeToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 
@@ -1115,6 +1115,9 @@ projectsApp.openapi(
     if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
     if (feature === 'agent_tunnel') {
       void reconcileComputerConnectors(row.accountId);
+    }
+    if (feature === 'meet') {
+      void reconcileChannelConnectors(projectId);
     }
     if (feature === 'llm_gateway') {
       void propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(row.metadata));
