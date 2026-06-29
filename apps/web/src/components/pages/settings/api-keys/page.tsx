@@ -45,7 +45,7 @@ import {
   APIKeyCreateResponse,
   APIKeyRegenerateResponse,
 } from '@/lib/api/api-keys';
-import { getActiveServer, getActiveOpenCodeUrl } from '@/stores/server-store';
+import { getActiveSandboxId, getActiveOpenCodeUrl } from '@/stores/server-store';
 import { getAuthToken } from '@/lib/auth-token';
 import { useServerStore } from '@/stores/server-store';
 import { getEnv } from '@/lib/env-config';
@@ -171,11 +171,7 @@ export default function APIKeysPage() {
     const server = s.servers.find((e) => e.id === s.activeServerId);
     return server?.instanceId;
   });
-  const activeSandboxExternalId = useServerStore((s) => {
-    const server = s.servers.find((e) => e.id === s.activeServerId);
-    return server?.sandboxId;
-  });
-  const activeServer = getActiveServer();
+  const activeSandboxExternalId = getActiveSandboxId();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newKeyData, setNewKeyData] = useState<NewAPIKeyData>({
     title: '',

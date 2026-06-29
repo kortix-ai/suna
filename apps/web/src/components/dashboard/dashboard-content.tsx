@@ -13,7 +13,6 @@ import type { AttachedFile } from '@/features/session/session-chat-input';
 import { formatModelString } from '@/hooks/opencode/use-opencode-local';
 import type { Command } from '@/hooks/opencode/use-opencode-sessions';
 import { useCreateOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
-import { useSandbox } from '@/hooks/platform/use-sandbox';
 import { useIsMobile } from '@/hooks/utils';
 import { getClient } from '@/lib/opencode-sdk';
 import { playSound } from '@/lib/sounds';
@@ -42,10 +41,9 @@ export function DashboardContent() {
   const { setOpen: setSidebarOpenState, setOpenMobile } = useSidebar();
   const createSession = useCreateOpenCodeSession();
 
-  // No-instance fallback: when the user has no sandbox at all, render the
-  // claim/onboarding hero in-place instead of bouncing to a dedicated page.
-  const { sandbox, isLoading: sandboxLoading } = useSandbox();
-  const showNoInstanceState = !sandboxLoading && !sandbox;
+  // Legacy "no sandbox/instance" hero retired — cloud sessions always have a
+  // runtime, and the instances system is gone.
+  const showNoInstanceState = false;
 
   // After Stripe checkout (?subscription=success), the webhook has already
   // provisioned the sandbox — refresh sandbox queries so the workspace
