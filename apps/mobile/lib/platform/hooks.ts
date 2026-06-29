@@ -19,7 +19,6 @@ import {
   stopSandbox,
   deleteSandbox,
   getProviders,
-  initLocalSandbox,
   type SandboxInfo,
   type LocalSandboxProgress,
 } from './client';

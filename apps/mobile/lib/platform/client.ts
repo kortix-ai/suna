@@ -384,20 +384,6 @@ export interface LocalSandboxProgress {
   message: string;
 }
 
-export async function initLocalSandbox(
-  _name?: string,
-  onProgress?: (progress: LocalSandboxProgress) => void
-): Promise<SandboxInfo> {
-  onProgress?.({ status: 'starting', progress: 0, message: 'Starting project session...' });
-  const result = await ensureSandbox();
-  onProgress?.({
-    status: result.sandbox.status,
-    progress: result.sandbox.status === 'active' ? 100 : 25,
-    message: 'Project session started',
-  });
-  return result.sandbox;
-}
-
 /**
  * Add a custom URL instance to the server store.
  * POST /platform/sandbox with custom URL.
