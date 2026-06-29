@@ -1,29 +1,52 @@
 ---
 name: people-search
-description: "Find people through web research — track down a specific person, or assemble a shortlist of people who match a profile (title + industry + geography + skill). Use to locate a named individual, build a sourcing/recruiting/outreach list, enrich a known contact into a dossier, or answer 'who is the X at Y' / 'find people who Z'. Web-search-backed: wide reach, then filtered down to precise matches."
+description: "Find people — track down a specific person, or assemble a shortlist who match a profile (title + industry + geography + skill). Use to locate a named individual, build a sourcing/recruiting/outreach list, enrich a known contact into a dossier, or answer 'who is the X at Y' / 'find people who Z'. Uses the dedicated people_search tool first (structured profiles), with open-web search as the fallback."
 defaultProjectInstall: true
 ---
 
 # People Search
 
-<!--
-  This skill runs entirely on web search + page scraping — there is no dedicated
-  people index behind it. That means broad recall but noisier results, so the
-  filter step carries the precision. A richer, connector-backed version
-  (verified profiles, emails, org charts) can supersede this one later; until
-  then, this is the default. Be honest about the noise and lean on filtering.
--->
+Find people — a single named person, or a whole list that fits a profile. There
+are two paths, in order:
 
-Find people on the open web — a single named person, or a whole list that fits a
-profile. I fan out a set of varied searches, merge and de-duplicate what comes
-back, scrape the promising pages to fill in detail, then ruthlessly filter down
-to the people who actually match before handing you a clean, sourced result.
+1. **The `people_search` tool (primary).** A dedicated people-data lookup, wired
+   like `web_search`: it works out of the box through the Kortix proxy (no key
+   needed — billed to the account), or set your own `APOLLO_API_KEY` to use your
+   own plan directly. It returns **structured profiles** — name, title, current
+   company, location, LinkedIn URL — far cleaner than scraping the open web.
+   Reach for it first for "find people who match X" and named-person lookups.
+2. **Open-web search (fallback).** When the tool errors (no proxy and no key),
+   returns nothing, or you need someone a B2B index won't have (creators,
+   academics, niche communities), fall back to the `web_search` + `scrape_webpage`
+   pipeline below.
 
-## How It Works
+Either way, the **filter step** (keep only true matches) and the **output format**
+are the same — and you always hyperlink each person's name to their source URL.
+
+## Using the people_search tool
+
+```
+people_search(query="climate tech founder", titles="Founder,CEO", locations="Lagos", num_results=10)
+```
+
+- `query` — free-text keywords (name, focus, skills, industry).
+- `titles` / `locations` — optional comma-separated filters.
+- `num_results` — up to 25; `page` to paginate.
+
+It returns a list of people with title, company, location, and LinkedIn URL. Run
+the **filter step** on the results, and `scrape_webpage` a kept candidate when you
+need bio / history the index doesn't carry. If the tool returns
+`success: false`, switch to the open-web pipeline.
+
+## Open-web fallback — how it works
+
+When the `people_search` tool isn't usable, this is the path. It runs entirely on
+web search + page scraping (no people index): broad recall, noisier results, so
+the filter step carries the precision.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                        PEOPLE SEARCH                              │
+│                   PEOPLE SEARCH (open-web fallback)              │
 ├──────────────────────────────────────────────────────────────────┤
 │  1. FAN OUT      Several varied web_search queries, not one       │
 │                  (name+company · role+location · "<name>" bio …)  │

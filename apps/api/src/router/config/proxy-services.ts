@@ -84,6 +84,22 @@ export function getProxyServices(): Record<string, ProxyServiceConfig> {
       billingToolName: 'proxy_serper',
     },
 
+    // People-data search (Apollo). Powers the sandbox `people_search` tool —
+    // default-included, billed to the account via the Kortix key; users can also
+    // bring their own APOLLO_API_KEY (passthrough). Locked to the search/match
+    // endpoints so the shared key can't be used for arbitrary Apollo calls.
+    apollo: {
+      name: 'apollo',
+      targetBaseUrl: config.APOLLO_API_URL,
+      getKortixApiKey: () => config.APOLLO_API_KEY,
+      keyInjection: { type: 'header', headerName: 'X-Api-Key' },
+      allowedRoutes: [
+        { path: '/api/v1/mixed_people/search', methods: ['POST'] },
+        { path: '/api/v1/people/match', methods: ['POST'] },
+      ],
+      billingToolName: 'proxy_apollo',
+    },
+
     firecrawl: {
       name: 'firecrawl',
       targetBaseUrl: config.FIRECRAWL_API_URL,

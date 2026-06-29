@@ -92,6 +92,8 @@ const envSchema = z.object({
   TAVILY_API_KEY:              optStr,
   SERPER_API_URL:              optUrl('https://google.serper.dev'),
   SERPER_API_KEY:              optStr,
+  APOLLO_API_URL:              optUrl('https://api.apollo.io'),
+  APOLLO_API_KEY:              optStr,
 
   // ── Proxy Providers (optional) ───────────────────────────────────────────
   FIRECRAWL_API_URL:           optUrl('https://api.firecrawl.dev'),
@@ -550,6 +552,8 @@ export const config = {
   TAVILY_API_KEY: env.TAVILY_API_KEY,
   SERPER_API_URL: env.SERPER_API_URL,
   SERPER_API_KEY: env.SERPER_API_KEY,
+  APOLLO_API_URL: env.APOLLO_API_URL,
+  APOLLO_API_KEY: env.APOLLO_API_KEY,
 
   // ─── Proxy Providers ──────────────────────────────────────────────────────
   FIRECRAWL_API_URL: env.FIRECRAWL_API_URL,

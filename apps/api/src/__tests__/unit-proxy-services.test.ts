@@ -209,6 +209,7 @@ describe('matchAllowedRoute', () => {
       const serviceNames = Object.keys(getProxyServices()).sort();
       expect(serviceNames).toEqual([
         'anthropic',
+        'apollo',
         'context7',
         'firecrawl',
         'gemini',
