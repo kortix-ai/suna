@@ -242,9 +242,9 @@ flow(
     const member = await team.addMember("member");
     const project = await team.project();
 
-    // Low direct role: Viewer (cannot delete).
-    await ctx.step("give member a direct Viewer role on the project", async () => {
-      await team.grantProjectRole(project.id, member.userId!, "viewer");
+    // Low direct role: User (cannot delete).
+    await ctx.step("give member a direct User role on the project", async () => {
+      await team.grantProjectRole(project.id, member.userId!, "user");
     });
 
     // High group grant: Manager (can delete) on the same project.
@@ -275,7 +275,7 @@ flow(
       grant.status(201).body().has("$.role", "manager");
     });
 
-    await ctx.step("max-role-wins: project.delete allowed (Manager grant overrides the lower Viewer; nothing denies)", async () => {
+    await ctx.step("max-role-wins: project.delete allowed (Manager grant overrides the lower User; nothing denies)", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
         params: { accountId: team.id, userId: member.userId! },
         query: { action: "project.delete", resourceType: "project", resourceId: project.id },
