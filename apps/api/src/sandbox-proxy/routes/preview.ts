@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { config } from '../../config';
 import { getTraceHeaders } from '../../lib/request-context';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
@@ -266,13 +267,47 @@ function agentSwitchConflictResponse(expectedAgent: string, requestedAgent: stri
   }, 409);
 }
 
-function bodyWithoutLegacyDefaultAgent(body: ArrayBuffer | undefined, incomingHeaders: Headers): ArrayBuffer | undefined {
+// The sentinel name a session carries when it isn't bound to a *concrete* agent.
+// `project_sessions.agent_name` defaults to this, and no agent is literally named
+// "default" — the runtime resolves it to OpenCode's configured `default_agent`
+// (conventionally `kortix`). It is therefore non-binding: a "default" session's
+// executor token carries the least-privileged grant (null = full for ungoverned
+// projects, deny for governed ones — see `grantFromLoadedAgents`), so a prompt
+// can never use it to escalate into another agent's connector / Kortix-CLI grant.
+const DEFAULT_AGENT_SENTINEL = 'default';
+
+// A prompt's explicit `agent` only constitutes a prohibited switch when it would
+// run a DIFFERENT *concrete* agent than the one this session's executor token was
+// minted for. That — and only that — is the escalation the policy prevents (see
+// docs/specs/2026-06-28-token-session-agent-identity.md). The sentinel 'default'
+// is non-binding on EITHER side: a session stored as 'default' has no privileged
+// agent-specific grant to inherit, and a prompt asking for 'default' just means
+// "this session's own default agent".
+//
+// Without this, the client's perfectly ordinary behaviour read as a bogus switch:
+// it resolves "the default" to a concrete name (e.g. `kortix`) for display and
+// echoes it back on follow-up turns — and a first-turn race can send that name
+// before the session's bound agent has even loaded. Comparing the concrete echo
+// against the stored sentinel 409'd every "start a new session, send a second
+// message" flow (the false AGENT_SWITCH_REQUIRES_NEW_SESSION reports).
+function isProhibitedAgentSwitch(requestedAgent: string | null, sessionAgent: string): boolean {
+  if (!requestedAgent) return false;
+  if (requestedAgent === DEFAULT_AGENT_SENTINEL) return false;
+  if (sessionAgent === DEFAULT_AGENT_SENTINEL) return false;
+  return requestedAgent !== sessionAgent;
+}
+
+// Drop the prompt's `agent` field entirely so OpenCode resolves its own
+// `default_agent`. Used for non-concrete ('default') sessions: the box must
+// always run the agent it booted with — the one the executor token was minted
+// for — regardless of which concrete name the client speculatively echoed.
+function bodyWithoutPromptAgent(body: ArrayBuffer | undefined, incomingHeaders: Headers): ArrayBuffer | undefined {
   if (!body) return body;
   const contentType = incomingHeaders.get('content-type') ?? '';
   if (!contentType.toLowerCase().includes('application/json')) return body;
   try {
     const parsed = JSON.parse(new TextDecoder().decode(body)) as { agent?: unknown };
-    if (parsed.agent !== 'default') return body;
+    if (!('agent' in parsed)) return body;
     delete parsed.agent;
     return new TextEncoder().encode(JSON.stringify(parsed)).buffer;
   } catch {
@@ -397,12 +432,23 @@ export async function forwardToSandbox(
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
         const requestedAgent = requestedPromptAgent(body, incomingHeaders);
-        const sessionAgent = record.agentName ?? 'default';
-        if (requestedAgent && requestedAgent !== sessionAgent) {
-          return agentSwitchConflictResponse(sessionAgent, requestedAgent);
+        const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
+        // Agent-lock enforcement is OFF by default — in-session agent switching is
+        // allowed. The 409 only fires when KORTIX_ENFORCE_SESSION_AGENT_LOCK is
+        // explicitly enabled (a future per-agent executor-token auth model; see the
+        // config flag's TODO). Until then a prompt may freely run a different agent.
+        if (
+          config.KORTIX_ENFORCE_SESSION_AGENT_LOCK &&
+          isProhibitedAgentSwitch(requestedAgent, sessionAgent)
+        ) {
+          return agentSwitchConflictResponse(sessionAgent, requestedAgent!);
         }
-        if (requestedAgent === 'default' && sessionAgent === 'default') {
-          body = bodyWithoutLegacyDefaultAgent(body, incomingHeaders);
+        // Drop only the legacy 'default' sentinel so OpenCode resolves its own
+        // `default_agent` (the real default the session booted with). A *concrete*
+        // requested agent is forwarded untouched so the user can switch agents
+        // within a session.
+        if (requestedAgent === DEFAULT_AGENT_SENTINEL) {
+          body = bodyWithoutPromptAgent(body, incomingHeaders);
         }
         try {
           await syncSandboxEnvForPrompt({
@@ -710,6 +756,15 @@ export async function resolvePreviewWsUpstream(opts: {
   if (remainingPath.startsWith('/pty/') && record.provider === 'platinum') {
     const signedContext = headers[KORTIX_USER_CONTEXT_HEADER];
     if (signedContext) upstreamUrl.searchParams.set(KORTIX_USER_CONTEXT_QUERY_PARAM, signedContext);
+    // opencode's PTY WS replays its scrollback — including the live shell prompt —
+    // ONLY when a cursor is supplied. The in-box agent's bridge otherwise defaults
+    // the upstream to cursor=-1, which makes opencode skip the buffer entirely, so
+    // the terminal renders only a cursor and no prompt (then idles → 1006 loop).
+    // This is Platinum-only: Daytona connects to opencode :4096 directly and never
+    // hits the agent's ticket+cursor default. Default to replay-from-start when the
+    // FE didn't pin a cursor; a FE-supplied cursor (reconnect resume) is preserved
+    // by the has() guard. Verified in-box: cursor=0 → "TEXT '# '", cursor=-1 → none.
+    if (!upstreamUrl.searchParams.has('cursor')) upstreamUrl.searchParams.set('cursor', '0');
   }
 
   return { ok: true, url: upstreamUrl.toString(), headers };

@@ -867,6 +867,9 @@ export async function upsertProjectSecret(
 // (operating on the project's owner account). Stored values are gateway wire
 // models (bare managed id, BYOK `provider/model`, or `codex/…`).
 
+export type ModelDefaultScope = 'account' | 'agent' | 'project';
+export type ModelDefaultSource = 'explicit' | 'agent' | 'project' | 'account' | 'platform';
+
 export interface ModelDefaultsResponse {
   /** The platform-wide fallback model (what `auto` resolves to with no override). */
   platformDefault: string;
@@ -874,8 +877,12 @@ export interface ModelDefaultsResponse {
   accountDefault: string | null;
   /** Per-agent default wire models, keyed by agent name. */
   agentDefaults: Record<string, string>;
-  /** Account-level resolution for picker display (agent/vision-agnostic). */
+  /** This project's default wire model, or null when unset. */
+  projectDefault: string | null;
+  /** Honest project-level resolution (project → account → platform) for display. */
   resolvedForCaller: string | null;
+  /** Where `resolvedForCaller` came from — drives "· project default" labels. */
+  resolvedSource?: ModelDefaultSource;
   /** True when the account can't use managed models (free tier). */
   freeTier: boolean;
 }
@@ -888,7 +895,7 @@ export async function getModelDefaults(projectId: string) {
 
 export async function setModelDefault(
   projectId: string,
-  input: { scope: 'account' | 'agent'; agentName?: string; model: string },
+  input: { scope: ModelDefaultScope; agentName?: string; model: string },
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; scope: string; agentName?: string; model: string }>(
@@ -900,7 +907,7 @@ export async function setModelDefault(
 
 export async function clearModelDefault(
   projectId: string,
-  params: { scope: 'account' | 'agent'; agentName?: string },
+  params: { scope: ModelDefaultScope; agentName?: string },
 ) {
   const qs = new URLSearchParams({
     scope: params.scope,

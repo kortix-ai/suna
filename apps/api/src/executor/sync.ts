@@ -173,8 +173,8 @@ export async function syncProjectConnectors(projectId: string, accountId: string
   // materialized like any other connector but never written back to git.
   const channelSpecs = await synthesizeChannelConnectors(projectId, declaredSpecs);
   // Computer connector (the Agent Computer Tunnel) is install-driven the same
-  // way: a single synthetic connector when the account has a machine + the
-  // project opted into agent_tunnel. Also manifest-independent.
+  // way: a single synthetic connector when the account has a connected machine.
+  // A regular connector — no experimental opt-in — also manifest-independent.
   const computerSpecs = await synthesizeComputerConnectors(projectId, declaredSpecs);
   const specs = [...declaredSpecs, ...channelSpecs, ...computerSpecs];
 

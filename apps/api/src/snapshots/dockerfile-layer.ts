@@ -192,19 +192,14 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '        "scipy>=1.12" \\',
     '        "seaborn>=0.13" \\',
     '        "youtube-transcript-api>=0.6" \\',
-    "    && python3 - <<'PY'",
-    'import importlib',
-    'mods = [',
-    '  "bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl",',
-    '  "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright",',
-    '  "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx",',
-    '  "reportlab", "requests", "sklearn", "scipy", "seaborn",',
-    '  "youtube_transcript_api",',
-    ']',
-    'for mod in mods:',
-    '    importlib.import_module(mod)',
-    'print("starter Python package floor OK")',
-    'PY',
+    // Verify the import floor with a `python3 -c` ONE-LINER, NOT a RUN heredoc.
+    // Platinum builds with buildah's classic imagebuilder, which does not support
+    // Dockerfile RUN heredocs (and ignores `# syntax=docker/dockerfile:1.7`): it
+    // parses the heredoc body's first line ("import importlib") as a Dockerfile
+    // instruction "IMPORT" and aborts the build with `Unknown instruction: IMPORT`
+    // at STEP 6 — failing EVERY Platinum template build. A -c one-liner is
+    // equivalent (still fails the layer if any module is missing) and portable.
+    '    && python3 -c \'import importlib; [importlib.import_module(m) for m in ["bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl", "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright", "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx", "reportlab", "requests", "sklearn", "scipy", "seaborn", "youtube_transcript_api"]]; print("starter Python package floor OK")\'',
     '',
     `RUN npm install -g --no-audit --no-fund "opencode-ai@${opencodeVersion}" \\`,
     '    && command -v opencode \\',

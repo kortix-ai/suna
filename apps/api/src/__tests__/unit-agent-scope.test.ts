@@ -74,6 +74,40 @@ kortix_cli = "all"
       kortixCli: 'all',
     });
   });
+
+  // Regression: a session that boots with the non-binding `default` sentinel in a
+  // GOVERNED project must NOT be default-denied. No agent is ever named `default`
+  // — the runtime resolves it to the configured `default_agent` (a GP agent), so
+  // default-denying it stripped every connector and made `kortix executor
+  // connectors` return [] (and hid synthetic channel/computer connectors). The
+  // sentinel is non-binding → null (no restriction, still capped at the user).
+  test('`default` sentinel under governance → null (non-binding), not default-deny', () => {
+    const loaded = loadAgents(`
+[[agents]]
+name = "veyris"
+connectors = "all"
+kortix_cli = "all"
+
+[[agents]]
+name = "memory-reflector"
+connectors = []
+`);
+    expect(grantFromLoadedAgents('default', loaded)).toBeNull();
+  });
+
+  // The security feature is preserved: an unlisted CONCRETE agent still denies.
+  test('concrete unlisted agent under governance still default-denies (≠ sentinel)', () => {
+    const loaded = loadAgents(`
+[[agents]]
+name = "veyris"
+connectors = "all"
+`);
+    expect(grantFromLoadedAgents('rogue-agent', loaded)).toEqual({
+      agent: 'rogue-agent',
+      connectors: [],
+      kortixCli: [],
+    });
+  });
 });
 
 describe('agentMayPerform — kortix_cli gate', () => {

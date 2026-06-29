@@ -162,6 +162,29 @@ export async function stageBuildContext(
     opencodeConfigPath,
     catalogPath: 'kortix-llm-catalog.json',
   });
+
+  // ── Buildah-portability guard ──────────────────────────────────────────────
+  // The SAME composed context ships to BOTH providers. Daytona builds with
+  // BuildKit (supports `# syntax=docker/dockerfile:1.7` + RUN heredocs); Platinum
+  // builds with podman/buildah's classic imagebuilder, which supports NEITHER — it
+  // parses a heredoc body's first line (e.g. `import importlib`) as a Dockerfile
+  // instruction and aborts EVERY build ("Unknown instruction: IMPORT"), failing
+  // all Platinum sessions. This exact regression (a `<<'PY'` python verify added
+  // 2026-06-27) took dev down for hours because Daytona silently tolerated it.
+  // Reject it at the SOURCE with a clear error instead of an opaque remote build
+  // failure minutes later — and keep the Dockerfile portable to both builders.
+  const heredocLine = composed
+    .split('\n')
+    .find((l) => !/^\s*#/.test(l) && /<<-?['"]?[A-Za-z_]\w*['"]?\s*\\?\s*$/.test(l));
+  if (heredocLine) {
+    throw new Error(
+      `composed Dockerfile is not buildah-portable — it contains a RUN heredoc Platinum's ` +
+        `builder cannot parse: "${heredocLine.trim().slice(0, 120)}". Use a single-line ` +
+        `equivalent (e.g. \`python3 -c '...'\`). Heredocs and BuildKit-only \`# syntax\` ` +
+        `directives work on Daytona but silently break every Platinum template build.`,
+    );
+  }
+
   if (typeof (globalThis as any).Bun?.write === 'function') {
     await (globalThis as any).Bun.write(composedPath, composed);
   } else {

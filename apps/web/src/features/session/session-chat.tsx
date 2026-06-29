@@ -3786,7 +3786,13 @@ export function SessionChat({
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
   const local = useOpenCodeLocal({ agents, providers, config, sessionId, boundAgentName });
-  const lockedAgentName = boundAgentName?.trim() || null;
+  // Session agent-lock is DISABLED (mirrors the backend KORTIX_ENFORCE_SESSION_AGENT_LOCK,
+  // default off): the picker still defaults to the session's agent (seeded via
+  // useOpenCodeLocal's boundAgentName) but stays switchable — sends use the current
+  // pick, not a forced lock. Flip to true to restore the hard lock once per-agent
+  // executor-token scoping lands (see docs/specs/2026-06-28-agent-defaults-todo.md).
+  const SESSION_AGENT_LOCK_ENABLED: boolean = false;
+  const lockedAgentName = SESSION_AGENT_LOCK_ENABLED ? boundAgentName?.trim() || null : null;
   const localAgentSet = local.agent.set;
   const localModelCurrentKey = local.model.currentKey;
   // Wire model to SEND: `auto` when on the default (gateway resolves it), else
@@ -5877,6 +5883,9 @@ export function SessionChat({
                   if (name) void local.model.defaults.setAgentDefault(name, m);
                 }
               : undefined,
+            onSetProjectDefault: (m) => {
+              void local.model.defaults.setProjectDefault(m);
+            },
           }}
           variants={local.model.variant.list}
           selectedVariant={local.model.variant.current ?? null}

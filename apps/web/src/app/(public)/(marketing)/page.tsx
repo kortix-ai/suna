@@ -5,20 +5,33 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { Separator } from '@/components/ui/separator';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
+import {
+  CompanyAsCodeSection,
+  HowItRunsSection,
+  ProblemSection,
+} from '@/features/marketing/company-os-sections';
 import Hero from '@/features/marketing/hero';
 import { HowItWorks } from '@/features/marketing/how-it-work/how-it-works';
 import Security from '@/features/marketing/security/security';
-import { OutcomeCardsSection, SurfacesSection } from '@/features/marketing/story-sections';
 import WhyKortix from '@/features/marketing/why-kortix';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { useTranslations } from 'next-intl';
-import Link from 'next/link';
 import { useCallback } from 'react';
 import { HiArrowRight } from 'react-icons/hi2';
 
+function SectionDivider() {
+  return (
+    <div className="mx-auto max-w-6xl">
+      <Separator />
+    </div>
+  );
+}
+
 export default function Home() {
   const { user } = useAuth();
+  const openDemo = useRequestDemo();
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tHome = useCallback(
     (key: string) => tHardcodedUi.raw(`appHomePage.${key}`),
@@ -33,42 +46,42 @@ export default function Home() {
   return (
     <>
       <div className="bg-background relative">
+        {/* 1. Hero — the AI command center, every surface */}
         <Hero />
 
-        <div className="mx-auto max-w-6xl">
-          <Separator />
-        </div>
+        <SectionDivider />
 
+        {/* 2. Your whole company, as files — the interactive repo explorer */}
+        <CompanyAsCodeSection />
+
+        <SectionDivider />
+
+        {/* 3. From a request to finished work — the how-it-works scroll */}
         <HowItWorks />
 
-        <div className="mx-auto max-w-6xl">
-          <Separator />
-        </div>
+        <SectionDivider />
 
-        <SurfacesSection />
+        {/* 4. A workforce, one shared main */}
+        <HowItRunsSection />
 
-        <div className="mx-auto max-w-6xl">
-          <Separator />
-        </div>
+        <SectionDivider />
 
-        <OutcomeCardsSection />
+        {/* 5. The 1% vs the 99% — shared with everyone */}
+        <ProblemSection />
 
-        <div className="mx-auto max-w-6xl">
-          <Separator />
-        </div>
+        <SectionDivider />
 
+        {/* 6. Open & yours */}
         <WhyKortix />
 
-        <div className="mx-auto max-w-6xl">
-          <Separator />
-        </div>
+        <SectionDivider />
 
+        {/* 7. Enterprise & security */}
         <Security />
 
-        <div className="mx-auto max-w-6xl">
-          <Separator />
-        </div>
+        <SectionDivider />
 
+        {/* 8. CTA — run your whole company from one repo you own */}
         <section id="cta" className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0">
           <Reveal>
             <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
@@ -95,8 +108,8 @@ export default function Home() {
                       {tHome('line337JsxTextGetStarted')}
                       <HiArrowRight className="size-4" />
                     </Button>
-                    <Button asChild size="lg" className="w-full" variant="accent">
-                      <Link href={'/enterprise'}>{tHome('line338JsxTextTalkToSales')}</Link>
+                    <Button size="lg" className="w-full" variant="accent" onClick={openDemo}>
+                      {tHome('line338JsxTextTalkToSales')}
                     </Button>
                   </div>
                 </div>

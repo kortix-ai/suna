@@ -9,6 +9,39 @@ import {
 import { insertLedgerEntry } from '../repositories/transactions';
 import { MINIMUM_CREDIT_FOR_RUN, TOKEN_PRICE_MULTIPLIER } from './tiers';
 
+const CREDIT_GRANT_DUPLICATE_MARKERS = [
+  'kortix_unique_stripe_event',
+  'idx_kortix_credit_ledger_idempotency',
+];
+
+function errorChainText(error: unknown): string {
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+
+  while (current && typeof current === 'object' && !seen.has(current)) {
+    seen.add(current);
+    const record = current as Record<string, unknown>;
+    for (const key of ['name', 'message', 'code', 'constraint', 'constraint_name', 'detail']) {
+      const value = record[key];
+      if (typeof value === 'string' && value) parts.push(value);
+    }
+    current = record.cause;
+  }
+
+  if (parts.length === 0 && error != null) parts.push(String(error));
+  return parts.join('\n');
+}
+
+function isDuplicateCreditGrantError(error: unknown): boolean {
+  const text = errorChainText(error).toLowerCase();
+  const hasDuplicateSignal =
+    text.includes('duplicate key') ||
+    text.includes('unique constraint') ||
+    text.includes('23505');
+  return hasDuplicateSignal && CREDIT_GRANT_DUPLICATE_MARKERS.some((marker) => text.includes(marker));
+}
+
 export async function getBalance(accountId: string) {
   const row = await getCreditBalance(accountId);
   if (!row) return { balance: 0, expiring: 0, nonExpiring: 0, daily: 0 };
@@ -220,11 +253,7 @@ export async function grantCredits(
       });
     } catch (insertErr) {
       const message = insertErr instanceof Error ? insertErr.message : String(insertErr);
-      const isDuplicate =
-        message.includes('duplicate key') &&
-        (message.includes('kortix_unique_stripe_event') ||
-          message.includes('idx_kortix_credit_ledger_idempotency'));
-      if (isDuplicate) {
+      if (isDuplicateCreditGrantError(insertErr)) {
         return { success: true, duplicate_prevented: true };
       }
 

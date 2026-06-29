@@ -7,6 +7,7 @@ import { Suspense, lazy, useCallback, useEffect, useLayoutEffect } from 'react';
 import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
 import { CustomizeOverlay } from '@/components/projects/customize/customize-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
+import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { useSidebar } from '@/components/ui/sidebar';
 import { parseSidebarStateCookie } from '@/features/co-worker/project-layout/sidebar-cookie';
 import { ProjectSidebar } from '@/features/co-worker/project-sidebar/project-sidebar';
@@ -143,6 +144,8 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         <CustomizeOverlay projectId={projectId} />
 
         <AppsOverlay projectId={projectId} />
+
+        <ProjectOnboardingWizard projectId={projectId} />
 
         <PersonalOnboardingWelcome projectId={projectId} />
       </AppProviders>

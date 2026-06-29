@@ -1,44 +1,10 @@
-import { useTranslations } from 'next-intl';
-import Image from 'next/image';
 import Link from 'next/link';
 
+import { BlogCover } from '@/components/blog/blog-cover';
 import { PostByline } from '@/components/blog/post-byline';
 import { Badge } from '@/components/ui/badge';
 import type { Post } from '@/lib/blog';
 import { cn } from '@/lib/utils';
-
-/** Cover image, or a clean branded gradient when a post has none. */
-function Cover({ post, className }: { post: Post; className?: string }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  if (post.data.cover) {
-    return (
-      <div className={cn('bg-muted relative overflow-hidden', className)}>
-        <Image
-          src={post.data.cover}
-          alt={post.data.title}
-          fill
-          className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-          sizes={tI18nHardcoded.raw('autoComponentsBlogPostCardJsxAttrSizesMaxWidth768pxed275b7f')}
-        />
-      </div>
-    );
-  }
-  return (
-    <div
-      className={cn(
-        'from-muted/70 via-background to-primary/[0.07] relative overflow-hidden bg-gradient-to-br',
-        className,
-      )}
-    >
-      <div className="absolute inset-0 bg-[url('/grain-texture.png')] bg-repeat opacity-[0.12]" />
-      <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-muted-foreground/45 text-xs font-medium tracking-[0.25em] uppercase">
-          Kortix
-        </span>
-      </div>
-    </div>
-  );
-}
 
 export function PostCard({ post, featured = false }: { post: Post; featured?: boolean }) {
   return (
@@ -49,8 +15,9 @@ export function PostCard({ post, featured = false }: { post: Post; featured?: bo
         featured && 'md:flex-row',
       )}
     >
-      <Cover
-        post={post}
+      <BlogCover
+        logos={post.data.coverLogos ?? []}
+        withKortix={post.data.coverKortix ?? true}
         className={cn(
           'shrink-0',
           featured ? 'aspect-[16/10] md:aspect-auto md:w-1/2' : 'aspect-[16/9]',

@@ -245,10 +245,10 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
   );
   const accountId = requested ?? await resolveAccountId(userId);
 
-  let membership = await getAccountMembership(userId, accountId);
-  if (!membership && requested) {
-    membership = await repairLegacyRequestedAccountMembership(userId, accountId);
-  }
+  const existingMembership = await getAccountMembership(userId, accountId);
+  const membership =
+    existingMembership ??
+    (requested ? await repairLegacyRequestedAccountMembership(userId, accountId) : null);
   if (!membership) {
     throw new HTTPException(403, { message: 'You do not have access to this account' });
   }

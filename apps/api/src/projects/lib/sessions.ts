@@ -343,7 +343,15 @@ export async function createProjectSession(input: {
   const accountId = project.accountId;
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
-  const agentName = normalizeString(body.agent_name ?? body.agentName) ?? 'default';
+  // Explicit request wins; otherwise fall back to the project's default agent
+  // (`[opencode] default_agent` in kortix.toml, synced to project metadata, or a
+  // UI/Slack override), so EVERY session — UI, triggers, channels — inherits the
+  // project's chosen agent without each caller passing one. Unset → 'default'.
+  const projectDefaultAgent = normalizeString(
+    (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
+  );
+  const agentName =
+    normalizeString(body.agent_name ?? body.agentName) ?? projectDefaultAgent ?? 'default';
   // Explicit request wins; otherwise fall back to the project's default sandbox
   // template (`[sandbox] default` in kortix.toml, synced to project metadata),
   // so EVERY session — UI, triggers, channels — inherits the project's chosen

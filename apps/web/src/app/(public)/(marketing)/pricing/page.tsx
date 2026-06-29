@@ -13,9 +13,9 @@ const START_URL = '/auth';
 const DEMO_URL = '/enterprise';
 
 const PLAN_CTAS: Record<(typeof PRICING_PLANS)[number]['id'], { cta: string; href: string }> = {
-  free: { cta: 'Start free', href: START_URL },
+  free: { cta: 'Get started', href: START_URL },
   team: { cta: 'Get started', href: START_URL },
-  enterprise: { cta: 'Contact sales', href: DEMO_URL },
+  enterprise: { cta: 'Request demo', href: DEMO_URL },
 };
 
 const CREDIT_POINTS: { title: string; body: string }[] = [

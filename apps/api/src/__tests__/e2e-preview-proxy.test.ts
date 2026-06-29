@@ -658,9 +658,15 @@ describe('Preview proxy: forwarding', () => {
     });
   });
 
-  test('rejects prompt_async agent switches because executor grants are session-token bound', async () => {
-    mockDbSandbox = { ...mockDbSandbox, agentName: 'default' };
-    mockFetchResponses = [{ status: 204, body: '' }];
+  // Agent-lock enforcement is OFF by default (KORTIX_ENFORCE_SESSION_AGENT_LOCK
+  // unset) — in-session agent switching is allowed. A prompt may run a different
+  // concrete agent than the session booted with, and it's forwarded untouched.
+  test('allows in-session agent switching by default (no 409, concrete agent forwarded)', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'reviewer' };
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
       method: 'POST',
@@ -668,17 +674,43 @@ describe('Preview proxy: forwarding', () => {
         Authorization: 'Bearer test',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ agent: 'reviewer', parts: [{ type: 'text', text: 'hi' }] }),
+      body: JSON.stringify({ agent: 'researcher', parts: [{ type: 'text', text: 'hi' }] }),
     });
 
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({
-      error: 'agent switch requires a new session',
-      code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
-      expected_agent: 'default',
-      requested_agent: 'reviewer',
+    expect(res.status).toBe(204);
+    expect(JSON.parse(mockFetchCalls[1].body ?? '{}')).toEqual({
+      agent: 'researcher',
+      parts: [{ type: 'text', text: 'hi' }],
     });
-    expect(mockFetchCalls).toHaveLength(0);
+  });
+
+  // Regression: the reported "agent switch requires a new session" false positive.
+  // A brand-new session is stored with the sentinel agent 'default'; the client
+  // resolves "the default" to a concrete name and echoes it back. With enforcement
+  // off this never 409s, and a concrete agent is forwarded untouched so the user
+  // can switch agents within the session.
+  test('allows a default session to run a concrete agent (forwarded untouched)', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'default' };
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ agent: 'kortix', parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(204);
+    // Concrete agent forwarded untouched (only the literal 'default' sentinel is stripped).
+    expect(JSON.parse(mockFetchCalls[1].body ?? '{}')).toEqual({
+      agent: 'kortix',
+      parts: [{ type: 'text', text: 'hi' }],
+    });
   });
 
   test('returns a clean proxy error when project env sync is rejected', async () => {

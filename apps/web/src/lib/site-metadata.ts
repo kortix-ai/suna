@@ -9,15 +9,18 @@ const DEFAULT_APP_URL = 'https://www.kortix.com';
 // `metadataBase: new URL(...)`, which then crashes SSR on EVERY route when Next
 // resolves relative OG/icon URLs against it (TypeError: Invalid URL).
 const rawAppUrl =
-  process.env.KORTIX_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_URL || '';
+  process.env.KORTIX_PUBLIC_APP_URL ||
+  process.env.NEXT_PUBLIC_APP_URL ||
+  process.env.NEXT_PUBLIC_URL ||
+  '';
 const baseUrl = /^https?:\/\//.test(rawAppUrl) ? rawAppUrl : DEFAULT_APP_URL;
 
 export const siteMetadata = {
   name: 'Kortix',
   title: 'Kortix – The AI Command Center for Your Company',
   description:
-    'Kortix is the open-source AI command center for your company — one place to build, run, and govern AI agents that connect 3,000+ tools and deliver real work, not just chat.',
+    'The open-source AI command center for your company. Every agent, skill, and memory is a file in one versioned repo you own — a workforce of AI agents that does real work, shared across your whole team from Slack, Teams, the web, or the CLI. Self-hostable, any model, your keys.',
   url: baseUrl,
   keywords:
-    'Kortix, AI command center, AI agents, AI workforce, open source AI platform, self-hosted AI agents, AI automation, agent orchestration, AI-native company, build AI agents, connect 3000 tools, AI operations',
+    'Kortix, AI command center, autonomous company operating system, workforce of AI agents, company as a git repo, agents skills and memory as files, shared AI agents, scoped access, open source AI platform, self-hosted AI agents, connect 3000 tools, agent orchestration, AI-native company, AI operations',
 };

@@ -18,6 +18,8 @@
       .wrap {
         height: 100%;
         display: flex;
+        flex-direction: column;
+        gap: 16px;
         align-items: center;
         justify-content: center;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -31,11 +33,21 @@
         animation: spin 0.9s linear infinite;
       }
       @keyframes spin { to { transform: rotate(360deg); } }
+      /* Update status, driven from the main process (see updater.js). Empty by
+         default so it occupies no visual space until there's something to say. */
+      #kx-status {
+        min-height: 14px;
+        font-size: 12px;
+        line-height: 14px;
+        color: rgba(255, 255, 255, 0.55);
+        letter-spacing: 0.01em;
+      }
     </style>
   </head>
   <body>
     <div class="wrap">
       <div class="ring" aria-label="Loading"></div>
+      <div id="kx-status" aria-live="polite"></div>
     </div>
   </body>
 </html>

@@ -44,8 +44,15 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
   # Universal binary → ONE .dmg that runs natively on both Apple Silicon and
   # Intel. Avoids the "wrong-arch download" bug and halves the CI mac matrix.
+  # The `zip` target is REQUIRED for auto-update: Squirrel.Mac (what
+  # electron-updater drives on macOS) installs from a zip, not the dmg. The dmg
+  # stays the user-facing first-install download; the zip is consumed only by the
+  # updater (referenced from latest-mac.yml). Both must ship in the release.
   target:
     - target: dmg
+      arch:
+        - universal
+    - target: zip
       arch:
         - universal
   # macOS ATS exceptions so HTTP localhost / *.localhost sandbox previews load
