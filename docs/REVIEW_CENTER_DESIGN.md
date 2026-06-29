@@ -252,21 +252,25 @@ shareable/clickable without login; mock data only, safe to expose).
 
 - `features/review-center/types.ts` — the `ReviewItem` model above.
 - `features/review-center/review-reducer.ts` — pure state transitions (bulk approve, roll-up to a terminal
-  status, filtering, counts), unit-tested in `review-reducer.test.ts` (`bun test`, 17 cases).
+  status, filtering, search, counts), unit-tested in `review-reducer.test.ts` (`bun test`, 21 cases).
 - `features/review-center/mock-data.ts` — realistic items of every kind, including a conflict-bearing change.
 - `features/review-center/review-meta.ts` — kind/status/risk/source metadata (icons, tones, labels).
-- `features/review-center/review-center.tsx` — the inbox: **Needs you / Waiting / Done** segments with
-  counts, kind filters (with per-kind counts), entity-row list, **Approve all safe** bulk bar, empty state,
-  optimistic actions.
+- `features/review-center/review-center.tsx` — the inbox. **Built for speed:** fully keyboard-driven
+  (`j`/`k` move, `Enter` open, `a` approve/ship, `e` ask-changes, `d` dismiss, `x` select, `1`–`3` switch
+  lists, `/` search, `?` help), **every action is undoable** (toast with Undo), **multi-select + bulk
+  approve/dismiss**, live **search**, sticky controls, per-row summaries and a focus cursor. **Needs you /
+  Waiting / Done** segments and kind filters carry live counts; the **Approve all safe** bulk bar stays.
 - `features/review-center/review-detail-modal.tsx` — per-kind friendly detail in a `Modal`, each with an
   **Advanced** disclosure and a Slack-preview. Implements the friendly-conflict flow (disabled "Ship it" +
   "Resolve with agent") and an optional **feedback composer** that returns free-text to the agent.
 - `features/review-center/slack-preview.tsx` — static Block Kit mock (cross-surface parity).
 - `app/(app)/review/page.tsx` — thin route.
 
-Run: `pnpm --filter web dev` → open `/review`. Switch segments, filter by kind, open any item, toggle
-Advanced, click Approve / Deny / Answer / Ship, and run **Approve all safe** (risky items stay behind).
+Run: `pnpm --filter web dev` → open `/review`. Drive it from the keyboard (press `?` for the cheatsheet),
+search, multi-select with `x` then bulk Approve/Dismiss, open any item, toggle Advanced, and act — every
+action shows an **Undo**.
 
-**Tested:** `bun test` for the reducer (17 cases); a Playwright pass against the running dev server drives
-the real UI (23 assertions: counts, modals, Advanced, conflict resolve, feedback composer, bulk approve,
-decision answer) with zero console errors.
+**Tested:** `bun test` for the reducer (21 cases); two Playwright passes against the running dev server
+drive the real UI — flows (23 assertions: counts, modals, Advanced, conflict resolve, feedback composer,
+bulk approve, decision answer) and speed UX (15 assertions: search, keyboard nav + focus ring, `?` help,
+keyboard approve + Undo restore, multi-select + bulk dismiss) — both with **zero console errors**.
