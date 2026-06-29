@@ -11,7 +11,7 @@ are two paths, in order:
 
 1. **The `people_search` tool (primary).** A dedicated people-data lookup, wired
    like `web_search`: it works out of the box through the Kortix proxy (no key
-   needed — billed to the account), or set your own `APOLLO_API_KEY` to use your
+   needed — billed to the account), or set your own `APIFY_TOKEN` to use your
    own plan directly. It returns **structured profiles** — name, title, current
    company, location, LinkedIn URL — far cleaner than scraping the open web.
    Reach for it first for "find people who match X" and named-person lookups.

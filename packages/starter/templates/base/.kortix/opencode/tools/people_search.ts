@@ -1,33 +1,42 @@
 import { tool } from "@opencode-ai/plugin";
 import { getEnv, getKortixRouterBase } from "./lib/get-env";
 
-// People data is fetched from a people-search provider (Apollo). Like web_search,
-// this runs in two modes: through the Kortix router by default (Kortix injects the
-// upstream key and bills the account — zero config for the user), or against a raw
-// APOLLO_API_KEY when KORTIX_API_URL is unset (self-host / opt-in to your own plan).
+// People search is powered by an Apify LinkedIn-profile-search actor. Like
+// web_search, it runs in two modes: through the Kortix router by default (Kortix
+// injects the APIFY_TOKEN and bills the account — zero config for the user), or
+// against a raw APIFY_TOKEN when KORTIX_API_URL is unset (self-host / opt-in).
+//
+// NOTE: Apify runs the search as an actor "run", not an instant API. We use the
+// run-sync-get-dataset-items endpoint in "Short" mode (search pages only, no
+// per-profile open) — the fastest, cheapest path (~$0.10 per 25) — and bound the
+// wait so a slow run fails cleanly instead of hanging. On timeout the
+// people-search skill falls back to web_search + scrape_webpage.
 
-interface ApolloPerson {
-  id?: string;
+const ACTOR = "harvestapi~linkedin-profile-search";
+const RUN_PATH = `/v2/acts/${ACTOR}/run-sync-get-dataset-items`;
+const APIFY_DIRECT_BASE = "https://api.apify.com";
+const RUN_TIMEOUT_MS = 90_000;
+
+interface RawPerson {
   name?: string;
-  first_name?: string;
-  last_name?: string;
-  title?: string;
+  fullName?: string;
+  firstName?: string;
+  lastName?: string;
   headline?: string;
-  linkedin_url?: string;
+  title?: string;
+  occupation?: string;
+  location?: string;
+  locationName?: string;
+  linkedinUrl?: string;
+  profileUrl?: string;
+  url?: string;
+  publicProfileUrl?: string;
+  companyName?: string;
+  currentCompany?: { name?: string } | null;
+  currentPosition?: { companyName?: string; title?: string } | null;
+  experience?: Array<{ companyName?: string; title?: string }>;
   email?: string | null;
-  city?: string;
-  state?: string;
-  country?: string;
-  organization?: { name?: string; website_url?: string } | null;
 }
-
-interface ApolloResponse {
-  people?: ApolloPerson[];
-  pagination?: { page?: number; per_page?: number; total_entries?: number };
-}
-
-const APOLLO_DIRECT_BASE = "https://api.apollo.io";
-const SEARCH_PATH = "/api/v1/mixed_people/search";
 
 function splitList(v?: string): string[] | undefined {
   if (!v) return undefined;
@@ -35,89 +44,89 @@ function splitList(v?: string): string[] | undefined {
   return items.length ? items : undefined;
 }
 
-function formatPerson(p: ApolloPerson) {
-  const location = [p.city, p.state, p.country].filter(Boolean).join(", ");
+function formatPerson(p: RawPerson) {
   return {
-    name: p.name ?? [p.first_name, p.last_name].filter(Boolean).join(" ").trim(),
-    title: p.title ?? p.headline ?? "",
-    company: p.organization?.name ?? "",
-    location,
-    linkedin_url: p.linkedin_url ?? "",
+    name: p.name || p.fullName || [p.firstName, p.lastName].filter(Boolean).join(" ").trim(),
+    title: p.headline || p.title || p.occupation || p.currentPosition?.title || "",
+    company:
+      p.companyName ||
+      p.currentPosition?.companyName ||
+      p.currentCompany?.name ||
+      p.experience?.[0]?.companyName ||
+      "",
+    location: p.location || p.locationName || "",
+    linkedin_url: p.linkedinUrl || p.profileUrl || p.publicProfileUrl || p.url || "",
     email: p.email ?? null,
   };
 }
 
 export default tool({
   description:
-    "Find real people by profile — name, title, company, location, or skill — from a people-data index. " +
+    "Find real people by profile — name, title, company, location, or skill — via LinkedIn profile search. " +
     "Returns structured profiles (name, title, current company, location, LinkedIn URL), cleaner than scraping the open web. " +
     "Use for sourcing / recruiting / outreach lists and named-person lookups. " +
-    "Always hyperlink each person's name to their LinkedIn/source URL in the result.",
+    "Always hyperlink each person's name to their LinkedIn URL in the result.",
   args: {
     query: tool.schema
       .string()
-      .describe("Free-text keywords: name, focus, skills, or industry (e.g. 'climate tech founder')."),
+      .describe("Free-text search: name, role, focus, or keywords (e.g. 'climate tech founder')."),
     titles: tool.schema
       .string()
       .optional()
-      .describe("Comma-separated job titles to match (e.g. 'Head of Talent,Recruiting Lead')."),
+      .describe("Comma-separated current job titles to match (e.g. 'Head of Talent,Recruiting Lead')."),
     locations: tool.schema
       .string()
       .optional()
-      .describe("Comma-separated person locations — city / region / country (e.g. 'Singapore')."),
+      .describe("Comma-separated locations — city / region / country (e.g. 'Singapore')."),
     num_results: tool.schema
       .number()
       .optional()
       .describe("People to return (1-25). Default: 10"),
-    page: tool.schema
-      .number()
-      .optional()
-      .describe("Page number for pagination (default 1)."),
   },
   async execute(args, _context) {
-    const routerBase = getKortixRouterBase("apollo");
+    const routerBase = getKortixRouterBase("apify");
     const kortixToken = getEnv("KORTIX_TOKEN");
-    const apolloKey = getEnv("APOLLO_API_KEY");
+    const apifyToken = getEnv("APIFY_TOKEN");
 
     let url: string;
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-cache",
-    };
+    let bearer: string;
     if (routerBase && kortixToken) {
-      url = `${routerBase}${SEARCH_PATH}`;
-      headers["Authorization"] = `Bearer ${kortixToken}`;
-    } else if (apolloKey) {
-      url = `${APOLLO_DIRECT_BASE}${SEARCH_PATH}`;
-      headers["X-Api-Key"] = apolloKey;
+      url = `${routerBase}${RUN_PATH}`;
+      bearer = kortixToken; // the router validates this and injects the real APIFY_TOKEN
+    } else if (apifyToken) {
+      url = `${APIFY_DIRECT_BASE}${RUN_PATH}`;
+      bearer = apifyToken;
     } else {
       return JSON.stringify(
         {
           success: false,
           error:
-            "people_search is unavailable: no Kortix router (KORTIX_API_URL / KORTIX_TOKEN) and no APOLLO_API_KEY set. Fall back to the web_search + scrape_webpage pipeline for people lookup.",
+            "people_search is unavailable: no Kortix router (KORTIX_API_URL / KORTIX_TOKEN) and no APIFY_TOKEN set. Fall back to the web_search + scrape_webpage pipeline for people lookup.",
         },
         null,
         2,
       );
     }
 
-    const perPage = Math.max(1, Math.min(args.num_results ?? 10, 25));
-    const body: Record<string, unknown> = {
-      q_keywords: args.query,
-      page: Math.max(1, args.page ?? 1),
-      per_page: perPage,
+    const maxItems = Math.max(1, Math.min(args.num_results ?? 10, 25));
+    const input: Record<string, unknown> = {
+      profileScraperMode: "Short",
+      searchQuery: args.query,
+      maxItems,
     };
     const titles = splitList(args.titles);
-    if (titles) body.person_titles = titles;
+    if (titles) input.currentJobTitles = titles;
     const locations = splitList(args.locations);
-    if (locations) body.person_locations = locations;
+    if (locations) input.locations = locations;
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), RUN_TIMEOUT_MS);
     try {
-      const res = await fetch(url, {
+      const res = await fetch(`${url}?maxItems=${maxItems}`, {
         method: "POST",
-        headers,
-        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${bearer}` },
+        body: JSON.stringify(input),
+        signal: controller.signal,
       });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
@@ -127,22 +136,28 @@ export default tool({
           2,
         );
       }
-      const data = (await res.json()) as ApolloResponse;
-      const people = (data.people ?? []).map(formatPerson);
+      const data = (await res.json()) as RawPerson[] | { items?: RawPerson[] };
+      const items = Array.isArray(data) ? data : (data.items ?? []);
+      const results = items.map(formatPerson).filter((p) => p.name);
       return JSON.stringify(
-        {
-          success: true,
-          query: args.query,
-          total: data.pagination?.total_entries ?? people.length,
-          page: data.pagination?.page ?? body.page,
-          count: people.length,
-          results: people,
-        },
+        { success: true, query: args.query, count: results.length, results },
         null,
         2,
       );
     } catch (e) {
-      return JSON.stringify({ success: false, error: String(e) }, null, 2);
+      const aborted = e instanceof Error && e.name === "AbortError";
+      return JSON.stringify(
+        {
+          success: false,
+          error: aborted
+            ? `people_search timed out after ${RUN_TIMEOUT_MS / 1000}s (Apify run too slow). Fall back to web_search + scrape_webpage.`
+            : String(e),
+        },
+        null,
+        2,
+      );
+    } finally {
+      clearTimeout(timer);
     }
   },
 });

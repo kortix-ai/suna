@@ -84,20 +84,20 @@ export function getProxyServices(): Record<string, ProxyServiceConfig> {
       billingToolName: 'proxy_serper',
     },
 
-    // People-data search (Apollo). Powers the sandbox `people_search` tool —
-    // default-included, billed to the account via the Kortix key; users can also
-    // bring their own APOLLO_API_KEY (passthrough). Locked to the search/match
-    // endpoints so the shared key can't be used for arbitrary Apollo calls.
-    apollo: {
-      name: 'apollo',
-      targetBaseUrl: config.APOLLO_API_URL,
-      getKortixApiKey: () => config.APOLLO_API_KEY,
-      keyInjection: { type: 'header', headerName: 'X-Api-Key' },
+    // People search (Apify — LinkedIn profile search actor). Powers the sandbox
+    // `people_search` tool: default-included, billed to the account via Kortix's
+    // APIFY_TOKEN; users can also bring their own APIFY_TOKEN (passthrough).
+    // Locked to the one pinned actor's run endpoint so the shared key can't run
+    // arbitrary (billable) Apify actors.
+    apify: {
+      name: 'apify',
+      targetBaseUrl: config.APIFY_API_URL,
+      getKortixApiKey: () => config.APIFY_TOKEN,
+      keyInjection: { type: 'header', headerName: 'Authorization', prefix: 'Bearer ' },
       allowedRoutes: [
-        { path: '/api/v1/mixed_people/search', methods: ['POST'] },
-        { path: '/api/v1/people/match', methods: ['POST'] },
+        { path: '/v2/acts/harvestapi~linkedin-profile-search/run-sync-get-dataset-items', methods: ['POST'] },
       ],
-      billingToolName: 'proxy_apollo',
+      billingToolName: 'proxy_apify',
     },
 
     firecrawl: {
