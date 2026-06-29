@@ -4,15 +4,16 @@ import { db } from '../../shared/db';
 import { config } from '../../config';
 import { escapeMrkdwn, formatRelativeTime, repoLabel, repoOgImage, respondViaUrl, sessionWebUrl } from './util';
 import {
-  RECOMMENDED_MODELS,
   currentChannelSelection,
-  isValidModelId,
   listProjectAgents,
-  modelLabel,
   setChannelAgent,
   setChannelConversationPolicy,
   setChannelModel,
 } from './selection';
+import { channelModelContext } from './model-gate';
+import { listPickerModels, labelForModelRef } from '../../llm-gateway/models/picker';
+import { isModelServableForAccount, resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
+import { chooseEffectiveAgent, toOpencodeModelRef, toWireModel } from '../../llm-gateway/resolution/effective';
 import { buildSlackLoginUrl } from './login';
 import { lookupSlackIdentity, revokeSlackIdentity } from './identity';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
@@ -69,9 +70,13 @@ export async function handleSlashCommand(
     case 'logout':
     case 'disconnect':
       return config.SLACK_REQUIRE_USER_IDENTITY ? slashLogout(ctx) : unknownSub(sub, ctx.command);
+    case '':
+    case 'config':
+    case 'channel':
+    case 'settings':
     case 'whoami':
     case 'who':
-      return slashWhoami(ctx);
+      return slashPanel(ctx);
     case 'agents':
       return slashAgents(ctx, arg);
     case 'agent':
@@ -88,7 +93,6 @@ export async function handleSlashCommand(
     case 'conversation':
       return slashPolicy(ctx, arg);
     case 'help':
-    case '':
       return slashHelp(ctx);
     default:
       return unknownSub(sub, ctx.command);
@@ -105,55 +109,35 @@ function unknownSub(sub: string, command: string): SlashResponse {
 function slashHelp(ctx: SlashCtx): SlashResponse {
   const command = ctx.command;
   const isProjectScoped = !!ctx.projectScopedProjectId;
-  const projectRows = isProjectScoped
-    ? [
-        { cmd: `${command} agents`,   desc: 'Pick which project agent answers in this channel.' },
-        { cmd: `${command} agent <name>`, desc: 'Set the channel-wide agent (`default` to reset).' },
-        { cmd: `${command} models`,   desc: 'Pick which model this channel uses.' },
-        { cmd: `${command} model <id>`, desc: 'Set the channel-wide model, e.g. `anthropic/claude-opus-4-8` (`default` to reset).' },
-        { cmd: `${command} policy`,   desc: 'Show or change who can join Slack-started sessions in this channel.' },
-      ]
-    : [
-        { cmd: `${command} projects`, desc: 'List every Kortix project connected to this workspace.' },
-        { cmd: `${command} switch`,   desc: 'Bind this channel to a different project (opens a picker).' },
-        { cmd: `${command} unbind`,   desc: 'Clear this channel\'s project binding.' },
-        { cmd: `${command} agents`,   desc: 'List this project\'s agents and pick which one answers here.' },
-        { cmd: `${command} agent <name>`, desc: 'Set the agent for this channel (`default` to reset).' },
-        { cmd: `${command} models`,   desc: 'List models and pick which one this channel uses.' },
-        { cmd: `${command} model <id>`, desc: 'Set the model, e.g. `anthropic/claude-opus-4-8` (`default` to reset).' },
-        { cmd: `${command} policy`,   desc: 'Show who can join Slack-started sessions in this channel.' },
-      ];
+  // Everything lives behind the one `/kortix` panel; the rest are power-user
+  // shortcuts for people who'd rather type than click.
+  const advanced: Array<{ cmd: string; desc: string }> = [
+    { cmd: `${command} model <id>`, desc: 'Set the channel model directly, e.g. `kortix/glm-5.2` or `anthropic/claude-sonnet-4.6` (`default` to reset).' },
+    { cmd: `${command} agent <name>`, desc: 'Set the channel agent directly (`default` to reset).' },
+    ...(isProjectScoped ? [] : [{ cmd: `${command} switch`, desc: 'Connect this channel to a different project.' }]),
+    { cmd: `${command} policy`,   desc: 'Show or change who can join Slack-started sessions here.' },
+    { cmd: `${command} sessions`, desc: 'Recent sessions started in this workspace.' },
+    ...(config.SLACK_REQUIRE_USER_IDENTITY
+      ? [
+          { cmd: `${command} login`,  desc: 'Connect your own Kortix account so the agent runs as you.' },
+          { cmd: `${command} logout`, desc: 'Disconnect your Kortix account.' },
+        ]
+      : []),
+  ];
   return {
     response_type: 'ephemeral',
     blocks: [
-      {
-        type: 'header',
-        text: { type: 'plain_text', text: '⚡  Kortix slash commands', emoji: true },
-      },
+      { type: 'header', text: { type: 'plain_text', text: '⚡  Kortix', emoji: true } },
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: isProjectScoped
-            ? 'This Slack app is tied to one Kortix project. Agent, model, and session policy settings are channel-wide.'
-            : 'Drive Kortix from any Slack channel. All responses are private to you.',
+          text: `Run \`${command}\` to open this channel's control panel — connected project, agent, and model, with buttons to change any of them. @-mention me in a thread to put me to work. All responses are private to you.`,
         },
       },
       { type: 'divider' },
-      ...[
-        ...projectRows,
-        // Only advertised when per-user identity is enabled.
-        ...(config.SLACK_REQUIRE_USER_IDENTITY
-          ? [
-              { cmd: `${command} login`,  desc: 'Connect your own Kortix account so the agent runs as you.' },
-              { cmd: `${command} logout`, desc: 'Disconnect your Kortix account from this Slack workspace.' },
-            ]
-          : []),
-        { cmd: `${command} session`,  desc: 'Show this channel\'s most recent session + open it on the web.' },
-        { cmd: `${command} sessions`, desc: 'Show the last 5 sessions started in this workspace.' },
-        { cmd: `${command} whoami`,   desc: 'This channel\'s project, agent, and model' + (config.SLACK_REQUIRE_USER_IDENTITY ? ' + your linked Kortix account.' : '.') },
-        { cmd: `${command} help`,     desc: 'This message.' },
-      ].map((r) => ({
+      { type: 'context', elements: [{ type: 'mrkdwn', text: '*Shortcuts*' }] },
+      ...advanced.map((r) => ({
         type: 'section',
         text: { type: 'mrkdwn', text: `\`${r.cmd}\`\n${r.desc}` },
       })),
@@ -441,8 +425,30 @@ async function buildIdentityContext(ctx: SlashCtx): Promise<Record<string, unkno
   };
 }
 
-async function slashWhoami(ctx: SlashCtx): Promise<SlashResponse> {
-  // Identity line only when the per-user feature is on.
+// Honest source label for an effective model/agent: how the value was decided,
+// so the panel reads "Sonnet 4.6 · project default" instead of implying a pin.
+function sourceLabel(source: string): string {
+  switch (source) {
+    case 'explicit':
+      return 'channel override';
+    case 'agent':
+      return 'agent default';
+    case 'project':
+      return 'project default';
+    case 'account':
+      return 'account default';
+    default:
+      return 'platform default';
+  }
+}
+
+// The single `/kortix` channel control panel. Consolidates project binding +
+// agent + model + join policy + account + sessions into one interactive card,
+// each row showing the EFFECTIVE value and where it came from. Inline buttons
+// open the focused pickers (real-catalog models, live agents, projects). DB-only
+// (no git) so it answers inside Slack's 3s window; the agent picker, opened on
+// demand, is the only git-touching path.
+async function slashPanel(ctx: SlashCtx): Promise<SlashResponse> {
   const identityBlocks = config.SLACK_REQUIRE_USER_IDENTITY ? [await buildIdentityContext(ctx)] : [];
   const selection = await currentChannelSelection(ctx);
   const currentId = selection?.projectId ?? null;
@@ -456,14 +462,26 @@ async function slashWhoami(ctx: SlashCtx): Promise<SlashResponse> {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `*No project bound to this channel.*\nRun \`${ctx.command} switch\` to pick one.`,
+            text: `*No project is connected to this channel yet.*\nConnect one to start working here.`,
           },
+        },
+        {
+          type: 'actions',
+          elements: [
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: 'Connect a project', emoji: true },
+              style: 'primary',
+              action_id: 'cfg_open_projects',
+              value: JSON.stringify({ c: ctx.channelId }),
+            },
+          ],
         },
       ],
     };
   }
   const [p] = await db
-    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl })
+    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl, metadata: projects.metadata })
     .from(projects)
     .where(eq(projects.projectId, currentId))
     .limit(1);
@@ -473,20 +491,54 @@ async function slashWhoami(ctx: SlashCtx): Promise<SlashResponse> {
       blocks: [
         {
           type: 'section',
-          text: { type: 'mrkdwn', text: `*This channel's bound project no longer exists.*\nRun \`${ctx.command} switch\` to rebind.` },
+          text: { type: 'mrkdwn', text: `*This channel's connected project no longer exists.*\nReconnect one below.` },
+        },
+        {
+          type: 'actions',
+          elements: [
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: 'Connect a project', emoji: true },
+              style: 'primary',
+              action_id: 'cfg_open_projects',
+              value: JSON.stringify({ c: ctx.channelId }),
+            },
+          ],
         },
       ],
     };
   }
   const og = repoOgImage(p.repoUrl);
-  const agentLabel = selection?.agentName ?? 'default';
-  const modelLabelText = selection?.opencodeModel ? modelLabel(selection.opencodeModel) : 'project default';
+
+  // Effective AGENT (channel override → project default → 'default').
+  const projectDefaultAgent =
+    typeof (p.metadata as Record<string, unknown> | null)?.default_agent === 'string'
+      ? ((p.metadata as Record<string, unknown>).default_agent as string)
+      : null;
+  const agent = chooseEffectiveAgent({ explicit: selection?.agentName ?? null, projectDefault: projectDefaultAgent });
+
+  // Effective MODEL (channel override → project/account/platform), with source.
+  const gate = await channelModelContext(ctx);
+  let modelText = '`auto` · platform default';
+  if (gate) {
+    const eff = await resolveEffectiveModel({
+      userId: gate.ownerUserId,
+      accountId: gate.accountId,
+      projectId: gate.projectId,
+      agentName: selection?.agentName ?? null,
+      explicit: selection?.opencodeModel ?? null,
+      freeModelsOnly: gate.freeManagedOnly,
+    });
+    const label = eff.model ? labelForModelRef(eff.model) : 'Auto';
+    modelText = `*${escapeMrkdwn(label)}* · ${sourceLabel(eff.source)}`;
+  }
+
   const policy = normalizeConversationPolicy(selection?.conversationPolicy);
   const section: Record<string, unknown> = {
     type: 'section',
     text: {
       type: 'mrkdwn',
-      text: `🟢  *${escapeMrkdwn(p.name)}*  ·  ✓ bound to this channel\n_<${p.repoUrl}|${escapeMrkdwn(repoLabel(p.repoUrl))}>_`,
+      text: `🟢  *${escapeMrkdwn(p.name)}*  ·  connected to this channel\n_<${p.repoUrl}|${escapeMrkdwn(repoLabel(p.repoUrl))}>_`,
     },
   };
   if (og) section.accessory = { type: 'image', image_url: og, alt_text: `${p.name} repo` };
@@ -498,10 +550,9 @@ async function slashWhoami(ctx: SlashCtx): Promise<SlashResponse> {
       {
         type: 'context',
         elements: [
-          { type: 'mrkdwn', text: `🤖  Agent: *${escapeMrkdwn(agentLabel)}*` },
-          { type: 'mrkdwn', text: `🧠  Model: *${escapeMrkdwn(modelLabelText)}*` },
+          { type: 'mrkdwn', text: `🤖  Agent: *${escapeMrkdwn(agent.agent)}* · ${sourceLabel(agent.source)}` },
+          { type: 'mrkdwn', text: `🧠  Model: ${modelText}` },
           { type: 'mrkdwn', text: `🔒  Slack sessions: *${conversationPolicyLabel(policy)}*` },
-          { type: 'mrkdwn', text: `Change with \`${ctx.command} agents\` · \`${ctx.command} models\`` },
         ],
       },
       {
@@ -509,16 +560,37 @@ async function slashWhoami(ctx: SlashCtx): Promise<SlashResponse> {
         elements: [
           {
             type: 'button',
-            text: { type: 'plain_text', text: 'Open project', emoji: true },
-            style: 'primary',
-            url: `${dashboardBase}/projects/${p.projectId}`,
-            action_id: `whoami_open_${p.projectId}`,
+            text: { type: 'plain_text', text: 'Change model', emoji: true },
+            action_id: 'cfg_open_models',
+            value: JSON.stringify({ c: ctx.channelId }),
           },
           {
             type: 'button',
-            text: { type: 'plain_text', text: 'View on GitHub', emoji: true },
-            url: p.repoUrl,
-            action_id: `whoami_repo_${p.projectId}`,
+            text: { type: 'plain_text', text: 'Change agent', emoji: true },
+            action_id: 'cfg_open_agents',
+            value: JSON.stringify({ c: ctx.channelId }),
+          },
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'Change project', emoji: true },
+            action_id: 'cfg_open_projects',
+            value: JSON.stringify({ c: ctx.channelId }),
+          },
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'Open in Kortix ↗', emoji: true },
+            style: 'primary',
+            url: `${dashboardBase}/projects/${p.projectId}`,
+            action_id: `panel_open_${p.projectId}`,
+          },
+        ],
+      },
+      {
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text: `Advanced: \`${ctx.command} model <id>\` · \`${ctx.command} policy\` · \`${ctx.command} sessions\` · \`${ctx.command} help\``,
           },
         ],
       },
@@ -815,22 +887,50 @@ async function slashSetAgent(ctx: SlashCtx, arg: string): Promise<SlashResponse>
 // ── Models ───────────────────────────────────────────────────────────────────
 
 async function slashModels(ctx: SlashCtx): Promise<SlashResponse> {
-  const selection = await currentChannelSelection(ctx);
-  if (!selection) {
+  const gate = await channelModelContext(ctx);
+  if (!gate) {
     return {
       response_type: 'ephemeral',
-      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No project bound to this channel.*\nRun \`${ctx.command} switch\` first, then pick a model.` } }],
+      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No project is connected to this channel yet.*\nRun \`${ctx.command}\` to connect one, then pick a model.` } }],
     };
   }
-  const current = selection.opencodeModel;
+  const selection = await currentChannelSelection(ctx);
+  const current = selection?.opencodeModel ?? null;
+  const isCurrent = (id: string) => !!current && toWireModel(current) === toWireModel(id);
+
+  // The REAL served catalog — managed models + the project's connected BYOK
+  // providers — plus the resolved project default. No hardcoded list, so a pick
+  // can never 404.
+  const { models, projectDefault } = await listPickerModels({
+    projectId: gate.projectId,
+    userId: gate.ownerUserId,
+    accountId: gate.accountId,
+    freeManagedOnly: gate.freeManagedOnly,
+    agentName: selection?.agentName ?? null,
+  });
+
   const blocks: Array<Record<string, unknown>> = [
     { type: 'header', text: { type: 'plain_text', text: 'Models', emoji: true } },
-    { type: 'context', elements: [{ type: 'mrkdwn', text: `Pick a model for this channel. Current: *${current ? escapeMrkdwn(modelLabel(current)) : 'project default'}*` }] },
+    {
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: current
+            ? `This channel uses *${escapeMrkdwn(labelForModelRef(current))}*.`
+            : `This channel uses the *project default*${projectDefault.label ? ` (${escapeMrkdwn(projectDefault.label)})` : ''}.`,
+        },
+      ],
+    },
   ];
-  // "Project default" clears the override.
+
+  // "Project default" clears the per-channel override.
   blocks.push({
     type: 'section',
-    text: { type: 'mrkdwn', text: `${current ? '' : '✓ '}*Project default*\n_Whatever the repo's opencode config sets._` },
+    text: {
+      type: 'mrkdwn',
+      text: `${current ? '' : '✓ '}*Use project default*${projectDefault.label ? `  ·  _${escapeMrkdwn(projectDefault.label)}_` : ''}`,
+    },
     accessory: {
       type: 'button',
       text: { type: 'plain_text', text: current ? 'Reset' : '✓ Current', emoji: true },
@@ -839,15 +939,16 @@ async function slashModels(ctx: SlashCtx): Promise<SlashResponse> {
       value: JSON.stringify({ c: ctx.channelId, m: '' }),
     },
   });
-  for (const m of RECOMMENDED_MODELS) {
-    const isCurrent = current === m.id;
+
+  for (const m of models) {
+    const cur = isCurrent(m.id);
     blocks.push({
       type: 'section',
-      text: { type: 'mrkdwn', text: `${isCurrent ? '✓ ' : ''}*${escapeMrkdwn(m.label)}*  ·  _${escapeMrkdwn(m.hint)}_\n\`${escapeMrkdwn(m.id)}\`` },
+      text: { type: 'mrkdwn', text: `${cur ? '✓ ' : ''}*${escapeMrkdwn(m.label)}*${m.hint ? `  ·  _${escapeMrkdwn(m.hint)}_` : ''}\n\`${escapeMrkdwn(m.id)}\`` },
       accessory: {
         type: 'button',
-        text: { type: 'plain_text', text: isCurrent ? '✓ Current' : 'Use this', emoji: true },
-        style: isCurrent ? undefined : 'primary',
+        text: { type: 'plain_text', text: cur ? '✓ Current' : 'Use this', emoji: true },
+        style: cur ? undefined : 'primary',
         action_id: `set_model_${m.id}`.slice(0, 250),
         value: JSON.stringify({ c: ctx.channelId, m: m.id }),
       },
@@ -855,7 +956,7 @@ async function slashModels(ctx: SlashCtx): Promise<SlashResponse> {
   }
   blocks.push({
     type: 'context',
-    elements: [{ type: 'mrkdwn', text: `Any model works: \`${ctx.command} model provider/model-id\` (availability depends on your project's connected providers).` }],
+    elements: [{ type: 'mrkdwn', text: `Any model works: \`${ctx.command} model provider/model-id\` (must be a managed model or a provider you've connected).` }],
   });
   return { response_type: 'ephemeral', blocks };
 }
@@ -863,21 +964,37 @@ async function slashModels(ctx: SlashCtx): Promise<SlashResponse> {
 async function slashSetModel(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
   const id = arg.trim();
   if (!id) return slashModels(ctx);
-  const selection = await currentChannelSelection(ctx);
-  if (!selection) {
-    return { response_type: 'ephemeral', text: `Bind a project first with \`${ctx.command} switch\`.` };
+  const gate = await channelModelContext(ctx);
+  if (!gate) {
+    return { response_type: 'ephemeral', text: `Connect a project first — run \`${ctx.command}\`.` };
   }
   if (id.toLowerCase() === 'default') {
     const ok = await setChannelModel(ctx, null);
-    if (!ok) return { response_type: 'ephemeral', text: `Bind a project first with \`${ctx.command} switch\`.` };
+    if (!ok) return { response_type: 'ephemeral', text: `Connect a project first — run \`${ctx.command}\`.` };
     return { response_type: 'ephemeral', text: 'Model reset to the project default.' };
   }
-  if (!isValidModelId(id)) {
-    return { response_type: 'ephemeral', text: `\`${escapeMrkdwn(id)}\` doesn't look like a model id. Use \`provider/model\`, e.g. \`anthropic/claude-opus-4-8\`.` };
+  if (/\s/.test(id)) {
+    return { response_type: 'ephemeral', text: `\`${escapeMrkdwn(id)}\` doesn't look like a model id. Use \`provider/model\` (e.g. \`anthropic/claude-sonnet-4.6\`) or a managed id (e.g. \`kortix/glm-5.2\` or \`glm-5.2\`).` };
   }
-  const ok = await setChannelModel(ctx, id);
-  if (!ok) return { response_type: 'ephemeral', text: `Bind a project first with \`${ctx.command} switch\`.` };
-  return { response_type: 'ephemeral', text: `Model for this channel set to *${escapeMrkdwn(modelLabel(id))}* (\`${escapeMrkdwn(id)}\`). New sessions will use it.` };
+  // The servability check is the real gate — never store a model that would 404
+  // at request time, whatever shape the id is.
+  const servable = await isModelServableForAccount({
+    userId: gate.ownerUserId,
+    accountId: gate.accountId,
+    projectId: gate.projectId,
+    freeModelsOnly: gate.freeManagedOnly,
+    model: id,
+  });
+  if (!servable) {
+    return {
+      response_type: 'ephemeral',
+      text: `\`${escapeMrkdwn(id)}\` isn't available for this workspace. Pick one from \`${ctx.command} models\`, or connect that provider's API key in Kortix first.`,
+    };
+  }
+  const stored = toOpencodeModelRef(id);
+  const ok = await setChannelModel(ctx, stored);
+  if (!ok) return { response_type: 'ephemeral', text: `Connect a project first — run \`${ctx.command}\`.` };
+  return { response_type: 'ephemeral', text: `Model for this channel set to *${escapeMrkdwn(labelForModelRef(stored))}* (\`${escapeMrkdwn(stored)}\`). New sessions will use it.` };
 }
 
 export async function listWorkspaceProjects(teamId: string): Promise<Array<{ projectId: string; name: string; repoUrl: string }>> {

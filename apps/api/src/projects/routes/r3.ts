@@ -10,6 +10,7 @@ import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth'
 import { decryptProjectSecret, encryptProjectSecret, isValidSecretName } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
+import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSecrets, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
@@ -513,6 +514,18 @@ projectsApp.openapi(
   if (sharing) await setSecretSharing(secretId, sharing);
 
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
+
+  // First provider connect on a default-less project → seed a sensible project
+  // default model (that provider's flagship). Detached + idempotent; never seeds
+  // over an existing default.
+  if (value !== null && isGatewayManagedEnv(name)) {
+    void seedProjectDefaultModelOnConnect({
+      projectId,
+      accountId: loaded.row.accountId,
+      userId: loaded.userId,
+      secretName: name,
+    });
+  }
 
   const subject = await resolveShareSubject(loaded.userId);
   const views = await loadSecretViewsForUser(projectId, subject, true);
