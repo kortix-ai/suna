@@ -39,9 +39,12 @@ import {
   type IamPolicy,
   type IamRole,
   type AgentIdentity,
+  type ServiceAccount,
+  type PrincipalType,
   createPolicy,
   deletePolicy,
   listAgentIdentities,
+  listServiceAccountsApi,
   listGroups,
   listPolicies,
   listRoles,
@@ -92,6 +95,14 @@ export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsPro
     staleTime: 30_000,
   });
 
+  // Standalone service accounts (CI/CD machine identities, no agent) — a
+  // distinct `token` principal you can also bind a role to.
+  const serviceAccountsQuery = useQuery({
+    queryKey: ['iam-service-accounts', accountId],
+    queryFn: () => listServiceAccountsApi(accountId),
+    staleTime: 30_000,
+  });
+
   const projectsQuery = useQuery({
     queryKey: ['account-projects', accountId],
     queryFn: () => listProjectsForAccount(accountId),
@@ -122,6 +133,12 @@ export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsPro
     return map;
   }, [agentsQuery.data]);
 
+  const serviceAccountNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of serviceAccountsQuery.data ?? []) map.set(s.service_account_id, s.name);
+    return map;
+  }, [serviceAccountsQuery.data]);
+
   const projectNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const p of projectsQuery.data ?? []) map.set(p.project_id, p.name);
@@ -140,14 +157,18 @@ export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsPro
 
   const policies = policiesQuery.data ?? [];
 
-  function principalLabel(p: IamPolicy): { name: string; kind: 'Member' | 'Group' | 'Agent' | null } {
+  function principalLabel(
+    p: IamPolicy,
+  ): { name: string; kind: 'Member' | 'Group' | 'Agent' | 'Service account' | null } {
     if (p.principal_type === 'member') {
       return { name: memberEmailById.get(p.principal_id) ?? p.principal_id, kind: 'Member' };
     }
     if (p.principal_type === 'group') {
       return { name: groupNameById.get(p.principal_id) ?? p.principal_id, kind: 'Group' };
     }
-    // token = a service-account / agent identity.
+    // token = a standalone service account OR an agent's standing identity.
+    const saName = serviceAccountNameById.get(p.principal_id);
+    if (saName) return { name: saName, kind: 'Service account' };
     return { name: agentNameById.get(p.principal_id) ?? p.principal_id, kind: 'Agent' };
   }
 
@@ -290,6 +311,7 @@ export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsPro
         members={membersQuery.data ?? []}
         groups={groupsQuery.data ?? []}
         agents={agentsQuery.data ?? []}
+        serviceAccounts={serviceAccountsQuery.data ?? []}
         projects={projectsQuery.data ?? []}
         projectsLoading={projectsQuery.isLoading}
         onCreated={() => {
@@ -334,6 +356,7 @@ function CreateAssignmentDialog({
   members,
   groups,
   agents,
+  serviceAccounts,
   projects,
   projectsLoading,
   onCreated,
@@ -346,11 +369,14 @@ function CreateAssignmentDialog({
   members: Array<{ user_id: string; email: string | null }>;
   groups: Array<{ group_id: string; name: string }>;
   agents: AgentIdentity[];
+  serviceAccounts: ServiceAccount[];
   projects: KortixProject[];
   projectsLoading: boolean;
   onCreated: () => void;
 }) {
-  const [principalType, setPrincipalType] = useState<PrincipalType>('member');
+  // `service_account` is a UI-only principal type — a standalone (non-agent)
+  // service account. It maps to the backend `token` principal on submit.
+  const [principalType, setPrincipalType] = useState<PrincipalType | 'service_account'>('member');
   const [principalId, setPrincipalId] = useState('');
   const [roleId, setRoleId] = useState('');
   const [scopeType, setScopeType] = useState<ScopeType>('account');
@@ -376,7 +402,8 @@ function CreateAssignmentDialog({
       // chosen date is the last day the assignment is valid.
       const expiresIso = expires ? new Date(`${expires}T23:59:59`).toISOString() : undefined;
       return createPolicy(accountId, {
-        principalType,
+        // A standalone service account is a `token` principal on the backend.
+        principalType: principalType === 'service_account' ? 'token' : principalType,
         principalId,
         scopeType,
         scopeId: scopeType === 'project' ? projectId.trim() : null,
@@ -445,6 +472,9 @@ function CreateAssignmentDialog({
                 {/* token = a service-account / agent standing identity. Assigning
                     a role here promotes the agent to a standing teammate. */}
                 <SelectItem value="token">Agent</SelectItem>
+                {/* Standalone service account — a CI/CD / integration machine
+                    identity (no agent). Backend principal is also `token`. */}
+                <SelectItem value="service_account">Service account</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -487,7 +517,13 @@ function CreateAssignmentDialog({
 
           <div className="space-y-1.5">
             <Label htmlFor="assignment-principal">
-              {principalType === 'member' ? 'Member' : principalType === 'group' ? 'Group' : 'Agent'}
+              {principalType === 'member'
+                ? 'Member'
+                : principalType === 'group'
+                  ? 'Group'
+                  : principalType === 'service_account'
+                    ? 'Service account'
+                    : 'Agent'}
             </Label>
             <Select
               value={principalId}
@@ -513,9 +549,11 @@ function CreateAssignmentDialog({
                       ? 'Select a member'
                       : principalType === 'group'
                         ? 'Select a group'
-                        : projectId
-                          ? 'Select an agent'
-                          : 'Select a project first'
+                        : principalType === 'service_account'
+                          ? 'Select a service account'
+                          : projectId
+                            ? 'Select an agent'
+                            : 'Select a project first'
                   }
                 />
               </SelectTrigger>
@@ -532,19 +570,30 @@ function CreateAssignmentDialog({
                           {g.name}
                         </SelectItem>
                       ))
-                    : (() => {
-                        // Agents are filtered to the project chosen above.
-                        if (!projectId)
-                          return <SelectItem value="__none" disabled>Select a project first</SelectItem>;
-                        const projectAgents = agents.filter((a) => a.project_id === projectId);
-                        if (projectAgents.length === 0)
-                          return <SelectItem value="__none" disabled>No agents in this project</SelectItem>;
-                        return projectAgents.map((a) => (
-                          <SelectItem key={a.service_account_id} value={a.service_account_id}>
-                            {a.agent_name ?? a.name}
-                          </SelectItem>
-                        ));
-                      })()}
+                    : principalType === 'service_account'
+                      ? (() => {
+                          const active = serviceAccounts.filter((s) => s.status === 'active');
+                          if (active.length === 0)
+                            return <SelectItem value="__none" disabled>No active service accounts yet</SelectItem>;
+                          return active.map((s) => (
+                            <SelectItem key={s.service_account_id} value={s.service_account_id}>
+                              {s.name}
+                            </SelectItem>
+                          ));
+                        })()
+                      : (() => {
+                          // Agents are filtered to the project chosen above.
+                          if (!projectId)
+                            return <SelectItem value="__none" disabled>Select a project first</SelectItem>;
+                          const projectAgents = agents.filter((a) => a.project_id === projectId);
+                          if (projectAgents.length === 0)
+                            return <SelectItem value="__none" disabled>No agents in this project</SelectItem>;
+                          return projectAgents.map((a) => (
+                            <SelectItem key={a.service_account_id} value={a.service_account_id}>
+                              {a.agent_name ?? a.name}
+                            </SelectItem>
+                          ));
+                        })()}
               </SelectContent>
             </Select>
           </div>
