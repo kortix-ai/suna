@@ -60,12 +60,15 @@ ok "instance $INSTANCE (api port $API_PORT)"
 
 section "CLI Self-host Setup"
 $CLI self-host init --instance "$INSTANCE" >/dev/null
+# Schema-only gate: this never provisions a sandbox, so no sandbox provider is
+# configured. An empty ALLOWED_SANDBOX_PROVIDERS lets the API boot without
+# daytona/platinum credentials (provider selection is lazy, on sandbox create).
 $CLI self-host env set --instance "$INSTANCE" \
   "API_PUBLIC_URL=http://localhost:$API_PORT" \
   "SUPABASE_PUBLIC_URL=http://localhost:$SUPABASE_PORT" \
   "API_PORT=$API_PORT" "SUPABASE_PORT=$SUPABASE_PORT" "POSTGRES_PORT=$POSTGRES_PORT" \
   "FRONTEND_PORT=$FRONTEND_PORT" \
-  "ALLOWED_SANDBOX_PROVIDERS=daytona" \
+  "ALLOWED_SANDBOX_PROVIDERS=" \
   "KORTIX_LOCAL_IMAGES=true" \
   "API_IMAGE=$API_IMAGE" >/dev/null
 ok "config initialized"

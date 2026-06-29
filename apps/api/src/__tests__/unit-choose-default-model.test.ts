@@ -5,41 +5,24 @@ import { chooseDefaultModel } from '../llm-gateway/resolution/choose-default-mod
 const MANAGED = DEFAULT_MANAGED_MODEL_IDS[0]!; // a real bare managed id
 const BYOK = 'anthropic/claude-sonnet-4-6'; // a non-managed wire model
 
-describe('chooseDefaultModel — precedence (agent > manifest > project > account)', () => {
+describe('chooseDefaultModel — precedence (agent > project > account)', () => {
   test('agent DB override beats everything', () => {
     expect(
       chooseDefaultModel({
         accountDefault: 'acc',
-        projectDefaults: { p1: 'proj' },
+        projectDefault: 'proj',
         agentDefaults: { release: 'agentdb' },
-        agentManifestModel: 'manifest',
-        projectId: 'p1',
         agentName: 'release',
       }),
     ).toBe('agentdb');
-  });
-
-  test('agent manifest model beats project + account when no agent DB override', () => {
-    expect(
-      chooseDefaultModel({
-        accountDefault: 'acc',
-        projectDefaults: { p1: 'proj' },
-        agentDefaults: {},
-        agentManifestModel: 'manifest',
-        projectId: 'p1',
-        agentName: 'release',
-      }),
-    ).toBe('manifest');
   });
 
   test('project default beats account', () => {
     expect(
       chooseDefaultModel({
         accountDefault: 'acc',
-        projectDefaults: { p1: 'proj' },
+        projectDefault: 'proj',
         agentDefaults: {},
-        agentManifestModel: null,
-        projectId: 'p1',
         agentName: 'release',
       }),
     ).toBe('proj');
@@ -49,9 +32,8 @@ describe('chooseDefaultModel — precedence (agent > manifest > project > accoun
     expect(
       chooseDefaultModel({
         accountDefault: 'acc',
-        projectDefaults: {},
+        projectDefault: null,
         agentDefaults: {},
-        projectId: 'p1',
         agentName: 'release',
       }),
     ).toBe('acc');
@@ -59,19 +41,8 @@ describe('chooseDefaultModel — precedence (agent > manifest > project > accoun
 
   test('nothing configured → undefined (the platform target)', () => {
     expect(
-      chooseDefaultModel({ accountDefault: null, projectDefaults: {}, agentDefaults: {} }),
+      chooseDefaultModel({ accountDefault: null, agentDefaults: {} }),
     ).toBeUndefined();
-  });
-
-  test('a project default for a different project is ignored', () => {
-    expect(
-      chooseDefaultModel({
-        accountDefault: 'acc',
-        projectDefaults: { other: 'proj' },
-        agentDefaults: {},
-        projectId: 'p1',
-      }),
-    ).toBe('acc');
   });
 });
 
@@ -80,7 +51,6 @@ describe('chooseDefaultModel — free tier', () => {
     expect(
       chooseDefaultModel({
         accountDefault: MANAGED,
-        projectDefaults: {},
         agentDefaults: {},
         freeModelsOnly: true,
       }),
@@ -91,7 +61,6 @@ describe('chooseDefaultModel — free tier', () => {
     expect(
       chooseDefaultModel({
         accountDefault: `kortix/${MANAGED}`,
-        projectDefaults: {},
         agentDefaults: {},
         freeModelsOnly: true,
       }),
@@ -102,7 +71,6 @@ describe('chooseDefaultModel — free tier', () => {
     expect(
       chooseDefaultModel({
         accountDefault: BYOK,
-        projectDefaults: {},
         agentDefaults: {},
         freeModelsOnly: true,
       }),

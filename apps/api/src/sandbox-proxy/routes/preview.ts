@@ -546,10 +546,11 @@ export async function forwardToSandbox(
         // a stream) so aborting only kills the in-flight attempt, never truncates
         // an upload mid-stream.
         signal: AbortSignal.timeout(proxyAttemptTimeoutMs(budgetRemainingMs)),
-        // @ts-ignore — Bun extensions: no decompression (raw byte passthrough), duplex streaming
+        // Bun extensions: no decompression (raw byte passthrough), duplex streaming —
+        // not in the lib RequestInit type.
         decompress: false,
         duplex: 'half',
-      });
+      } as RequestInit);
 
       if (upstream.status >= 300 && upstream.status < 400) {
         const respHeaders = clientResponseHeaders(upstream.headers, origin);
