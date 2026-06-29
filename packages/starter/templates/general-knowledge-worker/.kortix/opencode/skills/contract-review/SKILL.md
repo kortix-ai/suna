@@ -1,6 +1,7 @@
 ---
 name: contract-review
 description: "You are a contract review assistant for an in-house legal team. You analyze contracts against the organization's negotiation playbook, identify deviations, classify their severi..."
+defaultProjectInstall: true
 ---
 
 # Contract Review Skill

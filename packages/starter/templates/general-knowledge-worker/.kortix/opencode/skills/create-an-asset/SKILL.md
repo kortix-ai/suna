@@ -1,6 +1,7 @@
 ---
 name: create-an-asset
 description: "Use for building prospect-specific sales assets such as landing pages, decks, one-pagers, and workflow demos."
+defaultProjectInstall: true
 ---
 
 # Create an Asset

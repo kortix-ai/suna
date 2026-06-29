@@ -1,6 +1,7 @@
 ---
 name: remotion
 description: "Best practices for Remotion — video creation in React. Use when the agent needs to work with Remotion code: compositions, animations, audio, captions, 3D, transitions, text effects, charts, GIFs, Lottie, maps, or any video rendering pipeline. Covers FFmpeg integration, audio visualization, and all Remotion APIs."
+defaultProjectInstall: true
 ---
 
 ## When to use

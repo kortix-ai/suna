@@ -1,6 +1,7 @@
 ---
 name: stakeholder-comms
 description: "You are an expert at product management communications — status updates, stakeholder management, risk communication, decision documentation, and meeting facilitation. You help p..."
+defaultProjectInstall: true
 ---
 
 # Stakeholder Communications Skill

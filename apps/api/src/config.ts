@@ -92,6 +92,8 @@ const envSchema = z.object({
   TAVILY_API_KEY:              optStr,
   SERPER_API_URL:              optUrl('https://google.serper.dev'),
   SERPER_API_KEY:              optStr,
+  APIFY_API_URL:               optUrl('https://api.apify.com'),
+  APIFY_TOKEN:                 optStr,
 
   // ── Proxy Providers (optional) ───────────────────────────────────────────
   FIRECRAWL_API_URL:           optUrl('https://api.firecrawl.dev'),
@@ -550,6 +552,8 @@ export const config = {
   TAVILY_API_KEY: env.TAVILY_API_KEY,
   SERPER_API_URL: env.SERPER_API_URL,
   SERPER_API_KEY: env.SERPER_API_KEY,
+  APIFY_API_URL: env.APIFY_API_URL,
+  APIFY_TOKEN: env.APIFY_TOKEN,
 
   // ─── Proxy Providers ──────────────────────────────────────────────────────
   FIRECRAWL_API_URL: env.FIRECRAWL_API_URL,
@@ -822,6 +826,14 @@ const TOOL_PRICING: Record<string, ToolPricing> = {
   },
   proxy_serper: {
     baseCost: 0.001,
+    perResultCost: 0,
+    markupMultiplier: 1.5,
+  },
+  // Apify LinkedIn people-search actor (harvestapi short mode): $0.10 per search
+  // page of up to 25 results. Page-priced (not per-result), so a flat per-call
+  // cost; with markup the user is charged ~$0.15 per people_search call.
+  proxy_apify: {
+    baseCost: 0.1,
     perResultCost: 0,
     markupMultiplier: 1.5,
   },

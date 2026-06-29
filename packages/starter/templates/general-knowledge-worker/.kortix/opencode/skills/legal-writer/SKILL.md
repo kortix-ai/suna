@@ -1,6 +1,7 @@
 ---
 name: legal-writer
 description: "Legal document drafting -- contracts, memos, briefs, complaints, demand letters, opinions, discovery, settlements, ToS, privacy policies. Full pipeline: document structure, per-section writing, Bluebook citation, case law lookup (CourtListener API), regulation lookup (eCFR API), DOCX output, and TDD-style verification (defined terms, cross-references, placeholders, boilerplate, citation format). Triggers on: 'draft a contract', 'write a legal memo', 'create an NDA', 'write a brief', 'legal document about', 'draft a complaint', 'terms of service', 'privacy policy', 'demand letter', 'settlement agreement', 'legal opinion', 'discovery requests', any request to produce a legal or law-related document."
+defaultProjectInstall: true
 ---
 
 # Legal Document Writer

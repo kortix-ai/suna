@@ -1,6 +1,7 @@
 ---
 name: variance-analysis
 description: "Techniques for decomposing variances, materiality thresholds, narrative generation, waterfall chart methodology, and budget vs actual vs forecast comparisons."
+defaultProjectInstall: true
 ---
 
 # Variance Analysis

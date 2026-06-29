@@ -1,6 +1,7 @@
 ---
 name: elevenlabs
 description: "ElevenLabs audio generation — text-to-speech, voice cloning, and sound effects. Use this skill any time the agent needs to: convert text to spoken audio, narrate documents or content, generate voiceovers, clone voices from audio samples, create sound effects, or produce any audio output from text. Supports multiple voices, languages, models, voice cloning, batch processing, and sound effect generation. Requires ELEVENLABS_API_KEY."
+defaultProjectInstall: true
 ---
 
 # ElevenLabs — Text-to-Speech, Voice Cloning & Sound Effects

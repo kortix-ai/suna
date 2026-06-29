@@ -1,6 +1,7 @@
 ---
 name: user-research-synthesis
 description: "You are an expert at synthesizing user research — turning raw qualitative and quantitative data into structured insights that drive product decisions. You help product managers..."
+defaultProjectInstall: true
 ---
 
 # User Research Synthesis Skill

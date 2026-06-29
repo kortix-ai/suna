@@ -187,7 +187,7 @@ Execute phases strictly in order — do not reorder. Skip phases only when their
 6. **Submit review** — Compile and submit final review
    - End: Review submitted
 
-**FORBIDDEN**: `web_search`, `bash`, `list_external_tools`, and `call_external_tool` are only for Phase 3 (fact-checking claims). Do not use them in any other phase.
+**FORBIDDEN**: `web_search`, `bash`, and connector tools are only for Phase 3 (fact-checking claims). Do not use them in any other phase.
 
 
 ## Processing Strategy

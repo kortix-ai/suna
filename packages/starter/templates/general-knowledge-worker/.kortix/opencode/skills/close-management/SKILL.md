@@ -1,6 +1,7 @@
 ---
 name: close-management
 description: "Month-end close checklist, task sequencing and dependencies, status tracking, and common close activities organized by day."
+defaultProjectInstall: true
 ---
 
 # Close Management
