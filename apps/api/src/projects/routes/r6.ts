@@ -10,7 +10,7 @@ import { foldEffectiveProjectAccess, isAccountManager, parseProjectRole, roleAll
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accounts, projectAccessRequests, projectGroupGrants, projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { ensureOrgMembership, grantProjectRole, loadProjectForUser, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
+import { ensureOrgMembership, grantProjectRole, loadProjectForUser, lookupEmailsByUserIds, resolveUserIdentities, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { notifyProjectAccessRequestManagers } from '../lib/access-requests';
 import { AccessMemberSchema, AnyObject, projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/git';
@@ -208,11 +208,16 @@ projectsApp.openapi(
     groupSourcesByUser.set(m.userId, arr);
   }
 
-  const emails = await lookupEmailsByUserIds(accountRows.map((r) => r.userId));
+  const identities = await resolveUserIdentities(accountRows.map((r) => r.userId));
+  // Drop shadow members: an account_members row pointing at a user_id that is
+  // not a real auth user (e.g. a self-referential row where user_id == the
+  // account_id). These have no resolvable email and otherwise render as a bare
+  // UUID in the access list.
+  const realAccountRows = accountRows.filter((r) => identities.get(r.userId)?.exists !== false);
   const grantsByUser = new Map(grantRows.map((r) => [r.userId, r]));
   const rank: Record<AccountRole, number> = { owner: 0, admin: 1, member: 2 };
 
-  const members = accountRows
+  const members = realAccountRows
     .map((member) => {
       const accountRole = member.accountRole as AccountRole;
       const grant = grantsByUser.get(member.userId);
@@ -228,7 +233,7 @@ projectsApp.openapi(
 
       return {
         user_id: member.userId,
-        email: emails.get(member.userId) ?? null,
+        email: identities.get(member.userId)?.email ?? null,
         account_role: accountRole,
         project_role: projectRole,
         effective_project_role: fold.effective_project_role,

@@ -224,20 +224,48 @@ async function repairLegacyRequestedAccountMembership(userId: string, accountId:
 }
 
 
-export async function lookupEmailsByUserIds(userIds: string[]): Promise<Map<string, string | null>> {
-  const result = new Map<string, string | null>();
+export interface UserIdentity {
+  /** Email from the auth provider, or null if the user has none. */
+  email: string | null;
+  /**
+   * Whether this user_id resolves to a real auth user. `false` means the auth
+   * provider returned NO user for this id — i.e. it's a shadow/orphan principal
+   * (e.g. an `account_members` row whose user_id is actually an account_id with
+   * no backing user). A transient lookup failure leaves this `true` so a hiccup
+   * never hides a real member.
+   */
+  exists: boolean;
+}
+
+/**
+ * Resolve user_ids to their auth identity (email + existence). Existence lets
+ * callers drop "shadow" members — rows that point at a non-existent user, which
+ * would otherwise render as a raw UUID in member lists.
+ */
+export async function resolveUserIdentities(userIds: string[]): Promise<Map<string, UserIdentity>> {
+  const result = new Map<string, UserIdentity>();
   if (userIds.length === 0) return result;
   const supabase = getSupabase();
   await Promise.all(
     userIds.map(async (uid) => {
       try {
         const { data } = await supabase.auth.admin.getUserById(uid);
-        result.set(uid, data?.user?.email ?? null);
+        // A completed call with no user object = the id is not a real user.
+        const user = data?.user ?? null;
+        result.set(uid, { email: user?.email ?? null, exists: !!user });
       } catch {
-        result.set(uid, null);
+        // Transient (network/5xx) — assume the user exists; don't hide them.
+        result.set(uid, { email: null, exists: true });
       }
     }),
   );
+  return result;
+}
+
+export async function lookupEmailsByUserIds(userIds: string[]): Promise<Map<string, string | null>> {
+  const identities = await resolveUserIdentities(userIds);
+  const result = new Map<string, string | null>();
+  for (const [uid, identity] of identities) result.set(uid, identity.email);
   return result;
 }
 

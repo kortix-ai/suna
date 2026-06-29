@@ -457,7 +457,12 @@ mock.module('../shared/supabase', () => ({
   getSupabase: () => ({
     auth: {
       admin: {
-        getUserById: async () => ({ data: { user: { email: 'project@example.test' } } }),
+        // A shadow principal (user_id == account_id) has no backing auth user:
+        // a completed lookup returns no user object. Real users resolve normally.
+        getUserById: async (uid: string) =>
+          uid === ACCOUNT_ID
+            ? { data: { user: null } }
+            : { data: { user: { email: 'project@example.test' } } },
       },
     },
   }),
@@ -901,6 +906,26 @@ describe('projects API contract', () => {
     expect(removeMember.status).toBe(200);
     expect(await removeMember.json()).toEqual({ ok: true });
     expect(projectMemberRows.some((row) => row.userId === MEMBER_ID && row.projectId === PROJECT_ID)).toBe(false);
+  });
+
+  test('GET /access drops shadow members whose user_id is not a real auth user', async () => {
+    // Regression: a self-referential account_members row (user_id == account_id)
+    // with no backing auth user used to surface as a bare UUID in the access list
+    // (the email never resolves, so the UI fell back to the raw id).
+    accountMemberRows.push({
+      userId: ACCOUNT_ID,
+      accountId: ACCOUNT_ID,
+      accountRole: 'owner',
+      joinedAt: baseDate,
+    });
+    const app = createApp();
+    const access = await app.request(`/v1/projects/${PROJECT_ID}/access`);
+    expect(access.status).toBe(200);
+    const body = await access.json();
+    const ids = body.members.map((m: any) => m.user_id);
+    expect(ids).not.toContain(ACCOUNT_ID); // shadow principal filtered out
+    expect(ids).toContain(OWNER_ID); // real owner kept
+    expect(ids).toContain(MEMBER_ID); // real member kept
   });
 
   test('denies non-members and plain project users from manager-only operations', async () => {
