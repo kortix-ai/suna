@@ -1,5 +1,15 @@
 'use client';
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import {
   CommandDialog,
@@ -7,7 +17,6 @@ import {
   CommandGroup,
   CommandInput,
   CommandItem,
-  CommandKbd,
   CommandList,
   CommandShortcut,
 } from '@/components/ui/command';
@@ -22,10 +31,11 @@ import { featureFlags } from '@/lib/feature-flags';
 import { normalizeAppPathname } from '@/lib/instance-routes';
 import { getItemsForSurface, type MenuItemDef, type SettingsTabId } from '@/lib/menu-registry';
 import {
+  getProjectDetail,
   listAccounts,
   listProjectSessions,
   listProjectsForAccount,
-  searchProjectFiles,
+  type ExperimentalFeatureKey,
   type KortixAccount,
   type KortixProject,
   type ProjectSession,
@@ -52,15 +62,16 @@ import {
   PanelLeftClose,
   PanelLeftIcon,
   Search,
-  Users,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
+import { Kbd } from '@/components/ui/kbd';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
+import { useWorkspaceSearch } from '@/features/files';
 import {
   MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS,
@@ -78,6 +89,7 @@ import {
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
 import { clearSessionIDBCache } from '@/lib/idb-sync-cache';
+import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
@@ -94,8 +106,8 @@ import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { groupMessagesIntoTurns, isTextPart, type TextPart } from '@/ui';
 import { chalkColors, formatRelativeTime } from '@kortix/shared';
+import { UsersSolid } from '@mynaui/icons-react';
 import { useTheme } from 'next-themes';
-import { FaBackspace } from 'react-icons/fa';
 
 type PalettePage =
   | 'root'
@@ -136,41 +148,26 @@ const LEGACY_PALETTE_HIDDEN = new Set([
   'ssh-quick',
 ]);
 
-// Registry nav items that open a sub-picker page instead of navigating directly.
 const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
   'nav-projects': 'projects',
   'nav-accounts': 'accounts',
   'proj-sessions': 'sessions',
 };
 
-// ============================================================================
-// FileSearchPage — git-backed search over the active project's repo.
-// Filenames by default; prefix with ">" to grep file contents (server-side
-// `git grep`). Replaces the legacy sandbox /workspace search.
-// ============================================================================
-
 function FileSearchPage({
-  projectId,
   query,
   onSelect,
 }: {
-  projectId: string;
   query: string;
   onSelect: (filePath: string, lineNumber?: number) => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const isContent = query.trimStart().startsWith('>');
-  const effectiveQuery = (isContent ? query.replace(/^\s*>\s*/, '') : query).trim();
-  const enabled = effectiveQuery.length >= 2;
+  const { results, textResults, isLoading, isContentSearch, effectiveQuery, hasResults } =
+    useWorkspaceSearch(query, { minQueryLength: 1, maxResults: 50, maxTextResults: 50 });
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['project-file-search', projectId, effectiveQuery, isContent],
-    queryFn: () => searchProjectFiles(projectId, effectiveQuery, { content: isContent, limit: 50 }),
-    enabled,
-    staleTime: 15_000,
-  });
+  const fileResults = useMemo(() => results.filter((r) => !r.isDir), [results]);
 
-  if (!enabled) {
+  if (!effectiveQuery) {
     return (
       <div className="flex flex-col items-center gap-3 py-12">
         <div className="space-y-1 text-center">
@@ -194,23 +191,21 @@ function FileSearchPage({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center gap-2 py-10">
-        <Loading className="text-muted-foreground/50 size-4 shrink-0" />
-        <span className="text-muted-foreground/50 text-sm">
-          {isContent ? 'Searching file contents…' : 'Searching files…'}
-        </span>
+        <TextShimmer>
+          {isContentSearch ? 'Searching file contents…' : 'Searching files…'}
+        </TextShimmer>
       </div>
     );
   }
 
-  const results = data?.results ?? [];
-  if (results.length === 0) {
+  if (!hasResults) {
     return (
       <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-        <div className="bg-muted/30 flex h-10 w-10 items-center justify-center rounded-full">
-          <Search className="text-muted-foreground/30 size-4" />
+        <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
+          <Search className="text-muted-foreground size-4" />
         </div>
-        <span className="text-muted-foreground/60 text-sm">
-          No {isContent ? 'content matches' : 'files'}{' '}
+        <span className="text-muted-foreground text-sm">
+          No {isContentSearch ? 'content matches' : 'files'}{' '}
           {tHardcodedUi.raw('componentsCommandPalette.line213JsxTextFor')}
           {effectiveQuery}
           {tHardcodedUi.raw('componentsCommandPalette.line213JsxTextText')}
@@ -219,9 +214,9 @@ function FileSearchPage({
     );
   }
 
-  if (isContent) {
-    const grouped = new Map<string, typeof results>();
-    for (const r of results) {
+  if (isContentSearch) {
+    const grouped = new Map<string, typeof textResults>();
+    for (const r of textResults) {
       const arr = grouped.get(r.path) ?? [];
       arr.push(r);
       grouped.set(r.path, arr);
@@ -234,7 +229,7 @@ function FileSearchPage({
             heading={
               <span className="inline-flex items-center gap-1.5 font-mono text-xs">
                 <FileText className="size-3 shrink-0" />
-                {filePath}
+                <span className="text-foreground">{filePath}</span>
               </span>
             }
             forceMount
@@ -242,17 +237,15 @@ function FileSearchPage({
             {matches.map((match, i) => (
               <CommandItem
                 key={`${filePath}:${match.line_number}:${i}`}
-                value={sanitizeCmdkValue(
-                  `content ${filePath} ${match.line_text} ${match.line_number}`,
-                )}
+                value={sanitizeCmdkValue(`content ${filePath} ${match.lines} ${match.line_number}`)}
                 onSelect={() => onSelect(filePath, match.line_number)}
               >
                 <Hash className="text-muted-foreground/40 h-3.5 w-3.5 shrink-0" />
-                <span className="text-muted-foreground/50 w-8 shrink-0 text-right text-xs tabular-nums">
+                <span className="text-muted-foreground w-8 shrink-0 text-right text-xs tabular-nums">
                   {match.line_number}
                 </span>
-                <span className="text-muted-foreground/80 flex-1 truncate font-mono text-sm">
-                  {(match.line_text || '').trim()}
+                <span className="text-muted-foreground/60 flex-1 truncate font-mono text-sm">
+                  {(match.lines || '').trim()}
                 </span>
               </CommandItem>
             ))}
@@ -263,32 +256,25 @@ function FileSearchPage({
   }
 
   return (
-    <CommandGroup heading={`Files (${results.length})`} forceMount>
-      {results.map((item) => {
-        const name = item.path.split('/').pop() || item.path;
-        return (
-          <CommandItem
-            key={item.path}
-            value={sanitizeCmdkValue(`file ${name} ${item.path}`)}
-            onSelect={() => onSelect(item.path)}
-          >
-            <FileText className="text-muted-foreground/70 size-4 shrink-0" />
-            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
-              <span className="truncate text-sm font-medium">{name}</span>
-              <span className="text-muted-foreground/35 min-w-0 flex-shrink truncate font-mono text-xs">
-                {item.path}
-              </span>
-            </div>
-          </CommandItem>
-        );
-      })}
+    <CommandGroup heading="Files" forceMount>
+      {fileResults.map((item) => (
+        <CommandItem
+          key={item.path}
+          value={sanitizeCmdkValue(`file ${item.name} ${item.path}`)}
+          onSelect={() => onSelect(item.path)}
+        >
+          <FileText className="text-muted-foreground size-4 shrink-0" />
+          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+            <span className="shrink-0 text-sm font-medium">{item.name}</span>
+            <span className="text-muted-foreground/35 min-w-0 flex-1 truncate font-mono text-xs">
+              {item.path}
+            </span>
+          </div>
+        </CommandItem>
+      ))}
     </CommandGroup>
   );
 }
-
-// ============================================================================
-// MessagesPage — shows user messages for jump-to-message
-// ============================================================================
 
 function MessagesPage({
   sessionId,
@@ -368,10 +354,6 @@ function MessagesPage({
   );
 }
 
-// ============================================================================
-// Command Palette
-// ============================================================================
-
 export function CommandPalette() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
@@ -380,11 +362,13 @@ export function CommandPalette() {
   const [isCreating, setIsCreating] = useState(false);
   const [compactOpen, setCompactOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
-  // Momentary scale-down feedback when navigating back to root.
   const [backScale, setBackScale] = useState(false);
   const backScaleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const reopenPaletteRef = useRef(false);
   const openNewInstanceModal = useNewInstanceModalStore((s) => s.openNewInstanceModal);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -393,16 +377,12 @@ export function CommandPalette() {
   const params = useParams<{ id?: string; sessionId?: string }>();
   const queryClient = useQueryClient();
   const openProjectTab = useProjectSessionTabsStore((s) => s.openTab);
-  // New project shell: /projects/[id]/... scopes navigation + "new session" to
-  // the active project. Null in the legacy global shell.
   const projectId = rawPathname?.startsWith('/projects/') ? (params?.id ?? null) : null;
   const currentSessionId = useMemo(() => {
-    if (params?.sessionId) return params.sessionId; // /projects/[id]/sessions/[sessionId]
-    const match = pathname?.match(/^\/sessions\/([^/]+)/); // legacy global shell
+    if (params?.sessionId) return params.sessionId;
+    const match = pathname?.match(/^\/sessions\/([^/]+)/);
     return match ? match[1] : null;
   }, [params?.sessionId, pathname]);
-  // Read the sidebar context directly so the palette can mount anywhere
-  // (AppHeader pages have no SidebarProvider). Sidebar actions no-op there.
   const sidebarCtx = useContext(SidebarContext);
   const sidebarOpen = sidebarCtx?.open ?? false;
   const { proxyUrl: buildProxyUrl, subdomainOpts } = useSandboxProxy();
@@ -411,11 +391,9 @@ export function CommandPalette() {
   const { theme, setTheme } = useTheme();
   const billingEnabled = isBillingEnabled();
 
-  // ── Data hooks ──
   const { data: agents } = useOpenCodeAgents();
   const { data: providers } = useOpenCodeProviders();
 
-  // ── Project / account data for the switch sub-pickers ──
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
   const { data: accountsList } = useQuery({
     queryKey: ['accounts'],
@@ -441,11 +419,25 @@ export function CommandPalette() {
     staleTime: 15_000,
   });
 
-  // ── Derived: flat models ──
+  const { data: projectDetail } = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId!),
+    enabled: open && !!projectId,
+    staleTime: 60_000,
+  });
+  const isExperimentalEnabled = useCallback(
+    (key: ExperimentalFeatureKey) => {
+      const project = projectDetail?.project;
+      if (!project) return false;
+      if (key === 'llm_gateway') return isLlmGatewayAvailable(project);
+      return project.experimental?.[key] === true;
+    },
+    [projectDetail],
+  );
+
   const allModels = useMemo(() => flattenModels(providers), [providers]);
   const modelStore = useModelStore(allModels);
 
-  // ── Current agent/model for the active session ──
   const currentAgentName = useMemo(() => {
     if (!currentSessionId) return undefined;
     return modelStore.getSessionAgentName(currentSessionId);
@@ -463,20 +455,26 @@ export function CommandPalette() {
 
   const close = useCallback(() => setOpen(false), []);
 
-  // ── Page navigation helpers ──
-  const goToPage = useCallback((p: PalettePage, preserveQuery?: boolean) => {
-    setPage(p);
-    if (!preserveQuery) setQuery('');
-  }, []);
-
-  const goBack = useCallback(() => {
-    setPage('root');
-    setQuery('');
-    // Tactile feedback: dip the palette to 0.95 then spring back to 1.
+  const triggerBackScale = useCallback(() => {
     setBackScale(true);
     if (backScaleTimeout.current) clearTimeout(backScaleTimeout.current);
     backScaleTimeout.current = setTimeout(() => setBackScale(false), 130);
   }, []);
+
+  const goToPage = useCallback(
+    (p: PalettePage, preserveQuery?: boolean) => {
+      setPage(p);
+      if (!preserveQuery) setQuery('');
+      triggerBackScale();
+    },
+    [triggerBackScale],
+  );
+
+  const goBack = useCallback(() => {
+    setPage('root');
+    setQuery('');
+    triggerBackScale();
+  }, [triggerBackScale]);
 
   useEffect(() => {
     return () => {
@@ -501,7 +499,6 @@ export function CommandPalette() {
     close();
   }, [createPty, close]);
 
-  // Global keyboard shortcut
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
@@ -517,7 +514,6 @@ export function CommandPalette() {
     return () => document.removeEventListener('keydown', down);
   }, [handleOpenTerminal]);
 
-  // Reset when dialog closes
   useEffect(() => {
     if (!open) {
       setQuery('');
@@ -525,7 +521,6 @@ export function CommandPalette() {
     }
   }, [open]);
 
-  // Open straight to File Search (e.g. from the /files route).
   useEffect(() => {
     const openFileSearch = () => {
       setQuery('');
@@ -536,7 +531,6 @@ export function CommandPalette() {
     return () => window.removeEventListener('kortix:open-file-search', openFileSearch);
   }, []);
 
-  // Backspace on empty query goes back to root
   useEffect(() => {
     if (page === 'root') return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -549,7 +543,6 @@ export function CommandPalette() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [page, query, goBack]);
 
-  // Fuzzy match helper
   const fuzzyMatch = useCallback((text: string, q: string): boolean => {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     const haystack = text.toLowerCase();
@@ -558,28 +551,25 @@ export function CommandPalette() {
 
   const hasQuery = query.trim().length > 0;
   const queryLongEnough = query.trim().length >= 2;
-  // ── Palette items ──
   const allPaletteItems = useMemo(() => {
-    return (
-      getItemsForSurface('commandPalette')
-        .filter((item) => {
-          if (LEGACY_PALETTE_HIDDEN.has(item.id)) return false;
-          if (item.id === 'toggle-sidebar' && !sidebarCtx) return false;
-          if (item.requiresBilling && !billingEnabled) return false;
-          if (item.requiresSession && !currentSessionId) return false;
-          if (item.requiresProject && !projectId) return false;
-          return true;
-        })
-        // Resolve the {projectId} token in project-scoped hrefs.
-        .map((item) =>
-          item.href?.includes('{projectId}') && projectId
-            ? { ...item, href: item.href.replaceAll('{projectId}', projectId) }
-            : item,
-        )
-    );
-  }, [billingEnabled, currentSessionId, projectId, sidebarCtx]);
+    return getItemsForSurface('commandPalette')
+      .filter((item) => {
+        if (LEGACY_PALETTE_HIDDEN.has(item.id)) return false;
+        if (item.id === 'toggle-sidebar' && !sidebarCtx) return false;
+        if (item.requiresBilling && !billingEnabled) return false;
+        if (item.requiresSession && !currentSessionId) return false;
+        if (item.requiresProject && !projectId) return false;
+        if (item.requiresExperimental && !isExperimentalEnabled(item.requiresExperimental))
+          return false;
+        return true;
+      })
+      .map((item) =>
+        item.href?.includes('{projectId}') && projectId
+          ? { ...item, href: item.href.replaceAll('{projectId}', projectId) }
+          : item,
+      );
+  }, [billingEnabled, currentSessionId, projectId, sidebarCtx, isExperimentalEnabled]);
 
-  // Filter navigation items client-side
   const filteredNavItems = useMemo(() => {
     if (!hasQuery) return allPaletteItems;
     const q = query.trim().toLowerCase();
@@ -592,11 +582,6 @@ export function CommandPalette() {
     });
   }, [allPaletteItems, hasQuery, query]);
 
-  // ── Submenu: agents ──
-  // Project-only agents (orchestrator/project-maintainer/worker/project-manager)
-  // are hidden from the palette when the project paradigm is off —
-  // their bodies reference project tools that aren't registered in default
-  // mode. Keep in sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
   const visibleAgents = useMemo(() => {
     if (!agents) return [];
     const projectOnlyAgents = new Set(['project-manager']);
@@ -623,7 +608,6 @@ export function CommandPalette() {
     [filteredAgents],
   );
 
-  // ── Submenu: models (grouped by provider) ──
   const visibleModels = useMemo(() => {
     const q = query.trim().toLowerCase();
     return allModels
@@ -669,7 +653,6 @@ export function CommandPalette() {
     return entries;
   }, [visibleModels]);
 
-  // ── "Change Agent" and "Change Model" virtual palette items ──
   const sessionActionItems = useMemo(() => {
     if (!hasQuery) return [];
     const q = query.trim().toLowerCase();
@@ -704,13 +687,9 @@ export function CommandPalette() {
   const hasNavResults = filteredNavItems.length > 0;
   const hasSessionActionResults = sessionActionItems.length > 0;
 
-  // ── Handlers ──
-
   const newSession = useNewProjectSession(projectId ?? undefined);
   const handleNewSession = useCallback(() => {
     if (projectId) {
-      // Optimistic + shared — instant shell (see useNewProjectSession). The tab
-      // bar picks the session up from the URL.
       newSession({
         onNavigate: (sessionId) => {
           openProjectTab(projectId, sessionId);
@@ -719,7 +698,7 @@ export function CommandPalette() {
       });
       return;
     }
-    // No project context → the OpenCode-session path (dashboard / global).
+
     if (isCreating) return;
     setIsCreating(true);
     createSession
@@ -740,7 +719,6 @@ export function CommandPalette() {
       .finally(() => setIsCreating(false));
   }, [isCreating, projectId, newSession, createSession, openProjectTab, close]);
 
-  // ── Switch sub-pickers: select handlers + filtered lists ──
   const setSelectedAccountId = useCurrentAccountStore((s) => s.setSelectedAccountId);
 
   const handleSelectProject = useCallback(
@@ -776,8 +754,6 @@ export function CommandPalette() {
     s.branch_name ||
     s.session_id.slice(0, 8);
 
-  // Projects sorted by most-recently-opened — reused for both the "Switch
-  // Project" sub-picker and the global idle "Recent Projects" list.
   const sortedProjects = useMemo(
     () =>
       [...(projectsList ?? [])].sort((a, b) =>
@@ -793,10 +769,6 @@ export function CommandPalette() {
     ).slice(0, 50);
   }, [sortedProjects, query]);
 
-  // Idle "Recent" lists. In a project we surface the project's own recent
-  // sessions (current source: ['project-sessions', projectId]); in the global
-  // shell there is no cross-project session feed, so we surface recent
-  // projects instead.
   const recentProjectSessions = useMemo(() => {
     return [...(projectSessionsList ?? [])]
       .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
@@ -824,9 +796,6 @@ export function CommandPalette() {
     );
   }, [projectSessionsList, query]);
 
-  // ── Root-search result lists (current sources only) ──
-  // In a project, free-text search hits the project's own sessions; in the
-  // global shell it hits projects (there is no legacy global session feed).
   const rootSessionResults = useMemo(() => {
     if (!hasQuery || !projectId) return [];
     return filteredProjectSessionsList.slice(0, 8);
@@ -864,9 +833,6 @@ export function CommandPalette() {
   const handleSelectFile = useCallback(
     (_filePath: string, _lineNumber?: number) => {
       if (!projectId) return close();
-      // Files live in the Customize overlay's Files section. Open it in place
-      // (the explorer reads its own selection state; per-file/line deep focus
-      // is a follow-up now that this no longer rides a URL).
       useCustomizeStore.getState().openCustomize('files');
       close();
     },
@@ -883,18 +849,15 @@ export function CommandPalette() {
     [jumpToMessage, close],
   );
 
-  // ── URL detection: localhost:PORT, http(s)://, or bare port ──
   const detectedUrl = useMemo(() => {
     const q = query.trim();
     if (!q) return null;
 
-    // 1. localhost URL: "localhost:4200", "localhost:4200/api", "http://localhost:3000"
     const localhostParsed = parseLocalhostUrl(q.startsWith('http') ? q : `http://${q}`);
     if (localhostParsed) {
       return { kind: 'localhost' as const, ...localhostParsed };
     }
 
-    // 2. Bare port number: "4200", "3000"
     if (/^\d{2,5}$/.test(q)) {
       const port = parseInt(q, 10);
       if (port >= 1 && port <= 65535) {
@@ -907,12 +870,8 @@ export function CommandPalette() {
       }
     }
 
-    // 3. External URL: "https://github.com", "google.com", "example.com/path"
     const normalized = normalizeExternalInput(q);
     if (normalized) {
-      // Filter out filenames that look like domains (e.g. "package.json", "style.css")
-      // Only exclude if the "domain" ends with a known code/asset file extension
-      // and has no slash (i.e. it's just "name.ext", not "domain.com/path")
       if (!q.includes('/')) {
         const ext = q.split('.').pop()?.toLowerCase() || '';
         const FILE_EXTS = new Set([
@@ -1005,7 +964,6 @@ export function CommandPalette() {
         }),
       });
     } else {
-      // External URL — proxy through backend web proxy
       const extUrl = detectedUrl.url;
       const proxyUrl = buildWebProxyUrl(extUrl, subdomainOpts) || extUrl;
       let displayHost: string;
@@ -1050,14 +1008,20 @@ export function CommandPalette() {
     openNewInstanceModal();
   }, [close, openNewInstanceModal]);
 
-  const handleLogout = useCallback(async () => {
+  const handleLogout = useCallback(() => {
+    reopenPaletteRef.current = true;
     close();
+    setLogoutConfirmOpen(true);
+  }, [close]);
+
+  const performLogout = useCallback(async () => {
+    reopenPaletteRef.current = false;
     const supabase = createClient();
     await supabase.auth.signOut();
     clearUserLocalStorage();
     await clearSessionIDBCache();
     router.push('/auth');
-  }, [close, router]);
+  }, [router]);
 
   const handleSetTheme = useCallback(
     (newTheme: string) => {
@@ -1069,17 +1033,35 @@ export function CommandPalette() {
 
   const handleCompactSession = useCallback(() => {
     if (!currentSessionId) return;
+    reopenPaletteRef.current = true;
     close();
     setCompactOpen(true);
   }, [currentSessionId, close]);
 
   const handleViewChanges = useCallback(() => {
     if (!currentSessionId) return;
+    reopenPaletteRef.current = true;
     close();
     setDiffOpen(true);
   }, [currentSessionId, close]);
 
-  // ── Registry action dispatcher ──
+  const handleInviteMembers = useCallback(() => {
+    useCustomizeStore.getState().openCustomize('members', { membersTab: 'invite' });
+    close();
+  }, [close]);
+
+  const handleOverlayClose = useCallback(
+    (set: (open: boolean) => void) => (overlayOpen: boolean) => {
+      set(overlayOpen);
+      if (!overlayOpen && reopenPaletteRef.current) {
+        reopenPaletteRef.current = false;
+        setOpen(true);
+        triggerBackScale();
+      }
+    },
+    [triggerBackScale],
+  );
+
   const handleOpenProviderModal = useCallback(() => {
     close();
     import('@/stores/provider-modal-store').then(({ useProviderModalStore }) => {
@@ -1130,6 +1112,7 @@ export function CommandPalette() {
       openTerminal: handleOpenTerminal,
       compactSession: handleCompactSession,
       viewChanges: handleViewChanges,
+      inviteMembers: handleInviteMembers,
       toggleSidebar: handleToggleSidebar,
       logout: handleLogout,
       openPlan: handleOpenPlan,
@@ -1143,6 +1126,7 @@ export function CommandPalette() {
       handleOpenTerminal,
       handleCompactSession,
       handleViewChanges,
+      handleInviteMembers,
       handleToggleSidebar,
       handleLogout,
       handleOpenPlan,
@@ -1158,8 +1142,7 @@ export function CommandPalette() {
       switch (item.kind) {
         case 'navigate': {
           const href = item.href || '';
-          // Customize is a full-screen overlay, not a route — open it in place so
-          // the active session/page stays mounted behind it (no tab, no nav).
+
           const custMatch = href.match(/\/customize(?:\/([^/?#]+))?/);
           if (custMatch) {
             useCustomizeStore
@@ -1168,14 +1151,13 @@ export function CommandPalette() {
             close();
             break;
           }
-          // New project/account routes use the Next router directly — the project
-          // tab bar auto-syncs from the URL. The legacy tabbed shell is bypassed.
+
           if (href.startsWith('/projects') || href.startsWith('/accounts')) {
             router.push(href);
             close();
             break;
           }
-          // Legacy global-shell tabbed navigation (browser, preview, desktop, etc.)
+
           const tabType = (item.tabType ||
             (href.startsWith('/settings') ? 'settings' : 'page')) as any;
           const tabId = item.tabId || `page:${href}`;
@@ -1210,7 +1192,6 @@ export function CommandPalette() {
     [router, close, handleOpenSettings, handleSetTheme, actionHandlers],
   );
 
-  // ── Agent/Model selection handlers ──
   const handleSelectAgent = useCallback(
     (agentName: string) => {
       if (!currentSessionId) return;
@@ -1233,14 +1214,13 @@ export function CommandPalette() {
     [currentAgent, modelStore, allModels, close],
   );
 
-  // Count results for footer
   const totalSearchResults = useMemo(() => {
     if (page === 'agents') return filteredAgents.length;
     if (page === 'models') return visibleModels.length;
     if (page === 'projects') return filteredProjectsList.length;
     if (page === 'accounts') return filteredAccountsList.length;
     if (page === 'sessions') return filteredProjectSessionsList.length;
-    if (page === 'messages') return 0; // count is shown inline by MessagesPage
+    if (page === 'messages') return 0;
     if (!hasQuery) return 0;
     return (
       filteredNavItems.length +
@@ -1262,7 +1242,6 @@ export function CommandPalette() {
     filteredProjectSessionsList,
   ]);
 
-  // ── Placeholder text ──
   const placeholder = useMemo(() => {
     if (page === 'agents') return 'Search agents...';
     if (page === 'models') return 'Search models...';
@@ -1274,7 +1253,6 @@ export function CommandPalette() {
     return 'Search commands, sessions...';
   }, [page]);
 
-  // ── Page title for submenu header ──
   const pageTitle = useMemo(() => {
     if (page === 'agents') return 'Change Agent';
     if (page === 'models') return 'Change Model';
@@ -1418,14 +1396,15 @@ export function CommandPalette() {
                           value="suggestion search files find file grep repo content"
                           onSelect={() => goToPage('files')}
                         >
+                          <Search />
                           <span className="flex-1">
                             {tHardcodedUi.raw(
                               'componentsCommandPalette.line1248JsxTextSearchFiles',
                             )}
                           </span>
-                          <span className="bg-foreground/[0.04] border-border/40 text-muted-foreground/55 rounded-[5px] border px-1.5 py-0.5 font-mono text-xs leading-none">
+                          <Badge variant="kortix" size="sm">
                             repo
-                          </span>
+                          </Badge>
                           <ChevronRight className="text-muted-foreground/40 size-3" />
                         </CommandItem>
                       )}
@@ -1489,7 +1468,6 @@ export function CommandPalette() {
 
                 {hasQuery && (
                   <>
-                    {/* Session actions (Change Agent / Change Model) */}
                     {hasSessionActionResults && (
                       <CommandGroup heading="Session" forceMount>
                         {sessionActionItems.map((item) => (
@@ -1626,12 +1604,13 @@ export function CommandPalette() {
                               ? `Open localhost:${detectedUrl.port}${detectedUrl.path !== '/' ? detectedUrl.path : ''}`
                               : `Open ${new URL(detectedUrl.url).hostname}`}
                           </span>
-                          <span className="text-muted-foreground/40 text-xs">browser</span>
+                          <Badge variant="kortix" size="sm">
+                            browser
+                          </Badge>
                         </CommandItem>
                       </CommandGroup>
                     )}
 
-                    {/* Search files action — searches the project's git repo */}
                     {queryLongEnough && !detectedUrl && projectId && (
                       <CommandGroup
                         heading={tHardcodedUi.raw(
@@ -1652,19 +1631,18 @@ export function CommandPalette() {
                             {query.trim()}
                             {tHardcodedUi.raw('componentsCommandPalette.line1444JsxTextText')}
                           </span>
-                          <span className="bg-foreground/[0.04] border-border/40 text-muted-foreground/55 rounded-[5px] border px-1.5 py-0.5 font-mono text-xs leading-none">
+                          <Badge variant="kortix" size="sm">
                             repo
-                          </span>
+                          </Badge>
                           <ChevronRight className="text-muted-foreground/40 size-3" />
                         </CommandItem>
                       </CommandGroup>
                     )}
 
-                    {/* No results */}
                     {showNoResults && (
                       <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                        <div className="bg-muted/30 flex h-10 w-10 items-center justify-center rounded-full">
-                          <Search className="text-muted-foreground/30 size-4" />
+                        <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
+                          <Search className="text-muted-foreground size-4" />
                         </div>
                         <div className="text-center">
                           <span className="text-muted-foreground/60 text-sm">
@@ -1772,7 +1750,9 @@ export function CommandPalette() {
 
                 {filteredAgents.length === 0 && (
                   <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                    <Bot className="text-muted-foreground/30 h-5 w-5" />
+                    <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
+                      <Bot className="text-muted-foreground size-4" />
+                    </div>
                     <span className="text-muted-foreground/60 text-sm">
                       {query ? `No agents matching "${query}"` : 'No agents available'}
                     </span>
@@ -1814,12 +1794,12 @@ export function CommandPalette() {
                           </div>
                           <div className="flex flex-shrink-0 items-center gap-1.5">
                             {model.capabilities?.reasoning && (
-                              <Badge variant="outline" size="xs">
+                              <Badge variant="kortix" size="sm">
                                 reasoning
                               </Badge>
                             )}
                             {model.capabilities?.vision && (
-                              <Badge variant="outline" size="xs">
+                              <Badge variant="kortix" size="sm">
                                 vision
                               </Badge>
                             )}
@@ -1833,7 +1813,7 @@ export function CommandPalette() {
 
                 {visibleModels.length === 0 && (
                   <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                    <Cpu className="text-muted-foreground/30 h-5 w-5" />
+                    <Cpu className="text-muted-foreground/30 size-5" />
                     <span className="text-muted-foreground/60 text-sm">
                       {query ? `No models matching "${query}"` : 'No models available'}
                     </span>
@@ -1843,19 +1823,19 @@ export function CommandPalette() {
             )}
 
             {page === 'files' && projectId && (
-              <FileSearchPage projectId={projectId} query={query} onSelect={handleSelectFile} />
+              <FileSearchPage query={query} onSelect={handleSelectFile} />
             )}
 
             {page === 'projects' &&
               (filteredProjectsList.length > 0 ? (
-                <CommandGroup heading={`Projects (${filteredProjectsList.length})`} forceMount>
+                <CommandGroup heading="Projects" forceMount>
                   {filteredProjectsList.map((project) => (
                     <CommandItem
                       key={project.project_id}
                       value={sanitizeCmdkValue(`project ${project.name} ${project.project_id}`)}
                       onSelect={() => handleSelectProject(project)}
                     >
-                      <FolderGit2 className="text-muted-foreground/70 size-4 shrink-0" />
+                      <FolderGit2 className="text-muted-foreground size-4 shrink-0" />
                       <span className="flex-1 truncate">{project.name}</span>
                       {project.project_id === params?.id && (
                         <Check className="text-primary h-3.5 w-3.5 shrink-0" />
@@ -1865,7 +1845,7 @@ export function CommandPalette() {
                 </CommandGroup>
               ) : (
                 <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                  <FolderGit2 className="text-muted-foreground/30 h-5 w-5" />
+                  <FolderGit2 className="text-muted-foreground/30 size-5" />
                   <span className="text-muted-foreground/60 text-sm">
                     {query ? `No projects matching "${query}"` : 'No projects yet'}
                   </span>
@@ -1874,7 +1854,7 @@ export function CommandPalette() {
 
             {page === 'accounts' &&
               (filteredAccountsList.length > 0 ? (
-                <CommandGroup heading={`Accounts (${filteredAccountsList.length})`} forceMount>
+                <CommandGroup heading="Accounts" forceMount>
                   {filteredAccountsList.map((account) => {
                     const label = account.name || 'Account';
                     return (
@@ -1883,7 +1863,7 @@ export function CommandPalette() {
                         value={sanitizeCmdkValue(`account ${label} ${account.account_id}`)}
                         onSelect={() => handleSelectAccount(account)}
                       >
-                        <Users className="text-muted-foreground/70 size-4 shrink-0" />
+                        <UsersSolid className="text-muted-foreground size-4 shrink-0" />
                         <span className="flex-1 truncate">{label}</span>
                         {account.account_id === activeAccountId && (
                           <Check className="text-primary h-3.5 w-3.5 shrink-0" />
@@ -1894,7 +1874,7 @@ export function CommandPalette() {
                 </CommandGroup>
               ) : (
                 <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                  <Users className="text-muted-foreground/30 h-5 w-5" />
+                  <UsersSolid className="text-muted-foreground size-5" />
                   <span className="text-muted-foreground/60 text-sm">
                     {query ? `No accounts matching "${query}"` : 'No accounts'}
                   </span>
@@ -1903,10 +1883,7 @@ export function CommandPalette() {
 
             {page === 'sessions' &&
               (filteredProjectSessionsList.length > 0 ? (
-                <CommandGroup
-                  heading={`Sessions (${filteredProjectSessionsList.length})`}
-                  forceMount
-                >
+                <CommandGroup heading="Sessions" forceMount>
                   {filteredProjectSessionsList.map((session) => (
                     <CommandItem
                       key={session.session_id}
@@ -1915,9 +1892,9 @@ export function CommandPalette() {
                       )}
                       onSelect={() => handleSelectProjectSession(session)}
                     >
-                      <MessageCircle className="text-muted-foreground/70 size-4 shrink-0" />
+                      <MessageCircle className="text-muted-foreground size-4 shrink-0" />
                       <span className="flex-1 truncate">{sessionName(session)}</span>
-                      <span className="text-muted-foreground/30 shrink-0 text-xs tabular-nums">
+                      <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
                         {formatRelativeTime(new Date(session.updated_at).getTime())}
                       </span>
                       {session.session_id === params?.sessionId && (
@@ -1928,8 +1905,10 @@ export function CommandPalette() {
                 </CommandGroup>
               ) : (
                 <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                  <MessageCircle className="text-muted-foreground/30 h-5 w-5" />
-                  <span className="text-muted-foreground/60 text-sm">
+                  <div className="bg-popover inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold">
+                    <MessageCircle className="text-muted-foreground size-5" />
+                  </div>
+                  <span className="text-muted-foreground text-sm">
                     {query ? `No sessions matching "${query}"` : 'No sessions yet'}
                   </span>
                 </div>
@@ -1955,28 +1934,14 @@ export function CommandPalette() {
             <CornerDownLeft className="size-3" />
             <span>select</span>
           </div>
-          {page !== 'root' && (
-            <div className="flex items-center gap-1">
-              <CommandKbd>
-                <FaBackspace />
-              </CommandKbd>
-              <span>back</span>
-            </div>
-          )}
           {page === 'files' && (
-            <div className="flex items-center gap-1">
-              <CommandKbd>
-                {tHardcodedUi.raw('componentsCommandPalette.line1744JsxTextText')}
-              </CommandKbd>
+            <div className="flex items-center justify-center gap-1">
+              <Kbd>{tHardcodedUi.raw('componentsCommandPalette.line1744JsxTextText')}</Kbd>
               <span>
                 {tHardcodedUi.raw('componentsCommandPalette.line1745JsxTextContentSearch')}
               </span>
             </div>
           )}
-          <div className="flex items-center gap-1">
-            <CommandKbd>esc</CommandKbd>
-            <span>close</span>
-          </div>
           {totalSearchResults > 0 && (
             <span className="ml-auto tabular-nums">
               {totalSearchResults} result{totalSearchResults !== 1 ? 's' : ''}
@@ -1990,9 +1955,16 @@ export function CommandPalette() {
           <CompactModal
             sessionId={currentSessionId}
             open={compactOpen}
-            onOpenChange={setCompactOpen}
+            onOpenChange={handleOverlayClose(setCompactOpen)}
+            onCompactStart={() => {
+              reopenPaletteRef.current = false;
+            }}
           />
-          <DiffDialog sessionId={currentSessionId} open={diffOpen} onOpenChange={setDiffOpen} />
+          <DiffDialog
+            sessionId={currentSessionId}
+            open={diffOpen}
+            onOpenChange={handleOverlayClose(setDiffOpen)}
+          />
         </>
       )}
 
@@ -2001,6 +1973,25 @@ export function CommandPalette() {
         onOpenChange={setSettingsOpen}
         defaultTab={settingsTab}
       />
+
+      <AlertDialog open={logoutConfirmOpen} onOpenChange={handleOverlayClose(setLogoutConfirmOpen)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {tHardcodedUi.raw('autoFeaturesLayoutUserMenuJsxTextLogOutOfYour4770ea0c')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {tHardcodedUi.raw('autoFeaturesLayoutUserMenuJsxTextYouLlNeedToee9fad67')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={performLogout}>
+              {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

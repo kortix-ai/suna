@@ -52,7 +52,7 @@ function CommandDialog({
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
       <DialogContent
-        className={cn('p-0 shadow-[0_0_24px_0] shadow-black/50', className)}
+        className={cn('p-0 shadow-[0_0_50px_0] shadow-black/50', className)}
         hideCloseButton={!showCloseButton}
         overlayClassName="bg-black/40 backdrop-blur-[1px]"
       >
@@ -173,7 +173,7 @@ function CommandFooter({ className, children, ...props }: React.ComponentProps<'
     <div
       data-slot="command-footer"
       className={cn(
-        'text-muted-foreground flex items-center gap-4 border-t px-4 py-3 text-xs',
+        'text-muted-foreground flex items-center gap-4 border-t px-4 py-2 text-xs',
         className,
       )}
       {...props}
