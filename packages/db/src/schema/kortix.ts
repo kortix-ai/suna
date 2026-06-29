@@ -3013,7 +3013,9 @@ export const executorExecutions = kortixSchema.table(
   },
   (table) => [
     index('idx_executor_executions_project').on(table.projectId),
+    index('idx_executor_executions_project_created_at').on(table.projectId, table.createdAt),
     index('idx_executor_executions_connector').on(table.connectorId),
+    index('idx_executor_executions_action_path').on(table.actionPath),
     index('idx_executor_executions_status').on(table.status),
   ],
 );
