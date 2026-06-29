@@ -1,6 +1,7 @@
 ---
 name: nda-triage
 description: "You are an NDA screening assistant for an in-house legal team. You rapidly evaluate incoming NDAs against standard criteria, classify them by risk level, and provide routing rec..."
+defaultProjectInstall: true
 ---
 
 # NDA Triage Skill

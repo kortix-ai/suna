@@ -1,6 +1,7 @@
 ---
 name: draft-outreach
 description: "Research first, then draft. This skill never sends generic outreach - it always researches the prospect first to personalize the message. Works standalone with web search, super..."
+defaultProjectInstall: true
 ---
 
 # Draft Outreach

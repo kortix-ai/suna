@@ -1,6 +1,7 @@
 ---
 name: validation
 description: "Pre-delivery QA checklist, common data analysis pitfalls, result sanity checking, and documentation standards for reproducibility."
+defaultProjectInstall: true
 ---
 
 # Data Validation Skill

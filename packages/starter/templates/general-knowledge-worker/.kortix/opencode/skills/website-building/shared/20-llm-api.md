@@ -25,6 +25,18 @@ If a project needs these services, document the required env vars clearly and fa
 
 For speech-heavy features, prefer the `elevenlabs` skill when it is available in the runtime instead of carrying provider-specific voice or transcription glue inside the project.
 
+## Ready-Made Media Helpers
+
+For projects that need media generation inline in the backend, `shared/llm-api/` holds copy-in async helpers that follow the rules above — official SDKs, real env vars, configurable models. Read the file you need, copy it into the project, then import it from your handlers.
+
+| File | Does | Key call | Credential |
+| --- | --- | --- | --- |
+| `shared/llm-api/generate_image.py` | Text-to-image and img2img edits (OpenAI) | `await generate_image(prompt, image_bytes=..., aspect_ratio=...)` | `OPENAI_API_KEY` (optional `OPENAI_BASE_URL` → Kortix gateway) |
+| `shared/llm-api/generate_video.py` | Text-to-video and image-to-video (OpenAI / Sora) | `await generate_video(prompt, image_bytes=..., duration=...)` | `OPENAI_API_KEY` (optional `OPENAI_BASE_URL`) |
+| `shared/llm-api/generate_audio.py` | Text-to-speech and multi-speaker dialogue (ElevenLabs) | `await generate_audio(text, voice=...)` / `await generate_dialogue(lines)` | `ELEVENLABS_API_KEY` |
+
+Models default to real provider names (`gpt-image-1`, `sora-2`, `eleven_multilingual_v2`) and are overridable per call or via env (`IMAGE_MODEL`, `VIDEO_MODEL`, `TTS_MODEL`). These same keys must be provisioned on the deploy host before publishing — local-only credentials do not travel to a standalone deployment. See `website-publishing/SKILL.md`.
+
 ## Local Development Pattern
 
 1. Add the required env vars to the local environment.

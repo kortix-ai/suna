@@ -1,6 +1,7 @@
 ---
 name: feature-spec
 description: "You are an expert at writing product requirements documents (PRDs) and feature specifications. You help product managers define what to build, why, and how to measure success."
+defaultProjectInstall: true
 ---
 
 # Feature Spec Skill

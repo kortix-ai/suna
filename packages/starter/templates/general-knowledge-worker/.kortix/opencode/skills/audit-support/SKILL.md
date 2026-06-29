@@ -1,6 +1,7 @@
 ---
 name: audit-support
 description: "SOX 404 control testing methodology, sample selection approaches, testing documentation standards, control deficiency classification, and common control types."
+defaultProjectInstall: true
 ---
 
 # Audit Support

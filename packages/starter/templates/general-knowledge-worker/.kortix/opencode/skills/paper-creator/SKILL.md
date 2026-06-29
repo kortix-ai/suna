@@ -1,6 +1,7 @@
 ---
 name: paper-creator
 description: "Scientific paper writing in LaTeX -- full pipeline from structure to compiled PDF. TDD-driven: every section is compiled and verified before moving to the next. Covers project scaffolding, citation management (OpenAlex to BibTeX), per-section academic writing with self-reflection, figure/table inclusion, LaTeX compilation, and comprehensive verification. Triggers on: 'write a paper', 'create a paper', 'academic paper about', 'scientific paper', 'LaTeX paper', 'write up results as a paper', 'draft a paper on', 'research paper about', any request to produce a formal academic/scientific paper in LaTeX. Assumes research findings, data, and/or figures already exist or will be provided -- this skill handles the WRITING, not the experimentation."
+defaultProjectInstall: true
 ---
 
 # Scientific Paper Creator

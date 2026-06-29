@@ -1,6 +1,7 @@
 ---
 name: coding-and-data
 description: "Use for routing work that mixes coding, repository implementation, SQL/data analysis, or technical investigation and should often be delegated to a background session with clear context and boundaries."
+defaultProjectInstall: true
 ---
 
 # Coding And Data

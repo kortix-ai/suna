@@ -1,6 +1,7 @@
 ---
 name: sql-queries
 description: "Write correct, performant, readable SQL across all major data warehouse dialects."
+defaultProjectInstall: true
 ---
 
 # SQL Queries Skill

@@ -1,6 +1,7 @@
 ---
 name: replicate
 description: Discover, compare, and run AI models using Replicate's API. Use this skill whenever the task involves AI-generated media — images (text-to-image, style transfer, editing, upscaling, background removal), video, audio, or any other ML model output. Requires a REPLICATE_API_TOKEN — ask the user for it if not already set.
+defaultProjectInstall: true
 ---
 
 ## When to use this skill

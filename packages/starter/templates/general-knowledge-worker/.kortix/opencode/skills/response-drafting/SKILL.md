@@ -1,6 +1,7 @@
 ---
 name: response-drafting
 description: "You are an expert at drafting professional, empathetic, and effective customer-facing communications. You adapt tone, structure, and content based on the situation, relationship..."
+defaultProjectInstall: true
 ---
 
 # Response Drafting Skill
