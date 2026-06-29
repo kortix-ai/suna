@@ -1,11 +1,26 @@
 import type { Metadata } from 'next';
 
 import { MarketplaceCompanyExplore } from '@/features/marketplace/marketplace-company-explore';
-import { listPublicMarketplaces } from '@/lib/marketplace-public';
-import { companyIdFromSlug } from '@/lib/marketplace-slug';
+import {
+  filterPublicMarketplaceItems,
+  listPublicMarketplaceItems,
+  listPublicMarketplaces,
+} from '@/lib/marketplace-public';
+import { companyIdFromSlug, companySlugFromId } from '@/lib/marketplace-slug';
+
+export const dynamic = 'force-static';
 
 interface PageParams {
   company: string;
+}
+
+export async function generateStaticParams() {
+  try {
+    const { marketplaces } = await listPublicMarketplaces();
+    return marketplaces.map((m) => ({ company: companySlugFromId(m.id) }));
+  } catch {
+    return [];
+  }
 }
 
 export async function generateMetadata({
@@ -34,5 +49,20 @@ export async function generateMetadata({
 
 export default async function MarketplaceCompanyPage({ params }: { params: Promise<PageParams> }) {
   const { company } = await params;
-  return <MarketplaceCompanyExplore companySlug={company} />;
+  const marketplaceId = companyIdFromSlug(company);
+
+  const [itemsPage, marketplacesPage] = await Promise.all([
+    listPublicMarketplaceItems(),
+    listPublicMarketplaces(),
+  ]);
+
+  const items = filterPublicMarketplaceItems(itemsPage.items, { source: marketplaceId });
+
+  return (
+    <MarketplaceCompanyExplore
+      marketplaceId={marketplaceId}
+      items={items}
+      marketplaces={marketplacesPage.marketplaces}
+    />
+  );
 }

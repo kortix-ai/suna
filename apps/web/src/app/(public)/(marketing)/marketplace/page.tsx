@@ -1,6 +1,12 @@
 import type { Metadata } from 'next';
 
 import { MarketplaceExplore } from '@/features/marketplace/marketplace-explore';
+import {
+  listPublicMarketplaceItems,
+  listPublicMarketplaces,
+} from '@/lib/marketplace-public';
+
+export const dynamic = 'force-static';
 
 export const metadata: Metadata = {
   title: 'Marketplace — Extend the agent',
@@ -13,6 +19,16 @@ export const metadata: Metadata = {
   },
 };
 
-export default function MarketplacePage() {
-  return <MarketplaceExplore />;
+export default async function MarketplacePage() {
+  const [itemsPage, marketplacesPage] = await Promise.all([
+    listPublicMarketplaceItems(),
+    listPublicMarketplaces(),
+  ]);
+
+  return (
+    <MarketplaceExplore
+      items={itemsPage.items}
+      marketplaces={marketplacesPage.marketplaces}
+    />
+  );
 }

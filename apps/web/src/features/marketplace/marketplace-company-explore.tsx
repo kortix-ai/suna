@@ -11,16 +11,25 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
-import Loading from '@/components/ui/loading';
-import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { MarketplaceCompanyFilter, displayCompanyLabel, marketplaceIdFromCompanySlug } from '@/features/marketplace/marketplace-company-filter';
+import {
+  MarketplaceCompanyFilter,
+  displayCompanyLabel,
+} from '@/features/marketplace/marketplace-company-filter';
 import { MarketplaceExploreCard } from '@/features/marketplace/marketplace-explore-card';
 import { MarketplaceAvatar } from '@/features/marketplace/marketplace-avatar';
-import { useMarketplaceItems, useMarketplaces } from '@/hooks/marketplace';
-import { companyIdFromSlug } from '@/lib/marketplace-slug';
+import type { MarketplaceItem, MarketplaceSummary } from '@/lib/marketplace-client';
+import { filterPublicMarketplaceItems } from '@/lib/marketplace-public';
 
-export function MarketplaceCompanyExplore({ companySlug }: { companySlug: string }) {
+export function MarketplaceCompanyExplore({
+  marketplaceId,
+  items: catalogItems,
+  marketplaces,
+}: {
+  marketplaceId: string;
+  items: MarketplaceItem[];
+  marketplaces: MarketplaceSummary[];
+}) {
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
 
@@ -29,34 +38,22 @@ export function MarketplaceCompanyExplore({ companySlug }: { companySlug: string
     return () => clearTimeout(t);
   }, [query]);
 
-  const marketplacesQuery = useMarketplaces({ publicOnly: true });
-  const marketplaces = useMemo(
-    () => marketplacesQuery.data?.marketplaces ?? [],
-    [marketplacesQuery.data],
-  );
-
-  const marketplaceId = useMemo(() => {
-    const fromList = marketplaceIdFromCompanySlug(companySlug, marketplaces);
-    if (fromList) return fromList;
-    return companyIdFromSlug(companySlug);
-  }, [companySlug, marketplaces]);
-
   const company = useMemo(
     () => marketplaces.find((m) => m.id === marketplaceId),
     [marketplaces, marketplaceId],
   );
 
-  const itemsQuery = useMarketplaceItems({
-    query: debounced,
-    type: 'all',
-    source: marketplaceId,
-    publicOnly: true,
-  });
-  const items = useMemo(() => itemsQuery.data?.items ?? [], [itemsQuery.data]);
+  const items = useMemo(
+    () =>
+      filterPublicMarketplaceItems(catalogItems, {
+        query: debounced,
+        type: 'all',
+        source: marketplaceId,
+      }),
+    [catalogItems, debounced, marketplaceId],
+  );
 
   const companyLabel = displayCompanyLabel(marketplaceId, company?.label);
-  const isLoading = marketplacesQuery.isLoading || itemsQuery.isLoading;
-  const isError = marketplacesQuery.isError || itemsQuery.isError;
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-16 pt-28 pb-24 lg:px-0 lg:pt-40">
@@ -108,50 +105,32 @@ export function MarketplaceCompanyExplore({ companySlug }: { companySlug: string
         </header>
       </div>
 
-      {!marketplacesQuery.isLoading ? (
-        <MarketplaceCompanyFilter
-          marketplaces={marketplaces}
-          activeId={marketplaceId}
-          className="mb-8"
-        />
-      ) : null}
+      <MarketplaceCompanyFilter
+        marketplaces={marketplaces}
+        activeId={marketplaceId}
+        className="mb-8"
+      />
 
-      {isLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-[78px] rounded-md" />
-          ))}
-        </div>
-      ) : isError ? (
+      {catalogItems.length === 0 ? (
         <EmptyState
           icon={PackageSearch}
-          title="Couldn't load this source"
-          description="Something went wrong fetching the catalog."
+          title="Nothing here yet"
+          description="This source has no browseable items right now."
           action={
-            <Button variant="outline" size="sm" onClick={() => itemsQuery.refetch()}>
-              Retry
+            <Button asChild variant="outline" size="sm">
+              <Link href="/marketplace">Browse all sources</Link>
             </Button>
           }
         />
-      ) : items.length === 0 ? (
+      ) : debounced && items.length === 0 ? (
         <EmptyState
           icon={PackageSearch}
-          title={debounced ? 'No matches' : 'Nothing here yet'}
-          description={
-            debounced
-              ? `No items match "${debounced}" in this source.`
-              : 'This source has no browseable items right now.'
-          }
+          title="No matches"
+          description={`No items match "${debounced}" in this source.`}
           action={
-            debounced ? (
-              <Button variant="outline" size="sm" onClick={() => setQuery('')}>
-                Clear search
-              </Button>
-            ) : (
-              <Button asChild variant="outline" size="sm">
-                <Link href="/marketplace">Browse all sources</Link>
-              </Button>
-            )
+            <Button variant="outline" size="sm" onClick={() => setQuery('')}>
+              Clear search
+            </Button>
           }
         />
       ) : (
@@ -169,13 +148,6 @@ export function MarketplaceCompanyExplore({ companySlug }: { companySlug: string
           </div>
         </div>
       )}
-
-      {!isLoading && (itemsQuery.data?.pending ?? 0) > 0 ? (
-        <div className="text-muted-foreground mt-8 flex items-center gap-2 text-xs">
-          <Loading className="size-3.5 shrink-0" />
-          Loading more items…
-        </div>
-      ) : null}
     </div>
   );
 }

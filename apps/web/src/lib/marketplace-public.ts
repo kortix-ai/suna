@@ -17,16 +17,40 @@ import type {
   PendingSource,
 } from '@/lib/marketplace-client';
 
+/** Static/ISR revalidation for public marketplace catalog reads. */
+export const MARKETPLACE_PUBLIC_REVALIDATE_SECONDS = 3600;
+
+function publicApiOrigin(): string {
+  const backend = getEnv().BACKEND_URL || '';
+  return backend.replace(/\/$/, '').replace(/\/v1$/, '');
+}
+
 async function publicGet<T>(path: string): Promise<T> {
-  const base =
-    typeof window === 'undefined'
-      ? getEnv().BACKEND_URL.replace(/\/$/, '').replace(/\/v1$/, '')
-      : '';
+  const base = publicApiOrigin();
   const response = await fetch(`${base}/v1${path.startsWith('/') ? path : `/${path}`}`, {
     headers: { Accept: 'application/json' },
+    next: { revalidate: MARKETPLACE_PUBLIC_REVALIDATE_SECONDS },
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   return response.json() as Promise<T>;
+}
+
+/** Client-side filter mirroring the public catalog query params. */
+export function filterPublicMarketplaceItems(
+  items: MarketplaceItem[],
+  params?: { query?: string; type?: string; source?: string },
+): MarketplaceItem[] {
+  const q = (params?.query ?? '').trim().toLowerCase();
+  const type = params?.type?.trim();
+  const source = params?.source?.trim();
+  return items.filter((it) => {
+    if (type && type !== 'all' && it.type !== type && it.type !== `registry:${type}`) return false;
+    if (source && source !== 'all' && it.marketplaceId !== source) return false;
+    if (!q) return true;
+    return `${it.name} ${it.title} ${it.description ?? ''} ${it.categories.join(' ')}`
+      .toLowerCase()
+      .includes(q);
+  });
 }
 
 export async function listPublicMarketplaceItems(params?: {

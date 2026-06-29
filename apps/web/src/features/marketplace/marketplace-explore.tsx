@@ -10,13 +10,15 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
-import Loading from '@/components/ui/loading';
-import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { MarketplaceCompanyFilter } from '@/features/marketplace/marketplace-company-filter';
 import { MarketplaceExploreCard } from '@/features/marketplace/marketplace-explore-card';
-import { useMarketplaceItems, useMarketplaces } from '@/hooks/marketplace';
-import { defaultProjectMarketplaceItems, type MarketplaceItem } from '@/lib/marketplace-client';
+import {
+  defaultProjectMarketplaceItems,
+  type MarketplaceItem,
+  type MarketplaceSummary,
+} from '@/lib/marketplace-client';
+import { filterPublicMarketplaceItems } from '@/lib/marketplace-public';
 import { typeMeta } from './marketplace-meta';
 
 const TYPE_ORDER = [
@@ -87,7 +89,13 @@ function ExploreSection({
   );
 }
 
-export function MarketplaceExplore() {
+export function MarketplaceExplore({
+  items: catalogItems,
+  marketplaces,
+}: {
+  items: MarketplaceItem[];
+  marketplaces: MarketplaceSummary[];
+}) {
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
 
@@ -97,24 +105,16 @@ export function MarketplaceExplore() {
   }, [query]);
 
   const searching = debounced.length > 0;
-  const marketplacesQuery = useMarketplaces({ publicOnly: true });
-  const marketplaces = useMemo(
-    () => marketplacesQuery.data?.marketplaces ?? [],
-    [marketplacesQuery.data],
+
+  const items = useMemo(
+    () => filterPublicMarketplaceItems(catalogItems, { query: debounced, type: 'all' }),
+    [catalogItems, debounced],
   );
-
-  const { data, isLoading, isError, refetch } = useMarketplaceItems({
-    query: debounced,
-    type: 'all',
-    publicOnly: true,
-  });
-
-  const items = useMemo(() => data?.items ?? [], [data]);
-  const featured = useMemo(() => pickFeatured(items), [items]);
+  const featured = useMemo(() => pickFeatured(catalogItems), [catalogItems]);
 
   const groups = useMemo(() => {
     const byType = new Map<string, MarketplaceItem[]>();
-    for (const it of items) {
+    for (const it of catalogItems) {
       const arr = byType.get(it.type) ?? [];
       arr.push(it);
       byType.set(it.type, arr);
@@ -126,15 +126,7 @@ export function MarketplaceExplore() {
         return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.localeCompare(b);
       })
       .map((type) => ({ type, label: pluralize(typeMeta(type).label), items: byType.get(type)! }));
-  }, [items]);
-
-  const navItems = useMemo(
-    () => [
-      { id: FEATURED_ID, label: 'Featured' },
-      ...groups.map((g) => ({ id: sectionId(g.type), label: g.label })),
-    ],
-    [groups],
-  );
+  }, [catalogItems]);
 
   const scrollTo = (id: string) => (e: React.MouseEvent) => {
     e.preventDefault();
@@ -169,45 +161,23 @@ export function MarketplaceExplore() {
           </div>
         </header>
 
-        {!marketplacesQuery.isLoading ? (
-          <MarketplaceCompanyFilter marketplaces={marketplaces} activeId="all" className="mb-8" />
-        ) : null}
+        <MarketplaceCompanyFilter marketplaces={marketplaces} activeId="all" className="mb-8" />
 
-        {isLoading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-5 w-32 rounded" />
-            <div className="grid gap-3 sm:grid-cols-2">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-[78px] rounded-md" />
-              ))}
-            </div>
-          </div>
-        ) : isError ? (
+        {catalogItems.length === 0 ? (
           <EmptyState
             icon={PackageSearch}
-            title="Couldn't load the marketplace"
-            description="Something went wrong fetching the catalog."
-            action={
-              <Button variant="outline" size="sm" onClick={() => refetch()}>
-                Retry
-              </Button>
-            }
+            title="Nothing here yet"
+            description="The catalog is empty right now — check back soon."
           />
-        ) : items.length === 0 ? (
+        ) : searching && items.length === 0 ? (
           <EmptyState
             icon={PackageSearch}
-            title={searching ? 'No matches' : 'Nothing here yet'}
-            description={
-              searching
-                ? `No items match "${debounced}".`
-                : 'The catalog is empty right now — check back soon.'
-            }
+            title="No matches"
+            description={`No items match "${debounced}".`}
             action={
-              searching ? (
-                <Button variant="outline" size="sm" onClick={() => setQuery('')}>
-                  Clear search
-                </Button>
-              ) : undefined
+              <Button variant="outline" size="sm" onClick={() => setQuery('')}>
+                Clear search
+              </Button>
             }
           />
         ) : searching ? (
@@ -230,13 +200,6 @@ export function MarketplaceExplore() {
             ))}
           </div>
         )}
-
-        {!isLoading && (data?.pending ?? 0) > 0 ? (
-          <div className="text-muted-foreground mt-8 flex items-center gap-2 text-xs">
-            <Loading className="size-3.5 shrink-0" />
-            Loading more sources…
-          </div>
-        ) : null}
       </div>
     </div>
   );

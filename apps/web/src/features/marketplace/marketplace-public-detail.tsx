@@ -2,7 +2,7 @@
 
 import { FileText, KeyRound, Layers, Plug, Wrench } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -17,9 +17,8 @@ import {
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { useMarketplaceItem, useMarketplaces } from '@/hooks/marketplace';
+import type { MarketplaceItemDetail, MarketplaceSummary } from '@/lib/marketplace-client';
 import { marketplaceCompanyHref, marketplaceItemHref } from '@/lib/marketplace-slug';
 import { MarketplaceAddButton } from './marketplace-add-button';
 import { MarketplaceAvatar } from './marketplace-avatar';
@@ -200,189 +199,142 @@ function CollapsibleMarkdown({ content }: { content: string }) {
   );
 }
 
-function DetailSkeleton() {
-  return (
-    <div className="grid grid-cols-12 gap-6 lg:gap-8">
-      <div className="col-span-12 space-y-3">
-        <Skeleton className="h-4 w-56 rounded" />
-      </div>
-      <div className="col-span-12 space-y-4 lg:col-span-3">
-        <Skeleton className="size-14 rounded-md" />
-        <Skeleton className="h-5 w-32 rounded" />
-        <Skeleton className="h-4 w-20 rounded" />
-      </div>
-      <div className="col-span-12 space-y-8 lg:col-span-9">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <Skeleton className="size-10 rounded-md" />
-            <Skeleton className="h-8 w-56 rounded" />
-          </div>
-          <Skeleton className="h-9 w-36 rounded-md" />
-        </div>
-        <Skeleton className="h-4 w-full max-w-md rounded" />
-        <Skeleton className="h-72 w-full rounded-md" />
-      </div>
-    </div>
-  );
-}
-
-export function MarketplacePublicDetail({ id }: { id: string }) {
-  const { data, isLoading, isError } = useMarketplaceItem(id, { publicOnly: true });
-  const marketplacesQuery = useMarketplaces({ publicOnly: true });
-
-  const company = useMemo(
-    () => marketplacesQuery.data?.marketplaces.find((m) => m.id === data?.marketplaceId),
-    [marketplacesQuery.data, data?.marketplaceId],
-  );
-
-  const tm = data ? typeMeta(data.type) : null;
-  const caps = data?.capabilities;
-  const capItems = caps
-    ? [
-        ...caps.secrets.map((s) => ({ kind: 'secret' as const, id: s })),
-        ...caps.connectors.map((c) => ({ kind: 'connector' as const, id: c })),
-        ...caps.tools.map((t) => ({ kind: 'tool' as const, id: t })),
-      ]
-    : [];
-  const readme = data?.readme ? stripFrontmatter(data.readme) : '';
-  const itemTitle = data?.title.replaceAll('-', ' ') ?? '';
-  const companyLabel = data ? displayCompanyLabel(data.marketplaceId, data.marketplaceLabel) : '';
+export function MarketplacePublicDetail({
+  data,
+  company,
+}: {
+  data: MarketplaceItemDetail;
+  company?: MarketplaceSummary;
+}) {
+  const tm = typeMeta(data.type);
+  const caps = data.capabilities;
+  const capItems = [
+    ...caps.secrets.map((s) => ({ kind: 'secret' as const, id: s })),
+    ...caps.connectors.map((c) => ({ kind: 'connector' as const, id: c })),
+    ...caps.tools.map((t) => ({ kind: 'tool' as const, id: t })),
+  ];
+  const readme = data.readme ? stripFrontmatter(data.readme) : '';
+  const itemTitle = data.title.replaceAll('-', ' ');
+  const companyLabel = displayCompanyLabel(data.marketplaceId, data.marketplaceLabel);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 pt-28 pb-24 lg:px-0 lg:pt-32">
-      {isLoading ? (
-        <DetailSkeleton />
-      ) : isError || !data || !tm ? (
-        <div className="py-16">
-          <EmptyState
-            icon={FileText}
-            title="Item not found"
-            description="This marketplace item doesn't exist or isn't available."
-            action={
-              <Button asChild variant="outline" size="sm">
-                <Link href="/marketplace">Back to marketplace</Link>
-              </Button>
-            }
+      <div className="grid grid-cols-12 gap-6 lg:gap-8">
+        <div className="col-span-12">
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink asChild>
+                  <Link href="/marketplace">Marketplace</Link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem className="min-w-0">
+                <BreadcrumbLink asChild>
+                  <Link href={marketplaceCompanyHref(data.marketplaceId)} className="truncate">
+                    {companyLabel}
+                  </Link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem className="min-w-0">
+                <BreadcrumbPage className="truncate capitalize">{itemTitle}</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        </div>
+
+        <div className="col-span-12 lg:col-span-3">
+          <CompanyAside
+            marketplaceId={data.marketplaceId}
+            marketplaceLabel={data.marketplaceLabel}
+            owner={company?.owner ?? data.owner}
+            sourceUrl={company?.sourceUrl ?? data.sourceUrl}
+            itemCount={company?.count}
           />
         </div>
-      ) : (
-        <div className="grid grid-cols-12 gap-6 lg:gap-8">
-          <div className="col-span-12">
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink asChild>
-                    <Link href="/marketplace">Marketplace</Link>
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem className="min-w-0">
-                  <BreadcrumbLink asChild>
-                    <Link href={marketplaceCompanyHref(data.marketplaceId)} className="truncate">
-                      {companyLabel}
-                    </Link>
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem className="min-w-0">
-                  <BreadcrumbPage className="truncate capitalize">{itemTitle}</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          </div>
 
-          <div className="col-span-12 lg:col-span-3">
-            <CompanyAside
-              marketplaceId={data.marketplaceId}
-              marketplaceLabel={data.marketplaceLabel}
-              owner={company?.owner ?? data.owner}
-              sourceUrl={company?.sourceUrl ?? data.sourceUrl}
-              itemCount={company?.count}
-            />
-          </div>
-
-          <div className="min-w-0 space-y-8 lg:col-span-9">
-            <header className="space-y-4">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex min-w-0 items-center gap-4">
-                  <MarketplaceItemAvatar item={data} size="md" showSource={false} />
-                  <h1 className="text-foreground text-2xl font-semibold tracking-tight text-balance capitalize sm:text-3xl">
-                    {itemTitle}
-                  </h1>
-                </div>
-                <MarketplaceAddButton item={data} />
+        <div className="min-w-0 space-y-8 lg:col-span-9">
+          <header className="space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-4">
+                <MarketplaceItemAvatar item={data} size="md" showSource={false} />
+                <h1 className="text-foreground text-2xl font-semibold tracking-tight text-balance capitalize sm:text-3xl">
+                  {itemTitle}
+                </h1>
               </div>
-              {data.description ? (
-                <p className="text-foreground text-base leading-relaxed text-pretty">
-                  {data.description}
-                </p>
-              ) : null}
-            </header>
-
-            {capItems.length > 0 ? (
-              <section>
-                <SectionLabel count={capItems.length}>Permissions</SectionLabel>
-                <RowPanel>
-                  {capItems.map((item) =>
-                    item.kind === 'secret' ? (
-                      <MetaRow
-                        key={`secret:${item.id}`}
-                        icon={KeyRound}
-                        title={item.id}
-                        subtitle="Secret"
-                      />
-                    ) : item.kind === 'connector' ? (
-                      <MetaRow
-                        key={`connector:${item.id}`}
-                        icon={Plug}
-                        title={item.id}
-                        subtitle="Connector"
-                      />
-                    ) : (
-                      <MetaRow
-                        key={`tool:${item.id}`}
-                        icon={Wrench}
-                        title={item.id}
-                        subtitle="Tool"
-                      />
-                    ),
-                  )}
-                </RowPanel>
-              </section>
+              <MarketplaceAddButton item={data} />
+            </div>
+            {data.description ? (
+              <p className="text-foreground text-base leading-relaxed text-pretty">
+                {data.description}
+              </p>
             ) : null}
+          </header>
 
-            {data.dependencyItems.length > 0 ? (
-              <section>
-                <SectionLabel count={data.dependencyItems.length}>Includes</SectionLabel>
-                <RowPanel>
-                  {data.dependencyItems.map((dep) => (
+          {capItems.length > 0 ? (
+            <section>
+              <SectionLabel count={capItems.length}>Permissions</SectionLabel>
+              <RowPanel>
+                {capItems.map((item) =>
+                  item.kind === 'secret' ? (
                     <MetaRow
-                      key={dep.id}
-                      icon={Layers}
-                      title={dep.title}
-                      subtitle={typeMeta(dep.type).label}
-                      href={marketplaceItemHref(dep.id)}
+                      key={`secret:${item.id}`}
+                      icon={KeyRound}
+                      title={item.id}
+                      subtitle="Secret"
                     />
-                  ))}
-                </RowPanel>
-              </section>
-            ) : null}
-
-            <section className="space-y-3">
-              {readme ? (
-                <CollapsibleMarkdown content={readme} />
-              ) : (
-                <EmptyState
-                  icon={FileText}
-                  size="sm"
-                  title="No README"
-                  description="This item doesn't ship a README yet."
-                />
-              )}
+                  ) : item.kind === 'connector' ? (
+                    <MetaRow
+                      key={`connector:${item.id}`}
+                      icon={Plug}
+                      title={item.id}
+                      subtitle="Connector"
+                    />
+                  ) : (
+                    <MetaRow
+                      key={`tool:${item.id}`}
+                      icon={Wrench}
+                      title={item.id}
+                      subtitle="Tool"
+                    />
+                  ),
+                )}
+              </RowPanel>
             </section>
-          </div>
+          ) : null}
+
+          {data.dependencyItems.length > 0 ? (
+            <section>
+              <SectionLabel count={data.dependencyItems.length}>Includes</SectionLabel>
+              <RowPanel>
+                {data.dependencyItems.map((dep) => (
+                  <MetaRow
+                    key={dep.id}
+                    icon={Layers}
+                    title={dep.title}
+                    subtitle={typeMeta(dep.type).label}
+                    href={marketplaceItemHref(dep.id)}
+                  />
+                ))}
+              </RowPanel>
+            </section>
+          ) : null}
+
+          <section className="space-y-3">
+            {readme ? (
+              <CollapsibleMarkdown content={readme} />
+            ) : (
+              <EmptyState
+                icon={FileText}
+                size="sm"
+                title="No README"
+                description="This item doesn't ship a README yet."
+              />
+            )}
+          </section>
         </div>
-      )}
+      </div>
     </div>
   );
 }
