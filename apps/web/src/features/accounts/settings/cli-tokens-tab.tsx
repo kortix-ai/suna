@@ -6,6 +6,15 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
@@ -16,6 +25,7 @@ import {
   type AccountToken,
   type CreatedAccountToken,
 } from '@/lib/api/account-tokens';
+import { listProjectsForAccount, type KortixProject } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { ShieldSolid, TrashSolid } from '@mynaui/icons-react';
@@ -39,6 +49,35 @@ function formatRelative(iso: string | null): string {
   return d.toLocaleDateString();
 }
 
+/** Sentinel Select value for the account-wide (no project) scope. */
+const ACCOUNT_SCOPE = '__account__';
+
+function shortId(id: string): string {
+  return id.length > 8 ? `${id.slice(0, 8)}…` : id;
+}
+
+function ScopeBadge({
+  projectId,
+  projects,
+}: {
+  projectId: string | null;
+  projects: KortixProject[];
+}) {
+  if (!projectId) {
+    return (
+      <Badge variant="muted" size="xs">
+        Account-wide
+      </Badge>
+    );
+  }
+  const name = projects.find((p) => p.project_id === projectId)?.name;
+  return (
+    <Badge variant="muted" size="xs">
+      {name ?? shortId(projectId)}
+    </Badge>
+  );
+}
+
 function CopyButton({ value }: { value: string }) {
   const { copied, copy } = useCopy();
   return (
@@ -56,7 +95,15 @@ function CopyButton({ value }: { value: string }) {
   );
 }
 
-function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => void }) {
+function TokenRow({
+  token,
+  projects,
+  onChange,
+}: {
+  token: AccountToken;
+  projects: KortixProject[];
+  onChange: () => void;
+}) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [confirming, setConfirming] = useState(false);
@@ -86,6 +133,7 @@ function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => vo
             >
               {token.name}
             </span>
+            <ScopeBadge projectId={token.project_id} projects={projects} />
             {revoked && <Badge variant="destructive">{token.status}</Badge>}
           </div>
           <div className="text-muted-foreground mt-1 flex items-center gap-2 text-xs">
@@ -164,12 +212,20 @@ function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => vo
 export function CliTokensTab() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
+  const { selectedAccountId } = useCurrentAccountStore();
   const [creating, setCreating] = useState(false);
 
   const tokensQuery = useQuery({
     queryKey: ['account-tokens'],
     queryFn: () => accountTokensApi.list(),
   });
+
+  const projectsQuery = useQuery({
+    queryKey: ['projects', selectedAccountId],
+    queryFn: () => listProjectsForAccount(selectedAccountId ?? undefined),
+    staleTime: 30_000,
+  });
+  const projects = projectsQuery.data ?? [];
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['account-tokens'] });
@@ -183,7 +239,11 @@ export function CliTokensTab() {
     <div className="scrollbar-hide w-full max-w-full min-w-0 space-y-6 overflow-x-hidden px-6 py-5">
       {creating && (
         <div className="mb-4">
-          <InlineCreate onClose={() => setCreating(false)} onCreated={invalidate} />
+          <InlineCreate
+            projects={projects}
+            onClose={() => setCreating(false)}
+            onCreated={invalidate}
+          />
         </div>
       )}
 
@@ -199,35 +259,29 @@ export function CliTokensTab() {
       ) : tokens.length === 0 && !creating ? (
         <EmptyState
           icon={KeyRound}
-          title={tHardcodedUi.raw('componentsSettingsCliTokensTab.line363JsxTextNoTokensYet')}
+          title="No API keys yet"
           description={
             <>
-              Click{' '}
-              <strong>
-                {tHardcodedUi.raw('componentsSettingsCliTokensTab.line365JsxTextNewToken')}
-              </strong>
-              {tHardcodedUi.raw(
-                'componentsSettingsCliTokensTab.line365JsxTextAboveToMintYourFirstOne',
-              )}
+              Click <strong>Create API key</strong> above to mint your first one.
             </>
           }
           action={
             <Button onClick={() => setCreating(true)}>
               <Icon.Plus className="size-4" />
-              {tHardcodedUi.raw('componentsSettingsCliTokensTab.line368JsxTextNewToken')}
+              Create API key
             </Button>
           }
         />
       ) : (
         <div className="space-y-2">
           {active.map((t) => (
-            <TokenRow key={t.token_id} token={t} onChange={invalidate} />
+            <TokenRow key={t.token_id} token={t} projects={projects} onChange={invalidate} />
           ))}
           {revoked.length > 0 && (
             <div className="space-y-3">
               <label className="text-muted-foreground text-sm font-medium">Revoked</label>
               {revoked.map((t) => (
-                <TokenRow key={t.token_id} token={t} onChange={invalidate} />
+                <TokenRow key={t.token_id} token={t} projects={projects} onChange={invalidate} />
               ))}
             </div>
           )}
@@ -252,18 +306,31 @@ kortix projects ls`}
   );
 }
 
-function InlineCreate({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function InlineCreate({
+  projects,
+  onClose,
+  onCreated,
+}: {
+  projects: KortixProject[];
+  onClose: () => void;
+  onCreated: () => void;
+}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [name, setName] = useState('');
+  const [scope, setScope] = useState<string>(ACCOUNT_SCOPE);
   const [created, setCreated] = useState<CreatedAccountToken | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => accountTokensApi.create({ name: name.trim() }),
+    mutationFn: () =>
+      accountTokensApi.create({
+        name: name.trim(),
+        project_id: scope === ACCOUNT_SCOPE ? undefined : scope,
+      }),
     onSuccess: (token) => {
       setCreated(token);
       onCreated();
     },
-    onError: (err) => errorToast((err as Error).message || 'Failed to create token'),
+    onError: (err) => errorToast((err as Error).message || 'Failed to create API key'),
   });
 
   if (created) {
@@ -318,24 +385,50 @@ function InlineCreate({ onClose, onCreated }: { onClose: () => void; onCreated: 
       className="bg-card rounded-2xl border p-4"
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 space-y-2">
-          <Label htmlFor="token-name" className="text-sm font-medium">
-            {tHardcodedUi.raw('componentsSettingsCliTokensTab.line317JsxTextTokenName')}
-          </Label>
-          <Input
-            id="token-name"
-            placeholder="my-laptop"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoFocus
-            required
-            maxLength={255}
-          />
-          <p className="text-muted-foreground text-xs">
-            {tHardcodedUi.raw(
-              'componentsSettingsCliTokensTab.line329JsxTextUsedOnlyToRecognizeThisTokenLater',
-            )}
-          </p>
+        <div className="flex-1 space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="token-name" className="text-sm font-medium">
+              API key name
+            </Label>
+            <Input
+              id="token-name"
+              placeholder="my-laptop"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+              required
+              maxLength={255}
+            />
+            <p className="text-muted-foreground text-xs">
+              Used only to recognize this API key later.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="token-scope" className="text-sm font-medium">
+              Scope
+            </Label>
+            <Select value={scope} onValueChange={setScope}>
+              <SelectTrigger id="token-scope" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ACCOUNT_SCOPE}>Account-wide</SelectItem>
+                {projects.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Project</SelectLabel>
+                    {projects.map((p) => (
+                      <SelectItem key={p.project_id} value={p.project_id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">
+              Account-wide keys reach every project. A project key is limited to that one project.
+            </p>
+          </div>
         </div>
         <Button
           type="button"
@@ -353,7 +446,7 @@ function InlineCreate({ onClose, onCreated }: { onClose: () => void; onCreated: 
           Cancel
         </Button>
         <Button type="submit" disabled={!name.trim() || mutation.isPending}>
-          {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : 'Create token'}
+          {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : 'Create API key'}
         </Button>
       </div>
     </form>

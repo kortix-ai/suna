@@ -1,0 +1,183 @@
+---
+title: The client
+description: The createKortix facade — the complete method reference for accounts, projects, and the id-bound project handle.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`createKortix(config)` returns one client. Every REST method is a direct, fully
+typed reference to the platform client; the `project()` and `session()` handles
+bind ids so you never repeat them. This page is the **complete** surface — every
+method, grouped by resource.
+
+```ts
+const kortix = createKortix({ backendUrl, getToken });
+
+kortix.accounts          // account / team operations
+kortix.projects          // top-level project operations
+kortix.project(id)       // id-bound project handle (every sub-resource)
+kortix.session(pid, sid) // id-bound session handle  →  see Sessions
+kortix.runtime()         // the opencode client for the active runtime (escape hatch)
+```
+
+## Accounts — `kortix.accounts`
+
+| method | what |
+|---|---|
+| `list()` | accounts you belong to |
+| `get(accountId)` | one account |
+| `create({ name })` | create an account / team |
+| `updateName(accountId, name)` | rename |
+| `members(accountId)` | list members |
+| `invite(accountId, input)` | invite a member |
+| `updateMemberRole(accountId, userId, role)` | change a member's role |
+| `removeMember(accountId, userId)` | remove a member |
+| `invites(accountId)` | pending invites |
+| `leave(accountId)` | leave the account |
+
+## Projects — `kortix.projects`
+
+| method | what |
+|---|---|
+| `list()` | your projects |
+| `listForAccount(accountId)` | projects in an account |
+| `get(id)` · `detail(id)` | summary · full detail |
+| `create(input)` | create a project |
+| `provision(id)` | provision its runtime |
+| `update(id, input)` · `archive(id)` | update settings · archive |
+| `llmCatalog(id)` | available models |
+| `sandboxTemplates(id)` | sandbox build templates (Dockerfile/image/warm-pool) |
+| `sandboxHealth(id)` | sandbox-image build health |
+| `sessions(id)` · `createSession(id, input?)` | list · create sessions |
+
+## The project handle — `kortix.project(id)`
+
+Binds the project id; every sub-resource hangs off it.
+
+```ts
+const p = kortix.project(projectId);
+await p.detail();
+await p.update({ name });
+await p.llmCatalog();
+await p.onboardingComplete();
+await p.archive();
+```
+
+Direct methods: `get` · `detail` · `update` · `archive` · `llmCatalog` · `sandboxHealth` · `onboardingComplete`.
+
+### `p.secrets` — project secrets / env
+
+| method | what |
+|---|---|
+| `list()` | all project secrets |
+| `upsert({ name, value })` | create / update a secret |
+| `remove(name)` | delete a secret |
+| `setPersonal(name, value)` | a per-user override value |
+| `removePersonal(name)` | remove the override |
+| `setGitCredential(input)` | git auth credential |
+
+### `p.access` — members, invites, requests
+
+| method | what |
+|---|---|
+| `list()` | members with access |
+| `invite(email, role)` | invite a user |
+| `update(userId, role)` | change a role |
+| `revoke(userId)` | remove access |
+| `pendingInvites()` | outstanding invites |
+| `resendInvite(inviteId)` · `revokeInvite(inviteId)` | resend · revoke an invite |
+| `requests()` | pending access requests |
+| `approveRequest(id)` · `rejectRequest(id)` | approve · reject a request |
+| `groupGrants()` | IAM group grants on the project |
+
+### `p.connectors` — tool / MCP connectors
+
+| method | what |
+|---|---|
+| `list()` | configured connectors |
+| `config(connectorId)` | one connector's config |
+| `create(input)` | add a connector |
+| `remove(connectorId)` | delete a connector |
+| `sync()` | re-sync connectors |
+
+<Callout>
+Connectors are how tools reach a session (the **Executor** surface). The
+runtime-side MCP management hooks are being folded into this — see the
+[note in React hooks](/docs/sdk/react#mcp-servers). The deeper Executor-connector
+surface is still being brought into the SDK.
+</Callout>
+
+### `p.policies` — project policies
+
+| method | what |
+|---|---|
+| `list()` | the project's policies |
+| `set(policies)` | replace the policy set |
+
+### `p.triggers` — automations (cron / webhook)
+
+A trigger fires an agent action on a schedule or an inbound webhook.
+
+| method | what |
+|---|---|
+| `list()` | all triggers |
+| `create(input)` | create — `{ slug, name, type: 'cron' \| 'webhook', agent, action, … }` |
+| `update(triggerId, input)` | edit a trigger |
+| `remove(triggerId)` | delete a trigger |
+| `fire(triggerId)` | run it now |
+| `setActivation(triggerId, active)` | enable / disable |
+
+### `p.files` — repo files (read)
+
+Read-only access to the project's git tree through the API. For read **and write**
+files *inside a running session's workspace*, use the session's file ops — see
+[Modules → files](/docs/sdk/modules#kortix-sdk-files).
+
+| method | what |
+|---|---|
+| `list(options?)` | the repo tree |
+| `read(path, ref?)` | a file's contents at an optional git ref |
+| `search(query)` | search the repo |
+| `archive(options?)` | download a tarball |
+| `history(path)` | a file's git history |
+
+### `p.git` — history
+
+| method | what |
+|---|---|
+| `commits()` | the commit log |
+| `commit(sha)` | one commit |
+| `commitDiff(sha)` | a commit's diff |
+| `branches()` | branches |
+| `versionDiff(from, to)` | diff between two refs |
+
+### `p.changeRequests` — the review queue
+
+A change request is how a session's work merges back to the default branch.
+
+| method | what |
+|---|---|
+| `list()` | open change requests |
+| `get(crId)` | one change request |
+| `diff(crId)` | its diff |
+| `mergePreview(crId)` | preview the merge result |
+| `open(input)` | open a change request |
+| `merge(crId, input?)` | merge it |
+| `close(crId, input?)` | close without merging |
+| `reopen(crId, input?)` | reopen a closed one |
+
+### `p.sessions` — and the session handle
+
+| method | what |
+|---|---|
+| `list()` | the project's sessions |
+| `create(input?)` | create a session |
+| `session(sid)` | → the session handle (same as `kortix.session(id, sid)`) |
+
+The session handle is the heart of the runtime — see **[Sessions](/docs/sdk/sessions)**.
+
+## Escape hatch
+
+`kortix.runtime()` returns the typed opencode v2 client for the active runtime.
+Prefer `kortix.session(pid, sid).runtime`, the same client scoped to a session.
+You should never need `@opencode-ai/sdk` directly.

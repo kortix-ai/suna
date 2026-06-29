@@ -116,7 +116,7 @@ export async function runLogin(argv: string[]): Promise<number> {
 
   if (!token.startsWith('kortix_pat_')) {
     process.stderr.write(
-      `${status.err('Invalid token format — expected `kortix_pat_...` prefix.')}\n`,
+      `${status.err('Invalid API key format — expected `kortix_pat_...` prefix.')}\n`,
     );
     return 1;
   }

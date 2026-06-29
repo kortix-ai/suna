@@ -28,9 +28,9 @@ interface SandboxContextValue {
   isProvisioning: boolean;
   /** The sandbox_id (UUID) to use for polling provisioning status */
   provisioningSandboxId: string | undefined;
-  /** The external_id (e.g. 'kortix-sandbox') for proxy URL construction */
+  /** The external_id for proxy URL construction */
   provisioningExternalId: string | undefined;
-  /** The provider of the provisioning sandbox (local_docker, justavps, etc.) */
+  /** The provider of the provisioning sandbox (daytona, justavps, etc.) */
   provisioningProvider: string | undefined;
   /** Call this when provisioning completes to refetch sandbox data */
   onProvisioningComplete: () => void;

@@ -25,8 +25,8 @@ const MIGRATABLE_STATUSES = ['provisioning', 'active', 'stopped', 'error'] as co
 const LISTED_STATUSES = [...MIGRATABLE_STATUSES] as const;
 
 // Only JustAVPS VMs are migratable: the pipeline reaches the live machine via the
-// JustAVPS control API + CF proxy (legacy-vm-access). Legacy daytona/local_docker
-// sandboxes have no such reach path and are not offered.
+// JustAVPS control API + CF proxy (legacy-vm-access). Legacy daytona sandboxes
+// have no such reach path and are not offered.
 const MIGRATABLE_PROVIDER = 'justavps' as const;
 
 type MigrationRow = typeof legacySandboxMigrations.$inferSelect;

@@ -2,14 +2,8 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { useServerStore } from '@/stores/server-store';
 import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '@/lib/instance-routes';
-import { logger } from '@/lib/logger';
-import {
-  safeLocalStorage,
-  safeSetItem,
-  registerDisposableKey,
-} from '@/lib/storage/managed-storage';
+import { safeLocalStorage } from '@/lib/storage/managed-storage';
 
 // ============================================================================
 // Types
@@ -101,8 +95,6 @@ export interface Tab {
   openedAt: number;
   /** For sub-session tabs: the parent session ID (enables back-to-parent navigation) */
   parentSessionId?: string;
-  /** The server instance this tab belongs to (session/file tabs are scoped per instance) */
-  serverId?: string;
   /** Extra data for specialized tab types (e.g. preview URL, port number) */
   metadata?: Record<string, unknown>;
 }
@@ -160,58 +152,13 @@ interface TabState {
 
   /** Get ordered tab objects */
   getOrderedTabs: () => Tab[];
-
-  /** Save current server-scoped tabs and restore tabs for a different server */
-  swapForServer: (newServerId: string, currentServerId?: string) => void;
 }
 
 // ============================================================================
 // Resilient localStorage — tab state must never crash the app on quota limits
 // ============================================================================
 
-/** Disposable per-server tab cache; the first thing we evict under pressure. */
-const PER_SERVER_KEY = 'kortix-tabs-per-server';
-/** Cap how many servers we remember tabs for, so the cache can't grow forever. */
-const MAX_CACHED_SERVERS = 5;
-
-// Writes go through the shared never-throw layer, so a quota crunch reclaims
-// space across the WHOLE origin (the big offenders are the per-sandbox opencode
-// caches) before giving up — not just this store's own per-server blob. Register
-// that blob as a last-resort disposable so cross-store reclaim can still drop it.
-registerDisposableKey(PER_SERVER_KEY);
-
 const safeTabStorage = safeLocalStorage;
-
-type PerServerEntry = {
-  tabs: Record<string, Tab>;
-  tabOrder: string[];
-  activeTabId: string | null;
-  tabFocusHistory: string[];
-  _ts?: number;
-};
-
-/** Persist one server's tab state, pruning to the N most-recently-used servers. */
-function writePerServerCache(
-  serverId: string,
-  entry: Omit<PerServerEntry, '_ts'>,
-): void {
-  try {
-    const cache: Record<string, PerServerEntry> = JSON.parse(
-      localStorage.getItem(PER_SERVER_KEY) || '{}',
-    );
-    cache[serverId] = { ...entry, _ts: Date.now() };
-    const ids = Object.keys(cache);
-    if (ids.length > MAX_CACHED_SERVERS) {
-      ids
-        .sort((a, b) => (cache[a]._ts ?? 0) - (cache[b]._ts ?? 0))
-        .slice(0, ids.length - MAX_CACHED_SERVERS)
-        .forEach((id) => delete cache[id]);
-    }
-    safeSetItem(PER_SERVER_KEY, JSON.stringify(cache));
-  } catch {
-    /* ignore */
-  }
-}
 
 export const useTabStore = create<TabState>()(
   persist(
@@ -481,36 +428,6 @@ export const useTabStore = create<TabState>()(
         const { tabs, tabOrder } = get();
         return tabOrder.map((id) => tabs[id]).filter(Boolean);
       },
-
-      swapForServer: (newServerId: string, currentServerId?: string) => {
-        const { tabs, tabOrder, activeTabId, tabFocusHistory } = get();
-
-        // Save the entire current tab state for the old server
-        if (currentServerId) {
-          writePerServerCache(currentServerId, { tabs, tabOrder, activeTabId, tabFocusHistory });
-        }
-
-        // Restore the full tab state for the new server
-        try {
-          const cache = JSON.parse(localStorage.getItem(PER_SERVER_KEY) || '{}');
-          const saved = cache[newServerId];
-          if (saved?.tabs && saved?.tabOrder) {
-            const ensured = ensureDashboardTab(saved.tabs, saved.tabOrder);
-            set({
-              ...ensured,
-              activeTabId: saved.activeTabId || DASHBOARD_TAB_ID,
-              tabFocusHistory: saved.tabFocusHistory || [],
-            });
-            return;
-          }
-        } catch (err) {
-          logger.warn('[tab-store] failed to restore tab state for server', { err });
-        }
-
-        // No saved state for new server — start with just the dashboard tab
-        const ensured = ensureDashboardTab({}, []);
-        set({ ...ensured, activeTabId: DASHBOARD_TAB_ID, tabFocusHistory: [] });
-      },
     }),
     {
       name: 'kortix-tabs',
@@ -587,31 +504,3 @@ export function openTabAndNavigate(
     router.push(href);
   }
 }
-
-// ============================================================================
-// Keep per-server tab cache in sync
-// ============================================================================
-// Whenever the tab state changes, persist it to the per-server cache for the
-// currently active server. This ensures the cache is always up-to-date — not
-// just when explicitly switching servers via swapForServer(). Without this,
-// tabs opened/closed after the last swap would be lost on page reload.
-
-let _syncTimer: ReturnType<typeof setTimeout> | undefined;
-
-useTabStore.subscribe((state) => {
-  // Debounce to avoid excessive writes on rapid tab changes
-  clearTimeout(_syncTimer);
-  _syncTimer = setTimeout(() => {
-    try {
-      const serverId = useServerStore.getState().activeServerId;
-      if (!serverId) return;
-
-      writePerServerCache(serverId, {
-        tabs: state.tabs,
-        tabOrder: state.tabOrder,
-        activeTabId: state.activeTabId,
-        tabFocusHistory: state.tabFocusHistory,
-      });
-    } catch {}
-  }, 500);
-});

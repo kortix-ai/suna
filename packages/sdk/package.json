@@ -1,0 +1,60 @@
+{
+  "name": "@kortix/sdk",
+  "version": "0.1.0",
+  "description": "Official Kortix frontend TypeScript SDK — one typed client for the Kortix agent platform. Unifies project/session lifecycle and live agent streaming behind a single ergonomic Session handle, so web, mobile, and white-label apps never touch the raw HTTP API or OpenCode semantics.",
+  "type": "module",
+  "license": "Elastic-2.0",
+  "homepage": "https://github.com/kortix-ai/suna/tree/main/packages/sdk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kortix-ai/suna.git",
+    "directory": "packages/sdk"
+  },
+  "keywords": ["kortix", "agent", "sdk", "sessions", "streaming", "opencode"],
+  "sideEffects": false,
+  "dependencies": {
+    "@kortix/shared": "workspace:*",
+    "@opencode-ai/sdk": "^1.14.28",
+    "zustand": "^5.0.3"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.75.2",
+    "next": ">=15",
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "@tanstack/react-query": { "optional": true },
+    "next": { "optional": true },
+    "react": { "optional": true }
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./react": "./src/react/index.ts",
+    "./opencode-client": "./src/opencode/client.ts",
+    "./config": "./src/platform/config.ts",
+    "./auth": "./src/platform/auth.ts",
+    "./api-client": "./src/platform/api-client.ts",
+    "./projects-client": "./src/platform/projects-client/index.ts",
+    "./server-store": "./src/state/server-store.ts",
+    "./sync-store": "./src/state/sync-store.ts",
+    "./sandbox-connection-store": "./src/state/sandbox-connection-store.ts",
+    "./opencode-pending-store": "./src/state/opencode-pending-store.ts",
+    "./files": "./src/files/client.ts",
+    "./session": "./src/session/index.ts",
+    "./session/url": "./src/session/url.ts"
+  },
+  "files": ["dist", "src", "README.md"],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test src",
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "^5.75.2",
+    "@types/react": "^19.1.17",
+    "react": "^19.1.0",
+    "typescript": "^5.4.0"
+  }
+}

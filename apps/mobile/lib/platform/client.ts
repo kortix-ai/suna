@@ -24,7 +24,7 @@ export const SANDBOX_PORTS = {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'local_docker' | 'justavps';
+export type SandboxProviderName = 'daytona' | 'justavps';
 
 export interface SandboxInfo {
   sandbox_id: string;
@@ -298,12 +298,7 @@ export async function getActiveSandbox(): Promise<SandboxInfo | null> {
 }
 
 /**
- * List all sandboxes for the user.
- *
- * GET /platform/sandbox/list — cloud-tracked sandboxes from the DB.
- * Additionally probes /platform/local-bridge/status so a live local Docker
- * sandbox surfaces alongside cloud instances. The bridge call also ensures
- * the backend creates/updates the local sandbox's DB row on self-hosted setups.
+ * List all project-session sandboxes from the DB.
  */
 export async function listSandboxes(sandboxId?: string): Promise<SandboxInfo[]> {
   try {
@@ -317,17 +312,6 @@ export async function listSandboxes(sandboxId?: string): Promise<SandboxInfo[]> 
   } catch {
     return [];
   }
-}
-
-/**
- * Discover the local Docker sandbox (if any) by hitting the backend's
- * local-bridge status endpoint. Returns null if no local sandbox is running
- * or the endpoint is unreachable.
- *
- * GET /platform/local-bridge/status
- */
-export async function discoverLocalSandbox(): Promise<SandboxInfo | null> {
-  return null;
 }
 
 /**
@@ -372,30 +356,6 @@ export async function deleteSandbox(sandboxId: string): Promise<void> {
  */
 export async function getProviders(): Promise<string[]> {
   return ['daytona'];
-}
-
-/**
- * Initialize a local Docker sandbox.
- * POST /platform/init/local
- */
-export interface LocalSandboxProgress {
-  status: string;
-  progress: number;
-  message: string;
-}
-
-export async function initLocalSandbox(
-  _name?: string,
-  onProgress?: (progress: LocalSandboxProgress) => void
-): Promise<SandboxInfo> {
-  onProgress?.({ status: 'starting', progress: 0, message: 'Starting project session...' });
-  const result = await ensureSandbox();
-  onProgress?.({
-    status: result.sandbox.status,
-    progress: result.sandbox.status === 'active' ? 100 : 25,
-    message: 'Project session started',
-  });
-  return result.sandbox;
 }
 
 /**

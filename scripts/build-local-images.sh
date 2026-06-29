@@ -149,7 +149,7 @@ docker build -f "$REPO_ROOT/apps/sandbox/Dockerfile" -t "kortix/kortix-sandbox:$
 printf "[build-local-images] Building kortix/kortix-gateway:%s...\n" "$TAG"
 docker build -f "$REPO_ROOT/apps/llm-gateway/Dockerfile" -t "kortix/kortix-gateway:${TAG}" "$REPO_ROOT"
 
-printf "[build-local-images] Local project sessions use the sandbox image through the local_docker provider.\n"
+printf "[build-local-images] Local project sessions use the sandbox image.\n"
 
 if [ "$INCLUDE_POSTGRES" = "1" ]; then
   printf "[build-local-images] Building kortix/postgres:%s...\n" "$TAG"

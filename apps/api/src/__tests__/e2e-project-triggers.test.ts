@@ -214,7 +214,7 @@ mock.module('../platform/services/session-sandbox', () => ({
 }));
 
 mock.module('../platform/services/provider-balancer', () => ({
-  selectProvider: async () => 'local_docker',
+  selectProvider: async () => 'daytona',
 }));
 
 mock.module('../shared/resolve-account', () => ({

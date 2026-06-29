@@ -401,7 +401,7 @@ export async function createProjectSession(input: {
     providerName = requestedProvider as SandboxProviderName;
   }
 
-  const callbackUnreachable = providerName === 'local_docker' ? null : sandboxCallbackUnreachableReason();
+  const callbackUnreachable = sandboxCallbackUnreachableReason();
   if (callbackUnreachable) {
     return { error: { status: 503, body: { error: callbackUnreachable, code: 'KORTIX_URL_UNREACHABLE' } } };
   }

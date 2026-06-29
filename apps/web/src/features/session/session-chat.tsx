@@ -531,7 +531,6 @@ function HighlightMentions({
                   title: 'Session',
                   type: 'session',
                   href: `/sessions/${raw}`,
-                  serverId: useServerStore.getState().activeServerId,
                 });
                 return;
               }
@@ -542,7 +541,6 @@ function HighlightMentions({
                   title: ref.title || 'Session',
                   type: 'session',
                   href: `/sessions/${ref.id}`,
-                  serverId: useServerStore.getState().activeServerId,
                 });
               }
             }}
@@ -1988,7 +1986,6 @@ function UserMessageRow({
                             title: 'Session',
                             type: 'session',
                             href: `/sessions/${raw}`,
-                            serverId: useServerStore.getState().activeServerId,
                           });
                           return;
                         }
@@ -1999,7 +1996,6 @@ function UserMessageRow({
                             title: ref.title || 'Session',
                             type: 'session',
                             href: `/sessions/${ref.id}`,
-                            serverId: useServerStore.getState().activeServerId,
                           });
                         }
                       }}
@@ -4812,7 +4808,6 @@ export function SessionChat({
         title,
         type: 'session',
         href: `/sessions/${forkedSession.id}`,
-        serverId: useServerStore.getState().activeServerId,
       });
     },
     [sessionId, forkSession, messages, session?.directory, session?.workspaceID],
@@ -4835,7 +4830,6 @@ export function SessionChat({
         title,
         type: 'session',
         href: `/sessions/${forkedSession.id}`,
-        serverId: useServerStore.getState().activeServerId,
       });
     },
     [sessionId, forkSession, messages, session?.directory, session?.workspaceID],
@@ -5474,7 +5468,6 @@ export function SessionChat({
           title: parentSessionData.title || 'Parent session',
           type: 'session',
           href: `/sessions/${parentSessionData.id}`,
-          serverId: useServerStore.getState().activeServerId,
         });
       },
     };

@@ -16,9 +16,9 @@ import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
 import { recordUsageEvent } from '../shared/usage-events';
 import { checkBudget } from './budgets';
+import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { validateGatewayKey } from './gateway-keys';
 import { gatewayModelCatalog } from './models/catalog-models';
-import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { resolveCandidates } from './resolution/resolve-candidates';
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
@@ -77,11 +77,18 @@ async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrinc
         return { ...principal, tier, freeModelsOnly: !tierGrantsAllModels(tier) };
       })()
     : { ...principal, freeModelsOnly: false };
-  // Resolve the account/agent-configured default model once, here, so it travels
-  // with the principal (including across the RPC boundary to the standalone pod)
-  // and `auto` resolves to it. freeModelsOnly is already set above, so the
-  // resolver can drop a managed default for free tier.
-  const defaultModel = await resolveDefaultModelForPrincipal(tiered);
+  // Resolve the account/project/agent-configured default model once, here, so it
+  // travels with the principal (including across the RPC boundary to the
+  // standalone pod) and `auto` resolves to it. freeModelsOnly is already set
+  // above, so the resolver can drop a managed default for free tier. Never let a
+  // resolution hiccup break auth for every LLM call — degrade to the platform
+  // target (undefined) on error.
+  let defaultModel: string | undefined;
+  try {
+    defaultModel = await resolveDefaultModelForPrincipal(tiered);
+  } catch {
+    defaultModel = undefined;
+  }
   return defaultModel ? { ...tiered, defaultModel } : tiered;
 }
 

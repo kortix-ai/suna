@@ -45,9 +45,8 @@ import {
   APIKeyCreateResponse,
   APIKeyRegenerateResponse,
 } from '@/lib/api/api-keys';
-import { getActiveServer, getActiveOpenCodeUrl } from '@/stores/server-store';
+import { getActiveSandboxId, getActiveDbSandboxId, getActiveOpenCodeUrl } from '@/stores/server-store';
 import { getAuthToken } from '@/lib/auth-token';
-import { useServerStore } from '@/stores/server-store';
 import { getEnv } from '@/lib/env-config';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -161,21 +160,12 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function APIKeysPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  // Use instanceId (the stable DB UUID) so the api-keys backend can resolve
-  // ownership unambiguously. Using sandboxId (external_id) breaks for cloud
-  // providers like Daytona where the external_id is also a UUID — the backend
-  // would mistakenly treat it as the DB primary key and return 404.
-  // Subscribing to both activeServerId and servers ensures reactivity when
-  // the server entry is updated without an activeServerId change.
-  const activeSandboxId = useServerStore((s) => {
-    const server = s.servers.find((e) => e.id === s.activeServerId);
-    return server?.instanceId;
-  });
-  const activeSandboxExternalId = useServerStore((s) => {
-    const server = s.servers.find((e) => e.id === s.activeServerId);
-    return server?.sandboxId;
-  });
-  const activeServer = getActiveServer();
+  // Per-sandbox API keys are keyed by the sandbox's DB instance id (sandbox_id),
+  // resolved from the active session runtime. The external id can't be used —
+  // for cloud providers like Daytona it's also a UUID and the backend would
+  // treat it as the DB primary key and 404.
+  const activeSandboxId = getActiveDbSandboxId();
+  const activeSandboxExternalId = getActiveSandboxId();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newKeyData, setNewKeyData] = useState<NewAPIKeyData>({
     title: '',
