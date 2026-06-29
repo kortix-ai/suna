@@ -160,7 +160,7 @@ export async function addGroupMembers(accountId: string, groupId: string, userId
 export interface GroupProjectGrant {
   project_id: string;
   project_name: string;
-  role: 'manager' | 'editor' | 'viewer';
+  role: 'manager' | 'editor' | 'user';
   granted_by: string | null;
   created_at: string;
   /** Auto-revoke timestamp (ISO). null = permanent. Surfaced from the
@@ -208,7 +208,7 @@ export async function listMemberGroups(accountId: string, userId: string) {
 export interface MemberProjectAccess {
   project_id: string;
   project_name: string;
-  role: 'manager' | 'editor' | 'viewer';
+  role: 'manager' | 'editor' | 'user';
   sources: Array<'implicit' | 'direct' | 'group'>;
 }
 

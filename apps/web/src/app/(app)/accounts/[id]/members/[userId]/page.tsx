@@ -411,7 +411,7 @@ function MemberGroupsCard({
 
 // ─── V2: Projects this member can reach ───────────────────────────────────
 
-const PROJECT_ROLE_RANK = { manager: 3, editor: 2, viewer: 1 } as const;
+const PROJECT_ROLE_RANK = { manager: 3, editor: 2, user: 1 } as const;
 const SOURCE_LABEL: Record<MemberProjectAccess['sources'][number], string> = {
   implicit: 'Account admin',
   direct: 'Direct',

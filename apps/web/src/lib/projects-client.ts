@@ -54,7 +54,9 @@ export interface KortixAccount {
 }
 
 export type AccountRole = 'owner' | 'admin' | 'member';
-export type ProjectRole = 'manager' | 'editor' | 'user' | 'viewer';
+// `user` is the project floor role. `viewer` was folded into it and is no
+// longer assignable or emitted by the API.
+export type ProjectRole = 'manager' | 'editor' | 'user';
 
 export interface AccountDetail {
   account_id: string;
@@ -612,7 +614,7 @@ export async function listProjectAccessRequests(projectId: string, options?: Api
 export async function approveProjectAccessRequest(
   projectId: string,
   requestId: string,
-  role: ProjectRole = 'viewer',
+  role: ProjectRole = 'user',
 ) {
   return unwrap(
     await backendApi.post<{

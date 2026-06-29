@@ -99,7 +99,6 @@ const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
   manager: PROJECT_ROLE_DESCRIPTORS.manager.label,
   editor: PROJECT_ROLE_DESCRIPTORS.editor.label,
   user: PROJECT_ROLE_DESCRIPTORS.user.label,
-  viewer: PROJECT_ROLE_DESCRIPTORS.viewer.label,
 };
 
 function userLabel(member: Pick<ProjectAccessMember, 'email' | 'user_id'>) {
@@ -509,7 +508,6 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
               explains what each role does. Trigger stays one line —
               see role-select-item.tsx for how the ItemText split works. */}
           <SelectContent>
-            <ProjectRoleSelectItem role="viewer" />
             <ProjectRoleSelectItem role="user" />
             <ProjectRoleSelectItem role="editor" />
             <ProjectRoleSelectItem role="manager" />
@@ -865,7 +863,6 @@ function ProjectAccessCard({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <ProjectRoleSelectItem role="viewer" />
                             <ProjectRoleSelectItem role="user" />
                             <ProjectRoleSelectItem role="editor" />
                             <ProjectRoleSelectItem role="manager" />
@@ -1515,7 +1512,6 @@ function ProjectGroupGrantsCard({
                   attachment is a higher-impact decision than a single
                   per-user grant, so users benefit from the extra context. */}
                 <SelectContent>
-                  <ProjectRoleSelectItem role="viewer" />
                   <ProjectRoleSelectItem role="user" />
                   <ProjectRoleSelectItem role="editor" />
                   <ProjectRoleSelectItem role="manager" />
@@ -1620,7 +1616,6 @@ function ProjectGroupGrantsCard({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <ProjectRoleSelectItem role="viewer" />
                             <ProjectRoleSelectItem role="user" />
                             <ProjectRoleSelectItem role="editor" />
                             <ProjectRoleSelectItem role="manager" />

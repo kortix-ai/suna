@@ -25,23 +25,17 @@ export interface ProjectRoleDescriptor {
 }
 
 export const PROJECT_ROLE_DESCRIPTORS: Record<ProjectRole, ProjectRoleDescriptor> = {
-  viewer: {
-    label: 'Viewer',
-    blurb: 'Read + run sessions and chat — can’t fire triggers.',
-    summary:
-      'The base role for using the project: read everything, run sessions, and chat with the agent. Can’t fire triggers (a User can), edit, deploy, or manage members.',
-  },
   user: {
-    label: 'User (read + run)',
-    blurb: 'A Viewer that can also fire the project’s triggers.',
+    label: 'User',
+    blurb: 'Read + run sessions and chat, plus fire the project’s triggers.',
     summary:
-      'A Viewer plus one thing: can manually fire the project’s triggers to run its automations on demand. Still can’t edit, deploy, change config, or manage members.',
+      'The floor role for using the project: read everything, run sessions, chat with the agent, and fire its triggers on demand. Can’t edit, deploy, change config, or manage members.',
   },
   editor: {
     label: 'Editor',
-    blurb: 'Everything a viewer does, plus edit and customize the project.',
+    blurb: 'Everything a user does, plus edit and customize the project.',
     summary:
-      'Everything a viewer can do, plus edit the project, deploy, and create or fire triggers. Cannot invite members, change member roles, or delete the project.',
+      'Everything a user can do, plus edit the project, deploy, and create or delete triggers. Cannot invite members, change member roles, or delete the project.',
   },
   manager: {
     label: 'Manager',
@@ -52,7 +46,7 @@ export const PROJECT_ROLE_DESCRIPTORS: Record<ProjectRole, ProjectRoleDescriptor
 };
 
 /** Ordered low → high. Useful for rendering dropdowns consistently. */
-export const PROJECT_ROLES_ASCENDING: ProjectRole[] = ['viewer', 'user', 'editor', 'manager'];
+export const PROJECT_ROLES_ASCENDING: ProjectRole[] = ['user', 'editor', 'manager'];
 
 export interface AccountRoleDescriptor {
   label: string;
