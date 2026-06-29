@@ -6,31 +6,11 @@ export const siteConfig = {
     'http://localhost:3000',
   nav: {
     links: [
+      { id: 1, name: 'Product', href: '/' },
       { id: 2, name: 'Enterprise', href: '/enterprise' },
       { id: 3, name: 'Pricing', href: '/pricing' },
-      { id: 4, name: 'Docs', href: '/docs' },
-      {
-        id: 5,
-        name: 'Compare',
-        href: [
-          {
-            name: 'ChatGPT',
-            href: '/compare/chatgpt',
-          },
-          {
-            name: 'Zapier',
-            href: '/compare/zapier',
-          },
-          {
-            name: 'Viktor',
-            href: '/compare/viktor',
-          },
-          {
-            name: 'OpenClaw',
-            href: '/compare/openclaw',
-          },
-        ],
-      },
+      { id: 4, name: 'Blog', href: '/blog' },
+      { id: 5, name: 'Docs', href: '/docs' },
     ],
   },
   hero: {

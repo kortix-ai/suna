@@ -40,6 +40,15 @@ const NAME_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 const MANIFEST_FILENAME = 'kortix.toml';
 
 /**
+ * The non-binding agent sentinel. `project_sessions.agent_name` defaults to this
+ * literal and NO agent is ever named `default` — the runtime resolves it to
+ * OpenCode's configured `default_agent` (a general-purpose agent). Kept in sync
+ * with the proxy's copy (sandbox-proxy/routes/preview.ts).
+ * See docs/specs/2026-06-28-token-session-agent-identity.md.
+ */
+export const DEFAULT_AGENT_SENTINEL = 'default';
+
+/**
  * The actions an agent's `kortix_cli` may grant — the project-scoped surface.
  * Account-scoped admin actions (member.*, billing.*, token.*, project.create, …)
  * are deliberately excluded: they're the hard ceiling and can never be granted
@@ -194,7 +203,21 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
     return { agent: agentName, kortixCli: spec.kortixCli, connectors: spec.connectors };
   }
 
-  // Governance adopted but this agent is unlisted → default-deny.
+  // The `default` sentinel is non-binding: no agent is ever named `default`, so
+  // a `default`-booted session is OpenCode's configured `default_agent` (a
+  // general-purpose agent, conventionally `kortix`, granted "all") — NOT an
+  // unlisted concrete agent. Default-denying it stripped EVERY connector from
+  // such sessions (the `kortix executor connectors` → [] bug, and synthetic
+  // channel/computer connectors never reaching the agent) even though OpenCode
+  // runs them as the fully-privileged default agent. Resolve it the way the
+  // proxy already does: non-binding → null (no restriction, still capped at the
+  // launching user's role; identical to a project that never adopted [[agents]]).
+  // A project locks down its default by setting `default_agent` to a CONCRETE
+  // declared agent, which reaches us by that name and gets its (possibly narrow)
+  // grant — so this never weakens an intentionally-restricted default.
+  if (agentName === DEFAULT_AGENT_SENTINEL) return null;
+
+  // Governance adopted but this concrete agent is unlisted → default-deny.
   return { agent: agentName, kortixCli: [], connectors: [] };
 }
 

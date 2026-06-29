@@ -183,23 +183,29 @@ function BrowserMockup() {
   );
 }
 
+// Real app screenshots (the same assets used on the marketing site), fanned as
+// a phone trio that bleeds off the bottom edge like the other mockups.
+const MOBILE_SHOTS = [
+  { src: '/images/mobile-app/app-2.png', cls: 'mt-5 w-[74px] hidden sm:block' },
+  { src: '/images/mobile-app/app-1.png', cls: 'w-[96px] z-10' },
+  { src: '/images/mobile-app/app-3.png', cls: 'mt-5 w-[74px] hidden sm:block' },
+];
+
 function MobileMockup() {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
-    <div className="border-border/60 bg-background absolute top-2 bottom-0 left-1/2 w-[112px] -translate-x-1/2 translate-y-1 overflow-hidden rounded-t-[20px] border border-b-0 shadow-[0_-1px_24px_-12px_rgba(0,0,0,0.25)]">
-      <div className="flex justify-center py-1.5">
-        <div className="bg-muted h-1 w-10 rounded-full" />
-      </div>
-      <div className="space-y-2 px-3">
-        <div className="bg-foreground/90 text-background ml-auto w-2/3 rounded-2xl rounded-br-sm px-2 py-1 text-[8px]">
-          {tI18nHardcoded.raw('autoFeaturesLayoutDownloadAppsModalJsxTextSummarizeMyDaya3202c71')}
-        </div>
-        <div className="flex items-end gap-1 pt-1">
-          {[5, 9, 6, 11, 7, 12, 8].map((h, i) => (
-            <div key={i} className="bg-primary/70 w-2 rounded-sm" style={{ height: h * 3 }} />
-          ))}
-        </div>
-      </div>
+    <div className="absolute inset-x-0 top-2 bottom-0 flex translate-y-1 items-start justify-center gap-2.5">
+      {MOBILE_SHOTS.map((shot) => (
+        <span
+          key={shot.src}
+          className={cn(
+            'border-border/60 bg-background block shrink-0 overflow-hidden rounded-t-[20px] border border-b-0 shadow-[0_-1px_24px_-12px_rgba(0,0,0,0.3)]',
+            shot.cls,
+          )}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={shot.src} alt="Kortix mobile app" className="block w-full" />
+        </span>
+      ))}
     </div>
   );
 }
@@ -219,7 +225,7 @@ export function DownloadAppsModal({
     if (open) setPlatformId(detectPlatform());
   }, [open]);
 
-  const primary = PLATFORMS.find((p) => p.id === platformId)!;
+  const primary = PLATFORMS.find((p) => p.id === platformId) ?? PLATFORMS[0];
   const others = PLATFORMS.filter((p) => p.id !== platformId);
 
   const copyCli = async () => {
