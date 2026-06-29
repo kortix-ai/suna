@@ -35,7 +35,7 @@ export const STATUS_BG: Record<StatusTone, string> = {
   warning: 'bg-amber-500/10',
   destructive: 'bg-destructive/10',
   info: 'bg-blue-500/10',
-  neutral: 'bg-muted/50',
+  neutral: 'bg-popover',
 };
 
 /** Hairline border per tone (matches InfoBanner edges). */
@@ -44,7 +44,7 @@ export const STATUS_BORDER: Record<StatusTone, string> = {
   warning: 'border-amber-500/30',
   destructive: 'border-destructive/30',
   info: 'border-blue-500/25',
-  neutral: 'border-border/60',
+  neutral: 'border-border',
 };
 
 /** Solid dot fill per tone (for the live activity indicator). */
@@ -53,7 +53,7 @@ export const STATUS_DOT: Record<StatusTone, string> = {
   warning: 'bg-amber-500',
   destructive: 'bg-destructive',
   info: 'bg-blue-500',
-  neutral: 'bg-muted-foreground/40',
+  neutral: 'bg-muted-foreground',
 };
 
 export function statusText(tone: StatusTone) {

@@ -29,7 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';

@@ -10,6 +10,7 @@ import {
   type AutosizeTextAreaProps,
   type AutosizeTextAreaRef,
 } from '@/components/ui/textarea';
+import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
 
 function InputGroup({ className, ...props }: React.ComponentProps<'div'>) {
@@ -18,7 +19,7 @@ function InputGroup({ className, ...props }: React.ComponentProps<'div'>) {
       data-slot="input-group"
       role="group"
       className={cn(
-        'group/input-group border-input dark:bg-input/30 relative flex w-full items-center rounded-md border shadow-xs transition-[color,box-shadow] outline-none',
+        'group/input-group border-border dark:bg-input/30 relative flex w-full items-center rounded-md border transition-[color,box-shadow] outline-none',
         'h-9 min-w-0 has-[>textarea]:h-auto',
 
         // Variants based on alignment.
@@ -28,7 +29,7 @@ function InputGroup({ className, ...props }: React.ComponentProps<'div'>) {
         'has-[>[data-align=block-end]]:h-auto has-[>[data-align=block-end]]:flex-col has-[>[data-align=block-end]]:[&>input]:pt-3',
 
         // Focus state.
-        'has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-ring/50 has-[[data-slot=input-group-control]:focus-visible]:ring-1',
+        'has-[[data-slot=input-group-control]:focus-visible]:border-kortix-blue has-[[data-slot=input-group-control]:focus-visible]:border has-[[data-slot=input-group-control]:focus-visible]:outline-none',
 
         // Error state.
         'has-[[data-slot][aria-invalid=true]]:border-destructive has-[[data-slot][aria-invalid=true]]:ring-destructive/20 dark:has-[[data-slot][aria-invalid=true]]:ring-destructive/40',
@@ -132,6 +133,7 @@ function InputGroupInput({ className, ...props }: InputProps) {
       data-slot="input-group-control"
       className={cn(
         'flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent',
+        'focus:border-0 focus:outline-none',
         className,
       )}
       {...props}
@@ -154,11 +156,71 @@ const InputGroupTextarea = React.forwardRef<AutosizeTextAreaRef, AutosizeTextAre
 );
 InputGroupTextarea.displayName = 'InputGroupTextarea';
 
+function InputGroupSearch({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div data-slot="input-group-search" className={cn('relative w-full', className)} {...props} />
+  );
+}
+
+function InputGroupSearchIcon({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="input-group-search-icon"
+      aria-hidden="true"
+      className={cn(
+        'text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 [&_svg:not([class*="size-"])]:size-4',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+function InputGroupSearchInput({ className, variant = 'transparent', ...props }: InputProps) {
+  return (
+    <Input
+      data-slot="input-group-search-control"
+      variant={variant}
+      size="md"
+      className={cn('peer placeholder:text-muted-foreground/60 pl-9', className)}
+      {...props}
+    />
+  );
+}
+
+function InputGroupSearchClear({
+  className,
+  variant = 'ghost',
+  size = 'icon',
+  ...props
+}: Omit<React.ComponentProps<typeof Button>, 'children'>) {
+  return (
+    <Button
+      type="button"
+      variant={variant}
+      size={size}
+      aria-label="Clear"
+      data-slot="input-group-search-clear"
+      className={cn(
+        'absolute top-1/2 right-2 size-6 -translate-y-1/2 rounded-sm opacity-0 peer-focus:opacity-100',
+        className,
+      )}
+      {...props}
+    >
+      <Icon.Close className="text-muted-foreground size-4" />
+    </Button>
+  );
+}
+
 export {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupInput,
+  InputGroupSearch,
+  InputGroupSearchClear,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
   InputGroupText,
   InputGroupTextarea,
 };

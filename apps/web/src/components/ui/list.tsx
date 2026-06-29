@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import * as React from 'react';
 
 export function List({ className, ...props }: React.ComponentProps<'ul'>) {
-  return <ul data-slot="list" className={cn('divide-border/60 divide-y', className)} {...props} />;
+  return <ul data-slot="list" className={cn('divide-border divide-y', className)} {...props} />;
 }
 
 export interface ListRowProps {

@@ -284,7 +284,7 @@ function CapabilitiesCard({
       )}
       flush
     >
-      <div className="divide-border/60 divide-y">
+      <div className="divide-border divide-y">
         {CAPABILITY_GROUPS.map((group) => (
           <div key={group.heading} className="px-6 py-4">
             <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wider uppercase">
@@ -470,7 +470,7 @@ function MemberProjectAccessCard({
       )}
 
       {!query.isLoading && items.length > 0 && (
-        <ul className="divide-border/60 -mx-6 divide-y">
+        <ul className="divide-border -mx-6 divide-y">
           {items
             .slice()
             .sort(

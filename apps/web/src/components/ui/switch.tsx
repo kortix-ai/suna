@@ -1,19 +1,12 @@
-"use client";
+'use client';
 
-import {
-  forwardRef,
-  useRef,
-  useState,
-  useEffect,
-  useCallback,
-  type ComponentProps,
-} from "react";
-import { motion, useMotionValue, animate } from "motion/react";
-import * as SwitchPrimitive from "@radix-ui/react-switch";
-import { cn } from "@/lib/utils";
-import { spring } from "@/lib/springs";
+import { spring } from '@/lib/springs';
+import { cn } from '@/lib/utils';
+import * as SwitchPrimitive from '@radix-ui/react-switch';
+import { animate, motion, useMotionValue } from 'motion/react';
+import { forwardRef, useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
 
-type SwitchProps = Omit<ComponentProps<typeof SwitchPrimitive.Root>, "asChild"> & {
+type SwitchProps = Omit<ComponentProps<typeof SwitchPrimitive.Root>, 'asChild'> & {
   label?: string;
 };
 
@@ -28,18 +21,7 @@ const PRESS_SHRINK = 4;
 const DRAG_DEAD_ZONE = 2;
 
 const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
-  (
-    {
-      label,
-      checked,
-      onCheckedChange,
-      disabled = false,
-      className,
-      id,
-      ...props
-    },
-    ref
-  ) => {
+  ({ label, checked, onCheckedChange, disabled = false, className, id, ...props }, ref) => {
     const hasMounted = useRef(false);
     const [hovered, setHovered] = useState(false);
     const [pressed, setPressed] = useState(false);
@@ -52,9 +34,7 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
       originX: number;
     } | null>(null);
 
-    const motionX = useMotionValue(
-      isChecked ? THUMB_OFFSET + THUMB_TRAVEL : THUMB_OFFSET
-    );
+    const motionX = useMotionValue(isChecked ? THUMB_OFFSET + THUMB_TRAVEL : THUMB_OFFSET);
 
     useEffect(() => {
       hasMounted.current = true;
@@ -68,9 +48,7 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
     const thumbHeight = pressed ? THUMB_SIZE - PRESS_SHRINK : THUMB_SIZE;
     const thumbY = pressed ? THUMB_OFFSET + PRESS_SHRINK / 2 : THUMB_OFFSET;
     const extraWidth = thumbWidth - THUMB_SIZE;
-    const thumbX = isChecked
-      ? THUMB_OFFSET + THUMB_TRAVEL - extraWidth
-      : THUMB_OFFSET;
+    const thumbX = isChecked ? THUMB_OFFSET + THUMB_TRAVEL - extraWidth : THUMB_OFFSET;
 
     useEffect(() => {
       if (dragging.current) return;
@@ -84,7 +62,7 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
     const handlePointerDown = useCallback(
       (e: React.PointerEvent<HTMLButtonElement>) => {
         if (disabled) return;
-        if (e.pointerType === "mouse" && e.button !== 0) return;
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
         setPressed(true);
         dragging.current = false;
         didDrag.current = false;
@@ -94,7 +72,7 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
         };
         e.currentTarget.setPointerCapture(e.pointerId);
       },
-      [disabled, motionX]
+      [disabled, motionX],
     );
 
     const handlePointerMove = useCallback(
@@ -113,7 +91,7 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
         const rawX = pointerStart.current.originX + delta;
         motionX.set(Math.max(dragMin, Math.min(dragMax, rawX)));
       },
-      [motionX]
+      [motionX],
     );
 
     const handlePointerUp = useCallback(() => {
@@ -135,9 +113,7 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
         if (shouldBeOn !== isChecked) {
           onCheckedChange?.(shouldBeOn);
         } else {
-          const snapTarget = isChecked
-            ? THUMB_OFFSET + THUMB_TRAVEL
-            : THUMB_OFFSET;
+          const snapTarget = isChecked ? THUMB_OFFSET + THUMB_TRAVEL : THUMB_OFFSET;
           animate(motionX, snapTarget, spring.moderate);
         }
 
@@ -157,24 +133,24 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
         disabled={disabled}
         tabIndex={0}
         className={cn(
-          "relative shrink-0 rounded-full outline-none cursor-pointer touch-none",
-          "transition-colors duration-80",
-          "focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-          !label && className
+          'relative shrink-0 cursor-pointer touch-none rounded-full outline-none',
+          'transition-colors duration-80',
+          'focus-visible:ring-ring focus-visible:ring-offset-background focus-visible:ring-1 focus-visible:ring-offset-2',
+          !label && className,
         )}
         style={{
           width: TRACK_WIDTH,
           height: TRACK_HEIGHT,
           backgroundColor: isChecked
             ? hovered
-              ? "var(--kortix-blue)"
-              : "var(--kortix-blue)"
+              ? 'var(--kortix-blue)'
+              : 'var(--kortix-blue)'
             : hovered
-              ? "color-mix(in oklab, var(--accent), rgb(var(--overlay)) 10%)"
-              : "var(--accent)",
+              ? 'color-mix(in oklab, var(--accent), rgb(var(--overlay)) 10%)'
+              : 'var(--accent)',
         }}
         onPointerEnter={(e) => {
-          if (e.pointerType === "mouse") setHovered(true);
+          if (e.pointerType === 'mouse') setHovered(true);
         }}
         onPointerLeave={() => setHovered(false)}
         onPointerDown={handlePointerDown}
@@ -209,26 +185,26 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
     return (
       <div
         className={cn(
-          "relative z-10 flex items-center gap-2.5 px-3 py-2 cursor-pointer select-none",
-          disabled && "opacity-50 pointer-events-none",
-          className
+          'relative z-10 flex cursor-pointer items-center gap-2.5 px-3 py-2 select-none',
+          disabled && 'pointer-events-none opacity-50',
+          className,
         )}
       >
         {switchControl}
         <span
           className={cn(
-            "text-[13px] transition-[color] duration-80",
-            isChecked ? "text-foreground" : "text-muted-foreground"
+            'text-sm transition-[color] duration-80',
+            isChecked ? 'text-foreground' : 'text-muted-foreground',
           )}
         >
           {label}
         </span>
       </div>
     );
-  }
+  },
 );
 
-Switch.displayName = "Switch";
+Switch.displayName = 'Switch';
 
 export { Switch };
 export type { SwitchProps };
