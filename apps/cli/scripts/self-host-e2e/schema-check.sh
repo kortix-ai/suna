@@ -60,15 +60,19 @@ ok "instance $INSTANCE (api port $API_PORT)"
 
 section "CLI Self-host Setup"
 $CLI self-host init --instance "$INSTANCE" >/dev/null
-# Schema-only gate: this never provisions a sandbox, so no sandbox provider is
-# configured. An empty ALLOWED_SANDBOX_PROVIDERS lets the API boot without
-# daytona/platinum credentials (provider selection is lazy, on sandbox create).
+# Schema-only gate: this never provisions a sandbox. `self-host init` defaults
+# the provider to daytona, which makes env-validation require Daytona creds, so
+# supply dummy ones — they only need to be present for the API to boot; Daytona
+# is never actually called during a schema check (provider use is lazy).
 $CLI self-host env set --instance "$INSTANCE" \
   "API_PUBLIC_URL=http://localhost:$API_PORT" \
   "SUPABASE_PUBLIC_URL=http://localhost:$SUPABASE_PORT" \
   "API_PORT=$API_PORT" "SUPABASE_PORT=$SUPABASE_PORT" "POSTGRES_PORT=$POSTGRES_PORT" \
   "FRONTEND_PORT=$FRONTEND_PORT" \
-  "ALLOWED_SANDBOX_PROVIDERS=" \
+  "ALLOWED_SANDBOX_PROVIDERS=daytona" \
+  "DAYTONA_API_KEY=schema-check-dummy" \
+  "DAYTONA_SERVER_URL=https://daytona.invalid" \
+  "DAYTONA_TARGET=schema-check" \
   "KORTIX_LOCAL_IMAGES=true" \
   "API_IMAGE=$API_IMAGE" >/dev/null
 ok "config initialized"
