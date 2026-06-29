@@ -10,6 +10,11 @@ import {
   assertAuthorized,
 } from '../../iam';
 import {
+  invalidateIamCacheForGroup,
+  invalidateIamCacheForUser,
+  invalidateIamCacheForUsers,
+} from '../../iam/cache-invalidation';
+import {
   addGroupMembers,
   createGroup,
   deleteGroup,
@@ -238,6 +243,12 @@ iamRouter.openapi(
 
   const beforeGroup = await getGroup(accountId, groupId);
 
+  // Bust every member's cached decision BEFORE the delete: the cascade removes
+  // accountGroupMembers, so invalidateIamCacheForGroup (which reads that table)
+  // would find no one to bust if called afterwards. Otherwise the group's
+  // grants would keep applying for up to the cache TTL after deletion.
+  await invalidateIamCacheForGroup(groupId);
+
   const ok = await deleteGroup(accountId, groupId);
   if (!ok) return c.json({ error: 'group not found' }, 404);
 
@@ -322,6 +333,10 @@ iamRouter.openapi(
 
   const result = await addGroupMembers({ accountId, groupId, userIds, addedBy: userId });
 
+  // New members inherit the group's project grants immediately — bust their
+  // cached decisions so the added access isn't delayed by the cache TTL.
+  if (result.added > 0) invalidateIamCacheForUsers(userIds);
+
   if (result.added > 0) {
     await auditIam(c, {
       accountId,
@@ -364,6 +379,10 @@ iamRouter.openapi(
 
   const ok = await removeGroupMember(groupId, targetUserId);
   if (!ok) return c.json({ error: 'not a member of this group' }, 404);
+
+  // Revocation must take effect now, not after the cache TTL: drop the removed
+  // user's cached decision so the group's grants stop applying immediately.
+  invalidateIamCacheForUser(targetUserId);
 
   await auditIam(c, {
     accountId,

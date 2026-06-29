@@ -1,3 +1,12 @@
+export type NavSubLink = {
+  href: string;
+  name: string;
+};
+
+export type NavLink =
+  | { id: number; name: string; href: string }
+  | { id: number; name: string; href: NavSubLink[] };
+
 export const siteConfig = {
   url:
     process.env.KORTIX_PUBLIC_APP_URL ||
@@ -11,7 +20,7 @@ export const siteConfig = {
       { id: 3, name: 'Pricing', href: '/pricing' },
       { id: 4, name: 'Blog', href: '/blog' },
       { id: 5, name: 'Docs', href: '/docs' },
-    ],
+    ] as NavLink[],
   },
   hero: {
     description: 'Kortix – the open AI command center for your company.',

@@ -93,6 +93,21 @@ export interface GatewayDeps {
   loadEmailConnectorContext?(projectId: string, connectorSlug: string): Promise<EmailConnectorContext | null>;
   /** Resolve the AgentMail credential for the install that owns this inbox. */
   resolveEmailCredentialForInbox?(projectId: string, inboxId: string): Promise<string | null>;
+  /**
+   * Meet (Recall.ai) join augmentation — the realtime webhook endpoint + bot
+   * `metadata` (owning session + an HMAC token) injected server-side so Recall
+   * streams transcript/chat back to us. Null when no public URL is configured or
+   * the call isn't session-scoped. The sandbox never builds this callback.
+   */
+  resolveMeetJoinContext?(
+    projectId: string,
+    sessionId: string | null,
+  ): Promise<{
+    metadata: Record<string, unknown>;
+    realtimeEndpoints: unknown[];
+    automaticAudioOutput: unknown;
+    botName: string;
+  } | null>;
   /** Connector-scoped policies (relative patterns over the connector's tool paths). */
   loadPolicies(connectorId: string): Promise<Policy[]>;
   /** Project-scoped policies (fully-qualified patterns over <slug>.<path>). */
@@ -295,8 +310,34 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     return { status: 'denied', reason: usable.reason };
   }
 
-  const executionArgs = emailExecution.args;
+  let executionArgs = emailExecution.args;
   const executionSecret = usable.secret;
+
+  // Meet (Recall.ai) live relay: on join, inject the realtime webhook + bot
+  // metadata server-side so Recall streams transcript/chat back to us, tagged
+  // with this session. Merges with the recording_config the caller already set.
+  if (
+    connector.provider === 'channel' &&
+    connector.platform === 'meet' &&
+    input.actionPath === 'join_meeting' &&
+    deps.resolveMeetJoinContext
+  ) {
+    const ctx = await deps.resolveMeetJoinContext(input.projectId, input.sessionId ?? null);
+    if (ctx) {
+      const rc = { ...((executionArgs.recording_config as Record<string, unknown>) ?? {}) };
+      const existing = Array.isArray(rc.realtime_endpoints) ? rc.realtime_endpoints : [];
+      rc.realtime_endpoints = [...existing, ...ctx.realtimeEndpoints];
+      executionArgs = {
+        ...executionArgs,
+        recording_config: rc,
+        metadata: { ...((executionArgs.metadata as Record<string, unknown>) ?? {}), ...ctx.metadata },
+        // Enable the bot to speak (output_audio) unless the caller set its own.
+        automatic_audio_output: executionArgs.automatic_audio_output ?? ctx.automaticAudioOutput,
+        // The project's configured bot display name, unless the caller passed one.
+        bot_name: executionArgs.bot_name ?? ctx.botName,
+      };
+    }
+  }
 
   // Layered policy enforcement: project policies first → connector → risk default.
   if (deps.enforcePolicies !== false) {

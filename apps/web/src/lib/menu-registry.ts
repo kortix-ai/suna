@@ -18,6 +18,7 @@
  */
 
 import { Icon } from '@/features/icon/icon';
+import type { ExperimentalFeatureKey } from '@/lib/projects-client';
 import {
   CogOne,
   CogOneSolid,
@@ -30,6 +31,7 @@ import {
   Activity,
   Blocks,
   Bot,
+  Boxes,
   Cable,
   Calendar,
   Coins,
@@ -38,6 +40,7 @@ import {
   FolderGit2,
   FolderOpen,
   GitCompareArrows,
+  GitPullRequest,
   Globe,
   Hash,
   Keyboard,
@@ -49,6 +52,7 @@ import {
   LayoutTemplate,
   LogOut,
   MessagesSquare,
+  Monitor,
   // Preferences
   Palette,
   // View / Misc
@@ -61,7 +65,9 @@ import {
   ScrollText,
   Search,
   SlidersHorizontal,
+  Store,
   TerminalSquare,
+  UserPlus,
   Volume2,
   Webhook,
 } from 'lucide-react';
@@ -179,6 +185,10 @@ export interface MenuItemDef {
    *  feature flag (NEXT_PUBLIC_ENABLE_PROJECTS) is on. Used to gate
    *  project-paradigm surfaces (Board today; Milestones, Team later). */
   requiresProjectsFlag?: boolean;
+  /** If set, item is only shown when the named per-project experimental
+   *  feature is enabled (mirrors the Customize rail gating). The palette
+   *  resolves it against the active project's experimental flags. */
+  requiresExperimental?: ExperimentalFeatureKey;
 }
 
 // ============================================================================
@@ -389,6 +399,56 @@ export const menuRegistry: MenuItemDef[] = [
       'policies approval block require_approval rules tools executor guardrails project customize',
   },
   {
+    id: 'proj-changes',
+    label: 'Customize · Checkpoints',
+    icon: GitPullRequest,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/changes',
+    requiresProject: true,
+    keywords:
+      'checkpoint checkpoints changes change requests review merge pull request diff commits git history timeline versions branches project customize',
+  },
+  {
+    id: 'proj-marketplace',
+    label: 'Customize · Marketplace',
+    icon: Store,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/marketplace',
+    requiresProject: true,
+    requiresExperimental: 'marketplace',
+    keywords: 'marketplace store install templates agents skills browse project customize',
+  },
+  {
+    id: 'proj-llm',
+    label: 'Customize · LLM',
+    icon: Boxes,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/llm-management',
+    requiresProject: true,
+    requiresExperimental: 'llm_gateway',
+    keywords:
+      'llm gateway providers models budgets logs api keys overview anthropic openai openrouter google groq xai project customize',
+  },
+  {
+    id: 'proj-computers',
+    label: 'Customize · Computers',
+    icon: Monitor,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/computers',
+    requiresProject: true,
+    requiresExperimental: 'agent_tunnel',
+    keywords:
+      'computers tunnel machines connect reverse local devices remote agent access project customize',
+  },
+  {
     id: 'proj-members',
     label: 'Customize · Members',
     icon: UsersSolid,
@@ -398,6 +458,17 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/customize/members',
     requiresProject: true,
     keywords: 'members team access collaborators project customize',
+  },
+  {
+    id: 'proj-invite',
+    label: 'Invite members',
+    icon: UserPlus,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'inviteMembers',
+    requiresProject: true,
+    keywords: 'invite members add teammate email collaborator people access send project customize',
   },
   {
     id: 'proj-schedules',
@@ -430,7 +501,8 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/customize/channels',
     requiresProject: true,
-    keywords: 'channels slack integrations project customize',
+    keywords:
+      'channels slack email agent mail agentmail agentic mail inbox messaging notifications integrations project customize',
   },
   {
     id: 'proj-settings',

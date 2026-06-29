@@ -17,6 +17,7 @@ import { runLogout } from './commands/logout.ts';
 import { runMarketplace } from './commands/marketplace.ts';
 import { runProjects } from './commands/projects.ts';
 import { runRegistry } from './commands/registry.ts';
+import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
 import { runSecrets } from './commands/secrets.ts';
 import { runSelfHost } from './commands/self-host.ts';
@@ -73,6 +74,7 @@ const COMMANDS: readonly Command[] = [
   { name: 'apps', args: '<subcommand>', blurb: 'Manage deployable apps (experimental)' },
   { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
   { name: 'access', args: '<subcommand>', blurb: 'Manage who can use this project (invite/grant/revoke)' },
+  { name: 'roles', args: '<subcommand>', blurb: 'Manage IAM custom roles + policy assignments (account-scoped)' },
   { name: 'tunnel', args: '<subcommand>', blurb: 'See & drive your fleet of registered computers (Agent Tunnel)' },
   { name: 'update', blurb: 'Pull the latest CLI from kortix.com/install' },
   { name: 'uninstall', blurb: 'Remove the Kortix CLI from this machine' },
@@ -226,6 +228,9 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'access') {
     return runAccess(argv.slice(1));
+  }
+  if (argv[0] === 'roles') {
+    return runRoles(argv.slice(1));
   }
   if (argv[0] === 'update') {
     return runUpdate(argv.slice(1));

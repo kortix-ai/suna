@@ -997,7 +997,7 @@ importers:
         specifier: ^1.258.6
         version: 1.391.7
       radix-ui:
-        specifier: ^1.4.3
+        specifier: ^1.6.0
         version: 1.6.0(@types/react-dom@19.2.3)(@types/react@19.1.17)(react-dom@19.1.0)(react@19.1.0)
       react:
         specifier: ^19.1.0
@@ -13520,6 +13520,7 @@ packages:
   /@xmldom/xmldom@0.9.10:
     resolution: {integrity: sha512-A9gOqLdi6cV4ibazAjcQufGj0B1y/vDqYrcuP6d/6x8P27gRS8643Dj9o1dEKtB6O7fwxb2FgBmJS2mX7gpvdw==}
     engines: {node: '>=14.6'}
+    requiresBuild: true
 
   /@xterm/addon-fit@0.10.0(@xterm/xterm@5.5.0):
     resolution: {integrity: sha512-UFYkDm4HUahf2lnEyHvio51TNGiLK66mqP2JoATy7hRZeXaGMRDr00JiSF7m63vR5WKATF605yEggJKsw0JpMQ==}
@@ -15965,7 +15966,7 @@ packages:
     resolution: {integrity: sha512-zIHwmZPRshsCdpMDyVsqGmgyP0yT8GAgXUnkdAoJisxvf33k7yO6OuoKmcTGuXPWSsm8Oh88nZicRLA9Y0rUeA==}
     engines: {node: '>=12'}
     dependencies:
-      dotenv: 16.6.1
+      dotenv: 16.4.7
 
   /dotenv-expand@12.0.3:
     resolution: {integrity: sha512-uc47g4b+4k/M/SeaW1y4OApx+mtLWl92l5LMPP0GNXctZqELk+YGgOPIIC5elYmUH4OuoK3JLhuRUYegeySiFA==}

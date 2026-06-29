@@ -19,7 +19,7 @@ import { lazy, Suspense, useState } from 'react';
 import { DownloadAppsModal } from './download-apps-modal';
 
 const CommandPalette = lazy(() =>
-  import('@/components/command-palette').then((mod) => ({
+  import('@/features/workspace/command-palette').then((mod) => ({
     default: mod.CommandPalette,
   })),
 );

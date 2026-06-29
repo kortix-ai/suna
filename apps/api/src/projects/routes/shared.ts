@@ -258,6 +258,8 @@ export async function allocateRuntimeOnOpen(
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
         opencodeModel,
+        defaultBranch: loaded.row.defaultBranch,
+        manifestPath: loaded.row.manifestPath,
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
       }),
     resolveGitAuthToken: async () =>

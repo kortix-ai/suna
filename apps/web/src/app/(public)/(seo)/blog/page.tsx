@@ -3,7 +3,7 @@ import { useTranslations } from 'next-intl';
 
 import { PostCard } from '@/components/blog/post-card';
 import { Reveal } from '@/components/home/reveal';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { getAllPosts } from '@/lib/blog';
 import { siteMetadata } from '@/lib/site-metadata';
 

@@ -75,9 +75,14 @@ export const sessionLifecycleCommandStatusEnum = kortixSchema.enum(
   ],
 );
 
+// `user` is the floor project role. `viewer` is DEPRECATED — it was folded
+// into `user` (existing rows migrated, see the project_role_user_floor
+// migration) and is no longer assignable. The value lingers only because
+// Postgres can't drop an enum member; nothing reads or writes it.
 export const projectRoleEnum = kortixSchema.enum('project_role', [
   'manager',
   'editor',
+  'user',
   'viewer',
 ]);
 
@@ -193,13 +198,15 @@ export const accountInvitations = kortixSchema.table(
      *  account invite + records the project grant here; on accept,
      *  the user joins the org as a member AND gets the project role
      *  in the same transaction. Shape:
-     *    [{ project_id: uuid, role: 'manager'|'editor'|'viewer',
+     *    [{ project_id: uuid, role: 'manager'|'editor'|'user',
      *       expires_at?: iso }]
      *  Multiple grants are allowed — the same email could be invited
-     *  to several projects at once via repeated calls (they upsert). */
+     *  to several projects at once via repeated calls (they upsert).
+     *  Legacy rows may carry the retired 'viewer' role; readers fold it
+     *  into 'user' via parseProjectRole. */
     bootstrapGrants: jsonb('bootstrap_grants').$type<Array<{
       project_id: string;
-      role: 'manager' | 'editor' | 'viewer';
+      role: 'manager' | 'editor' | 'user';
       expires_at?: string | null;
     }>>(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
@@ -367,7 +374,7 @@ export const projectMembers = kortixSchema.table(
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull(),
-    projectRole: projectRoleEnum('project_role').default('viewer').notNull(),
+    projectRole: projectRoleEnum('project_role').default('user').notNull(),
     grantedBy: uuid('granted_by'),
     /** Optional auto-revoke timestamp. NULL = permanent grant.
      *  When set and in the past, the V2 engine treats the row as if it
@@ -1425,6 +1432,12 @@ export interface AgentGrant {
   agent: string;
   kortixCli: string[] | 'all';
   connectors: string[] | 'all';
+  /** Project-secret names this agent may receive as sandbox env (and read via
+   *  the secrets API). 'all' = every secret the launching user can see (the
+   *  default for a listed agent when `env` is omitted, and for the catch-all
+   *  agent); an explicit list narrows it; [] = none. Optional for back-compat
+   *  with grants minted before this field existed (treated as 'all'). */
+  env?: string[] | 'all';
 }
 
 export const accountTokens = kortixSchema.table(
@@ -1462,6 +1475,17 @@ export const accountTokens = kortixSchema.table(
      *  the reaper's reliable activity signal + precise billing. Null for
      *  non-session tokens (laptop CLI PATs, project-scoped operator tokens). */
     sessionId: text('session_id'),
+    /** The STANDING IDENTITY this session token acts as. When set, the IAM
+     *  engine authorizes the request as this service account (its own policies),
+     *  not the launching user — `effective = SA standing role ∩ agentGrant`. The
+     *  user_id stays for provenance/audit. NULL = legacy behavior (authorize as
+     *  the user). Set at session mint to the agent's auto-provisioned SA.
+     *  ON DELETE CASCADE (fail-closed): deleting the SA identity kills its live
+     *  session tokens (next call 401s) rather than silently reverting the agent
+     *  to the broader launching-user perms — sessions only ever NARROW. */
+    serviceAccountId: uuid('service_account_id').references(() => serviceAccounts.serviceAccountId, {
+      onDelete: 'cascade',
+    }),
   },
   (table) => [
     uniqueIndex('idx_account_tokens_public_key').on(table.publicKey),
@@ -2518,7 +2542,7 @@ export const projectGroupGrants = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    role: projectRoleEnum('role').default('viewer').notNull(),
+    role: projectRoleEnum('role').default('user').notNull(),
     grantedBy: uuid('granted_by'),
     /** Optional auto-revoke timestamp. NULL = permanent attachment.
      *  Same semantics as project_members.expires_at. */
@@ -2549,6 +2573,174 @@ export const accountGroupMembersRelations = relations(accountGroupMembers, ({ on
     references: [accountGroups.groupId],
   }),
 }));
+
+
+// ─── IAM v1 — DB-driven custom roles + policies ────────────────────────────
+// The built-in roles (owner/admin/member, manager/editor/user) stay as
+// frozen Sets in apps/api/src/iam/role-perms.ts and keep their in-memory fast
+// path. These tables add ACCOUNT-scoped CUSTOM roles and the policies that bind
+// a principal (member/group/token) to a custom role at a scope. The engine
+// consults them ADDITIVELY (union, allow-only highest-wins) on top of the
+// built-in role — so nothing existing changes until an admin creates a custom
+// role and assigns it. A department = an account_group bound here to a scoped
+// custom role; deactivating a capability = a role whose action set OMITS it.
+
+export const iamRoles = kortixSchema.table(
+  'iam_roles',
+  {
+    roleId: uuid('role_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** Machine key, unique per account (e.g. 'marketing_operator'). */
+    key: varchar('key', { length: 64 }).notNull(),
+    name: varchar('name', { length: 128 }).notNull(),
+    description: text('description'),
+    /** Where the role's actions apply: 'account' | 'project'. Plain text +
+     *  app-level validation (mirrors resourceTypeForAction's vocabulary). */
+    scopeType: varchar('scope_type', { length: 16 }).default('project').notNull(),
+    /** Reserved: v1 only creates custom roles; built-ins remain code-defined. */
+    isBuiltin: boolean('is_builtin').default(false).notNull(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_iam_roles_account').on(table.accountId),
+    uniqueIndex('idx_iam_roles_account_key').on(table.accountId, table.key),
+  ],
+);
+
+export const iamRoleActions = kortixSchema.table(
+  'iam_role_actions',
+  {
+    roleId: uuid('role_id')
+      .notNull()
+      .references(() => iamRoles.roleId, { onDelete: 'cascade' }),
+    /** A permission string from actions.ts VALID_ACTIONS (validated at write). */
+    action: varchar('action', { length: 96 }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.roleId, table.action] })],
+);
+
+export const iamPolicies = kortixSchema.table(
+  'iam_policies',
+  {
+    policyId: uuid('policy_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** 'member' (user id) | 'group' (account_groups.group_id) | 'token' (SA). */
+    principalType: varchar('principal_type', { length: 16 }).notNull(),
+    /** Untyped uuid — same choice as project_secret_grants.principal_id. */
+    principalId: uuid('principal_id').notNull(),
+    roleId: uuid('role_id')
+      .notNull()
+      .references(() => iamRoles.roleId, { onDelete: 'cascade' }),
+    /** 'account' (every project) | 'project' (scope_id = project_id). */
+    scopeType: varchar('scope_type', { length: 16 }).notNull(),
+    /** project_id when scope_type='project'; NULL = account-wide. No FK (the
+     *  column is polymorphic across account-wide vs a specific project). */
+    scopeId: uuid('scope_id'),
+    /** Optional auto-revoke; same semantics as project_members.expires_at. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    grantedBy: uuid('granted_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_iam_policies_account_principal').on(
+      table.accountId,
+      table.principalType,
+      table.principalId,
+    ),
+    index('idx_iam_policies_scope').on(table.scopeType, table.scopeId),
+    index('idx_iam_policies_role').on(table.roleId),
+  ],
+);
+
+export const iamRolesRelations = relations(iamRoles, ({ one, many }) => ({
+  account: one(accounts, {
+    fields: [iamRoles.accountId],
+    references: [accounts.accountId],
+  }),
+  actions: many(iamRoleActions),
+}));
+
+export const iamRoleActionsRelations = relations(iamRoleActions, ({ one }) => ({
+  role: one(iamRoles, {
+    fields: [iamRoleActions.roleId],
+    references: [iamRoles.roleId],
+  }),
+}));
+
+
+/**
+ * IAM V2 per-RESOURCE scoping. Scopes a member or group (Department) to a
+ * SPECIFIC agent or skill within a project — "Marketing may use agent
+ * `outreach-bot` and skill `lead-research`, nothing else." Sits as an
+ * INTERSECTION on top of the project-role / custom-policy verdict:
+ *   - A resource (agent name / skill slug) becomes "scoped" once ≥1 grant row
+ *     exists for (project, resource_type, resource_id).
+ *   - UNSCOPED resources stay project-wide (no behaviour change) — so scoping
+ *     agent A restricts only agent A; agents with no grant stay open to anyone
+ *     who holds the capability. This makes the feature inherently opt-in and
+ *     avoids surprise lockouts.
+ *   - SCOPED resources are visible/usable ONLY to principals with a matching
+ *     grant (member = the user, or any group the user belongs to). Account
+ *     owners/admins keep implicit Manager and bypass scoping entirely.
+ * `resource_id` is TEXT because agent names + skill slugs are file-based
+ * manifest keys, not uuids. Mirrors the project_group_grants / iam_policies
+ * (member|group principal) pattern; principal_id is an untyped uuid for the
+ * same polymorphic reason as iam_policies.principal_id.
+ */
+export const iamResourceGrants = kortixSchema.table(
+  'iam_resource_grants',
+  {
+    grantId: uuid('grant_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** 'agent' | 'skill' — validated app-side; extensible to command/etc. */
+    resourceType: varchar('resource_type', { length: 32 }).notNull(),
+    /** Agent name / skill slug — the file-based manifest key (NOT a uuid). */
+    resourceId: text('resource_id').notNull(),
+    /** 'member' (user id) | 'group' (account_groups.group_id). */
+    principalType: varchar('principal_type', { length: 16 }).notNull(),
+    /** Untyped uuid — same choice as iam_policies.principal_id. */
+    principalId: uuid('principal_id').notNull(),
+    /** v1 is allow-only; 'deny' reserved for a future explicit-deny tier. */
+    effect: varchar('effect', { length: 8 }).default('allow').notNull(),
+    /** Optional auto-revoke; same semantics as project_members.expires_at. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    grantedBy: uuid('granted_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // One grant per (resource, principal) — upsert target.
+    uniqueIndex('uq_iam_resource_grants').on(
+      table.projectId,
+      table.resourceType,
+      table.resourceId,
+      table.principalType,
+      table.principalId,
+    ),
+    // "Is anything of this type scoped in this project?" + per-resource lookup.
+    index('idx_iam_resource_grants_project_type').on(table.projectId, table.resourceType),
+    index('idx_iam_resource_grants_resource').on(
+      table.projectId,
+      table.resourceType,
+      table.resourceId,
+    ),
+    // Cache invalidation by principal (a user or a group).
+    index('idx_iam_resource_grants_principal').on(table.principalType, table.principalId),
+    index('idx_iam_resource_grants_account').on(table.accountId),
+  ],
+);
 
 
 // ─── SCIM 2.0 provisioning tokens ──────────────────────────────────────────
@@ -2683,13 +2875,23 @@ export const serviceAccounts = kortixSchema.table(
     name: varchar('name', { length: 128 }).notNull(),
     description: text('description'),
     /** SHA-256 hex of the plaintext bearer (kortix_sa_*). Plaintext
-     *  is shown ONCE at creation, never persisted. */
+     *  is shown ONCE at creation, never persisted. Auto-provisioned agent SAs
+     *  (agent_name set) are IDENTITY-ONLY: a random secret is generated and the
+     *  plaintext discarded, so the bearer is unusable — the agent authenticates
+     *  via its session account_token (service_account_id), not this bearer. */
     secretHash: text('secret_hash').notNull(),
     /** Display prefix so admins can recognise SAs in lists. */
     publicPrefix: varchar('public_prefix', { length: 32 }).notNull(),
     /** active | disabled. Disabled SAs are kept for audit trail but
      *  refuse every request. */
     status: varchar('status', { length: 16 }).default('active').notNull(),
+    /** Set for an auto-provisioned AGENT identity: the project the agent lives
+     *  in. NULL for a manually-created (human-managed) service account. */
+    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** The kortix.toml [[agents]] name this SA is the standing identity for.
+     *  NULL for a manual service account. (account_id, project_id, agent_name)
+     *  is unique so get-or-create is idempotent per agent. */
+    agentName: text('agent_name'),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
@@ -2700,7 +2902,15 @@ export const serviceAccounts = kortixSchema.table(
   (table) => [
     index('idx_service_accounts_account').on(table.accountId),
     uniqueIndex('idx_service_accounts_secret_hash').on(table.secretHash),
-    uniqueIndex('idx_service_accounts_account_name').on(table.accountId, table.name),
+    // Display-name uniqueness applies to MANUAL service accounts only — auto
+    // agent SAs are uniqued by their (account, project, agent) tuple instead, so
+    // two projects can each have an agent with the same friendly name.
+    uniqueIndex('idx_service_accounts_account_name')
+      .on(table.accountId, table.name)
+      .where(sql`agent_name IS NULL`),
+    uniqueIndex('idx_service_accounts_agent')
+      .on(table.accountId, table.projectId, table.agentName)
+      .where(sql`agent_name IS NOT NULL`),
   ],
 );
 

@@ -39,6 +39,25 @@ const DEFAULT_POSITION = 'bottom-right';
 const toastRowAlign = (options?: Pick<ToastOptions, 'description' | 'button'>) =>
   options?.description || options?.button ? 'items-start mt-0.5' : 'items-center';
 
+/**
+ * Build the data object for `toast.custom`.
+ *
+ * sonner hands the generated id to our render callback (so the close button can
+ * call `toast.dismiss(id)`), but it then spreads `data` over that id. Passing
+ * `id: undefined` clobbers it and sonner mints a *different* real id, leaving the
+ * close button pointing at a toast that no longer matches — so it never dismisses.
+ * Only include `id` when it is actually defined.
+ */
+const toastData = (
+  options: ToastOptions | undefined,
+  duration: number,
+  isMobile: boolean,
+): Parameters<typeof toast.custom>[1] => ({
+  ...(options?.id != null ? { id: options.id } : {}),
+  duration,
+  position: isMobile ? 'top-center' : options?.position || DEFAULT_POSITION,
+});
+
 function ToastMessage({
   message,
   description,
@@ -87,11 +106,7 @@ export const successToast = (message: string, options?: ToastOptions) => {
         </div>
       </div>
     ),
-    {
-      id: options?.id,
-      duration: options?.duration || DEFAULT_DURATION,
-      position: isMobile ? 'top-center' : options?.position || DEFAULT_POSITION,
-    },
+    toastData(options, options?.duration || DEFAULT_DURATION, isMobile),
   );
 };
 
@@ -123,11 +138,7 @@ export const progressToast = (message: string, options?: ToastOptions): string |
         </div>
       </div>
     ),
-    {
-      id: options?.id,
-      duration: options?.duration ?? Infinity,
-      position: isMobile ? 'top-center' : options?.position || DEFAULT_POSITION,
-    },
+    toastData(options, options?.duration ?? Infinity, isMobile),
   );
 };
 
@@ -163,10 +174,7 @@ export const loadingToast = <T,>(
         </div>
       </div>
     ),
-    {
-      duration: Infinity,
-      position: isMobile ? 'top-center' : options?.position || DEFAULT_POSITION,
-    },
+    toastData(options, Infinity, isMobile),
   );
 
   return promise.then(
@@ -225,11 +233,7 @@ export const errorToast = (message: string, options?: ToastOptions) => {
         </div>
       </div>
     ),
-    {
-      id: options?.id,
-      duration: options?.duration || DEFAULT_DURATION,
-      position: isMobile ? 'top-center' : options?.position || DEFAULT_POSITION,
-    },
+    toastData(options, options?.duration || DEFAULT_DURATION, isMobile),
   );
 };
 
@@ -261,10 +265,7 @@ export const infoToast = (message: string, options?: ToastOptions) => {
         </div>
       </div>
     ),
-    {
-      duration: options?.duration || DEFAULT_DURATION,
-      position: isMobile ? 'top-center' : options?.position || DEFAULT_POSITION,
-    },
+    toastData(options, options?.duration || DEFAULT_DURATION, isMobile),
   );
 };
 
@@ -296,9 +297,6 @@ export const warningToast = (message: string, options?: ToastOptions) => {
         </div>
       </div>
     ),
-    {
-      duration: options?.duration || DEFAULT_DURATION,
-      position: isMobile ? 'top-center' : options?.position || DEFAULT_POSITION,
-    },
+    toastData(options, options?.duration || DEFAULT_DURATION, isMobile),
   );
 };

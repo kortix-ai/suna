@@ -28,6 +28,7 @@ export type CustomizeSection =
   | 'schedules'
   | 'webhooks'
   | 'channels'
+  | 'meet'
   | 'sandbox'
   | 'dev'
   | 'settings';
@@ -54,6 +55,7 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'schedules',
   'webhooks',
   'channels',
+  'meet',
   'sandbox',
   'dev',
   'settings',

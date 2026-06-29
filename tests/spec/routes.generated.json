@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 421,
+  "count": 432,
   "routes": [
     {
       "method": "GET",
@@ -588,6 +588,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/channels/slack/identity/login/:token"
+    },
+    {
+      "method": "GET",
       "path": "/v1/docs"
     },
     {
@@ -1003,6 +1007,26 @@
       "path": "/v1/projects/:projectId/channels/email/mode"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/channels/meet/name"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/meet/speak"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/channels/meet/voice"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/meet/voices"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/meet/voices/:voiceId/preview"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/channels/slack/connect"
     },
@@ -1201,6 +1225,18 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/marketplace/updates"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/model-defaults"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/model-defaults"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/model-defaults"
     },
     {
       "method": "GET",
@@ -1637,6 +1673,14 @@
     {
       "method": "POST",
       "path": "/v1/webhooks/email/agentmail"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/meet/realtime"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/meet/status"
     },
     {
       "method": "POST",

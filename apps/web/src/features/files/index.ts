@@ -79,6 +79,7 @@ export {
 
 // Standalone workspace file search (CMD+K, @-mentions, etc.)
 export { searchWorkspaceFiles } from './search/workspace-search-service';
+export { useWorkspaceSearch } from './hooks/use-workspace-search';
 
 // Store
 export {

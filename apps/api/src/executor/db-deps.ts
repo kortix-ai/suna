@@ -46,10 +46,14 @@ import {
   loadAgentMailApiKeyForProject,
   loadAgentMailApiKeyForInbox,
   loadAgentMailInstall,
+  loadMeetInstall,
+  loadMeetTokenForProject,
   loadSlackInstall,
   loadSlackTokenForProject,
 } from '../channels/install-store';
 import { resolveAgentMailApiKey } from '../channels/agentmail-api';
+import { meetRealtimeJoinPatch } from '../channels/meet-realtime';
+import { deriveWakeWord, resolveProjectBotName } from '../channels/meet-voices';
 import { hideSupersededSlack } from './channel-rules';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import {
@@ -129,6 +133,7 @@ function channelPlatform(config: ConnectorRow['config'] | null): string | null {
 async function channelToken(projectId: string, platform: string | null, slug?: string | null): Promise<string | null> {
   if (platform === 'slack') return loadSlackTokenForProject(projectId);
   if (platform === 'email') return resolveAgentMailApiKey(await loadAgentMailApiKeyForProject(projectId, slug));
+  if (platform === 'meet') return loadMeetTokenForProject(projectId);
   return null;
 }
 
@@ -136,6 +141,7 @@ async function channelToken(projectId: string, platform: string | null, slug?: s
 async function channelInstalled(projectId: string, platform: string | null, slug?: string | null): Promise<boolean> {
   if (platform === 'slack') return (await loadSlackInstall(projectId).catch(() => null)) != null;
   if (platform === 'email') return (await loadAgentMailInstall(projectId, slug).catch(() => null)) != null;
+  if (platform === 'meet') return (await loadMeetInstall(projectId).catch(() => null)) != null;
   return false;
 }
 
@@ -234,6 +240,19 @@ function makeDbGatewayDeps(): GatewayDeps {
     },
     resolveEmailCredentialForInbox: async (projectId, inboxId) =>
       resolveAgentMailApiKey(await loadAgentMailApiKeyForInbox(projectId, inboxId)),
+    resolveMeetJoinContext: async (projectId, sessionId) => {
+      if (!sessionId) return null;
+      const botName = await resolveProjectBotName(projectId);
+      const patch = meetRealtimeJoinPatch(projectId, sessionId, deriveWakeWord(botName), botName);
+      return patch
+        ? {
+            metadata: patch.metadata,
+            realtimeEndpoints: patch.realtimeEndpoints,
+            automaticAudioOutput: patch.automaticAudioOutput,
+            botName,
+          }
+        : null;
+    },
     loadPolicies: loadConnectorPoliciesFor,
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,
@@ -419,7 +438,19 @@ async function resolveAdmin(c: Context, projectId: string): Promise<{ accountId:
   if (!userId) return null;
   const [proj] = await db.select({ accountId: projects.accountId }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
   if (!proj) return null;
-  const decision = await authorize(userId, proj.accountId, 'project.write', { type: 'project', id: projectId });
+  // Connector administration (create/delete connectors, write shared credentials,
+  // grants/policies) is project.connector.write — NOT the coarse, fold-exempt
+  // project.write. Thread the acting token (iamTokenId) so the agent-grant fold
+  // fires: a scoped agent-session token must actually hold connector.write to
+  // manage connectors, and a custom role can withhold it from humans too.
+  const actingTokenId = (c.get('iamTokenId') as string | undefined) ?? undefined;
+  const decision = await authorize(
+    userId,
+    proj.accountId,
+    'project.connector.write',
+    { type: 'project', id: projectId },
+    actingTokenId,
+  );
   if (!decision.allowed) return null;
   return { accountId: proj.accountId, userId };
 }

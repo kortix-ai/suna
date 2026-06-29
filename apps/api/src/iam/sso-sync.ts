@@ -17,6 +17,7 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { accountGroupMembers, accountMembers } from '@kortix/db';
 import { db } from '../shared/db';
+import { invalidateIamCacheForUser } from './cache-invalidation';
 import {
   getSsoProviderBySupabaseId,
   listSsoGroupMappings,
@@ -209,6 +210,12 @@ export async function syncSsoMembership(args: {
           inArray(accountGroupMembers.groupId, toRemove),
         ),
       );
+  }
+
+  // JIT membership changed on login → bust this user so their group-derived
+  // roles are correct on the very first authed request of the session.
+  if (memberCreated || toAdd.length > 0 || toRemove.length > 0) {
+    invalidateIamCacheForUser(args.userId);
   }
 
   return {

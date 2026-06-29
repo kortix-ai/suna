@@ -7,7 +7,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { extractAgents, grantFromLoadedAgents } from '../projects/agents';
-import { agentMayPerform, agentMayUseConnector, assertAgentScope } from '../iam/agent-scope';
+import { agentMayPerform, agentMayUseConnector, agentMayUseEnv, assertAgentScope } from '../iam/agent-scope';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
 
 function loadAgents(body: string) {
@@ -31,6 +31,7 @@ kortix_cli = ["project.deploy", "project.cr.open"]
       agent: 'release-bot',
       connectors: ['github'],
       kortixCli: ['project.deploy', 'project.cr.open'],
+      env: 'all', // env key omitted → defaults to 'all' (back-compat for the new dimension)
     });
   });
 
@@ -44,6 +45,7 @@ kortix_cli = ["project.deploy"]
       agent: 'some-other-agent',
       connectors: [],
       kortixCli: [],
+      env: [], // unlisted-but-adopted → default-deny everything, incl. secrets
     });
   });
 
@@ -58,6 +60,7 @@ kortix_cli = ["project.deploy"]
       agent: 'release-bot',
       connectors: [],
       kortixCli: [],
+      env: [],
     });
   });
 
@@ -72,6 +75,7 @@ kortix_cli = "all"
       agent: 'kortix',
       connectors: 'all',
       kortixCli: 'all',
+      env: 'all',
     });
   });
 
@@ -96,6 +100,8 @@ connectors = []
   });
 
   // The security feature is preserved: an unlisted CONCRETE agent still denies.
+  // Default-deny is total — no connectors, no Kortix-CLI, and (per the secrets-
+  // scoping rule) no project env either.
   test('concrete unlisted agent under governance still default-denies (≠ sentinel)', () => {
     const loaded = loadAgents(`
 [[agents]]
@@ -106,7 +112,34 @@ connectors = "all"
       agent: 'rogue-agent',
       connectors: [],
       kortixCli: [],
+      env: [],
     });
+  });
+});
+
+describe('agentMayUseEnv — per-agent secret gate', () => {
+  test('null grant → allowed (no restriction)', () => {
+    expect(agentMayUseEnv(null, 'GITHUB_TOKEN')).toBe(true);
+  });
+  test('missing env (legacy grant) → treated as all', () => {
+    expect(agentMayUseEnv({ agent: 'a', kortixCli: 'all', connectors: 'all' }, 'GITHUB_TOKEN')).toBe(true);
+  });
+  test('"all" → every secret allowed', () => {
+    expect(agentMayUseEnv({ agent: 'a', kortixCli: [], connectors: [], env: 'all' }, 'STRIPE_KEY')).toBe(true);
+  });
+  test('explicit list → only listed secrets; others denied', () => {
+    const grant = { agent: 'mkt', kortixCli: [], connectors: [], env: ['BRAND_API'] };
+    expect(agentMayUseEnv(grant, 'BRAND_API')).toBe(true);
+    expect(agentMayUseEnv(grant, 'STRIPE_KEY')).toBe(false);
+  });
+  test('empty list → no secrets', () => {
+    expect(agentMayUseEnv({ agent: 'a', kortixCli: [], connectors: [], env: [] }, 'ANY')).toBe(false);
+  });
+  test('case-insensitive: a lowercase allowlist still admits the UPPERCASE secret', () => {
+    // Secrets are canonically UPPERCASE; a hand-written kortix.toml allowlist may not be.
+    const grant = { agent: 'mkt', kortixCli: [], connectors: [], env: ['openai_api_key'] };
+    expect(agentMayUseEnv(grant, 'OPENAI_API_KEY')).toBe(true);
+    expect(agentMayUseEnv(grant, 'STRIPE_KEY')).toBe(false);
   });
 });
 
@@ -126,6 +159,19 @@ describe('agentMayPerform — kortix_cli gate', () => {
   });
   test('empty grant → everything denied', () => {
     expect(agentMayPerform({ agent: 'a', kortixCli: [], connectors: [] }, 'project.deploy')).toBe(false);
+  });
+  test('cr.open ≡ gitops.push alias: holding either satisfies the other (no double-gate)', () => {
+    const crOnly = { agent: 'a', kortixCli: ['project.cr.open'], connectors: [] };
+    expect(agentMayPerform(crOnly, 'project.gitops.push')).toBe(true); // fold gates the commit as gitops.push
+    const pushOnly = { agent: 'a', kortixCli: ['project.gitops.push'], connectors: [] };
+    expect(agentMayPerform(pushOnly, 'project.cr.open')).toBe(true); // route gates CR-create as cr.open
+    // merge pair is independent — cr.open does NOT unlock merge
+    expect(agentMayPerform(crOnly, 'project.gitops.merge')).toBe(false);
+    expect(agentMayPerform(crOnly, 'project.cr.merge')).toBe(false);
+  });
+  test('cr.merge ≡ gitops.merge alias', () => {
+    const mergeOnly = { agent: 'a', kortixCli: ['project.cr.merge'], connectors: [] };
+    expect(agentMayPerform(mergeOnly, 'project.gitops.merge')).toBe(true);
   });
 });
 

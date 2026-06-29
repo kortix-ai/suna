@@ -9,7 +9,7 @@ import { useTranslations } from 'next-intl';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { SharingPicker, type SharingSelection } from '@/features/co-worker/shared/sharing-picker';
+import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
 import type { ProjectAccessResponse } from '@/lib/projects-client';
 
 const DEMO_PROJECT = 'demo';
@@ -47,8 +47,8 @@ const DEMO_ACCESS: ProjectAccessResponse = {
       user_id: 'u3',
       email: 'ana@kortix.ai',
       account_role: 'member',
-      project_role: 'viewer',
-      effective_project_role: 'viewer',
+      project_role: 'user',
+      effective_project_role: 'user',
       has_implicit_access: false,
       joined_at: '',
       granted_by: null,
@@ -59,8 +59,8 @@ const DEMO_ACCESS: ProjectAccessResponse = {
       user_id: 'u4',
       email: 'ben.long.email@partner.example.com',
       account_role: 'member',
-      project_role: 'viewer',
-      effective_project_role: 'viewer',
+      project_role: 'user',
+      effective_project_role: 'user',
       has_implicit_access: false,
       joined_at: '',
       granted_by: null,
@@ -71,8 +71,8 @@ const DEMO_ACCESS: ProjectAccessResponse = {
       user_id: 'u5',
       email: 'chen@kortix.ai',
       account_role: 'member',
-      project_role: 'viewer',
-      effective_project_role: 'viewer',
+      project_role: 'user',
+      effective_project_role: 'user',
       has_implicit_access: false,
       joined_at: '',
       granted_by: null,

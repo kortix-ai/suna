@@ -183,6 +183,8 @@ export async function restartSession(input: {
           agentName: session.agentName ?? 'default',
           initialPrompt,
           opencodeModel,
+          defaultBranch: loaded.row.defaultBranch,
+          manifestPath: loaded.row.manifestPath,
           llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
         }),
       resolveGitAuthToken: async () =>

@@ -1,5 +1,7 @@
 import { buildInviteUrl, isInviteEmailConfigured, sendAccountInviteEmail } from '../../accounts/email';
-import { PROJECT_ACTIONS, assertAuthorized, authorize } from '../../iam';
+import { PROJECT_ACTIONS, authorize } from '../../iam';
+import { assertAgentScope } from '../../iam/agent-scope';
+import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { deriveRequestContext } from '../../iam/cache';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -8,13 +10,13 @@ import { foldEffectiveProjectAccess, isAccountManager, parseProjectRole, roleAll
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accounts, projectAccessRequests, projectGroupGrants, projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { ensureOrgMembership, grantProjectRole, loadProjectForUser, lookupEmailsByUserIds, parseExpiresAtBody } from '../lib/access';
+import { ensureOrgMembership, grantProjectRole, loadProjectForUser, lookupEmailsByUserIds, resolveUserIdentities, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { notifyProjectAccessRequestManagers } from '../lib/access-requests';
 import { AccessMemberSchema, AnyObject, projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/git';
 import { readBody, serializeProject } from '../lib/serializers';
 import { applyExperimentalOverride, isExperimentalFeatureKey } from '../../experimental/features';
-import { reconcileComputerConnectors } from '../../executor/sync';
+import { reconcileChannelConnectors, reconcileComputerConnectors } from '../../executor/sync';
 import { propagateLlmGatewayModeToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 
@@ -103,7 +105,7 @@ projectsApp.openapi(
   // Deletion is admin-only. Project Editor explicitly excludes
   // project.delete; loadProjectForUser('manage') would otherwise let
   // editors through via project.write.
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_DELETE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
 
   const [row] = await db
     .update(projects)
@@ -206,11 +208,16 @@ projectsApp.openapi(
     groupSourcesByUser.set(m.userId, arr);
   }
 
-  const emails = await lookupEmailsByUserIds(accountRows.map((r) => r.userId));
+  const identities = await resolveUserIdentities(accountRows.map((r) => r.userId));
+  // Drop shadow members: an account_members row pointing at a user_id that is
+  // not a real auth user (e.g. a self-referential row where user_id == the
+  // account_id). These have no resolvable email and otherwise render as a bare
+  // UUID in the access list.
+  const realAccountRows = accountRows.filter((r) => identities.get(r.userId)?.exists !== false);
   const grantsByUser = new Map(grantRows.map((r) => [r.userId, r]));
   const rank: Record<AccountRole, number> = { owner: 0, admin: 1, member: 2 };
 
-  const members = accountRows
+  const members = realAccountRows
     .map((member) => {
       const accountRole = member.accountRole as AccountRole;
       const grant = grantsByUser.get(member.userId);
@@ -226,7 +233,7 @@ projectsApp.openapi(
 
       return {
         user_id: member.userId,
-        email: emails.get(member.userId) ?? null,
+        email: identities.get(member.userId)?.email ?? null,
         account_role: accountRole,
         project_role: projectRole,
         effective_project_role: fold.effective_project_role,
@@ -420,10 +427,15 @@ projectsApp.openapi(
   const requestId = c.req.param('requestId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Approving an access request grants a project role to the requester —
+  // membership management, NOT plain write. loadProjectForUser('manage') only
+  // maps to project.write (editor), so without this an editor could approve
+  // requests and even hand out the 'manager' role. Gate on members.manage.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
-  const role = body.role === undefined ? 'viewer' : parseProjectRole(body.role);
-  if (!role) return c.json({ error: 'role must be one of manager|editor|viewer' }, 400);
+  const role = body.role === undefined ? 'user' : parseProjectRole(body.role);
+  if (!role) return c.json({ error: 'role must be one of manager|editor|user' }, 400);
 
   const [request] = await db
     .select()
@@ -500,6 +512,9 @@ projectsApp.openapi(
   const requestId = c.req.param('requestId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Reviewing an access request is membership management — gate on
+  // members.manage (loadProjectForUser('manage') only enforces project.write).
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const [request] = await db
     .select()
@@ -555,12 +570,14 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Inviting a member grants project access — members.manage, not plain write.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
   const email = (typeof body.email === 'string' ? body.email : '').trim().toLowerCase();
   const role = parseProjectRole(body.role);
   if (!email) return c.json({ error: 'email is required' }, 400);
-  if (!role) return c.json({ error: 'role must be one of manager|editor|viewer' }, 400);
+  if (!role) return c.json({ error: 'role must be one of manager|editor|user' }, 400);
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
 
@@ -732,7 +749,7 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   // JSONB containment check (`@>`) finds invitations whose grants array
   // contains an entry with this project_id. Includes expired invites in
@@ -774,8 +791,9 @@ projectsApp.openapi(
       if (!grant) return null;
       return {
         invite_id: r.inviteId,
-        email: r.email,
-        project_role: grant.role as 'manager' | 'editor' | 'viewer',
+        // Normalize a legacy `viewer` grant to `user` so the API never emits
+        // the retired role.
+        project_role: parseProjectRole(grant.role) ?? 'user',
         expires_at: grant.expires_at ?? null,
         invited_by_email: r.invitedBy ? (inviterEmails.get(r.invitedBy) ?? null) : null,
         created_at: r.createdAt.toISOString(),
@@ -818,7 +836,7 @@ projectsApp.openapi(
   const inviteId = c.req.param('inviteId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const [invite] = await db
     .select({
@@ -889,7 +907,7 @@ projectsApp.openapi(
   const inviteId = c.req.param('inviteId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const [invite] = await db
     .select({
@@ -971,11 +989,11 @@ projectsApp.openapi(
   // Member management is admin-only; loadProjectForUser('manage') now
   // resolves to project.write (editor-tier), so we add an explicit
   // stricter gate here.
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
   const role = parseProjectRole(body.role);
-  if (!role) return c.json({ error: 'role must be one of manager|editor|viewer' }, 400);
+  if (!role) return c.json({ error: 'role must be one of manager|editor|user' }, 400);
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
 
@@ -992,6 +1010,7 @@ projectsApp.openapi(
         eq(projectMembers.projectId, projectId),
         eq(projectMembers.userId, targetUserId),
       ));
+    invalidateIamCacheForUser(targetUserId);
 
     return c.json({
       user_id: targetUserId,
@@ -1043,7 +1062,7 @@ projectsApp.openapi(
   const targetUserId = c.req.param('userId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const targetMembership = await getAccountMembership(targetUserId, loaded.row.accountId);
   if (!targetMembership) {
@@ -1061,6 +1080,7 @@ projectsApp.openapi(
       eq(projectMembers.projectId, projectId),
       eq(projectMembers.userId, targetUserId),
     ));
+  invalidateIamCacheForUser(targetUserId);
 
   return c.json({ ok: true });
 },
@@ -1100,6 +1120,9 @@ projectsApp.openapi(
     const enabled = body.enabled;
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Per-agent gate: toggling experimental features is project config. A scoped
+    // agent token must hold project.customize.write (no-op for humans/PATs).
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     if (!isExperimentalFeatureKey(feature)) {
       return c.json({ error: `Unknown experimental feature '${feature}'` }, 400);
     }
@@ -1115,6 +1138,9 @@ projectsApp.openapi(
     if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
     if (feature === 'agent_tunnel') {
       void reconcileComputerConnectors(row.accountId);
+    }
+    if (feature === 'meet') {
+      void reconcileChannelConnectors(projectId);
     }
     if (feature === 'llm_gateway') {
       void propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(row.metadata));

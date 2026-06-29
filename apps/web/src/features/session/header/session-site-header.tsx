@@ -15,15 +15,15 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import Loading from '@/components/ui/loading';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { RenameSessionModal } from '@/features/co-worker/project-sidebar/modal/rename-session-modal';
-import { SessionDeleteModal } from '@/features/co-worker/project-sidebar/modal/session-delete-modal';
-import { ShareSessionModal } from '@/features/co-worker/project-sidebar/modal/share-session-modal';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
+import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
+import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
+import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import { listProjectSessions, restartProjectSession } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
-import { Pencil, Share, TrashSolid, HomeSolid } from '@mynaui/icons-react';
+import { HomeSolid, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileDown, Layers, MoreHorizontal, PanelRight, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
@@ -109,8 +109,6 @@ export function SessionSiteHeader({
           </div>
 
           <div className="pointer-events-auto flex items-center gap-1.5">
-            <SessionChangesIndicator sessionId={sessionId} />
-
             <DropdownMenu>
               <Hint
                 side="bottom"
@@ -191,6 +189,8 @@ export function SessionSiteHeader({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
+
+            <SessionChangesIndicator sessionId={sessionId} />
 
             <Hint
               side="bottom"
