@@ -7,10 +7,10 @@ import { useTranslations } from 'next-intl';
 // holding group memberships. Once configured, every SAML-issued JWT
 // triggers JIT membership + group sync in the auth middleware.
 
-import { useMemo, useState } from 'react';
+import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
-import { toast } from '@/lib/toast';
+import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -96,12 +96,12 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
   const mappings = mappingsQuery.data ?? [];
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className={provider ? 'border-b border-border/60 px-6 py-4' : 'px-6 py-4'}>
+    <section className="border-border/70 bg-card rounded-xl border">
+      <header className={provider ? 'border-border/60 border-b px-6 py-4' : 'px-6 py-4'}>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
-              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-foreground flex items-center gap-2 text-base font-semibold">
+              <ShieldCheck className="text-muted-foreground h-4 w-4" />
               {tHardcodedUi.raw('componentsIamSsoCard.line103JsxTextSAMLSSO')}
               {provider && (
                 <Badge
@@ -113,9 +113,11 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                 </Badge>
               )}
             </h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <p className="text-muted-foreground mt-0.5 text-xs">
               {provider
-                ? tHardcodedUi.raw('componentsIamSsoCard.line106JsxTextConnectYourIdPUsersSigningInViaSAML')
+                ? tHardcodedUi.raw(
+                    'componentsIamSsoCard.line106JsxTextConnectYourIdPUsersSigningInViaSAML',
+                  )
                 : 'Auto-provision members from your IdP. Group claims sync to IAM groups.'}
             </p>
           </div>
@@ -133,34 +135,42 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
       </header>
 
       {provider && (
-      <div className="px-6 py-4">
-        {providerQuery.isLoading ? (
-          <Skeleton className="h-16 w-full" />
-        ) : (
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            <dt className="text-muted-foreground">Provider</dt>
-            <dd className="font-medium text-foreground">{provider.name}</dd>
-            <dt className="text-muted-foreground">{tHardcodedUi.raw('componentsIamSsoCard.line135JsxTextPrimaryDomain')}</dt>
-            <dd className="font-mono text-xs text-foreground">{provider.primary_domain}</dd>
-            <dt className="text-muted-foreground">{tHardcodedUi.raw('componentsIamSsoCard.line137JsxTextGroupClaim')}</dt>
-            <dd className="font-mono text-xs text-foreground">{provider.group_claim_name}</dd>
-            <dt className="text-muted-foreground">{tHardcodedUi.raw('componentsIamSsoCard.line139JsxTextAutoCreateMembers')}</dt>
-            <dd className="text-foreground">
-              {provider.auto_create_members ? 'Yes' : 'No'}
-            </dd>
-            <dt className="text-muted-foreground">{tHardcodedUi.raw('componentsIamSsoCard.line143JsxTextSupabaseProviderId')}</dt>
-            <dd className="truncate font-mono text-[11px] text-muted-foreground">
-              {provider.supabase_sso_provider_id}
-            </dd>
-          </dl>
-        )}
-      </div>
+        <div className="px-6 py-4">
+          {providerQuery.isLoading ? (
+            <Skeleton className="h-16 w-full" />
+          ) : (
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <dt className="text-muted-foreground">Provider</dt>
+              <dd className="text-foreground font-medium">{provider.name}</dd>
+              <dt className="text-muted-foreground">
+                {tHardcodedUi.raw('componentsIamSsoCard.line135JsxTextPrimaryDomain')}
+              </dt>
+              <dd className="text-foreground font-mono text-xs">{provider.primary_domain}</dd>
+              <dt className="text-muted-foreground">
+                {tHardcodedUi.raw('componentsIamSsoCard.line137JsxTextGroupClaim')}
+              </dt>
+              <dd className="text-foreground font-mono text-xs">{provider.group_claim_name}</dd>
+              <dt className="text-muted-foreground">
+                {tHardcodedUi.raw('componentsIamSsoCard.line139JsxTextAutoCreateMembers')}
+              </dt>
+              <dd className="text-foreground">{provider.auto_create_members ? 'Yes' : 'No'}</dd>
+              <dt className="text-muted-foreground">
+                {tHardcodedUi.raw('componentsIamSsoCard.line143JsxTextSupabaseProviderId')}
+              </dt>
+              <dd className="text-muted-foreground truncate font-mono text-[11px]">
+                {provider.supabase_sso_provider_id}
+              </dd>
+            </dl>
+          )}
+        </div>
       )}
 
       {provider && (
         <>
-          <header className="flex items-center justify-between border-t border-border/60 px-6 py-3">
-            <h3 className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsIamSsoCard.line154JsxTextGroupMappings')}</h3>
+          <header className="border-border/60 flex items-center justify-between border-t px-6 py-3">
+            <h3 className="text-foreground text-sm font-medium">
+              {tHardcodedUi.raw('componentsIamSsoCard.line154JsxTextGroupMappings')}
+            </h3>
             {canManage && (
               <Button
                 size="sm"
@@ -169,42 +179,55 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                 onClick={() => setMapOpen(true)}
               >
                 <Plus className="h-3.5 w-3.5" />
-                {tHardcodedUi.raw('componentsIamSsoCard.line163JsxTextAddMapping')}</Button>
+                {tHardcodedUi.raw('componentsIamSsoCard.line163JsxTextAddMapping')}
+              </Button>
             )}
           </header>
           <div className="px-6 pb-5">
             {mappingsQuery.isLoading ? (
               <Skeleton className="h-12 w-full" />
             ) : mappings.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                {tHardcodedUi.raw('componentsIamSsoCard.line172JsxTextNoMappingsYetMapIdPGroupRoleValues')}{' '}
-                <span className="font-mono">{provider.group_claim_name}</span> {tHardcodedUi.raw('componentsIamSsoCard.line173JsxTextClaimToIAMGroupsSoUsersLandIn')}</p>
+              <p className="text-muted-foreground text-xs">
+                {tHardcodedUi.raw(
+                  'componentsIamSsoCard.line172JsxTextNoMappingsYetMapIdPGroupRoleValues',
+                )}{' '}
+                <span className="font-mono">{provider.group_claim_name}</span>{' '}
+                {tHardcodedUi.raw(
+                  'componentsIamSsoCard.line173JsxTextClaimToIAMGroupsSoUsersLandIn',
+                )}
+              </p>
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border/60 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                    <th className="py-2 font-medium">{tHardcodedUi.raw('componentsIamSsoCard.line180JsxTextClaimValue')}</th>
-                    <th className="py-2 font-medium">{tHardcodedUi.raw('componentsIamSsoCard.line181JsxTextIAMGroup')}</th>
+                  <tr className="border-border/60 text-muted-foreground border-b text-left text-[10px] font-medium tracking-wider uppercase">
+                    <th className="py-2 font-medium">
+                      {tHardcodedUi.raw('componentsIamSsoCard.line180JsxTextClaimValue')}
+                    </th>
+                    <th className="py-2 font-medium">
+                      {tHardcodedUi.raw('componentsIamSsoCard.line181JsxTextIAMGroup')}
+                    </th>
                     <th className="w-10 py-2" />
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border/60">
+                <tbody className="divide-border divide-y">
                   {mappings.map((m) => (
                     <tr key={m.mapping_id} className="hover:bg-muted/20">
-                      <td className="py-2 font-mono text-xs text-foreground">
-                        {m.claim_value}
-                      </td>
+                      <td className="text-foreground py-2 font-mono text-xs">{m.claim_value}</td>
                       <td className="py-2">
-                        <Badge variant="outline" size="sm">{m.group_name}</Badge>
+                        <Badge variant="outline" size="sm">
+                          {m.group_name}
+                        </Badge>
                       </td>
                       <td className="py-2 text-right">
                         {canManage && (
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            className="text-muted-foreground hover:text-destructive h-7 w-7"
                             onClick={() => setMapDeleteTarget(m)}
-                            aria-label={tHardcodedUi.raw('componentsIamSsoCard.line201JsxAttrAriaLabelRemoveMapping')}
+                            aria-label={tHardcodedUi.raw(
+                              'componentsIamSsoCard.line201JsxAttrAriaLabelRemoveMapping',
+                            )}
                           >
                             <X className="h-3.5 w-3.5" />
                           </Button>
@@ -220,7 +243,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
       )}
 
       {provider && canManage && (
-        <footer className="flex justify-end border-t border-border/60 px-6 py-3">
+        <footer className="border-border/60 flex justify-end border-t px-6 py-3">
           <Button
             size="sm"
             variant="ghost"
@@ -228,7 +251,8 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
             onClick={() => setDeleteOpen(true)}
           >
             <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-            {tHardcodedUi.raw('componentsIamSsoCard.line225JsxTextRemoveSSOProvider')}</Button>
+            {tHardcodedUi.raw('componentsIamSsoCard.line225JsxTextRemoveSSOProvider')}
+          </Button>
         </footer>
       )}
 
@@ -256,8 +280,12 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title={tHardcodedUi.raw('componentsIamSsoCard.line253JsxAttrTitleRemoveSSOProvider')}
-        description={tHardcodedUi.raw('componentsIamSsoCard.line254JsxAttrDescriptionExistingMembersKeepTheirAccessNewSignIns')}
-        confirmLabel={tHardcodedUi.raw('componentsIamSsoCard.line255JsxAttrConfirmLabelRemoveProvider')}
+        description={tHardcodedUi.raw(
+          'componentsIamSsoCard.line254JsxAttrDescriptionExistingMembersKeepTheirAccessNewSignIns',
+        )}
+        confirmLabel={tHardcodedUi.raw(
+          'componentsIamSsoCard.line255JsxAttrConfirmLabelRemoveProvider',
+        )}
         confirmVariant="destructive"
         isPending={deleteMutation.isPending}
         onConfirm={() => deleteMutation.mutate()}
@@ -274,7 +302,9 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
             ? `Users with the "${mapDeleteTarget.claim_value}" claim will no longer auto-join "${mapDeleteTarget.group_name}".`
             : ''
         }
-        confirmLabel={tHardcodedUi.raw('componentsIamSsoCard.line272JsxAttrConfirmLabelRemoveMapping')}
+        confirmLabel={tHardcodedUi.raw(
+          'componentsIamSsoCard.line272JsxAttrConfirmLabelRemoveMapping',
+        )}
         confirmVariant="destructive"
         isPending={deleteMappingMutation.isPending}
         onConfirm={() => {
@@ -346,7 +376,10 @@ function EditProviderDialog({
         <DialogHeader>
           <DialogTitle>{existing ? 'Edit SAML provider' : 'Configure SAML SSO'}</DialogTitle>
           <DialogDescription>
-            {tHardcodedUi.raw('componentsIamSsoCard.line343JsxTextCreateTheProviderInSupabaseStudioAuthenticationSSO')}</DialogDescription>
+            {tHardcodedUi.raw(
+              'componentsIamSsoCard.line343JsxTextCreateTheProviderInSupabaseStudioAuthenticationSSO',
+            )}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -361,7 +394,9 @@ function EditProviderDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>{tHardcodedUi.raw('componentsIamSsoCard.line360JsxTextSupabaseProviderUUID')}</Label>
+            <Label>
+              {tHardcodedUi.raw('componentsIamSsoCard.line360JsxTextSupabaseProviderUUID')}
+            </Label>
             <Input
               value={supabaseId}
               onChange={(e) => setSupabaseId(e.target.value)}
@@ -372,15 +407,18 @@ function EditProviderDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>{tHardcodedUi.raw('componentsIamSsoCard.line371JsxTextPrimaryEmailDomain')}</Label>
+            <Label>
+              {tHardcodedUi.raw('componentsIamSsoCard.line371JsxTextPrimaryEmailDomain')}
+            </Label>
             <Input
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
               placeholder="acme.com"
               disabled={mutation.isPending}
             />
-            <p className="text-[11px] text-muted-foreground">
-              {tHardcodedUi.raw('componentsIamSsoCard.line379JsxTextUsedToRouteSignInFlowsForThis')}</p>
+            <p className="text-muted-foreground text-[11px]">
+              {tHardcodedUi.raw('componentsIamSsoCard.line379JsxTextUsedToRouteSignInFlowsForThis')}
+            </p>
           </div>
 
           <div className="space-y-1.5">
@@ -392,23 +430,32 @@ function EditProviderDialog({
               className="font-mono text-xs"
               disabled={mutation.isPending}
             />
-            <p className="text-[11px] text-muted-foreground">
-              {tHardcodedUi.raw('componentsIamSsoCard.line393JsxTextCommonValues')}<span className="font-mono">groups</span> {tHardcodedUi.raw('componentsIamSsoCard.line393JsxTextOkta')}{' '}
-              <span className="font-mono">memberOf</span> {tHardcodedUi.raw('componentsIamSsoCard.line394JsxTextAzureAD')}</p>
+            <p className="text-muted-foreground text-[11px]">
+              {tHardcodedUi.raw('componentsIamSsoCard.line393JsxTextCommonValues')}
+              <span className="font-mono">groups</span>{' '}
+              {tHardcodedUi.raw('componentsIamSsoCard.line393JsxTextOkta')}{' '}
+              <span className="font-mono">memberOf</span>{' '}
+              {tHardcodedUi.raw('componentsIamSsoCard.line394JsxTextAzureAD')}
+            </p>
           </div>
 
-          <label className="flex cursor-pointer items-start gap-2 text-sm text-foreground">
+          <label className="text-foreground flex cursor-pointer items-start gap-2 text-sm">
             <input
               type="checkbox"
               checked={autoCreate}
               onChange={(e) => setAutoCreate(e.target.checked)}
-              className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-primary"
+              className="border-border accent-primary mt-0.5 h-3.5 w-3.5 rounded"
               disabled={mutation.isPending}
             />
             <span>
-              <span className="font-medium">{tHardcodedUi.raw('componentsIamSsoCard.line407JsxTextAutoCreateMembers')}</span>
-              <span className="block text-[11px] text-muted-foreground">
-                {tHardcodedUi.raw('componentsIamSsoCard.line409JsxTextWhenOffOnlyUsersAnAdminHasAlready')}</span>
+              <span className="font-medium">
+                {tHardcodedUi.raw('componentsIamSsoCard.line407JsxTextAutoCreateMembers')}
+              </span>
+              <span className="text-muted-foreground block text-[11px]">
+                {tHardcodedUi.raw(
+                  'componentsIamSsoCard.line409JsxTextWhenOffOnlyUsersAnAdminHasAlready',
+                )}
+              </span>
             </span>
           </label>
         </div>
@@ -488,9 +535,14 @@ function AddMappingDialog({
     <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{tHardcodedUi.raw('componentsIamSsoCard.line490JsxTextAddGroupMapping')}</DialogTitle>
+          <DialogTitle>
+            {tHardcodedUi.raw('componentsIamSsoCard.line490JsxTextAddGroupMapping')}
+          </DialogTitle>
           <DialogDescription>
-            {tHardcodedUi.raw('componentsIamSsoCard.line492JsxTextUsersWithThisClaimValueInTheirSAML')}</DialogDescription>
+            {tHardcodedUi.raw(
+              'componentsIamSsoCard.line492JsxTextUsersWithThisClaimValueInTheirSAML',
+            )}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -503,8 +555,11 @@ function AddMappingDialog({
               className="font-mono text-xs"
               disabled={mutation.isPending}
             />
-            <p className="text-[11px] text-muted-foreground">
-              {tHardcodedUi.raw('componentsIamSsoCard.line508JsxTextExactCaseSensitiveMatchAgainstAnEntryIn')}</p>
+            <p className="text-muted-foreground text-[11px]">
+              {tHardcodedUi.raw(
+                'componentsIamSsoCard.line508JsxTextExactCaseSensitiveMatchAgainstAnEntryIn',
+              )}
+            </p>
           </div>
 
           <div className="space-y-1.5">
@@ -515,12 +570,19 @@ function AddMappingDialog({
               disabled={mutation.isPending || groupsQuery.isLoading}
             >
               <SelectTrigger>
-                <SelectValue placeholder={tHardcodedUi.raw('componentsIamSsoCard.line521JsxAttrPlaceholderPickAGroup')} />
+                <SelectValue
+                  placeholder={tHardcodedUi.raw(
+                    'componentsIamSsoCard.line521JsxAttrPlaceholderPickAGroup',
+                  )}
+                />
               </SelectTrigger>
               <SelectContent>
                 {groups.length === 0 ? (
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                    {tHardcodedUi.raw('componentsIamSsoCard.line526JsxTextNoGroupsInThisAccountYetCreateOne')}</div>
+                  <div className="text-muted-foreground px-2 py-1.5 text-xs">
+                    {tHardcodedUi.raw(
+                      'componentsIamSsoCard.line526JsxTextNoGroupsInThisAccountYetCreateOne',
+                    )}
+                  </div>
                 ) : (
                   groups.map((g) => (
                     <SelectItem key={g.group_id} value={g.group_id}>
@@ -547,7 +609,8 @@ function AddMappingDialog({
             className="gap-1.5"
           >
             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            {tHardcodedUi.raw('componentsIamSsoCard.line554JsxTextAddMapping')}</Button>
+            {tHardcodedUi.raw('componentsIamSsoCard.line554JsxTextAddMapping')}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

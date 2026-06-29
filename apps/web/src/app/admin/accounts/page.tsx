@@ -29,7 +29,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { IconInbox } from '@/components/ui/kortix-icons';
 import { PageSearchBar } from '@/components/ui/page-search-bar';
@@ -59,6 +58,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   useAdminAccountLedger,
   useAdminAccountUsers,
@@ -1342,7 +1342,7 @@ function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccoun
   }
 
   return (
-    <div className="border-border/60 bg-card divide-border/60 divide-y rounded-2xl border">
+    <div className="border-border/60 bg-card divide-border divide-y rounded-2xl border">
       {users.map((user) => {
         const banned = user.banned_until && new Date(user.banned_until) > new Date();
         const confirmed = !!user.email_confirmed_at;
@@ -1440,7 +1440,7 @@ function LedgerTab({ ledgerQuery }: { ledgerQuery: ReturnType<typeof useAdminAcc
   }
 
   return (
-    <div className="border-border/60 bg-card divide-border/60 max-h-[50vh] divide-y overflow-y-auto rounded-2xl border">
+    <div className="border-border/60 bg-card divide-border max-h-[50vh] divide-y overflow-y-auto rounded-2xl border">
       {entries.map((entry) => {
         const amount = Number(entry.amount);
         const positive = amount >= 0;
@@ -1560,7 +1560,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
       )}
 
       <div className="border-border/60 bg-card rounded-2xl border text-sm">
-        <div className="divide-border/60 grid grid-cols-1 divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+        <div className="divide-border grid grid-cols-1 divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0">
           {summary.map(([label, value]) => (
             <div key={label} className="flex items-center justify-between gap-3 px-4 py-3">
               <span className="text-muted-foreground/70 text-xs tracking-wider uppercase">
@@ -1572,7 +1572,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
         </div>
       </div>
 
-      <div className="border-border/60 bg-card divide-border/60 divide-y rounded-2xl border text-sm">
+      <div className="border-border/60 bg-card divide-border divide-y rounded-2xl border text-sm">
         {idRows.map(({ label, value, href }) => (
           <div
             key={label}

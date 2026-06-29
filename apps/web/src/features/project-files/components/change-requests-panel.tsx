@@ -2,8 +2,16 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useMemo, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
+import { formatRelative } from '@kortix/shared';
 import {
+  AlertCircle,
+  ChevronDown,
   GitBranch,
   GitMerge,
   GitPullRequest,
@@ -12,78 +20,127 @@ import {
   RefreshCw,
   X,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { cn } from '@/lib/utils';
-import {
-  useChangeRequests,
-} from '../hooks/use-change-requests';
-import { useProjectContext } from '../context';
+import { useMemo, useState } from 'react';
 import type { ChangeRequest, ChangeRequestStatus } from '../api/change-requests';
+import { useProjectContext } from '../context';
+import { useChangeRequests } from '../hooks/use-change-requests';
 import { ChangeRequestDetailDialog } from './change-request-detail-dialog';
 import { OpenChangeRequestDialog } from './open-change-request-dialog';
 
-function relativeTime(iso: string): string {
-  const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return `${Math.floor(days / 30)}mo ago`;
+// ---------------------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------------------
+
+function formatFull(timestamp: number): string {
+  return new Date(timestamp).toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
+
+function tsFromCr(cr: ChangeRequest): number {
+  if (cr.status === 'merged' && cr.merged_at) {
+    return new Date(cr.merged_at).getTime();
+  }
+  if (cr.status === 'closed' && cr.closed_at) {
+    return new Date(cr.closed_at).getTime();
+  }
+  return new Date(cr.created_at).getTime();
+}
+
+function crTimeLabel(cr: ChangeRequest): string {
+  if (cr.status === 'merged' && cr.merged_at) {
+    return `merged ${formatRelative(cr.merged_at, { extended: 'full' }) ?? ''}`;
+  }
+  if (cr.status === 'closed' && cr.closed_at) {
+    return `closed ${formatRelative(cr.closed_at, { extended: 'full' }) ?? ''}`;
+  }
+  return `opened ${formatRelative(cr.created_at, { extended: 'full' }) ?? ''}`;
+}
+
+function groupByDate(crs: ChangeRequest[]) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86_400_000);
+  const thisWeekStart = new Date(today.getTime() - today.getDay() * 86_400_000);
+
+  const groups = new Map<string, ChangeRequest[]>();
+  for (const cr of crs) {
+    const d = new Date(tsFromCr(cr));
+    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    let label: string;
+    if (day.getTime() >= today.getTime()) label = 'Today';
+    else if (day.getTime() >= yesterday.getTime()) label = 'Yesterday';
+    else if (day.getTime() >= thisWeekStart.getTime()) label = 'This week';
+    else label = d.toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label)!.push(cr);
+  }
+  return Array.from(groups.entries()).map(([label, items]) => ({ label, items }));
+}
+
+// ---------------------------------------------------------------------------
+// list row
+// ---------------------------------------------------------------------------
 
 function CrIcon({ status }: { status: ChangeRequestStatus }) {
   if (status === 'merged') return <GitMerge className="h-3.5 w-3.5 text-violet-500" />;
-  if (status === 'closed') return <GitPullRequestClosed className="h-3.5 w-3.5 text-muted-foreground" />;
+  if (status === 'closed') {
+    return <GitPullRequestClosed className="text-muted-foreground h-3.5 w-3.5" />;
+  }
   return <GitPullRequest className="h-3.5 w-3.5 text-emerald-500" />;
 }
 
 function CrListItem({
   cr,
+  isActive,
   onSelect,
 }: {
   cr: ChangeRequest;
+  isActive: boolean;
   onSelect: () => void;
 }) {
+  const ts = tsFromCr(cr);
   return (
     <button
       onClick={onSelect}
-      className="group flex items-start gap-3 w-full px-3 py-2.5 text-left cursor-pointer hover:bg-muted/40 transition-colors border-l-2 border-l-transparent"
+      className={cn(
+        'group flex w-full cursor-pointer items-start gap-3 py-2.5 pr-2 pl-3 text-left',
+        'border-l-2 border-l-transparent',
+        'hover:bg-muted/40 transition-colors',
+        isActive && 'bg-primary/[0.05] border-l-primary',
+      )}
     >
-      <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted/40">
+      <div className="bg-muted/40 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full">
         <CrIcon status={cr.status} />
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="font-mono text-xs text-muted-foreground">#{cr.number}</span>
-          <p className="truncate text-sm font-medium text-foreground">{cr.title}</p>
+          <span className="text-muted-foreground font-mono text-xs">#{cr.number}</span>
+          <p className="text-foreground truncate text-sm font-medium">{cr.title}</p>
         </div>
-        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <GitBranch className="h-3 w-3" />
-          <span className="font-mono truncate max-w-[120px]">{cr.head_ref}</span>
+        <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
+          <GitBranch className="h-3 w-3 shrink-0" />
+          <span className="max-w-[120px] truncate font-mono">{cr.head_ref}</span>
           <span>→</span>
-          <span className="font-mono truncate max-w-[80px]">{cr.base_ref}</span>
-          <span className="text-muted-foreground/40">·</span>
-          <span>
-            {cr.status === 'merged' && cr.merged_at
-              ? `merged ${relativeTime(cr.merged_at)}`
-              : cr.status === 'closed' && cr.closed_at
-                ? `closed ${relativeTime(cr.closed_at)}`
-                : `opened ${relativeTime(cr.created_at)}`}
-          </span>
+          <span className="max-w-[80px] truncate font-mono">{cr.base_ref}</span>
+          <span className="text-muted-foreground/30">·</span>
+          <span title={formatFull(ts)}>{crTimeLabel(cr)}</span>
         </div>
       </div>
     </button>
   );
 }
 
+// ---------------------------------------------------------------------------
+// panel
+// ---------------------------------------------------------------------------
+
 interface ChangeRequestsPanelProps {
-  open: boolean;
+  open?: boolean;
   onClose: () => void;
 }
 
@@ -92,7 +149,7 @@ interface ChangeRequestsPanelProps {
  * the active project, filterable by status. Clicking a row opens the detail
  * dialog with diff + merge/close actions.
  */
-export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps) {
+export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPanelProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const ctx = useProjectContext();
   const activeRef = ctx?.ref ?? '';
@@ -101,15 +158,14 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
   const [selectedCrId, setSelectedCrId] = useState<string | null>(null);
   const [openDialogShown, setOpenDialogShown] = useState(false);
 
-  const { data, isLoading, refetch, isFetching } = useChangeRequests(status, {
+  const { data, isLoading, error, refetch, isFetching } = useChangeRequests(status, {
     enabled: open,
     refetchInterval: open ? 6_000 : undefined,
   });
   const crs = useMemo(() => data?.change_requests ?? [], [data]);
+  const groups = useMemo(() => groupByDate(crs), [crs]);
   const total = crs.length;
 
-  // If the user already has a non-default version selected, pre-fill the dialog
-  // with it; otherwise leave it for them to pick.
   const initialHeadForDialog =
     activeRef && defaultBranch && activeRef !== defaultBranch ? activeRef : undefined;
 
@@ -118,34 +174,36 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
       <aside
         aria-hidden={!open}
         className={cn(
-          // Same width and chrome as the Checkpoints drawer so the two feel
-          // like sibling surfaces. Both pinned to the right edge; the parent
-          // ensures only one is open at a time.
-          'absolute top-0 bottom-0 right-0 w-[400px] flex flex-col',
-          'border-l border-border/40 bg-background',
+          'absolute top-0 right-0 bottom-0 flex w-[400px] flex-col',
+          'border-border bg-background border-l',
           'transition-transform duration-200 ease-out',
           'z-30',
-          open ? 'translate-x-0' : 'translate-x-full pointer-events-none',
+          open ? 'translate-x-0' : 'pointer-events-none translate-x-full',
         )}
       >
-        {/* Header */}
-        <div className="flex items-center gap-2 px-3 h-12 border-b border-border/40 shrink-0">
-          <GitPullRequest className="h-4 w-4 text-muted-foreground" />
-          <span className="font-medium text-sm">{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestsPanel.line131JsxTextChangeRequests')}</span>
+        <div className="border-border flex h-12 shrink-0 items-center gap-2 border-b px-3">
+          <span className="text-sm font-medium">
+            {tHardcodedUi.raw(
+              'featuresProjectFilesComponentsChangeRequestsPanel.line131JsxTextChangeRequests',
+            )}
+          </span>
           {activeRef && (
             <span
-              className="flex items-center gap-1 rounded-full bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground/90 truncate max-w-[120px]"
+              className="bg-muted/50 text-muted-foreground/90 flex max-w-[140px] items-center gap-1 truncate rounded-full px-1.5 py-0.5 text-xs"
               title={`Version: ${activeRef}`}
             >
               <GitBranch className="h-3 w-3" />
               {activeRef}
             </span>
           )}
+          {total > 0 && <span className="text-muted-foreground text-xs tabular-nums">{total}</span>}
           <Button
             size="sm"
-            className="h-7 ml-auto gap-1 px-2 text-xs"
+            className="ml-auto h-7 gap-1 px-2 text-xs"
             onClick={() => setOpenDialogShown(true)}
-            title={tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestsPanel.line145JsxAttrTitleOpenANewChangeRequest')}
+            title={tHardcodedUi.raw(
+              'featuresProjectFilesComponentsChangeRequestsPanel.line145JsxAttrTitleOpenANewChangeRequest',
+            )}
           >
             <Plus className="h-3.5 w-3.5" />
             New
@@ -159,47 +217,58 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
           >
             <RefreshCw className={cn('h-3.5 w-3.5', isFetching && 'animate-spin')} />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={onClose}
-            title="Close"
-          >
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose} title="Close">
             <X className="h-3.5 w-3.5" />
           </Button>
         </div>
 
-        {/* Status tabs */}
-        <div className="px-3 py-2 border-b border-border/40 shrink-0">
+        <div className="border-border shrink-0 border-b px-3 py-2">
           <Tabs
             value={status}
             onValueChange={(v) => setStatus(v as ChangeRequestStatus | 'all')}
+            className="gap-0"
           >
-            <TabsList className="h-7 w-full grid grid-cols-4 p-0.5">
-              <TabsTrigger value="open" className="text-xs h-6">Open</TabsTrigger>
-              <TabsTrigger value="merged" className="text-xs h-6">Merged</TabsTrigger>
-              <TabsTrigger value="closed" className="text-xs h-6">Closed</TabsTrigger>
-              <TabsTrigger value="all" className="text-xs h-6">All</TabsTrigger>
-            </TabsList>
+            <TabsListCompact className="w-fit">
+              <TabsTriggerCompact value="open">Open</TabsTriggerCompact>
+              <TabsTriggerCompact value="merged">Merged</TabsTriggerCompact>
+              <TabsTriggerCompact value="closed">Closed</TabsTriggerCompact>
+              <TabsTriggerCompact value="all">All</TabsTriggerCompact>
+            </TabsListCompact>
           </Tabs>
         </div>
 
-        {/* List */}
-        <div className="flex-1 min-h-0">
+        <div className="min-h-0 flex-1">
           <ScrollArea className="h-full">
             {isLoading && (
-              <div className="p-3 space-y-2">
+              <div className="space-y-3 p-3">
                 {Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full rounded-lg" />
+                  <div key={i} className="space-y-1.5">
+                    <Skeleton className="h-3 w-20" />
+                    <Skeleton className="h-14 w-full rounded-lg" />
+                  </div>
                 ))}
               </div>
             )}
-            {!isLoading && total === 0 && (
+
+            {error && !isLoading && (
               <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
-                <GitPullRequest className="h-6 w-6 text-muted-foreground/30" />
-                <p className="text-xs text-muted-foreground">
-                  No {status === 'all' ? '' : status}{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestsPanel.line199JsxTextChangeRequests')}</p>
+                <AlertCircle className="text-muted-foreground/30 h-6 w-6" />
+                <p className="text-muted-foreground text-xs">Failed to load change requests</p>
+                <p className="text-muted-foreground/60 text-xs">
+                  {error instanceof Error ? error.message : 'Unknown error'}
+                </p>
+              </div>
+            )}
+
+            {!isLoading && !error && total === 0 && (
+              <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
+                <GitPullRequest className="text-muted-foreground/30 h-6 w-6" />
+                <p className="text-muted-foreground text-xs">
+                  No {status === 'all' ? '' : status}
+                  {tHardcodedUi.raw(
+                    'featuresProjectFilesComponentsChangeRequestsPanel.line199JsxTextChangeRequests',
+                  )}
+                </p>
                 {status === 'open' && (
                   <Button
                     size="sm"
@@ -207,18 +276,55 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
                     className="mt-1 h-7 gap-1 text-xs"
                     onClick={() => setOpenDialogShown(true)}
                   >
-                    <Plus className="h-3.5 w-3.5" />{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestsPanel.line209JsxTextOpenTheFirstOne')}</Button>
+                    <Plus className="h-3.5 w-3.5" />
+                    {tHardcodedUi.raw(
+                      'featuresProjectFilesComponentsChangeRequestsPanel.line209JsxTextOpenTheFirstOne',
+                    )}
+                  </Button>
                 )}
               </div>
             )}
-            {!isLoading && total > 0 && (
+
+            {!isLoading && !error && total > 0 && (
               <div className="py-1">
-                {crs.map((cr) => (
-                  <CrListItem
-                    key={cr.cr_id}
-                    cr={cr}
-                    onSelect={() => setSelectedCrId(cr.cr_id)}
-                  />
+                {groups.map((group, gi) => (
+                  <Disclosure
+                    key={group.label}
+                    open
+                    className="group/cr"
+                    transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+                  >
+                    <DisclosureTrigger>
+                      <button
+                        type="button"
+                        className={cn(
+                          'bg-background/95 sticky top-0 z-[1] flex w-full items-center gap-2 px-3 py-1.5 backdrop-blur-sm',
+                          'border-border border-b',
+                          gi === 0 ? '' : 'border-border border-t',
+                        )}
+                      >
+                        <div className="flex w-full items-center justify-between gap-2 px-1">
+                          <span className="text-foreground/90 text-sm font-medium">
+                            {group.label}
+                          </span>
+                          <div className="text-muted-foreground flex items-center gap-1.5">
+                            <span className="text-[12px] tabular-nums">{group.items.length}</span>
+                            <ChevronDown className="size-3.5 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]/cr:rotate-180" />
+                          </div>
+                        </div>
+                      </button>
+                    </DisclosureTrigger>
+                    <DisclosureContent>
+                      {group.items.map((cr) => (
+                        <CrListItem
+                          key={cr.cr_id}
+                          cr={cr}
+                          isActive={selectedCrId === cr.cr_id}
+                          onSelect={() => setSelectedCrId(cr.cr_id)}
+                        />
+                      ))}
+                    </DisclosureContent>
+                  </Disclosure>
                 ))}
               </div>
             )}
@@ -226,10 +332,7 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
         </div>
       </aside>
 
-      <ChangeRequestDetailDialog
-        crId={selectedCrId}
-        onClose={() => setSelectedCrId(null)}
-      />
+      <ChangeRequestDetailDialog crId={selectedCrId} onClose={() => setSelectedCrId(null)} />
 
       <OpenChangeRequestDialog
         open={openDialogShown}
