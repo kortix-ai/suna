@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 
 type ConnectMessage =
   | { type: 'github-connect-success'; provider_token: string; github_login?: string }
@@ -114,7 +114,9 @@ export default function GitHubConnectPopup() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-background p-8">
       <div className="flex max-w-sm flex-col items-center gap-4 text-center">
-        {status !== 'error' && <KortixLoader size="large" />}
+        {status !== 'error' && (
+          <KortixHyperLogo size={64} startOnView={false} loop className="text-foreground" />
+        )}
         <div className="space-y-1">
           <h1 className="text-base font-medium">{tHardcodedUi.raw('appAuthGithubConnectPage.line116JsxTextConnectGithub')}</h1>
           <p className={status === 'error' ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>
