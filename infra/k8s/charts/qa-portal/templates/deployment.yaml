@@ -1,18 +1,21 @@
 {{- if not .Values.bucket }}
 {{- fail "bucket is required (the S3 bucket from terraform output bucket_name, e.g. kortix-qa-reports)" }}
 {{- end }}
-# Stateless QA report portal.
+# Stateless QA report portal — proxies reports straight from private S3, holds
+# no report bytes on disk (so it can never outgrow its volume and crash-loop).
 #
-#   initContainer (aws-cli): one `aws s3 sync` so nginx has the report before it
-#     ever serves traffic (readiness gates the ALB on it being present).
-#   sidecar (aws-cli):       re-syncs s3://<bucket>/<prefix> -> the shared volume
-#     every syncIntervalSeconds, so a freshly generated report appears without a
-#     redeploy.
-#   nginx:                   serves /usr/share/nginx/html from the shared volume.
+#   web (nginx):     serves the branded landing page at / from a few-KB local
+#     file, a /healthz for the probes, and reverse-proxies everything else to the
+#     S3 gateway on localhost.
+#   s3gw (gateway):  nginx-s3-gateway, used stock — signs each request (SigV4)
+#     and streams the object from the PRIVATE bucket. Credentials are IRSA
+#     (web identity), no static keys. URL path maps 1:1 to the S3 key, so every
+#     existing deep link (/reports/pr/<n>/<run>/index.html) keeps working.
+#   index-gen (aws-cli): READ-ONLY sidecar. Every syncIntervalSeconds it lists
+#     the reports/ lanes (aws s3 ls) and regenerates the ~few-KB landing
+#     index.html into the shared landing volume. Never downloads report bodies.
 #
-# All three share an emptyDir; auth is IRSA (the ServiceAccount role) — no static
-# AWS keys. The report is rebuilt+re-uploaded in S3, so a pod restart loses
-# nothing (it just re-syncs).
+# Only the tiny landing emptyDir is local; report bytes never touch the pod.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -33,58 +36,27 @@ spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       volumes:
-        - name: html
-          emptyDir:
-            sizeLimit: {{ .Values.htmlVolumeSizeLimit }}
+        # Holds ONLY the generated landing index.html — kilobytes, never grows.
         - name: landing
+          emptyDir:
+            sizeLimit: {{ .Values.landingVolumeSizeLimit }}
+        - name: landing-script
           configMap:
             name: {{ include "qa-portal.name" . }}-landing
         - name: nginx-conf
           configMap:
             name: {{ include "qa-portal.name" . }}-nginx
-      initContainers:
-        # Prime the volume before nginx serves — readiness then gates the ALB on
-        # the report (or a placeholder) being present.
-        - name: report-sync-init
-          image: "{{ .Values.awsCli.repository }}:{{ .Values.awsCli.tag }}"
-          imagePullPolicy: {{ .Values.awsCli.pullPolicy }}
-          command: ["/bin/sh", "-c"]
-          args:
-            - |
-              set -e
-              # Sync the whole reports/ tree so per-PR reports (reports/pr/<n>/<run>/)
-              # and history are served too, not just latest/.
-              aws s3 sync "s3://{{ .Values.bucket }}/{{ .Values.s3Prefix }}/" "/html/{{ .Values.s3Prefix }}" --delete --region {{ .Values.region }}
-              # First-run safety: placeholder so nginx is healthy before any publish.
-              if [ -z "$(ls -A "/html/{{ .Values.s3Prefix }}/latest" 2>/dev/null)" ]; then
-                mkdir -p "/html/{{ .Values.s3Prefix }}/latest"
-                echo "<h1>QA report portal</h1><p>No report has been published yet.</p>" > "/html/{{ .Values.s3Prefix }}/latest/index.html"
-              fi
-              # Build the landing page (/) listing every lane's reports. The qa-pr
-              # comment still links deep to /{{ .Values.s3Prefix }}/pr/<n>/<run>/.
-              sh /scripts/gen-index.sh /html
-          env:
-            - name: AWS_REGION
-              value: {{ .Values.region | quote }}
-          volumeMounts:
-            - name: html
-              mountPath: /html
-            - name: landing
-              mountPath: /scripts
-              readOnly: true
-          resources:
-            {{- toYaml .Values.resources.sync | nindent 12 }}
       containers:
-        - name: nginx
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+        - name: web
+          image: "{{ .Values.web.image.repository }}:{{ .Values.web.image.tag }}"
+          imagePullPolicy: {{ .Values.web.image.pullPolicy }}
           ports:
             - name: http
               containerPort: {{ .Values.containerPort }}
               protocol: TCP
           volumeMounts:
-            - name: html
-              mountPath: /usr/share/nginx/html
+            - name: landing
+              mountPath: /landing
               readOnly: true
             - name: nginx-conf
               mountPath: /etc/nginx/conf.d/default.conf
@@ -105,26 +77,83 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           resources:
-            {{- toYaml .Values.resources.nginx | nindent 12 }}
-        # Sidecar: keep the served report current with S3.
-        - name: report-sync
+            {{- toYaml .Values.resources.web | nindent 12 }}
+        # S3 gateway: stock nginx-s3-gateway, signs + streams from private S3.
+        - name: s3gw
+          image: "{{ .Values.s3Gateway.image.repository }}:{{ .Values.s3Gateway.image.tag }}"
+          imagePullPolicy: {{ .Values.s3Gateway.image.pullPolicy }}
+          env:
+            - name: S3_BUCKET_NAME
+              value: {{ .Values.bucket | quote }}
+            - name: S3_REGION
+              value: {{ .Values.region | quote }}
+            - name: S3_SERVER
+              value: "s3.{{ .Values.region }}.amazonaws.com"
+            - name: S3_SERVER_PORT
+              value: "443"
+            - name: S3_SERVER_PROTO
+              value: "https"
+            - name: S3_STYLE
+              value: "virtual"
+            - name: AWS_SIGS_VERSION
+              value: "4"
+            - name: ALLOW_DIRECTORY_LIST
+              value: "false"
+            - name: PROVIDE_INDEX_PAGE
+              value: "true"
+            - name: APPEND_SLASH_FOR_POSSIBLE_DIRECTORY
+              value: "true"
+            - name: CORS_ENABLED
+              value: "false"
+            # IRSA web-identity creds: AWS_ROLE_ARN + AWS_WEB_IDENTITY_TOKEN_FILE
+            # are auto-injected by EKS from the ServiceAccount role annotation.
+            # AWS_REGION + JS_TRUSTED_CERT_PATH are required for the gateway's njs
+            # STS subrequest to validate TLS when fetching those creds.
+            - name: AWS_REGION
+              value: {{ .Values.region | quote }}
+            - name: JS_TRUSTED_CERT_PATH
+              value: {{ .Values.s3Gateway.trustedCertPath | quote }}
+          ports:
+            - name: s3gw
+              containerPort: {{ .Values.s3Gateway.port }}
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.resources.gateway | nindent 12 }}
+        # Read-only landing-page generator: lists the reports/ lanes and rebuilds
+        # the small index.html so freshly published reports appear automatically.
+        - name: index-gen
           image: "{{ .Values.awsCli.repository }}:{{ .Values.awsCli.tag }}"
           imagePullPolicy: {{ .Values.awsCli.pullPolicy }}
           command: ["/bin/sh", "-c"]
           args:
             - |
+              # Generate once up front so / is populated within seconds, then
+              # refresh on the interval. Read-only: only `aws s3 ls`.
+              sh /scripts/gen-index.sh /landing || true
               while true; do
                 sleep {{ .Values.syncIntervalSeconds }}
-                aws s3 sync "s3://{{ .Values.bucket }}/{{ .Values.s3Prefix }}/" "/html/{{ .Values.s3Prefix }}" --delete --region {{ .Values.region }} || true
-                sh /scripts/gen-index.sh /html || true
+                sh /scripts/gen-index.sh /landing || true
               done
           env:
             - name: AWS_REGION
               value: {{ .Values.region | quote }}
+            # The pod authenticates via IRSA web identity, never IMDS — disabling
+            # the metadata probe drops a multi-second per-call timeout, and the
+            # regional STS endpoint avoids a global round-trip.
+            - name: AWS_EC2_METADATA_DISABLED
+              value: "true"
+            - name: AWS_STS_REGIONAL_ENDPOINTS
+              value: "regional"
+            - name: BUCKET
+              value: {{ .Values.bucket | quote }}
+            - name: S3_PREFIX
+              value: {{ .Values.s3Prefix | quote }}
+            - name: REGION
+              value: {{ .Values.region | quote }}
           volumeMounts:
-            - name: html
-              mountPath: /html
             - name: landing
+              mountPath: /landing
+            - name: landing-script
               mountPath: /scripts
               readOnly: true
           resources:
