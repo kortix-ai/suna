@@ -360,13 +360,6 @@ function CreateAssignmentDialog({
   // Only custom roles are bindable via policies; built-ins 400 the backend.
   const customRoles = useMemo(() => roles.filter((r) => !r.is_system), [roles]);
 
-  // Project-name lookup for the agent picker labels (agents are project-scoped,
-  // so the option shows `agent · project`).
-  const projectNameById = useMemo(
-    () => new Map(projects.map((p) => [p.project_id, p.name])),
-    [projects],
-  );
-
   function reset() {
     setPrincipalType('member');
     setPrincipalId('');
@@ -428,8 +421,18 @@ function CreateAssignmentDialog({
             <Select
               value={principalType}
               onValueChange={(v) => {
-                setPrincipalType(v as PrincipalType);
+                const next = v as PrincipalType;
+                setPrincipalType(next);
                 setPrincipalId('');
+                // Agents are project-scoped — switch to project scope and make
+                // the admin pick the project FIRST, then its agents. Member /
+                // group default back to account scope.
+                if (next === 'token') {
+                  setScopeType('project');
+                } else {
+                  setScopeType('account');
+                }
+                setProjectId('');
               }}
               disabled={mutation.isPending}
             >
@@ -445,6 +448,42 @@ function CreateAssignmentDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {/* Agents live IN a project — pick the project first, then its agents. */}
+          {principalType === 'token' && (
+            <div className="space-y-1.5">
+              <Label htmlFor="assignment-agent-project">Project</Label>
+              {projectsLoading ? (
+                <p className="text-xs text-muted-foreground">Loading projects…</p>
+              ) : projects.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No projects in this account yet.</p>
+              ) : (
+                <Select
+                  value={projectId}
+                  onValueChange={(pid) => {
+                    setProjectId(pid);
+                    setScopeType('project');
+                    setPrincipalId('');
+                  }}
+                  disabled={mutation.isPending}
+                >
+                  <SelectTrigger id="assignment-agent-project">
+                    <SelectValue placeholder="Select a project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects.map((p) => (
+                      <SelectItem key={p.project_id} value={p.project_id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Agents are project-scoped — choose the project first.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="assignment-principal">
@@ -465,7 +504,7 @@ function CreateAssignmentDialog({
                   }
                 }
               }}
-              disabled={mutation.isPending}
+              disabled={mutation.isPending || (principalType === 'token' && !projectId)}
             >
               <SelectTrigger id="assignment-principal">
                 <SelectValue
@@ -474,7 +513,9 @@ function CreateAssignmentDialog({
                       ? 'Select a member'
                       : principalType === 'group'
                         ? 'Select a group'
-                        : 'Select an agent'
+                        : projectId
+                          ? 'Select an agent'
+                          : 'Select a project first'
                   }
                 />
               </SelectTrigger>
@@ -491,17 +532,19 @@ function CreateAssignmentDialog({
                           {g.name}
                         </SelectItem>
                       ))
-                    : agents.length === 0
-                      ? <SelectItem value="__none" disabled>No agents in this account&apos;s projects yet</SelectItem>
-                      : agents.map((a) => {
-                          const projectName = a.project_id ? projectNameById.get(a.project_id) : null;
-                          return (
-                            <SelectItem key={a.service_account_id} value={a.service_account_id}>
-                              {a.agent_name ?? a.name}
-                              {projectName ? ` · ${projectName}` : ''}
-                            </SelectItem>
-                          );
-                        })}
+                    : (() => {
+                        // Agents are filtered to the project chosen above.
+                        if (!projectId)
+                          return <SelectItem value="__none" disabled>Select a project first</SelectItem>;
+                        const projectAgents = agents.filter((a) => a.project_id === projectId);
+                        if (projectAgents.length === 0)
+                          return <SelectItem value="__none" disabled>No agents in this project</SelectItem>;
+                        return projectAgents.map((a) => (
+                          <SelectItem key={a.service_account_id} value={a.service_account_id}>
+                            {a.agent_name ?? a.name}
+                          </SelectItem>
+                        ));
+                      })()}
               </SelectContent>
             </Select>
           </div>
@@ -528,6 +571,10 @@ function CreateAssignmentDialog({
             )}
           </div>
 
+          {/* Scope + project picker — member/group only. An agent's scope IS
+              the project chosen above, so these are hidden for agents. */}
+          {principalType !== 'token' && (
+            <>
           <div className="space-y-1.5">
             <Label htmlFor="assignment-scope">Scope</Label>
             <Select
@@ -583,6 +630,8 @@ function CreateAssignmentDialog({
                 The project this role applies to.
               </p>
             </div>
+          )}
+            </>
           )}
 
           <div className="space-y-1.5">
