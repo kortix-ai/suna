@@ -3,7 +3,7 @@ import { continueSession } from '../projects/session-lifecycle';
 import { makeOpenApiApp, json, errors } from '../openapi';
 import { MEET_DEFAULT_WAKE, verifyMeetSessionToken } from './meet-realtime';
 import { type MeetTurn, meetConversation } from './meet-conversation';
-import { isBotEcho } from './meet-echo';
+import { isBotEcho, isBotSpeaking } from './meet-echo';
 import { playAcknowledgement } from './meet-tts';
 
 export const meetWebhookApp = makeOpenApiApp();
@@ -148,8 +148,14 @@ function deliverTurn(args: { projectId: string; sessionId: string; botId: string
 export function isSelfEcho(
   botId: string,
   botName: string,
-  turn: { speaker: string; text: string },
+  turn: { speaker: string; text: string; spoken: boolean },
 ): boolean {
+  // Primary guard: while the bot is speaking, captions stream its own output audio
+  // back as "Unknown" speech — drop all inbound speech for that window. Chat is
+  // never echoed this way, so it's exempt.
+  if (turn.spoken && isBotSpeaking(botId)) return true;
+  // Fallbacks for stragglers past the window: content match, and the bot's own
+  // chat message (attributed to its name).
   if (isBotEcho(botId, turn.text)) return true;
   if (botName && turn.speaker && turn.speaker.toLowerCase() === botName.toLowerCase()) return true;
   return false;
