@@ -114,7 +114,7 @@ export const metadata: Metadata = {
         url: '/banner.png',
         width: 1200,
         height: 630,
-        alt: `${siteMetadata.title} – ${siteMetadata.description}`,
+        alt: 'Own your clanker — Kortix',
       },
     ],
   },
@@ -261,6 +261,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           )}
         />
         <meta property="og:image" content="https://kortix.com/banner.png" />
+        <meta property="og:image:alt" content="Own your clanker — Kortix" />
         <meta property="og:url" content="https://kortix.com" />
         <meta property="og:type" content="website" />
         <meta property="og:site_name" content="Kortix" />
@@ -278,6 +279,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           )}
         />
         <meta name="twitter:image" content="https://kortix.com/banner.png" />
+        <meta name="twitter:image:alt" content="Own your clanker — Kortix" />
         <meta
           name="twitter:site"
           content={tHardcodedUi.raw('appLayout.line209JsxAttrContentKortix')}
