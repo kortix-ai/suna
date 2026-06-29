@@ -829,6 +829,14 @@ const TOOL_PRICING: Record<string, ToolPricing> = {
     perResultCost: 0,
     markupMultiplier: 1.5,
   },
+  // Apify LinkedIn people-search actor (harvestapi short mode): $0.10 per search
+  // page of up to 25 results. Page-priced (not per-result), so a flat per-call
+  // cost; with markup the user is charged ~$0.15 per people_search call.
+  proxy_apify: {
+    baseCost: 0.1,
+    perResultCost: 0,
+    markupMultiplier: 1.5,
+  },
   proxy_firecrawl: {
     baseCost: 0.01,
     perResultCost: 0,
