@@ -40,6 +40,15 @@ spec:
         - name: landing
           emptyDir:
             sizeLimit: {{ .Values.landingVolumeSizeLimit }}
+        # The gateway's /tmp, shared with the sidecar. njs only reads its creds
+        # from the hardcoded /tmp/credentials.json (the AWS_CREDENTIALS_TEMP_FILE
+        # override isn't declared as an nginx `env`, so njs can't see it), and the
+        # gateway's own web-identity fetch is broken on EKS — so the sidecar drops
+        # fresh creds straight into the path the gateway natively reads. nginx
+        # recreates its own temp dirs + pid file in this volume at startup.
+        - name: gw-tmp
+          emptyDir:
+            sizeLimit: {{ .Values.gwTmpVolumeSizeLimit }}
         - name: landing-script
           configMap:
             name: {{ include "qa-portal.name" . }}-landing
@@ -105,33 +114,55 @@ spec:
               value: "true"
             - name: CORS_ENABLED
               value: "false"
-            # IRSA web-identity creds: AWS_ROLE_ARN + AWS_WEB_IDENTITY_TOKEN_FILE
-            # are auto-injected by EKS from the ServiceAccount role annotation.
-            # AWS_REGION + JS_TRUSTED_CERT_PATH are required for the gateway's njs
-            # STS subrequest to validate TLS when fetching those creds.
-            - name: AWS_REGION
-              value: {{ .Values.region | quote }}
-            - name: JS_TRUSTED_CERT_PATH
-              value: {{ .Values.s3Gateway.trustedCertPath | quote }}
           ports:
             - name: s3gw
               containerPort: {{ .Values.s3Gateway.port }}
               protocol: TCP
+          volumeMounts:
+            # Shared /tmp: nginx writes its temp dirs + pid here, and the sidecar
+            # drops /tmp/credentials.json (the file njs reads to sign requests).
+            - name: gw-tmp
+              mountPath: /tmp
           resources:
             {{- toYaml .Values.resources.gateway | nindent 12 }}
-        # Read-only landing-page generator: lists the reports/ lanes and rebuilds
-        # the small index.html so freshly published reports appear automatically.
-        - name: index-gen
+        # Sidecar (aws-cli): two jobs on the same interval —
+        #   1. refresh the gateway's S3 credentials file from IRSA (assume role
+        #      via web identity, write /aws-creds/credentials.json atomically).
+        #   2. rebuild the landing index.html by listing the reports/ lanes.
+        # aws-cli auth itself is IRSA web identity (AWS_ROLE_ARN +
+        # AWS_WEB_IDENTITY_TOKEN_FILE auto-injected by EKS); no static keys.
+        - name: s3-sidecar
           image: "{{ .Values.awsCli.repository }}:{{ .Values.awsCli.tag }}"
           imagePullPolicy: {{ .Values.awsCli.pullPolicy }}
           command: ["/bin/sh", "-c"]
           args:
             - |
-              # Generate once up front so / is populated within seconds, then
-              # refresh on the interval. Read-only: only `aws s3 ls`.
+              # Write fresh session creds for the gateway (it reads this file to
+              # sign S3 requests). Atomic via temp + mv so the gateway never reads
+              # a half-written file. The real STS creds are ~1h; this sidecar owns
+              # their lifecycle and refreshes every loop (well within that), so we
+              # stamp a far-future `expiration` in the file: the gateway must treat
+              # it as always-valid and NEVER run its own refresh — that refresh
+              # path is its broken njs STS fetch (TLS verify fails on EKS), which
+              # would 500 the request. 4070908800 = 2099-01-01.
+              refresh_creds() {
+                set -- $(aws sts assume-role-with-web-identity \
+                  --role-arn "$AWS_ROLE_ARN" --role-session-name qa-portal \
+                  --web-identity-token "$(cat "$AWS_WEB_IDENTITY_TOKEN_FILE")" \
+                  --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+                  --output text --region "$REGION" 2>/dev/null)
+                [ -n "$1" ] && [ -n "$2" ] && [ -n "$3" ] || return 1
+                printf '{"accessKeyId":"%s","secretAccessKey":"%s","sessionToken":"%s","expiration":4070908800}' \
+                  "$1" "$2" "$3" > /gw-tmp/.credentials.json.tmp \
+                  && mv /gw-tmp/.credentials.json.tmp /gw-tmp/credentials.json
+              }
+              # Prime both up front so the gateway can sign and / is populated
+              # within seconds, then refresh on the interval.
+              refresh_creds || true
               sh /scripts/gen-index.sh /landing || true
               while true; do
                 sleep {{ .Values.syncIntervalSeconds }}
+                refresh_creds || true
                 sh /scripts/gen-index.sh /landing || true
               done
           env:
@@ -151,6 +182,8 @@ spec:
             - name: REGION
               value: {{ .Values.region | quote }}
           volumeMounts:
+            - name: gw-tmp
+              mountPath: /gw-tmp
             - name: landing
               mountPath: /landing
             - name: landing-script

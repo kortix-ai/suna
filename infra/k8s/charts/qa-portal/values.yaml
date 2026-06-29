@@ -27,9 +27,6 @@ s3Gateway:
   # The unprivileged gateway listens on 8080; the front nginx proxies here. Kept
   # distinct from the web containerPort so the two share the pod netns cleanly.
   port: 8080
-  # CA bundle the gateway's njs uses to validate TLS when fetching IRSA web
-  # identity credentials from STS. Path inside the gateway image.
-  trustedCertPath: /etc/ssl/certs/ca-certificates.crt
 
 # aws-cli image for the read-only index-gen sidecar (lists reports/ lanes and
 # regenerates the landing index.html — never downloads report bodies).
@@ -54,6 +51,11 @@ replicas: 1
 # emptyDir for the generated landing index.html ONLY — kilobytes, never holds
 # report bytes, so it can never fill and evict the pod (the old failure mode).
 landingVolumeSizeLimit: 16Mi
+
+# The gateway's /tmp (shared with the sidecar): nginx temp/pid files + the
+# credentials.json the sidecar drops. nginx proxy temp files are transient and
+# self-cleaning, so unlike the old report sync this can't accumulate and evict.
+gwTmpVolumeSizeLimit: 512Mi
 
 resources:
   web:
