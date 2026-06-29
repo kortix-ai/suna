@@ -235,9 +235,6 @@ type Selection = { kind: 'connector'; slug: string } | { kind: 'global' } | { ki
 export function ConnectorsView({ projectId }: { projectId: string }) {
   return (
     <div className="bg-background flex h-full min-h-0 flex-col">
-      <header className="flex flex-col gap-2 space-y-2 border-b p-4 sm:flex-row sm:items-center sm:justify-between md:space-y-0">
-        <h2 className="text-foreground text-xl font-medium text-balance">Connectors</h2>
-      </header>
       <ConnectorsMasterDetail projectId={projectId} />
     </div>
   );
@@ -1742,7 +1739,11 @@ export function SlackConnectForm({
           One-click install - authorize Kortix in your workspace, no setup required.
         </InfoBanner>
       ) : (
-        <InfoBanner tone="warning" icon={<SlackLogo />} title="Managed Slack install is not configured">
+        <InfoBanner
+          tone="warning"
+          icon={<SlackLogo />}
+          title="Managed Slack install is not configured"
+        >
           Use a custom Slack app for this deployment.
         </InfoBanner>
       )}
@@ -2863,7 +2864,7 @@ function AddAppPanel({
     'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnect19ca1c01',
   );
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 px-6 py-7">
+    <div className="mx-auto w-full max-w-4xl space-y-6 px-6 py-10 pb-20 lg:py-20">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-foreground text-xl font-medium">Add a connector</h2>
       </header>
@@ -2950,11 +2951,14 @@ export function SlackLogo({ className }: { className?: string }) {
 
 function SlackIconTile() {
   return (
-    <span className="border-border/60 bg-card relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border">
-      <SlackLogo className="size-7" />
+    <span className="border-border/60 bg-card relative flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-sm border">
+      <SlackLogo className="size-3.5" />
     </span>
   );
 }
+
+const CHANNEL_CATALOGUE_CARD_CLASS =
+  'group bg-popover hover:bg-muted/80 focus-visible:ring-primary/50 flex flex-col rounded-md border p-3.5 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none';
 
 function slugifyConnector(input: string): string {
   const slug = input
@@ -2999,20 +3003,15 @@ function AddEmailProfileCard({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="group border-border/60 bg-card hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:ring-primary/50 flex flex-col rounded-2xl border p-4 text-left transition-all hover:shadow-sm focus-visible:ring-2 focus-visible:outline-none"
-      >
+      <button type="button" onClick={() => setOpen(true)} className={CHANNEL_CATALOGUE_CARD_CLASS}>
         <div className="flex items-center gap-3">
           <EntityAvatar icon={Mail} size="sm" />
           <div className="min-w-0 flex-1">
-            <div className="text-foreground truncate text-sm font-semibold">Email inbox</div>
+            <div className="text-foreground truncate text-sm font-medium">Email inbox</div>
             <div className="text-muted-foreground truncate text-xs">Channel profile</div>
           </div>
-          <Plus className="text-muted-foreground/40 group-hover:text-primary size-4 shrink-0 transition-colors" />
         </div>
-        <p className="text-muted-foreground mt-2 line-clamp-3 min-h-[3rem] text-xs leading-relaxed">
+        <p className="text-muted-foreground mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed">
           Add a separate AgentMail inbox profile for support, sales, founders, or any mailbox the
           agent should run.
         </p>
@@ -3084,20 +3083,15 @@ function AddSlackProfileCard({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="group border-border/60 bg-card hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:ring-primary/50 flex flex-col rounded-2xl border p-4 text-left transition-all hover:shadow-sm focus-visible:ring-2 focus-visible:outline-none"
-      >
+      <button type="button" onClick={() => setOpen(true)} className={CHANNEL_CATALOGUE_CARD_CLASS}>
         <div className="flex items-center gap-3">
           <SlackIconTile />
           <div className="min-w-0 flex-1">
-            <div className="text-foreground truncate text-sm font-semibold">Slack</div>
+            <div className="text-foreground truncate text-sm font-medium">Slack</div>
             <div className="text-muted-foreground truncate text-xs">Built-in channel</div>
           </div>
-          <Plus className="text-muted-foreground/40 group-hover:text-primary size-4 shrink-0 transition-colors" />
         </div>
-        <p className="text-muted-foreground mt-2 line-clamp-3 min-h-[3rem] text-xs leading-relaxed">
+        <p className="text-muted-foreground mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed">
           Add Kortix to Slack so mentions and threaded replies route into Kortix agent sessions.
         </p>
       </button>
@@ -3303,7 +3297,7 @@ function ConfigureAppModal({
         if (!save.isPending) onOpenChange(o);
       }}
     >
-      <ModalContent className="lg:max-w-md">
+      <ModalContent className="lg:max-w-lg">
         <ModalHeader>
           <ModalTitle>Add {app?.name}</ModalTitle>
           <ModalDescription>

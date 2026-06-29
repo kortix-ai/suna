@@ -532,7 +532,7 @@ function RecurringControls({
               <Button
                 key={value}
                 type="button"
-                variant={selected ? 'subtle' : 'outline'}
+                variant={selected ? 'secondary' : 'outline'}
                 size="sm"
                 aria-pressed={selected}
                 onClick={() => onToggleWeekday(value)}
