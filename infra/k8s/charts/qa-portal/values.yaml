@@ -3,60 +3,92 @@
 # the qa-portal RUNBOOK.md. The chart `fail`s fast if the IRSA role ARN, bucket,
 # or cert ARN are unset, so a misconfigured deploy never reaches the cluster.
 
-# ── Images ────────────────────────────────────────────────────────────────────
-image:
-  # nginx serving /usr/share/nginx/html (the synced static report).
-  repository: nginxinc/nginx-unprivileged
-  tag: "1.27-alpine"
-  pullPolicy: IfNotPresent
+# ── Front nginx ───────────────────────────────────────────────────────────────
+# Serves the branded landing page at / (from the small generated landing volume)
+# and reverse-proxies every other path to the S3 gateway sidecar.
+web:
+  image:
+    repository: nginxinc/nginx-unprivileged
+    tag: "1.27-alpine"
+    pullPolicy: IfNotPresent
 
-# aws-cli image used by BOTH the initContainer (first sync) and the sidecar
-# (periodic resync). Pinned tag, not :latest, so reports/latest/ syncs are
-# reproducible.
+# ── S3 gateway ────────────────────────────────────────────────────────────────
+# nginx-s3-gateway, used stock: signs each request (SigV4) and streams the object
+# from the PRIVATE bucket. No report bytes are stored on the pod. Credentials are
+# IRSA web identity (the ServiceAccount role) — no static keys.
+s3Gateway:
+  image:
+    # Docker Hub is the maintained registry; the unprivileged OSS build listens on
+    # 8080. Dated tags are immutable — bump to a newer unprivileged-oss-YYYYMMDD as
+    # desired. Current digest: sha256:80254257ebcd7e99b1f532a228dfd8ed3afbbf374f3ba8741bbc7a6adbe24f84
+    repository: nginxinc/nginx-s3-gateway
+    tag: "unprivileged-oss-20260413"
+    pullPolicy: IfNotPresent
+  # The unprivileged gateway listens on 8080; the front nginx proxies here. Kept
+  # distinct from the web containerPort so the two share the pod netns cleanly.
+  port: 8080
+  # CA bundle the gateway's njs uses to validate TLS when fetching IRSA web
+  # identity credentials from STS. Path inside the gateway image.
+  trustedCertPath: /etc/ssl/certs/ca-certificates.crt
+
+# aws-cli image for the read-only index-gen sidecar (lists reports/ lanes and
+# regenerates the landing index.html — never downloads report bodies).
 awsCli:
   repository: amazon/aws-cli
   tag: "2.17.0"
   pullPolicy: IfNotPresent
 
 # ── S3 source ─────────────────────────────────────────────────────────────────
-# The sidecar runs `aws s3 sync s3://<bucket>/<prefix> /usr/share/nginx/html`.
 bucket: "" # REQUIRED — kortix-qa-reports (from terraform output bucket_name)
-s3Prefix: "reports" # the generated static report to serve
+s3Prefix: "reports" # the key prefix the reports live under (URL == S3 key)
 region: us-west-2
 
-# How often the sidecar re-syncs the latest report (seconds).
+# How often the index-gen sidecar relists S3 and rebuilds the landing page (s).
 syncIntervalSeconds: 120
 
 # ── Sizing ────────────────────────────────────────────────────────────────────
-# Stateless internal tool: a single replica is fine (the report is rebuilt in S3
-# and re-synced; nothing is lost on a pod restart). Bump for HA if desired.
+# Stateless internal tool: a single replica is fine (nothing is stored locally;
+# reports stream from S3). Bump for HA if desired.
 replicas: 1
 
-# emptyDir the report syncs into and nginx serves from (shared by all containers).
-htmlVolumeSizeLimit: 1Gi
+# emptyDir for the generated landing index.html ONLY — kilobytes, never holds
+# report bytes, so it can never fill and evict the pod (the old failure mode).
+landingVolumeSizeLimit: 16Mi
 
 resources:
-  nginx:
+  web:
+    requests:
+      cpu: "25m"
+      memory: "32Mi"
+    limits:
+      cpu: "200m"
+      memory: "64Mi"
+  gateway:
     requests:
       cpu: "25m"
       memory: "64Mi"
     limits:
-      cpu: "200m"
+      cpu: "250m"
       memory: "128Mi"
   sync:
     requests:
-      cpu: "25m"
-      memory: "64Mi"
+      cpu: "50m"
+      memory: "96Mi"
     limits:
-      cpu: "200m"
+      # aws-cli v2 bundles a Python runtime whose startup needs real CPU; at 100m
+      # every `aws s3 ls` was CPU-throttled to 6-12s, so the first index build
+      # never finished and / 404'd. The sidecar only runs briefly every
+      # syncIntervalSeconds, so a high burst ceiling is effectively free.
+      cpu: "1"
       memory: "256Mi"
 
-containerPort: 8080 # nginx-unprivileged listens on 8080 by default
+containerPort: 8081 # front nginx listen (ALB target); gateway uses s3Gateway.port
 terminationGracePeriodSeconds: 30
 
 health:
-  # nginx serves a 200 at / once the report (or the placeholder) is present.
-  path: /
+  # Front nginx returns 200 here as soon as it starts — independent of S3, so the
+  # ALB target group is never empty due to an S3 hiccup.
+  path: /healthz
 
 # ── ServiceAccount / IRSA ─────────────────────────────────────────────────────
 serviceAccount:
