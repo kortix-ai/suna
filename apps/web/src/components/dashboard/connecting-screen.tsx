@@ -24,7 +24,6 @@ import {
   type ProvisioningStageInfo,
 } from '@/lib/provisioning-stages';
 import { type SandboxRecoveryPhase, useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
-import { useServerStore } from '@/stores/server-store';
 
 /**
  * ConnectingScreen — canonical lightweight loader for auth, project routing,
@@ -67,14 +66,10 @@ export function ConnectingScreen({
   const restartRequestedAt = useSandboxConnectionStore((s) => s.restartRequestedAt);
   const healthy = useSandboxConnectionStore((s) => s.healthy);
 
-  const activeServerId = useServerStore((s) => s.activeServerId);
-  const servers = useServerStore((s) => s.servers);
-  const activeServer = servers.find((s) => s.id === activeServerId);
-
   const router = useRouter();
 
-  const effectiveProvider = provider || activeServer?.provider;
-  const resolvedSandboxId = sandboxId || activeServer?.instanceId || undefined;
+  const effectiveProvider = provider;
+  const resolvedSandboxId = sandboxId || undefined;
 
   const runtimeOnlyDegraded = !forceConnecting && healthy === false && status === 'connected';
   const runtimeSummary = 'Runtime services degraded';
@@ -83,8 +78,7 @@ export function ConnectingScreen({
     router.push(backHref || '/projects');
   };
 
-  const serverLabel =
-    labelOverride?.trim() || activeServer?.label?.trim() || 'workspace';
+  const serverLabel = labelOverride?.trim() || 'workspace';
 
   // ── Prop-driven modes (explicit caller intent beats store state) ────────
 

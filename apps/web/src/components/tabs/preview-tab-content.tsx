@@ -94,7 +94,7 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
     );
   }, [port, originalUrl]);
 
-  const { activeServer, subdomainOpts, proxyUrl, rewritePortPath } = useSandboxProxy();
+  const { subdomainOpts, proxyUrl, rewritePortPath } = useSandboxProxy();
 
   const proxiedPreviewUrl = useMemo(
     () => proxyUrl(rawPreviewUrl) ?? rawPreviewUrl,
@@ -292,7 +292,7 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
       }
     }
 
-    const internal = proxyUrlToInternal(prevUrl, activeServer?.mappedPorts);
+    const internal = proxyUrlToInternal(prevUrl);
     if (internal) {
       const parsed = parseLocalhostUrl(internal);
       if (parsed) {
@@ -315,7 +315,7 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
         setRefreshKey((k) => k + 1);
       }
     }
-  }, [canGoBack, historyIndex, history, tabId, updateTabMetadata, activeServer?.mappedPorts]);
+  }, [canGoBack, historyIndex, history, tabId, updateTabMetadata]);
 
   const handleForward = useCallback(() => {
     if (!canGoForward) return;
@@ -347,7 +347,7 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
       }
     }
 
-    const internal = proxyUrlToInternal(nextUrl, activeServer?.mappedPorts);
+    const internal = proxyUrlToInternal(nextUrl);
     if (internal) {
       const parsed = parseLocalhostUrl(internal);
       if (parsed) {
@@ -370,7 +370,7 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
         setRefreshKey((k) => k + 1);
       }
     }
-  }, [canGoForward, historyIndex, history, tabId, updateTabMetadata, activeServer?.mappedPorts]);
+  }, [canGoForward, historyIndex, history, tabId, updateTabMetadata]);
 
   // Fallback: if onLoad doesn't fire within 5s, dismiss the loading state.
   // Cross-origin iframes frequently fail to fire onLoad events.

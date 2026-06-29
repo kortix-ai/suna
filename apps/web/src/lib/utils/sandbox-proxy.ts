@@ -1,6 +1,5 @@
 import {
   getActiveOpenCodeUrl,
-  type ServerEntry,
   deriveSubdomainOpts,
 } from '@/stores/server-store';
 import {
@@ -12,21 +11,14 @@ import {
 
 export interface SandboxProxyContext {
   serverUrl: string;
-  mappedPorts?: Record<string, string>;
   subdomainOpts: SubdomainUrlOptions;
 }
 
-export function createSandboxProxyContext({
-  activeServer,
-  fallbackServerUrl = getActiveOpenCodeUrl(),
-}: {
-  activeServer: ServerEntry | null | undefined;
-  fallbackServerUrl?: string;
-}): SandboxProxyContext {
+/** Build a proxy context from the active runtime (opencode URL + sandbox id). */
+export function createSandboxProxyContext(): SandboxProxyContext {
   return {
-    serverUrl: activeServer?.url || fallbackServerUrl,
-    mappedPorts: activeServer?.mappedPorts,
-    subdomainOpts: deriveSubdomainOpts(activeServer),
+    serverUrl: getActiveOpenCodeUrl(),
+    subdomainOpts: deriveSubdomainOpts(null),
   };
 }
 

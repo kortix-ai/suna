@@ -30,7 +30,6 @@ import {
   type VersionChannel,
 } from '@/lib/platform-client';
 import { setSandboxVersion } from '@/stores/sandbox-connection-store';
-import { useServerStore } from '@/stores/server-store';
 import { type SandboxInfo } from '@/lib/platform-client';
 
 export type { UpdatePhase, SandboxUpdateStatus };
@@ -113,26 +112,9 @@ const POLL_INTERVAL_MS = 2_000;
 const TERMINAL_PHASES: UpdatePhase[] = ['complete', 'failed'];
 
 export function useSandboxUpdate(currentVersion: string | null) {
-  const activeServer = useServerStore((s) => {
-    const entry = s.servers.find((srv) => srv.id === s.activeServerId);
-    return entry ?? null;
-  });
-
-  // Memoize so effect deps are stable (new object every render otherwise would
-  // reset interval timers that watch this value).
-  const sandbox: SandboxInfo | null = useMemo(() => {
-    if (!activeServer?.instanceId) return null;
-    return {
-      sandbox_id: activeServer.instanceId,
-      external_id: activeServer.sandboxId ?? '',
-      name: activeServer.label,
-      provider: (activeServer.provider ?? 'daytona') as SandboxInfo['provider'],
-      base_url: activeServer.url,
-      status: 'active',
-      created_at: '',
-      updated_at: '',
-    };
-  }, [activeServer?.instanceId, activeServer?.sandboxId, activeServer?.label, activeServer?.provider, activeServer?.url]);
+  // Cloud sandboxes are platform-managed — there is no in-app image-update flow
+  // for them, so there is no local sandbox descriptor to drive this hook.
+  const sandbox: SandboxInfo | null = null;
   // local_docker is gone — sandbox updates always run the cloud path.
   const isLocalDocker = false;
 

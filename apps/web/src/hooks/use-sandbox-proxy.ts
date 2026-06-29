@@ -2,7 +2,6 @@
 
 import { useCallback, useMemo } from 'react';
 
-import { useServerStore } from '@/stores/server-store';
 import {
   createSandboxProxyContext,
   getSandboxServiceUrl,
@@ -11,11 +10,10 @@ import {
 } from '@/lib/utils/sandbox-proxy';
 
 export function useSandboxProxy() {
-  const activeServer = useServerStore((s) => {
-    return s.servers.find((srv) => srv.id === s.activeServerId) ?? null;
-  });
-
-  const context = useMemo(() => createSandboxProxyContext({ activeServer }), [activeServer]);
+  // The proxy context is derived entirely from the active runtime (its opencode
+  // URL + sandbox id). There is a single runtime per session, so this is stable
+  // for the lifetime of the consuming component.
+  const context = useMemo(() => createSandboxProxyContext(), []);
 
   const proxyUrl = useCallback(
     (url: string | undefined) => proxySandboxUrl(url, context),
@@ -33,9 +31,7 @@ export function useSandboxProxy() {
   );
 
   return {
-    activeServer,
     serverUrl: context.serverUrl,
-    mappedPorts: context.mappedPorts,
     subdomainOpts: context.subdomainOpts,
     proxyUrl,
     rewritePortPath,

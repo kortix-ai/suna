@@ -90,7 +90,7 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { toast } from '@/lib/toast';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
-import { useServerStore } from '@/stores/server-store';
+import { getActiveSandboxId } from '@/stores/server-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -399,7 +399,6 @@ function SessionsFlyout({ collapsed }: { collapsed?: boolean }) {
                   title: session.title || 'Session',
                   type: 'session',
                   href: `/sessions/${session.id}`,
-                  serverId: useServerStore.getState().activeServerId,
                 });
               }}
               className={cn(
@@ -708,13 +707,12 @@ function SidebarSections() {
   const migrateDone = migrateStatus?.status === 'done';
 
   const handleMigrateAll = React.useCallback(async () => {
-    const server = useServerStore.getState();
-    const active = server.servers.find((s) => s.id === server.activeServerId);
-    if (!active?.sandboxId) return;
+    const sandboxExternalId = getActiveSandboxId();
+    if (!sandboxExternalId) return;
 
     setMigrateAllStarted(true);
     try {
-      await migrateAll.mutateAsync({ sandboxExternalId: active.sandboxId });
+      await migrateAll.mutateAsync({ sandboxExternalId });
     } catch {}
   }, [migrateAll]);
 
@@ -962,7 +960,6 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
         title: 'New session',
         type: 'session',
         href: `/sessions/${session.id}`,
-        serverId: useServerStore.getState().activeServerId,
       });
       // Focus the textarea in the newly visible session tab
       requestAnimationFrame(() => {

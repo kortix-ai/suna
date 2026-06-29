@@ -57,23 +57,16 @@ function isImmediateOfflineStatus(status: number): boolean {
  *   - If it's the first connection, requires FAIL_THRESHOLD_FIRST failures.
  */
 export function useSandboxConnection() {
-	const activeServerId = useServerStore((s) => s.activeServerId);
-	const serverVersion = useServerStore((s) => s.serverVersion);
-
 	const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const abortRef = useRef<AbortController | null>(null);
 	const isMountRef = useRef(true);
-	const prevServerVersionRef = useRef(serverVersion);
 
 	useEffect(() => {
 		const isFirstMount = isMountRef.current;
 		isMountRef.current = false;
-		const isServerSwitch = serverVersion !== prevServerVersionRef.current;
-		prevServerVersionRef.current = serverVersion;
 
-		if (isFirstMount || isServerSwitch) {
+		if (isFirstMount) {
 			// Full reset — clears wasConnected, failCount, status, everything.
-			// Each instance starts with a clean slate.
 			resetForServerSwitch();
 		}
 
@@ -215,5 +208,5 @@ export function useSandboxConnection() {
 			abortRef.current?.abort();
 			if (timerRef.current) clearTimeout(timerRef.current);
 		};
-	}, [activeServerId, serverVersion]);
+	}, []);
 }

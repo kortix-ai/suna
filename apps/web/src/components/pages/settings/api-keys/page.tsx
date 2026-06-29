@@ -47,7 +47,6 @@ import {
 } from '@/lib/api/api-keys';
 import { getActiveSandboxId, getActiveOpenCodeUrl } from '@/stores/server-store';
 import { getAuthToken } from '@/lib/auth-token';
-import { useServerStore } from '@/stores/server-store';
 import { getEnv } from '@/lib/env-config';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -161,16 +160,14 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function APIKeysPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  // Use instanceId (the stable DB UUID) so the api-keys backend can resolve
-  // ownership unambiguously. Using sandboxId (external_id) breaks for cloud
-  // providers like Daytona where the external_id is also a UUID — the backend
-  // would mistakenly treat it as the DB primary key and return 404.
-  // Subscribing to both activeServerId and servers ensures reactivity when
-  // the server entry is updated without an activeServerId change.
-  const activeSandboxId = useServerStore((s) => {
-    const server = s.servers.find((e) => e.id === s.activeServerId);
-    return server?.instanceId;
-  });
+  // Per-sandbox API keys are keyed by the sandbox's DB instance id (a stable
+  // UUID the backend resolves ownership against). The external id can't be used
+  // — for cloud providers like Daytona it's also a UUID and the backend would
+  // treat it as the DB primary key and 404. The cloud runtime currently only
+  // exposes the external id, not the DB instance id, so this stays disabled.
+  // TODO(api-keys): resolve the active project's sandbox DB instance id so the
+  // per-sandbox key list can populate again for cloud runtimes.
+  const activeSandboxId: string | undefined = undefined;
   const activeSandboxExternalId = getActiveSandboxId();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newKeyData, setNewKeyData] = useState<NewAPIKeyData>({

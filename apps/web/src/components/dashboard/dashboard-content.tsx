@@ -19,7 +19,6 @@ import { playSound } from '@/lib/sounds';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
-import { useServerStore } from '@/stores/server-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useQueryClient } from '@tanstack/react-query';
 import { Menu } from 'lucide-react';
@@ -94,7 +93,6 @@ export function DashboardContent() {
           title: 'New session',
           type: 'session',
           href: `/sessions/${session.id}`,
-          serverId: useServerStore.getState().activeServerId,
         });
 
         requestAnimationFrame(() => {
@@ -122,7 +120,6 @@ export function DashboardContent() {
           title: cmd.name,
           type: 'session',
           href: `/sessions/${session.id}`,
-          serverId: useServerStore.getState().activeServerId,
         });
         const client = getClient();
         void client.session
