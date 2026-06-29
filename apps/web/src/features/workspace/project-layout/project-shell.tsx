@@ -24,7 +24,7 @@ import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 
 const CommandPalette = lazy(() =>
-  import('@/components/command-palette').then((mod) => ({
+  import('@/features/workspace/command-palette').then((mod) => ({
     default: mod.CommandPalette,
   })),
 );

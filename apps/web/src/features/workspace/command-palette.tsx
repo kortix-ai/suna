@@ -1,47 +1,6 @@
 'use client';
 
-import { parseCustomizeSection } from '@/lib/customize-sections';
-import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { normalizeAppPathname } from '@/lib/instance-routes';
-import {
-  listAccounts,
-  listProjectSessions,
-  listProjectsForAccount,
-  searchProjectFiles,
-  type KortixAccount,
-  type KortixProject,
-  type ProjectSession,
-} from '@/lib/projects-client';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useCustomizeStore } from '@/stores/customize-store';
-import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowUp,
-  Bot,
-  Check,
-  ChevronRight,
-  CornerDownLeft,
-  Cpu,
-  FileText,
-  FolderGit2,
-  Globe,
-  Hash,
-  Loader2,
-  MessageCircle,
-  PanelLeftClose,
-  PanelLeftIcon,
-  Search,
-  Users,
-} from 'lucide-react';
-import { useTranslations } from 'next-intl';
-import { useParams, usePathname, useRouter } from 'next/navigation';
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-
-import { getItemsForSurface, type MenuItemDef, type SettingsTabId } from '@/lib/menu-registry';
-
+import { Badge } from '@/components/ui/badge';
 import {
   CommandDialog,
   CommandFooter,
@@ -52,13 +11,55 @@ import {
   CommandList,
   CommandShortcut,
 } from '@/components/ui/command';
+import Loading from '@/components/ui/loading';
 import { SidebarContext } from '@/components/ui/sidebar';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { useOpenCodeAgents, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { authenticatedFetch } from '@/lib/auth-token';
+import { parseCustomizeSection } from '@/lib/customize-sections';
 import { featureFlags } from '@/lib/feature-flags';
-import { toast } from '@/lib/toast';
+import { normalizeAppPathname } from '@/lib/instance-routes';
+import { getItemsForSurface, type MenuItemDef, type SettingsTabId } from '@/lib/menu-registry';
+import {
+  listAccounts,
+  listProjectSessions,
+  listProjectsForAccount,
+  searchProjectFiles,
+  type KortixAccount,
+  type KortixProject,
+  type ProjectSession,
+} from '@/lib/projects-client';
+import { cn } from '@/lib/utils';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useCustomizeStore } from '@/stores/customize-store';
+import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { useServerStore } from '@/stores/server-store';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  ArrowDown,
+  ArrowUp,
+  Bot,
+  Check,
+  ChevronRight,
+  CornerDownLeft,
+  Cpu,
+  FileText,
+  FolderGit2,
+  Globe,
+  Hash,
+  MessageCircle,
+  PanelLeftClose,
+  PanelLeftIcon,
+  Search,
+  Users,
+} from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useParams, usePathname, useRouter } from 'next/navigation';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
+import { TextShimmer } from '@/components/ui/text-shimmer';
 import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
 import {
   MODEL_SELECTOR_PROVIDER_IDS,
@@ -74,19 +75,12 @@ import {
   useCreateOpenCodeSession,
   useOpenCodeMessages,
 } from '@/hooks/opencode/use-opencode-sessions';
+import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
 import { clearSessionIDBCache } from '@/lib/idb-sync-cache';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
-import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
-import { useMessageJumpStore } from '@/stores/message-jump-store';
-import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
-import { openTabAndNavigate } from '@/stores/tab-store';
-import { groupMessagesIntoTurns, isTextPart, type TextPart } from '@/ui';
-import { useTheme } from 'next-themes';
-
-import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import {
   buildWebProxyUrl,
   normalizeExternalInput,
@@ -94,10 +88,14 @@ import {
   toInternalUrl,
 } from '@/lib/utils/sandbox-url';
 import { enrichPreviewMetadata } from '@/lib/utils/session-context';
-
-// ============================================================================
-// Types
-// ============================================================================
+import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
+import { useMessageJumpStore } from '@/stores/message-jump-store';
+import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
+import { openTabAndNavigate } from '@/stores/tab-store';
+import { groupMessagesIntoTurns, isTextPart, type TextPart } from '@/ui';
+import { chalkColors, formatRelativeTime } from '@kortix/shared';
+import { useTheme } from 'next-themes';
+import { FaBackspace } from 'react-icons/fa';
 
 type PalettePage =
   | 'root'
@@ -109,39 +107,13 @@ type PalettePage =
   | 'sessions'
   | 'files';
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function formatRelativeTime(timestamp: number): string {
-  const diff = Date.now() - timestamp;
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(timestamp).toLocaleDateString();
-}
-
-/**
- * Sanitize a value string for use as a cmdk CommandItem value.
- * cmdk sets data-value then calls querySelector('[data-value="..."]'),
- * so any characters that break CSS attribute selectors must be removed.
- */
 function sanitizeCmdkValue(value: string): string {
-  // Remove double quotes, single quotes, backslashes, brackets — all CSS selector breakers
   return value
     .replace(/["'\\[\]]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-// Legacy global-workspace registry items that don't belong in the new
-// project-shell palette (they point at the old tabbed shell routes). The new
-// project + app nav items (proj-*, nav-*) replace them. Kept in the registry
-// because the legacy right/left sidebars still render them.
 const LEGACY_PALETTE_HIDDEN = new Set([
   'workspace',
   'dashboard',
@@ -201,9 +173,6 @@ function FileSearchPage({
   if (!enabled) {
     return (
       <div className="flex flex-col items-center gap-3 py-12">
-        <div className="bg-muted/30 flex h-10 w-10 items-center justify-center rounded-full">
-          <Search className="text-muted-foreground/40 h-4 w-4" />
-        </div>
         <div className="space-y-1 text-center">
           <p className="text-muted-foreground/60 text-sm">
             {tHardcodedUi.raw(
@@ -225,7 +194,7 @@ function FileSearchPage({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center gap-2 py-10">
-        <Loader2 className="text-muted-foreground/50 h-4 w-4 animate-spin" />
+        <Loading className="text-muted-foreground/50 size-4 shrink-0" />
         <span className="text-muted-foreground/50 text-sm">
           {isContent ? 'Searching file contents…' : 'Searching files…'}
         </span>
@@ -238,7 +207,7 @@ function FileSearchPage({
     return (
       <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
         <div className="bg-muted/30 flex h-10 w-10 items-center justify-center rounded-full">
-          <Search className="text-muted-foreground/30 h-4 w-4" />
+          <Search className="text-muted-foreground/30 size-4" />
         </div>
         <span className="text-muted-foreground/60 text-sm">
           No {isContent ? 'content matches' : 'files'}{' '}
@@ -264,7 +233,7 @@ function FileSearchPage({
             key={filePath}
             heading={
               <span className="inline-flex items-center gap-1.5 font-mono text-xs">
-                <FileText className="h-3 w-3 shrink-0" />
+                <FileText className="size-3 shrink-0" />
                 {filePath}
               </span>
             }
@@ -303,7 +272,7 @@ function FileSearchPage({
             value={sanitizeCmdkValue(`file ${name} ${item.path}`)}
             onSelect={() => onSelect(item.path)}
           >
-            <FileText className="text-muted-foreground/70 h-4 w-4 shrink-0" />
+            <FileText className="text-muted-foreground/70 size-4 shrink-0" />
             <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
               <span className="truncate text-sm font-medium">{name}</span>
               <span className="text-muted-foreground/35 min-w-0 flex-shrink truncate font-mono text-xs">
@@ -358,10 +327,9 @@ function MessagesPage({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center gap-2 py-10">
-        <Loader2 className="text-muted-foreground/50 h-4 w-4 animate-spin" />
-        <span className="text-muted-foreground/50 text-sm">
+        <TextShimmer>
           {tHardcodedUi.raw('componentsCommandPalette.line328JsxTextLoadingMessages')}
-        </span>
+        </TextShimmer>
       </div>
     );
   }
@@ -370,7 +338,7 @@ function MessagesPage({
     return (
       <div className="flex flex-col items-center gap-2 py-12">
         <div className="bg-muted/30 flex h-10 w-10 items-center justify-center rounded-full">
-          <MessageCircle className="text-muted-foreground/30 h-4 w-4" />
+          <MessageCircle className="text-muted-foreground/30 size-4" />
         </div>
         <span className="text-muted-foreground/60 text-sm">
           {query ? `No messages matching "${query}"` : 'No messages in this session'}
@@ -414,6 +382,9 @@ export function CommandPalette() {
   const [diffOpen, setDiffOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
+  // Momentary scale-down feedback when navigating back to root.
+  const [backScale, setBackScale] = useState(false);
+  const backScaleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openNewInstanceModal = useNewInstanceModalStore((s) => s.openNewInstanceModal);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -501,6 +472,16 @@ export function CommandPalette() {
   const goBack = useCallback(() => {
     setPage('root');
     setQuery('');
+    // Tactile feedback: dip the palette to 0.95 then spring back to 1.
+    setBackScale(true);
+    if (backScaleTimeout.current) clearTimeout(backScaleTimeout.current);
+    backScaleTimeout.current = setTimeout(() => setBackScale(false), 130);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (backScaleTimeout.current) clearTimeout(backScaleTimeout.current);
+    };
   }, []);
 
   const handleOpenTerminal = useCallback(async () => {
@@ -515,7 +496,7 @@ export function CommandPalette() {
         href: `/terminal/${pty.id}`,
       });
     } catch {
-      toast.error('Failed to open terminal');
+      errorToast('Failed to open terminal');
     }
     close();
   }, [createPty, close]);
@@ -755,7 +736,7 @@ export function CommandPalette() {
         });
         close();
       })
-      .catch(() => toast.error('Failed to create session'))
+      .catch(() => errorToast('Failed to create session'))
       .finally(() => setIsCreating(false));
   }, [isCreating, projectId, newSession, createSession, openProjectTab, close]);
 
@@ -1122,10 +1103,10 @@ export function CommandPalette() {
       body: JSON.stringify({ mode: 'dispose-only' }),
     })
       .then((res) => {
-        if (res.ok) toast.success('Config reloaded');
-        else toast.error('Restart failed');
+        if (res.ok) successToast('Config reloaded');
+        else errorToast('Restart failed');
       })
-      .catch(() => toast.error('Restart failed'));
+      .catch(() => errorToast('Restart failed'));
   }, [close]);
 
   const handleRestartFull = useCallback(() => {
@@ -1137,10 +1118,10 @@ export function CommandPalette() {
       body: JSON.stringify({ mode: 'full' }),
     })
       .then((res) => {
-        if (res.ok) toast.success('Full restart initiated');
-        else toast.error('Restart failed');
+        if (res.ok) successToast('Full restart initiated');
+        else errorToast('Restart failed');
       })
-      .catch(() => toast.error('Restart failed'));
+      .catch(() => errorToast('Restart failed'));
   }, [close]);
 
   const actionHandlers: Record<string, () => void> = useMemo(
@@ -1234,7 +1215,7 @@ export function CommandPalette() {
     (agentName: string) => {
       if (!currentSessionId) return;
       modelStore.setSessionAgentName(currentSessionId, agentName);
-      toast.success(`Agent switched to ${agentName}`);
+      successToast(`Agent switched to ${agentName}`);
       close();
     },
     [currentSessionId, modelStore, close],
@@ -1246,7 +1227,7 @@ export function CommandPalette() {
       modelStore.setSelectedModel(currentAgent.name, { providerID, modelID });
       modelStore.pushRecent({ providerID, modelID });
       const model = allModels.find((m) => m.providerID === providerID && m.modelID === modelID);
-      toast.success(`Model switched to ${model?.modelName || modelID}`);
+      successToast(`Model switched to ${model?.modelName || modelID}`);
       close();
     },
     [currentAgent, modelStore, allModels, close],
@@ -1307,25 +1288,15 @@ export function CommandPalette() {
 
   return (
     <>
-      <CommandDialog open={open} onOpenChange={setOpen} className="sm:max-w-[680px]">
-        {/* Submenu breadcrumb header */}
-        {page !== 'root' && (
-          <div className="flex items-center gap-2 px-4 pt-3 pb-0.5">
-            <button
-              type="button"
-              onClick={goBack}
-              className="group text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04] -ml-1.5 flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-xs transition-colors"
-            >
-              <ArrowLeft className="h-3 w-3 transition-transform group-hover:-translate-x-0.5" />
-              <span>Back</span>
-            </button>
-            <span className="text-muted-foreground/25 text-xs">/</span>
-            <span className="text-foreground/85 text-xs font-medium tracking-[-0.005em]">
-              {pageTitle}
-            </span>
-          </div>
+      <CommandDialog
+        open={open}
+        onOpenChange={setOpen}
+        className={cn(
+          'origin-center transition-transform duration-150 ease-in-out sm:max-w-[680px]',
+          backScale && 'scale-[0.99]',
         )}
-
+        showCloseButton={false}
+      >
         <CommandInput
           ref={inputRef}
           placeholder={placeholder}
@@ -1333,659 +1304,662 @@ export function CommandPalette() {
           onValueChange={setQuery}
         />
 
-        <CommandList>
-          {/* ============================================================ */}
-          {/* PAGE: ROOT                                                    */}
-          {/* ============================================================ */}
-          {page === 'root' && (
-            <>
-              {/* ── IDLE STATE ── */}
-              {!hasQuery && (
-                <>
-                  <CommandGroup heading="Suggestions" forceMount>
-                    {allPaletteItems
-                      .filter((item) => item.group === 'actions' || item.group === 'navigation')
-                      .slice(0, 8)
-                      .map((item) => {
-                        const Icon = item.icon;
-                        const isToggleSidebar = item.id === 'toggle-sidebar';
-                        const DisplayIcon = isToggleSidebar
-                          ? sidebarOpen
-                            ? PanelLeftClose
-                            : PanelLeftIcon
-                          : Icon;
-                        const displayLabel = isToggleSidebar
-                          ? sidebarOpen
-                            ? 'Collapse Sidebar'
-                            : 'Expand Sidebar'
-                          : item.label;
+        <FadedScrollArea fadeColor="from-popover" className="max-h-[min(60vh,380px)] min-h-[400px]">
+          <CommandList className="max-h-none overflow-visible">
+            {page === 'root' && (
+              <>
+                {!hasQuery && (
+                  <>
+                    <CommandGroup heading="Suggestions" forceMount>
+                      <div className="space-y-0.5">
+                        {allPaletteItems
+                          .filter((item) => item.group === 'actions' || item.group === 'navigation')
+                          .slice(0, 8)
+                          .map((item) => {
+                            const Icon = item.icon;
+                            const isToggleSidebar = item.id === 'toggle-sidebar';
+                            const DisplayIcon = isToggleSidebar
+                              ? sidebarOpen
+                                ? PanelLeftClose
+                                : PanelLeftIcon
+                              : Icon;
+                            const displayLabel = isToggleSidebar
+                              ? sidebarOpen
+                                ? 'Collapse Sidebar'
+                                : 'Expand Sidebar'
+                              : item.label;
 
-                        const submenuPage = SUBMENU_PAGE_BY_ID[item.id];
-                        return (
+                            const submenuPage = SUBMENU_PAGE_BY_ID[item.id];
+                            return (
+                              <CommandItem
+                                key={item.id}
+                                value={sanitizeCmdkValue(
+                                  `suggestion ${item.label} ${item.keywords || ''}`,
+                                )}
+                                onSelect={() =>
+                                  submenuPage ? goToPage(submenuPage) : handleRegistryItem(item)
+                                }
+                                disabled={item.id === 'new-session' && isCreating}
+                              >
+                                {item.id === 'new-session' && isCreating ? (
+                                  <Loading className="text-muted-foreground size-4 shrink-0" />
+                                ) : (
+                                  <DisplayIcon className="size-4" />
+                                )}
+                                <span className="flex-1">{displayLabel}</span>
+                                {item.shortcut && (
+                                  <CommandShortcut>{item.shortcut}</CommandShortcut>
+                                )}
+                                {submenuPage && (
+                                  <ChevronRight className="text-muted-foreground/30 size-3" />
+                                )}
+                              </CommandItem>
+                            );
+                          })}
+                      </div>
+
+                      {currentSessionId && (
+                        <>
                           <CommandItem
-                            key={item.id}
-                            value={sanitizeCmdkValue(
-                              `suggestion ${item.label} ${item.keywords || ''}`,
-                            )}
-                            onSelect={() =>
-                              submenuPage ? goToPage(submenuPage) : handleRegistryItem(item)
-                            }
-                            disabled={item.id === 'new-session' && isCreating}
+                            value="suggestion change agent worker switch"
+                            onSelect={() => goToPage('agents')}
                           >
-                            {item.id === 'new-session' && isCreating ? (
-                              <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
-                            ) : (
-                              <DisplayIcon className="h-4 w-4" />
+                            <Bot className="size-4" />
+                            <span className="flex-1">
+                              {tHardcodedUi.raw(
+                                'componentsCommandPalette.line1209JsxTextChangeAgent',
+                              )}
+                            </span>
+                            {currentAgent && (
+                              <span className="text-muted-foreground/40 text-xs">
+                                {currentAgent.name}
+                              </span>
                             )}
-                            <span className="flex-1">{displayLabel}</span>
-                            {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
-                            {submenuPage && (
-                              <ChevronRight className="text-muted-foreground/30 h-3 w-3" />
-                            )}
+                            <ChevronRight className="text-muted-foreground/30 size-3" />
                           </CommandItem>
-                        );
-                      })}
-
-                    {/* Session actions in idle state */}
-                    {currentSessionId && (
-                      <>
-                        <CommandItem
-                          value="suggestion change agent worker switch"
-                          onSelect={() => goToPage('agents')}
-                        >
-                          <Bot className="h-4 w-4" />
-                          <span className="flex-1">
-                            {tHardcodedUi.raw(
-                              'componentsCommandPalette.line1209JsxTextChangeAgent',
-                            )}
-                          </span>
-                          {currentAgent && (
-                            <span className="text-muted-foreground/40 text-xs">
-                              {currentAgent.name}
+                          <CommandItem
+                            value="suggestion change model llm switch"
+                            onSelect={() => goToPage('models')}
+                          >
+                            <Cpu className="size-4" />
+                            <span className="flex-1">
+                              {tHardcodedUi.raw(
+                                'componentsCommandPalette.line1220JsxTextChangeModel',
+                              )}
                             </span>
-                          )}
-                          <ChevronRight className="text-muted-foreground/30 h-3 w-3" />
-                        </CommandItem>
-                        <CommandItem
-                          value="suggestion change model llm switch"
-                          onSelect={() => goToPage('models')}
-                        >
-                          <Cpu className="h-4 w-4" />
-                          <span className="flex-1">
-                            {tHardcodedUi.raw(
-                              'componentsCommandPalette.line1220JsxTextChangeModel',
+                            {currentModelKey && (
+                              <span className="text-muted-foreground/40 max-w-[160px] truncate text-xs">
+                                {allModels.find(
+                                  (m) =>
+                                    m.providerID === currentModelKey.providerID &&
+                                    m.modelID === currentModelKey.modelID,
+                                )?.modelName || currentModelKey.modelID}
+                              </span>
                             )}
-                          </span>
-                          {currentModelKey && (
-                            <span className="text-muted-foreground/40 max-w-[160px] truncate text-xs">
-                              {allModels.find(
-                                (m) =>
-                                  m.providerID === currentModelKey.providerID &&
-                                  m.modelID === currentModelKey.modelID,
-                              )?.modelName || currentModelKey.modelID}
+                            <ChevronRight className="text-muted-foreground/30 size-3" />
+                          </CommandItem>
+                          <CommandItem
+                            value="suggestion jump to message go scroll navigate"
+                            onSelect={() => goToPage('messages')}
+                          >
+                            <MessageCircle className="size-4" />
+                            <span className="flex-1">
+                              {tHardcodedUi.raw(
+                                'componentsCommandPalette.line1235JsxTextJumpToMessage',
+                              )}
                             </span>
-                          )}
-                          <ChevronRight className="text-muted-foreground/30 h-3 w-3" />
-                        </CommandItem>
-                        <CommandItem
-                          value="suggestion jump to message go scroll navigate"
-                          onSelect={() => goToPage('messages')}
-                        >
-                          <MessageCircle className="h-4 w-4" />
-                          <span className="flex-1">
-                            {tHardcodedUi.raw(
-                              'componentsCommandPalette.line1235JsxTextJumpToMessage',
-                            )}
-                          </span>
-                          <ChevronRight className="text-muted-foreground/30 h-3 w-3" />
-                        </CommandItem>
-                      </>
-                    )}
-
-                    {/* File search entry point — searches the project's git repo */}
-                    {projectId && (
-                      <CommandItem
-                        value="suggestion search files find file grep repo content"
-                        onSelect={() => goToPage('files')}
-                      >
-                        <Search className="h-4 w-4" />
-                        <span className="flex-1">
-                          {tHardcodedUi.raw('componentsCommandPalette.line1248JsxTextSearchFiles')}
-                        </span>
-                        <span className="bg-foreground/[0.04] border-border/40 text-muted-foreground/55 rounded-[5px] border px-1.5 py-0.5 font-mono text-xs leading-none">
-                          repo
-                        </span>
-                        <ChevronRight className="text-muted-foreground/40 h-3 w-3" />
-                      </CommandItem>
-                    )}
-                  </CommandGroup>
-
-                  {/* Recent — project sessions when scoped to a project, else
-                      recent projects (no legacy global session feed). */}
-                  {projectId && recentProjectSessions.length > 0 && (
-                    <CommandGroup
-                      heading={tHardcodedUi.raw(
-                        'componentsCommandPalette.line1260JsxAttrHeadingRecentSessions',
+                            <ChevronRight className="text-muted-foreground/30 size-3" />
+                          </CommandItem>
+                        </>
                       )}
-                      forceMount
-                    >
-                      {recentProjectSessions.map((session) => (
+
+                      {projectId && (
                         <CommandItem
-                          key={session.session_id}
-                          value={sanitizeCmdkValue(
-                            `recent ${sessionName(session)} ${session.session_id}`,
-                          )}
-                          onSelect={() => handleSelectProjectSession(session)}
+                          value="suggestion search files find file grep repo content"
+                          onSelect={() => goToPage('files')}
                         >
-                          <MessageCircle className="h-4 w-4 flex-shrink-0" />
-                          <span className="flex-1 truncate">{sessionName(session)}</span>
-                          {session.session_id === params?.sessionId && (
-                            <span className="text-primary/60 text-xs font-medium">Current</span>
-                          )}
-                          <span className="text-muted-foreground/30 flex-shrink-0 text-xs tabular-nums">
-                            {formatRelativeTime(new Date(session.updated_at).getTime())}
+                          <span className="flex-1">
+                            {tHardcodedUi.raw(
+                              'componentsCommandPalette.line1248JsxTextSearchFiles',
+                            )}
                           </span>
+                          <span className="bg-foreground/[0.04] border-border/40 text-muted-foreground/55 rounded-[5px] border px-1.5 py-0.5 font-mono text-xs leading-none">
+                            repo
+                          </span>
+                          <ChevronRight className="text-muted-foreground/40 size-3" />
                         </CommandItem>
-                      ))}
+                      )}
                     </CommandGroup>
-                  )}
 
-                  {!projectId && recentProjects.length > 0 && (
-                    <CommandGroup
-                      heading={tHardcodedUi.raw(
-                        'componentsCommandPalette.line1281JsxAttrHeadingRecentProjects',
-                      )}
-                      forceMount
-                    >
-                      {recentProjects.map((project) => (
-                        <CommandItem
-                          key={project.project_id}
-                          value={sanitizeCmdkValue(
-                            `recent project ${project.name} ${project.project_id}`,
-                          )}
-                          onSelect={() => handleSelectProject(project)}
-                        >
-                          <FolderGit2 className="h-4 w-4 flex-shrink-0" />
-                          <span className="flex-1 truncate">{project.name}</span>
-                          {(project.last_opened_at || project.updated_at) && (
+                    {projectId && recentProjectSessions.length > 0 && (
+                      <CommandGroup
+                        heading={tHardcodedUi.raw(
+                          'componentsCommandPalette.line1260JsxAttrHeadingRecentSessions',
+                        )}
+                        forceMount
+                      >
+                        {recentProjectSessions.map((session) => (
+                          <CommandItem
+                            key={session.session_id}
+                            value={sanitizeCmdkValue(
+                              `recent ${sessionName(session)} ${session.session_id}`,
+                            )}
+                            onSelect={() => handleSelectProjectSession(session)}
+                          >
+                            <MessageCircle className="size-4 flex-shrink-0" />
+                            <span className="flex-1 truncate">{sessionName(session)}</span>
                             <span className="text-muted-foreground/30 flex-shrink-0 text-xs tabular-nums">
-                              {formatRelativeTime(
-                                new Date(project.last_opened_at || project.updated_at).getTime(),
-                              )}
+                              {formatRelativeTime(new Date(session.updated_at).getTime())}
                             </span>
-                          )}
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  )}
-                </>
-              )}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    )}
 
-              {/* ── SEARCH STATE ── */}
-              {hasQuery && (
-                <>
-                  {/* Session actions (Change Agent / Change Model) */}
-                  {hasSessionActionResults && (
-                    <CommandGroup heading="Session" forceMount>
-                      {sessionActionItems.map((item) => (
-                        <CommandItem
-                          key={item.id}
-                          value={`${item.label} ${item.keywords}`}
-                          onSelect={() => goToPage(item.targetPage)}
-                        >
-                          {item.id === 'change-agent' ? (
-                            <Bot className="h-4 w-4" />
-                          ) : item.id === 'jump-to-message' ? (
-                            <MessageCircle className="h-4 w-4" />
-                          ) : (
-                            <Cpu className="h-4 w-4" />
-                          )}
-                          <span className="flex-1">{item.label}</span>
-                          <ChevronRight className="text-muted-foreground/30 h-3 w-3" />
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  )}
-
-                  {/* Navigation */}
-                  {hasNavResults && (
-                    <CommandGroup heading="Navigation" forceMount>
-                      {filteredNavItems.map((item) => {
-                        const Icon = item.icon;
-                        const isToggleSidebar = item.id === 'toggle-sidebar';
-                        const SidebarIcon = isToggleSidebar
-                          ? sidebarOpen
-                            ? PanelLeftClose
-                            : PanelLeftIcon
-                          : Icon;
-                        const displayLabel = isToggleSidebar
-                          ? sidebarOpen
-                            ? 'Collapse Sidebar'
-                            : 'Expand Sidebar'
-                          : item.label;
-                        const isActiveTheme = item.kind === 'theme' && theme === item.themeValue;
-                        const submenuPage = SUBMENU_PAGE_BY_ID[item.id];
-
-                        return (
+                    {!projectId && recentProjects.length > 0 && (
+                      <CommandGroup
+                        heading={tHardcodedUi.raw(
+                          'componentsCommandPalette.line1281JsxAttrHeadingRecentProjects',
+                        )}
+                        forceMount
+                      >
+                        {recentProjects.map((project) => (
                           <CommandItem
-                            key={item.id}
+                            key={project.project_id}
                             value={sanitizeCmdkValue(
-                              item.keywords || `${item.group} ${item.label} ${item.id}`,
+                              `recent project ${project.name} ${project.project_id}`,
                             )}
-                            onSelect={() =>
-                              submenuPage ? goToPage(submenuPage) : handleRegistryItem(item)
-                            }
-                            disabled={item.id === 'new-session' && isCreating}
+                            onSelect={() => handleSelectProject(project)}
                           >
-                            {item.id === 'new-session' && isCreating ? (
-                              <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
-                            ) : (
-                              <SidebarIcon className="h-4 w-4" />
-                            )}
-                            <span className="flex-1">{displayLabel}</span>
-                            {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
-                            {isActiveTheme && (
-                              <span className="text-primary/60 text-xs font-medium">Active</span>
-                            )}
-                            {submenuPage && (
-                              <ChevronRight className="text-muted-foreground/30 h-3 w-3" />
+                            <FolderGit2 className="size-4 flex-shrink-0" />
+                            <span className="flex-1 truncate">{project.name}</span>
+                            {(project.last_opened_at || project.updated_at) && (
+                              <span className="text-muted-foreground/30 flex-shrink-0 text-xs tabular-nums">
+                                {formatRelativeTime(
+                                  new Date(project.last_opened_at || project.updated_at).getTime(),
+                                )}
+                              </span>
                             )}
                           </CommandItem>
-                        );
-                      })}
-                    </CommandGroup>
-                  )}
-
-                  {/* Sessions — project-scoped, current source only */}
-                  {hasSessionResults && (
-                    <CommandGroup heading="Sessions" forceMount>
-                      {rootSessionResults.map((session) => (
-                        <CommandItem
-                          key={session.session_id}
-                          value={sanitizeCmdkValue(
-                            `session ${sessionName(session)} ${session.session_id}`,
-                          )}
-                          onSelect={() => handleSelectProjectSession(session)}
-                        >
-                          <MessageCircle className="h-4 w-4 flex-shrink-0" />
-                          <span className="flex-1 truncate text-sm">{sessionName(session)}</span>
-                          {session.session_id === params?.sessionId && (
-                            <Check className="text-primary h-3.5 w-3.5 flex-shrink-0" />
-                          )}
-                          <span className="text-muted-foreground/40 flex-shrink-0 text-xs tabular-nums">
-                            {formatRelativeTime(new Date(session.updated_at).getTime())}
-                          </span>
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  )}
-
-                  {/* Projects — surfaced in the global shell where there is no
-                      active project to scope sessions to. */}
-                  {hasProjectResults && (
-                    <CommandGroup heading="Projects" forceMount>
-                      {rootProjectResults.map((project) => (
-                        <CommandItem
-                          key={project.project_id}
-                          value={sanitizeCmdkValue(`project ${project.name} ${project.project_id}`)}
-                          onSelect={() => handleSelectProject(project)}
-                        >
-                          <FolderGit2 className="h-4 w-4 flex-shrink-0" />
-                          <span className="flex-1 truncate text-sm">{project.name}</span>
-                          {(project.last_opened_at || project.updated_at) && (
-                            <span className="text-muted-foreground/40 flex-shrink-0 text-xs tabular-nums">
-                              {formatRelativeTime(
-                                new Date(project.last_opened_at || project.updated_at).getTime(),
-                              )}
-                            </span>
-                          )}
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  )}
-
-                  {/* Open URL — shown when query looks like a URL or port */}
-                  {detectedUrl && (
-                    <CommandGroup
-                      heading={tHardcodedUi.raw(
-                        'componentsCommandPalette.line1419JsxAttrHeadingOpenURL',
-                      )}
-                      forceMount
-                    >
-                      <CommandItem
-                        value={sanitizeCmdkValue(
-                          `open url browser preview ${query.trim()} localhost port`,
-                        )}
-                        onSelect={handleOpenUrl}
-                      >
-                        <Globe className="h-4 w-4 text-blue-400" />
-                        <span className="flex-1 truncate">
-                          {detectedUrl.kind === 'localhost'
-                            ? `Open localhost:${detectedUrl.port}${detectedUrl.path !== '/' ? detectedUrl.path : ''}`
-                            : `Open ${new URL(detectedUrl.url).hostname}`}
-                        </span>
-                        <span className="text-muted-foreground/40 text-xs">browser</span>
-                      </CommandItem>
-                    </CommandGroup>
-                  )}
-
-                  {/* Search files action — searches the project's git repo */}
-                  {queryLongEnough && !detectedUrl && projectId && (
-                    <CommandGroup
-                      heading={tHardcodedUi.raw(
-                        'componentsCommandPalette.line1437JsxAttrHeadingFileSearch',
-                      )}
-                      forceMount
-                    >
-                      <CommandItem
-                        value={sanitizeCmdkValue(
-                          `search files ${query.trim()} repo grep find open`,
-                        )}
-                        onSelect={() => goToPage('files', true)}
-                      >
-                        <Search className="h-4 w-4" />
-                        <span className="flex-1">
-                          {tHardcodedUi.raw(
-                            'componentsCommandPalette.line1444JsxTextSearchFilesFor',
-                          )}
-                          {query.trim()}
-                          {tHardcodedUi.raw('componentsCommandPalette.line1444JsxTextText')}
-                        </span>
-                        <span className="bg-foreground/[0.04] border-border/40 text-muted-foreground/55 rounded-[5px] border px-1.5 py-0.5 font-mono text-xs leading-none">
-                          repo
-                        </span>
-                        <ChevronRight className="text-muted-foreground/40 h-3 w-3" />
-                      </CommandItem>
-                    </CommandGroup>
-                  )}
-
-                  {/* No results */}
-                  {showNoResults && (
-                    <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                      <div className="bg-muted/30 flex h-10 w-10 items-center justify-center rounded-full">
-                        <Search className="text-muted-foreground/30 h-4 w-4" />
-                      </div>
-                      <div className="text-center">
-                        <span className="text-muted-foreground/60 text-sm">
-                          {tHardcodedUi.raw('componentsCommandPalette.line1462JsxTextNoResultsFor')}
-                          {query.trim()}
-                          {tHardcodedUi.raw('componentsCommandPalette.line1462JsxTextText')}
-                        </span>
-                        <p className="text-muted-foreground/30 mt-1 text-xs">
-                          {tHardcodedUi.raw(
-                            'componentsCommandPalette.line1465JsxTextTrySearchFilesOrADifferentTerm',
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </>
-          )}
-
-          {/* ============================================================ */}
-          {/* PAGE: AGENTS                                                  */}
-          {/* ============================================================ */}
-          {page === 'agents' && (
-            <>
-              {primaryAgents.length > 0 && (
-                <CommandGroup heading="Agents" forceMount>
-                  {primaryAgents.map((agent) => {
-                    const isActive = currentAgent?.name === agent.name;
-                    return (
-                      <CommandItem
-                        key={agent.name}
-                        value={sanitizeCmdkValue(`agent ${agent.name} ${agent.description || ''}`)}
-                        onSelect={() => handleSelectAgent(agent.name)}
-                      >
-                        <Bot className="h-4 w-4" />
-                        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                          <span className="truncate text-sm font-medium">{agent.name}</span>
-                          {agent.description && (
-                            <span className="text-muted-foreground/50 truncate text-xs">
-                              {agent.description}
-                            </span>
-                          )}
-                        </div>
-                        {isActive && <Check className="text-primary h-3.5 w-3.5 flex-shrink-0" />}
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-              )}
-
-              {subAgents.length > 0 && (
-                <CommandGroup heading="Sub-agents" forceMount>
-                  {subAgents.map((agent) => {
-                    const isActive = currentAgent?.name === agent.name;
-                    return (
-                      <CommandItem
-                        key={agent.name}
-                        value={sanitizeCmdkValue(
-                          `subagent ${agent.name} ${agent.description || ''}`,
-                        )}
-                        onSelect={() => handleSelectAgent(agent.name)}
-                      >
-                        <Bot className="text-muted-foreground/50 h-4 w-4" />
-                        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                          <span className="truncate text-sm">{agent.name}</span>
-                          {agent.description && (
-                            <span className="text-muted-foreground/50 truncate text-xs">
-                              {agent.description}
-                            </span>
-                          )}
-                        </div>
-                        {isActive && <Check className="text-primary h-3.5 w-3.5 flex-shrink-0" />}
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-              )}
-
-              {filteredAgents.length === 0 && (
-                <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                  <Bot className="text-muted-foreground/30 h-5 w-5" />
-                  <span className="text-muted-foreground/60 text-sm">
-                    {query ? `No agents matching "${query}"` : 'No agents available'}
-                  </span>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* ============================================================ */}
-          {/* PAGE: MODELS                                                  */}
-          {/* ============================================================ */}
-          {page === 'models' && (
-            <>
-              {groupedModels.map((group) => (
-                <CommandGroup
-                  key={group.providerID}
-                  heading={
-                    <span className="inline-flex items-center gap-1.5">
-                      <ProviderLogo providerID={group.providerID} size="small" />
-                      {group.providerName}
-                    </span>
-                  }
-                  forceMount
-                >
-                  {group.models.map((model) => {
-                    const isActive =
-                      currentModelKey?.providerID === model.providerID &&
-                      currentModelKey?.modelID === model.modelID;
-                    return (
-                      <CommandItem
-                        key={`${model.providerID}:${model.modelID}`}
-                        value={sanitizeCmdkValue(
-                          `model ${model.providerName} ${model.modelName} ${model.modelID}`,
-                        )}
-                        onSelect={() => handleSelectModel(model.providerID, model.modelID)}
-                      >
-                        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                          <span className="truncate text-sm">{model.modelName}</span>
-                          <span className="text-muted-foreground/40 truncate font-mono text-xs">
-                            {model.modelID}
-                          </span>
-                        </div>
-                        <div className="flex flex-shrink-0 items-center gap-1.5">
-                          {model.capabilities?.reasoning && (
-                            <span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-xs leading-none font-medium text-blue-600 dark:text-blue-400">
-                              reasoning
-                            </span>
-                          )}
-                          {model.capabilities?.vision && (
-                            <span className="rounded bg-purple-500/10 px-1.5 py-0.5 text-xs leading-none font-medium text-purple-600 dark:text-purple-400">
-                              vision
-                            </span>
-                          )}
-                          {isActive && <Check className="text-primary h-3.5 w-3.5" />}
-                        </div>
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-              ))}
-
-              {visibleModels.length === 0 && (
-                <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                  <Cpu className="text-muted-foreground/30 h-5 w-5" />
-                  <span className="text-muted-foreground/60 text-sm">
-                    {query ? `No models matching "${query}"` : 'No models available'}
-                  </span>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* ============================================================ */}
-          {/* PAGE: FILES                                                   */}
-          {/* ============================================================ */}
-          {page === 'files' && projectId && (
-            <FileSearchPage projectId={projectId} query={query} onSelect={handleSelectFile} />
-          )}
-
-          {/* ============================================================ */}
-          {/* PAGE: PROJECTS                                                */}
-          {/* ============================================================ */}
-          {page === 'projects' &&
-            (filteredProjectsList.length > 0 ? (
-              <CommandGroup heading={`Projects (${filteredProjectsList.length})`} forceMount>
-                {filteredProjectsList.map((project) => (
-                  <CommandItem
-                    key={project.project_id}
-                    value={sanitizeCmdkValue(`project ${project.name} ${project.project_id}`)}
-                    onSelect={() => handleSelectProject(project)}
-                  >
-                    <FolderGit2 className="text-muted-foreground/70 h-4 w-4 shrink-0" />
-                    <span className="flex-1 truncate">{project.name}</span>
-                    {project.project_id === params?.id && (
-                      <Check className="text-primary h-3.5 w-3.5 shrink-0" />
+                        ))}
+                      </CommandGroup>
                     )}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            ) : (
-              <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                <FolderGit2 className="text-muted-foreground/30 h-5 w-5" />
-                <span className="text-muted-foreground/60 text-sm">
-                  {query ? `No projects matching "${query}"` : 'No projects yet'}
-                </span>
-              </div>
-            ))}
+                  </>
+                )}
 
-          {/* ============================================================ */}
-          {/* PAGE: ACCOUNTS                                                */}
-          {/* ============================================================ */}
-          {page === 'accounts' &&
-            (filteredAccountsList.length > 0 ? (
-              <CommandGroup heading={`Accounts (${filteredAccountsList.length})`} forceMount>
-                {filteredAccountsList.map((account) => {
-                  const label = account.name || 'Account';
-                  return (
+                {hasQuery && (
+                  <>
+                    {/* Session actions (Change Agent / Change Model) */}
+                    {hasSessionActionResults && (
+                      <CommandGroup heading="Session" forceMount>
+                        {sessionActionItems.map((item) => (
+                          <CommandItem
+                            key={item.id}
+                            value={`${item.label} ${item.keywords}`}
+                            onSelect={() => goToPage(item.targetPage)}
+                          >
+                            {item.id === 'change-agent' ? (
+                              <Bot className="size-4" />
+                            ) : item.id === 'jump-to-message' ? (
+                              <MessageCircle className="size-4" />
+                            ) : (
+                              <Cpu className="size-4" />
+                            )}
+                            <span className="flex-1">{item.label}</span>
+                            <ChevronRight className="text-muted-foreground/30 size-3" />
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    )}
+
+                    {hasNavResults && (
+                      <CommandGroup heading="Navigation" forceMount>
+                        {filteredNavItems.map((item) => {
+                          const Icon = item.icon;
+                          const isToggleSidebar = item.id === 'toggle-sidebar';
+                          const SidebarIcon = isToggleSidebar
+                            ? sidebarOpen
+                              ? PanelLeftClose
+                              : PanelLeftIcon
+                            : Icon;
+                          const displayLabel = isToggleSidebar
+                            ? sidebarOpen
+                              ? 'Collapse Sidebar'
+                              : 'Expand Sidebar'
+                            : item.label;
+                          const isActiveTheme = item.kind === 'theme' && theme === item.themeValue;
+                          const submenuPage = SUBMENU_PAGE_BY_ID[item.id];
+
+                          return (
+                            <CommandItem
+                              key={item.id}
+                              value={sanitizeCmdkValue(
+                                item.keywords || `${item.group} ${item.label} ${item.id}`,
+                              )}
+                              onSelect={() =>
+                                submenuPage ? goToPage(submenuPage) : handleRegistryItem(item)
+                              }
+                              disabled={item.id === 'new-session' && isCreating}
+                            >
+                              {item.id === 'new-session' && isCreating ? (
+                                <Loading className="text-muted-foreground size-4 shrink-0" />
+                              ) : (
+                                <SidebarIcon className="size-4" />
+                              )}
+                              <span className="flex-1">{displayLabel}</span>
+                              {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
+                              {isActiveTheme && (
+                                <span className="text-primary/60 text-xs font-medium">Active</span>
+                              )}
+                              {submenuPage && (
+                                <ChevronRight className="text-muted-foreground/30 size-3" />
+                              )}
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    )}
+
+                    {hasSessionResults && (
+                      <CommandGroup heading="Sessions" forceMount>
+                        {rootSessionResults.map((session) => (
+                          <CommandItem
+                            key={session.session_id}
+                            value={sanitizeCmdkValue(
+                              `session ${sessionName(session)} ${session.session_id}`,
+                            )}
+                            onSelect={() => handleSelectProjectSession(session)}
+                          >
+                            <MessageCircle className="size-4 flex-shrink-0" />
+                            <span className="flex-1 truncate">{sessionName(session)}</span>
+                            {session.session_id === params?.sessionId && (
+                              <Check className="text-primary h-3.5 w-3.5 flex-shrink-0" />
+                            )}
+                            <span className="text-muted-foreground/40 flex-shrink-0 text-xs tabular-nums">
+                              {formatRelativeTime(new Date(session.updated_at).getTime())}
+                            </span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    )}
+
+                    {hasProjectResults && (
+                      <CommandGroup heading="Projects" forceMount>
+                        {rootProjectResults.map((project) => (
+                          <CommandItem
+                            key={project.project_id}
+                            value={sanitizeCmdkValue(
+                              `project ${project.name} ${project.project_id}`,
+                            )}
+                            onSelect={() => handleSelectProject(project)}
+                          >
+                            <FolderGit2 className="size-4 flex-shrink-0" />
+                            <span className="flex-1 truncate">{project.name}</span>
+                            {(project.last_opened_at || project.updated_at) && (
+                              <span className="text-muted-foreground/40 flex-shrink-0 text-xs tabular-nums">
+                                {formatRelativeTime(
+                                  new Date(project.last_opened_at || project.updated_at).getTime(),
+                                )}
+                              </span>
+                            )}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    )}
+
+                    {detectedUrl && (
+                      <CommandGroup
+                        heading={tHardcodedUi.raw(
+                          'componentsCommandPalette.line1419JsxAttrHeadingOpenURL',
+                        )}
+                        forceMount
+                      >
+                        <CommandItem
+                          value={sanitizeCmdkValue(
+                            `open url browser preview ${query.trim()} localhost port`,
+                          )}
+                          onSelect={handleOpenUrl}
+                        >
+                          <Globe className="text-kortix-blue size-4" />
+                          <span className="flex-1 truncate">
+                            {detectedUrl.kind === 'localhost'
+                              ? `Open localhost:${detectedUrl.port}${detectedUrl.path !== '/' ? detectedUrl.path : ''}`
+                              : `Open ${new URL(detectedUrl.url).hostname}`}
+                          </span>
+                          <span className="text-muted-foreground/40 text-xs">browser</span>
+                        </CommandItem>
+                      </CommandGroup>
+                    )}
+
+                    {/* Search files action — searches the project's git repo */}
+                    {queryLongEnough && !detectedUrl && projectId && (
+                      <CommandGroup
+                        heading={tHardcodedUi.raw(
+                          'componentsCommandPalette.line1437JsxAttrHeadingFileSearch',
+                        )}
+                        forceMount
+                      >
+                        <CommandItem
+                          value={sanitizeCmdkValue(
+                            `search files ${query.trim()} repo grep find open`,
+                          )}
+                          onSelect={() => goToPage('files', true)}
+                        >
+                          <span className="flex-1">
+                            {tHardcodedUi.raw(
+                              'componentsCommandPalette.line1444JsxTextSearchFilesFor',
+                            )}
+                            {query.trim()}
+                            {tHardcodedUi.raw('componentsCommandPalette.line1444JsxTextText')}
+                          </span>
+                          <span className="bg-foreground/[0.04] border-border/40 text-muted-foreground/55 rounded-[5px] border px-1.5 py-0.5 font-mono text-xs leading-none">
+                            repo
+                          </span>
+                          <ChevronRight className="text-muted-foreground/40 size-3" />
+                        </CommandItem>
+                      </CommandGroup>
+                    )}
+
+                    {/* No results */}
+                    {showNoResults && (
+                      <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
+                        <div className="bg-muted/30 flex h-10 w-10 items-center justify-center rounded-full">
+                          <Search className="text-muted-foreground/30 size-4" />
+                        </div>
+                        <div className="text-center">
+                          <span className="text-muted-foreground/60 text-sm">
+                            {tHardcodedUi.raw(
+                              'componentsCommandPalette.line1462JsxTextNoResultsFor',
+                            )}
+                            {query.trim()}
+                            {tHardcodedUi.raw('componentsCommandPalette.line1462JsxTextText')}
+                          </span>
+                          <p className="text-muted-foreground/30 mt-1 text-xs">
+                            {tHardcodedUi.raw(
+                              'componentsCommandPalette.line1465JsxTextTrySearchFilesOrADifferentTerm',
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+
+            {page === 'agents' && (
+              <>
+                {primaryAgents.length > 0 && (
+                  <CommandGroup heading="Agents" forceMount>
+                    {primaryAgents.map((agent) => {
+                      const isActive = currentAgent?.name === agent.name;
+                      const chalk = chalkColors(agent.name);
+                      return (
+                        <CommandItem
+                          key={agent.name}
+                          value={sanitizeCmdkValue(
+                            `agent ${agent.name} ${agent.description || ''}`,
+                          )}
+                          onSelect={() => handleSelectAgent(agent.name)}
+                        >
+                          <div
+                            className="inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold"
+                            style={{
+                              backgroundColor: chalk.background,
+                              color: chalk.foreground,
+                              borderColor: chalk.border,
+                            }}
+                          >
+                            <Bot className="size-5 shrink-0" />
+                          </div>
+                          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                            <span className="truncate text-sm font-medium">{agent.name}</span>
+                            {agent.description && (
+                              <span className="text-muted-foreground/50 truncate text-xs">
+                                {agent.description}
+                              </span>
+                            )}
+                          </div>
+                          {isActive && <Check className="text-primary h-3.5 w-3.5 flex-shrink-0" />}
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                )}
+
+                {subAgents.length > 0 && (
+                  <CommandGroup heading="Sub-agents" forceMount>
+                    {subAgents.map((agent) => {
+                      const isActive = currentAgent?.name === agent.name;
+                      const isKortixAgent = agent.name.toLowerCase().includes('kortix');
+                      const chalk = chalkColors(agent.name);
+                      return (
+                        <CommandItem
+                          key={agent.name}
+                          value={sanitizeCmdkValue(
+                            `subagent ${agent.name} ${agent.description || ''}`,
+                          )}
+                          onSelect={() => handleSelectAgent(agent.name)}
+                        >
+                          <div
+                            className="inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold"
+                            style={{
+                              backgroundColor: chalk.background,
+                              color: chalk.foreground,
+                              borderColor: chalk.border,
+                            }}
+                          >
+                            {isKortixAgent ? (
+                              <Bot className="size-5 shrink-0" />
+                            ) : (
+                              <span>{agent.name.charAt(0).toUpperCase()}</span>
+                            )}
+                          </div>
+                          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                            <span className="truncate text-sm capitalize">{agent.name}</span>
+                            {agent.description && (
+                              <span className="text-muted-foreground/50 truncate text-xs">
+                                {agent.description}
+                              </span>
+                            )}
+                          </div>
+                          {isActive && <Check className="text-primary h-3.5 w-3.5 flex-shrink-0" />}
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                )}
+
+                {filteredAgents.length === 0 && (
+                  <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
+                    <Bot className="text-muted-foreground/30 h-5 w-5" />
+                    <span className="text-muted-foreground/60 text-sm">
+                      {query ? `No agents matching "${query}"` : 'No agents available'}
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
+
+            {page === 'models' && (
+              <>
+                {groupedModels.map((group) => (
+                  <CommandGroup
+                    key={group.providerID}
+                    heading={
+                      <span className="inline-flex items-center gap-1.5">
+                        <ProviderLogo providerID={group.providerID} size="small" />
+                        {group.providerName}
+                      </span>
+                    }
+                    forceMount
+                  >
+                    {group.models.map((model) => {
+                      const isActive =
+                        currentModelKey?.providerID === model.providerID &&
+                        currentModelKey?.modelID === model.modelID;
+                      return (
+                        <CommandItem
+                          key={`${model.providerID}:${model.modelID}`}
+                          value={sanitizeCmdkValue(
+                            `model ${model.providerName} ${model.modelName} ${model.modelID}`,
+                          )}
+                          onSelect={() => handleSelectModel(model.providerID, model.modelID)}
+                        >
+                          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                            <span className="truncate text-sm">{model.modelName}</span>
+                            <span className="text-muted-foreground/40 truncate font-mono text-xs">
+                              {model.modelID}
+                            </span>
+                          </div>
+                          <div className="flex flex-shrink-0 items-center gap-1.5">
+                            {model.capabilities?.reasoning && (
+                              <Badge variant="outline" size="xs">
+                                reasoning
+                              </Badge>
+                            )}
+                            {model.capabilities?.vision && (
+                              <Badge variant="outline" size="xs">
+                                vision
+                              </Badge>
+                            )}
+                            {isActive && <Check className="text-primary h-3.5 w-3.5" />}
+                          </div>
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                ))}
+
+                {visibleModels.length === 0 && (
+                  <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
+                    <Cpu className="text-muted-foreground/30 h-5 w-5" />
+                    <span className="text-muted-foreground/60 text-sm">
+                      {query ? `No models matching "${query}"` : 'No models available'}
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
+
+            {page === 'files' && projectId && (
+              <FileSearchPage projectId={projectId} query={query} onSelect={handleSelectFile} />
+            )}
+
+            {page === 'projects' &&
+              (filteredProjectsList.length > 0 ? (
+                <CommandGroup heading={`Projects (${filteredProjectsList.length})`} forceMount>
+                  {filteredProjectsList.map((project) => (
                     <CommandItem
-                      key={account.account_id}
-                      value={sanitizeCmdkValue(`account ${label} ${account.account_id}`)}
-                      onSelect={() => handleSelectAccount(account)}
+                      key={project.project_id}
+                      value={sanitizeCmdkValue(`project ${project.name} ${project.project_id}`)}
+                      onSelect={() => handleSelectProject(project)}
                     >
-                      <Users className="text-muted-foreground/70 h-4 w-4 shrink-0" />
-                      <span className="flex-1 truncate">{label}</span>
-                      {account.account_id === activeAccountId && (
+                      <FolderGit2 className="text-muted-foreground/70 size-4 shrink-0" />
+                      <span className="flex-1 truncate">{project.name}</span>
+                      {project.project_id === params?.id && (
                         <Check className="text-primary h-3.5 w-3.5 shrink-0" />
                       )}
                     </CommandItem>
-                  );
-                })}
-              </CommandGroup>
-            ) : (
-              <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                <Users className="text-muted-foreground/30 h-5 w-5" />
-                <span className="text-muted-foreground/60 text-sm">
-                  {query ? `No accounts matching "${query}"` : 'No accounts'}
-                </span>
-              </div>
-            ))}
+                  ))}
+                </CommandGroup>
+              ) : (
+                <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
+                  <FolderGit2 className="text-muted-foreground/30 h-5 w-5" />
+                  <span className="text-muted-foreground/60 text-sm">
+                    {query ? `No projects matching "${query}"` : 'No projects yet'}
+                  </span>
+                </div>
+              ))}
 
-          {/* ============================================================ */}
-          {/* PAGE: SESSIONS (project)                                      */}
-          {/* ============================================================ */}
-          {page === 'sessions' &&
-            (filteredProjectSessionsList.length > 0 ? (
-              <CommandGroup heading={`Sessions (${filteredProjectSessionsList.length})`} forceMount>
-                {filteredProjectSessionsList.map((session) => (
-                  <CommandItem
-                    key={session.session_id}
-                    value={sanitizeCmdkValue(
-                      `session ${sessionName(session)} ${session.session_id}`,
-                    )}
-                    onSelect={() => handleSelectProjectSession(session)}
-                  >
-                    <MessageCircle className="text-muted-foreground/70 h-4 w-4 shrink-0" />
-                    <span className="flex-1 truncate">{sessionName(session)}</span>
-                    <span className="text-muted-foreground/30 shrink-0 text-xs tabular-nums">
-                      {formatRelativeTime(new Date(session.updated_at).getTime())}
-                    </span>
-                    {session.session_id === params?.sessionId && (
-                      <Check className="text-primary h-3.5 w-3.5 shrink-0" />
-                    )}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            ) : (
-              <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
-                <MessageCircle className="text-muted-foreground/30 h-5 w-5" />
-                <span className="text-muted-foreground/60 text-sm">
-                  {query ? `No sessions matching "${query}"` : 'No sessions yet'}
-                </span>
-              </div>
-            ))}
+            {page === 'accounts' &&
+              (filteredAccountsList.length > 0 ? (
+                <CommandGroup heading={`Accounts (${filteredAccountsList.length})`} forceMount>
+                  {filteredAccountsList.map((account) => {
+                    const label = account.name || 'Account';
+                    return (
+                      <CommandItem
+                        key={account.account_id}
+                        value={sanitizeCmdkValue(`account ${label} ${account.account_id}`)}
+                        onSelect={() => handleSelectAccount(account)}
+                      >
+                        <Users className="text-muted-foreground/70 size-4 shrink-0" />
+                        <span className="flex-1 truncate">{label}</span>
+                        {account.account_id === activeAccountId && (
+                          <Check className="text-primary h-3.5 w-3.5 shrink-0" />
+                        )}
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              ) : (
+                <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
+                  <Users className="text-muted-foreground/30 h-5 w-5" />
+                  <span className="text-muted-foreground/60 text-sm">
+                    {query ? `No accounts matching "${query}"` : 'No accounts'}
+                  </span>
+                </div>
+              ))}
 
-          {/* ============================================================ */}
-          {/* PAGE: MESSAGES                                                */}
-          {/* ============================================================ */}
-          {page === 'messages' && currentSessionId && (
-            <MessagesPage
-              sessionId={currentSessionId}
-              query={query}
-              onSelect={handleJumpToMessage}
-            />
-          )}
-        </CommandList>
+            {page === 'sessions' &&
+              (filteredProjectSessionsList.length > 0 ? (
+                <CommandGroup
+                  heading={`Sessions (${filteredProjectSessionsList.length})`}
+                  forceMount
+                >
+                  {filteredProjectSessionsList.map((session) => (
+                    <CommandItem
+                      key={session.session_id}
+                      value={sanitizeCmdkValue(
+                        `session ${sessionName(session)} ${session.session_id}`,
+                      )}
+                      onSelect={() => handleSelectProjectSession(session)}
+                    >
+                      <MessageCircle className="text-muted-foreground/70 size-4 shrink-0" />
+                      <span className="flex-1 truncate">{sessionName(session)}</span>
+                      <span className="text-muted-foreground/30 shrink-0 text-xs tabular-nums">
+                        {formatRelativeTime(new Date(session.updated_at).getTime())}
+                      </span>
+                      {session.session_id === params?.sessionId && (
+                        <Check className="text-primary h-3.5 w-3.5 shrink-0" />
+                      )}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              ) : (
+                <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
+                  <MessageCircle className="text-muted-foreground/30 h-5 w-5" />
+                  <span className="text-muted-foreground/60 text-sm">
+                    {query ? `No sessions matching "${query}"` : 'No sessions yet'}
+                  </span>
+                </div>
+              ))}
 
-        {/* ── Footer ── */}
+            {page === 'messages' && currentSessionId && (
+              <MessagesPage
+                sessionId={currentSessionId}
+                query={query}
+                onSelect={handleJumpToMessage}
+              />
+            )}
+          </CommandList>
+        </FadedScrollArea>
+
         <CommandFooter>
           <div className="flex items-center gap-1">
-            <ArrowUp className="h-3 w-3" />
-            <ArrowDown className="h-3 w-3" />
+            <ArrowUp className="size-3" />
+            <ArrowDown className="size-3" />
             <span>navigate</span>
           </div>
           <div className="flex items-center gap-1">
-            <CornerDownLeft className="h-3 w-3" />
+            <CornerDownLeft className="size-3" />
             <span>select</span>
           </div>
           {page !== 'root' && (
             <div className="flex items-center gap-1">
-              <CommandKbd>⌫</CommandKbd>
+              <CommandKbd>
+                <FaBackspace />
+              </CommandKbd>
               <span>back</span>
             </div>
           )}
