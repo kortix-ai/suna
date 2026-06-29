@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { isBotEcho, recordBotSpeech } from '../channels/meet-echo';
+import { isBotEcho, isBotSpeaking, recordBotSpeech } from '../channels/meet-echo';
 import { isSelfEcho } from '../channels/meet-webhook';
 
 describe('meet self-echo suppression (the bot hearing itself)', () => {
@@ -38,12 +38,31 @@ describe('meet self-echo suppression (the bot hearing itself)', () => {
 
 describe('isSelfEcho', () => {
   test("drops the bot's own chat message by sender name", () => {
-    expect(isSelfEcho('botX', 'Kortix Notetaker', { speaker: 'Kortix Notetaker', text: 'hi' })).toBe(true);
-    expect(isSelfEcho('botX', 'Kortix Notetaker', { speaker: 'Saumya', text: 'hi' })).toBe(false);
+    expect(isSelfEcho('botX', 'Kortix Notetaker', { speaker: 'Kortix Notetaker', text: 'hi', spoken: false })).toBe(
+      true,
+    );
+    expect(isSelfEcho('botX', 'Kortix Notetaker', { speaker: 'Saumya', text: 'hi', spoken: false })).toBe(false);
   });
 
   test('drops the bot transcribed speaking itself (content echo)', () => {
     recordBotSpeech('botY', 'Welcome everyone, glad to be here.');
-    expect(isSelfEcho('botY', 'Kortix', { speaker: 'Unknown', text: 'Welcome everyone glad to be here' })).toBe(true);
+    expect(
+      isSelfEcho('botY', 'Kortix', { speaker: 'Unknown', text: 'Welcome everyone glad to be here', spoken: true }),
+    ).toBe(true);
+  });
+
+  test('half-duplex: drops ALL inbound speech while the bot is speaking (immune to caption mangling)', () => {
+    recordBotSpeech('botSpk', 'Let me tell you all about what the project is and everything it can do today');
+    // even a fragment that would NOT content-match (heavy mis-hearing) is dropped during the window
+    expect(isBotSpeaking('botSpk')).toBe(true);
+    expect(isSelfEcho('botSpk', 'Kortix', { speaker: 'Unknown', text: 'so kortix is all about', spoken: true })).toBe(
+      true,
+    );
+    // chat is exempt from the speaking window — a real typed message still gets through
+    expect(isSelfEcho('botSpk', 'Kortix', { speaker: 'Saumya', text: 'unrelated typed note', spoken: false })).toBe(
+      false,
+    );
+    // a bot that hasn't spoken is not gated
+    expect(isBotSpeaking('botQuiet')).toBe(false);
   });
 });

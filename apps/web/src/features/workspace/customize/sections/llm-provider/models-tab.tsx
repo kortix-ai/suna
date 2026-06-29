@@ -135,15 +135,15 @@ export function ModelsTab({
               </span>
               <span className="text-muted-foreground/40 ml-auto text-xs">{providerRows.length}</span>
             </div>
-            <div className="border-border/40 bg-background/40 overflow-hidden rounded-2xl border">
+            <div className="bg-popover overflow-hidden rounded-md border">
               {providerRows.map(({ model, storeKey }, i) => {
                 const visible = modelStore.isVisible(storeKey);
                 return (
                   <label
                     key={model.id}
                     className={cn(
-                      'hover:bg-muted/30 flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors',
-                      i > 0 && 'border-border/20 border-t',
+                      'hover:bg-muted/40 flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors',
+                      i > 0 && 'border-border border-t',
                       !visible && 'opacity-60',
                     )}
                   >
