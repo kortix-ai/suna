@@ -283,6 +283,18 @@ Tokens stored as encrypted project secrets; webhooks public + signature-gated.
 `CHN-16` AgentMail inbound — `POST /webhooks/email/agentmail`: Svix `svix-*` signature verified against the per-project webhook secret when configured; AgentMail's real unwrapped `message.received` or `message.received.unauthenticated` payload routes by `message.inbox_id` → project, maps `thread_id` 1:1 to a Kortix session, and follow-up emails continue that session.
 `CHN-17` `GET /projects/:id/channels/email/mode` → `read` → `{provider:"agentmail",enabled:boolean,managed_available:boolean}` so the UI can hide Email until `agentmail_email` is enabled and require a project AgentMail key when no managed server key exists.
 
+### Meetings (Recall.ai notetaker bot) — §MEET
+
+A meeting-notetaker bot (Recall.ai) joins Google Meet / Zoom / Teams calls via the `meet` channel CLI. The bot transcribes, answers when addressed (chat or voice via ElevenLabs), and auto-recaps when the call ends. Per-project voice + bot name live in `projects.metadata.meet`. Gated platform-wide by `MEET_ENABLED` and per-project by the `meet` experimental flag.
+
+`MEET-1` `GET /projects/:id/channels/meet/voices` → `read` → `{selected, bot_name, default_bot_name, speak_enabled, voices[]}` (ElevenLabs catalog + chosen voice/name; `speak_enabled` reflects whether an ElevenLabs key is configured).
+`MEET-2` `PUT /projects/:id/channels/meet/voice {voice}` → `manage` → sets the bot's TTS voice; unknown voice → 400.
+`MEET-3` `PUT /projects/:id/channels/meet/name {name}` → `manage` → sets the bot's display name (default "Kortix Notetaker"); its first word becomes the wake word.
+`MEET-4` `POST /projects/:id/channels/meet/voices/:voiceId/preview` → `read` → base64 MP3 sample in that voice; unknown voice → 400; no ElevenLabs key → 503.
+`MEET-5` `POST /projects/:id/channels/meet/speak {bot_id,text,voice?}` → `read` → ElevenLabs TTS → Recall `output_audio` (the bot speaks aloud); missing `bot_id`/`text` → 400.
+`MEET-6` Recall realtime relay — `POST /webhooks/meet/realtime`: public; verifies the HMAC session token in `bot.metadata` (bad/missing → 401); wake-gated transcript/chat → live session; the bot's own transcribed speech is echo-suppressed.
+`MEET-7` Recall lifecycle — `POST /webhooks/meet/status`: public; on `bot.done` (verified via the `bot.metadata` token; bad/missing → 401) auto-wakes the session to produce the recap (TL;DR + decisions + action items).
+
 ---
 
 ## 14. GitHub integration + `kortix ship`/`deploy`
