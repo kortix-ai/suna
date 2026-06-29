@@ -2,8 +2,7 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { List, ListRow } from '@/components/ui/list';
-import { SectionCard } from '@/components/ui/section-card';
+import { Label } from '@/components/ui/label';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
 import { LLM_PROVIDERS, LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
@@ -11,10 +10,13 @@ import { ChevronLeft, ChevronRight, ExternalLink, Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
-import type { CatalogSubview } from './types';
-import { helpHostnameFromUrl, providerCredentialSummary, releasedAgo } from './utils';
 import { ApiKeyConnectForm } from './api-key-connect-form';
 import { CustomProviderForm } from './custom-provider-form';
+import type { CatalogSubview } from './types';
+import { helpHostnameFromUrl, providerCredentialSummary, releasedAgo } from './utils';
+
+const ROW =
+  'group bg-popover hover:bg-muted/40 flex w-full items-center gap-3 rounded-md border px-4 py-2.5 text-left transition-colors';
 
 export function CatalogTab({
   projectId,
@@ -85,62 +87,56 @@ export function CatalogTab({
 
   return (
     <div className="space-y-3 px-5 pt-3 pb-4">
-      <SectionCard className="border-dashed" flush>
-        <List>
-          <ListRow
-            leading={
-              <span className="border-border/60 text-muted-foreground/70 flex size-9 shrink-0 items-center justify-center rounded-lg border border-dashed">
-                <Plus className="h-4 w-4" />
-              </span>
-            }
-            title={tHardcodedUi.raw(
-              'componentsProjectsProjectProviderModal.line492JsxTextCustomProvider',
+      <button type="button" className={`${ROW} border-dashed`} onClick={() => setSubview({ kind: 'custom' })}>
+        <span className="border-border/60 text-muted-foreground/70 flex size-9 shrink-0 items-center justify-center rounded-sm border border-dashed">
+          <Plus className="size-4 shrink-0" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-foreground truncate text-sm font-medium">
+            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line492JsxTextCustomProvider')}
+          </div>
+          <p className="text-muted-foreground mt-0.5 truncate text-xs">
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectProviderModal.line495JsxTextConnectAnyOpenaiCompatibleEndpointWithYourOwn',
             )}
-            subtitle={
-              <span className="text-muted-foreground text-xs">
-                {tHardcodedUi.raw(
-                  'componentsProjectsProjectProviderModal.line495JsxTextConnectAnyOpenaiCompatibleEndpointWithYourOwn',
-                )}
-              </span>
-            }
-            trailing={<ChevronRight className="text-muted-foreground/40 h-4 w-4" />}
-            onClick={() => setSubview({ kind: 'custom' })}
-          />
-        </List>
-      </SectionCard>
+          </p>
+        </div>
+        <ChevronRight className="text-muted-foreground/40 size-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
+      </button>
 
       {filtered.length === 0 ? (
-        <EmptyState
-          size="sm"
-          title={search ? `No providers match "${search}"` : 'No providers'}
-        />
+        <EmptyState size="sm" title={search ? `No providers match "${search}"` : 'No providers'} />
       ) : (
-        <SectionCard flush>
-          <List>
-            {filtered.map((provider) => {
-              const isConnected = connectedIds.has(provider.id);
-              return (
-                <ListRow
-                  key={provider.id}
-                  leading={
-                    <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
-                  }
-                  title={PROVIDER_LABELS[provider.id] ?? provider.label}
-                  badges={
-                    isConnected ? (
-                      <Badge variant="success" size="sm">
-                        Connected
-                      </Badge>
-                    ) : undefined
-                  }
-                  subtitle={<span className="text-muted-foreground text-xs">{provider.hint}</span>}
-                  trailing={<ChevronRight className="text-muted-foreground/40 h-4 w-4" />}
+        <ul className="space-y-2">
+          {filtered.map((provider) => {
+            const isConnected = connectedIds.has(provider.id);
+            return (
+              <li key={provider.id}>
+                <button
+                  type="button"
+                  className={ROW}
                   onClick={() => setSubview({ kind: 'detail', providerId: provider.id })}
-                />
-              );
-            })}
-          </List>
-        </SectionCard>
+                >
+                  <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-foreground truncate text-sm font-medium">
+                        {PROVIDER_LABELS[provider.id] ?? provider.label}
+                      </span>
+                      {isConnected && (
+                        <Badge variant="success" size="sm">
+                          Connected
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-muted-foreground mt-0.5 truncate text-xs">{provider.hint}</p>
+                  </div>
+                  <ChevronRight className="text-muted-foreground/40 size-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );
@@ -162,7 +158,7 @@ function ProviderDetail({
   const helpHostname = helpHostnameFromUrl(provider.helpUrl);
 
   return (
-    <div className="space-y-3 px-5 pt-3 pb-5">
+    <div className="space-y-4 px-5 pt-3 pb-5">
       <Button
         type="button"
         variant="ghost"
@@ -170,37 +166,32 @@ function ProviderDetail({
         className="text-muted-foreground -ml-2 h-7 gap-1 px-2 text-xs"
         onClick={onBack}
       >
-        <ChevronLeft className="h-3.5 w-3.5" />
+        <ChevronLeft className="size-3.5 shrink-0" />
         {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line576JsxTextBackToProviders')}
       </Button>
 
-      <SectionCard
-        action={
-          <Button size="sm" onClick={onConnect}>
-            {isConnected ? 'Reconnect' : 'Connect'}
-          </Button>
-        }
-      >
-        <div className="flex items-center gap-3">
-          <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <span className="text-foreground truncate text-sm font-medium">
-                {PROVIDER_LABELS[provider.id] ?? provider.label}
-              </span>
-              {isConnected && (
-                <Badge variant="success" size="sm">
-                  Connected
-                </Badge>
-              )}
-            </div>
-            <p className="text-muted-foreground mt-0.5 truncate text-xs">
-              {providerCredentialSummary(provider)} · {models.length} model
-              {models.length === 1 ? '' : 's'}
-            </p>
+      <div className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3">
+        <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-foreground truncate text-sm font-medium">
+              {PROVIDER_LABELS[provider.id] ?? provider.label}
+            </span>
+            {isConnected && (
+              <Badge variant="success" size="sm">
+                Connected
+              </Badge>
+            )}
           </div>
+          <p className="text-muted-foreground mt-0.5 truncate text-xs">
+            {providerCredentialSummary(provider)} · {models.length} model
+            {models.length === 1 ? '' : 's'}
+          </p>
         </div>
-      </SectionCard>
+        <Button size="sm" className="shrink-0" onClick={onConnect}>
+          {isConnected ? 'Reconnect' : 'Connect'}
+        </Button>
+      </div>
 
       {helpHostname && provider.helpUrl && (
         <a
@@ -209,49 +200,50 @@ function ProviderDetail({
           rel="noopener noreferrer"
           className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 px-1 text-xs"
         >
-          <ExternalLink className="h-3 w-3" />
+          <ExternalLink className="size-3 shrink-0" />
           {helpHostname}
         </a>
       )}
 
-      <SectionCard
-        title="Models"
-        count={models.length}
-        flush
-        action={
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <Label>
+            Models
+            <span className="text-muted-foreground font-normal"> ({models.length})</span>
+          </Label>
           <span className="text-muted-foreground/40 text-xs">
             {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line618JsxTextNewestFirst')}
           </span>
-        }
-      >
+        </div>
+
         {models.length === 0 ? (
-          <div className="text-muted-foreground px-6 py-6 text-center text-xs">
-            {tHardcodedUi.raw(
-              'componentsProjectsProjectProviderModal.line623JsxTextNoModelsDeclared',
-            )}
-          </div>
+          <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line623JsxTextNoModelsDeclared')}
+          </p>
         ) : (
-          <List>
+          <ul className="space-y-2">
             {models.map((model) => (
-              <ListRow
+              <li
                 key={model.id}
-                title={model.name}
-                subtitle={<span className="text-muted-foreground/50 text-xs">{model.id}</span>}
-                trailing={
-                  model.released ? (
-                    <span
-                      className="text-muted-foreground/50 text-xs tabular-nums"
-                      title={`Released ${model.released}`}
-                    >
-                      {releasedAgo(model.released)}
-                    </span>
-                  ) : undefined
-                }
-              />
+                className="bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="text-foreground truncate text-sm font-medium">{model.name}</div>
+                  <div className="text-muted-foreground/50 mt-0.5 truncate text-xs">{model.id}</div>
+                </div>
+                {model.released && (
+                  <span
+                    className="text-muted-foreground/50 shrink-0 text-xs tabular-nums"
+                    title={`Released ${model.released}`}
+                  >
+                    {releasedAgo(model.released)}
+                  </span>
+                )}
+              </li>
             ))}
-          </List>
+          </ul>
         )}
-      </SectionCard>
+      </section>
     </div>
   );
 }
