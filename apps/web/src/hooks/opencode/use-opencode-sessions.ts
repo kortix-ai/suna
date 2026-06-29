@@ -22,6 +22,7 @@ import {
   filterToGatewayProviders,
   filterToNativeProviders,
   GATEWAY_PROVIDER_IDS,
+  mergeProviderLists,
   mergeProjectSecretConnectedProviders,
   normalizeProviderList,
   projectLlmCatalogToProviderList,
@@ -1088,12 +1089,26 @@ export function useOpenCodeProviders() {
     : CACHE_SCOPE_GLOBAL;
   return useQuery<ProviderListResponse>({
     queryKey: projectId
-      ? ['project-providers', projectId, projectGatewayEnabled ? 'gateway' : 'native']
+      ? [
+          'project-providers',
+          projectId,
+          projectGatewayEnabled
+            ? runtimeReady
+              ? 'gateway-runtime'
+              : 'gateway-catalog'
+            : 'native',
+        ]
       : opencodeKeys.providers(),
     queryFn: async () => {
       if (projectId && projectGatewayEnabled) {
         const catalog = await getProjectLlmCatalog(projectId);
-        const providers = projectLlmCatalogToProviderList(catalog);
+        let providers = projectLlmCatalogToProviderList(catalog);
+        if (runtimeReady) {
+          const client = getClient();
+          const result = await client.provider.list();
+          const sessionProviders = filterToGatewayProviders(normalizeProviderList(unwrap(result)));
+          providers = mergeProviderLists(providers, sessionProviders);
+        }
         setLSCache(LS_PROVIDERS, providers, cacheScope);
         return providers;
       }

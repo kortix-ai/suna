@@ -171,7 +171,7 @@ export function AuditTab({ accountId }: AuditTabProps) {
               onClick={() => setFilterIndex(i)}
               className={`cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
                 filterIndex === i
-                  ? 'border-foreground/30 bg-foreground/[0.06] text-foreground'
+                  ? 'border-primary/30 bg-primary/10 text-primary'
                   : 'border-border/60 bg-background text-muted-foreground hover:text-foreground'
               }`}
             >

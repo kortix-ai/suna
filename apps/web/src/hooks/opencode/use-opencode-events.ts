@@ -24,6 +24,7 @@ import { getActiveOpenCodeUrl, useServerStore } from '@/stores/server-store';
 import type { Event as OpenCodeSdkEvent, Part } from '@opencode-ai/sdk/v2/client';
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
+import { hasUnsettledToolPart, IDLE_RECONCILE_DELAY_MS } from './idle-reconcile';
 import { ptyKeys } from './use-opencode-pty';
 import { type MessageWithParts, opencodeKeys, type Session } from './use-opencode-sessions';
 import { resetPrefetchState } from './use-session-prefetch';
@@ -94,6 +95,61 @@ function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {
   if (!projectMetadataRefetchTimer) {
     projectMetadataRefetchTimer = setTimeout(run, wait);
   }
+}
+
+// ---- Reconcile-on-idle ----
+// When a run finishes, a tool call whose FINAL `message.part.updated` (the one
+// carrying its completed result) was dropped at the SSE stream-end boundary
+// stays frozen in `pending`/`running` — the tool keeps rendering its loading
+// spinner forever until a manual hard refresh re-fetches the persisted state.
+// (The reconnect rehydrate at the bottom of the stream loop only runs when the
+// gap was >5s, and `session.idle` itself never rehydrates messages.) On the
+// busy/retry → idle completion edge we refetch the authoritative messages and
+// `hydrate` — the same data a refresh loads, and for tool parts the server's
+// `completed` snapshot wins — so the stuck result resolves on its own.
+// The unsettled-part predicate lives in ./idle-reconcile (pure + unit-tested).
+const idleReconcileTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const idleReconcileInFlight = new Set<string>();
+
+function sessionHasUnsettledToolPart(sessionID: string): boolean {
+  const s = useSyncStore.getState();
+  return hasUnsettledToolPart(s.messages[sessionID] ?? [], s.parts);
+}
+
+function reconcileSessionFromServer(sessionID: string): void {
+  if (idleReconcileInFlight.has(sessionID)) return;
+  idleReconcileInFlight.add(sessionID);
+  getClient()
+    .session.messages({ sessionID })
+    .then((res) => {
+      if (res.data) {
+        useSyncStore.getState().hydrate(sessionID, res.data as any);
+        const s = useSyncStore.getState();
+        const msgs = s.messages[sessionID] ?? [];
+        if (msgs.length > 0) saveSessionToIDB(sessionID, msgs, s.parts);
+      }
+    })
+    .catch(() => {})
+    .finally(() => idleReconcileInFlight.delete(sessionID));
+}
+
+/**
+ * Debounced reconcile fired on the run-complete edge. Re-checks at fire time so
+ * the common case — the completed-result event simply arrived a beat after idle
+ * via SSE — costs nothing; we only hit the network for a part that is STILL
+ * stuck after the settle window.
+ */
+function scheduleIdleReconcile(sessionID: string): void {
+  const existing = idleReconcileTimers.get(sessionID);
+  if (existing) clearTimeout(existing);
+  idleReconcileTimers.set(
+    sessionID,
+    setTimeout(() => {
+      idleReconcileTimers.delete(sessionID);
+      if (!sessionHasUnsettledToolPart(sessionID)) return;
+      reconcileSessionFromServer(sessionID);
+    }, IDLE_RECONCILE_DELAY_MS),
+  );
 }
 
 function refetchKortixSessionMirrors(queryClient: QueryClient): void {
@@ -603,10 +659,32 @@ export function useOpenCodeEventStream() {
     }
 
     function handleEvent(event: OpenCodeEvent) {
+      // Detect the run-complete edge (busy/retry → idle) BEFORE applySyncEvent
+      // runs: it sets the session status to idle synchronously, which would
+      // otherwise mask the transition for the reconcile check below.
+      let completedSessionID: string | undefined;
+      if (event.type === 'session.idle' || event.type === 'session.status') {
+        const sid = (event.properties as any)?.sessionID as string | undefined;
+        const nextStatus =
+          event.type === 'session.idle' ? { type: 'idle' } : (event.properties as any)?.status;
+        if (sid && nextStatus?.type === 'idle') {
+          const prev = useSyncStore.getState().sessionStatus[sid];
+          if (prev && prev.type !== 'idle') completedSessionID = sid;
+        }
+      }
+
       // Sync store is the SINGLE source of truth for messages & parts.
       // This matches OpenCode's architecture where the SolidJS store is
       // the only place message/part data lives.
       applySyncEvent(event as OpenCodeSdkEvent);
+
+      // The run just finished. If a tool call is still showing a loading
+      // spinner because its completed-result event was dropped at the
+      // stream-end boundary, reconcile against the server (what a hard refresh
+      // would load) so it resolves without a manual refresh.
+      if (completedSessionID && sessionHasUnsettledToolPart(completedSessionID)) {
+        scheduleIdleReconcile(completedSessionID);
+      }
 
       switch (event.type) {
         // ---- Message events — handled by sync store only ----
@@ -721,10 +799,7 @@ export function useOpenCodeEventStream() {
               // Shallow check: skip only if BOTH the timestamp and the title are
               // unchanged. Title alone can flip (opencode auto-titles) without a
               // perceptible time bump, and dropping that would keep the tab stale.
-              if (
-                old[idx].time.updated === info.time.updated &&
-                old[idx].title === info.title
-              )
+              if (old[idx].time.updated === info.time.updated && old[idx].title === info.title)
                 return old;
               const next = [...old];
               next[idx] = info;

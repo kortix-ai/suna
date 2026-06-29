@@ -32,10 +32,8 @@ mock.module('../projects/git', () => ({
 }));
 
 const {
-  RECOMMENDED_MODELS,
   currentChannelSelection,
   isValidModelId,
-  modelLabel,
   setChannelAgent,
   setChannelModel,
 } = await import('../channels/slack/selection');
@@ -59,36 +57,16 @@ describe('isValidModelId — provider/model shape only (no stale-catalog gate)',
   });
 });
 
-describe('modelLabel', () => {
-  test('uses the friendly label for a recommended model', () => {
-    expect(modelLabel('anthropic/claude-opus-4-8')).toBe('Claude Opus 4.8');
-  });
-  test('falls back to the raw id for an unknown model', () => {
-    expect(modelLabel('exotic/model-x')).toBe('exotic/model-x');
-  });
-});
-
-describe('RECOMMENDED_MODELS', () => {
-  test('every entry is a valid id with a label + hint', () => {
-    expect(RECOMMENDED_MODELS.length).toBeGreaterThan(0);
-    for (const m of RECOMMENDED_MODELS) {
-      expect(isValidModelId(m.id)).toBe(true);
-      expect(m.label.length).toBeGreaterThan(0);
-      expect(m.hint.length).toBeGreaterThan(0);
-    }
-  });
-});
-
 describe('currentChannelSelection', () => {
   test('returns the binding + its agent/model overrides', async () => {
-    dbResults = [[{ projectId: 'p1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8' }]];
+    dbResults = [[{ projectId: 'p1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8', conversationPolicy: 'owner_approval' }]];
     const sel = await currentChannelSelection({ teamId: 'T1', channelId: 'C1' });
-    expect(sel).toEqual({ projectId: 'p1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8' });
+    expect(sel).toEqual({ projectId: 'p1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8', conversationPolicy: 'owner_approval' });
   });
   test('null agent/model overrides surface as null', async () => {
-    dbResults = [[{ projectId: 'p1', agentName: null, opencodeModel: null }]];
+    dbResults = [[{ projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null }]];
     const sel = await currentChannelSelection({ teamId: 'T1', channelId: 'C1' });
-    expect(sel).toEqual({ projectId: 'p1', agentName: null, opencodeModel: null });
+    expect(sel).toEqual({ projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null });
   });
   test('unbound channel → null', async () => {
     dbResults = [[]];
@@ -100,7 +78,7 @@ describe('currentChannelSelection', () => {
       [{ projectId: 'p1' }],
     ];
     const sel = await currentChannelSelection({ teamId: 'T1', channelId: 'C1' });
-    expect(sel).toEqual({ projectId: 'p1', agentName: null, opencodeModel: null });
+    expect(sel).toEqual({ projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null });
   });
   test('no channel id → null (no query)', async () => {
     expect(await currentChannelSelection({ teamId: 'T1', channelId: '' })).toBeNull();

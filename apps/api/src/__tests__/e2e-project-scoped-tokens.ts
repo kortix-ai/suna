@@ -131,6 +131,10 @@ async function main() {
   if (me.status !== 200) {
     die(`projA token → /accounts/me got ${me.status}: ${JSON.stringify(me.body)}`);
   }
+  const meBody = me.body as { token_context?: { project_id?: string | null; session_id?: string | null } } | null;
+  if (meBody?.token_context?.project_id !== projA.project_id || meBody.token_context.session_id !== null) {
+    die(`/accounts/me token_context mismatch for project token: ${JSON.stringify(me.body)}`);
+  }
   ok('token can hit /accounts/me (self-identity probe) → 200');
 
   // ── 5. Denied: a different project's routes ──────────────────────────

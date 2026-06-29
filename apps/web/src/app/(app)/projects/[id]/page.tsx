@@ -1,5 +1,6 @@
 'use client';
 
+import { buildNewSessionCreateInput } from '@/features/workspace/project-layout/new-session-create';
 import {
   ProjectHome,
   type ProjectHomeSendOptions,
@@ -72,8 +73,12 @@ export default function ProjectIndexPage() {
       // id, paint the instant shell, and let the session page auto-send `text` once
       // the box is ready. No server-side initial_prompt — the shell shows the
       // message + inline boot status, matching the global dashboard composer.
+      // Bind the chosen agent at session birth so it matches the `agent` the
+      // composer sends on the first prompt — sessions are agent-immutable and the
+      // API proxy 409s any prompt whose agent differs from the bound one, which
+      // defaults to "default" when unset (see buildNewSessionCreateInput).
       newSession({
-        create: options?.sandbox_slug ? { sandbox_slug: options.sandbox_slug } : undefined,
+        create: buildNewSessionCreateInput(options),
         onNavigate: (sessionId) => {
           sessionStorage.setItem(`project_pending_prompt:${sessionId}`, text);
           if (files?.length) {

@@ -82,6 +82,10 @@ async function makeRequest<T = any>(
       ...fetchOptions,
       headers,
       signal: controller.signal,
+      // API auth is bearer-token based. Do not send browser cookies to the
+      // same-origin /v1 proxy; large localhost cookie jars can trip HTTP 431
+      // before the request reaches the API.
+      credentials: fetchOptions.credentials ?? 'omit',
     });
 
     if (timeoutId) {
@@ -124,11 +128,11 @@ async function makeRequest<T = any>(
       }
 
       // Handle HTTP 431 - Request Header Fields Too Large
-      // This typically happens when uploading many files at once
+      // This typically happens when browser/request metadata is too large.
       if (response.status === 431) {
         error = new RequestTooLargeError(431, {
           message: 'Request is too large to process',
-          suggestion: 'Try uploading files one at a time, or reduce the number of files attached to your message.',
+          suggestion: 'Refresh the page and try again. If this keeps happening, sign out and back in to clear stale browser session data.',
         });
       }
 

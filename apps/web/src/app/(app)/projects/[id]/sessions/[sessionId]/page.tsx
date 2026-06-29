@@ -20,7 +20,6 @@ import {
   useCanonicalOpenCodeSession,
 } from '@/hooks/opencode/use-canonical-opencode-session';
 import { OpenCodeEventStreamProvider } from '@/hooks/opencode/use-opencode-events';
-import { useProjectPresence } from '@/hooks/platform/use-project-presence';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { isBillingEnabled } from '@/lib/config';
 import { clearSessionFresh, isSessionFresh } from '@/lib/fresh-sessions';
@@ -67,11 +66,6 @@ export default function ProjectSessionPage() {
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
-
-  // Warm-pool presence: heartbeat while this project tab is open so a spare stays
-  // ready for the next session, and reap it on close. Keeps warm cost scoped to
-  // open projects (no-op unless the pool is enabled + the member can launch).
-  useProjectPresence(projectId);
 
   // Billing gate. An account that cannot run should not start a session — the
   // backend would never provision a sandbox, so polling for one spins forever.
@@ -125,6 +119,7 @@ export default function ProjectSessionPage() {
   });
   const sandbox = start?.sandbox ?? null;
   const startStage = start?.stage ?? 'provisioning';
+  const boundAgentName = start?.agent_name ?? null;
 
   // Subscribe to the store so we can BOTH render-gate the dashboard mount and
   // drive the active-server switch off the real success condition (the active
@@ -157,8 +152,8 @@ export default function ProjectSessionPage() {
     sessionMark(sandbox.session_id, 'sandbox-active');
     (async () => {
       try {
-        // If /start already resolved the runtime as ready (warm claim: the box
-        // was pre-warmed and the pin handed to us), seed the connection store
+        // If /start already resolved the runtime as ready (for example, restored
+        // from a warm snapshot), seed the connection store
         // connected+healthy through the switch so the chat shows without an extra
         // client /kortix/health RTT. Otherwise fall back to provisioning-verified
         // (the health poller resolves readiness). The poller runs either way.
@@ -347,6 +342,7 @@ export default function ProjectSessionPage() {
                 <ActiveSessionChat
                   projectId={projectId}
                   sessionId={sessionId}
+                  boundAgentName={boundAgentName}
                   pinFromStart={start?.opencode_session_id ?? null}
                   onChatReady={() => setChatReady(true)}
                 />
@@ -370,6 +366,7 @@ export default function ProjectSessionPage() {
                 projectId={projectId}
                 sessionId={sessionId}
                 stage={authLoading || !user ? 'provisioning' : startStage}
+                boundAgentName={boundAgentName}
                 onSubmit={() => setShellSubmitted(true)}
               />
             ) : (
@@ -431,11 +428,13 @@ function InlineSessionError({
 function ActiveSessionChat({
   projectId,
   sessionId,
+  boundAgentName,
   pinFromStart,
   onChatReady,
 }: {
   projectId: string;
   sessionId: string;
+  boundAgentName: string | null;
   pinFromStart: string | null;
   /** Called once the chat is actually showable (resolved + healthy, or erroring)
    *  so the page can crossfade it in over the loader. */
@@ -661,7 +660,12 @@ function ActiveSessionChat({
       projectId={projectId}
       projectSessionId={sessionId}
     >
-      <SessionChat key={chatSessionId} sessionId={chatSessionId} projectId={projectId} />
+      <SessionChat
+        key={chatSessionId}
+        sessionId={chatSessionId}
+        projectId={projectId}
+        boundAgentName={boundAgentName}
+      />
     </SessionLayout>
   );
 }

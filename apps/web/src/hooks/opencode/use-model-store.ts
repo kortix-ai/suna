@@ -28,6 +28,23 @@ import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 export type ModelKey = { providerID: string; modelID: string };
 
+// ── Gateway wire-model ⟷ ModelKey conversion ───────────────────────────────
+// The LLM gateway identifies a model by its "wire model" — what opencode sends
+// as `body.model`. Under the kortix gateway provider that is just the modelID
+// (a bare managed id like 'glm-5.2', or a BYOK 'provider/model'). A direct
+// provider model uses 'provider/model'. The synthetic `auto` has no concrete
+// wire form and is never stored as a default.
+export function modelKeyToWire(model: ModelKey): string {
+  if (model.providerID === 'kortix' || model.providerID === 'opencode') return model.modelID;
+  return `${model.providerID}/${model.modelID}`;
+}
+
+export function wireToModelKey(wire: string): ModelKey {
+  // Managed (bare) and BYOK ('provider/model') both live under the kortix
+  // provider in the picker namespace, so the modelID carries the full wire id.
+  return { providerID: 'kortix', modelID: wire };
+}
+
 type Visibility = 'show' | 'hide';
 
 interface UserEntry extends ModelKey {
@@ -120,20 +137,27 @@ function subscribe(fn: () => void) {
 }
 
 /**
- * Non-hook API to hydrate the global default model from a server response.
- * Only sets the value if no globalDefault is already present in localStorage.
- * Notifies all useSyncExternalStore subscribers so the UI updates reactively.
+ * Non-hook API to SEED the global-default display cache from the server's
+ * account default (useModelDefaults). Always reflects the server value (it's the
+ * source of truth) but, unlike setGlobalDefaultModel, does NOT clear the user's
+ * explicit per-agent / per-session picks — this is passive hydration, not an
+ * explicit "make this my default everywhere" action. No-ops when unchanged.
  */
-export function hydrateGlobalDefaultFromServer(model: ModelKey): void {
+export function seedGlobalDefaultFromServer(model: ModelKey | undefined): void {
   const s = getStore();
-  if (s.globalDefault) return; // Don't overwrite existing local default
+  const same =
+    (!s.globalDefault && !model) ||
+    (!!s.globalDefault &&
+      !!model &&
+      s.globalDefault.providerID === model.providerID &&
+      s.globalDefault.modelID === model.modelID);
+  if (same) return;
   setStore({ ...s, globalDefault: model });
 }
 
 /**
  * Non-hook API to explicitly set the global default model.
- * Unlike hydrateGlobalDefaultFromServer, this always overwrites.
- * Use when the user explicitly picks a model in workspace settings.
+ * Use when the user explicitly picks a model as their account default.
  * Clears per-agent/per-session selections so the new default takes effect everywhere.
  */
 export function setGlobalDefaultModel(model: ModelKey | undefined): void {
@@ -183,7 +207,7 @@ function subProviderOf(modelID: string): string {
   return slash === -1 ? modelID : modelID.slice(0, slash);
 }
 
-function isDefaultVisible(model: ModelKey): boolean {
+export function isDefaultVisible(model: ModelKey): boolean {
   return DEFAULT_VISIBLE_MODEL_IDS.has(model.modelID);
 }
 
@@ -253,10 +277,13 @@ export function useModelStore(
   allModels: FlatModel[],
   opts?: {
     connectedProviderIds?: Set<string>;
+    // Free tier (no active paid sub): hides every Kortix managed model.
+    freeTier?: boolean;
   },
 ) {
   const store = useSyncExternalStore(subscribe, getStore, getStore);
   const connectedProviderIds = opts?.connectedProviderIds;
+  const freeTier = opts?.freeTier ?? false;
 
   // Compute latest set
   const latestSet = useMemo(() => computeLatestSet(allModels), [allModels]);
@@ -291,7 +318,10 @@ export function useModelStore(
           sub === SUBSCRIPTION_PROVIDER_ID
             ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
             : (connectedProviderIds?.has(sub) ?? false);
-        if (MANAGED_MODEL_IDS.has(model.modelID)) return true;
+        if (MANAGED_MODEL_IDS.has(model.modelID)) {
+          if (freeTier) return false;
+          return true;
+        }
         if (!connected) return false;
         if (state === 'show') return true;
         if (latestSet.has(key)) return true;
@@ -325,7 +355,7 @@ export function useModelStore(
       }
       return false;
     },
-    [visibilityMap, latestSet, allModels, connectedProviderIds],
+    [visibilityMap, latestSet, allModels, connectedProviderIds, freeTier],
   );
 
   // Check if a model is in the latest set

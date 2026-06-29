@@ -65,9 +65,13 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
     ).toBe(false);
   });
 
-  test('llm_gateway is platform-gated and explicit opt-in', () => {
+  test('llm_gateway is platform-gated and defaults on when available', () => {
     const available = findCatalogFeature('llm_gateway').available;
-    expect(resolveExperimentalFeature({}, 'llm_gateway')).toBe(false);
+    // No explicit project choice → inherits the platform: on wherever the
+    // gateway is available and the fleet default is on (the global default).
+    expect(resolveExperimentalFeature({}, 'llm_gateway')).toBe(
+      available && config.LLM_GATEWAY_DEFAULT_ENABLED,
+    );
     expect(resolveExperimentalFeature({ experimental: { llm_gateway: true } }, 'llm_gateway')).toBe(
       available,
     );

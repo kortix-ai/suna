@@ -10,7 +10,7 @@ export interface ScaffoldInput {
   projectName: string;
   /** Optional "owner/repo" placeholder for README clone URL. */
   repoFullName?: string;
-  /** Starter variant. Defaults to the richer general knowledge worker. */
+  /** Starter variant. Defaults to the minimal Kortix runtime floor. */
   template?: StarterTemplateId;
   /**
    * If true, skip writing any file whose path already exists at the

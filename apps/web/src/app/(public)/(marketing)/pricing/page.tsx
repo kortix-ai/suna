@@ -13,19 +13,19 @@ const START_URL = '/auth';
 const DEMO_URL = '/enterprise';
 
 const PLAN_CTAS: Record<(typeof PRICING_PLANS)[number]['id'], { cta: string; href: string }> = {
-  free: { cta: 'Start free', href: START_URL },
+  free: { cta: 'Get started', href: START_URL },
   team: { cta: 'Get started', href: START_URL },
-  enterprise: { cta: 'Contact sales', href: DEMO_URL },
+  enterprise: { cta: 'Request demo', href: DEMO_URL },
 };
 
 const CREDIT_POINTS: { title: string; body: string }[] = [
   {
     title: 'Free credits are for sandboxes',
-    body: 'Free includes 500 credits each month for Agent Computer runtime. Those credits do not pay for managed LLM calls.',
+    body: 'Free includes 200 credits each month for Agent Computer runtime. Those credits do not pay for managed LLM calls.',
   },
   {
     title: 'Use the models you already pay for',
-    body: 'Free LLM models are included. Bring your own API key or connect your ChatGPT subscription for premium model access.',
+    body: 'Bring your own API key or connect your ChatGPT subscription for premium model access.',
   },
   {
     title: 'Compute by the second',
@@ -34,25 +34,25 @@ const CREDIT_POINTS: { title: string; body: string }[] = [
 ];
 
 const CREDIT_EXAMPLES: { label: string; body: string }[] = [
-  { label: 'Free start', body: '500 credits covers sandbox runtime for early projects and demos.' },
+  { label: 'Free start', body: '200 credits covers sandbox runtime for early projects and demos.' },
   {
     label: 'Bring your model',
     body: 'Use BYOK or ChatGPT subscription when you want premium models without using Kortix credits.',
   },
   {
     label: 'Team scale',
-    body: 'Upgrade when you want managed frontier models, pooled credits, and seats for the whole team.',
+    body: 'Upgrade when you want the latest AI models, pooled credits, and seats for the whole team.',
   },
 ];
 
 const FAQ: [string, string][] = [
   [
     'What does Free include?',
-    'Free includes 500 credits each month for sandbox compute and 1 project. Free LLM models are included; bring your own API key or connect your ChatGPT subscription for premium access. Managed Claude, GPT, and Gemini on Kortix keys are paid.',
+    'Free includes 200 credits each month for sandbox compute and 3 projects. Bring your own API key or connect your ChatGPT subscription for premium access. Managed Claude, GPT, and Gemini on Kortix keys are paid.',
   ],
   [
     'What does a Team seat include?',
-    '$40/seat/month includes 2,000 pooled usage credits per seat, managed frontier models, and seats for the people on your team. Add seats anytime; credits scale with them.',
+    '$40/seat/month includes 2,500 pooled credits per seat, access to the latest AI models, and seats for the people on your team. Add seats anytime; credits scale with them.',
   ],
   [
     'How are models and compute priced?',

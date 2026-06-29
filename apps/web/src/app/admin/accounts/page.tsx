@@ -79,12 +79,15 @@ import { SectionContainer, SectionHeader, StatPill, StatRow } from '../_componen
 const PAGE_SIZE = 50;
 const REIMBURSEMENT_PRESETS = [5, 10, 25, 50, 100];
 
-// Tiers & payment statuses surfaced in the filter UI.
-// Keep the list short — legacy tier_* values are still filterable via "Other"
-// if needed, but we expose the common ones by name.
+// Tiers & payment statuses surfaced in the filter UI. Current tiers first, then
+// the hidden legacy tier_* plans. Keep these `value`s in sync with the canonical
+// TIERS map in apps/api/src/billing/services/tiers.ts — `tierLabel` also renders
+// account rows off this list, so a missing entry shows the raw tier key.
 const TIER_OPTIONS: { value: string; label: string }[] = [
   { value: 'free', label: 'Free' },
   { value: 'pro', label: 'Pro' },
+  { value: 'per_seat', label: 'Team' },
+  { value: 'enterprise', label: 'Enterprise' },
   { value: 'tier_2_20', label: 'Plus (legacy)' },
   { value: 'tier_6_50', label: 'Pro (legacy)' },
   { value: 'tier_12_100', label: 'Business (legacy)' },

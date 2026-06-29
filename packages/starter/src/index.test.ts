@@ -5,6 +5,9 @@ import {
   listGeneralKnowledgeWorkerSkills,
   STARTER_TEMPLATE_IDS,
   DEFAULT_STARTER_TEMPLATE_ID,
+  KORTIX_MANAGED_SKILL_NAMES,
+  getMarketplaceFiles,
+  isKortixManagedSkillName,
   type StarterFile,
 } from './index';
 
@@ -17,8 +20,8 @@ describe('STARTER_TEMPLATE_IDS', () => {
     expect([...STARTER_TEMPLATE_IDS]).toEqual(['minimal', 'general-knowledge-worker']);
   });
 
-  test('default template is the general knowledge worker', () => {
-    expect(DEFAULT_STARTER_TEMPLATE_ID).toBe('general-knowledge-worker');
+  test('default template is the minimal Kortix runtime floor', () => {
+    expect(DEFAULT_STARTER_TEMPLATE_ID).toBe('minimal');
   });
 });
 
@@ -99,8 +102,8 @@ describe('getStarterFiles', () => {
 
   test('an unknown template value falls back to the default template layers', () => {
     const fallback = getStarterFiles({ projectName: 'X', template: 'bogus' as never });
-    const general = getStarterFiles({ projectName: 'X', template: 'general-knowledge-worker' });
-    expect(fallback.map((f) => f.path)).toEqual(general.map((f) => f.path));
+    const minimal = getStarterFiles({ projectName: 'X', template: 'minimal' });
+    expect(fallback.map((f) => f.path)).toEqual(minimal.map((f) => f.path));
   });
 
   test('general-knowledge-worker includes more files than minimal', () => {
@@ -139,6 +142,59 @@ describe('getStarterFiles', () => {
   test('always includes the base kortix.toml', () => {
     const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
     expect(byPath(files).has('kortix.toml')).toBe(true);
+  });
+
+  test('default starter does not ship general knowledge worker skills', () => {
+    const files = getStarterFiles({ projectName: 'X' });
+    expect(files.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(false);
+    expect(files.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(false);
+  });
+
+  test('minimal starter includes the default runtime tools but not optional marketplace skills', () => {
+    const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
+    const paths = new Set(files.map((f) => f.path));
+
+    expect(paths.has('.kortix/opencode/tools/show.ts')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/kortix-system/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/agent-browser/SKILL.md')).toBe(false);
+    expect(paths.has('.kortix/opencode/plugins/pty.ts')).toBe(true);
+    expect(paths.has('.kortix/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts')).toBe(true);
+    expect(paths.has('.kortix/opencode/tools/memory.ts')).toBe(true);
+    expect(paths.has('.kortix/opencode/tools/web_search.ts')).toBe(true);
+    expect(paths.has('.kortix/opencode/tools/scrape_webpage.ts')).toBe(true);
+    expect(paths.has('.kortix/opencode/tools/image_search.ts')).toBe(true);
+    expect(paths.has('.kortix/opencode/tools/lib/get-env.ts')).toBe(true);
+  });
+
+  test('marketplace source contains optional first-party skills only', () => {
+    const paths = new Set(getMarketplaceFiles().map((f) => f.path));
+
+    expect(paths.has('kortix.registry.json')).toBe(true);
+    expect(paths.has('runtime/skills/agent-browser/SKILL.md')).toBe(true);
+    expect(paths.has('runtime/pty/pty-tools.ts')).toBe(false);
+    expect(paths.has('runtime/tools/memory.ts')).toBe(false);
+    expect(paths.has('runtime/tools/web_search.ts')).toBe(false);
+    expect(paths.has('runtime/tools/scrape_webpage.ts')).toBe(false);
+    expect(paths.has('runtime/tools/image_search.ts')).toBe(false);
+    expect(paths.has('runtime/tools/lib/get-env.ts')).toBe(false);
+  });
+});
+
+describe('KORTIX_MANAGED_SKILL_NAMES', () => {
+  test('tracks only the first-party kortix-* skill directories', () => {
+    expect([...KORTIX_MANAGED_SKILL_NAMES]).toEqual([
+      'kortix-computer',
+      'kortix-executor',
+      'kortix-memory',
+      'kortix-slack',
+      'kortix-system',
+    ]);
+
+    expect(isKortixManagedSkillName('kortix-system')).toBe(true);
+    expect(isKortixManagedSkillName('agent-browser')).toBe(false);
+    expect(isKortixManagedSkillName('kortix')).toBe(false);
+    expect(isKortixManagedSkillName('memory-reflector')).toBe(false);
+    expect(isKortixManagedSkillName('web_search')).toBe(false);
   });
 });
 

@@ -7,7 +7,7 @@ import type { RateLimitPolicy } from './rate-limit';
 // subscribe before creating projects. This cap governs any legacy/backwards-compat
 // free account; any paid plan lifts it to MAX_PROJECTS_PER_ACCOUNT, and Enterprise
 // is uncapped (see maxProjectsForAccount).
-export const FREE_TIER_PROJECT_LIMIT = 1;
+export const FREE_TIER_PROJECT_LIMIT = 3;
 
 const tierCache = new Map<string, { tier: string | null; expiresAt: number }>();
 

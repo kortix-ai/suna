@@ -332,7 +332,7 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'write');
+  const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   const result = await createSession({
     source: 'ui',
@@ -634,7 +634,7 @@ projectsApp.openapi(
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
   const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'write');
+  const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
   const serverManagedFields = ['status', 'sandbox_url', 'sandboxUrl', 'error'];
@@ -729,7 +729,7 @@ projectsApp.openapi(
   const sessionId = c.req.param('sessionId');
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-  const loaded = await loadProjectForUser(c, projectId, 'write');
+  const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
   // Stopping a session is reserved for its owner or a project manager.

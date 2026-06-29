@@ -267,39 +267,6 @@ export async function buildSessionSandboxEnvVars(input: {
   };
 }
 
-/**
- * Stage-2 warm-spare env: the PROJECT identity a session-LESS spare needs to
- * clone the base branch + warm the opencode project plugin AT PARK — and
- * nothing more. Deliberately omits KORTIX_BRANCH_NAME / KORTIX_SESSION_ID /
- * KORTIX_BOOTSTRAP_OPENCODE_SESSION / KORTIX_INITIAL_PROMPT so park stays on the
- * base branch and warms via a readiness probe (no session created, nothing
- * relayed). Also omits user runtime secrets: the clone authenticates with the
- * box's own KORTIX_TOKEN (git proxy) and the plugin warm needs none — the
- * claimant's full per-user env (secrets, channel binding, session id, branch,
- * prompt) is staged at claim by stageClaimEnv, so no other user's secrets ever
- * sit in a spare before it's bound.
- */
-export function buildSpareSandboxEnvVars(input: {
-  projectId: string;
-  repoUrl: string;
-  baseRef: string;
-  agentName: string;
-}): Record<string, string> {
-  return {
-    KORTIX_PROJECT_AUTO_CLONE: '1',
-    // Full clone (see buildSessionSandboxEnvVars for why blobless is avoided).
-    KORTIX_CLONE_FILTER: '',
-    KORTIX_REPO_URL: config.KORTIX_GIT_PROXY ? proxyGitUrl(input.projectId) : input.repoUrl,
-    KORTIX_DEFAULT_BRANCH: input.baseRef,
-    KORTIX_BASE_REF: input.baseRef,
-    KORTIX_PROJECT_ID: input.projectId,
-    KORTIX_SERVICE_PORT: '8000',
-    KORTIX_AGENT_NAME: input.agentName,
-    KORTIX_API_URL: deriveKortixApiBase(),
-    KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
-  };
-}
-
 /** Derive the API v1 base URL sandboxes call as `$KORTIX_API_URL`. */
 
 export function deriveKortixApiBase(): string {
@@ -368,7 +335,7 @@ export async function createProjectSession(input: {
    * project, not to the stand-in owner they're attributed to, and would
    * otherwise be invisible to everyone but the account's first owner.
    */
-  visibility?: 'private' | 'project';
+  visibility?: 'private' | 'project' | 'restricted';
 }): Promise<{ row?: ProjectSessionRow; error?: SessionCreateError; headers?: Record<string, string> }> {
   const { project, userId, body } = input;
   const visibility = input.visibility ?? 'private';
@@ -376,7 +343,15 @@ export async function createProjectSession(input: {
   const accountId = project.accountId;
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
-  const agentName = normalizeString(body.agent_name ?? body.agentName) ?? 'default';
+  // Explicit request wins; otherwise fall back to the project's default agent
+  // (`[opencode] default_agent` in kortix.toml, synced to project metadata, or a
+  // UI/Slack override), so EVERY session — UI, triggers, channels — inherits the
+  // project's chosen agent without each caller passing one. Unset → 'default'.
+  const projectDefaultAgent = normalizeString(
+    (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
+  );
+  const agentName =
+    normalizeString(body.agent_name ?? body.agentName) ?? projectDefaultAgent ?? 'default';
   // Explicit request wins; otherwise fall back to the project's default sandbox
   // template (`[sandbox] default` in kortix.toml, synced to project metadata),
   // so EVERY session — UI, triggers, channels — inherits the project's chosen

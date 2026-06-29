@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 import { AppHeader } from '@/features/layout/app-header';
@@ -14,18 +14,51 @@ import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
 
 export default function MarketplacePage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
   const [addItem, setAddItem] = useState<MarketplaceItem | null>(null);
+  const [source, setSource] = useState('all');
   const openId = useMarketplaceDetailStore((s) => s.openId);
   const closeSheet = useMarketplaceDetailStore((s) => s.close);
 
-  useEffect(() => {
-    if (!authLoading && !user) router.replace('/auth');
-  }, [authLoading, user, router]);
   useEffect(() => () => closeSheet(), [closeSheet]);
 
-  if (authLoading || !user) return <div className="bg-background min-h-screen" />;
+  if (authLoading) return <div className="bg-background min-h-screen" />;
+
+  if (!user) {
+    return (
+      <div className="bg-background min-h-screen">
+        <header className="border-border/60 bg-background/90 sticky top-0 z-10 border-b backdrop-blur">
+          <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
+            <Link href="/" className="text-foreground text-sm font-semibold">
+              Kortix
+            </Link>
+            <Link
+              href="/auth?redirect=/marketplace"
+              className="text-muted-foreground hover:text-foreground text-sm transition-colors"
+            >
+              Sign in
+            </Link>
+          </div>
+        </header>
+        <main className="px-4 py-8 sm:px-6 sm:py-10">
+          <div className="mx-auto w-full max-w-5xl space-y-6">
+            <div>
+              <h1 className="text-foreground text-lg font-semibold">Marketplace</h1>
+              <p className="text-muted-foreground text-sm">
+                Browse public marketplace items. Sign in to add them to a project.
+              </p>
+            </div>
+            <MarketplaceBrowser
+              source={source}
+              onSourceChange={setSource}
+              publicOnly
+              readOnly
+            />
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   if (openId) {
     return (

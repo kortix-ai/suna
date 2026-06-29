@@ -98,12 +98,6 @@ function StatusBadge({ status }: { status: string | null }) {
     case 'active':
     case 'running':
       return <Badge variant="highlight">{status}</Badge>;
-    case 'pooled':
-      return (
-        <Badge variant="info" className="gap-1">
-          {status}
-        </Badge>
-      );
     case 'provisioning':
       return (
         <Badge variant="warning" className="gap-1">

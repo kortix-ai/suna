@@ -43,6 +43,9 @@ export {
   type UploadResult,
 } from './api/opencode-files';
 
+// Pure path heuristics
+export { hasFileExtension } from './path-utils';
+
 // API — semantic search (LSS)
 export { searchLss } from './api/lss-search';
 

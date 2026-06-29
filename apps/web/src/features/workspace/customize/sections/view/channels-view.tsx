@@ -1,5 +1,6 @@
 'use client';
 
+import { useQuery } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
@@ -9,6 +10,14 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -18,29 +27,50 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
+import { EmailConnectForm } from '@/features/workspace/customize/sections/connectors-view';
 import {
   useConnectSlack,
+  useDisconnectEmail,
   useDisconnectSlack,
+  useEmailInstall,
   useSlackInstall,
   useSlackManifest,
   useSlackMode,
+  type EmailInstallation,
   type SlackInstallation,
 } from '@/hooks/channels/use-channels-installations';
+import { getProject } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { Check, CheckCircleSolid, ExternalLinkSolid } from '@mynaui/icons-react';
-import { Copy, MessageSquare, X } from 'lucide-react';
+import { Copy, Mail, MessageSquare, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useState } from 'react';
 
+/** Reserved slug for the built-in Email channel (see api connectors.ts). */
+const EMAIL_CONNECTOR_SLUG = 'kortix_email';
+
 export function ChannelsView({ projectId }: { projectId: string | null }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const projectQuery = useQuery({
+    queryKey: ['project', projectId],
+    queryFn: () => getProject(projectId ?? ''),
+    enabled: Boolean(projectId),
+    staleTime: 10_000,
+  });
+  const emailChannelEnabled = projectQuery.data?.experimental?.agentmail_email === true;
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
   const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
-  const loading = loadingInstall || loadingMode;
+  const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
+    emailChannelEnabled ? projectId : null,
+    EMAIL_CONNECTOR_SLUG,
+  );
+  const loading =
+    loadingInstall || loadingMode || projectQuery.isLoading || (emailChannelEnabled && loadingEmail);
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
 
   return (
@@ -118,6 +148,12 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                   installation={install ?? null}
                   oauthInstallUrl={oauthInstallUrl}
                 />
+                {emailChannelEnabled ? (
+                  <EmailChannelRow
+                    projectId={projectId}
+                    installation={emailInstall ?? null}
+                  />
+                ) : null}
               </TableBody>
             </Table>
 
@@ -228,6 +264,118 @@ function SlackChannelRow({
         ) : null}
       </TableCell>
     </TableRow>
+  );
+}
+
+function EmailChannelRow({
+  projectId,
+  installation,
+}: {
+  projectId: string;
+  installation: EmailInstallation | null;
+}) {
+  const disconnect = useDisconnectEmail();
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  const connected = Boolean(installation);
+
+  return (
+    <>
+      <TableRow className="hover:bg-transparent">
+        <TableCell>
+          <div className="flex items-center gap-2.5">
+            <Mail className="text-muted-foreground size-5 shrink-0" />
+            <span className="text-sm font-medium">Email</span>
+          </div>
+        </TableCell>
+        <TableCell>
+          {connected ? (
+            <Badge variant="success" size="sm">
+              Connected
+            </Badge>
+          ) : (
+            <Badge variant="outline" size="sm" className="text-muted-foreground">
+              Not connected
+            </Badge>
+          )}
+        </TableCell>
+        <TableCell className="text-muted-foreground text-sm">
+          {connected ? (
+            <code className="text-foreground font-mono text-xs">{installation?.email ?? '—'}</code>
+          ) : (
+            '—'
+          )}
+        </TableCell>
+        <TableCell>
+          {connected ? (
+            confirming ? (
+              <div className="flex items-center justify-end gap-1">
+                <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={disconnect.isPending}
+                  onClick={() =>
+                    disconnect.mutate(
+                      { projectId, connectorSlug: EMAIL_CONNECTOR_SLUG },
+                      {
+                        onSuccess: () => {
+                          setConfirming(false);
+                          successToast('Email disconnected');
+                        },
+                      },
+                    )
+                  }
+                >
+                  {disconnect.isPending ? (
+                    <Loading className="size-3.5 shrink-0 animate-spin" />
+                  ) : null}
+                  Disconnect
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setConfirming(true)}
+              >
+                <X className="size-3.5 shrink-0" />
+                Disconnect
+              </Button>
+            )
+          ) : (
+            <Button size="sm" variant="secondary" onClick={() => setConnectOpen(true)}>
+              Connect
+            </Button>
+          )}
+        </TableCell>
+      </TableRow>
+
+      <Modal open={connectOpen} onOpenChange={setConnectOpen}>
+        <ModalContent className="lg:max-w-2xl">
+          <ModalHeader>
+            <ModalTitle>Connect Email</ModalTitle>
+            <ModalDescription>
+              Create a managed AgentMail inbox for your agent, or attach one you already have.
+            </ModalDescription>
+          </ModalHeader>
+          <ModalBody className="max-h-[75vh] overflow-y-auto">
+            <EmailConnectForm
+              projectId={projectId}
+              connectorSlug={EMAIL_CONNECTOR_SLUG}
+              onConnected={() => {
+                setConnectOpen(false);
+                successToast('Email connected');
+              }}
+            />
+          </ModalBody>
+        </ModalContent>
+      </Modal>
+    </>
   );
 }
 

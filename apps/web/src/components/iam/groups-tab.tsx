@@ -27,10 +27,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { List } from '@/components/ui/list';
+import { List, ListRow } from '@/components/ui/list';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
@@ -129,9 +131,10 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
         <List>
           {Array.from({ length: 2 }).map((_, i) => (
             <li key={i} className="flex items-center gap-3 px-6 py-3">
+              <Skeleton className="size-8 rounded-md" />
               <div className="flex-1 space-y-1.5">
                 <Skeleton className="h-3.5 w-40" />
-                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-3 w-56" />
               </div>
             </li>
           ))}
@@ -149,43 +152,31 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
       )}
 
       {!groupsQuery.isLoading && filtered.length > 0 && (
-        <div className="overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-border/60 bg-muted/20 text-muted-foreground border-b text-left text-xs font-medium tracking-wider uppercase">
-                <th className="px-6 py-2.5 font-medium">Name</th>
-                <th className="px-3 py-2.5 font-medium">Source</th>
-                <th className="px-3 py-2.5 font-medium">Members</th>
-                <th className="px-3 py-2.5 font-medium">Projects</th>
-                <th className="w-12 px-3 py-2.5" />
-              </tr>
-            </thead>
-            <tbody className="divide-border divide-y">
-              {filtered.map((g) => (
-                <tr
-                  key={g.group_id}
-                  className="hover:bg-muted/30 cursor-pointer transition-colors"
-                  onClick={() => router.push(`/accounts/${accountId}/groups/${g.group_id}`)}
-                >
-                  <td className="text-foreground px-6 py-3 font-medium">
-                    <div className="flex flex-col gap-0.5">
-                      <span>{g.name}</span>
-                      {g.description && (
-                        <span className="text-muted-foreground text-xs font-normal">
-                          {g.description}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="text-muted-foreground px-3 py-3">
-                    <Badge variant="outline" size="sm" className="font-normal capitalize">
-                      {g.source}
-                    </Badge>
-                  </td>
-                  <td className="text-muted-foreground px-3 py-3">{g.member_count ?? 0}</td>
-                  <td className="text-muted-foreground px-3 py-3">{g.project_count ?? 0}</td>
-                  <td className="px-3 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    {canCreate && (
+        <List>
+          {filtered.map((g) => {
+            const memberCount = g.member_count ?? 0;
+            const projectCount = g.project_count ?? 0;
+            return (
+              <ListRow
+                key={g.group_id}
+                onClick={() => router.push(`/accounts/${accountId}/groups/${g.group_id}`)}
+                leading={<EntityAvatar icon={Users} />}
+                title={g.name}
+                badges={
+                  <Badge variant="outline" size="sm" className="capitalize">
+                    {g.source}
+                  </Badge>
+                }
+                subtitle={
+                  <InlineMeta>
+                    {g.description || null}
+                    {`${memberCount} member${memberCount === 1 ? '' : 's'}`}
+                    {`${projectCount} project${projectCount === 1 ? '' : 's'}`}
+                  </InlineMeta>
+                }
+                trailing={
+                  canCreate ? (
+                    <div onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
@@ -204,13 +195,13 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </div>
+                  ) : undefined
+                }
+              />
+            );
+          })}
+        </List>
       )}
 
       <CreateGroupDialog open={createOpen} onOpenChange={setCreateOpen} accountId={accountId} />

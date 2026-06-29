@@ -1,90 +1,123 @@
 'use client';
 
 /**
- * LLM — the per-project gateway, surfaced as a group of Customize sections
- * (Overview, Providers, Logs, Budgets, Keys) rather than one tab with its own
- * top-tab nav. Each is a normal Customize section so it reads exactly like
- * Agents / Skills / Secrets, controlled from the left rail.
+ * LLM — one Customize section that consolidates the per-project gateway surfaces
+ * (Providers, Overview, Logs, Budgets, API keys) behind a single FilterBar — the
+ * same pill-tab style the provider panel uses, so the whole section reads as one
+ * consistent surface (no competing tab styles).
+ *
+ * The active tab is LOCAL state, so switching tabs never touches the main
+ * Customize rail. Deep-links / `openCustomize('llm-providers')` set the store
+ * section, which we read once (and follow on change) to pick the initial tab —
+ * Providers is the default, core surface.
  */
 
-import type { ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { GatewayBudgets } from '@/components/projects/gateway/gateway-budgets';
-import { GatewayKeys } from '@/components/projects/gateway/gateway-keys';
-import { GatewayLogs } from '@/components/projects/gateway/gateway-logs';
-import { GatewayOverview } from '@/components/projects/gateway/gateway-overview';
+import { GatewayBudgets } from '@/features/workspace/customize/sections/view/gateway/gateway-budgets';
+import { GatewayKeys } from '@/features/workspace/customize/sections/view/gateway/gateway-keys';
+import { GatewayLogs } from '@/features/workspace/customize/sections/view/gateway/gateway-logs';
+import { GatewayOverview } from '@/features/workspace/customize/sections/view/gateway/gateway-overview';
+import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import { ModelSelector } from '@/features/session/model-selector';
+import { flattenModels } from '@/features/session/session-chat-input';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
+import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
+import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import type { CustomizeSection } from '@/lib/customize-sections';
 import { useCustomizeStore } from '@/stores/customize-store';
 
-function LlmSectionShell({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex h-full min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
-    </div>
-  );
-}
+type LlmTab = 'providers' | 'overview' | 'logs' | 'budgets' | 'keys';
 
-export function LlmGatewayEnablePrompt({ onOpenSettings }: { onOpenSettings: () => void }) {
+const LLM_TABS: { id: LlmTab; label: string }[] = [
+  { id: 'providers', label: 'Providers' },
+  { id: 'overview', label: 'Overview' },
+  { id: 'logs', label: 'Logs' },
+  { id: 'budgets', label: 'Budgets' },
+  { id: 'keys', label: 'API keys' },
+];
+
+const TAB_BY_SECTION: Partial<Record<CustomizeSection, LlmTab>> = {
+  'llm-management': 'providers',
+  'llm-providers': 'providers',
+  'llm-overview': 'overview',
+  'llm-logs': 'logs',
+  'llm-budgets': 'budgets',
+  'llm-keys': 'keys',
+};
+
+export function LlmManagementView({ projectId }: { projectId: string }) {
+  const open = useCustomizeStore((s) => s.open);
+  const section = useCustomizeStore((s) => s.section);
+  const llmProvidersTab = useCustomizeStore((s) => s.llmProvidersTab);
+  const [tab, setTab] = useState<LlmTab>(() => TAB_BY_SECTION[section] ?? 'providers');
+
+  // Account default model — the gateway resolves `auto` against this. Shown at
+  // the top of the LLM section so it's the obvious place to set "my default
+  // model", regardless of which sub-tab is open.
+  const { data: providers } = useOpenCodeProviders();
+  const models = useMemo(() => flattenModels(providers), [providers]);
+  const modelDefaults = useModelDefaults(projectId);
+  const effectiveDefault = modelDefaults.accountDefault ?? modelDefaults.platformDefault ?? null;
+
+  // Follow an external deep-link (e.g. openCustomize('llm-providers')) to its
+  // tab. Plain in-view tab clicks stay local and never move the main rail.
+  useEffect(() => {
+    const next = TAB_BY_SECTION[section];
+    if (next) setTab(next);
+  }, [section]);
+
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col items-center justify-center px-6 py-20 text-center">
-      <div className="max-w-md space-y-3">
-        <h2 className="text-foreground text-lg font-medium">LLM Gateway is off for this project</h2>
-        <p className="text-muted-foreground text-sm text-balance">
-          Turn on the experimental LLM Gateway feature in Settings to route this project through
-          the managed gateway and unlock Overview, Providers, Logs, Budgets, and Keys.
-        </p>
-        <Button variant="outline" size="sm" onClick={onOpenSettings}>
-          Open Settings
-        </Button>
+    <div className="bg-background flex h-full min-h-0 flex-col">
+      {/* Account default model — the single, obvious place to set "my default". */}
+      <div className="border-border/60 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
+        <div className="min-w-0">
+          <div className="text-foreground text-sm font-medium">Default model</div>
+          <p className="text-muted-foreground/70 max-w-md text-xs leading-5">
+            Used whenever a chat doesn&apos;t have a model picked — across all your projects.
+            Picking a model inside a conversation always overrides it.
+          </p>
+        </div>
+        <ModelSelector
+          models={models}
+          providers={providers}
+          selectedModel={effectiveDefault}
+          onSelect={(m) => {
+            if (m) void modelDefaults.setAccountDefault(m);
+          }}
+        />
+      </div>
+
+      <div className="border-border/60 flex shrink-0 items-center border-b px-5 py-3">
+        <FilterBar>
+          {LLM_TABS.map((t) => (
+            <FilterBarItem
+              key={t.id}
+              data-state={tab === t.id ? 'active' : 'inactive'}
+              onClick={() => setTab(t.id)}
+              className="text-xs"
+            >
+              {t.label}
+            </FilterBarItem>
+          ))}
+        </FilterBar>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {tab === 'providers' && (
+          <ProjectProviderModal
+            asPanel
+            projectId={projectId}
+            open={open}
+            onOpenChange={() => {}}
+            defaultTab={llmProvidersTab}
+          />
+        )}
+        {tab === 'overview' && <GatewayOverview projectId={projectId} />}
+        {tab === 'logs' && <GatewayLogs projectId={projectId} />}
+        {tab === 'budgets' && <GatewayBudgets projectId={projectId} />}
+        {tab === 'keys' && <GatewayKeys projectId={projectId} />}
       </div>
     </div>
-  );
-}
-
-export function LlmOverviewView({ projectId }: { projectId: string }) {
-  return (
-    <LlmSectionShell>
-      <GatewayOverview projectId={projectId} />
-    </LlmSectionShell>
-  );
-}
-
-export function LlmProvidersView({ projectId }: { projectId: string }) {
-  const open = useCustomizeStore((s) => s.open);
-  return (
-    <LlmSectionShell>
-      <ProjectProviderModal
-        asPanel
-        projectId={projectId}
-        open={open}
-        onOpenChange={() => {}}
-        defaultTab="connected"
-      />
-    </LlmSectionShell>
-  );
-}
-
-export function LlmLogsView({ projectId }: { projectId: string }) {
-  return (
-    <LlmSectionShell>
-      <GatewayLogs projectId={projectId} />
-    </LlmSectionShell>
-  );
-}
-
-export function LlmBudgetsView({ projectId }: { projectId: string }) {
-  return (
-    <LlmSectionShell>
-      <GatewayBudgets projectId={projectId} />
-    </LlmSectionShell>
-  );
-}
-
-export function LlmKeysView({ projectId }: { projectId: string }) {
-  return (
-    <LlmSectionShell>
-      <GatewayKeys projectId={projectId} />
-    </LlmSectionShell>
   );
 }

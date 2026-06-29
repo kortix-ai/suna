@@ -32,8 +32,8 @@ Everything below derives from these. If a feature violates one, it's wrong.
    whose payload is `registryDependencies`. Build the engine once; everything
    rides it.
 
-3. **Install is a commit, not a side effect.** `kortix add` writes files into
-   the project's repo and they get committed. No hidden runtime state, no
+3. **Install is a commit, not a side effect.** `kortix marketplace install`
+   writes files into the project's repo and they get committed. No hidden runtime state, no
    service you depend on at runtime. The result is **diffable, reviewable,
    reversible (`git revert`), and self-contained.** This is the shadcn ethic:
    you own the source after install.
@@ -63,12 +63,12 @@ Not everything should be a marketplace install. There are three concentric
 layers, and the core belongs to the inner two.
 
 ```
-┌─ Layer 3: MARKETPLACE ─ everyone's registries ─ kortix add owner/repo/item ─┐
+┌─ Layer 3: MARKETPLACE ─ everyone's registries ─ marketplace install item ───┐
 │  optional, opt-in, the 64 GKW skills + community skills/agents/bundles       │
 │ ┌─ Layer 2: STANDARD LIBRARY ─ first-party @kortix/* registry ─────────────┐ │
-│ │  official, curated, updatable: kortix-executor, kortix-slack, the packs  │ │
+│ │  official, curated, updatable: the Kortix-managed runtime skills + packs │ │
 │ │ ┌─ Layer 1: RUNTIME FLOOR ─ baked into the starter scaffold ───────────┐ │ │
-│ │ │  kortix-system, kortix-memory, default agent — `kortix init` writes  │ │ │
+│ │ │  kortix-system, kortix-memory, executor/slack/computer, agent-browser │ │ │
 │ │ │  them with ZERO network. A project must boot before any registry.    │ │ │
 │ │ └──────────────────────────────────────────────────────────────────────┘ │ │
 │ └────────────────────────────────────────────────────────────────────────────┘ │
@@ -81,15 +81,59 @@ layers, and the core belongs to the inner two.
   service being up. This is the floor.
 - **Layer 2 (Standard library):** the official `@kortix/*` registry. The core
   *is also published here* so an existing project can **update** it
-  (`kortix add @kortix/kortix-memory --overwrite` pulls the latest) and so the
-  same files have a single canonical source. Baked for bootstrap, registry for
-  updates. Both, not either.
+  through the managed update workflow and so the same files have a single
+  canonical source. Baked for bootstrap, marketplace-addressable for updates.
+  Both, not either.
 - **Layer 3 (Marketplace):** everyone else. Opt-in, curated at the global tier.
 
 **Verdict:** the core is *registry-addressable* (Layer 2) but *scaffold-delivered*
 (Layer 1). You don't force the floor through the network. "Everything is a
 registry item" is true as a *data model*; it is not true as a *delivery
 requirement*.
+
+### Current Kortix-managed contract
+
+The current Kortix-managed set is intentionally small:
+
+- `kortix-system`
+- `kortix-memory`
+- `kortix-executor`
+- `kortix-slack`
+- `kortix-computer`
+
+These are first-party runtime skills. They are baked into the starter so a new
+project boots with no marketplace/network dependency, and they are also exposed
+as marketplace items so existing projects can be inspected and updated through
+the same install/update machinery.
+
+Not Kortix-managed today:
+
+- Default agents (`kortix`, `memory-reflector`)
+- `agent-browser`
+- OpenCode config files (`opencode.jsonc`, `package.json`, `bun.lock`)
+- PTY/tools (`show`, `memory`, `web_search`, `scrape_webpage`, `image_search`)
+- General Knowledge Worker skills
+
+Those may be in the starter floor, but they do not carry `managedBy: "kortix"`
+or `updatePolicy: "kortix-managed"` until the update workflow owns them.
+
+### Kortix-managed update policy
+
+Kortix-managed updates should be **git-level change requests**, not silent
+sandbox-start mutations.
+
+1. A project records installed/managed files in `registry-lock.json`.
+2. A scheduled updater or explicit command compares the lock hash/source to the
+   current Kortix-managed source.
+3. If files changed, Kortix creates a normal branch and commit containing only
+   the managed file updates.
+4. Kortix opens a change request with the diff, source ref, changed file list,
+   and any migration notes.
+5. The project only changes when that CR is merged.
+
+Sandbox start may detect and report that a managed update is available, but it
+must not rewrite project files. Runtime boot must stay deterministic from the
+checked-out git state.
 
 ---
 
@@ -120,7 +164,7 @@ is an item that is *only* dependencies — the unit of "install a whole use-case
 
 **Deprecation & yank.** `meta.deprecated: "reason / successor"` shows a warning
 on install/list. A **yank** (security) is an index-side flag that makes the
-gallery refuse to surface it and `kortix add` warn loudly — but because files
+gallery refuse to surface it and `kortix marketplace install` warn loudly — but because files
 live in the author's repo, yanking is *advisory at the source*, *enforced at the
 index*. (Another reason index-not-host is honest: we can de-list, not rewrite
 history we don't own.)
@@ -212,7 +256,7 @@ At submit/index time, automated checks (a model reviewer is well-suited here):
 - **Content hashes** in the lock (built) → tamper-evident installs.
 - **Pin-by-sha** on unpinned installs → reproducible.
 - **Signed provenance** (roadmap): publishers sign releases (sigstore-style);
-  the index records the signature; `kortix add` can require verified provenance
+  the index records the signature; `kortix marketplace install` can require verified provenance
   at the global tier.
 - **Publish cooldown.** Mirror the supply-chain defense **this repo already runs
   in pnpm** (`minimumReleaseAge: 4320` — a 72h cooldown that defeats
@@ -239,14 +283,14 @@ At submit/index time, automated checks (a model reviewer is well-suited here):
 
 ---
 
-## Part 6 — Publishing & ownership
+## Part 6 — Listing & ownership
 
-**Publish = make a repo reachable, then (for global) register it.**
+**Listing = make a repo reachable, then (for global) submit it to the index.**
 
-1. `kortix registry build` → `registry.json` → `git push`. *(Repo tier done now.)*
+1. `kortix registry build` -> `registry.json` -> `git push`. *(Repo tier done now.)*
 2. **Company:** push to the org registry repo; appears in **Customize → Add**.
-3. **Global:** `kortix registry publish` (or a gallery "Publish" button) submits
-   the **repo URL + chosen namespace**. Kortix validates, runs static gates,
+3. **Global:** the Marketplace submission flow takes the **repo URL + chosen
+   namespace**. Kortix validates, runs static gates,
    indexes the items, records the checksum, and lists them.
 
 **Ownership & names.** A **namespace** (`@acme`) is claimed once, tied to a
@@ -277,7 +321,7 @@ broken for installers (the cache + lock still serve pinned installs).
 
 ## Part 8 — Lifecycle
 
-- `kortix add` — install (built).
+- `kortix marketplace install` — install (built).
 - `kortix outdated` — compare lock hashes vs. current source refs → what changed.
 - `kortix update [item]` — re-resolve → **diff** → apply on confirm (re-pin lock).
 - `kortix remove <item>` — delete its locked files + lock entry (clean uninstall
@@ -319,10 +363,9 @@ search/trust projection of public git state.
 
 ## Part 11 — Phased rollout
 
-1. **P0 — Engine + CLI (DONE).** Format, build, resolve, install, lock,
-   `kortix add` + `kortix registry`. Repo-tier sharing works today with zero
-   backend.
-2. **P1 — Cloud install.** `kortix add --project <id>` commits into a linked
+1. **P0 — Engine + CLI (DONE).** Format, build, resolve, install, lock, and
+   `kortix marketplace`. Repo-tier sharing works today with zero backend.
+2. **P1 — Cloud install.** `kortix marketplace install --project <id>` commits into a linked
    repo via `POST /projects/:id/files/commit` (reusing `commitFileToBranch`).
    Plus `kortix update/outdated/remove`.
 3. **P2 — Capability manifest + consent.** Declare + approve. The safety
@@ -361,8 +404,8 @@ the trust model is the classic mistake.
 | Install = files + lock | ✅ `install.ts`, `lock.ts` (v2, hashes, legacy migration) |
 | Resolve from git/URL/local + include | ✅ `fetch.ts` |
 | Repo = registry (`build`) | ✅ `build.ts`, proven on 69-skill starter |
-| CLI add / registry verbs | ✅ `apps/cli` |
-| Cloud install (`--project`) | ⏳ P1 — endpoint mapped |
+| Marketplace CLI | ✅ `apps/cli` |
+| Cloud install (`--project`) | ✅ API marketplace install path |
 | Capability manifest + consent | ⛔ P2 — **highest-value next** |
 | Company registries via git-proxy | ⛔ P3 |
 | Global index + gallery + checksums | ⛔ P4 |

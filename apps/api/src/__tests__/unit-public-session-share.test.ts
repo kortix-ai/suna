@@ -96,7 +96,7 @@ describe('public session preview shares', () => {
     expect(res.status).toBe(200);
     const body = await res.json() as any;
     expect(body.share.proxy_path).toBe(`/v1/p/public-share/${SHARE_TOKEN}/3000/`);
-    expect(body.share.public_url).toBe(`http://p3000-${EXTERNAL_ID}.localhost:8008/?public_share=${SHARE_TOKEN}`);
+    expect(body.share.public_url).toBe(`http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}/3000/`);
     expect(body.share.resource_type).toBe('preview');
   });
 

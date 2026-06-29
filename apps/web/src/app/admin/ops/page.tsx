@@ -238,9 +238,11 @@ function SignalPanel({
   );
 }
 
-function StatusList({ values, label }: { values: Record<string, number>; label?: string }) {
+function StatusList({ values, label }: { values?: Record<string, number> | null; label?: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const entries = Object.entries(values);
+  // Guard against a missing/null map — some overview sections (e.g. channel
+  // events) can be absent, and Object.entries(undefined) would crash the page.
+  const entries = Object.entries(values ?? {});
   return (
     <div className="space-y-2">
       {label && <div className="text-muted-foreground text-xs font-medium uppercase">{label}</div>}

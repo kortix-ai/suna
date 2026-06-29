@@ -11,7 +11,7 @@
  * from-spec path.
  */
 
-import { readFile, rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { platinumJson, isPlatinumConfigured } from '../../shared/platinum';
 import {
@@ -129,7 +129,13 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       const { upload_url, context_s3_key } = await platinumJson<{ upload_url: string; context_s3_key: string }>(
         '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify({}) },
       );
-      const put = await fetch(upload_url, { method: 'PUT', body: new Uint8Array(await readFile(tarPath)) });
+      // STREAM the upload — Bun.file() sends the tarball in chunks, so a
+      // 100s-of-MB context uploads in constant memory. The previous
+      // new Uint8Array(await readFile()) buffered the ENTIRE tarball (twice) in
+      // RAM and OOMKilled the 512Mi api pod (exit 137), 502-ing every session
+      // whose request hit the crashing replica. Daytona never buffers — its SDK
+      // streams the context — so this brings the Platinum path to parity.
+      const put = await fetch(upload_url, { method: 'PUT', body: Bun.file(tarPath) });
       if (!put.ok) throw new Error(`build-context S3 upload -> ${put.status} ${(await put.text().catch(() => '')).slice(0, 200)}`);
 
       const diskGb = Math.min(input.spec.diskGb ?? DEFAULT_DISK_GB, SANDBOX_SPEC_LIMITS.disk.max);
@@ -186,7 +192,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       const { upload_url, context_s3_key } = await platinumJson<{ upload_url: string; context_s3_key: string }>(
         '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify({}) },
       );
-      const put = await fetch(upload_url, { method: 'PUT', body: new Uint8Array(await readFile(gzPath)) });
+      const put = await fetch(upload_url, { method: 'PUT', body: Bun.file(gzPath) }); // streamed — see buildOnce
       if (!put.ok) throw new Error(`agent-swap upload -> ${put.status} ${(await put.text().catch(() => '')).slice(0, 200)}`);
       // Platinum's GENERAL file-patch primitive: patch our one changed file (the
       // kortix-agent binary) into the predecessor's rootfs — no rebuild. The guest

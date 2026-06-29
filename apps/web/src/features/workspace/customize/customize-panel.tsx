@@ -8,14 +8,6 @@ import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/mod
 import { Icon } from '@/features/icon/icon';
 import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
-import {
-  LlmBudgetsView,
-  LlmGatewayEnablePrompt,
-  LlmKeysView,
-  LlmLogsView,
-  LlmOverviewView,
-  LlmProvidersView,
-} from '@/features/workspace/customize/sections/gateway-view';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
 import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
@@ -39,16 +31,12 @@ import {
   Boxes,
   Container,
   FolderOpen,
-  Gauge,
   GitPullRequest,
   KeyRound,
-  KeySquare,
   Monitor,
   Plug,
-  ScrollText,
   Store,
   Terminal,
-  Wallet,
   Webhook,
 } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
@@ -57,6 +45,7 @@ import { FilesSection } from './sections/files-section';
 import { ChangesView } from './sections/view/changes-view';
 import { DevView } from './sections/view/dev-view';
 import { RailGroup, RailItem } from './type';
+import { LlmManagementView } from './sections/gateway-view';
 
 const GROUPS: readonly RailGroup[] = [
   {
@@ -73,6 +62,7 @@ const GROUPS: readonly RailGroup[] = [
       { section: 'connectors', label: 'Connectors', icon: Plug },
       { section: 'secrets', label: 'Secrets', icon: KeyRound },
       { section: 'channels', label: 'Channels', icon: ChatMessages },
+
     ],
   },
   {
@@ -100,16 +90,7 @@ const GROUPS: readonly RailGroup[] = [
   },
 ];
 
-const LLM_GROUP: RailGroup = {
-  label: 'LLM',
-  items: [
-    { section: 'llm-overview', label: 'Overview', icon: Gauge },
-    { section: 'llm-providers', label: 'Providers', icon: Boxes },
-    { section: 'llm-logs', label: 'Logs', icon: ScrollText },
-    { section: 'llm-budgets', label: 'Budgets', icon: Wallet },
-    { section: 'llm-keys', label: 'Keys', icon: KeySquare },
-  ],
-};
+const LLM_ITEM: RailItem = { section: 'llm-management', label: 'LLM', icon: Boxes };
 
 const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', icon: Monitor };
 
@@ -120,20 +101,18 @@ function railGroups(
   marketplaceEnabled: boolean,
   llmGatewayAvailable: boolean,
 ): readonly RailGroup[] {
-  const groups: RailGroup[] = [];
-  for (const g of GROUPS) {
+  return GROUPS.map((g) => {
     if (g.label === 'Build' && marketplaceEnabled) {
-      groups.push({ ...g, items: [...g.items, MARKETPLACE_ITEM] });
-    } else if (g.label === 'Connect' && tunnelEnabled) {
-      groups.push({ ...g, items: [...g.items, COMPUTERS_ITEM] });
-    } else {
-      groups.push(g);
+      return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
     }
-    if (g.label === 'Connect' && llmGatewayAvailable) {
-      groups.push(LLM_GROUP);
+    if (g.label === 'Connect') {
+      const items = [...g.items];
+      if (tunnelEnabled) items.push(COMPUTERS_ITEM);
+      if (llmGatewayAvailable) items.push(LLM_ITEM);
+      return { ...g, items };
     }
-  }
-  return groups;
+    return g;
+  });
 }
 
 export function CustomizPanel({ projectId }: { projectId: string }) {
@@ -161,13 +140,18 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
     [tunnelEnabled, marketplaceEnabled, llmGatewayAvailable],
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
-  const sectionVisible = allItems.some((item) => item.section === section);
+  // `llm-management` stands in for every `llm-*` sub-section so deep-links still work.
+  const sectionVisible = allItems.some((item) =>
+    item.section === 'llm-management'
+      ? section.startsWith('llm-')
+      : item.section === section,
+  );
 
   useEffect(() => {
-    if (open && !sectionVisible && !section.startsWith('llm-')) {
+    if (open && !sectionVisible) {
       setSection(DEFAULT_CUSTOMIZE_SECTION);
     }
-  }, [open, section, sectionVisible, setSection]);
+  }, [open, sectionVisible, setSection]);
 
   return (
     <Modal open={open} onOpenChange={(next) => (next ? undefined : close())}>
@@ -209,7 +193,11 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
                     <li key={item.section} className="shrink-0">
                       <RailButton
                         item={item}
-                        active={section === item.section}
+                        active={
+                          item.section === 'llm-management'
+                            ? section.startsWith('llm-')
+                            : section === item.section
+                        }
                         onClick={() => setSection(item.section)}
                         orientation="horizontal"
                       />
@@ -256,7 +244,11 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
                           <li key={item.section}>
                             <RailButton
                               item={item}
-                              active={section === item.section}
+                              active={
+                                item.section === 'llm-management'
+                                  ? section.startsWith('llm-')
+                                  : section === item.section
+                              }
                               onClick={() => setSection(item.section)}
                             />
                           </li>
@@ -270,13 +262,12 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
           )}
 
           <main className="bg-background flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-            {open && (
+            {open && sectionVisible && (
               <div className="flex min-h-0 flex-1 flex-col">
                 <SectionContent
                   section={section}
                   projectId={projectId}
                   llmGatewayEnabled={llmGatewayEnabled}
-                  onOpenSettings={() => setSection('settings')}
                 />
               </div>
             )}
@@ -322,15 +313,17 @@ function SectionContent({
   section,
   projectId,
   llmGatewayEnabled,
-  onOpenSettings,
 }: {
   section: CustomizeSection;
   projectId: string;
   llmGatewayEnabled: boolean;
-  onOpenSettings: () => void;
 }) {
   if (section.startsWith('llm-') && !llmGatewayEnabled) {
-    return <LlmGatewayEnablePrompt onOpenSettings={onOpenSettings} />;
+    return null;
+  }
+
+  if (section.startsWith('llm-')) {
+    return <LlmManagementView projectId={projectId} />;
   }
 
   switch (section) {
@@ -348,16 +341,6 @@ function SectionContent({
       return <SecretsView projectId={projectId} />;
     case 'channels':
       return <ChannelsView projectId={projectId} />;
-    case 'llm-overview':
-      return <LlmOverviewView projectId={projectId} />;
-    case 'llm-providers':
-      return <LlmProvidersView projectId={projectId} />;
-    case 'llm-logs':
-      return <LlmLogsView projectId={projectId} />;
-    case 'llm-budgets':
-      return <LlmBudgetsView projectId={projectId} />;
-    case 'llm-keys':
-      return <LlmKeysView projectId={projectId} />;
     case 'computers':
       return <ComputersView projectId={projectId} />;
     case 'schedules':

@@ -23,7 +23,6 @@ import {
   Search,
   ShieldAlert,
   ShieldCheck,
-  Slack,
   Trash2,
   Zap,
   type LucideIcon,
@@ -143,6 +142,10 @@ const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'd
   destructive: 'destructive',
 };
 
+const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
+const SLACK_ICON_SRC = 'https://www.google.com/s2/favicons?domain=slack.com&sz=128';
+
+/** Forward-facing provider label — "App" for the 1-click (Pipedream) connectors. */
 function providerLabel(p: AdminConnector['provider']): string {
   if (p === 'pipedream') return 'App';
   if (p === 'channel') return 'Channel';
@@ -1334,7 +1337,7 @@ function EmailSenderPolicyEditor({
   );
 }
 
-function EmailConnectForm({
+export function EmailConnectForm({
   projectId,
   connectorSlug,
   onConnected,
@@ -1677,7 +1680,7 @@ function ConnectedSlackProfile({
   );
 }
 
-function SlackConnectForm({
+export function SlackConnectForm({
   projectId,
   onConnected,
 }: {
@@ -1725,7 +1728,7 @@ function SlackConnectForm({
       ) : installUrl ? (
         <InfoBanner
           tone="info"
-          icon={Slack}
+          icon={<SlackLogo />}
           title="Add Kortix to your Slack workspace"
           action={
             <Button size="sm" className="shrink-0 gap-1.5" asChild>
@@ -1739,7 +1742,7 @@ function SlackConnectForm({
           One-click install - authorize Kortix in your workspace, no setup required.
         </InfoBanner>
       ) : (
-        <InfoBanner tone="warning" icon={Slack} title="Managed Slack install is not configured">
+        <InfoBanner tone="warning" icon={<SlackLogo />} title="Managed Slack install is not configured">
           Use a custom Slack app for this deployment.
         </InfoBanner>
       )}
@@ -2923,6 +2926,36 @@ function ChannelCatalogue({
   );
 }
 
+/**
+ * The real Slack logo — the single Slack mark used everywhere across the
+ * connectors + channels surface (catalogue cards, channel cards, connect flow),
+ * so Slack always reads as Slack and never as a generic glyph. Sized by
+ * `className`; defaults to `size-4`.
+ */
+export function SlackLogo({ className }: { className?: string }) {
+  return (
+    <span className={cn('relative inline-flex size-4 shrink-0', className)}>
+      <Image
+        src={SLACK_ICON_SRC}
+        alt=""
+        referrerPolicy="no-referrer"
+        fill
+        sizes="32px"
+        className="object-contain"
+        unoptimized
+      />
+    </span>
+  );
+}
+
+function SlackIconTile() {
+  return (
+    <span className="border-border/60 bg-card relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border">
+      <SlackLogo className="size-7" />
+    </span>
+  );
+}
+
 function slugifyConnector(input: string): string {
   const slug = input
     .trim()
@@ -3057,7 +3090,7 @@ function AddSlackProfileCard({
         className="group border-border/60 bg-card hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:ring-primary/50 flex flex-col rounded-2xl border p-4 text-left transition-all hover:shadow-sm focus-visible:ring-2 focus-visible:outline-none"
       >
         <div className="flex items-center gap-3">
-          <EntityAvatar icon={Slack} size="sm" />
+          <SlackIconTile />
           <div className="min-w-0 flex-1">
             <div className="text-foreground truncate text-sm font-semibold">Slack</div>
             <div className="text-muted-foreground truncate text-xs">Built-in channel</div>
@@ -3106,6 +3139,7 @@ function AppCatalogue({
   });
   const [configApp, setConfigApp] = useState<{ slug: string; name: string } | null>(null);
   const apps = (appsQuery.data?.pages ?? []).flatMap((p) => p.apps);
+  const visibleApps = apps.filter((app) => !BUILT_IN_CHANNEL_APP_SLUGS.has(app.slug));
   const notConfigured =
     appsQuery.isError && /501|not configured/i.test((appsQuery.error as Error)?.message ?? '');
 
@@ -3141,7 +3175,7 @@ function AppCatalogue({
               <Skeleton key={i} className="h-[104px] w-full rounded-md" />
             ))}
           </div>
-        ) : apps.length === 0 ? (
+        ) : visibleApps.length === 0 ? (
           <EmptyState
             icon={Search}
             title={tI18nHardcoded.raw(
@@ -3152,7 +3186,7 @@ function AppCatalogue({
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {apps.map((app) => (
+              {visibleApps.map((app) => (
                 <button
                   key={app.slug}
                   type="button"
@@ -3561,7 +3595,7 @@ function connectionValid(d: ConnectorDraftInput, emailChannelEnabled = true): bo
   return true;
 }
 
-function CustomConnectorForm({
+export function CustomConnectorForm({
   projectId,
   emailChannelEnabled,
   onAdded,

@@ -13,6 +13,7 @@ export interface ChannelSelection {
   projectId: string;
   agentName: string | null;
   opencodeModel: string | null;
+  conversationPolicy: string | null;
 }
 
 export interface ChannelCtx {
@@ -23,13 +24,14 @@ export interface ChannelCtx {
 /** The channel's bound project + its agent/model overrides, or null if unbound. */
 export async function currentChannelSelection(ctx: ChannelCtx): Promise<ChannelSelection | null> {
   if (!ctx.channelId) return null;
-  let binding: { projectId: string | null; agentName: string | null; opencodeModel: string | null } | undefined;
+  let binding: { projectId: string | null; agentName: string | null; opencodeModel: string | null; conversationPolicy: string | null } | undefined;
   try {
     [binding] = await db
       .select({
         projectId: chatChannelBindings.projectId,
         agentName: chatChannelBindings.agentName,
         opencodeModel: chatChannelBindings.opencodeModel,
+        conversationPolicy: chatChannelBindings.conversationPolicy,
       })
       .from(chatChannelBindings)
       .where(and(
@@ -42,14 +44,35 @@ export async function currentChannelSelection(ctx: ChannelCtx): Promise<ChannelS
     if (!isMissingSelectionColumnError(err)) throw err;
     console.warn('[slack-selection] optional channel override columns missing; falling back to project-only routing');
     const projectId = await currentChannelProjectId(ctx);
-    return projectId ? { projectId, agentName: null, opencodeModel: null } : null;
+    return projectId ? { projectId, agentName: null, opencodeModel: null, conversationPolicy: null } : null;
   }
   if (!binding?.projectId) return null;
   return {
     projectId: binding.projectId,
     agentName: binding.agentName ?? null,
     opencodeModel: binding.opencodeModel ?? null,
+    conversationPolicy: binding.conversationPolicy ?? null,
   };
+}
+
+export async function setChannelConversationPolicy(ctx: ChannelCtx, conversationPolicy: string): Promise<boolean> {
+  if (!ctx.channelId) return false;
+  try {
+    const rows = await db
+      .update(chatChannelBindings)
+      .set({ conversationPolicy })
+      .where(and(
+        eq(chatChannelBindings.platform, 'slack'),
+        eq(chatChannelBindings.workspaceId, ctx.teamId),
+        eq(chatChannelBindings.channelId, ctx.channelId),
+      ))
+      .returning({ id: chatChannelBindings.bindingId });
+    return rows.length > 0;
+  } catch (err) {
+    if (!isMissingSelectionColumnError(err)) throw err;
+    console.warn('[slack-selection] conversation policy column missing; ignoring policy update');
+    return false;
+  }
 }
 
 /**
@@ -119,7 +142,8 @@ function isMissingSelectionColumnError(err: unknown): boolean {
   ].filter(Boolean).join('\n');
   return (
     parts.includes('column "agent_name" does not exist') ||
-    parts.includes('column "opencode_model" does not exist')
+    parts.includes('column "opencode_model" does not exist') ||
+    parts.includes('column "conversation_policy" does not exist')
   );
 }
 
@@ -157,36 +181,12 @@ export async function listProjectAgents(projectId: string): Promise<ProjectAgent
   }));
 }
 
-// Curated flagship models offered in the `/kortix models` picker. These are the
-// common picks; ANY `provider/model` string is accepted via `/kortix model
-// <id>` (whatever the project's connected providers expose). The list is
-// hand-maintained rather than derived from the bundled models.dev catalog,
-// which lags real availability (e.g. ships claude-opus-4-7, not 4-8).
-export interface RecommendedModel {
-  id: string;
-  label: string;
-  hint: string;
-}
-
-export const RECOMMENDED_MODELS: RecommendedModel[] = [
-  { id: 'anthropic/claude-opus-4-8', label: 'Claude Opus 4.8', hint: 'Most capable' },
-  { id: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6', hint: 'Balanced, fast' },
-  { id: 'openai/gpt-5.5', label: 'GPT-5.5', hint: 'OpenAI flagship' },
-  { id: 'google/gemini-3-pro-preview', label: 'Gemini 3 Pro', hint: 'Google flagship' },
-];
-
 /**
- * A model id is usable if it's a non-empty `provider/model` pair. We don't
- * validate against the bundled catalog — it's a stale snapshot and would reject
- * legitimately-available newer models. The sandbox daemon already falls back to
- * the configured default when the id is malformed or the model is unavailable.
+ * A model id is shaped like a usable ref if it's a non-empty `provider/model`
+ * pair (or `kortix/<id>`). Shape only — real servability is enforced separately
+ * via `isModelServableForAccount` against the account's tier + connected keys.
  */
 export function isValidModelId(s: string): boolean {
   const slash = s.indexOf('/');
   return slash > 0 && slash < s.length - 1 && !/\s/.test(s);
-}
-
-/** Friendly label for a model id — the recommended label, else the raw id. */
-export function modelLabel(id: string): string {
-  return RECOMMENDED_MODELS.find((m) => m.id === id)?.label ?? id;
 }

@@ -1,6 +1,6 @@
 /**
- * Sandboxes / snapshots — read surfaces + build triggers + template CRUD +
- * warm pool config. Maps to spec §SNAP-* / §SBX-*.
+ * Sandboxes / snapshots — read surfaces + build triggers + template CRUD.
+ * Maps to spec §SNAP-* / §SBX-*.
  *
  * Existing spec ids:
  *   SNAP-1  GET  /snapshots                (read)
@@ -12,8 +12,6 @@
  *   SNAP-3  POST /snapshots/fix-with-agent
  *   SBX-3   GET  /sandboxes  + GET /sandbox-health  + GET /sandbox-templates
  *   SBX-4   sandbox-templates CRUD (POST / PATCH / DELETE / build)
- *   SBX-5   warm-pool GET + PATCH
- *
  * All build triggers are asserted at the TRIGGER response only — we never wait
  * on a real Daytona build to finish. rebuild/build are fire-and-forget → 202.
  */
@@ -293,65 +291,6 @@ flow(
           { slug: "nope", image: "ubuntu:22.04" },
           { params: { projectId: p.id } },
         );
-      r.status(401);
-    });
-  },
-);
-
-// ─── SBX-5: warm pool config ───────────────────────────────────────────────
-flow(
-  "SBX-5",
-  {
-    domain: "sandboxes",
-    routes: [
-      "GET /v1/projects/:projectId/warm-pool",
-      "PATCH /v1/projects/:projectId/warm-pool",
-    ],
-  },
-  async (ctx) => {
-    const p = await ctx.fixtures.project();
-    await ctx.step("GET warm-pool → 200 with config", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/warm-pool", { params: { projectId: p.id } });
-      r.status(200).body().exists("$.enabled").exists("$.size");
-    });
-    await ctx.step("PATCH warm-pool size → 200", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch(
-          "/v1/projects/:projectId/warm-pool",
-          { enabled: true, size: 2 },
-          { params: { projectId: p.id } },
-        );
-      // Handler clamps + persists; returns the serialized project (200). Bad
-      // body coerces to defaults rather than 400, but accept 400 defensively.
-      r.status([200, 400]).body().exists("$.project_id");
-    });
-    await ctx.step("PATCH warm-pool disable → 200", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch(
-          "/v1/projects/:projectId/warm-pool",
-          { enabled: false },
-          { params: { projectId: p.id } },
-        );
-      r.status([200, 400]);
-    });
-    await ctx.step("NONMEMBER PATCH → 403/404", async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .patch(
-          "/v1/projects/:projectId/warm-pool",
-          { size: 1 },
-          { params: { projectId: p.id } },
-        );
-      r.status([403, 404]);
-    });
-    await ctx.step("ANON GET → 401", async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/warm-pool", { params: { projectId: p.id } });
       r.status(401);
     });
   },

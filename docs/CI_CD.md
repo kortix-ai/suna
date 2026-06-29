@@ -26,25 +26,19 @@ PR staging → prod ─ qa-release.yml .. full suite in sequence + gates (blocki
 merge to prod ─── deploy-prod.yml . retag staging→version images, node-pg-migrate prod DB, publish, GitOps prod roll
 ```
 
-Deploy lanes: `deploy-dev.yml` (main→dev, Trivy CRITICAL gate + SBOM + cosign + dev DB migrations + EKS GitOps), `build-staging.yml` / `deploy-staging.yml` / `qa-staging.yml` (staging release-candidate artifacts + staging DB migrations + e2e), `deploy-preview.yml` (PR→Vercel preview), `deploy-prod.yml` (prod DB migrations + EKS GitOps), `hotfix-prod.yml` (break-glass — see below). IaC: `terraform-ci.yml`, `drata-compliance.yml`, `security-scan.yml` (weekly).
+Deploy lanes: `deploy-dev.yml` (main→dev, Trivy CRITICAL gate + SBOM + cosign + dev DB migrations + EKS GitOps), `build-staging.yml` / `deploy-staging.yml` / `qa-staging.yml` (staging release-candidate artifacts + staging DB migrations + e2e), `deploy-preview.yml` (PR→Vercel preview), `promote.yml` (opens the reviewed staging→prod release PR), `deploy-prod.yml` (prod DB migrations + EKS GitOps). IaC: `terraform-ci.yml`, `drata-compliance.yml`, `security-scan.yml` (weekly).
 
-## Emergency hotfix (break-glass)
+## Urgent production fixes
 
-When an incident needs a fix faster than the ~3h `qa-release` gate allows, `hotfix-prod.yml`
-**bypasses the full release suite** — but not all safety. It is `workflow_dispatch`-only and requires:
-a `production-hotfix` GitHub Environment approval (required reviewers), a typed `confirm: HOTFIX PROD`,
-and a mandatory `reason`. It still runs **fast safety checks** (`make typecheck unit contract api-coverage`,
-plus optional Docker `integration`), builds the **exact** version images, and pushes the release commit
-to `prod` — which triggers the normal `deploy-prod.yml` publish/rollout (no rebuild). So tagging and
-deploy stay centralized; only the heavy regression/perf/security suites are skipped.
+Use the same release lane as every other production change:
 
-**Slack alerting** (via `.github/scripts/slack-notify.sh`, posting to `SLACK_HOTFIX_CHANNEL` or the
-release channel): 🚨 *initiated* (the moment a break-glass run starts, with reason + who), ✅ *pushed to
-prod*, and ❌ *FAILED* (if the run dies before the prod push — prod left unchanged). `deploy-prod` then
-posts its own 🚀 *is live* message. Alerts skip gracefully if Slack secrets are unset.
+1. Land the fix on `main`, or open a targeted branch directly into `staging`.
+2. Advance `staging` by PR.
+3. Let `build-staging.yml`, `deploy-staging.yml`, and `qa-staging.yml` produce and verify staging artifacts.
+4. Run `promote.yml` to open the reviewed release PR into `prod`.
+5. Merge the release PR; `deploy-prod.yml` publishes and rolls production.
 
-Use it only when waiting for the full gate would materially prolong a production incident; everything
-it skipped is still owed afterward (open a follow-up PR through the normal path).
+There is no separate workflow that pushes `prod` directly. Keeping the single staging→prod path avoids image/source drift, branch-protection bypasses, and Slack noise from failed partial release attempts.
 
 ## What blocks a merge
 
@@ -98,9 +92,9 @@ If a UI target var is unset, `qa-staging` **skips browser regression with a noti
 
 ## Required repo configuration (one-time)
 
-- **Secrets:** `DOTENV_PRIVATE_KEY` (api suite), `KE2E_*` (ke2e), `QA_REPORTS_ROLE_ARN`, `DRATA_IAC_PIPELINE_KEY`, `SLACK_BOT_TOKEN` + `SLACK_RELEASE_CHANNEL` (release/hotfix alerts), `SLACK_HOTFIX_CHANNEL` (optional dedicated incident channel; falls back to release channel), `PROD_HOTFIX_TOKEN` (optional, if branch protection blocks the bot push).
+- **Secrets:** `DOTENV_PRIVATE_KEY` (api suite), `KE2E_*` (ke2e), `QA_REPORTS_ROLE_ARN`, `DRATA_IAC_PIPELINE_KEY`, `SLACK_BOT_TOKEN` + `SLACK_RELEASE_CHANNEL` (release alerts).
 - **Vars:** `QA_WEB_BASE_URL` (enables UI regression), `A11Y_CONTRAST_MAX`, `QA_REPORTS_BUCKET`, `QA_AWS_REGION`, `QA_REPORTS_PUBLIC_BASE_URL`, `MIN_COVERAGE`.
-- **Branch protection:** keep `main` push-friendly (no force/delete), keep `staging` as the pre-prod branch for PR-based human/code changes plus bot GitOps pin commits, require `qa-release` on `prod`; create the `production-hotfix` environment with reviewers. See `docs/specs/2026-06-25-dev-staging-prod-release-topology.md`.
+- **Branch protection:** keep `main` push-friendly (no force/delete), keep `staging` as the pre-prod branch for PR-based human/code changes plus bot GitOps pin commits, require `qa-release` on `prod`. See `docs/specs/2026-06-25-dev-staging-prod-release-topology.md`.
 - **Staging DB isolation:** `deploy-staging.yml` must fail if `STAGING_DATABASE_URL`
   is missing; staging must not fall back to dev, KE2E, or prod Postgres for
   migrations or runtime.

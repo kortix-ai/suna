@@ -12,7 +12,6 @@ interface GatewayModel {
   released?: string | null;
   release_date?: string | null;
   family?: string;
-  free?: boolean;
   reasoning?: boolean;
   tool_call?: boolean;
   attachment?: boolean;
@@ -88,7 +87,7 @@ export function managedModels(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   // AUTO is synthetic (not a real model): it accepts images because pickAutoModel
   // routes image-bearing requests to a vision-capable model. Its window matches
-  // its default target (Fusion) so OpenCode sizes conversations the same.
+  // its default target so OpenCode sizes conversations the same.
   out[AUTO_MODEL_ID] = {
     name: "Auto",
     reasoning: false,
@@ -103,7 +102,6 @@ export function managedModels(): Record<string, GatewayModel> {
   for (const m of MANAGED_MODELS) {
     out[m.id] = {
       name: m.name,
-      free: m.free,
       reasoning: true,
       tool_call: true,
       attachment: m.vision,
@@ -155,20 +153,31 @@ export function gatewayCodexModels(): Record<string, GatewayModel> {
 }
 
 // The served catalog depends only on the committed CATALOG snapshot and process
-// env (codex ids) — never on the caller. So the two shapes are each built ONCE,
-// at module load, instead of rebuilt (iterating ~5k models) on every /models
-// request and sandbox boot.
+// env (codex ids) — never on the caller. So the shapes are each built ONCE, at
+// module load, instead of rebuilt (iterating ~5k models) on every /models
+// request and sandbox boot. Free-tier accounts get no managed Kortix models;
+// BYOK/Codex are unchanged once a project is scoped.
 const MANAGED_ONLY: Record<string, GatewayModel> = managedModels();
-const FULL_CATALOG: Record<string, GatewayModel> = {
-  ...MANAGED_ONLY,
+const BYOK_AND_CODEX: Record<string, GatewayModel> = {
   ...gatewayModelsAll(),
   ...gatewayCodexModels(),
 };
+const FULL_CATALOG: Record<string, GatewayModel> = {
+  ...MANAGED_ONLY,
+  ...BYOK_AND_CODEX,
+};
+const EMPTY_CATALOG: Record<string, GatewayModel> = {};
 
-// `projectId` gates BYOK/codex visibility (anonymous callers see managed only) —
-// it is NOT a per-project filter, so both shapes are shared singletons.
+// `projectId` gates BYOK/codex visibility (anonymous callers see managed only).
+// `freeManagedOnly` (a free-tier account with internal billing on) hides every
+// managed Kortix model. A free user's own connected provider keys still work,
+// but there is no unreliable platform-managed free default.
 export function gatewayModelCatalog(
   projectId: string | undefined,
+  opts?: { freeManagedOnly?: boolean },
 ): Record<string, GatewayModel> {
+  if (opts?.freeManagedOnly) {
+    return projectId ? BYOK_AND_CODEX : EMPTY_CATALOG;
+  }
   return projectId ? FULL_CATALOG : MANAGED_ONLY;
 }

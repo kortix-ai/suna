@@ -62,7 +62,6 @@ describe('kortix enums', () => {
       'active',
       'stopped',
       'archived',
-      'pooled',
       'error',
     ]);
   });

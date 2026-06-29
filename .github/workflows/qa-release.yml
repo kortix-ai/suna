@@ -58,6 +58,10 @@ jobs:
       KE2E_DATABASE_URL: ${{ secrets.KE2E_DATABASE_URL }}
       KE2E_STRIPE_SECRET_KEY: ${{ secrets.KE2E_STRIPE_SECRET_KEY }}
       KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.KE2E_STRIPE_WEBHOOK_SECRET }}
+      # staging.kortix.com sits behind Vercel deployment protection (SSO); the
+      # Playwright configs send this as x-vercel-protection-bypass so the browser
+      # suite can reach the app instead of the Vercel login wall.
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -109,25 +113,41 @@ jobs:
         run: cd tests && bun install --frozen-lockfile
       - name: Install workspace dependencies
         run: corepack enable pnpm && pnpm install --frozen-lockfile
+      # ── Opt-in FAST-TRACK ──────────────────────────────────────────────────
+      # Set repo variable RELEASE_FAST_TRACK=true to skip the slow live lanes
+      # (Playwright/browser e2e, the ~278-flow API suite, migration+infra,
+      # advisory security) so this required gate clears in a few minutes instead
+      # of 6-16. The cheap, deterministic safety net — lint + typecheck + unit +
+      # contract + api-coverage and the final quality gates — STILL runs, so
+      # build-breakers are still caught. Unset the variable (or set it to false)
+      # to restore the full pre-prod gate. promote.yml has a matching skip.
+      - name: Fast-track notice
+        if: vars.RELEASE_FAST_TRACK == 'true'
+        run: echo "::warning::RELEASE_FAST_TRACK=true — skipping browser/e2e, API flow suite, migration+infra, and advisory security. Static checks + quality gates still run. Unset RELEASE_FAST_TRACK to restore the full pre-prod gate."
       - name: Install Playwright Chromium
+        if: vars.RELEASE_FAST_TRACK != 'true'
         run: cd tests && npx playwright install --with-deps chromium
 
       - name: Static + local functional checks
         run: make lint typecheck unit integration contract api-coverage
 
       - name: Live API smoke
+        if: vars.RELEASE_FAST_TRACK != 'true'
         timeout-minutes: 10
         run: make smoke
-      # The full ke2e API flow suite (~278 live flows) is OFF by default: dev is
-      # already exercised by its own tests, and running the funded suite against
-      # it adds load + time. Opt in by setting repo var QA_RUN_API_SUITE=true once
-      # we wire it against a dedicated target.
-      - name: API flow suite (opt-in)
-        if: vars.QA_RUN_API_SUITE == 'true'
+      # The full ke2e API flow suite (~278 live flows) runs against staging-api
+      # (QA_API_BASE_URL) as a BLOCKING pre-prod gate, enabled via repo var
+      # QA_RUN_API_SUITE=true. It catches HTTP-contract regressions the browser
+      # and unit gates miss — e.g. an unmounted route returning 404 (CHN-16, which
+      # is exactly how the AgentMail inbound webhook reached prod broken). Flip the
+      # repo var to false only to temporarily skip it.
+      - name: API flow suite
+        if: vars.QA_RUN_API_SUITE == 'true' && vars.RELEASE_FAST_TRACK != 'true'
         timeout-minutes: 45
         run: make api
 
       - name: Browser regression
+        if: vars.RELEASE_FAST_TRACK != 'true'
         timeout-minutes: 30
         run: |
           make e2e a11y
@@ -137,6 +157,7 @@ jobs:
           make visual || echo "::warning::Visual regression failed (advisory — live target). See the QA report for diffs."
 
       - name: Migration + infra
+        if: vars.RELEASE_FAST_TRACK != 'true'
         timeout-minutes: 20
         run: make migration infra
       # Static SAST/deps/secrets is advisory: the scanners are noisy (gitleaks
@@ -144,6 +165,7 @@ jobs:
       # CVEs) and real secrets are already gated by secret-scan.yml + the
       # pre-commit hook. It still runs and its SARIF lands in the report.
       - name: Static security (advisory)
+        if: vars.RELEASE_FAST_TRACK != 'true'
         timeout-minutes: 15
         run: make security-fast || echo "::warning::static security scan reported findings (advisory — see SARIF; real-secret gate lives in secret-scan.yml)"
       # The exhaustive, scan-the-whole-app lanes — mutation (Stryker), black-box
@@ -168,13 +190,15 @@ jobs:
           npx allure generate test-results/allure-results -o test-results/allure-report || true
           npm run catalog || true
       - name: AWS auth for report publish
+        id: aws-report-auth
         if: always() && env.QA_REPORTS_ROLE_ARN != '' && env.QA_REPORTS_BUCKET != '' && env.QA_REPORTS_PUBLIC_BASE_URL != ''
+        continue-on-error: true
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.QA_REPORTS_ROLE_ARN }}
           aws-region: ${{ vars.QA_AWS_REGION }}
       - name: Publish release Allure report
-        if: always() && env.QA_REPORTS_ROLE_ARN != '' && env.QA_REPORTS_BUCKET != '' && env.QA_REPORTS_PUBLIC_BASE_URL != ''
+        if: always() && steps.aws-report-auth.outcome == 'success'
         run: |
           set -euo pipefail
           run_key="release/${{ github.run_id }}"

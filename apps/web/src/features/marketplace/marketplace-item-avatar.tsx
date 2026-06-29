@@ -24,8 +24,8 @@ import {
 } from 'lucide-react';
 
 import { EntityAvatar, type EntityAvatarSize } from '@/components/ui/entity-avatar';
-import { cn } from '@/lib/utils';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
+import { cn } from '@/lib/utils';
 import { MarketplaceAvatar } from './marketplace-avatar';
 
 // A curated, "capability"-flavored icon pool. Every skill is assigned one mark
@@ -66,7 +66,7 @@ function hashOf(s: string): number {
   return h;
 }
 
-type ItemLike = Pick<
+export type MarketplaceItemAvatarItem = Pick<
   MarketplaceItem,
   'name' | 'id' | 'marketplaceId' | 'marketplaceLabel' | 'owner' | 'sourceUrl'
 >;
@@ -82,7 +82,7 @@ export function MarketplaceItemAvatar({
   showSource = true,
   className,
 }: {
-  item: ItemLike;
+  item: MarketplaceItemAvatarItem;
   size?: keyof typeof SIZE_TO_ENTITY;
   /** Render the source favicon corner badge (hide when already browsing one source). */
   showSource?: boolean;
@@ -93,7 +93,10 @@ export function MarketplaceItemAvatar({
   const hasSource = !!(item.owner || item.sourceUrl);
 
   return (
-    <span className={cn('relative inline-flex shrink-0', className)}>
+    <span
+      className={cn('relative inline-flex shrink-0', className)}
+      data-marketplace-avatar-name={item.name}
+    >
       <EntityAvatar label={seed} icon={Icon} size={SIZE_TO_ENTITY[size]} />
       {showSource && hasSource && (
         <span className="ring-background absolute -right-1 -bottom-1 inline-flex rounded-sm ring-2">

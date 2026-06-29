@@ -1,9 +1,10 @@
 /**
  * Agent-minted SETUP LINKS — the authenticated half.
  *
- * The in-sandbox agent (its KORTIX_TOKEN is a project-scoped PAT, accepted by
- * supabaseAuth) calls these to mint a short-lived link it can hand to a human
- * to (a) enter a project secret value, or (b) 1-click connect a Pipedream app.
+ * The in-sandbox agent (its KORTIX_EXECUTOR_TOKEN / KORTIX_CLI_TOKEN is a
+ * session-scoped PAT, accepted by supabaseAuth) calls these to mint a
+ * short-lived link it can hand to a human to (a) enter a project secret value,
+ * or (b) 1-click connect a Pipedream app.
  * The link itself is resolved/submitted by the PUBLIC app at /v1/setup-links/*.
  *
  * See ../../setup-links/token.ts for the stateless token model and

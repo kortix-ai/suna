@@ -190,7 +190,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 className="flex w-full items-center justify-between gap-1"
               >
                 <Button type="button" variant="ghost" size="icon" asChild>
-                  <Link href="/projects">
+                  <Link href={`/projects/${projectId}`}>
                     <Icon.Kortix className="text-foreground size-4.5" />
                   </Link>
                 </Button>

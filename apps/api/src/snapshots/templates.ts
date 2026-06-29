@@ -13,6 +13,7 @@
 
 import { and, eq, isNull, ne, or } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
+import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
 import { readManifest } from '../projects/triggers';
@@ -54,8 +55,6 @@ const CLI_PKG_JSON = resolve(REPO_ROOT, 'apps/cli/package.json');
 const MANIFEST_SCHEMA_SRC_DIR = resolve(REPO_ROOT, 'packages/manifest-schema/src');
 const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'] as const;
 
-const OPENCODE_VERSION = '1.15.10';
-const AGENT_BROWSER_VERSION = '0.27.0';
 // Bump when the rendered Kortix Dockerfile layer changes (the Dockerfile text
 // itself is not hashed into the snapshot fingerprint, so a layer change needs a
 // manual version bump to invalidate cached images). v2: bake OpenCode config
@@ -67,7 +66,13 @@ const AGENT_BROWSER_VERSION = '0.27.0';
 // browser-automation skill works out of the box with no runtime download.
 // v12: bake the full LLM model catalog (/opt/kortix/llm-catalog.json) so the
 // no-restart warm seed serves the full picker without a PARK-time fetch.
-const RUNTIME_LAYER_VERSION = 'baked-chromium-v12-llm-catalog';
+// v14: bake the COMPLETE config-dir deps (incl. @opencode-ai/plugin + its effect/
+// zod/sdk tree + overrides) instead of a partial hardcoded list.
+// v15: pin the baked @opencode-ai/plugin to the OPENCODE BINARY version (opencode
+// loads the plugin SDK matching its own binary and re-fetches it over the network
+// if the baked tree carries a different version — the stale starter pin left every
+// boot re-installing it, the ~5–8s opencode-session-created gap).
+const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v15';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 6);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

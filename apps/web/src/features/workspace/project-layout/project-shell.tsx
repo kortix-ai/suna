@@ -6,6 +6,7 @@ import { Suspense, lazy, useCallback, useEffect, useLayoutEffect } from 'react';
 
 import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
+import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { useSidebar } from '@/components/ui/sidebar';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -143,6 +144,8 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         <CustomizPanel projectId={projectId} />
 
         <AppsOverlay projectId={projectId} />
+
+        <ProjectOnboardingWizard projectId={projectId} />
 
         <PersonalOnboardingWelcome projectId={projectId} />
       </AppProviders>

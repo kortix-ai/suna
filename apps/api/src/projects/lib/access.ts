@@ -2,22 +2,21 @@ import { isSessionVisibleTo, loadSessionGrants, resolveShareSubject, type Secret
 import { authorize } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { auth } from '../../openapi';
-import { notePoolPresence } from '../../platform/services/warm-pool';
 import { preResumeRecentStoppedSessions } from '../routes/shared';
 import { db } from '../../shared/db';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { getSupabase } from '../../shared/supabase';
 import { ttlMemo } from '../../shared/ttl-memo';
 import { effectiveProjectRole, roleAllows, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
-import { accountMembers, projectMembers, projectSessions, projects } from '@kortix/db';
+import { accountMembers, accountUser, accounts, projectMembers, projectSessions, projects } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { maxProjectsForAccount } from '../../shared/account-limits';
+import { FREE_TIER_PROJECT_LIMIT, maxProjectsForAccount } from '../../shared/account-limits';
 import { getAccountMembership } from './git';
 import { ProjectRow, ProjectSessionRow, normalizeString } from './serializers';
 
-// Enforce the per-account project cap (free → 1, paid → effectively uncapped).
+// Enforce the per-account project cap (free → 3, paid → effectively uncapped).
 // Returns a 403 Response to send, or null when the account may create another
 // project. `repoUrl`, when supplied, makes re-linking a repo the account already
 // owns idempotent — that's an update, not a new project, so it never trips the
@@ -50,8 +49,8 @@ export async function enforceProjectQuota(
     return c.json(
       {
         error:
-          limit === 1
-            ? 'Free accounts are limited to 1 project. Upgrade to a paid plan to create more.'
+          limit === FREE_TIER_PROJECT_LIMIT
+            ? `Free accounts are limited to ${limit} projects. Upgrade to a paid plan to create more.`
             : `This account has reached its limit of ${limit} projects.`,
         code: 'project_limit_reached',
         limit,
@@ -187,6 +186,36 @@ export async function ensureOrgMembership(
   return 'member';
 }
 
+async function repairLegacyRequestedAccountMembership(userId: string, accountId: string) {
+  try {
+    const [legacy] = await db
+      .select({ accountId: accountUser.accountId })
+      .from(accountUser)
+      .where(and(eq(accountUser.userId, userId), eq(accountUser.accountId, accountId)))
+      .limit(1);
+    if (!legacy) return null;
+
+    await db
+      .insert(accounts)
+      .values({ accountId, name: 'Account' })
+      .onConflictDoNothing();
+    await db
+      .insert(accountMembers)
+      .values({
+        userId,
+        accountId,
+        accountRole: 'owner',
+        isSuperAdmin: true,
+      })
+      .onConflictDoNothing();
+
+    return await getAccountMembership(userId, accountId);
+  } catch (err) {
+    console.warn('[projects] Failed to repair legacy account membership:', err);
+    return null;
+  }
+}
+
 
 export async function lookupEmailsByUserIds(userIds: string[]): Promise<Map<string, string | null>> {
   const result = new Map<string, string | null>();
@@ -216,7 +245,10 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
   );
   const accountId = requested ?? await resolveAccountId(userId);
 
-  const membership = await getAccountMembership(userId, accountId);
+  const existingMembership = await getAccountMembership(userId, accountId);
+  const membership =
+    existingMembership ??
+    (requested ? await repairLegacyRequestedAccountMembership(userId, accountId) : null);
   if (!membership) {
     throw new HTTPException(403, { message: 'You do not have access to this account' });
   }
@@ -239,6 +271,11 @@ export function iamActionForProjectAccess(action: ProjectAccessAction): string {
   switch (action) {
     case 'read':
       return 'project.read';
+    case 'session':
+      // Starting / running / stopping a session. Granted to every project
+      // role (viewer included) so the default role can actually use Kortix,
+      // while project customization stays behind project.write.
+      return 'project.session.start';
     case 'write':
       return 'project.write';
     case 'manage':
@@ -340,19 +377,9 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
     effectiveProjectRole(accountRole, projectRole) ?? 'viewer';
   (c as any).set('accountId', row.accountId);
 
-  // Presence signal for the warm pool: an authenticated user touching the
-  // project (loading it, polling its sessions) means they're around and likely
-  // to start a session — keep a warm box ready. No-op unless the pool is on;
-  // throttled internally. Only members who can launch sessions count.
-  // Skip on the explicit leave beacon: the user is LEAVING the project, so
-  // recording presence (would re-arm a spare) or pre-resuming a session there is
-  // exactly backwards — the leave handler drops presence + reaps instead.
-  const isLeaveBeacon = !!(c as any).req?.path?.endsWith?.('/presence/leave');
-  if (!isLeaveBeacon && (action !== 'read' || roleAllows(effectiveRole as ProjectRole, 'write'))) {
-    notePoolPresence(projectId, row.accountId);
-    // Same presence signal drives pre-resume: proactively wake the user's most
-    // recently-stopped session(s) so the resume overlaps their navigation.
-    // No-op unless KORTIX_PRERESUME_ENABLED; throttled + idempotent internally.
+  if (action !== 'read' || roleAllows(effectiveRole as ProjectRole, 'write')) {
+    // Proactively wake the user's most recently-stopped session(s) so the resume
+    // overlaps their navigation. No-op unless KORTIX_PRERESUME_ENABLED.
     preResumeRecentStoppedSessions(projectId, userId);
   }
 

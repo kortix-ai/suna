@@ -4,7 +4,6 @@ import { db } from '../shared/db';
 import { deleteRemoteSessionBranch, type GitBackedProject } from './git';
 import { tickRunningComputeCharges } from '../billing/services/compute-metering';
 import { reconcileStaleBuilds } from '../snapshots/builder';
-import { reconcileWarmPool } from '../platform/services/warm-pool';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import {
   reapAndReconcileSandboxes,
@@ -145,7 +144,7 @@ async function runProjectMaintenance(): Promise<void> {
   if (maintenanceRunning) return;
   maintenanceRunning = true;
   try {
-    const [idle, orphanCompute, stuckSessions, orphanBoxes, branches, computeTick, staleBuilds, warmPool, snapshotGc] = await Promise.all([
+    const [idle, orphanCompute, stuckSessions, orphanBoxes, branches, computeTick, staleBuilds, snapshotGc] = await Promise.all([
       // Provider-authoritative idle reaper + state/billing reconcile (the fix for
       // boxes that never auto-stopped and kept billing). Backstops the webhooks.
       reapAndReconcileSandboxes().catch((err) => {
@@ -187,12 +186,6 @@ async function runProjectMaintenance(): Promise<void> {
         console.warn('[project-maintenance] stale-build reconcile failed:', err instanceof Error ? err.message : err);
         return { checked: 0, closedReady: 0, closedFailed: 0 };
       }),
-      // Keep each opted-in template's warm pool at its desired size and reap
-      // dead/aged boxes. No-op when KORTIX_WARM_POOL_ENABLED=false.
-      reconcileWarmPool().catch((err) => {
-        console.warn('[project-maintenance] warm-pool reconcile failed:', err instanceof Error ? err.message : err);
-        return { reaped: 0, projects: 0 };
-      }),
       // GC superseded template snapshots (content-addressed names orphaned by
       // every identity drift) before the 100/org Daytona quota fills up.
       // Pressure-gated + bounded; no-op while the namespace is small.
@@ -206,10 +199,10 @@ async function runProjectMaintenance(): Promise<void> {
       stuckSessions.reconciled || stuckSessions.errors ||
       orphanBoxes.stopped || orphanBoxes.errors ||
       branches.deleted || branches.errors ||
-      computeTick.settled || staleBuilds.closedReady || staleBuilds.closedFailed || warmPool.reaped ||
+      computeTick.settled || staleBuilds.closedReady || staleBuilds.closedFailed ||
       snapshotGc.deleted
     ) {
-      console.log('[project-maintenance] completed', { idle, orphanCompute, stuckSessions, orphanBoxes, branches, computeTick, staleBuilds, warmPool, snapshotGc });
+      console.log('[project-maintenance] completed', { idle, orphanCompute, stuckSessions, orphanBoxes, branches, computeTick, staleBuilds, snapshotGc });
     }
 
     // Invariant monitor: in steady state, every `active` compute session has a

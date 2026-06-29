@@ -1,5 +1,6 @@
 /**
- * Parse the address forms a user can pass to `kortix add` / `kortix registry`.
+ * Parse the address forms accepted by marketplace installs and legacy registry
+ * developer commands.
  *
  * Registry addresses (point at a whole registry):
  *   kortix-ai/skills                      GitHub repo (registry.json at root)

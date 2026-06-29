@@ -119,7 +119,7 @@ describe('writeAgentEnvFile', () => {
         KORTIX_PROJECT_ID: 'proj_1',
         KORTIX_API_URL: 'https://dev-api.kortix.com/v1',
         // daemon-internal — MUST NOT leak into the agent shell
-        KORTIX_WARM_POOL: '1',
+        KORTIX_WARM_SEED: '1',
         KORTIX_LLM_PROXY_URL: 'http://127.0.0.1:4319',
         KORTIX_LLM_HOTSWAP: '1',
         KORTIX_LLM_API_KEY: 'internal-llm-key',
@@ -133,7 +133,7 @@ describe('writeAgentEnvFile', () => {
     expect(body).toContain("export KORTIX_PROJECT_ID='proj_1'")
     expect(body).toContain("export KORTIX_API_URL='https://dev-api.kortix.com/v1'")
     // daemon-internal stays filtered (not the agent's business)
-    expect(body).not.toContain('KORTIX_WARM_POOL')
+    expect(body).not.toContain('KORTIX_WARM_SEED')
     expect(body).not.toContain('KORTIX_LLM_PROXY_URL')
     expect(body).not.toContain('KORTIX_LLM_HOTSWAP')
     expect(body).not.toContain('KORTIX_LLM_API_KEY')

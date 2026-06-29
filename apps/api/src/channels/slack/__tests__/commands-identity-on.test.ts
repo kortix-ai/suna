@@ -4,6 +4,12 @@ import { describe, expect, mock, test } from 'bun:test';
 // `/login` / `/logout` subcommands and help rows become live.
 process.env.SLACK_REQUIRE_USER_IDENTITY = 'true';
 
+mock.module('../../../config', () => ({
+  config: {
+    FRONTEND_URL: 'https://app.test',
+    SLACK_REQUIRE_USER_IDENTITY: true,
+  },
+}));
 mock.module('../../../shared/db', () => ({ db: {}, hasDatabase: () => true }));
 mock.module('../identity', () => ({
   lookupSlackIdentity: async () => null,
@@ -15,11 +21,15 @@ mock.module('../../../accounts/core/app', () => ({
 mock.module('../selection', () => ({
   currentChannelSelection: async () => null,
   setChannelAgent: async () => true,
+  setChannelConversationPolicy: async () => true,
   setChannelModel: async () => true,
   listProjectAgents: async () => [],
-  RECOMMENDED_MODELS: [],
   isValidModelId: () => true,
-  modelLabel: (id: string) => id,
+}));
+mock.module('../model-gate', () => ({ channelModelContext: async () => null }));
+mock.module('../participants', () => ({
+  conversationPolicyLabel: () => 'Owner approval',
+  normalizeConversationPolicy: () => 'owner_approval',
 }));
 
 const { handleSlashCommand } = await import('../commands');

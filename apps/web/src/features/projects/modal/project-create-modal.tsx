@@ -7,6 +7,7 @@ import { z } from 'zod';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   Form,
@@ -39,10 +40,13 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
 import { isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
+import {
+  defaultProjectMarketplaceItems,
+  listMarketplaceItems,
+} from '@/lib/marketplace-client';
 import {
   linkRepository,
   listGitHubInstallations,
@@ -54,9 +58,9 @@ import {
 } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
+import { Boxes, ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 const sanitizeProjectName = (value: string) => value.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
 
@@ -66,6 +70,7 @@ const managedProjectSchema = z.object({
     .transform(sanitizeProjectName)
     .pipe(z.string().min(1, 'Project name is required')),
   includeGeneralKnowledgeSkills: z.boolean(),
+  marketplaceItems: z.array(z.string()),
 });
 
 const githubLinkSchema = z.object({
@@ -109,12 +114,14 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
 
   const [mode, setMode] = useState<'managed' | 'github'>('managed');
   const [isConnectingGitHub, setIsConnectingGitHub] = useState(false);
+  const [marketplaceDefaultsApplied, setMarketplaceDefaultsApplied] = useState(false);
 
   const managedForm = useForm<ManagedProjectFormValues>({
     resolver: zodResolver(managedProjectSchema),
     defaultValues: {
       name: '',
       includeGeneralKnowledgeSkills: true,
+      marketplaceItems: [],
     },
   });
 
@@ -132,6 +139,7 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
 
   function resetAndClose() {
     setMode('managed');
+    setMarketplaceDefaultsApplied(false);
     managedForm.reset();
     githubForm.reset();
     onOpenChange(false);
@@ -188,6 +196,29 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
     enabled: open && mode === 'github' && !!accountId,
     staleTime: 0,
   });
+
+  const marketplaceDefaultsQuery = useQuery({
+    queryKey: ['marketplace-default-project-items'],
+    queryFn: () => listMarketplaceItems({ source: 'kortix', type: 'skill' }),
+    enabled: open && mode === 'managed',
+    staleTime: 60_000,
+  });
+  const marketplaceItems = useMemo(
+    () => defaultProjectMarketplaceItems(marketplaceDefaultsQuery.data?.items),
+    [marketplaceDefaultsQuery.data?.items],
+  );
+  const includeGeneralKnowledgeSkills = managedForm.watch('includeGeneralKnowledgeSkills');
+  const includedCount = includeGeneralKnowledgeSkills ? 1 : 0;
+
+  useEffect(() => {
+    if (!open || marketplaceDefaultsApplied || marketplaceItems.length === 0) return;
+    managedForm.setValue('marketplaceItems', marketplaceItems.map((item) => item.id), {
+      shouldDirty: false,
+      shouldTouch: false,
+      shouldValidate: false,
+    });
+    setMarketplaceDefaultsApplied(true);
+  }, [managedForm, marketplaceDefaultsApplied, marketplaceItems, open]);
 
   const githubInstallations = useMemo(
     () => githubInstallationsQuery.data?.installations ?? [],
@@ -250,12 +281,12 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
 
   function handleCreate(values: ManagedProjectFormValues) {
     if (!accountId) return errorToast('Select an account first');
+    const defaultMarketplaceItems = marketplaceItems.map((item) => item.id);
     createMutation.mutate({
       account_id: accountId,
       name: values.name,
-      starter_template: values.includeGeneralKnowledgeSkills
-        ? 'general-knowledge-worker'
-        : 'minimal',
+      starter_template: 'minimal',
+      marketplace_items: values.includeGeneralKnowledgeSkills ? defaultMarketplaceItems : [],
     });
   }
 
@@ -348,37 +379,41 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                     )}
                   />
 
-                  <FormField
-                    control={managedForm.control}
-                    name="includeGeneralKnowledgeSkills"
-                    render={({ field }) => (
-                      <Item variant="outline" className="items-start">
-                        <ItemContent>
-                          <ItemTitle>
-                            <FormLabel>
-                              {tHardcodedUi.raw(
-                                'componentsProjectsProjectCreateModal.line273JsxTextGeneralKnowledgeWorkerSkills',
-                              )}
-                            </FormLabel>
-                          </ItemTitle>
-                          <ItemDescription>
-                            {tHardcodedUi.raw(
-                              'componentsProjectsProjectCreateModal.line275JsxTextIncludePreconfiguredSkillsForResearchAuditSupportBrand',
-                            )}
-                          </ItemDescription>
-                        </ItemContent>
-                        <ItemActions>
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                              disabled={submitting}
-                            />
-                          </FormControl>
-                        </ItemActions>
-                      </Item>
-                    )}
-                  />
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-foreground text-sm font-medium">Starter skills</span>
+                      <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                        {includedCount} included
+                      </span>
+                    </div>
+                    <p className="text-muted-foreground text-xs leading-relaxed">
+                      Preinstalled into your project&apos;s repo and ready in the first session.
+                      Toggle off anything you don&apos;t need.
+                    </p>
+                    <div className="divide-border/60 overflow-hidden rounded-2xl border divide-y">
+                      <SetupOptionRow
+                        icon={
+                          <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-lg">
+                            <Boxes className="size-4" />
+                          </span>
+                        }
+                        title="Starter pack"
+                        description="Ready-made skills for research, writing, documents, slides, data, the web, and browser automation."
+                        selected={includeGeneralKnowledgeSkills}
+                        disabled={submitting}
+                        onToggle={(next) => {
+                          managedForm.setValue('includeGeneralKnowledgeSkills', next, {
+                            shouldDirty: true,
+                          });
+                          managedForm.setValue(
+                            'marketplaceItems',
+                            next ? marketplaceItems.map((item) => item.id) : [],
+                            { shouldDirty: true },
+                          );
+                        }}
+                      />
+                    </div>
+                  </div>
 
                   <Button
                     type="button"
@@ -399,7 +434,11 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                 <Button
                   type="submit"
                   className="w-full sm:w-auto"
-                  disabled={submitting || !accountId}
+                  disabled={
+                    submitting ||
+                    !accountId ||
+                    (includeGeneralKnowledgeSkills && marketplaceDefaultsQuery.isLoading)
+                  }
                 >
                   {submitting ? <Loading /> : <Icon.Plus />}
                   {tHardcodedUi.raw(
@@ -652,6 +691,65 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
     </Modal>
   );
 };
+
+/** One selectable row in the New Project "Starter skills" surface — the whole
+ *  row is a label wrapping a real checkbox, so a click anywhere toggles it and
+ *  it stays keyboard-accessible. Selected rows read as "included in this
+ *  project" via the tinted fill + checked box (no "Add" affordance). */
+function SetupOptionRow({
+  icon,
+  title,
+  description,
+  badge,
+  selected,
+  disabled,
+  onToggle,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  badge?: string;
+  selected: boolean;
+  disabled?: boolean;
+  onToggle: (next: boolean) => void;
+}) {
+  return (
+    <label
+      className={cn(
+        'flex cursor-pointer items-start gap-3 px-3.5 py-3 transition-colors',
+        selected ? 'bg-primary/[0.05]' : 'hover:bg-foreground/[0.03]',
+        disabled && 'cursor-not-allowed opacity-60',
+      )}
+    >
+      {icon}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-foreground truncate text-sm font-medium">{title}</span>
+          {badge && (
+            <Badge variant="new" size="sm" className="shrink-0">
+              {badge}
+            </Badge>
+          )}
+          {selected && (
+            <Badge variant="outline" size="sm" className="shrink-0">
+              Included
+            </Badge>
+          )}
+        </div>
+        <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-relaxed">
+          {description}
+        </p>
+      </div>
+      <Checkbox
+        checked={selected}
+        onCheckedChange={(value) => onToggle(value === true)}
+        disabled={disabled}
+        aria-label={title}
+        className="mt-0.5 shrink-0"
+      />
+    </label>
+  );
+}
 
 function RepositoryPicker({
   value,

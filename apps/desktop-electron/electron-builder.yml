@@ -1,0 +1,91 @@
+# electron-builder packaging config. Replaces the Tauri bundle:
+# same appId/identifier, the kortix:// protocol, macOS ATS exceptions, and the
+# installer formats the web /download route resolves (.dmg / .exe / .AppImage).
+#
+# Icons live in build/ (icon.icns / icon.ico / icon.png) and are auto-detected.
+# Code signing / notarization are env-driven (CSC_LINK / APPLE_* / WIN_CSC_*) so
+# unsigned local builds work for testing; CI injects the secrets.
+appId: com.kortix.desktop
+productName: Kortix
+copyright: © Kortix
+
+# Publish target. We never auto-publish from electron-builder (CI uploads the
+# artifacts itself with --publish never), but a concrete provider is REQUIRED:
+# without it electron-builder can't infer one ("Cannot detect repository") and
+# crashes generating update metadata (computeChannelNames → channel of null).
+publish:
+  provider: github
+  owner: kortix-ai
+  repo: suna
+
+directories:
+  output: dist
+  buildResources: build
+
+# `version` comes from package.json; CI overrides it from the root VERSION file
+# via --config.extraMetadata.version=$VERSION.
+files:
+  - src/**/*
+  - assets/**/*
+  - package.json
+
+# Registers the kortix:// deep-link scheme (auth callbacks) in the OS bundle.
+protocols:
+  - name: Kortix
+    schemes:
+      - kortix
+
+mac:
+  category: public.app-category.productivity
+  icon: build/icon.icns
+  minimumSystemVersion: "10.15"
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Universal binary → ONE .dmg that runs natively on both Apple Silicon and
+  # Intel. Avoids the "wrong-arch download" bug and halves the CI mac matrix.
+  # The `zip` target is REQUIRED for auto-update: Squirrel.Mac (what
+  # electron-updater drives on macOS) installs from a zip, not the dmg. The dmg
+  # stays the user-facing first-install download; the zip is consumed only by the
+  # updater (referenced from latest-mac.yml). Both must ship in the release.
+  target:
+    - target: dmg
+      arch:
+        - universal
+    - target: zip
+      arch:
+        - universal
+  # macOS ATS exceptions so HTTP localhost / *.localhost sandbox previews load
+  # inside the in-app browser (same rationale as the Tauri Info.plist).
+  extendInfo:
+    NSAppTransportSecurity:
+      NSAllowsArbitraryLoads: true
+      NSAllowsArbitraryLoadsInWebContent: true
+      NSAllowsLocalNetworking: true
+
+# Per-arch dmg name so the /download route can pick the right one
+# (e.g. Kortix-0.9.82-arm64.dmg / Kortix-0.9.82-x64.dmg).
+dmg:
+  title: Kortix ${version}
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+  artifactName: ${productName}-Setup-${version}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+linux:
+  icon: build/icon.png
+  category: Utility
+  target:
+    - AppImage
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+# No native modules to rebuild — keeps packaging fast.
+npmRebuild: false

@@ -31,20 +31,34 @@ import { TYPE_FILTERS, TYPE_SECTIONS } from './marketplace-meta';
 export function MarketplaceBrowser({
   onAdd,
   installedNames,
+  source: sourceProp,
+  onSourceChange,
   sourceFilter,
+  publicOnly = false,
+  readOnly = false,
 }: {
-  onAdd: (item: MarketplaceItem) => void;
+  onAdd?: (item: MarketplaceItem) => void;
   installedNames?: Set<string>;
+  /** Controlled source filter (defaults to internal state). */
+  source?: string;
+  onSourceChange?: (source: string) => void;
+  /** @deprecated Prefer `source` — kept for discover-tab handoff in project view. */
   sourceFilter?: string;
+  /** Use unauthenticated public catalog reads. */
+  publicOnly?: boolean;
+  /** Hide project/source mutation affordances. */
+  readOnly?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   const [type, setType] = useState('all');
+  const [sourceInternal, setSourceInternal] = useState('all');
+  const source = sourceProp ?? sourceFilter ?? sourceInternal;
   const [addOpen, setAddOpen] = useState(false);
   const openItem = useMarketplaceDetailStore((s) => s.openItem);
 
-  const marketplacesQuery = useMarketplaces();
+  const marketplacesQuery = useMarketplaces({ publicOnly });
   const marketplaces = useMemo(
     () => marketplacesQuery.data?.marketplaces ?? [],
     [marketplacesQuery.data],
@@ -57,10 +71,11 @@ export function MarketplaceBrowser({
 
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const m of marketplaces)
+    const list = source === 'all' ? marketplaces : marketplaces.filter((m) => m.id === source);
+    for (const m of list)
       for (const [k, v] of Object.entries(m.types ?? {})) counts[k] = (counts[k] ?? 0) + v;
     return counts;
-  }, [marketplaces]);
+  }, [marketplaces, source]);
 
   const typeOptions = useMemo(
     () => TYPE_FILTERS.filter((f) => f.value === 'all' || (typeCounts[f.value] ?? 0) > 0),
@@ -71,10 +86,11 @@ export function MarketplaceBrowser({
   const itemsQuery = useMarketplaceItems({
     query: debounced,
     type: effectiveType,
-    source: sourceFilter ?? 'all',
+    source,
+    publicOnly,
   });
   const items = useMemo(() => itemsQuery.data?.items ?? [], [itemsQuery.data]);
-  const grouped = effectiveType === 'all' && !debounced && !sourceFilter;
+  const grouped = effectiveType === 'all' && !debounced && source === 'all';
   const streaming = !!(itemsQuery.data?.loading || marketplacesQuery.data?.loading);
 
   const sections = useMemo(() => {
@@ -97,7 +113,7 @@ export function MarketplaceBrowser({
           <MarketplaceItemRow
             item={item}
             installed={installedNames?.has(item.name)}
-            onAdd={onAdd}
+            onAdd={readOnly ? undefined : onAdd}
             onOpen={() => openItem(item.id)}
           />
         </div>
@@ -148,9 +164,11 @@ export function MarketplaceBrowser({
             </Select>
           </InputGroupAddon>
         </InputGroup>
-        <Button size="sm" className="shrink-0" onClick={() => setAddOpen(true)}>
-          Manage
-        </Button>
+        {!readOnly && (
+          <Button size="sm" className="shrink-0" onClick={() => setAddOpen(true)}>
+            Manage
+          </Button>
+        )}
       </div>
 
       {itemsQuery.isLoading ? (
@@ -230,7 +248,7 @@ export function MarketplaceBrowser({
         </div>
       )}
 
-      <AddMarketplaceModal open={addOpen} onOpenChange={setAddOpen} />
+      {!readOnly && <AddMarketplaceModal open={addOpen} onOpenChange={setAddOpen} />}
     </div>
   );
 }
@@ -243,7 +261,7 @@ function MarketplaceItemRow({
 }: {
   item: MarketplaceItem;
   installed?: boolean;
-  onAdd: (item: MarketplaceItem) => void;
+  onAdd?: (item: MarketplaceItem) => void;
   onOpen: () => void;
 }) {
   return (
@@ -280,26 +298,28 @@ function MarketplaceItemRow({
           </p>
         ) : null}
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
-        <Button
-          variant={installed ? 'outline' : 'secondary'}
-          size="sm"
-          className="transition-transform active:scale-[0.96]"
-          onClick={(e) => {
-            e.stopPropagation();
-            onAdd(item);
-          }}
-        >
-          {installed ? (
-            <>
-              <Check className="size-3.5" />
-              Added
-            </>
-          ) : (
-            'Add'
-          )}
-        </Button>
-      </div>
+      {onAdd ? (
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button
+            variant={installed ? 'outline' : 'secondary'}
+            size="sm"
+            className="transition-transform active:scale-[0.96]"
+            onClick={(e) => {
+              e.stopPropagation();
+              onAdd(item);
+            }}
+          >
+            {installed ? (
+              <>
+                <Check className="size-3.5" />
+                Added
+              </>
+            ) : (
+              'Add'
+            )}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
