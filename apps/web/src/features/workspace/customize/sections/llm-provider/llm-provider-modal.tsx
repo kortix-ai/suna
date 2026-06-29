@@ -6,6 +6,7 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
+import Loading from '@/components/ui/loading';
 import {
   Modal,
   ModalContent,
@@ -14,12 +15,10 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
 import { Search } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState } from 'react';
-
-import Loading from '@/components/ui/loading';
-import { cn } from '@/lib/utils';
 import { CatalogTab } from './catalog-tab';
 import { ConnectedTab } from './connected-tab';
 import { ModelsTab } from './models-tab';
@@ -104,13 +103,8 @@ export function ProjectProviderModal({
           {showTabBar && (
             <TabsList className="shrink-0">
               {showTab('connected') && (
-                <TabsTrigger value="connected" className="gap-2 text-xs">
+                <TabsTrigger value="connected" className="text-xs">
                   Connected
-                  {connectedProviders.length > 0 && (
-                    <span className="text-muted-foreground text-xs tabular-nums">
-                      {connectedProviders.length}
-                    </span>
-                  )}
                 </TabsTrigger>
               )}
               {showTab('catalog') && (

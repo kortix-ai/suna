@@ -1,21 +1,25 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { SectionCard } from '@/components/ui/section-card';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
+import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { cn } from '@/lib/utils';
-import { toast } from '@/lib/toast';
 import {
   useDeleteGatewayBudget,
   useGatewayBudgets,
@@ -83,8 +87,8 @@ export function GatewayBudgets({ projectId }: { projectId: string }) {
 
   const remove = (budgetId: string) =>
     delBudget.mutate(budgetId, {
-      onSuccess: () => toast.success('Budget removed'),
-      onError: (e) => toast.error(e instanceof Error ? e.message : 'Could not remove budget'),
+      onSuccess: () => successToast('Budget removed'),
+      onError: (e) => errorToast(e instanceof Error ? e.message : 'Could not remove budget'),
     });
 
   const alerts: { label: string; pct: number }[] = [];
@@ -115,7 +119,7 @@ export function GatewayBudgets({ projectId }: { projectId: string }) {
             ))}
           </InfoBanner>
         )}
-        <SectionCard
+        <Panel
           title="Project budget"
           description="Cap total spend across everyone in this project's gateway"
           action={
@@ -170,9 +174,9 @@ export function GatewayBudgets({ projectId }: { projectId: string }) {
               </div>
             </div>
           )}
-        </SectionCard>
+        </Panel>
 
-        <SectionCard
+        <Panel
           title="Members"
           count={members.length}
           description="Spend per member this month — set a cap on anyone"
@@ -196,7 +200,7 @@ export function GatewayBudgets({ projectId }: { projectId: string }) {
               ))}
             </div>
           )}
-        </SectionCard>
+        </Panel>
       </div>
 
       {editing && (
@@ -216,11 +220,11 @@ export function GatewayBudgets({ projectId }: { projectId: string }) {
               },
               {
                 onSuccess: () => {
-                  toast.success('Budget saved');
+                  successToast('Budget saved');
                   setEditing(null);
                 },
                 onError: (e) =>
-                  toast.error(e instanceof Error ? e.message : 'Could not save budget'),
+                  errorToast(e instanceof Error ? e.message : 'Could not save budget'),
               },
             )
           }
@@ -311,50 +315,52 @@ function BudgetDialog({
   const valid = Number.isFinite(amount) && amount > 0;
 
   return (
-    <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-        <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
-          <DialogTitle>{target.scope === 'project' ? 'Project budget' : 'Member cap'}</DialogTitle>
-          <DialogDescription>Cap gateway spend for {who}.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 px-6 py-5">
+    <Modal open onOpenChange={(next) => (next ? undefined : onClose())}>
+      <ModalContent className="sm:max-w-md">
+        <ModalHeader>
+          <ModalTitle>{target.scope === 'project' ? 'Project budget' : 'Member cap'}</ModalTitle>
+          <ModalDescription>Cap gateway spend for {who}.</ModalDescription>
+        </ModalHeader>
+        <ModalBody className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">Limit (USD)</label>
+            <Label>Limit (USD)</Label>
             <Input
               autoFocus
               inputMode="decimal"
               placeholder="e.g. 50"
               value={limit}
               onChange={(e) => setLimit(e.target.value.replace(/[^0-9.]/g, ''))}
+              variant="popover"
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">Period</label>
+            <Label>Period</Label>
             <PillGroup options={PERIODS} value={period} onChange={setPeriod} />
           </div>
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">At limit</label>
+            <Label>At limit</Label>
             <PillGroup options={ACTIONS} value={action} onChange={setAction} />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-muted-foreground text-xs text-pretty">
               {action === 'block'
                 ? 'New requests are blocked once the limit is reached.'
                 : 'Requests keep flowing; the bar just turns over-budget.'}
             </p>
           </div>
-        </div>
-        <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
-          <Button variant="ghost" onClick={onClose}>
+        </ModalBody>
+        <ModalFooter className="sm:justify-between">
+          <Button type="button" variant="outline-ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button
             disabled={!valid || saving}
             onClick={() => valid && onSave({ limit_usd: amount, period, action })}
           >
-            {saving ? 'Saving…' : 'Save budget'}
+            {saving ? <Loading className="size-4 shrink-0" /> : null}
+            Save budget
           </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }
 
@@ -368,22 +374,53 @@ function PillGroup<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="flex items-center gap-1 rounded-full border border-border/60 bg-card p-0.5">
+    <FilterBar className="w-full">
       {options.map((o) => (
-        <button
+        <FilterBarItem
           key={o.value}
-          type="button"
           onClick={() => onChange(o.value)}
-          className={cn(
-            'flex-1 rounded-full px-3 py-1 text-xs font-medium transition-colors',
-            value === o.value
-              ? 'bg-primary/10 text-primary'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
+          data-state={value === o.value ? 'active' : 'inactive'}
+          className="text-xs"
         >
           {o.label}
-        </button>
+        </FilterBarItem>
       ))}
-    </div>
+    </FilterBar>
+  );
+}
+
+/**
+ * Hand-composed panel — the design-system `bg-popover rounded-md border`
+ * surface (replaces the deprecated SectionCard).
+ */
+function Panel({
+  title,
+  count,
+  description,
+  action,
+  children,
+}: {
+  title: ReactNode;
+  count?: number;
+  description?: ReactNode;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="bg-popover overflow-hidden rounded-md border">
+      <div className="border-border/60 flex items-start justify-between gap-3 border-b px-4 py-3">
+        <div className="min-w-0">
+          <h3 className="text-foreground text-sm font-medium">
+            {title}
+            {count != null && <span className="text-muted-foreground font-normal"> ({count})</span>}
+          </h3>
+          {description != null && (
+            <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{description}</p>
+          )}
+        </div>
+        {action != null && <div className="shrink-0">{action}</div>}
+      </div>
+      <div className="px-4 py-4">{children}</div>
+    </section>
   );
 }
