@@ -31,7 +31,7 @@ import {
   Eye,
   SparklesSolid,
 } from '@mynaui/icons-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   APPROVAL_ACTION_ICON,
   KIND_META,
@@ -94,8 +94,12 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 // ── change ────────────────────────────────────────────────────────────────
 function ChangeBody({
   item,
+  actions,
+  onClose,
 }: {
   item: Extract<ReviewItem, { kind: 'change' }>;
+  actions: ReviewActions;
+  onClose: () => void;
 }) {
   const d = item.detail;
   return (
@@ -135,12 +139,19 @@ function ChangeBody({
           tone="warning"
           title={`This overlaps with recent work in ${d.conflicts.length} files`}
           action={
-            <Button size="sm" variant="secondary">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                actions.resolve(item.id, 'waiting', 'Resolving the overlap with the agent…');
+                onClose();
+              }}
+            >
               Resolve with agent
             </Button>
           }
         >
-          The agent can rebase and fix the overlap for you.
+          The agent can rebase and fix the overlap for you — no merge markers to touch.
         </InfoBanner>
       )}
 
@@ -432,6 +443,41 @@ function BatchBody({ item }: { item: Extract<ReviewItem, { kind: 'batch' }> }) {
 }
 
 // ── footer ──────────────────────────────────────────────────────────────────
+/** Optional free-text feedback returned to the agent when asking for changes. */
+function FeedbackComposer({
+  onCancel,
+  onSend,
+}: {
+  onCancel: () => void;
+  onSend: (text: string) => void;
+}) {
+  const [text, setText] = useState('');
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+  return (
+    <div className="w-full space-y-2">
+      <textarea
+        ref={ref}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={3}
+        placeholder="What should the agent change? (optional — sent back as a follow-up)"
+        className="bg-popover focus-visible:border-primary/40 w-full resize-none rounded-md border px-3 py-2 text-sm outline-none"
+      />
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="outline-ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button size="sm" onClick={() => onSend(text.trim())}>
+          Send to agent
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function Footer({
   item,
   actions,
@@ -441,6 +487,8 @@ function Footer({
   actions: ReviewActions;
   onClose: () => void;
 }) {
+  const [composing, setComposing] = useState(false);
+
   if (item.status !== 'needs_you') {
     return (
       <ModalFooter className="border-border/60 border-t pt-4">
@@ -484,28 +532,41 @@ function Footer({
   }
 
   // change · output · batch
-  const primaryStatus: ReviewStatus = 'approved';
   const secondaryLabel = item.secondaryAction;
-  return (
-    <ModalFooter className="border-border/60 border-t pt-4">
-      {secondaryLabel && (
-        <Button
-          variant="ghost"
-          onClick={() => {
+  const hasConflicts = item.kind === 'change' && (item.detail.conflicts?.length ?? 0) > 0;
+
+  if (composing && secondaryLabel) {
+    return (
+      <ModalFooter className="border-border/60 border-t pt-4">
+        <FeedbackComposer
+          onCancel={() => setComposing(false)}
+          onSend={(text) => {
             actions.resolve(
               item.id,
               'changes_requested',
-              `${secondaryLabel} — sent back to the agent`,
+              text ? `Sent to the agent: “${text}”` : `${secondaryLabel} — sent to the agent`,
             );
             onClose();
           }}
-        >
+        />
+      </ModalFooter>
+    );
+  }
+
+  return (
+    <ModalFooter className="border-border/60 border-t pt-4">
+      {hasConflicts && (
+        <span className="text-muted-foreground mr-auto text-xs">Resolve the overlap first</span>
+      )}
+      {secondaryLabel && (
+        <Button variant="ghost" onClick={() => setComposing(true)}>
           {secondaryLabel}
         </Button>
       )}
       <Button
+        disabled={hasConflicts}
         onClick={() => {
-          actions.resolve(item.id, primaryStatus, `${item.primaryAction} · done`);
+          actions.resolve(item.id, 'approved', `${item.primaryAction} · done`);
           onClose();
         }}
       >
@@ -571,7 +632,7 @@ export function ReviewDetailModal({
             {item.agent} · {rel(item.createdAt)}
           </div>
 
-          {item.kind === 'change' && <ChangeBody item={item} />}
+          {item.kind === 'change' && <ChangeBody item={item} actions={actions} onClose={onClose} />}
           {item.kind === 'approval' && <ApprovalBody item={item} actions={actions} />}
           {item.kind === 'output' && <OutputBody item={item} />}
           {item.kind === 'decision' && (

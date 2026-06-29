@@ -124,6 +124,12 @@ export function ReviewCenter() {
     [items, segment, kindFilter],
   );
   const visibleSafePending = useMemo(() => safePendingCount(visible), [visible]);
+  const kindCounts = useMemo(() => {
+    const seg = items.filter((i) => segmentForStatus(i.status) === segment);
+    const c: Partial<Record<ReviewKind | 'all', number>> = { all: seg.length };
+    for (const i of seg) c[i.kind] = (c[i.kind] ?? 0) + 1;
+    return c;
+  }, [items, segment]);
 
   const actions: ReviewActions = {
     resolve: (id, status, toast) => {
@@ -193,6 +199,11 @@ export function ReviewCenter() {
               {KIND_FILTERS.map((f) => (
                 <TabsTriggerCompact key={f.value} value={f.value}>
                   {f.label}
+                  {(kindCounts[f.value] ?? 0) > 0 && (
+                    <span className="text-muted-foreground/60 ml-1 tabular-nums">
+                      {kindCounts[f.value]}
+                    </span>
+                  )}
                 </TabsTriggerCompact>
               ))}
             </TabsListCompact>

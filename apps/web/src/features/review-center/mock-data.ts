@@ -236,6 +236,45 @@ export const MOCK_ITEMS: ReviewItem[] = [
     },
   },
 
+  {
+    id: 'rv-change-conflict',
+    kind: 'change',
+    title: 'Add a testimonials section to the homepage',
+    summary: 'Overlaps with recent homepage edits — resolve before shipping',
+    risk: 'medium',
+    status: 'needs_you',
+    source: 'agent',
+    project: 'Acme Marketing Site',
+    agent: 'Suna · session “testimonials”',
+    actor: { name: 'Suna', initials: 'SU' },
+    createdAt: ago(18),
+    primaryAction: 'Ship it',
+    secondaryAction: 'Ask for changes',
+    detail: {
+      whatChanged: [
+        'Added a testimonials section with 3 customer quotes',
+        'Wired it into the homepage below the hero',
+      ],
+      impact: 'Medium change · 3 files · overlaps recent work',
+      verification: [{ label: 'Not tested yet', tone: 'neutral' }],
+      conflicts: ['the homepage hero', 'the homepage layout', 'shared styles'],
+      advanced: {
+        headRef: 'session/testimonials',
+        baseRef: 'main',
+        headSha: 'bb44cc55dd66',
+        baseSha: '0099fedcba98',
+        additions: 96,
+        deletions: 12,
+        mergeMode: '3-way',
+        files: [
+          { path: 'app/(marketing)/page.tsx', status: 'modified', additions: 40, deletions: 10 },
+          { path: 'components/testimonials.tsx', status: 'added', additions: 52, deletions: 0 },
+          { path: 'app/globals.css', status: 'modified', additions: 4, deletions: 2 },
+        ],
+      },
+    },
+  },
+
   // ── Waiting ───────────────────────────────────────────────────────────────
   {
     id: 'rv-change-2',
