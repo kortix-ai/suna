@@ -29,7 +29,13 @@ export const PROJECT_ROLE_DESCRIPTORS: Record<ProjectRole, ProjectRoleDescriptor
     label: 'Viewer',
     blurb: 'Use the project: start sessions and chat with the agent.',
     summary:
-      'The base role. Can open the project, start and run sessions, and use the agent chat. Cannot customize the project — no editing settings, deploying, managing members, or changing triggers.',
+      'The base role. Can open the project, start and run sessions, and use the agent chat. Cannot customize the project — no editing settings, deploying, managing members, or firing triggers.',
+  },
+  user: {
+    label: 'User (read + run)',
+    blurb: 'Run sessions and fire the project’s triggers — no editing.',
+    summary:
+      'Everything a viewer can do (read + run sessions), plus manually fire the project’s triggers to operate its automations. Cannot edit the project, deploy, manage members, or change configuration.',
   },
   editor: {
     label: 'Editor',
@@ -46,7 +52,7 @@ export const PROJECT_ROLE_DESCRIPTORS: Record<ProjectRole, ProjectRoleDescriptor
 };
 
 /** Ordered low → high. Useful for rendering dropdowns consistently. */
-export const PROJECT_ROLES_ASCENDING: ProjectRole[] = ['viewer', 'editor', 'manager'];
+export const PROJECT_ROLES_ASCENDING: ProjectRole[] = ['viewer', 'user', 'editor', 'manager'];
 
 export interface AccountRoleDescriptor {
   label: string;

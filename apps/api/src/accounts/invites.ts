@@ -76,7 +76,7 @@ type ValidatedGrant = {
   expires_at: string | null;
 };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const VALID_PROJECT_ROLES = new Set(['manager', 'editor', 'viewer']);
+const VALID_PROJECT_ROLES = new Set(['manager', 'editor', 'user', 'viewer']);
 
 function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
   if (!raw || typeof raw !== 'object') return null;

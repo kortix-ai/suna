@@ -171,7 +171,7 @@ projectsApp.openapi(
   const role = body.role;
   if (!groupId) return c.json({ error: 'group_id is required' }, 400);
   if (!isProjectRole(role)) {
-    return c.json({ error: 'role must be manager, editor, or viewer' }, 400);
+    return c.json({ error: 'role must be manager, editor, user, or viewer' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
@@ -246,7 +246,7 @@ projectsApp.openapi(
 
   const body = await readBody(c);
   if (!isProjectRole(body.role)) {
-    return c.json({ error: 'role must be manager, editor, or viewer' }, 400);
+    return c.json({ error: 'role must be manager, editor, user, or viewer' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);

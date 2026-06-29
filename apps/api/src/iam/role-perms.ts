@@ -12,7 +12,7 @@
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from './actions';
 
 export type AccountRole = 'owner' | 'admin' | 'member';
-export type ProjectRole = 'manager' | 'editor' | 'viewer';
+export type ProjectRole = 'manager' | 'editor' | 'user' | 'viewer';
 
 // ─── Account roles ─────────────────────────────────────────────────────────
 
@@ -145,8 +145,17 @@ const VIEWER_BASELINE: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
 ];
 
+/** What a "User (read + run)" gets on top of Viewer: manually FIRE the
+ *  project's triggers (operate the automations) — still no editing, config,
+ *  deploy, gitops, members or secret write. Viewer already reads + runs
+ *  sessions (the base usable role), so firing triggers is the one extra a User
+ *  has over a Viewer. This keeps the chain a clean superset:
+ *  viewer ⊂ user ⊂ editor ⊂ manager (editor's EDITOR_EXTRAS includes fire). */
+const USER_EXTRAS: readonly string[] = [PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE];
+
 export const PROJECT_ROLE_PERMS: Record<ProjectRole, ReadonlySet<string>> = {
   viewer: new Set<string>(VIEWER_BASELINE),
+  user: new Set<string>([...VIEWER_BASELINE, ...USER_EXTRAS]),
   editor: new Set<string>([...VIEWER_BASELINE, ...EDITOR_EXTRAS]),
   manager: new Set<string>([...VIEWER_BASELINE, ...EDITOR_EXTRAS, ...MANAGER_ONLY]),
 };
@@ -155,8 +164,9 @@ export const PROJECT_ROLE_PERMS: Record<ProjectRole, ReadonlySet<string>> = {
 
 const PROJECT_ROLE_RANK: Record<ProjectRole, number> = {
   viewer: 1,
-  editor: 2,
-  manager: 3,
+  user: 2,
+  editor: 3,
+  manager: 4,
 };
 
 /** Return the higher-ranked of two project roles. Used when a user's

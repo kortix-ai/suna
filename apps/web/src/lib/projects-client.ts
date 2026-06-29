@@ -54,7 +54,7 @@ export interface KortixAccount {
 }
 
 export type AccountRole = 'owner' | 'admin' | 'member';
-export type ProjectRole = 'manager' | 'editor' | 'viewer';
+export type ProjectRole = 'manager' | 'editor' | 'user' | 'viewer';
 
 export interface AccountDetail {
   account_id: string;

@@ -78,6 +78,7 @@ export const sessionLifecycleCommandStatusEnum = kortixSchema.enum(
 export const projectRoleEnum = kortixSchema.enum('project_role', [
   'manager',
   'editor',
+  'user',
   'viewer',
 ]);
 

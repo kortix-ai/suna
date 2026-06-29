@@ -98,6 +98,7 @@ import { sortByRoleThenLabel } from './member-sort';
 const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
   manager: PROJECT_ROLE_DESCRIPTORS.manager.label,
   editor: PROJECT_ROLE_DESCRIPTORS.editor.label,
+  user: PROJECT_ROLE_DESCRIPTORS.user.label,
   viewer: PROJECT_ROLE_DESCRIPTORS.viewer.label,
 };
 
@@ -509,6 +510,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
               see role-select-item.tsx for how the ItemText split works. */}
           <SelectContent>
             <ProjectRoleSelectItem role="viewer" />
+            <ProjectRoleSelectItem role="user" />
             <ProjectRoleSelectItem role="editor" />
             <ProjectRoleSelectItem role="manager" />
           </SelectContent>
@@ -864,6 +866,7 @@ function ProjectAccessCard({
                           </SelectTrigger>
                           <SelectContent>
                             <ProjectRoleSelectItem role="viewer" />
+                            <ProjectRoleSelectItem role="user" />
                             <ProjectRoleSelectItem role="editor" />
                             <ProjectRoleSelectItem role="manager" />
                           </SelectContent>
@@ -1513,6 +1516,7 @@ function ProjectGroupGrantsCard({
                   per-user grant, so users benefit from the extra context. */}
                 <SelectContent>
                   <ProjectRoleSelectItem role="viewer" />
+                  <ProjectRoleSelectItem role="user" />
                   <ProjectRoleSelectItem role="editor" />
                   <ProjectRoleSelectItem role="manager" />
                 </SelectContent>
@@ -1617,6 +1621,7 @@ function ProjectGroupGrantsCard({
                           </SelectTrigger>
                           <SelectContent>
                             <ProjectRoleSelectItem role="viewer" />
+                            <ProjectRoleSelectItem role="user" />
                             <ProjectRoleSelectItem role="editor" />
                             <ProjectRoleSelectItem role="manager" />
                           </SelectContent>
