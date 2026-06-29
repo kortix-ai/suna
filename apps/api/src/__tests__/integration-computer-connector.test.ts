@@ -83,7 +83,7 @@ afterAll(async () => {
 });
 
 describe('computer connector — real DB e2e', () => {
-  test('synth produces ONE computer spec when the account has a machine + the flag', async () => {
+  test('synth produces ONE computer spec when the account has a connected machine', async () => {
     if (!seeded) return;
     const specs = await synthesizeComputerConnectors(projectId, []);
     expect(specs).toHaveLength(1);
@@ -92,14 +92,15 @@ describe('computer connector — real DB e2e', () => {
     expect(specs[0]!.auth.type).toBe('none');
   });
 
-  test('synth gates off the agent_tunnel flag', async () => {
+  test('synth is a REGULAR connector — a connected machine alone materializes it, no agent_tunnel flag', async () => {
     if (!seeded) return;
-    // Temporarily clear the flag → no synth.
+    // Clear the experimental flag entirely: the connector no longer depends on
+    // it (it's machine-driven like the Slack channel connector). Previously this
+    // returned []; now the connected machine alone is enough.
     await db.update(projects).set({ metadata: {} as any }).where(eq(projects.projectId, projectId));
-    const none = await synthesizeComputerConnectors(projectId, []);
-    expect(none).toHaveLength(0);
-    // Restore the flag for the rest of the suite.
-    await db.update(projects).set({ metadata: { experimental: { agent_tunnel: true } } as any }).where(eq(projects.projectId, projectId));
+    const specs = await synthesizeComputerConnectors(projectId, []);
+    expect(specs).toHaveLength(1);
+    expect(specs[0]!.slug).toBe('computer');
   });
 
   test('full sync materializes the computer connector + the tunnel catalog', async () => {
