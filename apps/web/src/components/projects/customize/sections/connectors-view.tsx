@@ -3653,7 +3653,7 @@ function connectionValid(d: ConnectorDraftInput, emailChannelEnabled = true): bo
   return true;
 }
 
-function CustomConnectorForm({
+export function CustomConnectorForm({
   projectId,
   emailChannelEnabled,
   onAdded,
