@@ -1,4 +1,4 @@
-import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
+import { listAgentMailInstalls, loadMeetInstall, loadSlackInstall } from '../channels/install-store';
 /**
  * Auto-materialize channel connectors from platform installs.
  *
@@ -79,6 +79,17 @@ export async function synthesizeChannelConnectors(
     .from(projects)
     .where(eq(projects.projectId, projectId))
     .limit(1);
+
+  // Meet (Recall.ai) — gated on the per-project `meet` experimental flag. Like
+  // Slack, a resolvable Recall key IS the registration (no OAuth / no [[connectors]]).
+  if (project && resolveExperimentalFeature(project.metadata, 'meet')) {
+    const meetSlug = channelDefaultSlug('meet');
+    if (!channelAlreadyDeclared(declared, 'meet', meetSlug)) {
+      const install = await loadMeetInstall(projectId).catch(() => null);
+      if (install) specs.push(channelSpec('meet', meetSlug));
+    }
+  }
+
   if (!project || !resolveExperimentalFeature(project.metadata, 'agentmail_email')) {
     return specs;
   }
