@@ -1,16 +1,13 @@
 'use client';
 
 import { Check, Copy } from 'lucide-react';
-import Link from 'next/link';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import { infoToast } from '@/components/ui/toast';
-import { Icon } from '@/features/icon/icon';
 import { useAuth } from '@/features/providers/auth-provider';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
-import { marketplaceItemHref } from '@/lib/marketplace-slug';
 import { AddToProjectModal } from './add-to-project-modal';
 
 /**
@@ -39,7 +36,6 @@ export function MarketplaceAddButton({ item }: { item: MarketplaceItem }) {
   if (isLoading) {
     return (
       <Button variant="secondary" size="sm" disabled className="shrink-0">
-        <Icon.Plus className="size-4" />
         Add to project
       </Button>
     );
@@ -49,7 +45,6 @@ export function MarketplaceAddButton({ item }: { item: MarketplaceItem }) {
     return (
       <>
         <Button variant="secondary" size="sm" className="shrink-0" onClick={() => setAddOpen(true)}>
-          <Icon.Plus className="size-4" />
           Add to project
         </Button>
         <AddToProjectModal item={item} open={addOpen} onOpenChange={setAddOpen} />
@@ -59,12 +54,6 @@ export function MarketplaceAddButton({ item }: { item: MarketplaceItem }) {
 
   return (
     <ButtonGroup className="shrink-0">
-      {/* <Button variant="secondary" size="sm" asChild>
-        <Link href={`/auth?redirect=${encodeURIComponent(marketplaceItemHref(item.id))}`}>
-          <Icon.Plus className="size-4" />
-          Sign in to add
-        </Link>
-      </Button> */}
       <Button
         variant="secondary"
         size="icon"
