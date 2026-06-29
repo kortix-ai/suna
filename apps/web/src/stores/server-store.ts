@@ -162,7 +162,9 @@ function getBackendUrl(): string {
 }
 
 function getDefaultSandboxUrl(): string {
-  const sandboxId = getEnv().SANDBOX_ID || 'kortix-sandbox';
+  // Active cloud session sandbox first; self-host override next. No legacy
+  // 'kortix-sandbox' default — it masked the real sandbox and 403'd.
+  const sandboxId = sdkActiveSandboxId() || getEnv().SANDBOX_ID || '';
   return `${getBackendUrl()}/p/${sandboxId}/8000`;
 }
 
