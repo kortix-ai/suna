@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import type { SlackEvent } from '../channels/slack/types';
 import type { ProjectSessionRow } from '../projects/lib/serializers';
-import type { SessionDeliveryOutcome } from '../projects/session-lifecycle';
+import type { ContinueSessionCommand, CreateSessionCommand, SessionDeliveryOutcome } from '../projects/session-lifecycle';
 
 // Persist the headline invariant of the Slack channel refactor: a known thread
 // maps PERMANENTLY to exactly one session. A follow-up routes into that session
@@ -56,15 +57,19 @@ let deliverOutcome: SessionDeliveryOutcome = 'delivered';
 let deliverCalls = 0;
 
 // ─── lifecycle seam: spy on createSession (the "second session") ─────────────
+type RecordedCreateSessionInput = CreateSessionCommand & {
+  body: { initial_prompt?: string };
+  metadata?: { slack?: { conversation_policy?: string } };
+};
 let createSessionCalls = 0;
-let createSessionInputs: any[] = [];
+let createSessionInputs: RecordedCreateSessionInput[] = [];
 mock.module('../projects/session-lifecycle', () => ({
   continueSession: async () => {
     deliverCalls++;
     return deliverOutcome;
   },
-  createSession: async (input: any) => {
-    createSessionInputs.push(input);
+  createSession: async (input: CreateSessionCommand) => {
+    createSessionInputs.push(input as RecordedCreateSessionInput);
     createSessionCalls++;
     return { status: 'created', sessionId: 'replacement-sess', row: fakeSessionRow('replacement-sess') };
   },
@@ -167,8 +172,8 @@ beforeEach(() => {
       deliverCalls++;
       return deliverOutcome;
     },
-    createSession: async (input: any) => {
-      createSessionInputs.push(input);
+    createSession: async (input: CreateSessionCommand) => {
+      createSessionInputs.push(input as RecordedCreateSessionInput);
       createSessionCalls++;
       return { status: 'created', sessionId: 'replacement-sess', row: fakeSessionRow('replacement-sess') };
     },
@@ -191,7 +196,7 @@ describe('Slack authorization matrix — project access and session visibility',
       ts: '110.1',
       user: 'Uoutsider',
       text: '<@B1> show me secrets',
-    } as any);
+    } satisfies SlackEvent);
 
     expect(createSessionCalls).toBe(0);
     expect(deliverCalls).toBe(0);
@@ -425,6 +430,31 @@ describe('createOrJoinThreadSession — atomic claim arbitrates a brand-new thre
     expect(deliverCalls).toBe(0); // the winner creates with the initial prompt; no follow-up
   });
 
+  test('initial prompt pushes vague ambitious asks into a shippable slice', async () => {
+    dbResults = [
+      [project], // spawnAgentTurn project lookup
+      [], // chat_threads lookup → brand-new thread
+      [project], // projects lookup
+      [{ eventId: 'claim' }], // claimThreadCreate → WON
+      [], // re-check chat_threads → still none
+      [], // channel selection → defaults
+      [], // remember owner participant
+    ];
+    await spawnAgentTurn('proj-1', envelope, {
+      ...event,
+      thread_ts: undefined,
+      ts: '150.1',
+      text: '<@B1> build agi. like fr try.',
+    } satisfies SlackEvent);
+
+    const prompt = createSessionInputs[0]?.body?.initial_prompt;
+    expect(prompt).toContain('load the `engineering` skill');
+    expect(prompt).toContain('For ambitious or vague asks like "build AGI"');
+    expect(prompt).toContain('Pick the smallest concrete');
+    expect(prompt).toContain('valuable slice you can actually ship');
+    expect(prompt).toContain('implement and verify it');
+  });
+
   test('claim LOST → joins the winner’s session as a follow-up, NEVER creates a second', async () => {
     dbResults = [
       [project], // spawnAgentTurn project lookup
@@ -436,6 +466,29 @@ describe('createOrJoinThreadSession — atomic claim arbitrates a brand-new thre
     await spawnAgentTurn('proj-1', envelope, event);
     expect(createSessionCalls).toBe(0); // never a shadow session
     expect(deliverCalls).toBe(1); // delivered into the winner's session as a follow-up
+  });
+
+  test('follow-up prompt keeps the same shippable-slice behavior', async () => {
+    let followUpText = '';
+    setSlackSessionLifecycleForTest({
+      continueSession: async (input: ContinueSessionCommand) => {
+        followUpText = input.text;
+        deliverCalls++;
+        return deliverOutcome;
+      },
+    });
+    deliverOutcome = 'delivered';
+    dbResults = [[project], [{ sessionId: 'sess-1', createdBy: 'user-1', metadata: {} }], []];
+
+    await spawnAgentTurn('proj-1', envelope, {
+      ...event,
+      text: '<@B1> actually build agi now',
+    } satisfies SlackEvent);
+
+    expect(followUpText).toContain('For ambitious or vague asks like "build AGI"');
+    expect(followUpText).toContain('Pick the smallest concrete');
+    expect(followUpText).toContain('valuable slice you can actually ship');
+    expect(followUpText).toContain('implement and verify it');
   });
 });
 

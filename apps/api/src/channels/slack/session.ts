@@ -1,11 +1,11 @@
-import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projects } from '@kortix/db';
-import { db } from '../../shared/db';
+import { and, eq } from 'drizzle-orm';
 import {
   continueSession as continueLifecycleSession,
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
+import { db } from '../../shared/db';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { currentChannelSelection } from './selection';
 import {
@@ -287,6 +287,14 @@ const TURN_INSTRUCTIONS = [
   '  The `blocks` JSON follows the Block Kit schema (header, section with mrkdwn,',
   '  divider, context, image, actions). Plain text via `slack send "..."` is fine',
   '  for one-liners, but prefer blocks when there\'s real structure to convey.',
+  '- If the task implies code changes, load the `engineering` skill, work in the repo',
+  '  that owns the code, verify with real tests/app behavior, then open a PR with the',
+  '  required preview/checks before calling it done.',
+  '- For ambitious or vague asks like "build AGI", "fix growth", or "make this 10x",',
+  '  do not only debate semantics or ask for clarification. Pick the smallest concrete,',
+  '  valuable slice you can actually ship in the current repo/context, announce that',
+  '  slice with a `slack step`, then implement and verify it. Be honest about scope,',
+  '  but leave the system measurably better than you found it.',
   '- One `slack send` per turn. It finalizes the live stream and can\'t be undone.',
 ].join('\n');
 
