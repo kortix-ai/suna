@@ -360,6 +360,13 @@ function CreateAssignmentDialog({
   // Only custom roles are bindable via policies; built-ins 400 the backend.
   const customRoles = useMemo(() => roles.filter((r) => !r.is_system), [roles]);
 
+  // Project-name lookup for the agent picker labels (agents are project-scoped,
+  // so the option shows `agent · project`).
+  const projectNameById = useMemo(
+    () => new Map(projects.map((p) => [p.project_id, p.name])),
+    [projects],
+  );
+
   function reset() {
     setPrincipalType('member');
     setPrincipalId('');
