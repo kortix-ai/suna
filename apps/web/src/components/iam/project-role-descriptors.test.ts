@@ -15,7 +15,7 @@ import {
 describe('PROJECT_ROLE_DESCRIPTORS', () => {
   test('covers every project role', () => {
     expect(Object.keys(PROJECT_ROLE_DESCRIPTORS).sort()).toEqual(
-      ['editor', 'manager', 'viewer'],
+      ['editor', 'manager', 'user', 'viewer'],
     );
   });
 
@@ -67,11 +67,20 @@ describe('PROJECT_ROLE_DESCRIPTORS', () => {
     // Viewer can do" rather than treating them as disjoint.
     expect(PROJECT_ROLE_DESCRIPTORS.editor.blurb.toLowerCase()).toContain('viewer');
   });
+
+  test('viewer and user copy makes their ONE difference (firing triggers) explicit', () => {
+    // Viewer and User both read + run sessions; the only thing that separates
+    // them is firing triggers. Both descriptors must say so, or the pair reads
+    // as near-duplicates (the exact confusion this guards against).
+    expect(PROJECT_ROLE_DESCRIPTORS.viewer.summary.toLowerCase()).toContain('trigger');
+    expect(PROJECT_ROLE_DESCRIPTORS.user.summary.toLowerCase()).toContain('trigger');
+    expect(PROJECT_ROLE_DESCRIPTORS.user.blurb.toLowerCase()).toContain('trigger');
+  });
 });
 
 describe('PROJECT_ROLES_ASCENDING', () => {
-  test('matches role hierarchy viewer → editor → manager', () => {
-    expect(PROJECT_ROLES_ASCENDING).toEqual(['viewer', 'editor', 'manager']);
+  test('matches role hierarchy viewer → user → editor → manager', () => {
+    expect(PROJECT_ROLES_ASCENDING).toEqual(['viewer', 'user', 'editor', 'manager']);
   });
 });
 

@@ -27,15 +27,15 @@ export interface ProjectRoleDescriptor {
 export const PROJECT_ROLE_DESCRIPTORS: Record<ProjectRole, ProjectRoleDescriptor> = {
   viewer: {
     label: 'Viewer',
-    blurb: 'Use the project: start sessions and chat with the agent.',
+    blurb: 'Read + run sessions and chat — can’t fire triggers.',
     summary:
-      'The base role. Can open the project, start and run sessions, and use the agent chat. Cannot customize the project — no editing settings, deploying, managing members, or firing triggers.',
+      'The base role for using the project: read everything, run sessions, and chat with the agent. Can’t fire triggers (a User can), edit, deploy, or manage members.',
   },
   user: {
     label: 'User (read + run)',
-    blurb: 'Run sessions and fire the project’s triggers — no editing.',
+    blurb: 'A Viewer that can also fire the project’s triggers.',
     summary:
-      'Everything a viewer can do (read + run sessions), plus manually fire the project’s triggers to operate its automations. Cannot edit the project, deploy, manage members, or change configuration.',
+      'A Viewer plus one thing: can manually fire the project’s triggers to run its automations on demand. Still can’t edit, deploy, change config, or manage members.',
   },
   editor: {
     label: 'Editor',
