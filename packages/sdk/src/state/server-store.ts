@@ -95,9 +95,9 @@ export function deriveSubdomainOpts(
     return fromUrl;
   }
 
-  // Fall back to the active runtime's sandbox id (or the configured default),
-  // so proxy rewriting NEVER silently degrades to raw localhost URLs.
-  const sandboxId = server?.sandboxId || getActiveSandboxId() || 'kortix-sandbox';
+  // Fall back to the active runtime's sandbox id. No legacy 'kortix-sandbox'
+  // default — it masked the real cloud sandbox and 403'd the preview proxy.
+  const sandboxId = server?.sandboxId || getActiveSandboxId() || '';
   return {
     sandboxId,
     backendPort: getBackendPort(),

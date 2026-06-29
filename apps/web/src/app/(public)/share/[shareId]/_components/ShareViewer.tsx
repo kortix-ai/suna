@@ -70,13 +70,10 @@ interface ShareData {
 
 import { getActiveOpenCodeUrl } from '@/stores/server-store';
 
-const FALLBACK_BASE_URL = `${getEnv().BACKEND_URL.replace(/\/+$/, '')}/p/kortix-sandbox/8000`;
-
 function getOpenCodeBaseUrl(): string {
-  // Use the active server URL if available (resolves correct sandboxId).
-  // Only fall back to the local default for self-hosted / local mode.
-  const active = getActiveOpenCodeUrl();
-  return active || FALLBACK_BASE_URL;
+  // The active runtime URL resolves the correct (cloud) sandbox. No legacy
+  // 'kortix-sandbox' fallback — it 403'd and masked the real sandbox.
+  return getActiveOpenCodeUrl();
 }
 
 async function fetchShareData(shareId: string): Promise<ShareData> {

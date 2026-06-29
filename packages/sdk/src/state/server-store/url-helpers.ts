@@ -12,7 +12,8 @@ export function getBackendUrl(): string {
 }
 
 export function getDefaultSandboxUrl(): string {
-  const sandboxId = platformConfig().sandboxId || 'kortix-sandbox';
+  // Self-host override only; no legacy 'kortix-sandbox' default (it 403'd cloud).
+  const sandboxId = platformConfig().sandboxId || '';
   return `${getBackendUrl()}/p/${sandboxId}/8000`;
 }
 
