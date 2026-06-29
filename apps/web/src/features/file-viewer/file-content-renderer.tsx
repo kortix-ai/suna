@@ -299,6 +299,12 @@ export interface FileContentRendererProps {
    *  preview/source toggle into its own chrome. */
   markdownPreview?: boolean;
   onMarkdownPreviewChange?: (preview: boolean) => void;
+  /**
+   * Optional: report load status to the caller. Used by `show` tool cards to
+   * hide a dead/renamed file reference (→ 'error') instead of rendering the
+   * "file does not exist" state. No effect on the default viewer chrome.
+   */
+  onStatusChange?: (status: 'loading' | 'ready' | 'error') => void;
 }
 
 export function FileContentRenderer({
@@ -313,6 +319,7 @@ export function FileContentRenderer({
   readOnly = false,
   markdownPreview,
   onMarkdownPreviewChange,
+  onStatusChange,
 }: FileContentRendererProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -638,6 +645,16 @@ export function FileContentRenderer({
     blobError,
     rawBlob,
   ]);
+
+  // Report load status up (used by `show` cards to hide dead references). Only
+  // fires when a caller opts in via `onStatusChange`; the default viewer is
+  // unaffected.
+  useEffect(() => {
+    if (!onStatusChange) return;
+    if (isNotFound) onStatusChange('error');
+    else if (showLoadingState) onStatusChange('loading');
+    else onStatusChange('ready');
+  }, [onStatusChange, isNotFound, showLoadingState]);
 
   // ---------------------------------------------------------------------------
   // Shared CodeEditor props — keeps edit & read-only paths DRY

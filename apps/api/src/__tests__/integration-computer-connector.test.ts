@@ -21,6 +21,7 @@ import {
 import { synthesizeComputerConnectors } from '../executor/computer-materialize';
 import { syncProjectConnectors } from '../executor/sync';
 import { executeComputerCall, listAccountComputers } from '../tunnel/core/rpc-core';
+import { dbExecutorRouterDeps } from '../executor/db-deps';
 
 let projectId = '';
 let accountId = '';
@@ -82,7 +83,7 @@ afterAll(async () => {
 });
 
 describe('computer connector — real DB e2e', () => {
-  test('synth produces ONE computer spec when the account has a machine + the flag', async () => {
+  test('synth produces ONE computer spec when the account has a connected machine', async () => {
     if (!seeded) return;
     const specs = await synthesizeComputerConnectors(projectId, []);
     expect(specs).toHaveLength(1);
@@ -91,14 +92,15 @@ describe('computer connector — real DB e2e', () => {
     expect(specs[0]!.auth.type).toBe('none');
   });
 
-  test('synth gates off the agent_tunnel flag', async () => {
+  test('synth is a REGULAR connector — a connected machine alone materializes it, no agent_tunnel flag', async () => {
     if (!seeded) return;
-    // Temporarily clear the flag → no synth.
+    // Clear the experimental flag entirely: the connector no longer depends on
+    // it (it's machine-driven like the Slack channel connector). Previously this
+    // returned []; now the connected machine alone is enough.
     await db.update(projects).set({ metadata: {} as any }).where(eq(projects.projectId, projectId));
-    const none = await synthesizeComputerConnectors(projectId, []);
-    expect(none).toHaveLength(0);
-    // Restore the flag for the rest of the suite.
-    await db.update(projects).set({ metadata: { experimental: { agent_tunnel: true } } as any }).where(eq(projects.projectId, projectId));
+    const specs = await synthesizeComputerConnectors(projectId, []);
+    expect(specs).toHaveLength(1);
+    expect(specs[0]!.slug).toBe('computer');
   });
 
   test('full sync materializes the computer connector + the tunnel catalog', async () => {
@@ -128,6 +130,32 @@ describe('computer connector — real DB e2e', () => {
     expect(actions.some((a) => a.path === 'list_computers')).toBe(true);
     expect(actions.some((a) => a.path === 'fs.read')).toBe(true);
     for (const a of actions) expect((a.binding as { kind: string }).kind).toBe('tunnel');
+  });
+
+  test('settings reads (policies/config) resolve the SYNTHETIC connector instead of 404ing', async () => {
+    if (!seeded) return;
+    // Reproduces the dashboard bug: a synthetic connector (channel/computer) is
+    // never declared in kortix.toml, so the manifest-only read returned null →
+    // the route 404'd ("connector not found") on a connector that exists + works.
+    // The fix falls back to the materialized DB row.
+    const [conn] = await db
+      .select()
+      .from(executorConnectors)
+      .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, 'computer')));
+    if (!conn) return; // sync skipped (git backend unreachable) — nothing materialized to read.
+
+    const policies = await dbExecutorRouterDeps.getConnectorPolicies!(projectId, 'computer');
+    expect(policies).not.toBeNull(); // would have been null → 404 before the fix
+    expect(Array.isArray(policies!.policies)).toBe(true);
+
+    const config = await dbExecutorRouterDeps.getConnectorConfig!(projectId, 'computer');
+    expect(config).not.toBeNull();
+    expect(config!.provider).toBe('computer');
+    expect(config!.slug).toBe('computer');
+
+    // A genuinely unknown slug must still be null → a true 404 (fallback doesn't mask it).
+    const missing = await dbExecutorRouterDeps.getConnectorPolicies!(projectId, 'no-such-connector-xyz');
+    expect(missing).toBeNull();
   });
 
   test('list_computers returns the connected machine and DB-backed online status', async () => {

@@ -1,8 +1,9 @@
 'use client';
 
+import { ConsentGate } from '@/components/consent-gate';
 import Footer from '@/components/home/footer';
 import { Navbar } from '@/components/home/navbar';
-import { ConsentGate } from '@/components/consent-gate';
+import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { Children } from 'react';
 
 export default function HomeLayout({
@@ -13,13 +14,15 @@ export default function HomeLayout({
   const routedChildren = Children.toArray(children);
 
   return (
-    <div className="relative min-h-dvh w-full">
-      <ConsentGate />
-      <div className="fixed top-0 right-0 left-0 z-50">
-        <Navbar isAbsolute />
+    <RequestDemoProvider>
+      <div className="relative min-h-dvh w-full">
+        <ConsentGate />
+        <div className="fixed top-0 right-0 left-0 z-50">
+          <Navbar isAbsolute />
+        </div>
+        {routedChildren}
+        <Footer />
       </div>
-      {routedChildren}
-      <Footer />
-    </div>
+    </RequestDemoProvider>
   );
 }

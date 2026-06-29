@@ -51,11 +51,13 @@ interface ExperimentalFeatureDef {
  * The registry. Order here is the order shown in Customize → Settings →
  * Experimental.
  *
- * agent_tunnel → connector: connected machines now ALSO flow through the
- * Executor as a `computer` connector (one connector fronts all the account's
- * machines; `connectors`/`discover`/`describe`/`call`, one audit + policy path).
- * This flag still gates the dedicated tunnel surface (Customize → Computers, the
- * device-auth / permissions UI) AND the auto-materialization of that connector.
+ * agent_tunnel → connector: connected machines flow through the Executor as a
+ * regular `computer` connector (one connector fronts all the account's machines;
+ * `connectors`/`discover`/`describe`/`call`, one audit + policy path). That
+ * connector is NO LONGER gated by this flag — it auto-materializes whenever the
+ * account has a connected machine, exactly like the Slack channel connector
+ * (see executor/computer-materialize.ts). This flag now only gates the dedicated
+ * tunnel surface (Customize → Computers, the device-auth / permissions UI).
  * See docs/specs/computer-connector.md.
  */
 const FEATURES: readonly ExperimentalFeatureDef[] = [

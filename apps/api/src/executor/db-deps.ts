@@ -75,6 +75,7 @@ import {
   type ConnectorDraft,
 } from './manifest-crud';
 import type { ActionBinding, Risk } from './types';
+import type { ChannelPlatform } from '../projects/connectors';
 import type { ExecutorAuth, FetchImpl } from './execute';
 import type { GatewayAction, GatewayConnector, GatewayDeps } from './gateway';
 import type {
@@ -488,6 +489,68 @@ async function setSharing(projectId: string, slug: string, intent: SharingIntent
   return true;
 }
 
+/**
+ * Read a connector's per-tool policies for the dashboard/settings surface.
+ *
+ * Declared connectors are manifest-first (kortix.toml is their source of truth).
+ * Install-driven SYNTHETIC connectors (channel/computer) are never in the
+ * manifest, so the manifest read returns null and the route would 404
+ * ("connector not found") — even though the connector exists, works, and its
+ * policies are enforced at call time from the DB. Fall back to the materialized
+ * rows (executor_connector_policies) so the settings panel renders. Only a slug
+ * that is neither declared NOR a real DB row returns null (→ a true 404).
+ */
+async function getConnectorPolicies(
+  projectId: string,
+  slug: string,
+): Promise<{ policies: Array<{ match: string; action: string }> } | null> {
+  const fromManifest = await getConnectorPoliciesFromManifest(projectId, slug);
+  if (fromManifest) return fromManifest;
+  const [row] = await db
+    .select({ connectorId: executorConnectors.connectorId })
+    .from(executorConnectors)
+    .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
+    .limit(1);
+  if (!row) return null;
+  const policies = await loadConnectorPoliciesFor(row.connectorId);
+  return { policies: policies.map((p) => ({ match: p.match, action: p.action })) };
+}
+
+/**
+ * Read a connector's definition for the editor. Same manifest-first / DB-fallback
+ * rule as getConnectorPolicies: synthetic channel/computer connectors aren't in
+ * kortix.toml, so reconstruct the view from the materialized row instead of 404ing.
+ */
+async function getConnectorConfig(
+  projectId: string,
+  slug: string,
+): Promise<Awaited<ReturnType<typeof getConnectorConfigFromManifest>>> {
+  const fromManifest = await getConnectorConfigFromManifest(projectId, slug);
+  if (fromManifest) return fromManifest;
+  const [row] = await db
+    .select()
+    .from(executorConnectors)
+    .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
+    .limit(1);
+  if (!row) return null;
+  const cfg = (row.config ?? {}) as Record<string, any>;
+  const { auth } = authOf(row);
+  return {
+    slug: row.slug,
+    provider: row.providerType,
+    platform: channelPlatform(row.config) as ChannelPlatform | null,
+    credentialMode: row.credentialMode as 'shared' | 'per_user',
+    app: cfg.app ?? null,
+    account: cfg.account ?? null,
+    url: cfg.url ?? null,
+    transport: cfg.transport ?? null,
+    endpoint: cfg.endpoint ?? null,
+    baseUrl: baseUrlOf(row),
+    spec: cfg.spec ?? null,
+    auth: { type: auth.type, in: auth.in, name: auth.name, prefix: auth.prefix },
+  };
+}
+
 export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   resolvePrincipal,
   resolveProjectPrincipal,
@@ -516,8 +579,8 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   },
   setCredentialMode: (projectId, accountId, slug, mode) => setConnectorCredentialModeInManifest(projectId, accountId, slug, mode),
   setConnectorName: (projectId, accountId, slug, name) => setConnectorNameInManifest(projectId, accountId, slug, name),
-  getConnectorPolicies: (projectId, slug) => getConnectorPoliciesFromManifest(projectId, slug),
-  getConnectorConfig: (projectId, slug) => getConnectorConfigFromManifest(projectId, slug),
+  getConnectorPolicies,
+  getConnectorConfig,
   setConnectorPolicies: (projectId, accountId, slug, policies) =>
     setConnectorPoliciesInManifest(projectId, accountId, slug, policies as Parameters<typeof setConnectorPoliciesInManifest>[3]),
   pipedreamConnect: pipedreamConfigured()

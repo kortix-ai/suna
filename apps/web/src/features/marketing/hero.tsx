@@ -1,23 +1,18 @@
-import { InteractiveDemoSection } from '@/components/home/interactive-demo-section';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
+import { HeroSurfaces } from '@/features/marketing/hero-surfaces';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { MessageSquare, PanelTop, Terminal } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import Link from 'next/link';
 import { useCallback } from 'react';
 import { HiArrowRight } from 'react-icons/hi2';
 
-const SURFACES = [
-  { label: 'Slack', icon: MessageSquare },
-  { label: 'Web workspace', icon: PanelTop },
-  { label: 'CLI', icon: Terminal },
-] as const;
-
 const Hero = () => {
   const { user } = useAuth();
+  const openDemo = useRequestDemo();
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tHome = useCallback(
     (key: string) => tHardcodedUi.raw(`appHomePage.${key}`),
@@ -40,12 +35,16 @@ const Hero = () => {
 
       <div className="z-20">
         <section className="mx-auto w-full max-w-6xl">
-          <h1 className="text-foreground mt-5 text-4xl leading-[1.1] font-medium tracking-tight md:text-5xl">
+          <Badge variant="kortix" className="rounded">
+            {tHome('heroEyebrow')}
+          </Badge>
+          <h1 className="text-foreground mt-6 text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
             {tHome('heroCommandCenter')}
-            <br />
-            <span className="text-muted-foreground">{tHome('heroAiWorkforce')}</span>
           </h1>
-          <p className="text-muted-foreground mt-6 max-w-xl text-lg leading-relaxed">
+          <p className="text-muted-foreground mt-5 text-xl font-normal tracking-tight text-balance sm:text-2xl">
+            {tHome('heroAiWorkforce')}
+          </p>
+          <p className="text-muted-foreground mt-5 max-w-xl text-base leading-relaxed">
             {tHome('heroDescription')}
           </p>
 
@@ -54,14 +53,14 @@ const Hero = () => {
               {tHome('startBuildingCta')}
               <HiArrowRight className="size-4" />
             </Button>
-            <Button size="xl" variant="secondary" asChild>
-              <Link href={'/enterprise'}>{tHome('line149JsxTextTalkToSales')}</Link>
+            <Button size="xl" variant="secondary" onClick={openDemo}>
+              {tHome('line149JsxTextTalkToSales')}
             </Button>
           </div>
         </section>
 
         <div id="demo" className="relative z-10 mx-auto mt-14 max-w-6xl scroll-mt-24 sm:mt-20">
-          <InteractiveDemoSection />
+          <HeroSurfaces />
         </div>
       </div>
     </section>
