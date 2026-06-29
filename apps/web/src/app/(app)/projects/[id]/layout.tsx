@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
+import { BackgroundActivityIndicator } from '@/components/projects/background-activity-indicator';
 import { SessionStreamKeeper } from '@/components/projects/session-stream-keeper';
 import { ProjectAccessBoundary } from '@/components/projects/project-access-boundary';
 import { createClient } from '@/lib/supabase/server';
@@ -24,6 +25,7 @@ export default async function ProjectLayout({ children, params }: ProjectLayoutP
   return (
     <ProjectAccessBoundary projectId={projectId}>
       <SessionStreamKeeper projectId={projectId} />
+      <BackgroundActivityIndicator />
       {children}
     </ProjectAccessBoundary>
   );
