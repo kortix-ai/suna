@@ -10,9 +10,9 @@ import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
-import { MeetView } from '@/features/workspace/customize/sections/view/meet-view';
 import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
+import { MeetView } from '@/features/workspace/customize/sections/view/meet-view';
 import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
@@ -35,7 +35,7 @@ import {
   Boxes,
   Container,
   FolderOpen,
-  GitPullRequest,
+  GitCommitHorizontal,
   KeyRound,
   Monitor,
   Plug,
@@ -46,10 +46,10 @@ import {
 import { useCallback, useEffect, useMemo } from 'react';
 import { LuSettings, LuUsersRound } from 'react-icons/lu';
 import { FilesSection } from './sections/files-section';
+import { LlmManagementView } from './sections/gateway-view';
 import { ChangesView } from './sections/view/changes-view';
 import { DevView } from './sections/view/dev-view';
 import { RailGroup, RailItem } from './type';
-import { LlmManagementView } from './sections/gateway-view';
 
 const GROUPS: readonly RailGroup[] = [
   {
@@ -66,7 +66,6 @@ const GROUPS: readonly RailGroup[] = [
       { section: 'connectors', label: 'Connectors', icon: Plug },
       { section: 'secrets', label: 'Secrets', icon: KeyRound },
       { section: 'channels', label: 'Channels', icon: ChatMessages },
-
     ],
   },
   {
@@ -79,7 +78,7 @@ const GROUPS: readonly RailGroup[] = [
   {
     label: 'Workspace',
     items: [
-      { section: 'changes', label: 'Changes', icon: GitPullRequest },
+      { section: 'changes', label: 'Checkpoints', icon: GitCommitHorizontal },
       { section: 'files', label: 'Files', icon: FolderOpen },
       { section: 'sandbox', label: 'Sandbox', icon: Container },
       { section: 'dev', label: 'Dev', icon: Terminal },
@@ -187,9 +186,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
   // `llm-management` stands in for every `llm-*` sub-section so deep-links still work.
   const sectionVisible = allItems.some((item) =>
-    item.section === 'llm-management'
-      ? section.startsWith('llm-')
-      : item.section === section,
+    item.section === 'llm-management' ? section.startsWith('llm-') : item.section === section,
   );
 
   useEffect(() => {
