@@ -29,7 +29,7 @@ import {
 import { AnimatePresence, motion, useInView } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import Image from 'next/image';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Icon } from '../icon/icon';
 
 const sectionShell = 'mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0';
@@ -433,6 +433,7 @@ function SlackSurfaceCard({
                 <div className="text-muted-foreground flex items-center">
                   <span className="flex size-7 items-center justify-center">
                     <svg
+                      aria-hidden="true"
                       className="size-[1.05rem]"
                       width="24"
                       height="24"
@@ -527,6 +528,18 @@ export function SurfacesSection() {
           title={tHome('storySurfacesTitle')}
           description={tHome('storySurfacesDescription')}
         />
+        <div className="mb-8 flex flex-wrap gap-2">
+          {tHome('surfacesChips')
+            .split(' · ')
+            .map((chip: string) => (
+              <span
+                key={chip}
+                className="border-border text-muted-foreground rounded-full border px-3 py-1 font-mono text-xs"
+              >
+                {chip}
+              </span>
+            ))}
+        </div>
         <div className="grid aspect-video h-full grid-cols-1 gap-4 md:grid-cols-12">
           {surfaceCards.map((card, index) =>
             card.key === 'slack' ? (

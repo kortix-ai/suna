@@ -1,16 +1,12 @@
-Guided onboarding, a unified Slack panel, and tool-card fixes
+Refreshed marketing site, new blog, and default-agent connector fixes
 
-**New**
-- **Guided project onboarding** — new projects now open into a full-screen, step-by-step setup that walks you through connecting your tools and getting to your first run.
-- **One `/kortix` Slack panel** — a single Slack command opens a unified panel with a real model picker and per-project default models.
-- **Desktop auto-update** — the desktop app now updates itself, with a steadier always-on-top window.
+Improved
+- Refreshed marketing site: a new Company-OS landing page with a Web / Slack / Teams / Mobile / CLI / SDK surface switcher and an interactive "your company, as files" explorer, a revamped enterprise hero, and a single "Request demo" flow across the site.
+- New blog: rebuilt as data-driven React pages (replacing MDX) with branded post covers, plus comparison write-ups (Claude Cowork; OpenClaw + Hermes; ChatGPT / Claude / Grok) covering bring-your-own-model cost and shared-vs-siloed work.
+- The mobile app download preview now shows real app screenshots instead of a placeholder mockup.
+- Cleaned up page titles and metadata so the title bar no longer repeats "Kortix".
 
-**Fixed**
-- Dead `show` tool cards no longer render a confusing "File not found" card — they're hidden when the artifact is gone.
-- Stuck tool results now resolve themselves when a run finishes, instead of needing a page refresh.
-- The in-sandbox terminal correctly replays your prompt again.
-- AgentMail inbox-limit errors are handled gracefully instead of failing hard.
-- Tighter, safer account-membership repair.
-
-**Behind the scenes**
-- Staging runs the full release gate behind Vercel SSO with the Slack identity gate enabled, and releases now go through promote only (the direct prod-hotfix path was removed).
+Fixed
+- Default-agent sessions now see their connectors. Sessions running as the default agent were getting an empty connector grant, which hid shared Slack channel and computer connectors — they now resolve correctly.
+- Install-based connectors (Slack channel, computer) no longer show "connector not found" in the dashboard connector settings; they fall back to the live connector record.
+- The Agent Computer Tunnel is now a regular connector: a connected machine shows up as a connector automatically, without needing an experimental flag.
