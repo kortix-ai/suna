@@ -156,6 +156,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   return (
     <Modal open={open} onOpenChange={(next) => (next ? undefined : close())}>
       <ModalContent
+        animation="none"
         showCloseButton={false}
         closeOnOutsideClick={false}
         variant="base"
