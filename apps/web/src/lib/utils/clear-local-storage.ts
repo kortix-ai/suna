@@ -9,18 +9,16 @@ export const clearUserLocalStorage = () => {
     localStorage.removeItem('pendingAgentPrompt');
     // Clean up legacy keys
     localStorage.removeItem('opencode-model-store-v1');
-    // Clear sandbox/server state — prevents stale sandbox IDs leaking across accounts
-    localStorage.removeItem('opencode-servers-v4');
+    // Clear tab state so it doesn't leak across accounts
     localStorage.removeItem('kortix-tabs');
-    localStorage.removeItem('kortix-tabs-per-server');
     // Clear pattern-based keys
     Object.keys(localStorage).forEach(key => {
       if (key.startsWith('maintenance-dismissed-')) {
         localStorage.removeItem(key);
       }
     });
-    // Clear sessionStorage sandbox connection flag
-    try { sessionStorage.removeItem('kortix-sandbox-was-connected'); } catch {}
+    // Clear sessionStorage runtime connection flag
+    try { sessionStorage.removeItem('kortix-runtime-was-connected'); } catch {}
 
     console.log('✅ Local storage cleared on logout');
   } catch (error) {

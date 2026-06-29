@@ -42,14 +42,14 @@ interface SandboxConnectionStore {
 // On hard refresh, wasConnected resets to false which triggers a full-screen
 // blocking overlay. By persisting it, users who were previously connected
 // see the lightweight reconnect pill instead, making reconnection feel instant.
-const STORAGE_KEY = "kortix-sandbox-was-connected";
-const PROVISION_VERIFIED_KEY = "kortix-sandbox-provision-verified";
+const STORAGE_KEY = "kortix-runtime-was-connected";
+const PROVISION_VERIFIED_KEY = "kortix-runtime-provision-verified";
 // Stronger than PROVISION_VERIFIED: POST /start already resolved stage='ready',
 // which the backend only returns once it reached the daemon's /session (runtime
 // proven healthy server-side). When this flag is set, the new instance starts
 // optimistically connected+healthy so the chat shows WITHOUT waiting out an extra
 // client-side /kortix/health round-trip. The poller still runs and self-corrects.
-const RUNTIME_READY_VERIFIED_KEY = "kortix-sandbox-runtime-ready";
+const RUNTIME_READY_VERIFIED_KEY = "kortix-runtime-ready";
 
 function loadWasConnected(): boolean {
 	try {

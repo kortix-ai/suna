@@ -77,11 +77,10 @@ export default function InstancesScreen() {
   const { sandboxId, switchSandbox } = useSandboxContext();
 
   const { data: rawInstances, isLoading, refetch, isRefetching } = useInstances();
-  // Fallback: if `/sandbox/list` returns empty (e.g. local-bridge discovery
-  // failed) but the user actually has an active sandbox known via
-  // `/sandbox`, surface it so the page never shows "No Instances" while the
-  // app's active sandbox is connected. Mirrors what useSandbox already does
-  // internally for the dashboard.
+  // Fallback: if `/sandbox/list` returns empty but the user actually has an
+  // active sandbox known via `/sandbox`, surface it so the page never shows
+  // "No Instances" while the app's active sandbox is connected. Mirrors what
+  // useSandbox already does internally for the dashboard.
   const { data: activeData } = useSandbox();
   const instances = React.useMemo<SandboxInfo[] | undefined>(() => {
     if (rawInstances === undefined) return undefined;
@@ -174,7 +173,7 @@ export default function InstancesScreen() {
                       <View className="flex-row items-center mb-2">
                         <View className="h-2.5 w-2.5 rounded-full mr-3" style={{ backgroundColor: '#FBBF24' }} />
                         <View className="flex-1">
-                          <Text className="font-roobert-medium text-[15px] text-foreground">Local Docker</Text>
+                          <Text className="font-roobert-medium text-[15px] text-foreground">Sandbox</Text>
                           <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">
                             {creatingProgress.message}
                           </Text>
@@ -480,7 +479,7 @@ const AddInstanceSheet = React.forwardRef<
               <View className="flex-row items-center mb-3">
                 <Icon as={Monitor} size={18} className="text-foreground/80" strokeWidth={2.2} />
                 <View className="ml-4 flex-1">
-                  <Text className="font-roobert-medium text-[15px] text-foreground">Local Docker</Text>
+                  <Text className="font-roobert-medium text-[15px] text-foreground">Sandbox</Text>
                   <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">{progress.message}</Text>
                 </View>
                 <Text className="font-roobert text-xs tabular-nums text-muted-foreground">

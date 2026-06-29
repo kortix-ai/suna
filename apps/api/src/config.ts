@@ -296,9 +296,6 @@ const envSchema = z.object({
   SANDBOX_IMAGE:               optStr,
   KORTIX_LOCAL_IMAGES:         optBoolFalse,
   SANDBOX_NETWORK:             optStr,
-  // Default port base for local Docker sandbox port mapping.
-  SANDBOX_PORT_BASE:           optInt(14000),
-  SANDBOX_CONTAINER_NAME:      z.string().optional().transform(v => v || undefined).default('kortix-sandbox'),
 
   // ── Sandbox lifecycle (Daytona auto-stop / auto-archive / auto-delete) ────
   // Set as SDK create() params so a box self-manages even if the API/tunnel
@@ -380,7 +377,7 @@ type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 // here plus a case in `getProvider()` in platform/providers/index.ts.
 const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'platinum'] as const;
 
-/** Parse comma-separated provider list (e.g. "daytona,local_docker"). */
+/** Parse comma-separated provider list (e.g. "daytona,platinum"). */
 function parseAllowedProviders(raw: string): SandboxProviderName[] {
   if (!raw) return ['daytona'];
   const names = raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -644,8 +641,6 @@ export const config = {
   SANDBOX_IMAGE: env.SANDBOX_IMAGE || 'kortix/kortix-sandbox:latest',
   KORTIX_LOCAL_IMAGES: env.KORTIX_LOCAL_IMAGES,
   SANDBOX_NETWORK: env.SANDBOX_NETWORK,
-  SANDBOX_PORT_BASE: env.SANDBOX_PORT_BASE,
-  SANDBOX_CONTAINER_NAME: env.SANDBOX_CONTAINER_NAME,
 
   /**
    * INTERNAL_SERVICE_KEY -- direction: kortix-api -> sandbox.

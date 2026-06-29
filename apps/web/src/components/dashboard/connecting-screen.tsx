@@ -523,7 +523,6 @@ function UnreachableView({
   sandboxId?: string;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const isLocalDocker = false;
   const isRestartRecovering = recoveryPhase !== 'idle';
   const secondsSinceRestart = restartRequestedAt ? Math.max(1, Math.floor((Date.now() - restartRequestedAt) / 1000)) : null;
 
@@ -538,25 +537,23 @@ function UnreachableView({
 
       <div className="flex flex-col items-center gap-1.5">
         <h1 className="text-sm font-medium text-foreground/90">
-          {isLocalDocker ? 'Local sandbox unreachable' : recoveryPhase === 'restarting_host' ? 'Rebooting host' : recoveryPhase === 'restarting_runtime' ? 'Restarting runtime services' : recoveryPhase === 'restarting_workload' ? 'Restarting workload' : degraded ? 'Workspace services unavailable' : 'Workspace offline'}
+          {recoveryPhase === 'restarting_host' ? 'Rebooting host' : recoveryPhase === 'restarting_runtime' ? 'Restarting runtime services' : recoveryPhase === 'restarting_workload' ? 'Restarting workload' : degraded ? 'Workspace services unavailable' : 'Workspace offline'}
         </h1>
         <p className="max-w-[300px] text-center text-xs leading-relaxed text-muted-foreground/55">
-          {isLocalDocker
-            ? 'Make sure Docker is running and the container has started.'
-            : recoveryPhase === 'restarting_host'
-              ? 'The host reboot was accepted. Waiting for the machine and services to come back online.'
-              : recoveryPhase === 'restarting_runtime'
-                ? 'The runtime restart was accepted. Waiting for core services to come back online.'
-              : recoveryPhase === 'restarting_workload'
-                ? 'The workload restart was accepted. Waiting for the container and core services to come back online.'
-              : degraded
-                ? 'The host is reachable, but the core workspace runtime is failing requests. Restart the runtime or workload to recover services.'
-              : 'This workspace is unreachable. Return to projects and open or create another session.'}
+          {recoveryPhase === 'restarting_host'
+            ? 'The host reboot was accepted. Waiting for the machine and services to come back online.'
+            : recoveryPhase === 'restarting_runtime'
+              ? 'The runtime restart was accepted. Waiting for core services to come back online.'
+            : recoveryPhase === 'restarting_workload'
+              ? 'The workload restart was accepted. Waiting for the container and core services to come back online.'
+            : degraded
+              ? 'The host is reachable, but the core workspace runtime is failing requests. Restart the runtime or workload to recover services.'
+            : 'This workspace is unreachable. Return to projects and open or create another session.'}
         </p>
-        {!isLocalDocker && sandboxId ? (
+        {sandboxId ? (
           <p className="text-xs font-mono text-muted-foreground/35">Sandbox {sandboxId.slice(0, 8)}</p>
         ) : null}
-        {!isLocalDocker && isRestartRecovering && secondsSinceRestart ? (
+        {isRestartRecovering && secondsSinceRestart ? (
           <p className="text-xs font-mono text-muted-foreground/35">{tHardcodedUi.raw('componentsDashboardConnectingScreen.line564JsxTextRecovering')}{secondsSinceRestart}s</p>
         ) : null}
       </div>

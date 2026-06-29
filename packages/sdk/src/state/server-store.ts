@@ -2,41 +2,31 @@ import { create } from 'zustand';
 
 import { platformConfig } from '../platform/config';
 
+import { type ServerStore } from './server-store/types';
 import {
-  type SandboxProvider,
-  type ServerEntry,
-  type ServerStore,
-} from './server-store/types';
-import {
-  deriveProxyBaseFromServerUrl,
   getBackendUrl,
   getDefaultSandboxUrl,
 } from './server-store/url-helpers';
-import { getCurrentRuntimeSandboxId, getCurrentRuntimeUrl } from './current-runtime';
+import {
+  getCurrentRuntimeSandboxId,
+  getCurrentRuntimeUrl,
+  getCurrentRuntimeDbSandboxId,
+} from './current-runtime';
 
 // Re-export the public surface that lives in sibling modules so importers of
 // '../state/server-store' (and '@kortix/sdk/server-store') stay unchanged.
-export type { SandboxProvider, ServerEntry };
 export { getSandboxUrlForExternalId } from './server-store/url-helpers';
 
 /**
  * server-store — a thin, read-only view over the per-session runtime.
  *
  * The runtime (which sandbox the app talks to) is owned by `current-runtime`,
- * set by the active session via `useSession`. This store exposes that as a
- * stable surface for the consumers that still read it:
- *   - `getActiveServerUrl()` → the active OpenCode proxy URL.
- *   - `activeServerId` / `serverVersion` / `urlVersion` / `servers` are inert
- *     fields kept so existing query/scoping-key + registry consumers keep
- *     compiling. The old multi-instance registry, the persisted server list,
- *     and the `setActiveServer`/`switchToInstance`/`registerOrUpdateSandbox`
- *     switching machinery are gone — there is no "active server" to switch.
+ * set by the active session via `useSession`. This store exposes it as a stable
+ * surface: `getActiveServerUrl()` resolves the active OpenCode proxy URL. The
+ * old multi-instance registry, the persisted server list, and the server-
+ * switching machinery are gone — there is no "active server" to switch.
  */
 export const useServerStore = create<ServerStore>(() => ({
-  servers: [],
-  activeServerId: '',
-  serverVersion: 0,
-  urlVersion: 0,
   getActiveServerUrl: () => getActiveOpenCodeUrl(),
 }));
 
@@ -65,6 +55,18 @@ export function getActiveSandboxId(): string | undefined {
 }
 
 /**
+ * DB instance id (platform `sandbox_id`) for the active runtime's sandbox.
+ *
+ * This is the stable DB primary key — distinct from the external id returned by
+ * `getActiveSandboxId()`. Ownership-scoped APIs (per-sandbox API keys) key on
+ * this, not the external id (which the backend would mistake for the DB key).
+ * Only set while a session runtime is active.
+ */
+export function getActiveDbSandboxId(): string | undefined {
+  return getCurrentRuntimeDbSandboxId() ?? undefined;
+}
+
+/**
  * Extract the backend port from NEXT_PUBLIC_BACKEND_URL (e.g. 8008 from
  * "http://localhost:8008/v1"). Used for subdomain URL construction:
  *   http://p{port}-{sandboxId}.localhost:{backendPort}/
@@ -79,27 +81,18 @@ export function getBackendPort(): number {
 }
 
 /**
- * Derive SubdomainUrlOptions from a ServerEntry (pure function).
+ * Subdomain URL options for the active runtime (pure-ish function).
  *
  * Always returns a valid options object — never undefined. Every provider routes
  * through the same backend preview proxy; the `apiBaseUrl` field lets
  * `rewriteLocalhostUrl` take the path-based branch on VPS/cloud deployments
- * where *.localhost DNS isn't available. Falls back to the active runtime's
- * sandbox id when the entry has none.
+ * where *.localhost DNS isn't available. The sandbox id comes from the active
+ * runtime (no legacy 'kortix-sandbox' default — it masked the real cloud sandbox
+ * and 403'd the preview proxy).
  */
-export function deriveSubdomainOpts(
-  server: ServerEntry | null | undefined,
-): { sandboxId: string; backendPort: number; apiBaseUrl: string } {
-  const fromUrl = server?.url ? deriveProxyBaseFromServerUrl(server.url) : null;
-  if (fromUrl) {
-    return fromUrl;
-  }
-
-  // Fall back to the active runtime's sandbox id. No legacy 'kortix-sandbox'
-  // default — it masked the real cloud sandbox and 403'd the preview proxy.
-  const sandboxId = server?.sandboxId || getActiveSandboxId() || '';
+export function deriveSubdomainOpts(): { sandboxId: string; backendPort: number; apiBaseUrl: string } {
   return {
-    sandboxId,
+    sandboxId: getActiveSandboxId() || '',
     backendPort: getBackendPort(),
     apiBaseUrl: getBackendUrl(),
   };

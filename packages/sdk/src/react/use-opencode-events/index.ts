@@ -38,16 +38,15 @@ export function useOpenCodeEventStream() {
   const clearPending = useOpenCodePendingStore((s) => s.clear);
   const stopCompaction = useOpenCodeCompactionStore((s) => s.stopCompaction);
   const applySyncEvent = useSyncStore((s) => s.applyEvent);
-  const serverVersion = useServerStore((s) => s.serverVersion);
-  // Re-render (and re-read getActiveServerUrl, which prefers current-runtime) when
-  // the session's runtime URL changes — so the SSE re-subscribes to the new daemon.
+  // Re-render (and re-read getActiveServerUrl, which resolves current-runtime) when
+  // the session's runtime changes — so the SSE re-subscribes to the new daemon.
   const runtimeVersion = useCurrentRuntime((s) => s.version);
   const activeServerUrl = useServerStore((s) => s.getActiveServerUrl());
   const sandboxStatus = useSandboxConnectionStore((s) => s.status);
   const runtimeHealthy = useSandboxConnectionStore((s) => s.healthy);
   const abortRef = useRef<AbortController | null>(null);
   const isMountRef = useRef(true);
-  const prevServerVersionRef = useRef(serverVersion);
+  const prevRuntimeVersionRef = useRef(runtimeVersion);
   const prevServerUrlRef = useRef(activeServerUrl);
 
   const {
@@ -59,16 +58,16 @@ export function useOpenCodeEventStream() {
 
   useEffect(() => {
     // On first mount, always start clean — the provider may have remounted
-    // after navigating from a non-dashboard page (e.g. /instances) where
-    // the server was switched while this component wasn't mounted. The ref
-    // would have been initialized to the post-switch serverVersion so the
+    // after navigating away and back while the session's runtime changed. The
+    // ref would have been initialized to the post-change runtimeVersion so the
     // isServerSwitch check below would miss the change.
     const isFirstMount = isMountRef.current;
     isMountRef.current = false;
 
-    // Only nuke caches on actual server switches (not URL/port updates)
-    const isServerSwitch = prevServerVersionRef.current !== serverVersion;
-    prevServerVersionRef.current = serverVersion;
+    // Only nuke caches on an actual runtime switch (new session/sandbox), not
+    // URL/port updates within the same runtime.
+    const isServerSwitch = prevRuntimeVersionRef.current !== runtimeVersion;
+    prevRuntimeVersionRef.current = runtimeVersion;
     const didServerUrlChange = prevServerUrlRef.current !== activeServerUrl;
     prevServerUrlRef.current = activeServerUrl;
 
@@ -417,7 +416,6 @@ export function useOpenCodeEventStream() {
     addQuestion,
     removeQuestion,
     clearPending,
-    serverVersion,
     runtimeVersion,
     activeServerUrl,
     sandboxStatus,

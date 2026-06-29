@@ -45,7 +45,7 @@ import {
   APIKeyCreateResponse,
   APIKeyRegenerateResponse,
 } from '@/lib/api/api-keys';
-import { getActiveSandboxId, getActiveOpenCodeUrl } from '@/stores/server-store';
+import { getActiveSandboxId, getActiveDbSandboxId, getActiveOpenCodeUrl } from '@/stores/server-store';
 import { getAuthToken } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
 
@@ -160,14 +160,11 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function APIKeysPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  // Per-sandbox API keys are keyed by the sandbox's DB instance id (a stable
-  // UUID the backend resolves ownership against). The external id can't be used
-  // — for cloud providers like Daytona it's also a UUID and the backend would
-  // treat it as the DB primary key and 404. The cloud runtime currently only
-  // exposes the external id, not the DB instance id, so this stays disabled.
-  // TODO(api-keys): resolve the active project's sandbox DB instance id so the
-  // per-sandbox key list can populate again for cloud runtimes.
-  const activeSandboxId: string | undefined = undefined;
+  // Per-sandbox API keys are keyed by the sandbox's DB instance id (sandbox_id),
+  // resolved from the active session runtime. The external id can't be used —
+  // for cloud providers like Daytona it's also a UUID and the backend would
+  // treat it as the DB primary key and 404.
+  const activeSandboxId = getActiveDbSandboxId();
   const activeSandboxExternalId = getActiveSandboxId();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newKeyData, setNewKeyData] = useState<NewAPIKeyData>({

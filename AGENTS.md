@@ -50,7 +50,7 @@ these as standing rules whenever you touch the data/runtime layer:
   provider.
 - **Session-scoped + provider-agnostic.** The public API is session-scoped
   (`kortix.session(pid, sid).health() / .previewUrl() / .restart() / …`).
-  "Sandbox" and the provider (daytona / local_docker / …) are server-side
+  "Sandbox" and the provider (daytona / …) are server-side
   concerns; client code must never branch on them.
 - **`apps/web` data modules are shims.** Files such as
   `apps/web/src/stores/server-store`, `lib/projects-client`, and

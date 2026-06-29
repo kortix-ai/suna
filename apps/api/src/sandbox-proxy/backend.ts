@@ -50,8 +50,6 @@ export interface SandboxRecord {
   status: string;
   /** Provider base URL stored on the row (used by the share endpoints). */
   baseUrl: string;
-  /** Host-mapped provider ports, when the provider records them. */
-  mappedPorts: Record<string, string>;
   /** Sandbox INTERNAL_SERVICE_KEY — proxy authenticates upstream with this. */
   serviceKey: string | null;
 }
@@ -117,7 +115,6 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
       status: sessionSandboxes.status,
       baseUrl: sessionSandboxes.baseUrl,
       config: sessionSandboxes.config,
-      metadata: sessionSandboxes.metadata,
     })
     .from(sessionSandboxes)
     .where(eq(sessionSandboxes.externalId, externalId))
@@ -127,15 +124,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
   if (!row) return null;
 
   const config = (row.config || {}) as Record<string, unknown>;
-  const metadata = (row.metadata || {}) as Record<string, unknown>;
   const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
-  const mappedPorts =
-    metadata.mappedPorts && typeof metadata.mappedPorts === 'object' && !Array.isArray(metadata.mappedPorts)
-      ? Object.fromEntries(
-          Object.entries(metadata.mappedPorts as Record<string, unknown>)
-            .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-        )
-      : {};
   setCachedServiceKey(externalId, serviceKey);
 
   return {
@@ -148,7 +137,6 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
     provider: row.provider,
     status: row.status,
     baseUrl: row.baseUrl || '',
-    mappedPorts,
     serviceKey,
   };
 }
@@ -186,8 +174,8 @@ export async function resolveServiceKey(sandboxId: string): Promise<string | nul
 // ── Preview link (provider-resolved upstream, cached per port) ────────────────
 // Delegates to the sandbox's provider — NOT hardcoded to Daytona. The proxy is
 // provider-agnostic: a Platinum sandbox resolves to its edge URL, Daytona to a
-// preview link, local-docker to the container address. (This is the fix for the
-// 502/503 every non-Daytona sandbox hit through `/v1/p/`.)
+// preview link. (This is the fix for the 502/503 every non-Daytona sandbox hit
+// through `/v1/p/`.)
 
 export async function resolvePreviewLink(
   sandboxRef: string | SandboxRecord,

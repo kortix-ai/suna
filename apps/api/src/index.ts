@@ -30,7 +30,6 @@ import { billingApp, accountDeletionApp } from './billing';
 import { platformApp } from './platform';
 import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
-import { serversApp } from './servers';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { requestDeadline } from './middleware/request-deadline';
 // Statically imported (NOT await import() in the handlers): on a long-running
@@ -696,10 +695,6 @@ app.route('/v1/admin', adminApp);
 // OAuth2 provider — public token endpoint, auth on authorize/consent
 app.route('/v1/oauth', oauthApp);
 
-// All remaining routes require authentication (JWT or kortix_ token).
-app.use('/v1/servers/*', combinedAuth);
-app.route('/v1/servers', serversApp);        // /v1/servers, /v1/servers/:id, /v1/servers/sync
-
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
 app.route('/v1/tunnel/device-auth', createDeviceAuthPublicRouter());
@@ -715,10 +710,9 @@ app.use('/v1/tunnel/*', async (c, next) => {
 });
 app.route('/v1/tunnel', tunnelApp);
 
-// Preview Proxy — unified route for both cloud (Daytona) and local mode.
-// Pattern: /v1/p/{sandboxId}/{port}/* for ALL modes.
-// Cloud:  sandboxId = Daytona external ID → proxied via Daytona SDK
-// Local:  sandboxId = container name (e.g. 'kortix-sandbox') → Docker DNS resolution
+// Preview Proxy — unified route for sandbox HTTP access.
+// Pattern: /v1/p/{sandboxId}/{port}/* — sandboxId is the provider external ID,
+// resolved to a reachable upstream URL via the provider's resolvePreviewLink.
 // Auth: unified previewProxyAuth (accepts Supabase JWT and kortix_ tokens).
 // MUST be after all explicit routes (wildcard catch-all).
 app.route('/v1/p', sandboxProxyApp);

@@ -115,8 +115,6 @@ export function useSandboxUpdate(currentVersion: string | null) {
   // Cloud sandboxes are platform-managed — there is no in-app image-update flow
   // for them, so there is no local sandbox descriptor to drive this hook.
   const sandbox: SandboxInfo | null = null;
-  // local_docker is gone — sandbox updates always run the cloud path.
-  const isLocalDocker = false;
 
   // Detect which channel the running instance belongs to
   const currentChannel = useMemo(() => detectChannel(currentVersion), [currentVersion]);
@@ -135,13 +133,12 @@ export function useSandboxUpdate(currentVersion: string | null) {
   const latestChannel = (latestQuery.data?.channel as VersionChannel) ?? currentChannel;
 
   const updateAvailable = useMemo(() => {
-    if (isLocalDocker) return false;
     if (!currentVersion || !latestVersion) return false;
     if (currentChannel === 'dev') {
       return isNewerDevVersion(currentVersion, latestVersion);
     }
     return isNewerVersion(currentVersion, latestVersion);
-  }, [currentVersion, latestVersion, currentChannel, isLocalDocker]);
+  }, [currentVersion, latestVersion, currentChannel]);
 
   // ── Live update status (polled while in-progress) ────────────────────────
   const [liveStatus, setLiveStatus] = useState<SandboxUpdateStatus | null>(null);
@@ -207,7 +204,7 @@ export function useSandboxUpdate(currentVersion: string | null) {
   // the tab regains focus so refresh / second-tab handoff can recover active
   // updates without hammering /update/status forever after terminal states.
   useEffect(() => {
-    if (!sandbox || isLocalDocker) return;
+    if (!sandbox) return;
     let cancelled = false;
     const check = async () => {
       try {
@@ -237,14 +234,13 @@ export function useSandboxUpdate(currentVersion: string | null) {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [sandbox, startPolling, isLocalDocker]);
+  }, [sandbox, startPolling]);
 
   // ── Trigger mutation ─────────────────────────────────────────────────────
   const updateMutation = useMutation({
     mutationFn: async (targetVersion?: string) => {
       const versionToInstall = targetVersion || latestVersion;
       if (!sandbox || !versionToInstall) throw new Error('No sandbox or version');
-      if (isLocalDocker) throw new Error('Local Docker updates are manual-only. Rebuild/restart with pnpm dev:sandbox:build.');
       // Start polling immediately — the POST returns immediately (fire-and-forget)
       startPolling();
       return triggerSandboxUpdate(sandbox, versionToInstall);

@@ -65,7 +65,7 @@ $CLI self-host env set --instance "$INSTANCE" \
   "SUPABASE_PUBLIC_URL=http://localhost:$SUPABASE_PORT" \
   "API_PORT=$API_PORT" "SUPABASE_PORT=$SUPABASE_PORT" "POSTGRES_PORT=$POSTGRES_PORT" \
   "FRONTEND_PORT=$FRONTEND_PORT" \
-  "ALLOWED_SANDBOX_PROVIDERS=local_docker" \
+  "ALLOWED_SANDBOX_PROVIDERS=daytona" \
   "KORTIX_LOCAL_IMAGES=true" \
   "API_IMAGE=$API_IMAGE" >/dev/null
 ok "config initialized"

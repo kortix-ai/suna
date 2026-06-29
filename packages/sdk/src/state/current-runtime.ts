@@ -16,13 +16,19 @@ import { create } from 'zustand';
  */
 interface CurrentRuntimeState {
   url: string | null;
+  /** The sandbox's external_id (Daytona id) — used for proxy routing. */
   sandboxId: string | null;
+  /** The sandbox's DB instance id (platform `sandbox_id`) — used by ownership-
+   *  scoped APIs like per-sandbox API keys that key on the DB row, not the
+   *  external id (which the backend would mistake for the primary key). */
+  dbSandboxId: string | null;
   version: number;
 }
 
 export const useCurrentRuntime = create<CurrentRuntimeState>(() => ({
   url: null,
   sandboxId: null,
+  dbSandboxId: null,
   version: 0,
 }));
 
@@ -31,10 +37,14 @@ export const useCurrentRuntime = create<CurrentRuntimeState>(() => ({
  * next runtime read then has no url and callers wait, exactly as before a session
  * is open.
  */
-export function setCurrentRuntime(url: string | null, sandboxId: string | null = null): void {
+export function setCurrentRuntime(
+  url: string | null,
+  sandboxId: string | null = null,
+  dbSandboxId: string | null = null,
+): void {
   const cur = useCurrentRuntime.getState();
-  if (cur.url === url && cur.sandboxId === sandboxId) return;
-  useCurrentRuntime.setState({ url, sandboxId, version: cur.version + 1 });
+  if (cur.url === url && cur.sandboxId === sandboxId && cur.dbSandboxId === dbSandboxId) return;
+  useCurrentRuntime.setState({ url, sandboxId, dbSandboxId, version: cur.version + 1 });
 }
 
 /** Read the current runtime url outside React (API modules, the client factory). */
@@ -45,4 +55,9 @@ export function getCurrentRuntimeUrl(): string | null {
 /** Read the current runtime sandbox id (external_id) outside React. */
 export function getCurrentRuntimeSandboxId(): string | null {
   return useCurrentRuntime.getState().sandboxId;
+}
+
+/** Read the current runtime DB sandbox id (platform `sandbox_id`) outside React. */
+export function getCurrentRuntimeDbSandboxId(): string | null {
+  return useCurrentRuntime.getState().dbSandboxId;
 }

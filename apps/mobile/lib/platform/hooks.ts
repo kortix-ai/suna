@@ -20,7 +20,6 @@ import {
   deleteSandbox,
   getProviders,
   type SandboxInfo,
-  type LocalSandboxProgress,
 } from './client';
 import type { Session, SessionMessage, SessionStatusMap } from './types';
 
@@ -74,14 +73,13 @@ export function useSandbox(enabled: boolean = true) {
       // First try to get existing active sandbox
       let sandbox = await getActiveSandbox();
 
-      // If no active sandbox, list everything the platform knows about — this
-      // also probes /platform/local-bridge/status, which discovers a running
-      // local Docker container and upserts it in the DB as 'active'. We reuse
-      // ANY sandbox the list returns (active / provisioning / stopped) so a
-      // cold app open never accidentally routes through POST /platform/init
-      // just because the DB row momentarily says 'stopped' — calling /init
-      // would trigger tryReactivateStaleSandbox → provider.start(), which can
-      // surface to users as a spurious "restart on every open".
+      // If no active sandbox, listSandboxes() retrieves all known sandboxes
+      // from the platform API. We reuse ANY sandbox the list returns (active /
+      // provisioning / stopped) so a cold app open never accidentally routes
+      // through POST /platform/init just because the DB row momentarily says
+      // 'stopped' — calling /init would trigger tryReactivateStaleSandbox →
+      // provider.start(), which can surface to users as a spurious "restart on
+      // every open".
       if (!sandbox) {
         log.log('📦 [useSandbox] No active sandbox, listing all sandboxes...');
         const allSandboxes = await listSandboxes();

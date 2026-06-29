@@ -106,7 +106,7 @@ export function useSession(
     // the current runtime url. Every read (getClient, the SSE stream, files/
     // terminal/git) resolves through it. `stage==='ready'` is server-proven, so the
     // health effect below seeds connected+healthy with no client poll.
-    setCurrentRuntime(getSandboxUrlForExternalId(sandbox.external_id), sandbox.external_id);
+    setCurrentRuntime(getSandboxUrlForExternalId(sandbox.external_id), sandbox.external_id, sandbox.sandbox_id);
     setSwitchedSandboxId(sandbox.sandbox_id);
   }, [startReady, sandbox, switchedSandboxId]);
   // Clear the current runtime when this session view unmounts.

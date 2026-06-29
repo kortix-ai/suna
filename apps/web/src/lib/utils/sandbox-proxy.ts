@@ -18,7 +18,7 @@ export interface SandboxProxyContext {
 export function createSandboxProxyContext(): SandboxProxyContext {
   return {
     serverUrl: getActiveOpenCodeUrl(),
-    subdomainOpts: deriveSubdomainOpts(null),
+    subdomainOpts: deriveSubdomainOpts(),
   };
 }
 

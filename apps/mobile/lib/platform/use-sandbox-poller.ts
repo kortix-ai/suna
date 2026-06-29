@@ -308,8 +308,7 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
         } else {
           // Still provisioning — update state
           const isNewStage = d.stage !== null && d.stage !== stateRef.current.currentStage;
-          // Local docker: use raw progress from backend (real pull %)
-          // Cloud: use max of current and backend progress (interpolation fills gaps)
+          // Use max of current and backend progress (interpolation fills gaps)
           const newProgress = Math.max(stateRef.current.progress, d.stageProgress ?? stateRef.current.progress);
           update({
             progress: newProgress,

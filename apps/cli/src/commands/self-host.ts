@@ -91,8 +91,6 @@ interface SelfHostEnv {
   INTERNAL_SERVICE_KEY: string;
   API_KEY_SECRET: string;
   TUNNEL_SIGNING_SECRET: string;
-  SANDBOX_CONTAINER_NAME: string;
-  SANDBOX_PORT_BASE: string;
   ALLOWED_SANDBOX_PROVIDERS: string;
   DAYTONA_API_KEY: string;
   DAYTONA_SERVER_URL: string;
@@ -859,11 +857,8 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     INTERNAL_SERVICE_KEY: token(32),
     API_KEY_SECRET: token(32),
     TUNNEL_SIGNING_SECRET: token(32),
-    SANDBOX_CONTAINER_NAME: `kortix-${flags.instance}-sandbox`,
-    SANDBOX_PORT_BASE: '15000',
     // Sandboxes run on a real provider, just like Kortix Cloud. Daytona is the
-    // default; `kortix self-host configure` collects the API key. local_docker
-    // remains available (no external account) for fully-local / CI use.
+    // self-host sandbox provider; `kortix self-host configure` collects the API key.
     ALLOWED_SANDBOX_PROVIDERS: 'daytona',
     DAYTONA_API_KEY: '',
     DAYTONA_SERVER_URL: 'https://app.daytona.io/api',
@@ -1055,13 +1050,11 @@ function writeCompose(instance: string): void {
       DAYTONA_API_KEY: \${DAYTONA_API_KEY}
       DAYTONA_SERVER_URL: \${DAYTONA_SERVER_URL}
       DAYTONA_TARGET: \${DAYTONA_TARGET}
-      DOCKER_HOST: unix:///var/run/docker.sock
       KORTIX_URL: http://kortix-api:8008
       FRONTEND_URL: \${PUBLIC_URL}
       CORS_ALLOWED_ORIGINS: \${PUBLIC_URL},\${API_PUBLIC_URL}
       SANDBOX_IMAGE: \${SANDBOX_IMAGE}
       SANDBOX_NETWORK: ${project}_default
-      KORTIX_LOCAL_DOCKER_HOST: host.docker.internal
       KORTIX_LOCAL_IMAGES: \${KORTIX_LOCAL_IMAGES}
       KORTIX_ROUTER_INTERNAL_ENABLED: "false"
       KORTIX_BILLING_INTERNAL_ENABLED: "false"
@@ -1069,8 +1062,6 @@ function writeCompose(instance: string): void {
       LLM_GATEWAY_BASE_URL: http://llm-gateway:8090/v1/llm
       GATEWAY_INTERNAL_TOKEN: \${GATEWAY_INTERNAL_TOKEN}
       OPENROUTER_API_KEY: \${OPENROUTER_API_KEY}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       supabase-db:
         condition: service_healthy

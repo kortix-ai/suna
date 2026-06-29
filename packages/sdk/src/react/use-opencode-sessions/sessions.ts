@@ -5,7 +5,7 @@ import { getClient } from '../../opencode/client';
 import { isOpenCodeConfigInvalidError } from '../../platform/opencode-errors';
 import { markSessionFresh } from '../../platform/fresh-sessions';
 import { useOpenCodeCompactionStore } from '../../state/opencode-compaction-store';
-import { useServerStore } from '../../state/server-store';
+import { useCurrentRuntime } from '../../state/current-runtime';
 import type { Session } from '@opencode-ai/sdk/v2/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_SESSIONS, canQueryOpenCodeSession } from './shared';
@@ -16,10 +16,10 @@ import { unwrap, getLSCache, setLSCache, LS_SESSIONS, canQueryOpenCodeSession } 
 
 export function useOpenCodeSessions() {
   const runtimeReady = useOpenCodeRuntimeReady();
-  // Subscribe to the active server so the query key recomputes the instant the
-  // sandbox switches — returning to a warm session hits its cached list rather
-  // than refetching from scratch.
-  const serverId = useServerStore((s) => s.activeServerId) ?? undefined;
+  // Subscribe to the active runtime sandbox so the query key recomputes the
+  // instant the sandbox switches — returning to a warm session hits its cached
+  // list rather than refetching from scratch.
+  const serverId = useCurrentRuntime((s) => s.sandboxId) ?? undefined;
   return useQuery<Session[]>({
     queryKey: opencodeKeys.sessions(serverId),
     queryFn: async () => {

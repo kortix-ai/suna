@@ -41,7 +41,7 @@ export interface ParsedLocalhostUrl {
 
 /** Options for proxy URL generation */
 export interface SubdomainUrlOptions {
-  /** Sandbox ID (e.g. 'kortix-sandbox' for local, Daytona ID for cloud) */
+  /** Sandbox ID (the sandbox's external id — the Daytona sandbox ID). */
   sandboxId: string;
   /** Backend port (e.g. 8008) — the port kortix-api listens on */
   backendPort: number;
@@ -358,9 +358,9 @@ function isBackendOnLocalhost(apiBaseUrl: string): boolean {
  * Build a preview proxy URL for a sandbox service port.
  *
  * Both modes are proxy URLs — neither connects to the user's raw localhost.
- * Provider type (local_docker, daytona, justavps) is irrelevant; the only thing
- * that matters is whether kortix-api is running on the user's local machine,
- * because that determines whether *.localhost DNS can reach it.
+ * The provider is irrelevant; the only thing that matters is whether kortix-api
+ * is running on the user's local machine, because that determines whether
+ * *.localhost DNS can reach it.
  *
  *   - **Subdomain** (backend local): `http://p{port}-{sandboxId}.localhost:{backendPort}/{path}`
  *     Transparent mode — the proxied app thinks it's at root `/`. Only works
@@ -370,8 +370,8 @@ function isBackendOnLocalhost(apiBaseUrl: string): boolean {
  *     Goes through Caddy → API → sandbox. Used for all deployed setups.
  *
  * @example
- *   // Local dev:      → 'http://p3210-kortix-sandbox.localhost:8008/viewer.html'
- *   // Deployed back:  → 'https://e2e-test.kortix.cloud/v1/p/kortix-sandbox/3210/viewer.html'
+ *   // Local dev:      → 'http://p3210-sb-abc123.localhost:8008/viewer.html'
+ *   // Deployed back:  → 'https://e2e-test.kortix.cloud/v1/p/sb-abc123/3210/viewer.html'
  */
 export function rewriteLocalhostUrl(
   port: number,
@@ -475,8 +475,8 @@ const PATH_PROXY_URL_REGEX =
  * Parse a preview proxy URL back to its components.
  * Handles both subdomain and path-based formats:
  *
- * Subdomain: http://p3210-kortix-sandbox.localhost:8008/viewer.html
- * Path:      https://e2e-test.kortix.cloud/v1/p/kortix-sandbox/3210/viewer.html
+ * Subdomain: http://p3210-sb-abc123.localhost:8008/viewer.html
+ * Path:      https://e2e-test.kortix.cloud/v1/p/sb-abc123/3210/viewer.html
  */
 export function parseSubdomainUrl(url: string): {
   port: number;
@@ -517,36 +517,18 @@ export function parseSubdomainUrl(url: string): {
 /**
  * Try to reverse-map a proxy URL back to its internal localhost equivalent.
  *
- * Handles:
- *   - `http://p{port}-{sandboxId}.localhost:{backendPort}/{path}` → `http://localhost:{port}{path}`
- *   - Direct mapped port URLs (e.g. `http://localhost:14002/...`) → `http://localhost:6080/...`
+ * Handles `http://p{port}-{sandboxId}.localhost:{backendPort}/{path}` →
+ * `http://localhost:{port}{path}`.
  *
  * Returns null if the URL can't be reverse-mapped.
  */
-export function proxyUrlToInternal(
-  proxyUrl: string,
-  mappedPorts?: Record<string, string>,
-): string | null {
+export function proxyUrlToInternal(proxyUrl: string): string | null {
   try {
     // Subdomain URL — http://p{port}-{sandboxId}.localhost:{backendPort}/{path}
     const subdomain = parseSubdomainUrl(proxyUrl);
     if (subdomain) {
       return `http://localhost:${subdomain.port}${subdomain.path}`;
     }
-
-    // Direct mapped port URL (e.g. http://localhost:14002/path)
-    if (mappedPorts) {
-      const url = new URL(proxyUrl);
-      const hostPort = url.port;
-      for (const [containerPort, mappedHostPort] of Object.entries(
-        mappedPorts,
-      )) {
-        if (mappedHostPort === hostPort) {
-          return `http://localhost:${containerPort}${url.pathname}${url.search}`;
-        }
-      }
-    }
-
     return null;
   } catch {
     return null;

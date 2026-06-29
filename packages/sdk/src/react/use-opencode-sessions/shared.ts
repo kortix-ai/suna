@@ -1,5 +1,5 @@
 import { ScopedCache } from '../../platform/storage/managed-storage';
-import { useServerStore } from '../../state/server-store';
+import { getCurrentRuntimeSandboxId } from '../../state/current-runtime';
 import type {
   Session,
   Agent,
@@ -30,7 +30,7 @@ import type {
  */
 export function activeServerKey(): string {
   try {
-    return useServerStore.getState().activeServerId ?? 'none';
+    return getCurrentRuntimeSandboxId() ?? 'none';
   } catch {
     return 'none';
   }
