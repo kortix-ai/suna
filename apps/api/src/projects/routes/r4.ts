@@ -24,6 +24,16 @@ import {
   downloadSlackFile,
   uploadSlackFile,
 } from "../../channels/slack/file-proxy";
+import {
+  MEET_VOICES,
+  DEFAULT_MEET_BOT_NAME,
+  isMeetVoice,
+  resolveProjectBotName,
+  resolveProjectVoice,
+  setProjectBotName,
+  setProjectVoice,
+} from "../../channels/meet-voices";
+import { previewVoiceB64, speakInMeeting } from "../../channels/meet-tts";
 import { buildSlackInstallUrl } from "../../channels/slack-oauth";
 import { slackOauthMode } from "../../channels/slack-oauth-mode";
 import {
@@ -1266,6 +1276,160 @@ projectsApp.openapi(
     if (!result.ok)
       return c.json({ error: result.error }, result.status as 400 | 404);
     return c.json({ ok: true, files: result.files });
+  },
+);
+
+// GET /v1/projects/:projectId/channels/meet/voices
+// The voice picker: the predefined catalog + the project's current selection,
+// plus whether speaking is wired (ElevenLabs configured).
+projectsApp.openapi(
+  createRoute({
+    method: "get",
+    path: "/{projectId}/channels/meet/voices",
+    tags: ["channels"],
+    summary: "GET /:projectId/channels/meet/voices",
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(z.object({ ok: z.boolean() }).passthrough(), "Voices"),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const [selected, botName] = await Promise.all([
+      resolveProjectVoice(projectId),
+      resolveProjectBotName(projectId),
+    ]);
+    return c.json({
+      ok: true,
+      selected: selected.id,
+      bot_name: botName,
+      default_bot_name: DEFAULT_MEET_BOT_NAME,
+      speak_enabled: Boolean(config.ELEVENLABS_API_KEY),
+      voices: MEET_VOICES.map((v) => ({ id: v.id, name: v.name, desc: v.desc })),
+    });
+  },
+);
+
+// PUT /v1/projects/:projectId/channels/meet/name — set the bot's display name.
+projectsApp.openapi(
+  createRoute({
+    method: "put",
+    path: "/{projectId}/channels/meet/name",
+    tags: ["channels"],
+    summary: "PUT /:projectId/channels/meet/name",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), bot_name: z.string() }).passthrough(), "Saved"),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const body = await readBody(c);
+    const name = String(body.name ?? body.bot_name ?? "");
+    const saved = await setProjectBotName(projectId, name);
+    return c.json({ ok: true, bot_name: saved });
+  },
+);
+
+// PUT /v1/projects/:projectId/channels/meet/voice — choose the meeting voice.
+projectsApp.openapi(
+  createRoute({
+    method: "put",
+    path: "/{projectId}/channels/meet/voice",
+    tags: ["channels"],
+    summary: "PUT /:projectId/channels/meet/voice",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), selected: z.string() }).passthrough(), "Saved"),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const body = await readBody(c);
+    const voiceId = String(body.voice ?? "");
+    if (!isMeetVoice(voiceId)) return c.json({ error: "unknown voice" }, 400);
+    const voice = await setProjectVoice(projectId, voiceId);
+    return c.json({ ok: true, selected: voice.id });
+  },
+);
+
+// POST /v1/projects/:projectId/channels/meet/voices/:voiceId/preview
+// Returns a base64 MP3 of a stock line in that voice (for the picker's preview).
+projectsApp.openapi(
+  createRoute({
+    method: "post",
+    path: "/{projectId}/channels/meet/voices/{voiceId}/preview",
+    tags: ["channels"],
+    summary: "POST /:projectId/channels/meet/voices/:voiceId/preview",
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), voiceId: z.string() }) },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), kind: z.string(), b64: z.string() }).passthrough(), "Preview"),
+      ...errors(400, 404, 502, 503),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const voiceId = c.req.param("voiceId");
+    if (!isMeetVoice(voiceId)) return c.json({ error: "unknown voice" }, 400);
+    const r = await previewVoiceB64(voiceId);
+    if (!r.ok) return c.json({ error: r.error }, r.status as 400 | 404 | 502 | 503);
+    return c.json({ ok: true, kind: "mp3", b64: r.b64 });
+  },
+);
+
+// POST /v1/projects/:projectId/channels/meet/speak — the bot speaks in the call.
+// Server-side proxy: text → ElevenLabs (project voice) → Recall output_audio.
+// Both keys stay server-side; backs `meet speak`.
+projectsApp.openapi(
+  createRoute({
+    method: "post",
+    path: "/{projectId}/channels/meet/speak",
+    tags: ["channels"],
+    summary: "POST /:projectId/channels/meet/speak",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), voice: z.string() }).passthrough(), "Spoken"),
+      ...errors(400, 404, 502, 503),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const body = await readBody(c);
+    const botId = String(body.bot_id ?? body.botId ?? "");
+    const text = String(body.text ?? "");
+    const voice = typeof body.voice === "string" ? body.voice : undefined;
+    if (!botId) return c.json({ error: "bot_id required" }, 400);
+    if (!text.trim()) return c.json({ error: "text required" }, 400);
+    const r = await speakInMeeting(projectId, botId, text, voice);
+    if (!r.ok) return c.json({ error: r.error }, r.status as 400 | 404 | 502 | 503);
+    return c.json({ ok: true, voice: r.voice });
   },
 );
 

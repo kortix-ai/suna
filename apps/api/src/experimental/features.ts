@@ -29,6 +29,7 @@ export type ExperimentalFeatureKey =
   | 'agent_tunnel'
   | 'marketplace'
   | 'agentmail_email'
+  | 'meet'
   | 'llm_gateway';
 
 /** How settled a feature is — surfaced as a badge so users know what to expect. */
@@ -98,6 +99,18 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     stability: 'experimental',
     available: () => true,
     // Explicit opt-in: hidden unless a project enables it in Settings.
+    platformDefault: () => false,
+  },
+  {
+    key: 'meet',
+    name: 'Meetings',
+    description:
+      'Send a notetaker bot to your calls — Google Meet, Zoom, or Microsoft Teams — to record, transcribe with speaker labels, answer when addressed, and speak back in a voice you choose. Powered by Recall.ai; the agent drives it through the `meet` channel CLI.',
+    stability: 'experimental',
+    // Master kill switch (the global gate): when off, Meet disappears platform-wide
+    // and every project falls back to no meeting bot — mirrors LLM Gateway.
+    available: () => config.MEET_ENABLED,
+    // Explicit opt-in: a project enables Meet in Settings.
     platformDefault: () => false,
   },
   {

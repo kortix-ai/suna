@@ -25,6 +25,7 @@
 import { useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
+  AudioLines,
   Bot,
   Boxes,
   Container,
@@ -52,6 +53,7 @@ import { CommandsView } from '@/components/projects/customize/sections/commands-
 import { ComputersView } from '@/components/projects/customize/sections/computers-view';
 import { ConnectorsView } from '@/components/projects/customize/sections/connectors-view';
 import { LlmManagementView } from '@/components/projects/customize/sections/gateway-view';
+import { MeetView } from '@/components/projects/customize/sections/meet-view';
 import { MembersView } from '@/components/projects/customize/sections/members-view';
 import { SandboxView } from '@/components/projects/customize/sections/sandbox-view';
 import { SecretsView } from '@/components/projects/customize/sections/secrets-view';
@@ -141,10 +143,15 @@ const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', ico
 // Marketplace — browse + install skills, agents, commands, tools, and bundles.
 const MARKETPLACE_ITEM: RailItem = { section: 'marketplace', label: 'Marketplace', icon: Store };
 
+// Meetings — the notetaker bot's controls (voice). Shown only when the project
+// opted into the experimental Meetings feature.
+const MEET_ITEM: RailItem = { section: 'meet', label: 'Meetings', icon: AudioLines };
+
 /** Build the rail groups for this project, injecting flag-gated entries. */
 function railGroups(
   tunnelEnabled: boolean,
   llmGatewayEnabled: boolean,
+  meetEnabled: boolean,
 ): readonly RailGroup[] {
   return GROUPS.map((g) => {
     if (g.label === 'Build') {
@@ -152,6 +159,7 @@ function railGroups(
     }
     if (g.label === 'Connect') {
       const items = [...g.items];
+      if (meetEnabled) items.push(MEET_ITEM);
       if (tunnelEnabled) items.push(COMPUTERS_ITEM);
       if (llmGatewayEnabled) items.push(LLM_ITEM);
       return { ...g, items };
@@ -189,9 +197,10 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
   // project has opted into the experimental feature.
   const tunnelEnabled = detail.data?.project?.experimental?.agent_tunnel ?? false;
   const llmGatewayEnabled = detail.data?.project?.experimental?.llm_gateway ?? false;
+  const meetEnabled = detail.data?.project?.experimental?.meet ?? false;
   const groups = useMemo(
-    () => railGroups(tunnelEnabled, llmGatewayEnabled),
-    [tunnelEnabled, llmGatewayEnabled],
+    () => railGroups(tunnelEnabled, llmGatewayEnabled, meetEnabled),
+    [tunnelEnabled, llmGatewayEnabled, meetEnabled],
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
   // The single `llm-management` rail item stands in for every `llm-*` sub-section
@@ -444,6 +453,8 @@ function SectionContent({
       return <TriggersView projectId={projectId} type="webhook" />;
     case 'channels':
       return <ChannelsView projectId={projectId} />;
+    case 'meet':
+      return <MeetView projectId={projectId} />;
     case 'sandbox':
       return <SandboxView projectId={projectId} />;
     case 'dev':
