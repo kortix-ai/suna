@@ -25,13 +25,14 @@ import { MOCK_ITEMS } from './mock-data';
 import { type ReviewActions, ReviewDetailModal } from './review-detail-modal';
 import { KIND_META, RISK_META, SOURCE_META, STATUS_META } from './review-meta';
 import {
-  type ReviewItem,
-  type ReviewKind,
-  type ReviewSegment,
-  type ReviewStatus,
-  isSafeRisk,
-  segmentForStatus,
-} from './types';
+  approveAllSafe,
+  countsBySegment,
+  decideApprovalAction,
+  filterItems,
+  safePendingCount,
+  setStatus,
+} from './review-reducer';
+import { type ReviewItem, type ReviewKind, type ReviewSegment, segmentForStatus } from './types';
 
 function rel(iso: string): string {
   const mins = Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
@@ -117,84 +118,29 @@ export function ReviewCenter() {
   const [kindFilter, setKindFilter] = useState<ReviewKind | 'all'>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const counts = useMemo(() => {
-    const c: Record<ReviewSegment, number> = { needs_you: 0, waiting: 0, done: 0 };
-    for (const i of items) c[segmentForStatus(i.status)] += 1;
-    return c;
-  }, [items]);
-
+  const counts = useMemo(() => countsBySegment(items), [items]);
   const visible = useMemo(
-    () =>
-      items.filter(
-        (i) =>
-          segmentForStatus(i.status) === segment && (kindFilter === 'all' || i.kind === kindFilter),
-      ),
+    () => filterItems(items, segment, kindFilter),
     [items, segment, kindFilter],
   );
-
-  const safePendingCount = useMemo(
-    () =>
-      visible
-        .filter((i) => i.kind === 'approval')
-        .reduce(
-          (n, i) =>
-            n +
-            (i.kind === 'approval'
-              ? i.detail.actions.filter((a) => isSafeRisk(a.risk) && !a.decided).length
-              : 0),
-          0,
-        ),
-    [visible],
-  );
-
-  const setItemStatus = (id: string, status: ReviewStatus) =>
-    setItems((prev) => prev.map((i) => (i.id === id ? ({ ...i, status } as ReviewItem) : i)));
+  const visibleSafePending = useMemo(() => safePendingCount(visible), [visible]);
 
   const actions: ReviewActions = {
     resolve: (id, status, toast) => {
-      setItemStatus(id, status);
+      setItems((prev) => setStatus(prev, id, status));
       if (toast)
         (status === 'rejected' || status === 'changes_requested' ? infoToast : successToast)(toast);
     },
     decideAction: (itemId, actionId, decision) =>
-      setItems((prev) =>
-        prev.map((i) => {
-          if (i.id !== itemId || i.kind !== 'approval') return i;
-          const acts = i.detail.actions.map((a) =>
-            a.id === actionId ? { ...a, decided: decision } : a,
-          );
-          const allDecided = acts.every((a) => a.decided);
-          const anyApproved = acts.some((a) => a.decided === 'approved');
-          return {
-            ...i,
-            detail: { actions: acts },
-            status: allDecided ? (anyApproved ? 'approved' : 'rejected') : i.status,
-          };
-        }),
-      ),
-    approveAllSafe: (itemId) =>
-      setItems((prev) =>
-        prev.map((i) => {
-          if (i.id !== itemId || i.kind !== 'approval') return i;
-          const acts = i.detail.actions.map((a) =>
-            isSafeRisk(a.risk) && !a.decided ? { ...a, decided: 'approved' as const } : a,
-          );
-          const allDecided = acts.every((a) => a.decided);
-          const anyApproved = acts.some((a) => a.decided === 'approved');
-          return {
-            ...i,
-            detail: { actions: acts },
-            status: allDecided ? (anyApproved ? 'approved' : 'rejected') : i.status,
-          };
-        }),
-      ),
+      setItems((prev) => decideApprovalAction(prev, itemId, actionId, decision)),
+    approveAllSafe: (itemId) => setItems((prev) => approveAllSafe(prev, itemId)),
   };
 
   const onApproveAllSafeGlobal = () => {
     const ids = visible.filter((i) => i.kind === 'approval').map((i) => i.id);
-    ids.forEach((id) => actions.approveAllSafe(id));
+    setItems((prev) => ids.reduce((acc, id) => approveAllSafe(acc, id), prev));
     successToast(
-      `Approved ${safePendingCount} safe ${safePendingCount === 1 ? 'action' : 'actions'}`,
+      `Approved ${visibleSafePending} safe ${visibleSafePending === 1 ? 'action' : 'actions'}`,
     );
   };
 
@@ -253,11 +199,11 @@ export function ReviewCenter() {
           </Tabs>
 
           {/* Bulk bar */}
-          {segment === 'needs_you' && safePendingCount > 0 && (
+          {segment === 'needs_you' && visibleSafePending > 0 && (
             <div className="bg-kortix-green/10 border-kortix-green/25 flex flex-wrap items-center gap-3 rounded-md border px-4 py-2.5">
               <ShieldCheckSolid className="text-kortix-green size-5 shrink-0" />
               <span className="text-foreground min-w-0 flex-1 text-sm text-pretty">
-                {safePendingCount} safe {safePendingCount === 1 ? 'action' : 'actions'} can be
+                {visibleSafePending} safe {visibleSafePending === 1 ? 'action' : 'actions'} can be
                 approved together. Risky ones stay for you to decide.
               </span>
               <Button size="sm" onClick={onApproveAllSafeGlobal}>
