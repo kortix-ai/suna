@@ -50,7 +50,18 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { listGroups, removeGroupMember, type AccountGroup } from '@/lib/iam-client';
+import {
+  listGroups,
+  removeGroupMember,
+  listPolicies,
+  createPolicy,
+  deletePolicy,
+  listRoles,
+  listAgentIdentities,
+  type AccountGroup,
+  type IamPolicy,
+  type PrincipalType,
+} from '@/lib/iam-client';
 import {
   approveProjectAccessRequest,
   attachGroupToProject,
@@ -187,6 +198,15 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
 
         {canManage && project?.account_id && (
           <ResourceAccessCard
+            projectId={projectId}
+            accountId={project.account_id}
+            canManage={!!canManage}
+            members={accessQuery.data?.members ?? []}
+          />
+        )}
+
+        {canManage && project?.account_id && (
+          <ProjectRoleAssignmentsCard
             projectId={projectId}
             accountId={project.account_id}
             canManage={!!canManage}
@@ -1900,6 +1920,262 @@ function ResourceAccessCard({
                   ) : (
                     <Badge variant="outline" size="sm" className="capitalize">
                       {g.principal_type}
+                    </Badge>
+                  )
+                }
+              />
+            );
+          })}
+        </List>
+      )}
+    </SectionCard>
+  );
+}
+
+/**
+ * Custom-role assignments for THIS project — the project-level view of the
+ * account Roles page's bindings. Custom roles are DEFINED on the account Roles
+ * page; here a manager grants one (to a member / department / agent) scoped to
+ * this project, so a project's full access picture lives in one place.
+ */
+function ProjectRoleAssignmentsCard({
+  projectId,
+  accountId,
+  canManage,
+  members,
+}: {
+  projectId: string;
+  accountId: string;
+  canManage: boolean;
+  members: ProjectAccessMember[];
+}) {
+  const queryClient = useQueryClient();
+  const policiesKey = ['project-policies', projectId];
+
+  const policiesQuery = useQuery({
+    queryKey: policiesKey,
+    queryFn: () => listPolicies(accountId, { scopeId: projectId }),
+    staleTime: 20_000,
+  });
+  const rolesQuery = useQuery({
+    queryKey: ['iam-roles', accountId],
+    queryFn: () => listRoles(accountId),
+    enabled: canManage,
+    staleTime: 60_000,
+  });
+  const groupsQuery = useQuery({
+    queryKey: ['account-groups', accountId],
+    queryFn: () => listGroups(accountId),
+    enabled: canManage,
+    staleTime: 60_000,
+  });
+  const agentsQuery = useQuery({
+    queryKey: ['iam-agent-identities', accountId],
+    queryFn: () => listAgentIdentities(accountId),
+    enabled: canManage,
+    staleTime: 60_000,
+  });
+
+  // Only project-scoped bindings for THIS project (account-wide custom roles
+  // apply too, but they're managed on the account page, not per-project).
+  const policies = useMemo(
+    () => (policiesQuery.data ?? []).filter((p) => p.scope_type === 'project' && p.scope_id === projectId),
+    [policiesQuery.data, projectId],
+  );
+  const customRoles = useMemo(() => (rolesQuery.data ?? []).filter((r) => !r.is_system), [rolesQuery.data]);
+  const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
+  const projectAgents = useMemo(
+    () => (agentsQuery.data ?? []).filter((a) => a.project_id === projectId),
+    [agentsQuery.data, projectId],
+  );
+
+  const roleNameById = useMemo(
+    () => new Map((rolesQuery.data ?? []).map((r) => [r.role_id, r.name])),
+    [rolesQuery.data],
+  );
+  const memberLabelById = useMemo(() => new Map(members.map((m) => [m.user_id, userLabel(m)])), [members]);
+  const groupNameById = useMemo(() => new Map(groups.map((g) => [g.group_id, g.name])), [groups]);
+  const agentLabelById = useMemo(
+    () => new Map((agentsQuery.data ?? []).map((a) => [a.service_account_id, a.agent_name ?? a.name])),
+    [agentsQuery.data],
+  );
+
+  function principalLabel(p: IamPolicy): { kind: string; label: string } {
+    if (p.principal_type === 'group') return { kind: 'Dept', label: groupNameById.get(p.principal_id) ?? p.principal_id };
+    if (p.principal_type === 'token') return { kind: 'Agent', label: agentLabelById.get(p.principal_id) ?? p.principal_id };
+    return { kind: 'Member', label: memberLabelById.get(p.principal_id) ?? p.principal_id };
+  }
+
+  const [principalValue, setPrincipalValue] = useState(''); // "member:id" | "group:id" | "token:said"
+  const [roleId, setRoleId] = useState('');
+  const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
+  const markPending = (id: string) => setPendingIds((prev) => new Set(prev).add(id));
+  const clearPending = (id: string) =>
+    setPendingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: policiesKey });
+  }
+  function splitOnce(v: string): [string, string] {
+    const i = v.indexOf(':');
+    return i < 0 ? [v, ''] : [v.slice(0, i), v.slice(i + 1)];
+  }
+
+  const createMutation = useMutation({
+    mutationFn: () => {
+      const [principalType, principalId] = splitOnce(principalValue);
+      return createPolicy(accountId, {
+        principalType: principalType as PrincipalType,
+        principalId,
+        scopeType: 'project',
+        scopeId: projectId,
+        roleId,
+      });
+    },
+    onSuccess: () => {
+      toast.success('Role assigned');
+      setPrincipalValue('');
+      setRoleId('');
+      invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to assign role'),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (policyId: string) => deletePolicy(accountId, policyId),
+    onMutate: (policyId) => markPending(policyId),
+    onSettled: (_d, _e, policyId) => clearPending(policyId),
+    onSuccess: () => {
+      toast.success('Assignment removed');
+      invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to remove assignment'),
+  });
+
+  const canSubmit = !!principalValue && !!roleId && !createMutation.isPending;
+
+  return (
+    <SectionCard
+      flush
+      title="Custom roles"
+      description="Grant a custom role to a member, department, or agent on this project. Custom roles are defined on the account Roles page; here you bind them for this project only."
+      count={policies.length}
+      action={
+        canManage && customRoles.length > 0 ? (
+          <form
+            className="flex items-center gap-1.5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!canSubmit) return;
+              createMutation.mutate();
+            }}
+          >
+            <Select value={principalValue} onValueChange={setPrincipalValue} disabled={createMutation.isPending}>
+              <SelectTrigger className="h-8 w-40 text-xs">
+                <SelectValue placeholder="Member, dept, agent" />
+              </SelectTrigger>
+              <SelectContent>
+                {members.map((m) => (
+                  <SelectItem key={`member:${m.user_id}`} value={`member:${m.user_id}`}>
+                    {userLabel(m)}
+                  </SelectItem>
+                ))}
+                {groups.map((g) => (
+                  <SelectItem key={`group:${g.group_id}`} value={`group:${g.group_id}`}>
+                    {g.name} · dept
+                  </SelectItem>
+                ))}
+                {projectAgents.map((a) => (
+                  <SelectItem key={`token:${a.service_account_id}`} value={`token:${a.service_account_id}`}>
+                    {a.agent_name ?? a.name} · agent
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={roleId} onValueChange={setRoleId} disabled={createMutation.isPending}>
+              <SelectTrigger className="h-8 w-36 text-xs">
+                <SelectValue placeholder="Custom role" />
+              </SelectTrigger>
+              <SelectContent>
+                {customRoles.map((r) => (
+                  <SelectItem key={r.role_id} value={r.role_id}>
+                    {r.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button type="submit" size="sm" variant="outline" disabled={!canSubmit}>
+              Assign
+            </Button>
+          </form>
+        ) : null
+      }
+    >
+      {policiesQuery.isLoading && (
+        <div className="px-6 py-5">
+          <Skeleton className="h-8 w-full" />
+        </div>
+      )}
+
+      {!policiesQuery.isLoading && policies.length === 0 && (
+        <div className="text-muted-foreground px-6 py-5 text-xs">
+          {customRoles.length === 0 ? (
+            <>
+              No custom roles exist yet. Create one on the{' '}
+              <a href={`/accounts/${accountId}?tab=roles`} className="underline">
+                account Roles page
+              </a>
+              , then bind it here for this project.
+            </>
+          ) : (
+            'No custom-role assignments on this project yet. Bind one above to grant a member, department, or agent a custom role here.'
+          )}
+        </div>
+      )}
+
+      {!policiesQuery.isLoading && policies.length > 0 && (
+        <List>
+          {policies.map((p) => {
+            const busy = pendingIds.has(p.policy_id);
+            const { kind, label } = principalLabel(p);
+            return (
+              <ListRow
+                key={p.policy_id}
+                leading={
+                  <span className="bg-muted/60 flex h-8 w-8 items-center justify-center rounded-full">
+                    <Shield className="text-muted-foreground h-4 w-4" />
+                  </span>
+                }
+                title={
+                  <span className="flex items-center gap-2">
+                    {roleNameById.get(p.role_id) ?? p.role_id}
+                    <Badge variant="outline" size="sm">
+                      Custom
+                    </Badge>
+                  </span>
+                }
+                subtitle={
+                  <InlineMeta>
+                    <span>
+                      {kind}: {label}
+                    </span>
+                    {p.expires_at ? <span>Expires {formatDate(p.expires_at)}</span> : null}
+                  </InlineMeta>
+                }
+                trailing={
+                  busy ? (
+                    <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+                  ) : canManage ? (
+                    <Button type="button" size="sm" variant="ghost" onClick={() => removeMutation.mutate(p.policy_id)}>
+                      Remove
+                    </Button>
+                  ) : (
+                    <Badge variant="outline" size="sm" className="capitalize">
+                      {kind}
                     </Badge>
                   )
                 }
