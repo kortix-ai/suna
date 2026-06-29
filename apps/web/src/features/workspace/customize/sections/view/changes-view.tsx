@@ -35,26 +35,15 @@ import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useMemo, useState } from 'react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
+import {
+  buildTimeline,
+  commitTime,
+  groupTimeline,
+  isKortixAgent,
+  type TimelineItem,
+} from './changes-timeline';
 
 const LIST_CLASS = 'bg-popover overflow-hidden divide-y divide-border rounded-md border';
-
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
-
-function commitTime(c: ProjectCommit): number {
-  return Number(new Date(c.committed_at || c.authored_at).getTime()) || Date.now();
-}
-
-/** The sandbox agent commits as `Kortix Agent <agent@kortix.ai>`
- *  (see apps/kortix-sandbox-agent-server/src/config.ts). Match the email
- *  first — it's stable — and fall back to the display name. */
-const KORTIX_AGENT_EMAIL = 'agent@kortix.ai';
-function isKortixAgent(c: ProjectCommit): boolean {
-  if (c.author_email?.trim().toLowerCase() === KORTIX_AGENT_EMAIL) return true;
-  const name = c.author_name?.trim().toLowerCase();
-  return name === 'kortix agent' || name === 'cortex agent';
-}
 
 function relCommit(c: ProjectCommit): string {
   try {
@@ -71,66 +60,6 @@ function relIso(iso: string | null | undefined): string {
   } catch {
     return '';
   }
-}
-
-function crTime(cr: ChangeRequest): number {
-  const iso =
-    cr.status === 'merged'
-      ? (cr.merged_at ?? cr.updated_at ?? cr.created_at)
-      : cr.status === 'closed'
-        ? (cr.closed_at ?? cr.updated_at ?? cr.created_at)
-        : cr.created_at;
-  return Number(new Date(iso).getTime()) || Date.now();
-}
-
-function dayLabel(ts: number): string {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const yesterday = today - 86_400_000;
-  const weekStart = today - now.getDay() * 86_400_000;
-  const d = new Date(ts);
-  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  if (day >= today) return 'Today';
-  if (day >= yesterday) return 'Yesterday';
-  if (day >= weekStart) return 'This week';
-  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
-}
-
-type TimelineItem =
-  | { kind: 'checkpoint'; commit: ProjectCommit; at: number; key: string }
-  | { kind: 'cr'; cr: ChangeRequest; at: number; key: string };
-
-function buildTimeline(commits: ProjectCommit[], crs: ChangeRequest[]): TimelineItem[] {
-  return [
-    ...commits.map((commit) => ({
-      kind: 'checkpoint' as const,
-      commit,
-      at: commitTime(commit),
-      key: `cp:${commit.hash}`,
-    })),
-    ...crs.map((cr) => ({
-      kind: 'cr' as const,
-      cr,
-      at: crTime(cr),
-      key: `cr:${cr.cr_id}`,
-    })),
-  ];
-}
-
-/** Bucket checkpoints + change requests into Today / Yesterday / This week / "Month Year". */
-function groupTimeline(items: TimelineItem[]) {
-  const sorted = [...items].sort((a, b) => b.at - a.at);
-  const order: string[] = [];
-  const groups = new Map<string, TimelineItem[]>();
-  for (const item of sorted) {
-    const label = dayLabel(item.at);
-    if (!groups.has(label)) {
-      groups.set(label, []);
-      order.push(label);
-    }
-    groups.get(label)!.push(item);
-  }
-  return order.map((label) => ({ label, items: groups.get(label)! }));
 }
 
 function crStatusLabel(cr: ChangeRequest): string {
