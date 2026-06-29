@@ -21,7 +21,7 @@ export const SANDBOX_PORTS = {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'local_docker' | 'justavps';
+export type SandboxProviderName = 'daytona' | 'justavps';
 export type ServerTypeOption = string;
 
 export interface SandboxCreateProgress {

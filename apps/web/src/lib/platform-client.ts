@@ -81,7 +81,7 @@ function isDbSandboxId(sandboxId: string | null | undefined): sandboxId is strin
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'local_docker' | 'justavps';
+export type SandboxProviderName = 'daytona' | 'justavps';
 export type ServerTypeOption = string;
 
 export interface SandboxCreateProgress {
@@ -318,14 +318,9 @@ export function getSandboxPortUrl(
  * Extract mappedPorts from sandbox metadata (convenience for storing in ServerEntry).
  * Returns undefined if not available.
  */
-export function extractMappedPorts(
-  sandbox: SandboxInfo,
-): Record<string, string> | undefined {
-  if (sandbox.provider !== 'local_docker') return undefined;
-  const ports = sandbox.metadata?.mappedPorts;
-  if (ports && typeof ports === 'object' && !Array.isArray(ports)) {
-    return ports as Record<string, string>;
-  }
+// Container port→host-port mapping was a local_docker concept; cloud sandboxes
+// route through the preview proxy, so there's nothing to extract.
+export function extractMappedPorts(_sandbox: SandboxInfo): Record<string, string> | undefined {
   return undefined;
 }
 
@@ -383,9 +378,6 @@ export async function createSandbox(opts?: {
   serverType?: ServerTypeOption;
   name?: string;
 }): Promise<{ sandbox: SandboxInfo }> {
-  if (opts?.provider === 'local_docker') {
-    throw new Error('Local Docker instances are not exposed by the current project-session API');
-  }
 
   const result = await ensureSandbox(opts);
   return { sandbox: result.sandbox };

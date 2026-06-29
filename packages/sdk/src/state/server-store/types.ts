@@ -1,4 +1,4 @@
-export type SandboxProvider = 'daytona' | 'local_docker' | 'justavps';
+export type SandboxProvider = 'daytona' | 'justavps';
 
 export interface ServerEntry {
   id: string;

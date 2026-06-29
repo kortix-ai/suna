@@ -199,7 +199,7 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
           <Select value={providerFilter || 'all'} onValueChange={(v) => setProviderFilter(v === 'all' ? '' : v)}>
             <SelectTrigger className="h-8 w-[130px] text-sm"><SelectValue placeholder="Provider" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line214JsxTextAllProviders')}</SelectItem><SelectItem value="justavps">JustAVPS</SelectItem><SelectItem value="daytona">Daytona</SelectItem><SelectItem value="local_docker">Local</SelectItem>
+              <SelectItem value="all">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line214JsxTextAllProviders')}</SelectItem><SelectItem value="justavps">JustAVPS</SelectItem><SelectItem value="daytona">Daytona</SelectItem>
             </SelectContent>
           </Select>
           <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="h-8 gap-1.5"><RefreshCw className={cn('h-3.5 w-3.5', isFetching ? 'animate-spin' : '')} /></Button>

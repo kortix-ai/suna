@@ -529,7 +529,7 @@ function UnreachableView({
   sandboxId?: string;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const isLocalDocker = provider === 'local_docker';
+  const isLocalDocker = false;
   const isRestartRecovering = recoveryPhase !== 'idle';
   const secondsSinceRestart = restartRequestedAt ? Math.max(1, Math.floor((Date.now() - restartRequestedAt) / 1000)) : null;
 

@@ -17,7 +17,7 @@ export function UpdateDialogProvider() {
     const id = s.activeServerId;
     return id ? s.servers.find((sv) => sv.id === id) : undefined;
   });
-  const isLocalSelfHosted = activeServer?.provider === 'local_docker';
+  const isLocalSelfHosted = false;
   const {
     phase, phaseMessage, phaseProgress, latestVersion,
     changelog, updateResult, update, updateErrorMessage,

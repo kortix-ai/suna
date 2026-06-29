@@ -81,10 +81,6 @@ export async function createSandbox(opts?: {
   serverType?: ServerTypeOption;
   name?: string;
 }): Promise<{ sandbox: SandboxInfo }> {
-  if (opts?.provider === 'local_docker') {
-    throw new Error('Local Docker instances are not exposed by the current project-session API');
-  }
-
   const result = await ensureSandbox(opts);
   return { sandbox: result.sandbox };
 }

@@ -126,15 +126,13 @@ export function useSandboxUpdate(currentVersion: string | null) {
       sandbox_id: activeServer.instanceId,
       external_id: activeServer.sandboxId ?? '',
       name: activeServer.label,
-      provider: (activeServer.provider ?? 'local_docker') as SandboxInfo['provider'],
+      provider: (activeServer.provider ?? 'daytona') as SandboxInfo['provider'],
       base_url: activeServer.url,
       status: 'active',
       created_at: '',
       updated_at: '',
     };
   }, [activeServer?.instanceId, activeServer?.sandboxId, activeServer?.label, activeServer?.provider, activeServer?.url]);
-  const isLocalDocker = sandbox?.provider === 'local_docker';
-
   // Detect which channel the running instance belongs to
   const currentChannel = useMemo(() => detectChannel(currentVersion), [currentVersion]);
 
@@ -142,7 +140,7 @@ export function useSandboxUpdate(currentVersion: string | null) {
   const latestQuery = useQuery({
     queryKey: ['sandbox', 'latest-version', currentChannel],
     queryFn: () => getLatestSandboxVersion(currentChannel),
-    enabled: !!sandbox && !isLocalDocker,
+    enabled: !!sandbox,
     staleTime: 5 * 60 * 1000,        // re-fetch from GitHub at most every 5 min
     refetchInterval: 10 * 60 * 1000, // background poll every 10 min
     refetchOnWindowFocus: true,       // re-check when user returns to the tab

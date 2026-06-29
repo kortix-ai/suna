@@ -70,14 +70,8 @@ interface ShareData {
 
 import { getActiveOpenCodeUrl } from '@/stores/server-store';
 
-function getOpenCodeBaseUrl(): string {
-  // The active runtime URL resolves the correct (cloud) sandbox. No legacy
-  // 'kortix-sandbox' fallback — it 403'd and masked the real sandbox.
-  return getActiveOpenCodeUrl();
-}
-
 async function fetchShareData(shareId: string): Promise<ShareData> {
-  const baseUrl = getOpenCodeBaseUrl();
+  const baseUrl = getActiveOpenCodeUrl();
   const sessionsRes = await fetch(`${baseUrl}/session`, {
     headers: { 'Accept': 'application/json' },
   });
