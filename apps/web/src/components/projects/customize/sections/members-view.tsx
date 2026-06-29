@@ -411,7 +411,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
     <SectionCard
       title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line140JsxAttrTitleInviteByEmail')}
       description={tI18nHardcoded.raw(
-        'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrDescriptionAdd408ff6ec',
+        'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrDescriptionAdd514c1feb',
       )}
     >
       {/* Layout: labels on top row, controls on the row below. Stacking
@@ -1322,7 +1322,7 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
               )}
               <strong>{revokeTarget.email}</strong>{' '}
               {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextWillBe5ec1d9e8',
+                'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextWillBee1f9a143',
               )}
             </span>
           ) : null
@@ -1660,7 +1660,7 @@ function ProjectGroupGrantsCard({
               )}
               <strong>{detachTarget.role}</strong>{' '}
               {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAccessUnless520e90ca',
+                'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAccessUnlessdecb2209',
               )}
             </span>
           ) : null
