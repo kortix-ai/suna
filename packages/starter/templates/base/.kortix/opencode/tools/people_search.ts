@@ -6,16 +6,14 @@ import { getEnv, getKortixRouterBase } from "./lib/get-env";
 // injects the APIFY_TOKEN and bills the account — zero config for the user), or
 // against a raw APIFY_TOKEN when KORTIX_API_URL is unset (self-host / opt-in).
 //
-// NOTE: Apify runs the search as an actor "run", not an instant API. We use the
+// The search is an Apify actor "run" (not an instant API). We use the
 // run-sync-get-dataset-items endpoint in "Short" mode (search pages only, no
-// per-profile open) — the fastest, cheapest path (~$0.10 per 25) — and bound the
-// wait so a slow run fails cleanly instead of hanging. On timeout the
-// people-search skill falls back to web_search + scrape_webpage.
+// per-profile open) — the fastest, cheapest path (~$0.10 per 25) — and wait for
+// it to finish. A run can take a while; that's expected, let it complete.
 
 const ACTOR = "harvestapi~linkedin-profile-search";
 const RUN_PATH = `/v2/acts/${ACTOR}/run-sync-get-dataset-items`;
 const APIFY_DIRECT_BASE = "https://api.apify.com";
-const RUN_TIMEOUT_MS = 90_000;
 
 interface RawPerson {
   name?: string;
@@ -63,7 +61,7 @@ function formatPerson(p: RawPerson) {
 export default tool({
   description:
     "Find real people by profile — name, title, company, location, or skill — via LinkedIn profile search. " +
-    "Returns structured profiles (name, title, current company, location, LinkedIn URL), cleaner than scraping the open web. " +
+    "Returns structured profiles (name, title, current company, location, LinkedIn URL). " +
     "Use for sourcing / recruiting / outreach lists and named-person lookups. " +
     "Always hyperlink each person's name to their LinkedIn URL in the result.",
   args: {
@@ -101,7 +99,7 @@ export default tool({
         {
           success: false,
           error:
-            "people_search is unavailable: no Kortix router (KORTIX_API_URL / KORTIX_TOKEN) and no APIFY_TOKEN set. Fall back to the web_search + scrape_webpage pipeline for people lookup.",
+            "people_search is unavailable: no Kortix router (KORTIX_API_URL / KORTIX_TOKEN) and no APIFY_TOKEN set.",
         },
         null,
         2,
@@ -119,14 +117,11 @@ export default tool({
     const locations = splitList(args.locations);
     if (locations) input.locations = locations;
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), RUN_TIMEOUT_MS);
     try {
       const res = await fetch(`${url}?maxItems=${maxItems}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${bearer}` },
         body: JSON.stringify(input),
-        signal: controller.signal,
       });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
@@ -145,19 +140,7 @@ export default tool({
         2,
       );
     } catch (e) {
-      const aborted = e instanceof Error && e.name === "AbortError";
-      return JSON.stringify(
-        {
-          success: false,
-          error: aborted
-            ? `people_search timed out after ${RUN_TIMEOUT_MS / 1000}s (Apify run too slow). Fall back to web_search + scrape_webpage.`
-            : String(e),
-        },
-        null,
-        2,
-      );
-    } finally {
-      clearTimeout(timer);
+      return JSON.stringify({ success: false, error: String(e) }, null, 2);
     }
   },
 });
