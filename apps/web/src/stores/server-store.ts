@@ -11,6 +11,12 @@ import {
   normalizeAppPathname,
   setActiveInstanceCookie,
 } from '@/lib/instance-routes';
+// The SDK's (cloud) server-store is the source of truth for the active session
+// runtime sandbox — the connection flow registers it there. The legacy app-side
+// `servers[]` array (local_docker multi-instance) stays empty for cloud sessions,
+// so prefer the SDK's real sandbox here. (Legacy server-switching is slated for
+// full removal; this points resolution at the correct source meanwhile.)
+import { getActiveSandboxId as sdkActiveSandboxId } from '@kortix/sdk/server-store';
 
 /**
  * SDK client reset callback — set by opencode-sdk.ts to break the circular
@@ -791,6 +797,10 @@ export function getBackendPort(): number {
  * - Cloud mode: uses the server's sandboxId from the store (empty if not yet loaded)
  */
 export function getActiveSandboxId(): string | undefined {
+  // Cloud session sandbox (SDK runtime) wins — that's where the active session's
+  // sandbox actually lives. Fall back to the legacy local server entry.
+  const sdk = sdkActiveSandboxId();
+  if (sdk) return sdk;
   const state = useServerStore.getState();
   const server = state.servers.find((s) => s.id === state.activeServerId) ?? null;
   return server?.sandboxId;
@@ -820,7 +830,7 @@ export function getInstanceSubdomainOpts(
   }
 
   return {
-    sandboxId: getActiveSandboxId() ?? getEnv().SANDBOX_ID ?? 'kortix-sandbox',
+    sandboxId: getActiveSandboxId() ?? getEnv().SANDBOX_ID ?? '',
     backendPort,
     apiBaseUrl: getBackendUrl(),
   };
@@ -854,7 +864,7 @@ export function deriveSubdomainOpts(
   // This ensures proxy rewriting NEVER silently degrades to raw localhost URLs
   // just because the store hasn't hydrated the sandboxId yet, or because the
   // provider is marked as cloud (Daytona/JustAVPS use the same /p/ proxy).
-  const sandboxId = server?.sandboxId || getEnv().SANDBOX_ID || 'kortix-sandbox';
+  const sandboxId = server?.sandboxId || sdkActiveSandboxId() || getEnv().SANDBOX_ID || '';
   return {
     sandboxId,
     backendPort: getBackendPort(),
