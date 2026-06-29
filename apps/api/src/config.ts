@@ -188,6 +188,19 @@ const envSchema = z.object({
   AGENTMAIL_API_KEY:           optStr,
   AGENTMAIL_WEBHOOK_SECRET:    optStr,
 
+  // ── Channels — Recall.ai meeting bot (optional) ──────────────────────────
+  // MEET_ENABLED is the operator master switch (the global gate): when false the
+  // Google Meet experimental feature is unavailable platform-wide regardless of
+  // any per-project choice. RECALL_BASE_URL is the regional gateway (us-west-2 =
+  // pay-as-you-go default; us-east-1 / eu-central-1 / ap-northeast-1 also exist).
+  // The key is sent server-side as `Authorization: Token <key>`; never in a sandbox.
+  MEET_ENABLED:                optBoolFalse,
+  RECALL_BASE_URL:             optUrl('https://us-west-2.recall.ai/api/v1'),
+  RECALL_API_KEY:              optStr,
+  // ElevenLabs TTS — gives the meeting bot a voice (the agent speaks in-call).
+  ELEVENLABS_BASE_URL:         optUrl('https://api.elevenlabs.io'),
+  ELEVENLABS_API_KEY:          optStr,
+
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL:          optUrl('https://openrouter.ai/api/v1'),
   // Single OpenRouter key for BOTH the router (/v1/router) and the managed LLM
@@ -468,6 +481,10 @@ function validateEnv(): z.infer<typeof envSchema> {
     }
   }
 
+  if (raw.MEET_ENABLED === 'true' && !raw.RECALL_API_KEY) {
+    issues.push({ var: 'RECALL_API_KEY', message: 'MEET_ENABLED is on but RECALL_API_KEY is unset — the meeting bot cannot join or transcribe', level: 'warn' });
+  }
+
   // ── Print results ─────────────────────────────────────────────────────
   const errors = issues.filter((i) => i.level === 'error');
   const warnings = issues.filter((i) => i.level === 'warn');
@@ -594,6 +611,13 @@ export const config = {
   AGENTMAIL_API_URL: env.AGENTMAIL_API_URL,
   AGENTMAIL_API_KEY: env.AGENTMAIL_API_KEY,
   AGENTMAIL_WEBHOOK_SECRET: env.AGENTMAIL_WEBHOOK_SECRET,
+
+  // ─── Channels (Recall.ai meeting bot) ────────────────────────────────────
+  MEET_ENABLED: env.MEET_ENABLED,
+  RECALL_BASE_URL: env.RECALL_BASE_URL,
+  RECALL_API_KEY: env.RECALL_API_KEY,
+  ELEVENLABS_BASE_URL: env.ELEVENLABS_BASE_URL,
+  ELEVENLABS_API_KEY: env.ELEVENLABS_API_KEY,
 
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,

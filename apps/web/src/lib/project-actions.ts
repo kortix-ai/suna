@@ -98,6 +98,9 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<CustomizeSection, { read: ProjectA
   dev: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   settings: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   computers: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE },
+  // Meetings (notetaker bot) — connector-backed (materializes kortix_meet), so
+  // it follows the connector leaves like channels does.
+  meet: { read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ, write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE },
 };
 
 /** The distinct read leaves used to gate section visibility — handy for a single

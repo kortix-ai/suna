@@ -60,20 +60,23 @@ const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 
 export const RESERVED_SLUG_PROVIDERS: Readonly<Record<string, ConnectorProvider>> = {
   kortix_slack: 'channel',
   kortix_email: 'channel',
+  kortix_meet: 'channel',
   computer: 'computer',
 };
 /** The reserved slug the built-in Slack channel materializes under. */
 export const SLACK_RESERVED_SLUG = 'kortix_slack';
 export const EMAIL_RESERVED_SLUG = 'kortix_email';
+export const MEET_RESERVED_SLUG = 'kortix_meet';
 export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
   'slack',
   'email',
+  'meet',
   ...Object.keys(RESERVED_SLUG_PROVIDERS),
 ]);
 
 /** Chat platforms a `channel` connector can target. */
-export type ChannelPlatform = 'slack' | 'email';
-const CHANNEL_PLATFORMS: readonly ChannelPlatform[] = ['slack', 'email'];
+export type ChannelPlatform = 'slack' | 'email' | 'meet';
+const CHANNEL_PLATFORMS: readonly ChannelPlatform[] = ['slack', 'email', 'meet'];
 
 type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'none';
 const AUTH_TYPES: readonly ConnectorAuthType[] = ['bearer', 'basic', 'custom', 'none'];

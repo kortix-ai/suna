@@ -10,6 +10,7 @@ import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
+import { MeetView } from '@/features/workspace/customize/sections/view/meet-view';
 import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
@@ -29,6 +30,7 @@ import { useCustomizeStore } from '@/stores/customize-store';
 import { AlarmClock, ArrowLeft, ChatMessages, Command, Sparkles } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
+  AudioLines,
   Bot,
   Boxes,
   Container,
@@ -98,10 +100,13 @@ const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', ico
 
 const MARKETPLACE_ITEM: RailItem = { section: 'marketplace', label: 'Marketplace', icon: Store };
 
+const MEET_ITEM: RailItem = { section: 'meet', label: 'Meetings', icon: AudioLines };
+
 function railGroups(
   tunnelEnabled: boolean,
   marketplaceEnabled: boolean,
   llmGatewayAvailable: boolean,
+  meetEnabled: boolean,
 ): readonly RailGroup[] {
   return GROUPS.map((g) => {
     if (g.label === 'Build' && marketplaceEnabled) {
@@ -109,6 +114,7 @@ function railGroups(
     }
     if (g.label === 'Connect') {
       const items = [...g.items];
+      if (meetEnabled) items.push(MEET_ITEM);
       if (tunnelEnabled) items.push(COMPUTERS_ITEM);
       if (llmGatewayAvailable) items.push(LLM_ITEM);
       return { ...g, items };
@@ -167,15 +173,16 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   const marketplaceEnabled = detail.data?.project?.experimental?.marketplace ?? false;
   const llmGatewayEnabled = isLlmGatewayEnabled(detail.data?.project);
   const llmGatewayAvailable = isLlmGatewayAvailable(detail.data?.project);
+  const meetEnabled = detail.data?.project?.experimental?.meet ?? false;
   const groups = useMemo(
     // Compose flag-gating with IAM visibility: an item shows only if it passes
     // BOTH its flag check (baked into railGroups) AND its read-leaf probe. Empty
     // groups drop out so no orphan header renders.
     () =>
-      railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayAvailable)
+      railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, meetEnabled)
         .map((g) => ({ ...g, items: g.items.filter((item) => isSectionAllowed(item.section)) }))
         .filter((g) => g.items.length > 0),
-    [tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, isSectionAllowed],
+    [tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, meetEnabled, isSectionAllowed],
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
   // `llm-management` stands in for every `llm-*` sub-section so deep-links still work.
@@ -390,6 +397,8 @@ function SectionContent({
       return <SecretsView projectId={projectId} />;
     case 'channels':
       return <ChannelsView projectId={projectId} />;
+    case 'meet':
+      return <MeetView projectId={projectId} />;
     case 'computers':
       return <ComputersView projectId={projectId} />;
     case 'schedules':

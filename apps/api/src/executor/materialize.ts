@@ -9,7 +9,7 @@
  */
 import type { ConnectorSpec } from '../projects/connectors';
 import type { ProjectPolicySpec } from '../projects/policies';
-import { channelApiBase } from './channels';
+import { channelApiBase, channelAuth } from './channels';
 
 export interface DesiredPolicy {
   match: string;
@@ -33,12 +33,13 @@ export function connectorConfig(spec: ConnectorSpec, openapiServer?: string | nu
       return { spec: spec.spec, server: openapiServer ?? null, auth };
     case 'channel':
       // The credential is the platform install token (resolved server-side); the
-      // connector always carries bearer auth + the platform's API base so
-      // authOf()/baseUrlOf() resolve and executeCall attaches `Bearer <token>`.
+      // connector carries the platform's API base + its auth placement so
+      // authOf()/baseUrlOf() resolve and executeCall attaches the credential.
+      // Slack/email → `Bearer <token>`; meet (Recall.ai) → `Authorization: Token <key>`.
       return {
         platform: spec.platform,
         baseUrl: channelApiBase(spec.platform ?? ''),
-        auth: { type: 'bearer', in: 'header', name: null, prefix: null },
+        auth: channelAuth(spec.platform ?? ''),
       };
     case 'computer':
       // No credential and no base URL — the gateway routes `tunnel` bindings
