@@ -250,11 +250,6 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
     while (cursor < rows.length) {
       const row = rows[cursor++];
       try {
-        // Local Docker containers are --rm; stopping discards them. Skip (as before).
-        if (row.provider === 'local_docker') {
-          result.skipped += 1;
-          continue;
-        }
         const provider = getProvider(row.provider);
         const providerStatus: SandboxStatus = await provider.getStatus(row.externalId);
         // Meaningful = latest of (stamped lastTurnAt | row creation) and the last

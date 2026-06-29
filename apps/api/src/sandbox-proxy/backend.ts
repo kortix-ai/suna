@@ -193,20 +193,6 @@ export async function resolvePreviewLink(
   sandboxRef: string | SandboxRecord,
   port: number,
 ): Promise<{ url: string; token: string | null }> {
-  if (typeof sandboxRef !== 'string' && sandboxRef.provider === 'local_docker') {
-    const mappedPort = sandboxRef.mappedPorts[String(port)] || new URL(sandboxRef.baseUrl || 'http://localhost').port;
-    const base = new URL(sandboxRef.baseUrl || `http://localhost:${mappedPort}`);
-    const host =
-      config.KORTIX_LOCAL_DOCKER_HOST ||
-      (['localhost', '127.0.0.1', '0.0.0.0'].includes(base.hostname) ? base.hostname : base.hostname);
-    base.hostname = host;
-    if (mappedPort) base.port = mappedPort;
-    base.pathname = '';
-    base.search = '';
-    base.hash = '';
-    return { url: base.toString().replace(/\/$/, ''), token: null };
-  }
-
   const sandboxId = typeof sandboxRef === 'string' ? sandboxRef : sandboxRef.externalId;
   const key = previewLinkKey(sandboxId, port);
   const cached = previewLinkCache.get(key);

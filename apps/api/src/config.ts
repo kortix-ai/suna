@@ -12,7 +12,7 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'local_docker' | 'platinum';
+export type SandboxProviderName = 'daytona' | 'platinum';
 type InternalKortixEnv = 'dev' | 'staging' | 'prod' | 'preview';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -295,9 +295,7 @@ const envSchema = z.object({
   ALLOWED_SANDBOX_PROVIDERS:   optStrDefault('daytona'),
   SANDBOX_IMAGE:               optStr,
   KORTIX_LOCAL_IMAGES:         optBoolFalse,
-  DOCKER_HOST:                 optStr,
   SANDBOX_NETWORK:             optStr,
-  KORTIX_LOCAL_DOCKER_HOST:    optStr,
   // Default port base for local Docker sandbox port mapping.
   SANDBOX_PORT_BASE:           optInt(14000),
   SANDBOX_CONTAINER_NAME:      z.string().optional().transform(v => v || undefined).default('kortix-sandbox'),
@@ -380,7 +378,7 @@ type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 // Recognised provider names. Source-of-truth for what can legally appear in
 // ALLOWED_SANDBOX_PROVIDERS — adding a new provider is a one-place change
 // here plus a case in `getProvider()` in platform/providers/index.ts.
-const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'local_docker', 'platinum'] as const;
+const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'platinum'] as const;
 
 /** Parse comma-separated provider list (e.g. "daytona,local_docker"). */
 function parseAllowedProviders(raw: string): SandboxProviderName[] {
@@ -424,9 +422,6 @@ function validateEnv(): z.infer<typeof envSchema> {
   if (providers.includes('platinum')) {
     if (!raw.PLATINUM_API_KEY) issues.push({ var: 'PLATINUM_API_KEY', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
     if (!raw.PLATINUM_API_URL) issues.push({ var: 'PLATINUM_API_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
-  }
-  if (providers.includes('local_docker') && !raw.DOCKER_HOST) {
-    issues.push({ var: 'DOCKER_HOST', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "local_docker"', level: 'error' });
   }
 
   // ── Conditional: Billing enabled → need Stripe keys ────────────────────
@@ -648,9 +643,7 @@ export const config = {
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
   SANDBOX_IMAGE: env.SANDBOX_IMAGE || 'kortix/kortix-sandbox:latest',
   KORTIX_LOCAL_IMAGES: env.KORTIX_LOCAL_IMAGES,
-  DOCKER_HOST: env.DOCKER_HOST,
   SANDBOX_NETWORK: env.SANDBOX_NETWORK,
-  KORTIX_LOCAL_DOCKER_HOST: env.KORTIX_LOCAL_DOCKER_HOST,
   SANDBOX_PORT_BASE: env.SANDBOX_PORT_BASE,
   SANDBOX_CONTAINER_NAME: env.SANDBOX_CONTAINER_NAME,
 
@@ -745,7 +738,6 @@ export const config = {
     if (!this.ALLOWED_SANDBOX_PROVIDERS.includes(name)) return false;
     switch (name) {
       case 'daytona': return !!this.DAYTONA_API_KEY;
-      case 'local_docker': return !!this.DOCKER_HOST;
       case 'platinum': return !!this.PLATINUM_API_KEY;
       default: {
         const exhaustive: never = name;
@@ -767,10 +759,6 @@ export const config = {
 
   isDaytonaEnabled(): boolean {
     return this.ALLOWED_SANDBOX_PROVIDERS.includes('daytona') && !!this.DAYTONA_API_KEY;
-  },
-
-  isLocalDockerEnabled(): boolean {
-    return this.ALLOWED_SANDBOX_PROVIDERS.includes('local_docker') && !!this.DOCKER_HOST;
   },
 
   isPlatinumEnabled(): boolean {

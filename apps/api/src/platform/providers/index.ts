@@ -1,6 +1,5 @@
 import { config } from '../../config';
 import { DaytonaProvider } from './daytona';
-import { LocalDockerProvider } from './local-docker';
 import { PlatinumProvider } from './platinum';
 
 /**
@@ -10,9 +9,9 @@ import { PlatinumProvider } from './platinum';
  * interface, not the concrete class, so they stay untouched.
  *
  *   - daytona — managed cloud (Daytona)
- *   - local_docker — self-hosted/local Docker runtime
+ *   - platinum — managed cloud (Platinum)
  */
-export type ProviderName = 'daytona' | 'local_docker' | 'platinum';
+export type ProviderName = 'daytona' | 'platinum';
 
 /**
  * Thrown by the Daytona warm path when the experimental memory-snapshot restore
@@ -138,12 +137,6 @@ export function getProvider(name: ProviderName): SandboxProvider {
         throw new Error('Daytona provider requires DAYTONA_API_KEY to be set.');
       }
       provider = new DaytonaProvider();
-      break;
-    case 'local_docker':
-      if (!config.DOCKER_HOST) {
-        throw new Error('Local Docker provider requires DOCKER_HOST to be set.');
-      }
-      provider = new LocalDockerProvider();
       break;
     case 'platinum':
       if (!config.PLATINUM_API_KEY) {
