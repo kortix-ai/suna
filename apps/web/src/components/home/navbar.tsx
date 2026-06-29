@@ -25,6 +25,7 @@ import {
   NavigationMenuList,
   NavigationMenuTrigger,
 } from '@/components/ui/navigation-menu';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { Icon } from '@/features/icon/icon';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useIsMobile } from '@/hooks/utils';
@@ -37,7 +38,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { type MouseEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 const SCROLL_THRESHOLD_DOWN = 50;
 const SCROLL_THRESHOLD_UP = 20;
@@ -100,10 +101,11 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
 
   const filteredNavLinks = siteConfig.nav.links;
   const { formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'kortix');
+  const openDemo = useRequestDemo();
 
   const isNavActive = useCallback(
     (href: string) =>
-      href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/'),
+      href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`),
     [pathname],
   );
 
@@ -166,7 +168,11 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
           <div className="flex flex-1 items-center gap-8">
             <ContextMenu>
               <ContextMenuTrigger asChild>
-                <Link href="/" aria-label="Kortix home" className="hit-area-4 flex shrink-0 items-center">
+                <Link
+                  href="/"
+                  aria-label="Kortix home"
+                  className="hit-area-4 flex shrink-0 items-center"
+                >
                   <KortixLogo size={18} variant="logomark" />
                 </Link>
               </ContextMenuTrigger>
@@ -340,10 +346,8 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               </Button>
             )}
 
-            <Button asChild variant="ghost" className="hidden sm:inline-flex">
-              <Link href="/enterprise">
-                {tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}
-              </Link>
+            <Button variant="ghost" className="hidden sm:inline-flex" onClick={openDemo}>
+              {tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}
             </Button>
             {user ? (
               <Button asChild>
