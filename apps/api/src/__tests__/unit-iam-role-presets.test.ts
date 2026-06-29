@@ -9,9 +9,10 @@ import {
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, VALID_ACTIONS } from '../iam/actions';
 
 describe('built-in role presets', () => {
-  test('exposes the 6 built-ins plus the read+run "User" tier', () => {
+  test('exposes the built-ins with "user" as the project floor (no viewer)', () => {
     const keys = BUILTIN_PRESETS.map((p) => p.key).sort();
-    expect(keys).toEqual(['admin', 'editor', 'manager', 'member', 'owner', 'user', 'viewer']);
+    // `viewer` was retired — folded into `user`, the read+run floor role.
+    expect(keys).toEqual(['admin', 'editor', 'manager', 'member', 'owner', 'user']);
   });
 
   test('every preset action is a real action (no drift from actions.ts)', () => {

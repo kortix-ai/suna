@@ -102,8 +102,8 @@ export const PROJECT_ACTIONS = {
   // DEACTIVATE one capability (omit the leaf) without losing the rest. Until a
   // route is migrated to assert these, it keeps gating on project.read/write,
   // so adding them is additive: every write leaf is also seeded into the Editor
-  // built-in role and every read leaf into Viewer (see role-perms.ts), so no
-  // existing editor/viewer loses a capability. All resolve to 'project' scope
+  // built-in role and every read leaf into the User floor role (see
+  // role-perms.ts), so no existing editor/user loses a capability. All resolve to 'project' scope
   // (prefix = 'project') via resourceTypeForAction.
   PROJECT_AGENT_READ: 'project.agent.read',
   PROJECT_AGENT_WRITE: 'project.agent.write',

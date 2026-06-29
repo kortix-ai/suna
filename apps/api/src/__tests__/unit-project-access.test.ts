@@ -34,7 +34,7 @@ describe('project access roles', () => {
 
   test.each([
     ['owner', null, 'manager'],
-    ['admin', 'viewer', 'manager'],
+    ['admin', 'user', 'manager'],
     ['member', 'editor', 'editor'],
     ['member', null, null],
   ] as Array<[AccountRole, ProjectRole | null, ProjectRole | null]>)(
@@ -45,10 +45,10 @@ describe('project access roles', () => {
   );
 
   test.each([
-    ['viewer', 'read', true],
-    ['viewer', 'session', true], // viewer is the base usable role — can run sessions
-    ['viewer', 'write', false],
-    ['viewer', 'manage', false],
+    ['user', 'read', true],
+    ['user', 'session', true], // user is the floor usable role — can run sessions
+    ['user', 'write', false],
+    ['user', 'manage', false],
     ['editor', 'read', true],
     ['editor', 'session', true],
     ['editor', 'write', true],
@@ -81,7 +81,10 @@ describe('project access roles', () => {
   test('normalizes valid role input and rejects invalid values', () => {
     expect(parseProjectRole(' Manager ')).toBe('manager');
     expect(parseProjectRole('editor')).toBe('editor');
-    expect(parseProjectRole('viewer')).toBe('viewer');
+    expect(parseProjectRole('user')).toBe('user');
+    // `viewer` is a deprecated alias — it folds into `user`, never round-trips.
+    expect(parseProjectRole('viewer')).toBe('user');
+    expect(parseProjectRole(' VIEWER ')).toBe('user');
     expect(parseProjectRole('owner')).toBeNull();
     expect(parseProjectRole(null)).toBeNull();
   });

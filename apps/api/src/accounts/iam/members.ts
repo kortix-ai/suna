@@ -186,9 +186,11 @@ iamRouter.openapi(
     await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
   }
 
-  type Role = 'manager' | 'editor' | 'viewer';
-  const rank: Record<Role, number> = { viewer: 1, editor: 2, manager: 3 };
+  type Role = 'manager' | 'editor' | 'user';
+  const rank: Record<Role, number> = { user: 1, editor: 2, manager: 3 };
   const max = (a: Role, b: Role): Role => (rank[a] >= rank[b] ? a : b);
+  // Fold the retired `viewer` tier into `user` at the DB-read boundary.
+  const asRole = (raw: string): Role => (raw === 'viewer' ? 'user' : (raw as Role));
 
   // Project info we'll need for every row in the response.
   const allProjects = await db
@@ -241,7 +243,7 @@ iamRouter.openapi(
       ),
     );
   for (const r of directRows) {
-    const role = r.role as Role;
+    const role = asRole(r.role);
     const cur = byProject.get(r.projectId);
     if (cur) {
       cur.role = max(cur.role, role);
@@ -271,7 +273,7 @@ iamRouter.openapi(
         ),
       );
     for (const r of grantRows) {
-      const role = r.role as Role;
+      const role = asRole(r.role);
       const cur = byProject.get(r.projectId);
       if (cur) {
         cur.role = max(cur.role, role);

@@ -75,6 +75,10 @@ export const sessionLifecycleCommandStatusEnum = kortixSchema.enum(
   ],
 );
 
+// `user` is the floor project role. `viewer` is DEPRECATED — it was folded
+// into `user` (existing rows migrated, see the project_role_user_floor
+// migration) and is no longer assignable. The value lingers only because
+// Postgres can't drop an enum member; nothing reads or writes it.
 export const projectRoleEnum = kortixSchema.enum('project_role', [
   'manager',
   'editor',
@@ -194,13 +198,15 @@ export const accountInvitations = kortixSchema.table(
      *  account invite + records the project grant here; on accept,
      *  the user joins the org as a member AND gets the project role
      *  in the same transaction. Shape:
-     *    [{ project_id: uuid, role: 'manager'|'editor'|'viewer',
+     *    [{ project_id: uuid, role: 'manager'|'editor'|'user',
      *       expires_at?: iso }]
      *  Multiple grants are allowed — the same email could be invited
-     *  to several projects at once via repeated calls (they upsert). */
+     *  to several projects at once via repeated calls (they upsert).
+     *  Legacy rows may carry the retired 'viewer' role; readers fold it
+     *  into 'user' via parseProjectRole. */
     bootstrapGrants: jsonb('bootstrap_grants').$type<Array<{
       project_id: string;
-      role: 'manager' | 'editor' | 'viewer';
+      role: 'manager' | 'editor' | 'user';
       expires_at?: string | null;
     }>>(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
@@ -368,7 +374,7 @@ export const projectMembers = kortixSchema.table(
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull(),
-    projectRole: projectRoleEnum('project_role').default('viewer').notNull(),
+    projectRole: projectRoleEnum('project_role').default('user').notNull(),
     grantedBy: uuid('granted_by'),
     /** Optional auto-revoke timestamp. NULL = permanent grant.
      *  When set and in the past, the V2 engine treats the row as if it
@@ -2565,7 +2571,7 @@ export const projectGroupGrants = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    role: projectRoleEnum('role').default('viewer').notNull(),
+    role: projectRoleEnum('role').default('user').notNull(),
     grantedBy: uuid('granted_by'),
     /** Optional auto-revoke timestamp. NULL = permanent attachment.
      *  Same semantics as project_members.expires_at. */
@@ -2599,7 +2605,7 @@ export const accountGroupMembersRelations = relations(accountGroupMembers, ({ on
 
 
 // ─── IAM v1 — DB-driven custom roles + policies ────────────────────────────
-// The 6 built-in roles (owner/admin/member, manager/editor/viewer) stay as
+// The built-in roles (owner/admin/member, manager/editor/user) stay as
 // frozen Sets in apps/api/src/iam/role-perms.ts and keep their in-memory fast
 // path. These tables add ACCOUNT-scoped CUSTOM roles and the policies that bind
 // a principal (member/group/token) to a custom role at a scope. The engine

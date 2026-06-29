@@ -5,10 +5,11 @@
 import { ACCOUNT_ACTIONS, ACTION_CATALOG, PROJECT_ACTIONS, VALID_ACTIONS, resourceTypeForAction } from '../../iam';
 import { ACCOUNT_ROLE_PERMS, PROJECT_ROLE_PERMS } from '../../iam/role-perms';
 
-/** The "User (read + run)" tier (Q4): read everything + start/run sessions +
- *  fire triggers; no editing, config, deploy, gitops, members or secret write. */
+/** The "User" floor tier: read everything + start/run sessions + fire
+ *  triggers; no editing, config, deploy, gitops, members or secret write.
+ *  (The project floor role now that `viewer` was folded into it.) */
 export const USER_PRESET_ACTIONS: readonly string[] = [
-  ...PROJECT_ROLE_PERMS.viewer,
+  ...PROJECT_ROLE_PERMS.user,
   PROJECT_ACTIONS.PROJECT_SESSION_START,
   PROJECT_ACTIONS.PROJECT_SESSION_EXEC,
   PROJECT_ACTIONS.PROJECT_SESSION_STOP,
@@ -26,8 +27,7 @@ export interface BuiltinPreset {
 export const BUILTIN_PRESETS: readonly BuiltinPreset[] = [
   { key: 'manager', name: 'Manager', description: 'Full project control, including members and delete.', resourceType: 'project', actions: [...PROJECT_ROLE_PERMS.manager] },
   { key: 'editor', name: 'Editor', description: 'Create and edit project content, run sessions.', resourceType: 'project', actions: [...PROJECT_ROLE_PERMS.editor] },
-  { key: 'user', name: 'User (read + run)', description: 'Read, run sessions, and fire triggers — no editing or config.', resourceType: 'project', actions: [...USER_PRESET_ACTIONS] },
-  { key: 'viewer', name: 'Viewer', description: 'Read and run sessions — no editing, config, or triggers.', resourceType: 'project', actions: [...PROJECT_ROLE_PERMS.viewer] },
+  { key: 'user', name: 'User (read + run)', description: 'Read, run sessions, and fire triggers — no editing or config. The project floor role.', resourceType: 'project', actions: [...USER_PRESET_ACTIONS] },
   { key: 'owner', name: 'Owner', description: 'Full account control.', resourceType: 'account', actions: [...ACCOUNT_ROLE_PERMS.owner] },
   { key: 'admin', name: 'Admin', description: 'Manage members, groups, roles and tokens.', resourceType: 'account', actions: [...ACCOUNT_ROLE_PERMS.admin] },
   { key: 'member', name: 'Member', description: 'Baseline account membership.', resourceType: 'account', actions: [...ACCOUNT_ROLE_PERMS.member] },

@@ -49,6 +49,7 @@ import {
   accountRoleAllows,
   implicitProjectRoleForAccount,
   maxProjectRole,
+  normalizeProjectRole,
   projectRoleAllows,
   type AccountRole,
   type ProjectRole,
@@ -359,8 +360,13 @@ const loadProjectRoleRows = ttlMemo({
         : Promise.resolve([] as Array<{ role: string }>),
     ]);
     return {
-      directRole: (directRows[0]?.role as ProjectRole | undefined) ?? null,
-      groupRoles: grantRows.map((r) => r.role as ProjectRole),
+      // Normalize at the DB-read boundary so a legacy `viewer` row resolves
+      // to `user` (the tier it was folded into) rather than an unknown role.
+      directRole: normalizeProjectRole(directRows[0]?.role),
+      groupRoles: grantRows.flatMap((r) => {
+        const role = normalizeProjectRole(r.role);
+        return role ? [role] : [];
+      }),
     };
   },
   // Never cache "no path to this project" — a freshly granted member must
@@ -762,16 +768,19 @@ export async function listAccessibleProjectsV2(
           notExpiredGrant,
         ),
       );
-    groupRows = rows.map((r) => ({
-      projectId: r.projectId,
-      role: r.role as ProjectRole,
-    }));
+    groupRows = rows.flatMap((r) => {
+      // Normalize at the DB-read boundary: a legacy `viewer` grant folds into
+      // `user`. Drop anything unrecognized rather than feed it to the rank map.
+      const role = normalizeProjectRole(r.role);
+      return role ? [{ projectId: r.projectId, role }] : [];
+    });
   }
 
   // Merge by max-role per project, then filter by action.
   const byProject = new Map<string, ProjectRole>();
   for (const r of directRows) {
-    byProject.set(r.projectId, r.role as ProjectRole);
+    const role = normalizeProjectRole(r.role);
+    if (role) byProject.set(r.projectId, role);
   }
   for (const r of groupRows) {
     const existing = byProject.get(r.projectId);

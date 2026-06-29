@@ -20,7 +20,7 @@ const NEW_PROJECT_ID = '00000000-0000-4000-a000-000000000203';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
 type AccountRole = 'owner' | 'admin' | 'member';
-type ProjectRole = 'manager' | 'editor' | 'viewer';
+type ProjectRole = 'manager' | 'editor' | 'user';
 
 interface ProjectRow {
   projectId: string;
@@ -291,9 +291,9 @@ mock.module('../iam/dispatcher', () => {
     if (am.accountRole === 'owner' || am.accountRole === 'admin') return true;
     const pm = projectMemberRows.find((r) => r.userId === userId && r.projectId === PROJECT_ID);
     const pr = pm?.projectRole ?? null;
-    if (action === 'project.read') return pr === 'viewer' || pr === 'editor' || pr === 'manager';
-    // Session lifecycle: any project member (viewer included) may run sessions.
-    if (action.startsWith('project.session.')) return pr === 'viewer' || pr === 'editor' || pr === 'manager';
+    if (action === 'project.read') return pr === 'user' || pr === 'editor' || pr === 'manager';
+    // Session lifecycle: any project member (a plain `user` included) may run sessions.
+    if (action.startsWith('project.session.')) return pr === 'user' || pr === 'editor' || pr === 'manager';
     if (action === 'project.write') return pr === 'editor' || pr === 'manager';
     return pr === 'manager';
   };
@@ -660,7 +660,7 @@ describe('projects API contract', () => {
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
       userId: MEMBER_ID,
-      projectRole: 'viewer',
+      projectRole: 'user',
       grantedBy: OWNER_ID,
       createdAt: baseDate,
       updatedAt: baseDate,
@@ -673,8 +673,8 @@ describe('projects API contract', () => {
     expect(body).toHaveLength(1);
     expect(body[0]).toMatchObject({
       project_id: PROJECT_ID,
-      project_role: 'viewer',
-      effective_project_role: 'viewer',
+      project_role: 'user',
+      effective_project_role: 'user',
     });
   });
 
@@ -879,7 +879,7 @@ describe('projects API contract', () => {
     const ownerGrant = await app.request(`/v1/projects/${PROJECT_ID}/access/${OWNER_ID}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: 'viewer' }),
+      body: JSON.stringify({ role: 'user' }),
     });
     expect(ownerGrant.status).toBe(200);
     expect(await ownerGrant.json()).toMatchObject({
@@ -903,7 +903,7 @@ describe('projects API contract', () => {
     expect(projectMemberRows.some((row) => row.userId === MEMBER_ID && row.projectId === PROJECT_ID)).toBe(false);
   });
 
-  test('denies non-members and project viewers from manager-only operations', async () => {
+  test('denies non-members and plain project users from manager-only operations', async () => {
     const app = createApp();
     setCurrentUser(OUTSIDER_ID, 'outsider@example.test');
     const outsider = await app.request(`/v1/projects/${PROJECT_ID}/files`);
@@ -914,16 +914,16 @@ describe('projects API contract', () => {
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
       userId: MEMBER_ID,
-      projectRole: 'viewer',
+      projectRole: 'user',
       grantedBy: OWNER_ID,
       createdAt: baseDate,
       updatedAt: baseDate,
     });
-    const viewerPatch = await app.request(`/v1/projects/${PROJECT_ID}`, {
+    const userPatch = await app.request(`/v1/projects/${PROJECT_ID}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Viewer Rename' }),
+      body: JSON.stringify({ name: 'User Rename' }),
     });
-    expect(viewerPatch.status).toBe(403);
+    expect(userPatch.status).toBe(403);
   });
 });

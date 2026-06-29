@@ -11,13 +11,13 @@ import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
 import { projectHasResource, projectResourcesFromConfig, loadConfigWithFiles } from '../lib/project-resources';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
-import { roleAllows } from '../access';
+import { roleAllows, parseProjectRole } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid } from '../lib/access';
 import { AnyObject, GroupGrantSchema, SessionSchema, projectsApp } from '../lib/app';
-import { UUID_V4_REGEX, hasOwn, isProjectRole, normalizeString, readBody, requestAuditContext, serializeSession, serializeSessionSandboxConfig } from '../lib/serializers';
+import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession, serializeSessionSandboxConfig } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
@@ -168,10 +168,12 @@ projectsApp.openapi(
 
   const body = await readBody(c);
   const groupId = normalizeString(body.group_id ?? body.groupId);
-  const role = body.role;
+  // parseProjectRole folds the legacy `viewer` alias into `user`, so a grant
+  // is never persisted with the retired role.
+  const role = parseProjectRole(body.role);
   if (!groupId) return c.json({ error: 'group_id is required' }, 400);
-  if (!isProjectRole(role)) {
-    return c.json({ error: 'role must be manager, editor, user, or viewer' }, 400);
+  if (!role) {
+    return c.json({ error: 'role must be manager, editor, or user' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
@@ -245,8 +247,9 @@ projectsApp.openapi(
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
-  if (!isProjectRole(body.role)) {
-    return c.json({ error: 'role must be manager, editor, user, or viewer' }, 400);
+  const role = parseProjectRole(body.role);
+  if (!role) {
+    return c.json({ error: 'role must be manager, editor, or user' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
@@ -254,7 +257,7 @@ projectsApp.openapi(
   const result = await db
     .update(projectGroupGrants)
     .set({
-      role: body.role,
+      role,
       updatedAt: new Date(),
       ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
     })

@@ -49,8 +49,8 @@ describe('IAM V2 — account role table', () => {
 });
 
 describe('IAM V2 — project role table', () => {
-  test('manager ⊇ editor ⊇ viewer', () => {
-    for (const a of PROJECT_ROLE_PERMS.viewer) {
+  test('manager ⊇ editor ⊇ user', () => {
+    for (const a of PROJECT_ROLE_PERMS.user) {
       expect(PROJECT_ROLE_PERMS.editor.has(a)).toBe(true);
       expect(PROJECT_ROLE_PERMS.manager.has(a)).toBe(true);
     }
@@ -59,22 +59,26 @@ describe('IAM V2 — project role table', () => {
     }
   });
 
-  test('viewer is the base usable role: reads + runs sessions, no customization', () => {
-    // Every viewer action is either a read or a session-lifecycle action —
-    // viewer can use the agent/chat but never edit, deploy, or manage.
-    for (const a of PROJECT_ROLE_PERMS.viewer) {
-      expect(a).toMatch(/\.(read|start|exec|stop)$/);
+  test('user is the floor role: reads + runs sessions + fires triggers, no customization', () => {
+    // Every user action is a read, a session-lifecycle action, or trigger.fire —
+    // the floor role can use the agent/chat and operate automations, but never
+    // edit, deploy, create/delete triggers, or manage. (The old `viewer` tier
+    // folded into `user`, which adds trigger.fire on top of read+run.)
+    for (const a of PROJECT_ROLE_PERMS.user) {
+      expect(a).toMatch(/\.(read|start|exec|stop|fire)$/);
     }
-    // Can start / run / stop sessions (the default role must be able to USE Kortix).
-    expect(projectRoleAllows('viewer', PROJECT_ACTIONS.PROJECT_SESSION_START)).toBe(true);
-    expect(projectRoleAllows('viewer', PROJECT_ACTIONS.PROJECT_SESSION_EXEC)).toBe(true);
-    expect(projectRoleAllows('viewer', PROJECT_ACTIONS.PROJECT_SESSION_STOP)).toBe(true);
+    // Can start / run / stop sessions (the floor role must be able to USE Kortix).
+    expect(projectRoleAllows('user', PROJECT_ACTIONS.PROJECT_SESSION_START)).toBe(true);
+    expect(projectRoleAllows('user', PROJECT_ACTIONS.PROJECT_SESSION_EXEC)).toBe(true);
+    expect(projectRoleAllows('user', PROJECT_ACTIONS.PROJECT_SESSION_STOP)).toBe(true);
+    // ...and can FIRE the project's triggers (operate its automations).
+    expect(projectRoleAllows('user', PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE)).toBe(true);
     // ...but cannot customize the project in any way.
-    expect(projectRoleAllows('viewer', PROJECT_ACTIONS.PROJECT_WRITE)).toBe(false);
-    expect(projectRoleAllows('viewer', PROJECT_ACTIONS.PROJECT_DEPLOY)).toBe(false);
-    expect(projectRoleAllows('viewer', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE)).toBe(false);
-    expect(projectRoleAllows('viewer', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(false);
-    expect(projectRoleAllows('viewer', PROJECT_ACTIONS.PROJECT_DELETE)).toBe(false);
+    expect(projectRoleAllows('user', PROJECT_ACTIONS.PROJECT_WRITE)).toBe(false);
+    expect(projectRoleAllows('user', PROJECT_ACTIONS.PROJECT_DEPLOY)).toBe(false);
+    expect(projectRoleAllows('user', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE)).toBe(false);
+    expect(projectRoleAllows('user', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(false);
+    expect(projectRoleAllows('user', PROJECT_ACTIONS.PROJECT_DELETE)).toBe(false);
   });
 
   test('editor can fire and write triggers but not manage members or delete project', () => {
@@ -89,15 +93,15 @@ describe('IAM V2 — project role table', () => {
     expect(projectRoleAllows('manager', PROJECT_ACTIONS.PROJECT_DELETE)).toBe(true);
     expect(projectRoleAllows('manager', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(true);
     expect(projectRoleAllows('editor', PROJECT_ACTIONS.PROJECT_DELETE)).toBe(false);
-    expect(projectRoleAllows('viewer', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(false);
+    expect(projectRoleAllows('user', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(false);
   });
 });
 
 describe('IAM V2 — role helpers', () => {
   test('maxProjectRole picks the stronger role', () => {
-    expect(maxProjectRole('viewer', 'viewer')).toBe('viewer');
-    expect(maxProjectRole('viewer', 'editor')).toBe('editor');
-    expect(maxProjectRole('editor', 'viewer')).toBe('editor');
+    expect(maxProjectRole('user', 'user')).toBe('user');
+    expect(maxProjectRole('user', 'editor')).toBe('editor');
+    expect(maxProjectRole('editor', 'user')).toBe('editor');
     expect(maxProjectRole('editor', 'manager')).toBe('manager');
     expect(maxProjectRole('manager', 'editor')).toBe('manager');
   });
@@ -111,9 +115,10 @@ describe('IAM V2 — role helpers', () => {
 
 describe('IAM V2 — no unknown actions', () => {
   // IAM v1 per-capability leaves: backward-compat invariant. Editor must hold
-  // every write leaf (it had all of these via project.write before) and Viewer
-  // every read leaf (via project.read). Viewer must NOT gain any write leaf.
-  test('per-capability leaves preserve the editor/viewer capability surface', () => {
+  // every write leaf (it had all of these via project.write before) and the
+  // User floor role every read leaf (via project.read). User must NOT gain any
+  // write leaf.
+  test('per-capability leaves preserve the editor/user capability surface', () => {
     const writeLeaves = [
       PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
       PROJECT_ACTIONS.PROJECT_SKILL_WRITE,
@@ -142,10 +147,10 @@ describe('IAM V2 — no unknown actions', () => {
     for (const a of writeLeaves) {
       expect(projectRoleAllows('editor', a)).toBe(true);
       expect(projectRoleAllows('manager', a)).toBe(true);
-      expect(projectRoleAllows('viewer', a)).toBe(false);
+      expect(projectRoleAllows('user', a)).toBe(false);
     }
     for (const a of readLeaves) {
-      expect(projectRoleAllows('viewer', a)).toBe(true);
+      expect(projectRoleAllows('user', a)).toBe(true);
       expect(projectRoleAllows('editor', a)).toBe(true);
     }
   });
