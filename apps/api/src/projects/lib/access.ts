@@ -1,5 +1,5 @@
 import { isSessionVisibleTo, loadSessionGrants, resolveShareSubject, type SecretGrant, type ShareSubject } from '../../executor/share';
-import { authorize, assertAuthorized } from '../../iam';
+import { authorize, assertAuthorized, PROJECT_ACTIONS } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { auth } from '../../openapi';
@@ -324,6 +324,51 @@ export async function assertProjectCapability(
     actingTokenId,
     deriveRequestContext(c),
   );
+}
+
+/**
+ * The per-capability WRITE leaf that governs editing a given repo path. Agents,
+ * skills and commands live under their own directories; everything else is a
+ * generic project file. Lets an API edit path (e.g. a marketplace install) gate
+ * each touched file on the RIGHT capability — so a custom role that omits
+ * `project.skill.write` can't install/modify skills even though it can touch
+ * other files.
+ */
+export function writeCapabilityForRepoPath(path: string): string {
+  const segments = path.replace(/^\.?\//, '').split('/');
+  if (segments.includes('agent') || segments.includes('agents')) return PROJECT_ACTIONS.PROJECT_AGENT_WRITE;
+  if (segments.includes('skill') || segments.includes('skills')) return PROJECT_ACTIONS.PROJECT_SKILL_WRITE;
+  if (segments.includes('command') || segments.includes('commands')) return PROJECT_ACTIONS.PROJECT_COMMAND_WRITE;
+  return PROJECT_ACTIONS.PROJECT_FILE_WRITE;
+}
+
+/**
+ * Gate an API-mediated commit on the per-capability write leaves of the files it
+ * touches. A commit that adds an agent requires project.agent.write; one that
+ * touches a skill + a generic file requires BOTH project.skill.write AND
+ * project.file.write. Threads the acting token so the agent-grant fold fires.
+ * (Raw `git push` and daemon-side session commits don't pass through here — that
+ * whole-tree boundary is the git-proxy tier.)
+ */
+export async function assertCommitCapabilities(
+  c: Context,
+  userId: string,
+  accountId: string,
+  projectId: string,
+  paths: readonly string[],
+): Promise<void> {
+  // Generated bookkeeping files ride along with every install/remove — they're
+  // not a resource a role edits, so don't couple e.g. "install a skill" to also
+  // needing project.file.write for the lock file.
+  const BOOKKEEPING = new Set(['registry-lock.json', 'skills-lock.json']);
+  const capabilities = new Set(
+    paths
+      .filter((p) => !BOOKKEEPING.has(p.replace(/^\.?\//, '').split('/').pop() ?? ''))
+      .map(writeCapabilityForRepoPath),
+  );
+  for (const action of capabilities) {
+    await assertProjectCapability(c, userId, accountId, projectId, action);
+  }
 }
 
 
