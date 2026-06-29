@@ -8,7 +8,7 @@ import {
 } from '@/lib/marketplace-public';
 import { companyIdFromSlug, companySlugFromId } from '@/lib/marketplace-slug';
 
-export const dynamic = 'force-static';
+export const revalidate = 3600;
 
 interface PageParams {
   company: string;
@@ -51,10 +51,17 @@ export default async function MarketplaceCompanyPage({ params }: { params: Promi
   const { company } = await params;
   const marketplaceId = companyIdFromSlug(company);
 
-  const [itemsPage, marketplacesPage] = await Promise.all([
-    listPublicMarketplaceItems(),
-    listPublicMarketplaces(),
-  ]);
+  let itemsPage;
+  let marketplacesPage;
+  try {
+    [itemsPage, marketplacesPage] = await Promise.all([
+      listPublicMarketplaceItems(),
+      listPublicMarketplaces(),
+    ]);
+  } catch {
+    itemsPage = { items: [], loading: false, pending: 0, sources: [] };
+    marketplacesPage = { marketplaces: [], loading: false, pending: 0, sources: [] };
+  }
 
   const items = filterPublicMarketplaceItems(itemsPage.items, { source: marketplaceId });
 

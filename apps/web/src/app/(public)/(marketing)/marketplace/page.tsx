@@ -6,7 +6,7 @@ import {
   listPublicMarketplaces,
 } from '@/lib/marketplace-public';
 
-export const dynamic = 'force-static';
+export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: 'Marketplace — Extend the agent',
@@ -20,10 +20,17 @@ export const metadata: Metadata = {
 };
 
 export default async function MarketplacePage() {
-  const [itemsPage, marketplacesPage] = await Promise.all([
-    listPublicMarketplaceItems(),
-    listPublicMarketplaces(),
-  ]);
+  let itemsPage;
+  let marketplacesPage;
+  try {
+    [itemsPage, marketplacesPage] = await Promise.all([
+      listPublicMarketplaceItems(),
+      listPublicMarketplaces(),
+    ]);
+  } catch {
+    itemsPage = { items: [], loading: false, pending: 0, sources: [] };
+    marketplacesPage = { marketplaces: [], loading: false, pending: 0, sources: [] };
+  }
 
   return (
     <MarketplaceExplore

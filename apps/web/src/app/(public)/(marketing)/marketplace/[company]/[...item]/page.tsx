@@ -9,7 +9,7 @@ import {
 } from '@/lib/marketplace-public';
 import { itemIdToPathParts, pathPartsToItemId } from '@/lib/marketplace-slug';
 
-export const dynamic = 'force-static';
+export const revalidate = 3600;
 
 interface PageParams {
   company: string;
