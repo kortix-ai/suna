@@ -1,13 +1,12 @@
 /**
  * Scroll-synced "How it works" section.
  *
- * Marketing order:
  *   01 Connect → wire company tools once
- *   02 Ask     → teams request outcomes in plain language
- *   03 Work    → each task runs in a secure workspace
- *   04 Review  → finished output returns for human approval
- *   05 Skills  → good workflows become reusable skills
- *   06 Memory  → company context compounds over time
+ *   02 Ask     → anyone requests an outcome in plain language
+ *   03 Work    → each task runs in its own secure sandbox
+ *   04 Review  → finished work returns for human approval
+ *   05 Skills  → good workflows become reusable skill files
+ *   06 Memory  → the company learns and compounds on its own
  */
 
 export type Step = {
@@ -26,12 +25,12 @@ export const STEPS: Step[] = [
     label: 'Connect',
     title: 'Connect your tools once.',
     description:
-      'Connect Slack, docs, tickets, CRM, databases, code, and internal systems with scoped access.',
+      'Wire up Slack, docs, tickets, CRM, databases, and code with scoped access — once, for the whole company.',
     bullets: [
-      '3,000+ app connections, plus MCP, OpenAPI, GraphQL, and HTTP',
-      'Credentials stay brokered by Kortix instead of copied into a session',
-      'Connect tools per project so every coworker has the right reach',
-      'Admins keep control over what can run, ask first, or stay blocked',
+      '3,000+ apps, plus MCP, OpenAPI, GraphQL, and HTTP',
+      'Credentials stay brokered by Kortix, never copied into a session',
+      'Scope each tool per project, per agent, per person',
+      'Admins set what can run, what asks first, and what stays blocked',
     ],
   },
   {
@@ -40,11 +39,11 @@ export const STEPS: Step[] = [
     label: 'Ask',
     title: 'Ask for the outcome.',
     description:
-      'Your team describes what they need in plain language from Slack, the web workspace, or the CLI.',
+      'Anyone on the team describes what they need in plain language — from Slack, Teams, the web, or their phone.',
     bullets: [
-      'No prompt engineering course before the first useful task',
-      'Ask for a report, brief, dashboard, reply, app, or reviewable change',
-      'Slack, web, and CLI all start the same underlying kind of work',
+      'No prompt-engineering course before the first useful task',
+      'Ask for a report, brief, dashboard, reply, app, or change',
+      'Every surface starts the same underlying kind of work',
       'Follow-up messages keep the context instead of starting over',
     ],
   },
@@ -52,13 +51,13 @@ export const STEPS: Step[] = [
     id: 'work',
     step: '03',
     label: 'Work',
-    title: 'Kortix works safely.',
+    title: 'It works in a safe sandbox.',
     description:
-      'Each task runs in a secure workspace with its own permissions, files, and audit trail.',
+      'Each task runs in its own isolated machine with scoped permissions, its own files, and a full audit trail.',
     bullets: [
-      'A session gets its own isolated sandbox and branch',
-      'The coworker can use connected tools without holding raw credentials',
-      'Long-running work continues after you leave the tab',
+      'Every session gets its own isolated sandbox and branch',
+      'Agents use connected tools without ever holding raw keys',
+      'Long-running work keeps going after you close the tab',
       'Every important action stays logged, reviewable, or approval-gated',
     ],
   },
@@ -68,12 +67,12 @@ export const STEPS: Step[] = [
     label: 'Review',
     title: 'Review what comes back.',
     description:
-      'Kortix returns the finished output: a report, deck, dashboard, app, reply, or change request.',
+      'Kortix returns finished work — a report, deck, dashboard, app, reply, or a change request you approve.',
     bullets: [
-      'People stay in control before important work ships',
-      'Files, diffs, and results open in the workspace instead of getting lost',
-      'Change requests make builder work auditable before it reaches main',
-      'Approved work becomes part of the company system',
+      'People stay in control before anything important ships',
+      'Files, diffs, and results open right in the workspace',
+      'Change requests make every edit auditable before it reaches main',
+      'Approved work becomes part of the company',
     ],
   },
   {
@@ -82,26 +81,26 @@ export const STEPS: Step[] = [
     label: 'Skills',
     title: 'Save the workflow as a skill.',
     description:
-      'The best way to do the task becomes reusable, so the next person starts from a stronger place.',
+      'The best way to do a job becomes a reusable skill file — so the next person, and every agent, starts from a stronger place.',
     bullets: [
-      'Capture repeatable know-how in simple skill files',
-      'Attach skills to the coworkers that need them',
-      'Improve skills through the same reviewable change flow',
-      'One person levels up the whole team overnight',
+      'Capture repeatable know-how in simple files',
+      'Attach skills to the agents that need them',
+      'Improve them through the same reviewable change flow',
+      'One person levels up the whole company overnight',
     ],
   },
   {
     id: 'memory',
     step: '06',
     label: 'Memory',
-    title: 'It remembers useful context.',
+    title: 'It learns by itself.',
     description:
-      'Future work starts with the company knowledge Kortix has already learned from tools, files, and previous sessions.',
+      'Every session adds to a shared memory — people, docs, decisions, context — so the next one starts smarter. The company gets sharper on its own.',
     bullets: [
-      'Relevant projects, people, docs, and decisions carry forward',
-      'Memory helps coworkers avoid asking the same setup questions',
-      'Context remains part of the system your team can inspect and improve',
-      'Your company gets sharper as workflows compound',
+      'Relevant projects, people, and decisions carry forward',
+      'Agents stop asking the same setup questions twice',
+      'Memory is shared by everyone and inspectable as files',
+      'Your company compounds what it learns, every run',
     ],
   },
 ];
