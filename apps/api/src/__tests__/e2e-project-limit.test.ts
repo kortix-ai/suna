@@ -79,11 +79,13 @@ mock.module('../projects/git-backends', () => ({
 // The limit *number* is controlled here; the plan→number policy lives in the
 // real maxProjectsForAccount (see unit-project-limit-policy.test.ts).
 mock.module('../shared/account-limits', () => ({
+  FREE_TIER_PROJECT_LIMIT: 3,
   maxProjectsForAccount: async () => projectLimit,
   maxConcurrentSessionsForTier: () => Number.MAX_SAFE_INTEGER,
   resolveAccountTier: async () => 'free',
   accountEntitledToLlmGateway: async () => true,
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
+  clearAccountLimitCache: () => {},
 }));
 
 mock.module('../deployments/providers/freestyle', () => ({
@@ -170,6 +172,7 @@ mock.module('../shared/supabase', () => ({
 }));
 
 mock.module('../billing/repositories/credit-accounts', () => ({
+  upsertCreditAccount: async () => undefined,
   getSubscriptionInfo: async () => ({ tier: 'free' }),
   getCreditAccount: async () => null,
   getCreditBalance: async () => ({ balance: 0, granted: 0, used: 0 }),

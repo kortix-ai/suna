@@ -3,8 +3,8 @@
 // via principal_type='token' with principal_id = service_account_id so
 // the existing IAM engine token-path handles authorisation unchanged.
 
-import { and, asc, eq, inArray } from 'drizzle-orm';
-import { serviceAccounts } from '@kortix/db';
+import { and, asc, eq, inArray, isNull, isNotNull } from 'drizzle-orm';
+import { serviceAccounts, iamPolicies } from '@kortix/db';
 import { db } from '../shared/db';
 import {
   generateServiceAccountSecret,
@@ -24,6 +24,9 @@ export type ServiceAccount = {
   description: string | null;
   publicPrefix: string;
   status: 'active' | 'disabled';
+  /** Set for an auto-provisioned agent identity (system-managed, not a
+   *  human bearer SA). Null for a manually-created service account. */
+  agentName: string | null;
   lastUsedAt: Date | null;
   expiresAt: Date | null;
   createdBy: string | null;
@@ -45,6 +48,7 @@ function mapRow(r: typeof serviceAccounts.$inferSelect): ServiceAccount {
     description: r.description,
     publicPrefix: r.publicPrefix,
     status: r.status as 'active' | 'disabled',
+    agentName: r.agentName,
     lastUsedAt: r.lastUsedAt,
     expiresAt: r.expiresAt,
     createdBy: r.createdBy,
@@ -58,7 +62,12 @@ export async function listServiceAccounts(accountId: string): Promise<ServiceAcc
   const rows = await db
     .select()
     .from(serviceAccounts)
-    .where(eq(serviceAccounts.accountId, accountId))
+    // Only human-managed bearer SAs. Auto-provisioned AGENT identities
+    // (agent_name set) are system-managed — they carry no usable bearer and are
+    // governed via the Roles UI, so they must not appear in (or be deletable
+    // from) the bearer-SA management card (deleting one CASCADE-kills live agent
+    // sessions). isNull keeps them out.
+    .where(and(eq(serviceAccounts.accountId, accountId), isNull(serviceAccounts.agentName)))
     .orderBy(asc(serviceAccounts.name));
   return rows.map(mapRow);
 }
@@ -109,6 +118,91 @@ export async function createServiceAccount(args: {
   return { ...mapRow(row), secret };
 }
 
+/** Auto-provisioned AGENT identities (agent_name set), for the policy
+ *  principal picker — an admin binds a role to one to promote that agent to a
+ *  standing teammate. Distinct from listServiceAccounts (human bearer SAs). */
+export async function listAgentServiceAccounts(
+  accountId: string,
+): Promise<Array<{ serviceAccountId: string; name: string; projectId: string | null; agentName: string | null }>> {
+  return db
+    .select({
+      serviceAccountId: serviceAccounts.serviceAccountId,
+      name: serviceAccounts.name,
+      projectId: serviceAccounts.projectId,
+      agentName: serviceAccounts.agentName,
+    })
+    .from(serviceAccounts)
+    .where(
+      and(
+        eq(serviceAccounts.accountId, accountId),
+        isNotNull(serviceAccounts.agentName),
+        eq(serviceAccounts.status, 'active'),
+      ),
+    )
+    .orderBy(asc(serviceAccounts.name));
+}
+
+/**
+ * Get-or-create the auto-provisioned STANDING IDENTITY for a kortix.toml
+ * [[agents]] agent. Idempotent per (account, project, agent) via the partial
+ * unique index. The returned SA id is stamped onto the session's account_token
+ * (service_account_id) so the agent authorizes AS this identity.
+ *
+ * Identity-ONLY: a bearer secret is generated and the plaintext DISCARDED, so
+ * the kortix_sa_ credential is unusable — the agent never presents it; it acts
+ * via its session token. An admin assigns this SA a role in the Roles UI.
+ */
+export async function ensureAgentServiceAccount(args: {
+  accountId: string;
+  projectId: string;
+  agentName: string;
+  displayName?: string;
+}): Promise<string> {
+  const match = and(
+    eq(serviceAccounts.accountId, args.accountId),
+    eq(serviceAccounts.projectId, args.projectId),
+    eq(serviceAccounts.agentName, args.agentName),
+  );
+  const existing = await db
+    .select({ id: serviceAccounts.serviceAccountId })
+    .from(serviceAccounts)
+    .where(match)
+    .limit(1);
+  if (existing[0]) return existing[0].id;
+
+  if (!isApiKeySecretConfigured()) {
+    throw new Error('API_KEY_SECRET not configured');
+  }
+  const { secret, publicPrefix } = generateServiceAccountSecret();
+  const secretHash = hashSecretKey(secret); // plaintext `secret` intentionally discarded — identity-only
+  const name = (args.displayName ?? args.agentName).slice(0, 128);
+  try {
+    const [row] = await db
+      .insert(serviceAccounts)
+      .values({
+        accountId: args.accountId,
+        projectId: args.projectId,
+        agentName: args.agentName,
+        name,
+        secretHash,
+        publicPrefix,
+        createdBy: null,
+      })
+      .returning({ id: serviceAccounts.serviceAccountId });
+    if (row) return row.id;
+  } catch (err) {
+    // Lost a concurrent create race (unique violation) — fall through to re-read.
+    if ((err as { code?: string })?.code !== '23505') throw err;
+  }
+  const [winner] = await db
+    .select({ id: serviceAccounts.serviceAccountId })
+    .from(serviceAccounts)
+    .where(match)
+    .limit(1);
+  if (!winner) throw new Error('failed to ensure agent service account');
+  return winner.id;
+}
+
 export async function disableServiceAccount(args: {
   accountId: string;
   serviceAccountId: string;
@@ -136,16 +230,30 @@ export async function deleteServiceAccount(
   accountId: string,
   serviceAccountId: string,
 ): Promise<boolean> {
-  const rows = await db
-    .delete(serviceAccounts)
-    .where(
-      and(
-        eq(serviceAccounts.accountId, accountId),
-        eq(serviceAccounts.serviceAccountId, serviceAccountId),
-      ),
-    )
-    .returning({ serviceAccountId: serviceAccounts.serviceAccountId });
-  return rows.length > 0;
+  // Atomically remove the SA and its standing-role bindings. iam_policies has no
+  // FK to service_accounts (principal_id is polymorphic across member/group/token),
+  // so without this a deleted SA leaves dangling token policies behind.
+  return db.transaction(async (tx) => {
+    await tx
+      .delete(iamPolicies)
+      .where(
+        and(
+          eq(iamPolicies.accountId, accountId),
+          eq(iamPolicies.principalType, 'token'),
+          eq(iamPolicies.principalId, serviceAccountId),
+        ),
+      );
+    const rows = await tx
+      .delete(serviceAccounts)
+      .where(
+        and(
+          eq(serviceAccounts.accountId, accountId),
+          eq(serviceAccounts.serviceAccountId, serviceAccountId),
+        ),
+      )
+      .returning({ serviceAccountId: serviceAccounts.serviceAccountId });
+    return rows.length > 0;
+  });
 }
 
 export interface ServiceAccountValidation {

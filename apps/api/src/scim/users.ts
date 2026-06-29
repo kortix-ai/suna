@@ -5,6 +5,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq } from 'drizzle-orm';
 import { accountInvitations, accountMembers } from '@kortix/db';
 import { db } from '../shared/db';
+import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
 import { scimError } from '../middleware/scim-auth';
 import { json, errors } from '../openapi';
 import {
@@ -229,6 +230,7 @@ scimRouter.openapi(
       accountRole: 'member',
       scimExternalId: externalId,
     });
+    invalidateIamCacheForUser(existingUserId);
   }
 
   const [member] = await db
@@ -336,6 +338,7 @@ scimRouter.openapi(
       .where(
         and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)),
       );
+    invalidateIamCacheForUser(userId);
     await scimAudit(c, {
       accountId,
       action: 'scim.user.deactivate',
@@ -401,6 +404,7 @@ scimRouter.openapi(
   await db
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
+  invalidateIamCacheForUser(userId);
 
   await scimAudit(c, {
     accountId,

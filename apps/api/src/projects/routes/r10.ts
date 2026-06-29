@@ -20,7 +20,7 @@ import { getCatalogItemDetail, resolveOpencodeDir } from '../../marketplace/cata
 import { buildInstall, buildInstallBatch, catalogIdForName, resolveItemFiles } from '../../marketplace/install-service';
 import { commitMultipleFilesToBranch } from '../git/branches';
 import { readRepoFile } from '../git/files';
-import { loadProjectForUser } from '../lib/access';
+import { loadProjectForUser, assertCommitCapabilities } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
 import { readBody } from '../lib/serializers';
@@ -62,6 +62,12 @@ async function handleMarketplaceInstall(c: any) {
   } catch (err) {
     return c.json({ error: (err as Error).message }, 400);
   }
+
+  // Per-capability gate: installing an agent needs project.agent.write, a skill
+  // project.skill.write, etc. — so a role can be scoped to install some resource
+  // types but not others. (Editor/Manager hold them all; the agent-grant fold
+  // still fires through assertProjectCapability.)
+  await assertCommitCapabilities(c, loaded.userId, loaded.row.accountId, projectId, built.files.map((f) => f.path));
 
   const commit = await commitMultipleFilesToBranch(project, {
     files: built.files,
@@ -168,6 +174,9 @@ async function handleMarketplaceUpdate(c: any) {
     return c.json({ error: (err as Error).message }, 400);
   }
 
+  // Per-capability gate on the resource types this update rewrites.
+  await assertCommitCapabilities(c, loaded.userId, loaded.row.accountId, projectId, built.files.map((f) => f.path));
+
   const commit = await commitMultipleFilesToBranch(project, {
     files: built.files,
     message: `chore(marketplace): update ${name}`,
@@ -217,6 +226,9 @@ async function handleMarketplaceUpdateAll(c: any) {
     return c.json({ error: (err as Error).message }, 400);
   }
 
+  // Per-capability gate on the resource types this bulk update rewrites.
+  await assertCommitCapabilities(c, loaded.userId, loaded.row.accountId, projectId, built.files.map((f) => f.path));
+
   const commit = await commitMultipleFilesToBranch(project, {
     files: built.files,
     message: `chore(marketplace): update ${names.length} item${names.length === 1 ? '' : 's'}`,
@@ -248,6 +260,9 @@ async function handleMarketplaceRemove(c: any) {
   if (!entry) return c.json({ error: `"${name}" is not installed` }, 404);
 
   const deletes = entry.files.map((f) => f.target);
+  // Per-capability gate on the resource type being removed (an agent removal
+  // needs project.agent.write, a skill project.skill.write, …).
+  await assertCommitCapabilities(c, loaded.userId, loaded.row.accountId, projectId, deletes);
   delete lock.items[name];
 
   const commit = await commitMultipleFilesToBranch(project, {
@@ -502,6 +517,8 @@ projectsApp.openapi(
     if (!entry) return c.json({ error: `"${name}" is not installed` }, 404);
 
     const deletes = entry.files.map((f) => f.target);
+    // Per-capability gate on the resource type being removed.
+    await assertCommitCapabilities(c, loaded.userId, loaded.row.accountId, projectId, deletes);
     delete lock.items[name];
 
     const commit = await commitMultipleFilesToBranch(project, {

@@ -32,6 +32,9 @@ mock.module('../../install-store', () => ({
 }));
 mock.module('../../../iam', () => ({
   authorize: async () => ({ allowed: authorizeAllowed }),
+  assertAuthorized: async () => {},
+  filterAccessibleProjectResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
+  unscopedResourceIds: async (_p: string, _t: string, ids: readonly string[]) => [...ids],
 }));
 
 const { postIdentityPrompt, resolveSlackActor } = await import('../identity');

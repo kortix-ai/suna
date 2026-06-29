@@ -49,6 +49,9 @@ mock.module('../shared/db', () => ({
 }));
 mock.module('../iam', () => ({
   authorize: async () => ({ allowed: authorizeAllowed }),
+  assertAuthorized: async () => {},
+  filterAccessibleProjectResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
+  unscopedResourceIds: async (_p: string, _t: string, ids: readonly string[]) => [...ids],
 }));
 
 // ─── Lifecycle delivery: the outcome under test ───────────────────────────────

@@ -386,6 +386,11 @@ export async function combinedAuth(c: Context, next: Next) {
     c.set('authType', 'pat');
     if (patResult.accountId) c.set('accountId', patResult.accountId);
     if (patResult.projectId) c.set('tokenProjectId', patResult.projectId);
+    // Set the acting token id so engine gates on combinedAuth-mounted routes can
+    // thread it and the agent-grant fold fires (mirrors supabaseAuth). Without
+    // this, a capability check on a combinedAuth route silently no-ops the fold —
+    // a scoped agent PAT would pass gates it shouldn't (e.g. executor connector-admin).
+    c.set('iamTokenId', patResult.tokenId);
     if (patResult.sessionId) c.set('sessionId', patResult.sessionId);
     c.set('agentGrant', patResult.agentGrant ?? null);
     setSentryUser({ id: patResult.userId, accountId: patResult.accountId });

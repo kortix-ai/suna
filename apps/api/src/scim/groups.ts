@@ -5,6 +5,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, inArray } from 'drizzle-orm';
 import { accountGroupMembers, accountGroups, accountMembers } from '@kortix/db';
 import { db } from '../shared/db';
+import { invalidateIamCacheForGroup, invalidateIamCacheForUsers } from '../iam/cache-invalidation';
 import { scimError } from '../middleware/scim-auth';
 import { json, errors } from '../openapi';
 import {
@@ -182,6 +183,8 @@ scimRouter.openapi(
     }
   }
 
+  await invalidateIamCacheForGroup(groupId);
+
   await scimAudit(c, {
     accountId,
     action: 'scim.group.create',
@@ -250,6 +253,15 @@ scimRouter.openapi(
   const operations = Array.isArray(body.Operations)
     ? (body.Operations as Array<Record<string, unknown>>)
     : [];
+
+  // Snapshot the pre-PATCH members so we can bust REMOVED users too (the
+  // current-member helper below only covers who's left after the ops).
+  const beforeMemberIds = (
+    await db
+      .select({ userId: accountGroupMembers.userId })
+      .from(accountGroupMembers)
+      .where(eq(accountGroupMembers.groupId, groupId))
+  ).map((r) => r.userId);
 
   for (const op of operations) {
     const opName = typeof op.op === 'string' ? op.op.toLowerCase() : '';
@@ -354,6 +366,11 @@ scimRouter.openapi(
     .set({ updatedAt: new Date() })
     .where(eq(accountGroups.groupId, groupId));
 
+  // Membership may have changed → bust both who was a member before and who is
+  // now, so role changes via this group apply immediately (not after the TTL).
+  invalidateIamCacheForUsers(beforeMemberIds);
+  await invalidateIamCacheForGroup(groupId);
+
   await scimAudit(c, {
     accountId,
     action: 'scim.group.update',
@@ -394,11 +411,21 @@ scimRouter.openapi(
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
 
+  // Capture members before the cascade so we can bust their cached roles —
+  // deleting the group drops every grant it conferred.
+  const memberIds = (
+    await db
+      .select({ userId: accountGroupMembers.userId })
+      .from(accountGroupMembers)
+      .where(eq(accountGroupMembers.groupId, groupId))
+  ).map((r) => r.userId);
+
   const rows = await db
     .delete(accountGroups)
     .where(and(eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId)))
     .returning({ groupId: accountGroups.groupId, name: accountGroups.name });
   if (rows.length === 0) return c.body(null, 204);
+  invalidateIamCacheForUsers(memberIds);
 
   await scimAudit(c, {
     accountId,

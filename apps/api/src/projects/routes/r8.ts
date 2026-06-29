@@ -18,8 +18,9 @@ import {
 import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
-import { loadProjectForUser, loadVisibleSession } from '../lib/access';
+import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { assertAgentScope } from '../../iam/agent-scope';
+import { PROJECT_ACTIONS } from '../../iam';
 import { AnyObject, ChangeRequestSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
@@ -54,6 +55,9 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Per-agent gate: resuming a session provisions compute. A scoped agent
+    // token must hold project.session.start (no-op for human/PAT tokens).
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
     const visible = await loadVisibleSession(loaded, sessionId);
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
@@ -110,6 +114,9 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Per-agent gate: restart re-provisions compute. A scoped agent token must
+    // hold project.session.start (no-op for human/PAT tokens).
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
 
     // Restart is reserved for the session owner or a project manager.
     const visible = await loadVisibleSession(loaded, sessionId);
@@ -217,6 +224,9 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Human-side capability gate (Git Ops). Editors/managers hold it; a custom
+    // role omits project.gitops.push to take Git-Ops away from a department.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
     // Per-agent gate: opening a CR is the agent's intended path to propose work.
     // Default-deny — a scoped agent must be granted project.cr.open.
@@ -341,6 +351,7 @@ projectsApp.openapi(
     const sessionId = c.req.param('sessionId');
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
     const body = await readBody(c);
     const message = normalizeString(body.message) ?? undefined;
@@ -508,6 +519,8 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Per-agent gate: editing a CR is part of the change-request capability.
+    assertAgentScope(c, 'project.cr.open');
 
     const cr = await getCrById(crId, projectId);
     if (!cr) return c.json({ error: 'Change request not found' }, 404);

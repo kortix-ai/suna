@@ -438,7 +438,19 @@ async function resolveAdmin(c: Context, projectId: string): Promise<{ accountId:
   if (!userId) return null;
   const [proj] = await db.select({ accountId: projects.accountId }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
   if (!proj) return null;
-  const decision = await authorize(userId, proj.accountId, 'project.write', { type: 'project', id: projectId });
+  // Connector administration (create/delete connectors, write shared credentials,
+  // grants/policies) is project.connector.write — NOT the coarse, fold-exempt
+  // project.write. Thread the acting token (iamTokenId) so the agent-grant fold
+  // fires: a scoped agent-session token must actually hold connector.write to
+  // manage connectors, and a custom role can withhold it from humans too.
+  const actingTokenId = (c.get('iamTokenId') as string | undefined) ?? undefined;
+  const decision = await authorize(
+    userId,
+    proj.accountId,
+    'project.connector.write',
+    { type: 'project', id: projectId },
+    actingTokenId,
+  );
   if (!decision.allowed) return null;
   return { accountId: proj.accountId, userId };
 }

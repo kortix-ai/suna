@@ -7,8 +7,8 @@ import {
 } from '../command-helpers.ts';
 import { C, pad, status } from '../style.ts';
 
-type ProjectRole = 'manager' | 'editor' | 'viewer';
-const ROLES: readonly ProjectRole[] = ['manager', 'editor', 'viewer'];
+type ProjectRole = 'manager' | 'editor' | 'user';
+const ROLES: readonly ProjectRole[] = ['manager', 'editor', 'user'];
 
 interface AccessMember {
   user_id: string;

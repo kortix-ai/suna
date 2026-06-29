@@ -1,4 +1,6 @@
 import { parseSharingIntent, resolveShareSubject, setSecretSharing } from '../../executor/share';
+import { PROJECT_ACTIONS } from '../../iam';
+import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
 import { db } from '../../shared/db';
@@ -14,7 +16,7 @@ import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSecrets, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { loadProjectForUser } from '../lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, getProjectGitRemote, hasServerManagedGitAuth, loadGitProject, resolveProjectGitAuth, upsertProjectGitConnection, upsertProjectGitCredential, withProjectGitAuth } from '../lib/git';
 import { CODEX_AUTH_JSON_SECRET_NAME, isSystemProjectSecretName, loadSecretViewsForUser, normalizeString, readBody, serializeProjectGitConnection } from '../lib/serializers';
@@ -39,6 +41,10 @@ projectsApp.openapi(
   const templateId = c.req.param('templateId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Capability gate: building a sandbox template provisions infra. Gated on
+  // project.customize.write so a custom role can withhold it (humans) AND the
+  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   const row = await getTemplateById(templateId);
   if (!row) return c.json({ error: 'Not found' }, 404);
@@ -119,6 +125,15 @@ projectsApp.openapi(
   // Authorization is enforced by loadProjectForUser(... 'manage') above,
   // which routes through the IAM engine (project.write).
 
+  // Privilege-escalation guard: an agent-session token is itself a project
+  // account token carrying a (possibly narrow) AgentGrant. If it could mint a
+  // fresh project token, the new token would carry NO grant — letting a scoped
+  // agent issue an unscoped sibling and escape its own ceiling. Token minting
+  // is a human/manage operation; agents are denied outright.
+  if (getAgentGrant(c)) {
+    return c.json({ error: 'Agent-session tokens cannot mint project tokens' }, 403);
+  }
+
   // One body field: `name`. Defaults to "cli · <project name>".
   let body: { name?: unknown } = {};
   try {
@@ -177,6 +192,12 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Authorization is enforced by loadProjectForUser(... 'manage') above.
+  // Token management is a human/manage operation: an agent-session token must
+  // not revoke project tokens (it could knock out its own siblings / the human
+  // CLI token as a DoS). Symmetric with the mint guard above.
+  if (getAgentGrant(c)) {
+    return c.json({ error: 'Agent-session tokens cannot manage project tokens' }, 403);
+  }
   const ok = await revokeAccountToken(tokenId, loaded.row.accountId);
   if (!ok) return c.json({ error: 'token not found or already revoked' }, 404);
   return c.json({ ok: true });
@@ -300,6 +321,10 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Storing a git credential is a connector-write capability — a custom role can
+  // omit project.connector.write to take credential management away from a
+  // department, and an agent grant must include it (central fold) to write one.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
 
   if (await hasServerManagedGitAuth(loaded.row)) {
     return c.json({ error: 'Git auth is already managed by Kortix for this project' }, 409);
@@ -372,6 +397,9 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Leaf-gate the read (a custom role can omit project.secret.read) — and, via
+  // the central agent-grant fold, an agent token must hold it in its kortixCli.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
 
   const subject = await resolveShareSubject(loaded.userId);
   const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
@@ -398,8 +426,13 @@ projectsApp.openapi(
     });
   }
 
+  // Per-agent env scoping: a scoped agent token only sees the secret NAMES it's
+  // granted (mirrors the env-injection narrowing), so it can't enumerate keys
+  // outside its allowlist. No-op for non-agent tokens / 'all' / null grants.
+  const agentGrant = getAgentGrant(c);
   const items = (await loadSecretViewsForUser(projectId, subject, canManageShared))
-    .filter((item) => !item.system);
+    .filter((item) => !item.system)
+    .filter((item) => agentMayUseEnv(agentGrant, item.name));
 
   return c.json({
     items,
@@ -439,6 +472,7 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
 
   const name = normalizeString(body.name)?.toUpperCase();
   if (!name) return c.json({ error: 'name is required' }, 400);
@@ -688,9 +722,15 @@ projectsApp.openapi(
       return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
     }
   }
-  // A shared credential needs manage; a private (owner-only) one just needs read.
-  if (sharing?.mode !== 'private' && !roleAllows(loaded.effectiveRole, 'manage')) {
-    return c.json({ error: 'Only project managers can configure shared provider credentials' }, 403);
+  // A shared credential is a project SECRET WRITE (the device flow persists it
+  // via writeCodexAuthSecret on poll). Gate on the leaf so a custom role can
+  // withhold it and the agent-grant fold applies — closing the gap where the
+  // flow wrote a shared credential behind only loadProjectForUser('read'). A
+  // private (owner-only) credential is the member's own, so read still suffices.
+  // The poll step is reachable only with the project-key-encrypted flow handle
+  // minted here, so gating start transitively protects the write on poll.
+  if (sharing?.mode !== 'private') {
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
   }
 
   // Request a device code straight from OpenAI — a couple HTTPS calls, no
@@ -866,6 +906,7 @@ projectsApp.openapi(
   const provider = c.req.param('provider');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
 
   const cfg = OAUTH_PROVIDERS[provider];
   if (!cfg) return c.json({ error: 'Not found' }, 404);
@@ -901,6 +942,7 @@ projectsApp.openapi(
   const name = c.req.param('name')?.trim().toUpperCase();
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
   if (!name || !isValidSecretName(name)) {
     return c.json({ error: 'Invalid secret name' }, 400);
   }

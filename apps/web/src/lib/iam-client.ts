@@ -160,7 +160,7 @@ export async function addGroupMembers(accountId: string, groupId: string, userId
 export interface GroupProjectGrant {
   project_id: string;
   project_name: string;
-  role: 'manager' | 'editor' | 'viewer';
+  role: 'manager' | 'editor' | 'user';
   granted_by: string | null;
   created_at: string;
   /** Auto-revoke timestamp (ISO). null = permanent. Surfaced from the
@@ -208,7 +208,7 @@ export async function listMemberGroups(accountId: string, userId: string) {
 export interface MemberProjectAccess {
   project_id: string;
   project_name: string;
-  role: 'manager' | 'editor' | 'viewer';
+  role: 'manager' | 'editor' | 'user';
   sources: Array<'implicit' | 'direct' | 'group'>;
 }
 
@@ -351,6 +351,21 @@ export async function listRoles(accountId: string) {
   return unwrap(
     await backendApi.get<{ roles: IamRole[] }>(`/accounts/${accountId}/iam/roles`),
   ).roles;
+}
+
+/** Auto-provisioned agent (service-account) identities — the principal picker for
+ *  binding a role to an agent, promoting it to a standing teammate. */
+export interface AgentIdentity {
+  service_account_id: string;
+  name: string;
+  project_id: string | null;
+  agent_name: string | null;
+}
+
+export async function listAgentIdentities(accountId: string) {
+  return unwrap(
+    await backendApi.get<{ agents: AgentIdentity[] }>(`/accounts/${accountId}/iam/agent-identities`),
+  ).agents;
 }
 
 export async function getRolePermissions(accountId: string, roleId: string) {
