@@ -18,15 +18,16 @@ import { Bot, Check, ChevronDown, CreditCard, FolderGit2, KeyRound, Plus, Slider
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
 import {
   MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS,
   ProviderLogo,
 } from '@/features/providers/provider-branding';
+import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { getProjectDetail, listProjectSecrets } from '@/lib/projects-client';
 import { useCustomizeStore } from '@/stores/customize-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
@@ -149,7 +150,7 @@ export function ModelSelector({
     enabled: !!projectId,
     staleTime: 30_000,
   });
-  const llmGatewayEnabled = projectDetailQuery.data?.project.experimental?.llm_gateway === true;
+  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
   const baseModels = useMemo(() => {
     return llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix');
   }, [models, llmGatewayEnabled]);

@@ -16,6 +16,7 @@ import {
   listProjectSecrets,
   type ProjectConfigSummary,
 } from '@/lib/projects-client';
+import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { LLM_PROVIDERS } from '@/lib/llm-providers';
 import {
   filterToGatewayProviders,
@@ -1078,7 +1079,7 @@ export function useOpenCodeProviders() {
     staleTime: 30_000,
   });
   const projectGatewayEnabled =
-    projectId ? projectDetailQuery.data?.project.experimental?.llm_gateway === true : false;
+    projectId ? isLlmGatewayEnabled(projectDetailQuery.data?.project) : false;
   const projectModeKnown = !projectId || projectDetailQuery.isSuccess;
   // BYOK makes the connected model set project-specific (a provider connected
   // in one project must NOT leak into another, nor linger after removal), so

@@ -31,7 +31,7 @@ import {
   CommandPopoverContent,
   CommandPopoverTrigger,
 } from '@/components/ui/command';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { IconDelete, IconInvite, IconLoader, IconUsers } from '@/components/ui/kortix-icons';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { UserRow } from '@/components/ui/user-row';

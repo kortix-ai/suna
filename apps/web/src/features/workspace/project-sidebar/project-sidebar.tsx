@@ -1,0 +1,375 @@
+'use client';
+
+import {
+  matchesSessionFilter,
+  SESSION_FILTER_OPTIONS,
+  type SessionFilterValue,
+} from '@/components/projects/session-label';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import Hint from '@/components/ui/hint';
+import { Kbd, KbdGroup } from '@/components/ui/kbd';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+  useSidebar,
+} from '@/components/ui/sidebar';
+import { Icon } from '@/features/icon/icon';
+import { UserMenu } from '@/features/layout/user-menu';
+import { useAuth } from '@/features/providers/auth-provider';
+import {
+  ProjectAppsNavItem,
+  ProjectAppsRailItem,
+} from '@/features/workspace/project-sidebar/footer/project-apps-nav';
+import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
+import {
+  ProjectChatGptConnectNavItem,
+  ProjectChatGptConnectRailItem,
+} from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
+import {
+  ProjectCustomizeNavItem,
+  ProjectCustomizeRailItem,
+  useCustomizeKeyboardShortcut,
+} from '@/features/workspace/project-sidebar/footer/project-customize-nav';
+import {
+  ProjectSandboxAlert,
+  ProjectSandboxAlertRailItem,
+} from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
+import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
+import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-switcher';
+import { useAdminRole } from '@/hooks/admin';
+import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
+import { useIsMobile } from '@/hooks/utils';
+import { listProjectSessions } from '@/lib/projects-client';
+import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
+import { cn } from '@/lib/utils';
+import { useBillingAccountId } from '@/stores/billing-account-context';
+import { useSessionFilterStore } from '@/stores/session-filter-store';
+import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
+import { useQuery } from '@tanstack/react-query';
+import {
+  CalendarClock,
+  List,
+  Mail,
+  MessagesSquare,
+  PanelLeft,
+  Plus,
+  Webhook,
+  type LucideIcon,
+} from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useTranslations } from 'next-intl';
+import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { HiDotsHorizontal } from 'react-icons/hi';
+import { IconType } from 'react-icons/lib';
+import { SidebarUpgradeButton, SidebarUpgradeRailItem } from './footer/project-upgrade-button';
+
+const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+const modSymbol = isMac ? '⌘' : 'Ctrl';
+
+const SESSION_FILTER_ICONS: Record<SessionFilterValue, LucideIcon | IconMynauiType | IconType> = {
+  all: List,
+  mine: MessagesSquare,
+  shared: UsersSolid,
+  slack: Icon.Slack,
+  email: Mail,
+  schedule: CalendarClock,
+  webhook: Webhook,
+};
+
+export function ProjectSidebar({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const { state, setOpenMobile, toggleSidebar } = useSidebar();
+  const isExpanded = state === 'expanded';
+  const isMobile = useIsMobile();
+  const sessionsGroupRef = useRef<HTMLDivElement>(null);
+
+  // Filter lives in a persisted store (keyed by project) so it survives the
+  // project shell remounting on navigation — local state reset to "all" on
+  // every session open / ⌘J / switch.
+  const sessionFilter = useSessionFilterStore((s) => s.filterByProject[projectId] ?? 'all');
+  const setSessionFilter = useSessionFilterStore((s) => s.setFilter);
+  const { data: filterSessions } = useQuery({
+    queryKey: ['project-sessions', projectId],
+    queryFn: () => listProjectSessions(projectId),
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
+  });
+  const sessionFilterCounts = useMemo(() => {
+    const counts = new Map<SessionFilterValue, number>();
+    for (const option of SESSION_FILTER_OPTIONS) {
+      counts.set(
+        option.value,
+        (filterSessions ?? []).filter((s) => matchesSessionFilter(s, option.value)).length,
+      );
+    }
+    return counts;
+  }, [filterSessions]);
+  const activeFilterOption =
+    SESSION_FILTER_OPTIONS.find((option) => option.value === sessionFilter) ??
+    SESSION_FILTER_OPTIONS[0];
+
+  const { data: adminRoleData } = useAdminRole();
+  const isAdmin = adminRoleData?.isAdmin ?? false;
+
+  const accountId = useBillingAccountId();
+
+  const { user: authUser } = useAuth();
+  const user = useMemo(
+    () => ({
+      name: authUser?.user_metadata?.name || authUser?.email?.split('@')[0] || 'User',
+      email: authUser?.email ?? '',
+      avatar: authUser?.user_metadata?.avatar_url || authUser?.user_metadata?.picture || '',
+      isAdmin,
+    }),
+    [authUser, isAdmin],
+  );
+
+  // Optimistic + shared with every other entry point (see useNewProjectSession).
+  // The timing marks + mobile-drawer close fire on the synchronous navigation.
+  const newSession = useNewProjectSession(projectId);
+  const handleNewSession = useCallback(() => {
+    markSessionClick();
+    newSession({
+      onNavigate: (sessionId) => {
+        beginSessionTiming(sessionId);
+        sessionMark(sessionId, 'session-created');
+        if (isMobile) setOpenMobile(false);
+      },
+    });
+  }, [newSession, isMobile, setOpenMobile]);
+
+  useCustomizeKeyboardShortcut();
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.shiftKey &&
+        !event.altKey &&
+        (event.key === 'j' || event.key === 'J')
+      ) {
+        event.preventDefault();
+        handleNewSession();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleNewSession]);
+
+  return (
+    <Sidebar
+      collapsible="icon"
+      variant="inset"
+      className="bg-sidebar [scrollbar-width:'none'] [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden"
+    >
+      <SidebarHeader className="space-y-2 pt-[max(0.5rem,env(safe-area-inset-top,0px))]">
+        <div className="flex w-full items-center justify-between gap-2">
+          <AnimatePresence initial={false} mode="popLayout">
+            {isExpanded ? (
+              <motion.div
+                key="expanded-sidebar-header"
+                initial={{ opacity: 0, x: -10, filter: 'blur(6px)' }}
+                animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                exit={{ opacity: 0, x: -8, filter: 'blur(6px)' }}
+                transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
+                className="flex w-full items-center justify-between gap-1"
+              >
+                <Button type="button" variant="ghost" size="icon" asChild>
+                  <Link href={`/projects/${projectId}`}>
+                    <Icon.Kortix className="text-foreground size-4.5" />
+                  </Link>
+                </Button>
+                <div className="w-full min-w-0">
+                  <ProjectSwitcher variant="sidebar" />
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="collapsed-sidebar-header"
+                initial={{ opacity: 0, scale: 0.92, filter: 'blur(6px)' }}
+                animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+                exit={{ opacity: 0, scale: 0.92, filter: 'blur(6px)' }}
+                transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
+                className="flex w-full items-center justify-center"
+              >
+                <Hint
+                  label={tI18nHardcoded.raw(
+                    'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrLabelb7b89bbc',
+                  )}
+                >
+                  <button
+                    type="button"
+                    aria-label={tI18nHardcoded.raw(
+                      'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria0ca75c68',
+                    )}
+                    onClick={toggleSidebar}
+                    className="group/expand text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground relative flex size-8 items-center justify-center rounded-md transition-colors duration-150 ease-out"
+                  >
+                    <Icon.Kortix className="absolute size-4.5 transition-all duration-200 ease-out group-hover/expand:scale-90 group-hover/expand:opacity-0" />
+                    <PanelLeft className="cn-rtl-flip absolute size-4 scale-90 opacity-0 transition-all duration-200 ease-out group-hover/expand:scale-100 group-hover/expand:opacity-100" />
+                  </button>
+                </Hint>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </SidebarHeader>
+      <SidebarContent className="relative min-h-0 flex-1 [scrollbar-width:'none'] overflow-hidden [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden">
+        <div
+          className={cn(
+            'absolute inset-0 flex min-h-0 flex-col items-center px-0 pt-0 pb-1',
+            !isExpanded ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
+          )}
+        >
+          <div className="flex w-full flex-col items-center gap-1">
+            <Hint
+              label={tI18nHardcoded.raw(
+                'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrLabel335b2318',
+              )}
+            >
+              <Button
+                type="button"
+                size="icon"
+                aria-label={tI18nHardcoded.raw(
+                  'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria7f9fc26a',
+                )}
+                onClick={handleNewSession}
+                className={cn(
+                  'text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 flex size-8 items-center justify-center border-[1.2px] [&_svg]:size-4!',
+                )}
+              >
+                <Plus />
+              </Button>
+            </Hint>
+          </div>
+
+          <div className="mt-auto flex w-full flex-col items-center gap-1">
+            <ProjectSandboxAlertRailItem projectId={projectId} />
+            <ProjectAppsRailItem projectId={projectId} />
+            <ProjectChatGptConnectRailItem projectId={projectId} />
+            <ProjectCustomizeRailItem />
+            <SidebarUpgradeRailItem accountId={accountId} />
+          </div>
+        </div>
+
+        <div
+          className={cn(
+            'flex h-full min-h-0 flex-col space-y-4',
+            !isExpanded ? 'pointer-events-none opacity-0' : 'pointer-events-auto opacity-100',
+          )}
+        >
+          <SidebarGroup className="py-0">
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  onClick={handleNewSession}
+                  size="md"
+                  className="group/menu-button text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 flex items-center justify-center border-[1.2px] text-center !text-sm [&_svg]:!size-5"
+                >
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextNew55d0b491',
+                  )}
+                  <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 transition-opacity duration-200 group-hover/menu-button:opacity-100">
+                    <Kbd>{modSymbol}</Kbd>
+                    <Kbd>J</Kbd>
+                  </KbdGroup>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroup>
+
+          <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
+            {/* Sessions are always expanded — no collapse toggle. The header
+                label only carries the active filter; the ⋯ button opens the
+                filter menu. */}
+            <div className="flex min-h-0 flex-1 flex-col space-y-2">
+              <SidebarGroupLabel className="text-muted-foreground/60 mt-1 flex h-6 items-center px-0 text-xs font-medium tracking-wider uppercase">
+                <div className="flex w-full flex-row items-center gap-0.5">
+                  <div className="flex min-w-0 flex-1 flex-row items-center gap-0.5 px-2 text-[13px] font-normal">
+                    <span>Sessions</span>
+                    {sessionFilter !== 'all' && (
+                      <span className="text-muted-foreground/90 truncate tracking-normal normal-case">
+                        {tI18nHardcoded.raw(
+                          'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextBulled44625b',
+                        )}{' '}
+                        {activeFilterOption.label}
+                      </span>
+                    )}
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuContent align="start" className="w-44 p-1">
+                      {SESSION_FILTER_OPTIONS.map((option) => {
+                        const OptionIcon = SESSION_FILTER_ICONS[option.value];
+                        return (
+                          <DropdownMenuItem
+                            key={option.value}
+                            className="cursor-pointer"
+                            onClick={() => setSessionFilter(projectId, option.value)}
+                          >
+                            <OptionIcon className="h-4 w-4" />
+                            {option.label}
+                            <span className="text-muted-foreground ml-auto flex items-center gap-1.5 text-xs tabular-nums">
+                              {sessionFilterCounts.get(option.value) ?? 0}
+                            </span>
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuContent>
+                    <DropdownMenuTrigger asChild>
+                      <SidebarMenuButton
+                        type="button"
+                        aria-label={tI18nHardcoded.raw(
+                          'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria39d6d82d',
+                        )}
+                        className="text-muted-foreground/90 hover:text-sidebar-foreground flex size-8 shrink-0 items-center justify-center px-2"
+                      >
+                        <HiDotsHorizontal className="size-3" />
+                      </SidebarMenuButton>
+                    </DropdownMenuTrigger>
+                  </DropdownMenu>
+                </div>
+              </SidebarGroupLabel>
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="flex h-full min-h-0 flex-col">
+                  <ProjectSessionList projectId={projectId} filter={sessionFilter} />
+                </div>
+              </div>
+            </div>
+          </SidebarGroup>
+
+          <SidebarGroup className="mt-auto py-0.5">
+            <SidebarMenu>
+              <ProjectSandboxAlert projectId={projectId} />
+              <ProjectChangeRequestsNavItem projectId={projectId} />
+              <ProjectAppsNavItem projectId={projectId} />
+              <ProjectCustomizeNavItem />
+              <ProjectChatGptConnectNavItem projectId={projectId} />
+              <SidebarUpgradeButton accountId={accountId} />
+            </SidebarMenu>
+          </SidebarGroup>
+        </div>
+      </SidebarContent>
+
+      <SidebarFooter className="space-y-0.5 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] group-data-[collapsible=icon]:px-0">
+        <UserMenu user={user} variant="sidebar" />
+      </SidebarFooter>
+
+      <SidebarRail />
+    </Sidebar>
+  );
+}

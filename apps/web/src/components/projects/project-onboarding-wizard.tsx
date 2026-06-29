@@ -73,7 +73,7 @@ const SLACK_SLUGS = new Set(['slack', 'slack_v2']);
 
 /** Lazy — keeps the giant connectors-view module out of the project bundle. */
 const SlackConnectForm = lazy(() =>
-  import('@/components/projects/customize/sections/connectors-view').then((m) => ({
+  import('@/features/workspace/customize/sections/connectors-view').then((m) => ({
     default: m.SlackConnectForm,
   })),
 );
@@ -81,7 +81,7 @@ const SlackConnectForm = lazy(() =>
 /** Lazy — the full custom-connector form (OpenAPI / GraphQL / MCP / HTTP), reused
  * verbatim from the Connectors page so onboarding's "Advanced" tab matches it. */
 const CustomConnectorForm = lazy(() =>
-  import('@/components/projects/customize/sections/connectors-view').then((m) => ({
+  import('@/features/workspace/customize/sections/connectors-view').then((m) => ({
     default: m.CustomConnectorForm,
   })),
 );

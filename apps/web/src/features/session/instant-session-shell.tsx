@@ -10,7 +10,7 @@ import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import {
   ProjectHomeWelcomeBody,
   StarterPromptsCarousel,
-} from '@/features/co-worker/project-layout/project-home';
+} from '@/features/workspace/project-layout/project-home';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import type { AttachedFile } from '@/features/session/session-chat-input';

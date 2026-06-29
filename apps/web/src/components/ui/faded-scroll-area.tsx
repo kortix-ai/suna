@@ -72,10 +72,16 @@ export const FadedScrollArea = React.forwardRef<
     ro.observe(el);
     el.addEventListener('scroll', updateScrollFades, { passive: true });
     window.addEventListener('resize', updateScrollFades);
+    // Keep wheel/touch scroll working inside Radix scroll-lock layers (Dialog/Modal).
+    const stopScrollLockCapture = (e: Event) => e.stopPropagation();
+    el.addEventListener('wheel', stopScrollLockCapture, { passive: false });
+    el.addEventListener('touchmove', stopScrollLockCapture, { passive: false });
     return () => {
       ro.disconnect();
       el.removeEventListener('scroll', updateScrollFades);
       window.removeEventListener('resize', updateScrollFades);
+      el.removeEventListener('wheel', stopScrollLockCapture);
+      el.removeEventListener('touchmove', stopScrollLockCapture);
     };
   }, [updateScrollFades]);
 
@@ -83,7 +89,7 @@ export const FadedScrollArea = React.forwardRef<
     <div
       className={cn(
         'relative flex min-h-0 min-w-0',
-        isHorizontal ? 'h-full flex-1' : 'h-full flex-col',
+        isHorizontal ? 'w-full min-w-0 flex-1 self-center' : 'h-full flex-col',
       )}
     >
       <div
@@ -112,7 +118,7 @@ export const FadedScrollArea = React.forwardRef<
         ref={setScrollRef}
         className={cn(
           'scrollbar-hide min-h-0 min-w-0 flex-1 pb-0',
-          isHorizontal ? 'overflow-x-auto overflow-y-hidden' : 'overflow-y-auto',
+          isHorizontal ? 'touch-pan-x overflow-x-auto overflow-y-hidden' : 'overflow-y-auto',
           className,
         )}
       >

@@ -50,7 +50,6 @@ import { cn } from '@/lib/utils';
 import { DialogDepthProvider, dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
 import { Suspense, useEffect, useState } from 'react';
 import { Button } from './button';
-import Hint from './hint';
 import Loading from './loading';
 
 const Modal = ({ onOpenChange, ...props }: DialogPrimitive.DialogProps) => {
@@ -174,20 +173,18 @@ const ModalContentInner = React.forwardRef<
         <div className="absolute top-3 right-3 flex items-center justify-end gap-2">
           {closeButtonChildren}
           {showCloseButton && (
-            <Hint label="Close" className="z-[9999]" side="top">
-              <ModalClose asChild>
-                <Button
-                  variant="ghost"
-                  className={cn(
-                    'size-8 p-0 text-xs font-semibold focus:outline-none',
-                    closeClassName,
-                  )}
-                >
-                  <Icon.Close className="text-primary size-4 stroke-1" />
-                  <span className="sr-only">Close</span>
-                </Button>
-              </ModalClose>
-            </Hint>
+            <ModalClose asChild>
+              <Button
+                variant="ghost"
+                className={cn(
+                  'size-8 p-0 text-xs font-semibold focus:outline-none',
+                  closeClassName,
+                )}
+              >
+                <Icon.Close className="text-primary size-4 stroke-1" />
+                <span className="sr-only">Close</span>
+              </Button>
+            </ModalClose>
           )}
         </div>
       </DialogPrimitive.Content>

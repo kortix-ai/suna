@@ -5,10 +5,10 @@ import { useTranslations } from 'next-intl';
 // timeout, plus an "active sessions" panel with force-logout. PATs are
 // not represented here — they have their own lifecycle policies.
 
-import { useEffect, useMemo, useState } from 'react';
+import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Clock, Loader2, LogOut, ShieldCheck } from 'lucide-react';
-import { toast } from '@/lib/toast';
+import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -140,49 +140,71 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
   }, [sessions]);
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="border-b border-border/60 px-6 py-4">
-        <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
-          <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-          {tHardcodedUi.raw('componentsIamSessionControlsCard.line145JsxTextSessionControls')}</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {tHardcodedUi.raw('componentsIamSessionControlsCard.line148JsxTextCapHowLongABrowserSessionLivesForce')}</p>
+    <section className="border-border/70 bg-card rounded-xl border">
+      <header className="border-border/60 border-b px-6 py-4">
+        <h2 className="text-foreground flex items-center gap-2 text-base font-semibold">
+          <ShieldCheck className="text-muted-foreground h-4 w-4" />
+          {tHardcodedUi.raw('componentsIamSessionControlsCard.line145JsxTextSessionControls')}
+        </h2>
+        <p className="text-muted-foreground mt-0.5 text-xs">
+          {tHardcodedUi.raw(
+            'componentsIamSessionControlsCard.line148JsxTextCapHowLongABrowserSessionLivesForce',
+          )}
+        </p>
       </header>
 
       {/* Policy form */}
-      <div className="space-y-4 border-b border-border/60 px-6 py-5">
+      <div className="border-border/60 space-y-4 border-b px-6 py-5">
         {policyQuery.isLoading ? (
           <Skeleton className="h-24 w-full" />
         ) : (
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs">{tHardcodedUi.raw('componentsIamSessionControlsCard.line161JsxTextMaxSessionLifetimeMinutes')}</Label>
+              <Label className="text-xs">
+                {tHardcodedUi.raw(
+                  'componentsIamSessionControlsCard.line161JsxTextMaxSessionLifetimeMinutes',
+                )}
+              </Label>
               <Input
                 value={maxLifetime}
                 onChange={(e) => setMaxLifetime(e.target.value)}
-                placeholder={tHardcodedUi.raw('componentsIamSessionControlsCard.line165JsxAttrPlaceholderLeaveBlankForNoMax')}
+                placeholder={tHardcodedUi.raw(
+                  'componentsIamSessionControlsCard.line165JsxAttrPlaceholderLeaveBlankForNoMax',
+                )}
                 inputMode="numeric"
                 disabled={!canManage || saveMutation.isPending}
               />
-              <p className="text-[11px] text-muted-foreground">
-                {tHardcodedUi.raw('componentsIamSessionControlsCard.line170JsxTextForcesAFreshSignInAfterThisMany')}</p>
+              <p className="text-muted-foreground text-[11px]">
+                {tHardcodedUi.raw(
+                  'componentsIamSessionControlsCard.line170JsxTextForcesAFreshSignInAfterThisMany',
+                )}
+              </p>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">{tHardcodedUi.raw('componentsIamSessionControlsCard.line175JsxTextIdleTimeoutMinutes')}</Label>
+              <Label className="text-xs">
+                {tHardcodedUi.raw(
+                  'componentsIamSessionControlsCard.line175JsxTextIdleTimeoutMinutes',
+                )}
+              </Label>
               <Input
                 value={idleTimeout}
                 onChange={(e) => setIdleTimeout(e.target.value)}
-                placeholder={tHardcodedUi.raw('componentsIamSessionControlsCard.line179JsxAttrPlaceholderLeaveBlankForNoIdleGate')}
+                placeholder={tHardcodedUi.raw(
+                  'componentsIamSessionControlsCard.line179JsxAttrPlaceholderLeaveBlankForNoIdleGate',
+                )}
                 inputMode="numeric"
                 disabled={!canManage || saveMutation.isPending}
               />
-              <p className="text-[11px] text-muted-foreground">
-                {tHardcodedUi.raw('componentsIamSessionControlsCard.line184JsxTextKillsTheSessionAfterThisManyMinutesOf')}</p>
+              <p className="text-muted-foreground text-[11px]">
+                {tHardcodedUi.raw(
+                  'componentsIamSessionControlsCard.line184JsxTextKillsTheSessionAfterThisManyMinutesOf',
+                )}
+              </p>
             </div>
           </div>
         )}
 
-        {error && <p className="text-xs text-destructive">{error}</p>}
+        {error && <p className="text-destructive text-xs">{error}</p>}
 
         {canManage && (
           <div className="flex justify-end">
@@ -201,14 +223,18 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
 
       {/* Active sessions */}
       <div className="px-6 py-5">
-        <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
-          <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-          {tHardcodedUi.raw('componentsIamSessionControlsCard.line212JsxTextActiveSessions')}</h3>
+        <h3 className="text-foreground mb-3 flex items-center gap-2 text-sm font-medium">
+          <Clock className="text-muted-foreground h-3.5 w-3.5" />
+          {tHardcodedUi.raw('componentsIamSessionControlsCard.line212JsxTextActiveSessions')}
+        </h3>
         {sessionsQuery.isLoading ? (
           <Skeleton className="h-16 w-full" />
         ) : partitioned.live.length === 0 && partitioned.revoked.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            {tHardcodedUi.raw('componentsIamSessionControlsCard.line218JsxTextNoSessionsTrackedYetSessionsShowUpHere')}</p>
+          <p className="text-muted-foreground text-xs">
+            {tHardcodedUi.raw(
+              'componentsIamSessionControlsCard.line218JsxTextNoSessionsTrackedYetSessionsShowUpHere',
+            )}
+          </p>
         ) : (
           <div className="space-y-3">
             <SessionsTable
@@ -219,9 +245,12 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
               muted={false}
             />
             {partitioned.revoked.length > 0 && (
-              <details className="rounded-2xl border border-border/60 px-3 py-2 text-xs">
-                <summary className="cursor-pointer text-muted-foreground">
-                  {tHardcodedUi.raw('componentsIamSessionControlsCard.line233JsxTextRevokedExpired')}{partitioned.revoked.length})
+              <details className="border-border/60 rounded-2xl border px-3 py-2 text-xs">
+                <summary className="text-muted-foreground cursor-pointer">
+                  {tHardcodedUi.raw(
+                    'componentsIamSessionControlsCard.line233JsxTextRevokedExpired',
+                  )}
+                  {partitioned.revoked.length})
                 </summary>
                 <div className="mt-3">
                   <SessionsTable
@@ -243,7 +272,9 @@ export function SessionControlsCard({ accountId, canManage }: SessionControlsCar
         onOpenChange={(o) => {
           if (!o) setRevokeTarget(null);
         }}
-        title={tHardcodedUi.raw('componentsIamSessionControlsCard.line255JsxAttrTitleForceLogoutThisSession')}
+        title={tHardcodedUi.raw(
+          'componentsIamSessionControlsCard.line255JsxAttrTitleForceLogoutThisSession',
+        )}
         description={
           revokeTarget
             ? `The user (${emailByUserId.get(revokeTarget.user_id) ?? revokeTarget.user_id}) will get 401 on their next request to this account and must sign in again.`
@@ -278,45 +309,49 @@ function SessionsTable({
   const tHardcodedUi = useTranslations('hardcodedUi');
   if (rows.length === 0) {
     return (
-      <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsIamSessionControlsCard.line289JsxTextNoActiveSessions')}</p>
+      <p className="text-muted-foreground text-xs">
+        {tHardcodedUi.raw('componentsIamSessionControlsCard.line289JsxTextNoActiveSessions')}
+      </p>
     );
   }
 
   return (
     <table className="w-full text-xs">
       <thead>
-        <tr className="border-b border-border/60 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        <tr className="border-border/60 text-muted-foreground border-b text-left text-[10px] font-medium tracking-wider uppercase">
           <th className="py-2 font-medium">Member</th>
-          <th className="py-2 font-medium">{tHardcodedUi.raw('componentsIamSessionControlsCard.line298JsxTextLastSeen')}</th>
+          <th className="py-2 font-medium">
+            {tHardcodedUi.raw('componentsIamSessionControlsCard.line298JsxTextLastSeen')}
+          </th>
           <th className="py-2 font-medium">IP</th>
           <th className="py-2 font-medium">Status</th>
           <th className="w-16 py-2" />
         </tr>
       </thead>
-      <tbody className="divide-y divide-border/60">
+      <tbody className="divide-border divide-y">
         {rows.map((s) => (
           <tr
             key={`${s.user_id}|${s.session_id}`}
             className={muted ? 'opacity-60' : 'hover:bg-muted/20'}
           >
-            <td className="py-2 text-foreground">
+            <td className="text-foreground py-2">
               {emailByUserId.get(s.user_id) ?? (
-                <span className="font-mono text-[11px] text-muted-foreground">
-                  {s.user_id}
-                </span>
+                <span className="text-muted-foreground font-mono text-[11px]">{s.user_id}</span>
               )}
             </td>
-            <td className="py-2 text-muted-foreground">{formatRelative(s.last_seen_at)}</td>
-            <td className="py-2 font-mono text-[11px] text-muted-foreground">
-              {s.ip ?? '—'}
-            </td>
+            <td className="text-muted-foreground py-2">{formatRelative(s.last_seen_at)}</td>
+            <td className="text-muted-foreground py-2 font-mono text-[11px]">{s.ip ?? '—'}</td>
             <td className="py-2">
               {s.revoked_at ? (
                 <Badge variant="outline" size="sm" className="text-muted-foreground">
                   {s.revoked_reason ?? 'revoked'}
                 </Badge>
               ) : (
-                <Badge variant="outline" size="sm" className="border-emerald-500/40 text-emerald-700 dark:text-emerald-300">
+                <Badge
+                  variant="outline"
+                  size="sm"
+                  className="border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
+                >
                   active
                 </Badge>
               )}
@@ -326,7 +361,7 @@ function SessionsTable({
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                  className="text-muted-foreground hover:text-destructive h-7 w-7"
                   onClick={() => onRevoke(s)}
                   aria-label="Force-logout"
                   title="Force-logout"
