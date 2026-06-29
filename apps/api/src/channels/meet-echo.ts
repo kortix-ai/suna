@@ -1,7 +1,18 @@
 const ECHO_TTL_MS = 25_000;
 const MAX_TRACKED_BOTS = 512;
 
+// Half-duplex window: meeting captions transcribe the bot's OWN output audio and
+// stream it back as "Unknown" speech, which would re-wake the agent. While the bot
+// is speaking — for the estimated duration of its utterance plus a caption-lag
+// buffer — we drop inbound spoken transcripts entirely. Unlike content matching this
+// scales with utterance length (long monologues don't outrun a fixed TTL) and is
+// immune to caption mis-hearings ("Kortix" → "cortex").
+const MS_PER_WORD = 450;
+const CAPTION_LAG_MS = 12_000;
+const MIN_SPEAK_MS = 3_000;
+
 const recent = new Map<string, Array<{ text: string; at: number }>>();
+const speakingUntil = new Map<string, number>();
 
 function normalize(text: string): string {
   return text
@@ -9,6 +20,10 @@ function normalize(text: string): string {
     .replace(/[^a-z0-9\s]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function wordCount(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
 export function recordBotSpeech(botId: string, text: string): void {
@@ -19,6 +34,21 @@ export function recordBotSpeech(botId: string, text: string): void {
   list.push({ text: norm, at: now });
   recent.set(botId, list);
   if (recent.size > MAX_TRACKED_BOTS) prune(now);
+
+  const windowMs = Math.max(MIN_SPEAK_MS, wordCount(text) * MS_PER_WORD) + CAPTION_LAG_MS;
+  speakingUntil.set(botId, Math.max(speakingUntil.get(botId) ?? 0, now + windowMs));
+}
+
+/** True while the bot is (estimated to be) speaking + captions are still catching up. */
+export function isBotSpeaking(botId: string): boolean {
+  if (!botId) return false;
+  const until = speakingUntil.get(botId);
+  if (until == null) return false;
+  if (Date.now() >= until) {
+    speakingUntil.delete(botId);
+    return false;
+  }
+  return true;
 }
 
 export function isBotEcho(botId: string, text: string): boolean {
