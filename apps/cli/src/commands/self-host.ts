@@ -519,19 +519,12 @@ async function configureIntegrations(env: SelfHostEnv): Promise<void> {
   process.stdout.write(`  ${C.dim}Press enter to skip anything you do not use yet.${C.reset}\n\n`);
 
   // Sandbox runtime — where agents execute. Like Kortix Cloud, self-host runs
-  // sandboxes on Daytona; the wizard just collects the API key. (local_docker is
-  // still a valid ALLOWED_SANDBOX_PROVIDERS value for fully-local / CI use, but it
-  // is intentionally not offered here — Daytona is the supported user runtime. An
-  // instance already pinned to local_docker is left as-is, not flipped.)
-  if (sandboxProviders(env).includes('local_docker')) {
-    process.stdout.write(`  ${C.dim}Sandbox runtime: local_docker (advanced) — leaving as configured.${C.reset}\n`);
-  } else {
-    env.ALLOWED_SANDBOX_PROVIDERS = 'daytona';
-    process.stdout.write(`  ${C.dim}Agent sandbox runtime: Daytona (https://app.daytona.io)${C.reset}\n`);
-    env.DAYTONA_API_KEY = await promptSecret('Daytona API key', env.DAYTONA_API_KEY);
-    env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
-    env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
-  }
+  // sandboxes on Daytona; the wizard just collects the API key.
+  env.ALLOWED_SANDBOX_PROVIDERS = 'daytona';
+  process.stdout.write(`  ${C.dim}Agent sandbox runtime: Daytona (https://app.daytona.io)${C.reset}\n`);
+  env.DAYTONA_API_KEY = await promptSecret('Daytona API key', env.DAYTONA_API_KEY);
+  env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
+  env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
 
   const freestyleMode = await selectFrom('App deployments (Freestyle): skip/configure', ['skip', 'configure'] as const, freestyleConfigured(env) ? 'configure' : 'skip');
   if (freestyleMode === 'configure') {
@@ -612,10 +605,9 @@ function sandboxProviders(env: SelfHostEnv): string[] {
   return (env.ALLOWED_SANDBOX_PROVIDERS || '').split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-/** A provider is "ready" if local_docker (no creds) or daytona with an API key. */
+/** A provider is "ready" if daytona has an API key. */
 function sandboxProviderConfigured(env: SelfHostEnv): boolean {
   const providers = sandboxProviders(env);
-  if (providers.includes('local_docker')) return true;
   if (providers.includes('daytona')) return !!env.DAYTONA_API_KEY;
   return false;
 }
