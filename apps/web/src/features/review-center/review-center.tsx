@@ -76,6 +76,25 @@ function TimeAgo({ iso }: { iso: string }) {
   return <span className="tabular-nums">{mounted ? rel(iso) : ''}</span>;
 }
 
+/** A count that rolls when it changes — the satisfying tick as you clear the inbox. */
+function AnimatedCount({ value }: { value: number }) {
+  return (
+    <span className="relative inline-flex justify-center tabular-nums">
+      <AnimatePresence mode="popLayout" initial={false}>
+        <motion.span
+          key={value}
+          initial={{ y: -7, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 7, opacity: 0 }}
+          transition={{ duration: 0.16, ease: EASE }}
+        >
+          {value}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
+
 const SEGMENTS: { value: ReviewSegment; label: string }[] = [
   { value: 'needs_you', label: 'Needs you' },
   { value: 'waiting', label: 'Waiting' },
@@ -130,6 +149,7 @@ function ItemRow({
       layout
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
+      whileTap={{ scale: 0.994 }}
       transition={{ duration: 0.18, ease: EASE, delay: Math.min(idx * 0.015, 0.08) }}
       className={cn(
         'group bg-popover relative flex items-center gap-3 rounded-md border px-3 py-2.5',
@@ -507,7 +527,7 @@ export function ReviewCenter({
                     {s.label}
                     {counts[s.value] > 0 && (
                       <Badge variant="secondary" size="xs">
-                        {counts[s.value]}
+                        <AnimatedCount value={counts[s.value]} />
                       </Badge>
                     )}
                   </TabsTrigger>
@@ -525,8 +545,8 @@ export function ReviewCenter({
                     <TabsTriggerCompact key={f.value} value={f.value}>
                       {f.label}
                       {(kindCounts[f.value] ?? 0) > 0 && (
-                        <span className="text-muted-foreground/60 ml-1 tabular-nums">
-                          {kindCounts[f.value]}
+                        <span className="text-muted-foreground/60 ml-1">
+                          <AnimatedCount value={kindCounts[f.value] ?? 0} />
                         </span>
                       )}
                     </TabsTriggerCompact>
@@ -643,8 +663,8 @@ export function ReviewCenter({
             className="pointer-events-none fixed inset-x-0 bottom-6 z-30 flex justify-center px-4"
           >
             <div className="bg-popover pointer-events-auto flex items-center gap-2 rounded-full border px-2 py-2 shadow-lg">
-              <span className="text-foreground px-2 text-sm font-medium tabular-nums">
-                {selectionCount} selected
+              <span className="text-foreground flex items-center gap-1 px-2 text-sm font-medium">
+                <AnimatedCount value={selectionCount} /> selected
               </span>
               <Button size="sm" onClick={() => approveIds([...selectedIds])}>
                 Approve
