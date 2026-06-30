@@ -60,10 +60,11 @@ describe('isResourceAccessible — scoped resources gate by principal', () => {
 });
 
 describe('resource type guard', () => {
-  test('only agent + skill are valid resource types for now', () => {
-    expect(RESOURCE_GRANT_TYPES).toEqual(['agent', 'skill']);
+  test('agent, skill + secret are the valid resource types', () => {
+    expect(RESOURCE_GRANT_TYPES).toEqual(['agent', 'skill', 'secret']);
     expect(isResourceType('agent')).toBe(true);
     expect(isResourceType('skill')).toBe(true);
+    expect(isResourceType('secret')).toBe(true);
     expect(isResourceType('connector')).toBe(false);
     expect(isResourceType('')).toBe(false);
   });

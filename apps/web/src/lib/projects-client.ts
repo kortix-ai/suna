@@ -819,7 +819,7 @@ export async function detachGroupFromProject(projectId: string, groupId: string)
 
 // ─── Per-resource (agent/skill) scoping ─────────────────────────────────────
 
-export type ResourceGrantType = 'agent' | 'skill';
+export type ResourceGrantType = 'agent' | 'skill' | 'secret';
 
 /** A grantable resource (agent name / skill slug) discovered from the repo. */
 export interface ProjectResourceItem {
@@ -847,7 +847,7 @@ export interface ProjectResourceGrant {
 }
 
 export interface ProjectResourceGrantsResponse {
-  resources: { agents: ProjectResourceItem[]; skills: ProjectResourceItem[] };
+  resources: { agents: ProjectResourceItem[]; skills: ProjectResourceItem[]; secrets: ProjectResourceItem[] };
   grants: ProjectResourceGrant[];
 }
 

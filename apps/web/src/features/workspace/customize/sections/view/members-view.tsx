@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Check, Clock, Loader2, Mail, MessageSquare, RefreshCw, Shield, Sparkles, Users, X } from 'lucide-react';
+import { Bot, Check, Clock, KeyRound, Loader2, Mail, MessageSquare, RefreshCw, Shield, Sparkles, Users, X } from 'lucide-react';
 import { FormEvent, useMemo, useState } from 'react';
 
 import {
@@ -1632,7 +1632,7 @@ function ResourceAccessCard({
     staleTime: 60_000,
   });
 
-  const resources = grantsQuery.data?.resources ?? { agents: [], skills: [] };
+  const resources = grantsQuery.data?.resources ?? { agents: [], skills: [], secrets: [] };
   const grants = useMemo(() => {
     const raw = grantsQuery.data?.grants ?? [];
     return [...raw].sort((a, b) => {
@@ -1649,12 +1649,14 @@ function ResourceAccessCard({
     const m = new Map<string, string>();
     for (const a of resources.agents) m.set(`agent:${a.id}`, a.name);
     for (const s of resources.skills) m.set(`skill:${s.id}`, s.name);
+    for (const s of resources.secrets ?? []) m.set(`secret:${s.id}`, s.name);
     return m;
   }, [resources]);
 
-  const hasResources = resources.agents.length > 0 || resources.skills.length > 0;
+  const hasResources =
+    resources.agents.length > 0 || resources.skills.length > 0 || (resources.secrets?.length ?? 0) > 0;
 
-  const [resourceValue, setResourceValue] = useState<string>(''); // "agent:id" | "skill:id"
+  const [resourceValue, setResourceValue] = useState<string>(''); // "agent:id" | "skill:id" | "secret:id"
   const [principalValue, setPrincipalValue] = useState<string>(''); // "member:id" | "group:id"
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const markPending = (id: string) => setPendingIds((prev) => new Set(prev).add(id));
@@ -1715,7 +1717,7 @@ function ResourceAccessCard({
     <SectionCard
       flush
       title="Resource access"
-      description="Scope specific agents & skills to a member or department. A resource with no grants stays open to everyone with project access; granting one restricts it to just the people or departments you pick."
+      description="Scope specific agents, skills & secrets to a member or department. A resource with no grants stays open to everyone with project access; granting one restricts it to just the people or departments you pick."
       count={grants.length}
       action={
         canManage && hasResources ? (
@@ -1728,8 +1730,8 @@ function ResourceAccessCard({
             }}
           >
             <Select value={resourceValue} onValueChange={setResourceValue} disabled={createMutation.isPending}>
-              <SelectTrigger className="h-8 w-40 text-xs">
-                <SelectValue placeholder="Agent or skill" />
+              <SelectTrigger className="h-8 w-44 text-xs">
+                <SelectValue placeholder="Agent, skill or secret" />
               </SelectTrigger>
               <SelectContent>
                 {resources.agents.map((a) => (
@@ -1740,6 +1742,11 @@ function ResourceAccessCard({
                 {resources.skills.map((s) => (
                   <SelectItem key={`skill:${s.id}`} value={`skill:${s.id}`}>
                     {s.name} · skill
+                  </SelectItem>
+                ))}
+                {(resources.secrets ?? []).map((s) => (
+                  <SelectItem key={`secret:${s.id}`} value={`secret:${s.id}`}>
+                    {s.name} · secret
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1777,8 +1784,8 @@ function ResourceAccessCard({
       {!grantsQuery.isLoading && grants.length === 0 && (
         <div className="text-muted-foreground px-6 py-5 text-xs">
           {hasResources
-            ? 'No agents or skills are scoped yet — every member with project access can see and use all of them. Grant one above to restrict it to specific people or departments.'
-            : 'This project has no agents or skills to scope yet. Add some in the Agents and Skills sections, then come back here to limit who can use them.'}
+            ? 'Nothing is scoped yet — every member with project access can see and use all agents, skills, and secrets. Grant one above to restrict it to specific people or departments.'
+            : 'This project has no agents, skills, or secrets to scope yet. Add some first, then come back here to limit who can use them.'}
         </div>
       )}
 
@@ -1786,18 +1793,14 @@ function ResourceAccessCard({
         <List>
           {grants.map((g: ProjectResourceGrant) => {
             const busy = pendingIds.has(g.grant_id);
-            const isAgent = g.resource_type === 'agent';
             const displayName = resourceName.get(`${g.resource_type}:${g.resource_id}`) ?? g.resource_id;
+            const ResourceIcon = g.resource_type === 'agent' ? Bot : g.resource_type === 'secret' ? KeyRound : Sparkles;
             return (
               <ListRow
                 key={g.grant_id}
                 leading={
                   <span className="bg-muted/60 flex h-8 w-8 items-center justify-center rounded-full">
-                    {isAgent ? (
-                      <Bot className="text-muted-foreground h-4 w-4" />
-                    ) : (
-                      <Sparkles className="text-muted-foreground h-4 w-4" />
-                    )}
+                    <ResourceIcon className="text-muted-foreground h-4 w-4" />
                   </span>
                 }
                 title={

@@ -38,8 +38,10 @@ import {
   registerProjectScopedMemo,
 } from './cache-invalidation';
 
-/** The resource kinds that support per-resource scoping today. Extensible. */
-export const RESOURCE_GRANT_TYPES = ['agent', 'skill'] as const;
+/** The resource kinds that support per-resource scoping today. Extensible.
+ *  agent/skill ids come from the git config; secret ids are the secret NAME
+ *  (uppercased key) from the project_secrets table. */
+export const RESOURCE_GRANT_TYPES = ['agent', 'skill', 'secret'] as const;
 export type ResourceType = (typeof RESOURCE_GRANT_TYPES)[number];
 export function isResourceType(v: string): v is ResourceType {
   return (RESOURCE_GRANT_TYPES as readonly string[]).includes(v);

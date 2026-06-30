@@ -13,7 +13,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { roleAllows, parseProjectRole } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountGroups, accountMembers, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
+import { accountGroupMembers, accountGroups, accountMembers, projectGroupGrants, projectSecrets, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid } from '../lib/access';
 import { AnyObject, GroupGrantSchema, SessionSchema, projectsApp } from '../lib/app';
@@ -811,11 +811,13 @@ projectsApp.openapi(
 
     // Enumerate grantable resources from the project config (best-effort: a repo
     // that won't load just yields empty lists — the existing grants still show).
-    let resources: { agents: { id: string }[]; skills: { id: string }[] } = { agents: [], skills: [] };
+    let resources: { agents: { id: string }[]; skills: { id: string }[]; secrets: { id: string }[] } = { agents: [], skills: [], secrets: [] };
     let configLoaded = false;
     try {
       const config = await loadConfigWithFiles(loaded.row);
-      resources = projectResourcesFromConfig(config);
+      const fromConfig = projectResourcesFromConfig(config);
+      resources.agents = fromConfig.agents;
+      resources.skills = fromConfig.skills;
       configLoaded = true;
     } catch (err) {
       console.warn('[resource-grants] config load failed', {
@@ -823,15 +825,29 @@ projectsApp.openapi(
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    // Grants key on the agent NAME / skill SLUG (file-based ids). A rename or
-    // delete of the underlying agent/skill leaves the grant ORPHANED — and since
-    // an unscoped resource is project-wide, the restriction silently evaporates.
-    // Flag orphaned grants so the manager gets a SIGNAL to re-grant (only when the
-    // config actually loaded — a transient repo failure must not mass-flag).
+    // Secrets aren't in the git config — they live in project_secrets. Enumerate
+    // their NAMES (the grant resource_id) so they're grantable in the picker.
+    // This always loads (DB, not the repo), independent of configLoaded.
+    const secretRows = await db
+      .selectDistinct({ name: projectSecrets.name })
+      .from(projectSecrets)
+      .where(eq(projectSecrets.projectId, projectId));
+    resources.secrets = secretRows.map((r) => ({ id: r.name }));
+
+    // Grants key on the agent NAME / skill SLUG / secret NAME. A rename or delete
+    // of the underlying resource leaves the grant ORPHANED — and since an
+    // unscoped resource is project-wide, the restriction silently evaporates.
+    // Flag orphaned grants so the manager gets a SIGNAL to re-grant. Agent/skill
+    // orphans only when the config actually loaded (a transient repo failure must
+    // not mass-flag); secrets always load, so they're always checkable.
     const liveAgentIds = new Set(resources.agents.map((r) => r.id));
     const liveSkillIds = new Set(resources.skills.map((r) => r.id));
-    const isOrphan = (type: string, id: string) =>
-      configLoaded && (type === 'agent' ? !liveAgentIds.has(id) : type === 'skill' ? !liveSkillIds.has(id) : false);
+    const liveSecretIds = new Set(resources.secrets.map((r) => r.id));
+    const isOrphan = (type: string, id: string) => {
+      if (type === 'secret') return !liveSecretIds.has(id);
+      if (!configLoaded) return false;
+      return type === 'agent' ? !liveAgentIds.has(id) : type === 'skill' ? !liveSkillIds.has(id) : false;
+    };
 
     const grants = await listResourceGrants(projectId);
 
@@ -899,7 +915,7 @@ projectsApp.openapi(
     const principalType = normalizeString(body.principal_type ?? body.principalType);
     const principalId = normalizeString(body.principal_id ?? body.principalId);
     if (!resourceType || !isResourceType(resourceType)) {
-      return c.json({ error: 'resource_type must be agent or skill' }, 400);
+      return c.json({ error: 'resource_type must be agent, skill, or secret' }, 400);
     }
     if (!resourceId) return c.json({ error: 'resource_id is required' }, 400);
     if (principalType !== 'member' && principalType !== 'group') {
@@ -931,15 +947,25 @@ projectsApp.openapi(
     }
 
     // The resource must actually exist in the project — a typo'd grant would be
-    // a silent dead row that scopes a phantom resource.
-    let config;
-    try {
-      config = await loadConfigWithFiles(loaded.row);
-    } catch (err) {
-      return c.json({ error: `project config unavailable: ${err instanceof Error ? err.message : String(err)}` }, 400);
-    }
-    if (!projectHasResource(config, resourceType, resourceId)) {
-      return c.json({ error: `no ${resourceType} '${resourceId}' in this project` }, 400);
+    // a silent dead row that scopes a phantom resource. Secrets live in the DB
+    // (project_secrets); agents/skills live in the git config.
+    if (resourceType === 'secret') {
+      const [s] = await db
+        .select({ name: projectSecrets.name })
+        .from(projectSecrets)
+        .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, resourceId)))
+        .limit(1);
+      if (!s) return c.json({ error: `no secret '${resourceId}' in this project` }, 400);
+    } else {
+      let config;
+      try {
+        config = await loadConfigWithFiles(loaded.row);
+      } catch (err) {
+        return c.json({ error: `project config unavailable: ${err instanceof Error ? err.message : String(err)}` }, 400);
+      }
+      if (!projectHasResource(config, resourceType, resourceId)) {
+        return c.json({ error: `no ${resourceType} '${resourceId}' in this project` }, 400);
+      }
     }
 
     const { grantId } = await upsertResourceGrant({

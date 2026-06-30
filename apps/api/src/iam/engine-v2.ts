@@ -640,7 +640,7 @@ export async function filterAccessibleProjectResources(
   userId: string,
   accountId: string,
   projectId: string,
-  resourceType: 'agent' | 'skill',
+  resourceType: 'agent' | 'skill' | 'secret',
   resourceIds: string[],
   actingTokenId?: string,
 ): Promise<string[]> {
