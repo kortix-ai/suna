@@ -7,6 +7,7 @@ import {
   buildReviewCardBlocks,
   parseReviewActionId,
   reviewActionId,
+  reviewVerbToVerdict,
 } from '../channels/slack/review-cards';
 
 const item: ReviewCardItem = {
@@ -32,6 +33,15 @@ describe('reviewActionId / parseReviewActionId', () => {
     expect(parseReviewActionId('qa_0_1')).toBeNull();
     expect(parseReviewActionId('review_')).toBeNull();
     expect(parseReviewActionId('review_bogus_rv-1')).toBeNull();
+  });
+});
+
+describe('reviewVerbToVerdict', () => {
+  test('maps card verbs to review verdicts; view carries none', () => {
+    expect(reviewVerbToVerdict('approve')).toBe('approve');
+    expect(reviewVerbToVerdict('deny')).toBe('reject');
+    expect(reviewVerbToVerdict('changes')).toBe('changes');
+    expect(reviewVerbToVerdict('view')).toBeNull();
   });
 });
 

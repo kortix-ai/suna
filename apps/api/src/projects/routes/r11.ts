@@ -7,6 +7,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
+import { postReviewCard } from '../../channels/slack-webhook';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
@@ -165,6 +166,19 @@ projectsApp.openapi(
       originSessionId,
       createdBy: loaded.userId,
     });
+    // If this was submitted from a live Slack session, post an actionable card
+    // into that thread so a human can approve/deny it right there. Best-effort and
+    // a no-op for web sessions (postReviewCard returns early when there's no live
+    // Slack turn). Fire-and-forget so a slow Slack API never delays the 201.
+    if (row.originSessionId) {
+      void postReviewCard(row.originSessionId, {
+        review_item_id: row.reviewItemId,
+        kind: row.kind,
+        risk: row.risk,
+        title: row.title,
+        summary: row.summary,
+      }).catch(() => {});
+    }
     return c.json(serializeReviewItem(row), 201);
   },
 );

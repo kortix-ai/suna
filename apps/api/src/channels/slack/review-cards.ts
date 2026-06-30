@@ -40,6 +40,17 @@ export function parseReviewActionId(actionId: string): { verb: ReviewVerb; id: s
   return { verb, id };
 }
 
+/**
+ * Map a card verb to the review `verdict` the act path applies. `view` is a link
+ * button (it opens Kortix), so it carries no verdict and returns null.
+ */
+export function reviewVerbToVerdict(verb: ReviewVerb): 'approve' | 'reject' | 'changes' | null {
+  if (verb === 'approve') return 'approve';
+  if (verb === 'deny') return 'reject';
+  if (verb === 'changes') return 'changes';
+  return null;
+}
+
 /** Minimal Slack mrkdwn escaping (matches the question-card treatment). */
 function escapeMrkdwn(s: string): string {
   return s.replace(/[*_~`]/g, (c) => `\\${c}`);
