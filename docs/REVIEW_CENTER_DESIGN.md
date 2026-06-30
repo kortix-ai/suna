@@ -1,9 +1,27 @@
 # Review Center — human-friendly review for CRs, approvals & agent outputs
 
-**Status:** Design + clickable prototype (this branch). No production wiring yet.
+**Status:** Design + clickable prototype + **native-items vertical slice implemented** (DB · API · web data layer).
 **Owner:** ino@kortix.ai
 **Related:** KORTIX-207 (Executor approval / full-allow UX), KORTIX-208 (sandbox git authorization / CR-only main merge path)
 **Prototype:** `apps/web/src/features/review-center/*`, route `/review` (mock data only).
+
+### Implementation status (this branch)
+
+Built and tested for **native review items** (agent-submitted `output` / `decision` / `batch`):
+
+- **DB** — `review_items` table + enums + migration (`packages/db`).
+- **API** — `review-items.ts` core + `routes/r11.ts` (list / get / submit / act / bulk), new IAM actions
+  `project.review.read|submit|act`, co-located unit tests, `tests/spec/end-to-end.md` §11b + `review.flow.ts`,
+  route manifest regenerated.
+- **Web** — `projects-client.ts` methods + types + the `review_center` experimental flag, `use-review-items.ts`
+  hooks, `map.ts` (API→view-model, unit-tested), and `review-center-connected.tsx` (the inbox wired to the
+  live `/act` + `/bulk` mutations with optimistic updates). The presentational inbox is shared with the mock
+  prototype.
+
+**Remaining last-mile** (not in this slice): surface the connected inbox in the product (a project "Review"
+customize section or `/projects/:id/review` route + a `requiresExperimental: 'review_center'` nav entry);
+then the deferred passes below — CR/executor/tunnel **adapters**, executor **202→resume** (KORTIX-207), and
+**Slack** cards.
 
 ---
 
