@@ -55,7 +55,10 @@ function describeAgents(parsed: Record<string, unknown> | null): string {
     v === 'all' ? 'all' : Array.isArray(v) ? (v.join(', ') || 'none') : 'none (default-deny)';
   const lines = agents.map((a: any) => {
     const name = typeof a?.name === 'string' ? a.name : '(unnamed)';
-    return `  ${C.cyan}${name}${C.reset}  connectors=[${show(a?.connectors)}]  kortix_cli=[${show(a?.kortix_cli)}]`;
+    // `env` omitted == 'all' (the parser's default), so render it that way rather
+    // than as default-deny — otherwise the summary misreports an unscoped agent.
+    const env = a?.env === undefined || a?.env === null ? 'all' : a?.env;
+    return `  ${C.cyan}${name}${C.reset}  connectors=[${show(a?.connectors)}]  kortix_cli=[${show(a?.kortix_cli)}]  env=[${show(env)}]`;
   });
   return `\n${C.dim}Per-agent scope (kortix.toml [[agents]]):${C.reset}\n${lines.join('\n')}\n`;
 }
