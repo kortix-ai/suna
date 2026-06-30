@@ -39,7 +39,6 @@ import {
   SOURCE_META,
   STATUS_META,
 } from './review-meta';
-import { SlackPreview } from './slack-preview';
 import { type ApprovalAction, type ReviewItem, type ReviewStatus, isSafeRisk } from './types';
 
 export interface ReviewActions {
@@ -591,7 +590,6 @@ export function ReviewDetailModal({
   actions: ReviewActions;
   onClose: () => void;
 }) {
-  const [slackOpen, setSlackOpen] = useState(false);
   if (!item) return null;
 
   const kind = KIND_META[item.kind];
@@ -644,43 +642,6 @@ export function ReviewDetailModal({
             <DecisionBody item={item} actions={actions} onClose={onClose} />
           )}
           {item.kind === 'batch' && <BatchBody item={item} />}
-
-          <Disclosure
-            open={slackOpen}
-            onOpenChange={setSlackOpen}
-            variant="outline"
-            className="overflow-hidden"
-          >
-            <DisclosureTrigger variant="outline">
-              <button
-                type="button"
-                className="text-muted-foreground hover:text-foreground flex w-full items-center justify-between rounded-none px-4 py-2.5 text-xs font-medium transition-colors"
-              >
-                <span>How this appears in Slack</span>
-                <ChevronDown
-                  className={cn('size-3.5 transition-transform', slackOpen && 'rotate-180')}
-                />
-              </button>
-            </DisclosureTrigger>
-            <DisclosureContent variant="outline" contentClassName="border-border border-t">
-              <div className="px-3 py-3">
-                <SlackPreview
-                  item={item}
-                  onAction={(verb) => {
-                    if (item.status !== 'needs_you') return;
-                    if (verb === 'approve') {
-                      actions.resolve(item.id, 'approved', 'Approved from Slack');
-                    } else if (verb === 'deny') {
-                      actions.resolve(item.id, 'rejected', 'Denied from Slack');
-                    } else {
-                      actions.resolve(item.id, 'changes_requested', 'Changes requested from Slack');
-                    }
-                    onClose();
-                  }}
-                />
-              </div>
-            </DisclosureContent>
-          </Disclosure>
         </ModalBody>
 
         <Footer item={item} actions={actions} onClose={onClose} />

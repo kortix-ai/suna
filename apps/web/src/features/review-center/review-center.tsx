@@ -122,14 +122,6 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
   { keys: ['?'], label: 'This help' },
 ];
 
-// A thin left accent on items that need a decision AND carry real risk — a calm
-// triage signal (orange = medium, red = high); none/low stay unmarked so the eye
-// goes straight to what actually needs care.
-const RISK_BAR: Record<string, string> = {
-  medium: 'bg-kortix-orange',
-  high: 'bg-kortix-red',
-};
-
 function ItemRow({
   item,
   idx,
@@ -160,18 +152,12 @@ function ItemRow({
       whileTap={{ scale: 0.994 }}
       transition={{ duration: 0.18, ease: EASE, delay: Math.min(idx * 0.015, 0.08) }}
       className={cn(
-        'group bg-popover relative flex items-center gap-3 rounded-md border px-3.5 py-3',
+        'group bg-popover flex items-center gap-3 rounded-md border px-4 py-3',
         'transition-[border-color,box-shadow,transform] duration-150 ease-out hover:-translate-y-px hover:shadow-sm',
-        focused ? 'border-primary/40 ring-primary/25 ring-2' : 'hover:border-foreground/15',
+        focused ? 'ring-1 ring-primary/20' : 'hover:border-foreground/15',
         selected && 'bg-primary/[0.04]',
       )}
     >
-      {segment === 'needs_you' && RISK_BAR[item.risk] && (
-        <span
-          className={cn('absolute inset-y-2 left-0 w-1 rounded-r-full', RISK_BAR[item.risk])}
-          aria-hidden
-        />
-      )}
       <Checkbox
         checked={selected}
         onCheckedChange={onToggleSelect}
@@ -559,7 +545,7 @@ export function ReviewCenter({
                     <TabsTriggerCompact key={f.value} value={f.value}>
                       {f.label}
                       {(kindCounts[f.value] ?? 0) > 0 && (
-                        <span className="text-muted-foreground/60 ml-1">
+                        <span className="ml-1 tabular-nums opacity-60">
                           <AnimatedCount value={kindCounts[f.value] ?? 0} />
                         </span>
                       )}
