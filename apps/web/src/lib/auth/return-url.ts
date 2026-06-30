@@ -48,4 +48,14 @@ export function sanitizeAuthReturnUrl(
   return trimmedValue;
 }
 
+/**
+ * True when a (already-sanitized) return URL points at an invite acceptance
+ * page. Invited users must land here verbatim after sign-up so they see the
+ * accept/decline dialog — they must NOT be bounced to a freshly-provisioned
+ * first project, which would skip the dialog and leave the invite unaccepted.
+ */
+export function isInviteReturnUrl(returnUrl: string | null | undefined): boolean {
+  return typeof returnUrl === 'string' && returnUrl.startsWith('/invites/');
+}
+
 export { DEFAULT_AUTH_RETURN_URL };

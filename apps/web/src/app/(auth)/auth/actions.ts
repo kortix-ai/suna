@@ -3,7 +3,7 @@
 import { accountHasAppAccess } from '@/lib/auth/account-access';
 import { resolveFirstProjectPathForNewUser } from '@/lib/auth/bootstrap-first-project';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
-import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import { isInviteReturnUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
@@ -535,7 +535,14 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   const billingEnabled = runtimeEnv.BILLING_ENABLED;
   let redirectTo = returnUrl;
 
-  if (billingEnabled && !alreadyExists && signInData.session?.access_token) {
+  // Invited users (returnUrl → /invites/:id) must land on the accept/decline
+  // dialog verbatim; don't override with a freshly-provisioned first project.
+  if (
+    billingEnabled &&
+    !alreadyExists &&
+    !isInviteReturnUrl(returnUrl) &&
+    signInData.session?.access_token
+  ) {
     try {
       const backendUrl = (process.env.BACKEND_URL || runtimeEnv.BACKEND_URL || '').replace(
         /\/v1\/?$/,
@@ -644,7 +651,10 @@ export async function verifyOtp(prevState: any, formData: FormData) {
   const billingEnabled = runtimeEnv.BILLING_ENABLED;
   let finalDestination = returnUrl;
 
-  if (billingEnabled && isNewUser && data.session?.access_token) {
+  // Invited users (returnUrl → /invites/:id) must land on the accept/decline
+  // dialog verbatim — skip the billing-aware landing (account page or a freshly
+  // provisioned first project), which would otherwise skip the dialog.
+  if (billingEnabled && isNewUser && !isInviteReturnUrl(returnUrl) && data.session?.access_token) {
     try {
       const backendUrl = (process.env.BACKEND_URL || runtimeEnv.BACKEND_URL || '').replace(
         /\/v1\/?$/,
