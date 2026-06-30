@@ -332,34 +332,41 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('reports runtime not ready and blocks OpenCode proxy when repo materialization failed', async () => {
-    const app = buildOpencodeApp(
-      baseConfig({ autoClone: true }),
-      fakeOpencode('ok'),
-      Date.now(),
-      { repoMaterializationError: 'git clone failed: authentication required', timeline: [] },
-    )
+    const root = mkdtempSync(join(tmpdir(), 'kortix-repo-failed-'))
+    try {
+      const target = join(root, 'workspace')
+      mkdirSync(target)
+      const app = buildOpencodeApp(
+        baseConfig({ autoClone: true, projectTarget: target }),
+        fakeOpencode('ok'),
+        Date.now(),
+        { repoMaterializationError: 'git clone failed: authentication required', timeline: [] },
+      )
 
-    const health = await app.request('/kortix/health')
-    expect(health.status).toBe(200)
-    const healthBody = (await health.json()) as {
-      status: string
-      runtimeReady: boolean
-      repo_ready: boolean
-      boot_error: string
+      const health = await app.request('/kortix/health')
+      expect(health.status).toBe(200)
+      const healthBody = (await health.json()) as {
+        status: string
+        runtimeReady: boolean
+        repo_ready: boolean
+        boot_error: string
+      }
+      expect(healthBody.status).toBe('error')
+      expect(healthBody.runtimeReady).toBe(false)
+      expect(healthBody.repo_ready).toBe(false)
+      expect(healthBody.boot_error).toContain('git clone failed')
+
+      const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
+      const res = await app.request('/session?directory=%2Fworkspace', {
+        headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
+      })
+      expect(res.status).toBe(503)
+      const body = (await res.json()) as { error: string; reason: string }
+      expect(body.error).toBe('sandbox runtime not ready')
+      expect(body.reason).toBe('repo_materialization_failed')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
-    expect(healthBody.status).toBe('error')
-    expect(healthBody.runtimeReady).toBe(false)
-    expect(healthBody.repo_ready).toBe(false)
-    expect(healthBody.boot_error).toContain('git clone failed')
-
-    const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
-    const res = await app.request('/session?directory=%2Fworkspace', {
-      headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
-    })
-    expect(res.status).toBe(503)
-    const body = (await res.json()) as { error: string; reason: string }
-    expect(body.error).toBe('sandbox runtime not ready')
-    expect(body.reason).toBe('repo_materialization_failed')
   })
 
   it('keeps runtime not ready until the boot OpenCode session is pinned', async () => {

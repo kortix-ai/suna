@@ -155,6 +155,13 @@ export function resolveConfigAgents(
           mode: native?.mode ?? null,
           source: 'kortix.toml' as const,
           enabled: spec.enabled,
+          // Surface the per-agent allowlists so the UI can show (read-only) what
+          // secrets/connectors/CLI powers each [[agents]] entry is scoped to.
+          scope: {
+            env: spec.env,
+            connectors: spec.connectors,
+            kortix_cli: spec.kortixCli,
+          },
         };
       }),
   };

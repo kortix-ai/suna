@@ -80,6 +80,10 @@ function mockApi() {
     if (has('/iam/roles') && method === 'POST') return json({ role_id: 'role_new', key: body?.key, name: body?.name, resource_type: body?.resourceType, is_system: false, account_id: 'account_1' });
     if (has('/iam/roles')) return json({ roles: ROLES });
     if (has('/iam/actions')) return json({ actions: [{ action: 'project.read', label: 'Read project', resource_type: 'project' }] });
+    if (has('/iam/policies:bulk-import') && method === 'POST') {
+      const n = (body?.policies ?? []).length;
+      return json({ attempted: n, created: n, skipped: 0, errors: [] });
+    }
     if (has('/iam/policies') && method === 'POST') return json({ policy_id: 'pol_1', principal_type: body?.principalType, principal_id: body?.principalId, scope_type: body?.scopeType, scope_id: body?.scopeId, role_id: body?.roleId, effect: 'allow', created_at: '2026-01-01T00:00:00.000Z' });
     if (has('/iam/policies')) return json({ policies: [{ policy_id: 'pol_1', principal_type: 'member', principal_id: 'user-9', scope_type: 'project', scope_id: 'proj-1', role_id: 'role_77', effect: 'allow', created_at: '2026-01-01T00:00:00.000Z' }] });
     return new Response(JSON.stringify({ error: `unexpected ${method} ${url}` }), { status: 500 });
@@ -199,5 +203,43 @@ describe('kortix roles', () => {
     const code = await runRoles(['rm', 'support_agent']);
     expect(code).toBe(0);
     expect(requests.some((r) => r.method === 'DELETE' && r.url.includes('/iam/roles/role_77'))).toBe(true);
+  });
+
+  test('export emits only custom roles (with actions) + bindings as TOML', async () => {
+    const code = await runRoles(['export']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('[[roles]]');
+    expect(out).toContain('key = "support_agent"'); // custom role
+    expect(out).not.toContain('key = "user"'); // built-in excluded
+    expect(out).toContain('[[policies]]');
+    expect(out).toContain('role_key = "support_agent"'); // bound by KEY (portable)
+  });
+
+  test('import creates missing roles and dedupes already-existing bindings', async () => {
+    // Existing live state (from the mock): role support_agent=role_77, and one
+    // policy member:user-9 @ project:proj-1 → role_77.
+    const file = join(tmp, 'pol.toml');
+    writeFileSync(
+      file,
+      [
+        '[[roles]]', 'key = "support_agent"', 'name = "Support Agent"', 'resource_type = "project"', 'actions = ["project.read"]', '',
+        '[[roles]]', 'key = "new_role"', 'name = "New Role"', 'resource_type = "project"', 'actions = ["project.read"]', '',
+        '[[policies]]', 'role_key = "support_agent"', 'principal_type = "member"', 'principal_id = "user-9"', 'scope_type = "project"', 'scope_id = "proj-1"', '',
+        '[[policies]]', 'role_key = "support_agent"', 'principal_type = "member"', 'principal_id = "user-NEW"', 'scope_type = "project"', 'scope_id = "proj-1"', '',
+      ].join('\n'),
+      'utf8',
+    );
+    const code = await runRoles(['import', file]);
+    expect(code).toBe(0);
+    // Only the NEW role is created (support_agent already exists).
+    const rolePosts = requests.filter((r) => r.method === 'POST' && /\/iam\/roles(\?|$)/.test(r.url));
+    expect(rolePosts.length).toBe(1);
+    expect(rolePosts[0].body.key).toBe('new_role');
+    // Bulk-import receives ONLY the new binding; user-9 matches the live policy.
+    const bulk = requests.find((r) => r.method === 'POST' && r.url.includes(':bulk-import'));
+    expect(bulk).toBeDefined();
+    expect(bulk!.body.policies.length).toBe(1);
+    expect(bulk!.body.policies[0].principal_id).toBe('user-NEW');
   });
 });

@@ -91,6 +91,26 @@ describe('iam_resource_grants — real DB round-trip + engine fold', () => {
     expect(await isProjectResourceAccessible(ctx.projectId, 'skill', 'lead-research', OTHER_USER, [])).toBe(false);
   });
 
+  test('secret grant: scoping a secret restricts it; unscoped secrets stay open', async () => {
+    if (!ctx) return;
+    const { grantId } = await upsertResourceGrant({
+      accountId: ctx.accountId,
+      projectId: ctx.projectId,
+      resourceType: 'secret',
+      resourceId: 'STRIPE_KEY', // grant resource_id = the secret NAME
+      principalType: 'member',
+      principalId: GRANTED_USER,
+      grantedBy: GRANTED_USER,
+    });
+    cleanup.push(grantId);
+
+    // The scoped secret: only the granted member sees it.
+    expect(await isProjectResourceAccessible(ctx.projectId, 'secret', 'STRIPE_KEY', GRANTED_USER, [])).toBe(true);
+    expect(await isProjectResourceAccessible(ctx.projectId, 'secret', 'STRIPE_KEY', OTHER_USER, [])).toBe(false);
+    // A DIFFERENT, ungranted secret stays unscoped → open to everyone.
+    expect(await isProjectResourceAccessible(ctx.projectId, 'secret', 'OPENAI_KEY', OTHER_USER, [])).toBe(true);
+  });
+
   test('filterAccessibleResourceIds hides ungranted resources, keeps unscoped ones', async () => {
     if (!ctx) return;
     // 'release-bot' is member-scoped to GRANTED_USER; 'free-agent' is unscoped.
