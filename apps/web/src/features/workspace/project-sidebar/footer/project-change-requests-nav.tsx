@@ -1,5 +1,6 @@
 'use client';
 
+import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, GitBranch, GitPullRequest } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useMemo, useState } from 'react';
@@ -12,6 +13,8 @@ import { ChangeRequestDetailDialog } from '@/features/project-files/components/c
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useChangeRequests } from '@/features/project-files/hooks/use-change-requests';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { getProjectDetail } from '@/lib/projects-client';
+import { useCustomizeStore } from '@/stores/customize-store';
 
 interface CrController {
   crs: ChangeRequest[];
@@ -118,20 +121,38 @@ function OpenCrChooser({
   );
 }
 
-function NavItemInner() {
+function NavItemInner({ projectId }: { projectId: string }) {
   const c = useOpenCrController();
   const isMobile = useIsMobile();
+  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  // When the Review Center is enabled for this project, this pill becomes the
+  // single entry point into the unified inbox (Customize → Review) — change
+  // requests, approvals and agent outputs all live in one place — instead of
+  // opening a single CR's detail dialog.
+  const detail = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    enabled: !!projectId,
+    staleTime: 60_000,
+  });
+  const reviewEnabled = detail.data?.project?.experimental?.review_center ?? false;
 
   if (c.count === 0) return null;
 
-  const label = c.count === 1 ? 'Review change' : 'Review changes';
+  const label = reviewEnabled ? 'Review' : c.count === 1 ? 'Review change' : 'Review changes';
   const baseRef = c.crs[0]?.base_ref ?? '';
 
   const menuButton = (
     <SidebarMenuButton
       variant="success"
       className="text-sm! font-medium [&_svg]:size-4!"
-      onClick={c.count === 1 ? () => c.openCr(c.crs[0].cr_id) : undefined}
+      onClick={
+        reviewEnabled
+          ? () => openCustomize('review')
+          : c.count === 1
+            ? () => c.openCr(c.crs[0].cr_id)
+            : undefined
+      }
     >
       <GitPullRequest />
       <span>{label}</span>
@@ -139,9 +160,11 @@ function NavItemInner() {
     </SidebarMenuButton>
   );
 
+  // Review on → always one button into the inbox. Review off → keep the existing
+  // CR shortcut (button for a single CR, popover chooser for several).
   return (
     <SidebarMenuItem>
-      {c.count === 1 ? (
+      {reviewEnabled || c.count === 1 ? (
         menuButton
       ) : (
         <Popover open={c.listOpen} onOpenChange={c.setListOpen}>
@@ -157,7 +180,9 @@ function NavItemInner() {
         </Popover>
       )}
 
-      <ChangeRequestDetailDialog crId={c.selectedCrId} onClose={() => c.setSelectedCrId(null)} />
+      {!reviewEnabled && (
+        <ChangeRequestDetailDialog crId={c.selectedCrId} onClose={() => c.setSelectedCrId(null)} />
+      )}
     </SidebarMenuItem>
   );
 }
@@ -165,7 +190,7 @@ function NavItemInner() {
 export function ProjectChangeRequestsNavItem({ projectId }: { projectId: string }) {
   return (
     <ProjectFilesProvider value={{ projectId, ref: '' }}>
-      <NavItemInner />
+      <NavItemInner projectId={projectId} />
     </ProjectFilesProvider>
   );
 }
