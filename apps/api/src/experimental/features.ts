@@ -30,7 +30,8 @@ export type ExperimentalFeatureKey =
   | 'marketplace'
   | 'agentmail_email'
   | 'meet'
-  | 'llm_gateway';
+  | 'llm_gateway'
+  | 'review_center';
 
 /** How settled a feature is — surfaced as a badge so users know what to expect. */
 type ExperimentalStability = 'experimental' | 'beta';
@@ -128,6 +129,18 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     // project, while explicit project overrides still win and the master
     // availability gate above remains the emergency kill switch.
     platformDefault: () => config.LLM_GATEWAY_DEFAULT_ENABLED,
+  },
+  {
+    key: 'review_center',
+    name: 'Review Center',
+    description:
+      'A friendly inbox for change requests, approvals, and agent outputs — review and act (approve, reject, ask for changes) from one place, on the web or from Slack. The surface and what feeds it are still expanding.',
+    stability: 'experimental',
+    // Pure web/DB surface — the routes + table ship with the app, so no operator
+    // env gates it. Always available; a project opts in per Settings.
+    available: () => true,
+    // Explicit opt-in: hidden unless a project enables it in Settings.
+    platformDefault: () => false,
   },
 ];
 
