@@ -18,6 +18,7 @@ import {
 } from '@/features/project-files/hooks/use-change-requests';
 import type { ReviewVerdict } from '@/lib/projects-client';
 import { useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { useMemo } from 'react';
 import { useActReviewItem, useBulkActReviewItems, useReviewItems } from './hooks/use-review-items';
 import { mapApiReviewItem } from './map';
@@ -26,10 +27,24 @@ import { ReviewCenter } from './review-center';
 const CR_PREFIX = 'cr:';
 const EXEC_PREFIX = 'exec:';
 
+/** Seed a session's chat composer with a message, reusing the app's existing
+ *  prompt-prefill channel (read + cleared by session-chat-input on mount). */
+function seedSessionComposer(sessionId: string, text: string) {
+  try {
+    sessionStorage.setItem(
+      `opencode_fork_prompt:${sessionId}`,
+      JSON.stringify([{ type: 'text', text }]),
+    );
+  } catch {
+    // sessionStorage unavailable (SSR / privacy mode) — navigation still helps.
+  }
+}
+
 export function ReviewCenterConnected({ projectName }: { projectName: string }) {
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
   const qc = useQueryClient();
+  const router = useRouter();
   const { data, isLoading } = useReviewItems();
   const act = useActReviewItem();
   const bulk = useBulkActReviewItems();
@@ -65,9 +80,21 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
           onError: (e) => errorToast(e.message),
         });
       } else {
-        infoToast(
-          'To request changes, reply in the session — the agent revises and updates the change.',
-        );
+        // "Request changes" → deliver the feedback to the agent that opened the
+        // change: seed its session composer and jump into the conversation, so
+        // the user sends it (and the agent revises) in context.
+        const target = items.find((i) => i.id === id);
+        if (target?.sessionId) {
+          const note = (feedback ?? '').trim();
+          const message = note
+            ? `Please revise the change "${target.title}":\n\n${note}`
+            : `Please revise the change "${target.title}".`;
+          seedSessionComposer(target.sessionId, message);
+          infoToast('Opening the session — your request is ready to send.');
+          router.push(`/sessions/${target.sessionId}`);
+        } else {
+          infoToast('This change has no linked session — open it from Changes to act on it.');
+        }
       }
       return;
     }
