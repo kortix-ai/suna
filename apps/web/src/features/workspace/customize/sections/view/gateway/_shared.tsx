@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
-import { getManagedModel } from '@kortix/shared/llm-catalog';
+import { getManagedModel } from '@kortix/llm-catalog';
 
 import { cn } from '@/lib/utils';
 

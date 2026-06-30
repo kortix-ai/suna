@@ -19,7 +19,7 @@ import {
   AUTO_MODEL_ID,
   DEFAULT_MANAGED_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
-} from '@kortix/shared/llm-catalog';
+} from '@kortix/llm-catalog';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 // ============================================================================
@@ -198,7 +198,7 @@ const SUBSCRIPTION_PROVIDER_ID = 'codex';
 // `kortix` model is on out-of-the-box only when it's a platform-managed default
 // or its underlying provider is connected (live, from project secrets). The
 // rest stay one search away. Single source for the managed set lives in
-// @kortix/shared (mirrors the gateway's managed-ids).
+// @kortix/llm-catalog (mirrors the gateway's managed-ids).
 // Includes the synthetic `auto` entry so it's always offered in the picker.
 const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
 
