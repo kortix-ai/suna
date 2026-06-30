@@ -1,5 +1,14 @@
 # Sandbox not found investigation
 
+> **OUTDATED — the `local_docker` provider has been removed.** This note predates
+> consolidating on cloud sandboxes. **Daytona is the sandbox model now** (`justavps`
+> resolves the same way), and there is no longer a direct local-Docker proxy path.
+> The error itself is still real: the preview proxy returns
+> `{"error":"Sandbox not found"}` when no `sandboxes.externalId` row matches the
+> requested id. Everything below about `local_docker` / `core/docker` /
+> `SANDBOX_ID=local` / `ALLOWED_SANDBOX_PROVIDERS=local_docker` is historical and
+> no longer applies.
+
 ## Origin of the error
 
 - Exact `{"error":"Sandbox not found"}` is returned by the sandbox preview proxy in `apps/api/src/sandbox-proxy/index.ts:169-171`.

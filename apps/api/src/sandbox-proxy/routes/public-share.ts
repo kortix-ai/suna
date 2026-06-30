@@ -157,10 +157,10 @@ async function forwardPublicShare(c: any, args: {
         headers,
         body,
         redirect: 'manual',
-        // @ts-ignore Bun/undici streaming option.
+        // Bun/undici streaming extensions — not in the lib RequestInit type.
         decompress: false,
         duplex: 'half',
-      });
+      } as RequestInit);
 
       if ((upstream.status === 502 || upstream.status === 503) && attempt < maxRetries) {
         invalidatePreviewLink(args.share.externalId!, args.port);

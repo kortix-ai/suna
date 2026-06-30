@@ -1,0 +1,108 @@
+// Server-safe marketplace reads. This module talks to the public, unauthenticated
+// `/v1/marketplace/*` directory endpoints with plain `fetch` and MUST NOT import
+// `@/lib/api-client` (a `'use client'` module that initializes browser-only
+// stores at eval time). Keeping these reads here lets Server Components — the
+// public detail page's `generateMetadata` and render — fetch without dragging
+// the client bundle across the server boundary. Types are imported `type`-only
+// so the client module is never loaded at runtime.
+
+import { getEnv } from '@/lib/env-config';
+import type {
+  ItemsPage,
+  MarketplaceItem,
+  MarketplaceItemDetail,
+  MarketplaceItemFile,
+  MarketplacesPage,
+  MarketplaceSummary,
+  PendingSource,
+} from '@/lib/marketplace-client';
+
+/** Static/ISR revalidation for public marketplace catalog reads. */
+export const MARKETPLACE_PUBLIC_REVALIDATE_SECONDS = 3600;
+
+function publicApiOrigin(): string {
+  const backend = getEnv().BACKEND_URL || '';
+  return backend.replace(/\/$/, '').replace(/\/v1$/, '');
+}
+
+async function publicGet<T>(path: string): Promise<T> {
+  const base = publicApiOrigin();
+  const response = await fetch(`${base}/v1${path.startsWith('/') ? path : `/${path}`}`, {
+    headers: { Accept: 'application/json' },
+    next: { revalidate: MARKETPLACE_PUBLIC_REVALIDATE_SECONDS },
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  return response.json() as Promise<T>;
+}
+
+/** Client-side filter mirroring the public catalog query params. */
+export function filterPublicMarketplaceItems(
+  items: MarketplaceItem[],
+  params?: { query?: string; type?: string; source?: string },
+): MarketplaceItem[] {
+  const q = (params?.query ?? '').trim().toLowerCase();
+  const type = params?.type?.trim();
+  const source = params?.source?.trim();
+  return items.filter((it) => {
+    if (type && type !== 'all' && it.type !== type && it.type !== `registry:${type}`) return false;
+    if (source && source !== 'all' && it.marketplaceId !== source) return false;
+    if (!q) return true;
+    return `${it.name} ${it.title} ${it.description ?? ''} ${it.categories.join(' ')}`
+      .toLowerCase()
+      .includes(q);
+  });
+}
+
+export async function listPublicMarketplaceItems(params?: {
+  query?: string;
+  type?: string;
+  source?: string;
+}): Promise<ItemsPage> {
+  const qs = new URLSearchParams();
+  if (params?.query) qs.set('query', params.query);
+  if (params?.type && params.type !== 'all') qs.set('type', params.type);
+  if (params?.source && params.source !== 'all') qs.set('source', params.source);
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  const res = await publicGet<{
+    items: MarketplaceItem[];
+    loading?: boolean;
+    pending?: number;
+    sources?: PendingSource[];
+  }>(`/marketplace/items${suffix}`);
+  return {
+    items: res.items ?? [],
+    loading: !!res.loading,
+    pending: res.pending ?? 0,
+    sources: res.sources ?? [],
+  };
+}
+
+export async function listPublicMarketplaces(): Promise<MarketplacesPage> {
+  const res = await publicGet<{
+    marketplaces: MarketplaceSummary[];
+    loading?: boolean;
+    pending?: number;
+    sources?: PendingSource[];
+  }>(`/marketplace/marketplaces`);
+  return {
+    marketplaces: res.marketplaces ?? [],
+    loading: !!res.loading,
+    pending: res.pending ?? 0,
+    sources: res.sources ?? [],
+  };
+}
+
+/** Unauthenticated detail read for the public marketplace directory. */
+export async function getPublicMarketplaceItem(id: string): Promise<MarketplaceItemDetail> {
+  return publicGet<MarketplaceItemDetail>(`/marketplace/items/${encodeURIComponent(id)}`);
+}
+
+/** Unauthenticated single-file read for the public marketplace detail viewer. */
+export async function getPublicMarketplaceItemFile(
+  id: string,
+  target: string,
+): Promise<MarketplaceItemFile> {
+  return publicGet<MarketplaceItemFile>(
+    `/marketplace/items/${encodeURIComponent(id)}/file?path=${encodeURIComponent(target)}`,
+  );
+}

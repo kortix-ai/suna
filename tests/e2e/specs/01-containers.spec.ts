@@ -41,6 +41,6 @@ test.describe('01 — Docker containers are running', () => {
   });
 
   test('Sandbox container is up', () => {
-    expect(containerRunning(process.env.E2E_SANDBOX_CONTAINER_NAME || 'kortix-sandbox')).toBe(true);
+    expect(containerRunning('kortix-sandbox')).toBe(true);
   });
 });

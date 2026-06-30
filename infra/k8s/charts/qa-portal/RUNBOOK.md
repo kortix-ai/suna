@@ -7,9 +7,13 @@ is applied automatically — follow the order.
 ## Architecture (one line)
 
 CI uploads Allure results + the generated static report to **versioned S3**
-(`s3://kortix-qa-reports/reports/latest/`); a stateless nginx pod on EKS
-re-`aws s3 sync`s that prefix (IRSA, no keys) and serves it via an ALB Ingress;
-external-dns + Cloudflare publish proxied `qa.kortix.com`.
+(`s3://kortix-qa-reports/reports/...`); a **stateless** pod on EKS serves it
+**straight from the private bucket** — `nginx-s3-gateway` signs each request
+(SigV4, IRSA, no keys) and streams the object, a front nginx serves the branded
+landing page (rebuilt from `aws s3 ls` by a read-only sidecar), behind an ALB
+Ingress; external-dns + Cloudflare publish proxied `qa.kortix.com`. No report
+bytes are ever stored on the pod (the old `aws s3 sync` into an emptyDir grew
+past its limit and crash-looped — that's gone).
 
 ## Apply order
 
@@ -77,10 +81,12 @@ external-dns + Cloudflare publish proxied `qa.kortix.com`.
 7. **Verify:**
 
    ```bash
-   argocd app get kortix-qa                      # Synced / Healthy
+   argocd app get kortix-qa                       # Synced / Healthy
    kubectl -n kortix-qa get deploy,po,svc,ingress
-   kubectl -n kortix-qa logs deploy/qa-portal -c report-sync   # sync ran
-   curl -I https://qa.kortix.com                 # 200
+   kubectl -n kortix-qa logs deploy/qa-portal -c index-gen   # landing rebuilt
+   kubectl -n kortix-qa logs deploy/qa-portal -c s3gw        # gateway creds OK
+   curl -I https://qa.kortix.com                  # 200 (landing)
+   curl -I https://qa.kortix.com/reports/latest/index.html   # 200 (from S3)
    ```
 
 ## CI upload (write side)

@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
+import { Button } from '@/components/ui/button';
 import {
   CommandGroup,
   CommandInput,
@@ -11,10 +12,19 @@ import {
   CommandPopoverContent,
   CommandPopoverTrigger,
 } from '@/components/ui/command';
-import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Bot, Check, ChevronDown, CreditCard, FolderGit2, KeyRound, Plus, SlidersHorizontal, Star } from 'lucide-react';
+import {
+  Bot,
+  Check,
+  ChevronDown,
+  CreditCard,
+  FolderGit2,
+  KeyRound,
+  Plus,
+  SlidersHorizontal,
+  Star,
+} from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -24,21 +34,18 @@ import {
   ProviderLogo,
 } from '@/features/providers/provider-branding';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
+import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { featureFlags } from '@/lib/feature-flags';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { getProjectDetail, listProjectSecrets } from '@/lib/projects-client';
 import { useCustomizeStore } from '@/stores/customize-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import {
-  AUTO_MODEL_ID,
-  DEFAULT_MANAGED_MODEL_IDS,
-} from '@kortix/shared/llm-catalog';
-import { featureFlags } from '@/lib/feature-flags';
-import { accountStateSelectors, useAccountState } from '@/hooks/billing';
+import { AUTO_MODEL_ID, DEFAULT_MANAGED_MODEL_IDS } from '@kortix/llm-catalog';
 import { useQuery } from '@tanstack/react-query';
 import { AutoModelToggle } from './auto-model-toggle';
 import { shouldShowFreeTag } from './model-tags';

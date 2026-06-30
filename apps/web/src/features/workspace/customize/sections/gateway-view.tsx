@@ -2,8 +2,13 @@
 
 /**
  * LLM — one Customize section that consolidates the per-project gateway surfaces
- * (Providers, Overview, Logs, Budgets, API keys) behind a single pill-tab bar,
- * so the whole section reads as one consistent surface (no competing tab styles).
+ * (Providers, Overview, Logs, Budgets, API keys) behind a single tab bar, so the
+ * whole section reads as one consistent surface (no competing tab styles).
+ *
+ * The tab bar is one row: the section tabs sit on the left, the account default
+ * model picker ("Choose model") on the right — `justify-between`. There's no
+ * separate default-model header; the picker in the bar IS where you set "my
+ * default", and the gateway resolves `auto` against it.
  *
  * The active tab is LOCAL state, so switching tabs never touches the main
  * Customize rail. Deep-links / `openCustomize('llm-providers')` set the store
@@ -51,9 +56,9 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
   const llmProvidersTab = useCustomizeStore((s) => s.llmProvidersTab);
   const [tab, setTab] = useState<LlmTab>(() => TAB_BY_SECTION[section] ?? 'providers');
 
-  // Account default model — the gateway resolves `auto` against this. Shown at
-  // the top of the LLM section so it's the obvious place to set "my default
-  // model", regardless of which sub-tab is open.
+  // Account default model — the gateway resolves `auto` against this. The picker
+  // lives in the tab bar so it's the obvious place to set "my default model",
+  // regardless of which sub-tab is open.
   const { data: providers } = useOpenCodeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const modelDefaults = useModelDefaults(projectId);
@@ -72,15 +77,17 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
       onValueChange={(v) => setTab(v as LlmTab)}
       className="bg-background flex h-full min-h-0 flex-col gap-0"
     >
-      {/* Account default model — the single, obvious place to set "my default". */}
-      <div className="border-border/60 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
-        <div className="min-w-0">
-          <div className="text-foreground text-sm font-medium">Default model</div>
-          <p className="text-muted-foreground/70 max-w-md text-xs leading-5 text-pretty">
-            Used whenever a chat doesn&apos;t have a model picked — across all your projects.
-            Picking a model inside a conversation always overrides it.
-          </p>
-        </div>
+      {/* One bar: section tabs left, default-model picker right. The underline
+          list sits flush on the container's divider (no vertical padding so the
+          active underline lands exactly on the border). */}
+      <div className="border-border flex shrink-0 items-center justify-between gap-3 border-b px-5 pt-2">
+        <TabsList type="underline" size="lg" className="border-b-0">
+          {LLM_TABS.map((t) => (
+            <TabsTrigger key={t.id} value={t.id} className="w-fit flex-none text-xs">
+              {t.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
         <ModelSelector
           models={models}
           providers={providers}
@@ -91,17 +98,7 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
         />
       </div>
 
-      <div className="border-border/60 flex shrink-0 items-center border-b px-5 py-2.5">
-        <TabsList>
-          {LLM_TABS.map((t) => (
-            <TabsTrigger key={t.id} value={t.id} className="text-xs">
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </div>
-
-      <TabsContent value="providers" className="flex min-h-0 flex-col overflow-hidden">
+      <TabsContent value="providers">
         <ProjectProviderModal
           asPanel
           projectId={projectId}
@@ -110,16 +107,16 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
           defaultTab={llmProvidersTab}
         />
       </TabsContent>
-      <TabsContent value="overview" className="flex min-h-0 flex-col overflow-hidden">
+      <TabsContent value="overview">
         <GatewayOverview projectId={projectId} />
       </TabsContent>
-      <TabsContent value="logs" className="flex min-h-0 flex-col overflow-hidden">
+      <TabsContent value="logs">
         <GatewayLogs projectId={projectId} />
       </TabsContent>
-      <TabsContent value="budgets" className="flex min-h-0 flex-col overflow-hidden">
+      <TabsContent value="budgets">
         <GatewayBudgets projectId={projectId} />
       </TabsContent>
-      <TabsContent value="keys" className="flex min-h-0 flex-col overflow-hidden">
+      <TabsContent value="keys">
         <GatewayKeys projectId={projectId} />
       </TabsContent>
     </Tabs>

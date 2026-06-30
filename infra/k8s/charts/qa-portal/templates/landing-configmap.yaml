@@ -1,8 +1,10 @@
 {{/*
-Landing-page generator. The portal's init + sidecar run this after each S3 sync
-to (re)build <root>/index.html by scanning the synced reports/ tree, so the root
-of qa.kortix.com lists every lane's reports instead of redirecting to latest.
-Kept here (not baked into the aws-cli image) so the chart stays self-contained.
+Landing-page generator. The portal's read-only index-gen sidecar runs this on a
+loop to (re)build <root>/index.html by LISTING the reports/ lanes in S3
+(`aws s3 ls`, no object downloads), so the root of qa.kortix.com lists every
+lane's reports. The report bytes themselves are streamed on demand by the S3
+gateway — only this kilobyte index lives on the pod. Kept here (not baked into
+the aws-cli image) so the chart stays self-contained.
 */}}
 apiVersion: v1
 kind: ConfigMap
@@ -14,19 +16,36 @@ metadata:
 data:
   gen-index.sh: |
     #!/bin/sh
-    # Build <root>/index.html from the synced reports/ tree. POSIX sh only.
+    # Build <root>/index.html from the reports/ lanes in S3. POSIX sh only.
+    # Env: BUCKET, S3_PREFIX, REGION (set by the deployment).
     set -u
-    ROOT="${1:-/usr/share/nginx/html}"
-    REPORTS="$ROOT/reports"
+    ROOT="${1:-/landing}"
     OUT="$ROOT/index.html"
     TMP="$OUT.tmp.$$"
+    B="${BUCKET:?BUCKET required}"
+    P="${S3_PREFIX:-reports}"
+    R="${REGION:-us-west-2}"
+    BASE="s3://$B/$P"
 
-    # cards <dir-of-run-subdirs> <url-base> <label> — newest run id first
+    # Never leave a half-written temp behind (a prior crash/throttle could).
+    rm -f "$ROOT"/index.html.tmp.* 2>/dev/null || true
+
+    # runs <lane> — newest run id first, up to 12 (immediate subdirs of the lane).
+    runs() {
+      aws s3 ls "$BASE/$1/" --region "$R" 2>/dev/null \
+        | awk '/ PRE /{print $NF}' | sed 's#/$##' | sort -rn | head -12
+    }
+    # exists <key> — 0 if the object is present in S3.
+    exists() {
+      aws s3 ls "$BASE/$1" --region "$R" 2>/dev/null | grep -q .
+    }
+
+    # cards <lane> <url-base> <label> — a card per run. We trust a run dir has an
+    # index.html (the publish uploads a full report), so we don't probe each one
+    # — that kept the call count to one `aws s3 ls` per lane.
     cards() {
-      d="$1"; ubase="$2"; label="$3"
-      [ -d "$d" ] || return 0
-      for run in $(ls -1 "$d" 2>/dev/null | sort -rn | head -12); do
-        [ -f "$d/$run/index.html" ] || continue
+      lane="$1"; ubase="$2"; label="$3"
+      for run in $(runs "$lane"); do
         printf '<a class="card" href="%s/%s/index.html"><span class="t">%s</span><span class="r">%s</span><span class="go">Open &rarr;</span></a>' "$ubase" "$run" "$label" "$run"
       done
     }
@@ -63,8 +82,8 @@ data:
 
       # Latest (main)
       printf '<section><h2>Latest &middot; main</h2><div class="grid">'
-      if [ -f "$REPORTS/latest/index.html" ]; then
-        printf '<a class="card primary" href="/reports/latest/index.html"><span class="t">main</span><span class="r">latest</span><span class="go">Open &rarr;</span></a>'
+      if exists "latest/index.html"; then
+        printf '<a class="card primary" href="/%s/latest/index.html"><span class="t">main</span><span class="r">latest</span><span class="go">Open &rarr;</span></a>' "$P"
       else
         printf '<div class="empty">No latest report yet.</div>'
       fi
@@ -72,29 +91,27 @@ data:
 
       # Release (full suite incl. ke2e)
       printf '<section><h2>Release &middot; full suite</h2><div class="grid">'
-      out=$(cards "$REPORTS/release" "/reports/release" "release run")
+      out=$(cards "release" "/$P/release" "release run")
       [ -n "$out" ] && printf '%s' "$out" || printf '<div class="empty">No release reports yet.</div>'
       printf '</div></section>'
 
       # Nightly
       printf '<section><h2>Nightly &middot; security / perf / chaos</h2><div class="grid">'
-      out=$(cards "$REPORTS/nightly" "/reports/nightly" "nightly run")
+      out=$(cards "nightly" "/$P/nightly" "nightly run")
       [ -n "$out" ] && printf '%s' "$out" || printf '<div class="empty">No nightly reports yet.</div>'
       printf '</div></section>'
 
       # Pull requests (newest run per PR)
       printf '<section><h2>Pull requests &middot; fast checks</h2><div class="grid">'
       any=""
-      if [ -d "$REPORTS/pr" ]; then
-        for pr in $(ls -1 "$REPORTS/pr" 2>/dev/null | sort -rn | head -12); do
-          run=$(ls -1 "$REPORTS/pr/$pr" 2>/dev/null | sort -rn | head -1)
-          [ -n "$run" ] && [ -f "$REPORTS/pr/$pr/$run/index.html" ] || continue
-          printf '<a class="card" href="/reports/pr/%s/%s/index.html"><span class="t">pull request</span><span class="r">#%s</span><span class="go">run %s &rarr;</span></a>' "$pr" "$run" "$pr" "$run"
-          any="y"
-        done
-      fi
+      for pr in $(runs "pr"); do
+        run=$(runs "pr/$pr" | head -1)
+        [ -n "$run" ] || continue
+        printf '<a class="card" href="/%s/pr/%s/%s/index.html"><span class="t">pull request</span><span class="r">#%s</span><span class="go">run %s &rarr;</span></a>' "$P" "$pr" "$run" "$pr" "$run"
+        any="y"
+      done
       [ -n "$any" ] || printf '<div class="empty">No PR reports yet.</div>'
       printf '</div></section>'
 
       printf '<footer>Served by the QA portal &middot; behind Cloudflare Access</footer></div></body></html>'
-    } > "$TMP" && mv "$TMP" "$OUT"
+    } > "$TMP" && mv "$TMP" "$OUT" || rm -f "$TMP"

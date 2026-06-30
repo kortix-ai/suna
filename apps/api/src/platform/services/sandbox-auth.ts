@@ -22,10 +22,6 @@ export async function getSandboxServiceKeyByExternalId(externalId: string): Prom
   return typeof configJson.serviceKey === 'string' ? configJson.serviceKey : '';
 }
 
-export async function getLocalSandboxServiceKey(): Promise<string> {
-  return getSandboxServiceKeyByExternalId(config.SANDBOX_CONTAINER_NAME);
-}
-
 /**
  * Generate the s6/bootstrap auth script that runs inside a sandbox at boot.
  *

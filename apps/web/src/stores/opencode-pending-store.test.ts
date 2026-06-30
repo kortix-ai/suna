@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import type { QuestionRequest } from '@opencode-ai/sdk/v2/client';
+import type { QuestionRequest } from '@kortix/sdk/opencode-client';
 
 import { useOpenCodePendingStore } from './opencode-pending-store';
 

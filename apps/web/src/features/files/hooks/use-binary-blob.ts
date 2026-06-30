@@ -10,8 +10,8 @@ import { fileReadRetryDelayMs, shouldRetryFileRead } from './file-read-retry';
 
 export const binaryBlobKeys = {
   all: ['opencode-files', 'binary-blob'] as const,
-  file: (serverUrl: string, serverVersion: number, filePath: string) =>
-    ['opencode-files', 'binary-blob', serverUrl, serverVersion, filePath] as const,
+  file: (serverUrl: string, filePath: string) =>
+    ['opencode-files', 'binary-blob', serverUrl, filePath] as const,
 };
 
 // ── Hook ───────────────────────────────────────────────────────────────────
@@ -38,12 +38,11 @@ export function useBinaryBlob(filePath: string | null): {
   error: string | null;
 } {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
-  const serverVersion = useServerStore((s) => s.serverVersion);
 
   // ── Fetch the raw Blob — this is what React Query caches ────────────
   const query = useQuery<Blob>({
     queryKey: filePath
-      ? binaryBlobKeys.file(serverUrl, serverVersion, filePath)
+      ? binaryBlobKeys.file(serverUrl, filePath)
       : ['opencode-files', 'binary-blob', '__disabled__'],
     queryFn: async () => {
       const blob = await readFileAsBlob(filePath!);

@@ -37,7 +37,6 @@ import {
   opencodeKeys,
   useOpenCodeSessions,
 } from '@/hooks/opencode/use-opencode-sessions';
-import { useServerStore } from '@/stores/server-store';
 import { childMapByParent } from '@/ui';
 import { getClient } from '@/lib/opencode-sdk';
 import { getFileIcon } from '@/features/files/components/file-icon';
@@ -623,7 +622,6 @@ export function TabBar() {
   // Sessions data
   const { data: sessions, isLoading: sessionsLoading } = useOpenCodeSessions();
   const updateTabTitle = useTabStore((s) => s.updateTabTitle);
-  const activeServerId = useServerStore((s) => s.activeServerId);
 
   // Sync session titles to tab titles
   useEffect(() => {
@@ -636,41 +634,21 @@ export function TabBar() {
     }
   }, [sessions, tabs, updateTabTitle]);
 
-  // Track which server the sessions data was last fetched for.
-  // After a server switch, sessions briefly contains stale data from the OLD server.
-  // We must not prune until sessions data is confirmed fresh for the current server.
-  const lastPrunedServerRef = useRef(activeServerId);
-  const sessionsReadyForServer = useRef(false);
-
-  // When activeServerId changes, mark sessions as not-yet-ready for the new server.
-  // When sessions subsequently reloads (goes through loading → loaded), mark as ready.
+  // Prune tabs for sessions that no longer exist on the runtime.
+  // Gate on a fully-loaded session list so we never prune against stale/empty data.
   useEffect(() => {
-    if (lastPrunedServerRef.current !== activeServerId) {
-      // Server just switched — sessions data is stale, don't prune yet
-      sessionsReadyForServer.current = false;
-      lastPrunedServerRef.current = activeServerId;
-    } else if (!sessionsLoading && sessions) {
-      // Same server, sessions finished loading — safe to prune
-      sessionsReadyForServer.current = true;
-    }
-  }, [activeServerId, sessions, sessionsLoading]);
-
-  // Prune tabs for sessions that no longer exist on the server.
-  // Only runs once sessions data is confirmed fresh for the current server.
-  useEffect(() => {
-    if (!sessions || sessionsLoading || !sessionsReadyForServer.current) return;
+    if (!sessions || sessionsLoading) return;
     const sessionIds = new Set(sessions.map(s => s.id));
     const { tabs: currentTabs, tabOrder: currentOrder } = useTabStore.getState();
     const staleTabIds = currentOrder.filter(id => {
       const tab = currentTabs[id];
       if (tab?.type !== 'session') return false;
-      if (tab.serverId && tab.serverId !== activeServerId) return false;
       return !sessionIds.has(id);
     });
     for (const id of staleTabIds) {
       useTabStore.getState().closeTab(id);
     }
-  }, [sessions, sessionsLoading, activeServerId]);
+  }, [sessions, sessionsLoading]);
 
   // Prefetch session metadata for all open tabs so switching is instant.
   // NOTE: Message prefetching was removed — messages are now served from
@@ -739,7 +717,6 @@ export function TabBar() {
           type: 'session',
           href: `/sessions/${sessionId}`,
           parentSessionId: session?.parentID,
-          serverId: activeServerId,
         });
       } else {
         setActiveTab(sessionId);
@@ -752,7 +729,7 @@ export function TabBar() {
     if (routeTab && !isTabRecentlyClosed(routeTab.id)) {
       openTab(routeTab);
     }
-  }, [pathname, openTab, setActiveTab, sessions, activeServerId]);
+  }, [pathname, openTab, setActiveTab, sessions]);
 
   // Build child map for permission aggregation across sub-sessions
   const childMap = useMemo(

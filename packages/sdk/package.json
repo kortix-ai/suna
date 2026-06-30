@@ -1,0 +1,84 @@
+{
+  "name": "@kortix/sdk",
+  "version": "0.1.0",
+  "description": "Official Kortix frontend TypeScript SDK — one typed client for the Kortix agent platform. Unifies project/session lifecycle and live agent streaming behind a single ergonomic Session handle, so web, mobile, and white-label apps never touch the raw HTTP API or OpenCode semantics.",
+  "type": "module",
+  "license": "Elastic-2.0",
+  "homepage": "https://github.com/kortix-ai/suna/tree/main/packages/sdk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kortix-ai/suna.git",
+    "directory": "packages/sdk"
+  },
+  "keywords": ["kortix", "agent", "sdk", "sessions", "streaming", "opencode"],
+  "sideEffects": false,
+  "dependencies": {
+    "@kortix/llm-catalog": "workspace:*",
+    "@opencode-ai/sdk": "^1.14.28",
+    "zustand": "^5.0.3"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.75.2",
+    "next": ">=15",
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "@tanstack/react-query": { "optional": true },
+    "next": { "optional": true },
+    "react": { "optional": true }
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./react": "./src/react/index.ts",
+    "./opencode-client": "./src/opencode/client.ts",
+    "./config": "./src/platform/config.ts",
+    "./auth": "./src/platform/auth.ts",
+    "./api-client": "./src/platform/api-client.ts",
+    "./projects-client": "./src/platform/projects-client/index.ts",
+    "./server-store": "./src/state/server-store.ts",
+    "./sync-store": "./src/state/sync-store.ts",
+    "./sandbox-connection-store": "./src/state/sandbox-connection-store.ts",
+    "./opencode-pending-store": "./src/state/opencode-pending-store.ts",
+    "./files": "./src/files/client.ts",
+    "./session": "./src/session/index.ts",
+    "./session/url": "./src/session/url.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+      "./react": { "types": "./dist/react/index.d.ts", "import": "./dist/react/index.js" },
+      "./opencode-client": { "types": "./dist/opencode/client.d.ts", "import": "./dist/opencode/client.js" },
+      "./config": { "types": "./dist/platform/config.d.ts", "import": "./dist/platform/config.js" },
+      "./auth": { "types": "./dist/platform/auth.d.ts", "import": "./dist/platform/auth.js" },
+      "./api-client": { "types": "./dist/platform/api-client.d.ts", "import": "./dist/platform/api-client.js" },
+      "./projects-client": { "types": "./dist/platform/projects-client/index.d.ts", "import": "./dist/platform/projects-client/index.js" },
+      "./server-store": { "types": "./dist/state/server-store.d.ts", "import": "./dist/state/server-store.js" },
+      "./sync-store": { "types": "./dist/state/sync-store.d.ts", "import": "./dist/state/sync-store.js" },
+      "./sandbox-connection-store": { "types": "./dist/state/sandbox-connection-store.d.ts", "import": "./dist/state/sandbox-connection-store.js" },
+      "./opencode-pending-store": { "types": "./dist/state/opencode-pending-store.d.ts", "import": "./dist/state/opencode-pending-store.js" },
+      "./files": { "types": "./dist/files/client.d.ts", "import": "./dist/files/client.js" },
+      "./session": { "types": "./dist/session/index.d.ts", "import": "./dist/session/index.js" },
+      "./session/url": { "types": "./dist/session/url.d.ts", "import": "./dist/session/url.js" }
+    },
+    "files": ["dist", "README.md"]
+  },
+  "files": ["dist", "src", "README.md"],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test src",
+    "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
+    "prepublishOnly": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "^5.75.2",
+    "@types/react": "^19.1.17",
+    "react": "^19.1.0",
+    "tsc-alias": "^1.8.17",
+    "typescript": "^5.4.0"
+  }
+}

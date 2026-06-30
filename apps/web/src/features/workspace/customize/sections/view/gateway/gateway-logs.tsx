@@ -14,6 +14,7 @@ import {
 import { forwardRef, type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import Hint from '@/components/ui/hint';
 import { useGatewayLog, useGatewayLogs } from '@/hooks/projects/use-project-gateway';
 import type { GatewayLogRow } from '@/lib/projects-gateway-client';
@@ -399,23 +400,17 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center justify-between border-b border-border/50 px-4 py-2.5">
-        <div className="flex items-center gap-1 rounded-full border border-border/60 bg-card p-0.5">
+        <FilterBar>
           {FILTERS.map((f) => (
-            <button
+            <FilterBarItem
               key={f.key}
-              type="button"
               onClick={() => setFilter(f.key)}
-              className={cn(
-                'rounded-full px-3 py-1 text-xs font-medium transition-colors duration-150',
-                filter === f.key
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
+              data-state={filter === f.key ? 'active' : 'inactive'}
             >
               {f.label}
-            </button>
+            </FilterBarItem>
           ))}
-        </div>
+        </FilterBar>
         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <span className="size-1.5 animate-pulse rounded-full bg-kortix-green" />
           Live · {logs.length}

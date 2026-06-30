@@ -73,7 +73,6 @@ export {
   deployments,
   kortixApiKeys,
   accountTokens,
-  serverEntries,
   workerLeaderLease,
   // Relations
   projectsRelations,
@@ -226,8 +225,6 @@ export type {
   SandboxSelect,
   KortixApiKey,
   NewKortixApiKey,
-  ServerEntry,
-  NewServerEntry,
   TunnelConnection,
   NewTunnelConnection,
   TunnelPermission,

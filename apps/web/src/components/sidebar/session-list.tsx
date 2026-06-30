@@ -59,7 +59,6 @@ import {
   markRecoveryRequested,
   useSandboxConnectionStore,
 } from '@/stores/sandbox-connection-store';
-import { useServerStore } from '@/stores/server-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { allDescendantIds, childMapByParent, sortSessions } from '@/ui';
 import {
@@ -447,13 +446,12 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   // Auto-refetch sessions when connection recovers from error state
   const connectionStatus = useSandboxConnectionStore((s) => s.status);
   const recoveryPhase = useSandboxConnectionStore((s) => s.recoveryPhase);
-  const activeServer = useServerStore((s) =>
-    s.servers.find((server) => server.id === s.activeServerId),
-  );
   const routeInstanceId = getCurrentInstanceIdFromPathname(rawPathname);
   const activeInstanceId =
-    routeInstanceId || getActiveInstanceIdFromCookie() || activeServer?.instanceId || '';
-  const supportsLayeredHealth = activeServer?.provider === 'justavps';
+    routeInstanceId || getActiveInstanceIdFromCookie() || '';
+  // Layered (per-host) health is a justavps-only feature; the cloud runtime
+  // never reports that provider, so it is permanently off here.
+  const supportsLayeredHealth = false;
   const { data: adminRole } = useAdminRole({ enabled: !!activeInstanceId });
   const isAdmin = !!adminRole?.isAdmin;
   const adminHealthQuery = useAdminSandboxHealth(
@@ -669,7 +667,6 @@ export function SessionList({ projectId }: SessionListProps = {}) {
       type: 'session',
       href: `/sessions/${sessionId}`,
       ...(parentId && { parentSessionId: parentId }),
-      serverId: useServerStore.getState().activeServerId,
     });
   };
 
@@ -929,7 +926,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
             </p>
             <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
               {connectionStatus === 'unreachable' &&
-              activeServer?.provider === 'justavps' &&
+              supportsLayeredHealth &&
               activeInstanceId &&
               primaryRepairAction ? (
                 <Button

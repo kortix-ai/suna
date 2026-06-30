@@ -59,6 +59,7 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 # Copy the target app and workspace packages it depends on
 COPY ${SERVICE} ./${SERVICE}
 COPY packages/shared ./packages/shared
+COPY packages/llm-catalog ./packages/llm-catalog
 COPY packages/db ./packages/db
 COPY packages/agent-tunnel ./packages/agent-tunnel
 COPY packages/starter ./packages/starter
@@ -113,9 +114,10 @@ COPY --from=deps /app/node_modules ./node_modules
 
 # Copy workspace packages — source only, skip nested node_modules
 # which may contain stale symlinks to the .pnpm store.
-# Full dirs (not src-only): @kortix/llm-gateway resolves the @kortix/shared/llm-catalog
-# subpath transitively, which needs shared's package-resolution intact at runtime.
+# Full dirs (not src-only): the API and @kortix/llm-gateway resolve @kortix/llm-catalog
+# (and @kortix/shared's subpaths) at runtime, which needs package-resolution intact.
 COPY --from=deps /app/packages/shared ./packages/shared
+COPY --from=deps /app/packages/llm-catalog ./packages/llm-catalog
 COPY --from=deps /app/packages/llm-gateway ./packages/llm-gateway
 COPY --from=deps /app/packages/db/src ./packages/db/src
 COPY --from=deps /app/packages/db/drizzle.config.ts ./packages/db/drizzle.config.ts

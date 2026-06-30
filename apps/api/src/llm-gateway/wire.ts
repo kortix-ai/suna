@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { createGateway } from '@kortix/llm-gateway';
-import { pickAutoModel } from '@kortix/shared/llm-catalog';
+import { pickAutoModel } from '@kortix/llm-catalog';
 import { Hono } from 'hono';
 import { config } from '../config';
 import { createInProcessGatewayHooks } from './hooks';

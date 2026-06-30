@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bot, Check, Clock, KeyRound, Loader2, Mail, MessageSquare, RefreshCw, Shield, Sparkles, Users, X } from 'lucide-react';
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 import {
   inheritedFromGroupSummary,
@@ -81,6 +81,7 @@ import {
   type ProjectRole,
   type ResourceGrantType,
 } from '@/lib/projects-client';
+import { useCustomizeStore } from '@/stores/customize-store';
 import { UsersSolid } from '@mynaui/icons-react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import { sortByRoleThenLabel } from '../member-sort';
@@ -100,7 +101,14 @@ function formatDate(input: string | null | undefined) {
 
 export function MembersView({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const [tab, setTab] = useState<'people' | 'invite'>('people');
+  // Deep-link target tab (e.g. the palette's "Invite members" opens here). Plain
+  // in-view tab clicks stay local; this only follows an external openCustomize.
+  const requestedTab = useCustomizeStore((s) => s.membersTab);
+  const [tab, setTab] = useState<'people' | 'invite'>(() => requestedTab);
+
+  useEffect(() => {
+    setTab(requestedTab);
+  }, [requestedTab]);
 
   const projectQuery = useQuery({
     queryKey: ['project', projectId],

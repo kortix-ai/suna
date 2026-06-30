@@ -13,14 +13,12 @@ import type { AttachedFile } from '@/features/session/session-chat-input';
 import { formatModelString } from '@/hooks/opencode/use-opencode-local';
 import type { Command } from '@/hooks/opencode/use-opencode-sessions';
 import { useCreateOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
-import { useSandbox } from '@/hooks/platform/use-sandbox';
 import { useIsMobile } from '@/hooks/utils';
 import { getClient } from '@/lib/opencode-sdk';
 import { playSound } from '@/lib/sounds';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
-import { useServerStore } from '@/stores/server-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useQueryClient } from '@tanstack/react-query';
 import { Menu } from 'lucide-react';
@@ -42,10 +40,9 @@ export function DashboardContent() {
   const { setOpen: setSidebarOpenState, setOpenMobile } = useSidebar();
   const createSession = useCreateOpenCodeSession();
 
-  // No-instance fallback: when the user has no sandbox at all, render the
-  // claim/onboarding hero in-place instead of bouncing to a dedicated page.
-  const { sandbox, isLoading: sandboxLoading } = useSandbox();
-  const showNoInstanceState = !sandboxLoading && !sandbox;
+  // Legacy "no sandbox/instance" hero retired — cloud sessions always have a
+  // runtime, and the instances system is gone.
+  const showNoInstanceState = false;
 
   // After Stripe checkout (?subscription=success), the webhook has already
   // provisioned the sandbox — refresh sandbox queries so the workspace
@@ -96,7 +93,6 @@ export function DashboardContent() {
           title: 'New session',
           type: 'session',
           href: `/sessions/${session.id}`,
-          serverId: useServerStore.getState().activeServerId,
         });
 
         requestAnimationFrame(() => {
@@ -124,7 +120,6 @@ export function DashboardContent() {
           title: cmd.name,
           type: 'session',
           href: `/sessions/${session.id}`,
-          serverId: useServerStore.getState().activeServerId,
         });
         const client = getClient();
         void client.session
