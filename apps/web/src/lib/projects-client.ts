@@ -237,6 +237,14 @@ export interface ProjectConfigSummary {
     mode: string | null;
     source?: 'opencode' | 'kortix.toml';
     enabled?: boolean;
+    /** Per-agent governance from `kortix.toml [[agents]]` (read-only mirror).
+     *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
+     *  OpenCode-discovered agents (not governed by [[agents]]). */
+    scope?: {
+      env: string[] | 'all';
+      connectors: string[] | 'all';
+      kortix_cli: string[] | 'all';
+    };
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;
   commands: Array<{ name: string; path: string; description: string | null }>;

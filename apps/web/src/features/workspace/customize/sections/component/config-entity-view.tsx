@@ -73,6 +73,9 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
   renderRowTrailing?: (entity: T, config: ProjectConfigSummary) => ReactNode;
   renderDetailTitle: (entity: T) => ReactNode;
   renderDetailMeta?: (entity: T, config: ProjectConfigSummary) => ReactNode;
+  /** Rendered in the detail panel between the header block and the source body
+   *  — e.g. the per-agent scope (env/connectors/CLI). Read-only. */
+  renderDetailExtra?: (entity: T, config: ProjectConfigSummary) => ReactNode;
   emptyBodyLabel: string;
 
   /** Section-level context rendered above the search (e.g. kortix.toml manifest). */
@@ -102,6 +105,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
     renderRowTrailing,
     renderDetailTitle,
     renderDetailMeta,
+    renderDetailExtra,
     emptyBodyLabel,
     renderContext,
     embedded = false,
@@ -217,6 +221,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
                   renderRowTrailing={renderRowTrailing}
                   renderDetailTitle={renderDetailTitle}
                   renderDetailMeta={renderDetailMeta}
+                  renderDetailExtra={renderDetailExtra}
                   emptyBodyLabel={emptyBodyLabel}
                 />
               </li>
@@ -276,6 +281,7 @@ interface EntityDisclosureProps<T extends ConfigEntity> {
   renderRowTrailing?: (entity: T, config: ProjectConfigSummary) => ReactNode;
   renderDetailTitle: (entity: T) => ReactNode;
   renderDetailMeta?: (entity: T, config: ProjectConfigSummary) => ReactNode;
+  renderDetailExtra?: (entity: T, config: ProjectConfigSummary) => ReactNode;
   emptyBodyLabel: string;
 }
 
@@ -289,6 +295,7 @@ function EntityDisclosure<T extends ConfigEntity>({
   renderRowTrailing,
   renderDetailTitle,
   renderDetailMeta,
+  renderDetailExtra,
   emptyBodyLabel,
 }: EntityDisclosureProps<T>) {
   const [open, setOpen] = useState(false);
@@ -313,6 +320,7 @@ function EntityDisclosure<T extends ConfigEntity>({
           config={config}
           renderDetailTitle={renderDetailTitle}
           renderDetailMeta={renderDetailMeta}
+          renderDetailExtra={renderDetailExtra}
           emptyBodyLabel={emptyBodyLabel}
         />
       </DisclosureContent>
@@ -327,6 +335,7 @@ interface EntityDetailProps<T extends ConfigEntity> {
   config: ProjectConfigSummary;
   renderDetailTitle: (entity: T) => ReactNode;
   renderDetailMeta?: (entity: T, config: ProjectConfigSummary) => ReactNode;
+  renderDetailExtra?: (entity: T, config: ProjectConfigSummary) => ReactNode;
   emptyBodyLabel: string;
 }
 
@@ -337,6 +346,7 @@ function EntityDetail<T extends ConfigEntity>({
   config,
   renderDetailTitle,
   renderDetailMeta,
+  renderDetailExtra,
   emptyBodyLabel,
 }: EntityDetailProps<T>) {
   const configure = useConfigureThread(projectId);
@@ -362,6 +372,7 @@ function EntityDetail<T extends ConfigEntity>({
   );
 
   const meta = renderDetailMeta?.(entity, config);
+  const extra = renderDetailExtra?.(entity, config);
 
   return (
     <div className="px-4 py-5">
@@ -385,6 +396,8 @@ function EntityDetail<T extends ConfigEntity>({
           copyDisabled={!fileQuery.data?.content}
         />
       </div>
+
+      {extra ? <div className="mt-6">{extra}</div> : null}
 
       <div className="mt-8">
         {fileQuery.isLoading ? (
