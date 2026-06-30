@@ -10,16 +10,16 @@ import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
-import { MeetView } from '@/features/workspace/customize/sections/view/meet-view';
 import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
+import { MeetView } from '@/features/workspace/customize/sections/view/meet-view';
 import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
 import { SettingsView } from '@/features/workspace/customize/sections/view/settings-view';
 import { SkillsView } from '@/features/workspace/customize/sections/view/skills-view';
 import { useIsMobile } from '@/hooks/utils';
-import { DEFAULT_CUSTOMIZE_SECTION, type CustomizeSection } from '@/lib/customize-sections';
+import { type CustomizeSection, DEFAULT_CUSTOMIZE_SECTION } from '@/lib/customize-sections';
 import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { CUSTOMIZE_SECTION_ACCESS, CUSTOMIZE_SECTION_READ_ACTIONS } from '@/lib/project-actions';
 import { getProjectDetail } from '@/lib/projects-client';
@@ -36,6 +36,7 @@ import {
   Container,
   FolderOpen,
   GitPullRequest,
+  Inbox,
   KeyRound,
   Monitor,
   Plug,
@@ -46,10 +47,11 @@ import {
 import { useCallback, useEffect, useMemo } from 'react';
 import { LuSettings, LuUsersRound } from 'react-icons/lu';
 import { FilesSection } from './sections/files-section';
+import { LlmManagementView } from './sections/gateway-view';
 import { ChangesView } from './sections/view/changes-view';
 import { DevView } from './sections/view/dev-view';
-import { RailGroup, RailItem } from './type';
-import { LlmManagementView } from './sections/gateway-view';
+import { ReviewView } from './sections/view/review-view';
+import type { RailGroup, RailItem } from './type';
 
 const GROUPS: readonly RailGroup[] = [
   {
@@ -66,7 +68,6 @@ const GROUPS: readonly RailGroup[] = [
       { section: 'connectors', label: 'Connectors', icon: Plug },
       { section: 'secrets', label: 'Secrets', icon: KeyRound },
       { section: 'channels', label: 'Channels', icon: ChatMessages },
-
     ],
   },
   {
@@ -102,11 +103,14 @@ const MARKETPLACE_ITEM: RailItem = { section: 'marketplace', label: 'Marketplace
 
 const MEET_ITEM: RailItem = { section: 'meet', label: 'Meetings', icon: AudioLines };
 
+const REVIEW_ITEM: RailItem = { section: 'review', label: 'Review', icon: Inbox };
+
 function railGroups(
   tunnelEnabled: boolean,
   marketplaceEnabled: boolean,
   llmGatewayAvailable: boolean,
   meetEnabled: boolean,
+  reviewEnabled: boolean,
 ): readonly RailGroup[] {
   return GROUPS.map((g) => {
     if (g.label === 'Build' && marketplaceEnabled) {
@@ -117,6 +121,13 @@ function railGroups(
       if (meetEnabled) items.push(MEET_ITEM);
       if (tunnelEnabled) items.push(COMPUTERS_ITEM);
       if (llmGatewayAvailable) items.push(LLM_ITEM);
+      return { ...g, items };
+    }
+    if (g.label === 'Workspace' && reviewEnabled) {
+      // Slot Review right after Changes — both are review surfaces.
+      const items = [...g.items];
+      const at = items.findIndex((it) => it.section === 'changes');
+      items.splice(at >= 0 ? at + 1 : items.length, 0, REVIEW_ITEM);
       return { ...g, items };
     }
     return g;
@@ -174,22 +185,28 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   const llmGatewayEnabled = isLlmGatewayEnabled(detail.data?.project);
   const llmGatewayAvailable = isLlmGatewayAvailable(detail.data?.project);
   const meetEnabled = detail.data?.project?.experimental?.meet ?? false;
+  const reviewEnabled = detail.data?.project?.experimental?.review_center ?? false;
   const groups = useMemo(
     // Compose flag-gating with IAM visibility: an item shows only if it passes
     // BOTH its flag check (baked into railGroups) AND its read-leaf probe. Empty
     // groups drop out so no orphan header renders.
     () =>
-      railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, meetEnabled)
+      railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, meetEnabled, reviewEnabled)
         .map((g) => ({ ...g, items: g.items.filter((item) => isSectionAllowed(item.section)) }))
         .filter((g) => g.items.length > 0),
-    [tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, meetEnabled, isSectionAllowed],
+    [
+      tunnelEnabled,
+      marketplaceEnabled,
+      llmGatewayAvailable,
+      meetEnabled,
+      reviewEnabled,
+      isSectionAllowed,
+    ],
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
   // `llm-management` stands in for every `llm-*` sub-section so deep-links still work.
   const sectionVisible = allItems.some((item) =>
-    item.section === 'llm-management'
-      ? section.startsWith('llm-')
-      : item.section === section,
+    item.section === 'llm-management' ? section.startsWith('llm-') : item.section === section,
   );
 
   useEffect(() => {
@@ -408,6 +425,8 @@ function SectionContent({
       return <ScheduleView projectId={projectId} type="webhook" />;
     case 'changes':
       return <ChangesView projectId={projectId} />;
+    case 'review':
+      return <ReviewView projectId={projectId} />;
     case 'files':
       return <FilesSection projectId={projectId} />;
     case 'sandbox':
