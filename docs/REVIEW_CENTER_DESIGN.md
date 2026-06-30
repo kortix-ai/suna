@@ -26,8 +26,13 @@ Also built since:
 - **Adapters** — the inbox read model (`listInboxItems`) now **folds in real Change Requests** (`kind:change`,
   id `cr:<id>`) and **executor pending-approvals** (`kind:approval`, id `exec:<id>`) via `review-adapters.ts`
   (unit-tested). Adapted items are read-only in the inbox; acting routes to their source view (act → 409).
-- **Slack** — `channels/slack/review-cards.ts`: the Block Kit **review-card builder** + the
-  `review_<verb>_<id>` action-id codec (unit-tested).
+- **Slack** — full in-thread bridge wired. `channels/slack/review-cards.ts`: the Block Kit **review-card
+  builder** + the `review_<verb>_<id>` action-id codec + `reviewVerbToVerdict` (unit-tested).
+  `channels/slack/review.ts` **`postReviewCard`** posts the card into a live Slack thread (the
+  human-in-the-loop twin of `postQuestion`) — triggered from `POST /review/items` when the item comes from a
+  Slack session. `interactivity.ts` **`handleReviewAction`** applies the verdict (`applyVerdict`, actor gated
+  by `resolveSlackActor` — self-approve allowed) and resumes the session via `spawnAgentTurn`, the same path
+  a question answer takes. (Live click-through still needs a runtime to dogfood; App Home "Needs you (N)" not built.)
 - **UX/UI polish** — fluid `motion` (row reflow, animated bars, rolling counts, tactile press), calmer
   `StatusBadge` risk pills, faded empty state.
 
@@ -35,8 +40,8 @@ Also built since:
 - Executor **202→resume** (KORTIX-207): persist the pending call + a resume/poll so an approval re-runs it
   and returns the result to the waiting agent. (Note: the executor SDK already returns the structured 202
   `pending_approval` body — `res.ok` is true for 202 — so the gap is the resume plumbing, not the SDK.)
-- Slack **handler wiring**: `handleReviewAction` (parse `review_<verb>_<id>` → dispatch via the existing
-  `handleQuestionAnswer → spawnAgentTurn` path) + post review cards in-thread + App Home "Needs you (N)".
+- Slack **App Home**: a "Needs you (N)" section listing pending items (the sender + `handleReviewAction`
+  card flow is now built; only the App Home surface remains).
 - Adapter **act-dispatch**: let the inbox merge/close a CR and approve/deny an executor call directly
   (currently 409 → source view).
 
@@ -274,7 +279,8 @@ tangible during review.
   (CR, executor, tunnel); executor approval record + **resume** (close the 202 gap). Ships with tests.
 - **Phase B — web Review Center.** Productionize the prototype against the real read model + the
   tunnel/kortix-task hooks. Add a nav entry. A11y + visual tests.
-- **Phase C — Slack.** Review cards in-thread, `handleReviewAction`, App Home "Needs you", bulk approve.
+- **Phase C — Slack.** ✅ Review cards in-thread (`postReviewCard`) + `handleReviewAction` (verdict +
+  resume) built. Remaining: App Home "Needs you (N)", bulk approve from Slack.
 - Each phase follows the repo testing discipline (unit/integration/contract/api/e2e as the change demands).
 
 ---
