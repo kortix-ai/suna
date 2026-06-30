@@ -152,10 +152,11 @@ function ItemRow({
       whileTap={{ scale: 0.994 }}
       transition={{ duration: 0.18, ease: EASE, delay: Math.min(idx * 0.015, 0.08) }}
       className={cn(
-        'group bg-popover flex items-center gap-3 rounded-md border px-4 py-3',
-        'transition-[border-color,box-shadow,transform] duration-150 ease-out hover:-translate-y-px hover:shadow-sm',
-        focused ? 'ring-1 ring-primary/20' : 'hover:border-foreground/15',
-        selected && 'bg-primary/[0.04]',
+        'group bg-popover flex items-center gap-3.5 rounded-lg border px-4 py-3.5',
+        'border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 ease-out',
+        'hover:border-border hover:shadow-md',
+        focused && 'border-primary/40 ring-1 ring-primary/15',
+        selected && 'border-primary/40 bg-primary/[0.04]',
       )}
     >
       <Checkbox
@@ -168,7 +169,7 @@ function ItemRow({
         )}
       />
       <span
-        className={cn('flex size-9 shrink-0 items-center justify-center rounded-sm', kind.tile)}
+        className={cn('flex size-9 shrink-0 items-center justify-center rounded-md', kind.tile)}
       >
         <kind.icon className={cn('size-5', kind.iconColor)} />
       </span>
