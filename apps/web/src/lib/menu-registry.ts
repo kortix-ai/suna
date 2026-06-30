@@ -73,6 +73,8 @@ import {
 } from 'lucide-react';
 import { IconType } from 'react-icons/lib';
 
+const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -311,14 +313,15 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-customize',
-    label: 'Customize',
+    label: 'Plugins',
     icon: SlidersHorizontal,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/projects/{projectId}/customize',
     requiresProject: true,
-    keywords: 'customize configure project agents skills commands',
+    keywords:
+      'plugins plugin build customize configure project agents agent skills skill commands command',
   },
   {
     id: 'proj-files',
@@ -333,36 +336,36 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-agents',
-    label: 'Customize · Agents',
+    label: 'Plugins · Agents',
     icon: Bot,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/projects/{projectId}/customize/agents',
     requiresProject: true,
-    keywords: 'agents subagents project customize ai',
+    keywords: 'plugins plugin agents agent subagents subagent project customize build ai',
   },
   {
     id: 'proj-skills',
-    label: 'Customize · Skills',
+    label: 'Plugins · Skills',
     icon: Blocks,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/projects/{projectId}/customize/skills',
     requiresProject: true,
-    keywords: 'skills project customize abilities',
+    keywords: 'plugins plugin skills skill project customize build abilities',
   },
   {
     id: 'proj-commands',
-    label: 'Customize · Commands',
+    label: 'Plugins · Commands',
     icon: TerminalSquare,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/projects/{projectId}/customize/commands',
     requiresProject: true,
-    keywords: 'commands slash project customize',
+    keywords: 'plugins plugin commands command slash project customize build',
   },
   {
     id: 'proj-secrets',
