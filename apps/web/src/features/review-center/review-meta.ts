@@ -5,6 +5,7 @@
  * a solid Kortix-token icon.
  */
 
+import type { StatusTone } from '@/components/ui/status';
 import {
   ChatMessages,
   CheckCircleSolid,
@@ -74,11 +75,14 @@ export const KIND_META: Record<
   },
 };
 
-export const RISK_META: Record<ReviewRisk, { label: string; badge: BadgeVariant }> = {
-  none: { label: 'Safe', badge: 'success' },
-  low: { label: 'Low risk', badge: 'success' },
-  medium: { label: 'Medium risk', badge: 'warning' },
-  high: { label: 'High risk', badge: 'destructive' },
+// Risk pills use StatusBadge (faint tinted fill + colored text) rather than the
+// solid Badge variants — calmer and consistent across tones, the way the brand
+// reads (red is the brake, not the paint). See components/ui/status.tsx.
+export const RISK_META: Record<ReviewRisk, { label: string; tone: StatusTone }> = {
+  none: { label: 'Safe', tone: 'success' },
+  low: { label: 'Low risk', tone: 'success' },
+  medium: { label: 'Medium risk', tone: 'warning' },
+  high: { label: 'High risk', tone: 'destructive' },
 };
 
 export const STATUS_META: Record<ReviewStatus, { label: string; badge: BadgeVariant }> = {

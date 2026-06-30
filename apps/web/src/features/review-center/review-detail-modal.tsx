@@ -207,9 +207,9 @@ function ApprovalActionRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-foreground text-sm font-medium">{action.title}</span>
-            <Badge variant={RISK_META[action.risk].badge} size="xs">
+            <StatusBadge tone={RISK_META[action.risk].tone}>
               {RISK_META[action.risk].label}
-            </Badge>
+            </StatusBadge>
           </div>
           <div className="text-muted-foreground mt-0.5 text-sm text-pretty">
             {action.consequence}
@@ -613,9 +613,9 @@ export function ReviewDetailModal({
                   {kind.label}
                 </Badge>
                 {item.risk !== 'none' && (
-                  <Badge variant={RISK_META[item.risk].badge} size="xs">
+                  <StatusBadge tone={RISK_META[item.risk].tone}>
                     {RISK_META[item.risk].label}
-                  </Badge>
+                  </StatusBadge>
                 )}
                 <span className="text-muted-foreground/70 flex items-center gap-1 text-xs">
                   <Source.icon className="size-3" />

@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Kbd } from '@/components/ui/kbd';
 import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
+import { StatusBadge } from '@/components/ui/status';
 import {
   Tabs,
   TabsList,
@@ -156,9 +157,9 @@ function ItemRow({
         <div className="flex items-center gap-2">
           <span className="text-foreground truncate text-sm font-medium">{item.title}</span>
           {item.risk !== 'none' && segment === 'needs_you' && (
-            <Badge variant={RISK_META[item.risk].badge} size="xs">
+            <StatusBadge tone={RISK_META[item.risk].tone} className="shrink-0">
               {RISK_META[item.risk].label}
-            </Badge>
+            </StatusBadge>
           )}
           <span className="text-muted-foreground/60 ml-auto hidden shrink-0 items-center gap-1 text-xs sm:flex">
             <Source.icon className="size-3" />
