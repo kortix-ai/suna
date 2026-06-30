@@ -1,4 +1,4 @@
-import { CATALOG } from '@kortix/shared/llm-catalog';
+import { CATALOG } from '@kortix/llm-catalog';
 import { providerKindForNpm } from './compatibility';
 import type { ProviderKind } from '../domain';
 

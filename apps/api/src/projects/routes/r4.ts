@@ -57,7 +57,7 @@ import {
   getAccountModelDefaults,
   upsertAccountModelPreference,
 } from "../../repositories/model-preferences";
-import { AUTO_DEFAULT_MODEL_ID } from "@kortix/shared/llm-catalog";
+import { AUTO_DEFAULT_MODEL_ID } from "@kortix/llm-catalog";
 import { resolveExperimentalFeature } from "../../experimental/features";
 import { db } from "../../shared/db";
 import { extractApps } from "../apps";

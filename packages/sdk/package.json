@@ -13,7 +13,7 @@
   "keywords": ["kortix", "agent", "sdk", "sessions", "streaming", "opencode"],
   "sideEffects": false,
   "dependencies": {
-    "@kortix/shared": "workspace:*",
+    "@kortix/llm-catalog": "workspace:*",
     "@opencode-ai/sdk": "^1.14.28",
     "zustand": "^5.0.3"
   },
@@ -45,16 +45,40 @@
     "./session": "./src/session/index.ts",
     "./session/url": "./src/session/url.ts"
   },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+      "./react": { "types": "./dist/react/index.d.ts", "import": "./dist/react/index.js" },
+      "./opencode-client": { "types": "./dist/opencode/client.d.ts", "import": "./dist/opencode/client.js" },
+      "./config": { "types": "./dist/platform/config.d.ts", "import": "./dist/platform/config.js" },
+      "./auth": { "types": "./dist/platform/auth.d.ts", "import": "./dist/platform/auth.js" },
+      "./api-client": { "types": "./dist/platform/api-client.d.ts", "import": "./dist/platform/api-client.js" },
+      "./projects-client": { "types": "./dist/platform/projects-client/index.d.ts", "import": "./dist/platform/projects-client/index.js" },
+      "./server-store": { "types": "./dist/state/server-store.d.ts", "import": "./dist/state/server-store.js" },
+      "./sync-store": { "types": "./dist/state/sync-store.d.ts", "import": "./dist/state/sync-store.js" },
+      "./sandbox-connection-store": { "types": "./dist/state/sandbox-connection-store.d.ts", "import": "./dist/state/sandbox-connection-store.js" },
+      "./opencode-pending-store": { "types": "./dist/state/opencode-pending-store.d.ts", "import": "./dist/state/opencode-pending-store.js" },
+      "./files": { "types": "./dist/files/client.d.ts", "import": "./dist/files/client.js" },
+      "./session": { "types": "./dist/session/index.d.ts", "import": "./dist/session/index.js" },
+      "./session/url": { "types": "./dist/session/url.d.ts", "import": "./dist/session/url.js" }
+    },
+    "files": ["dist", "README.md"]
+  },
   "files": ["dist", "src", "README.md"],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test src",
-    "build": "tsc -p tsconfig.build.json"
+    "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
+    "prepublishOnly": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths"
   },
   "devDependencies": {
     "@tanstack/react-query": "^5.75.2",
     "@types/react": "^19.1.17",
     "react": "^19.1.0",
+    "tsc-alias": "^1.8.17",
     "typescript": "^5.4.0"
   }
 }

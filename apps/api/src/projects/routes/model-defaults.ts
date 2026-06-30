@@ -8,7 +8,7 @@
 // form so a default can't be obvious garbage that 400s every session.
 
 import { createRoute, z } from "@hono/zod-openapi";
-import { AUTO_MODEL_ID, getManagedModel } from "@kortix/shared/llm-catalog";
+import { AUTO_MODEL_ID, getManagedModel } from "@kortix/llm-catalog";
 import { auth, errors, json } from "../../openapi";
 import { invalidateAccountModelDefaults } from "../../llm-gateway/resolution/default-model";
 import {

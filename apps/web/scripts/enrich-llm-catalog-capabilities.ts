@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Enrich per-model capability flags in the committed LLM catalog snapshot
- * (`packages/shared/src/llm-catalog/catalog.generated.json`) from models.dev.
+ * (`packages/llm-catalog/src/catalog.generated.json`) from models.dev.
  *
  * This ENRICHES existing entries IN PLACE — it is NOT a full catalog generator.
  * The snapshot is intentionally slim (id/name/released per model + provider
@@ -28,7 +28,7 @@ type MdProvider = { models?: Record<string, MdModel> };
 
 const CATALOG_PATH = join(
   import.meta.dir,
-  '../../../packages/shared/src/llm-catalog/catalog.generated.json',
+  '../../../packages/llm-catalog/src/catalog.generated.json',
 );
 
 async function main() {
