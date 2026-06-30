@@ -2,14 +2,18 @@
  * Review Center adapters — Change Requests folded into the inbox read model.
  */
 import { describe, expect, test } from 'bun:test';
-import type { changeRequests } from '@kortix/db';
+import type { changeRequests, executorExecutions } from '@kortix/db';
 import {
   CR_ID_PREFIX,
+  EXEC_ID_PREFIX,
   adapterSourceForId,
   changeRequestToReviewItem,
+  executorExecutionToReviewItem,
+  isAdaptedId,
 } from '../projects/review-adapters';
 
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
+type ExecutorExecutionRow = typeof executorExecutions.$inferSelect;
 
 const baseCr: ChangeRequestRow = {
   crId: 'cr-1',
@@ -35,10 +39,49 @@ const baseCr: ChangeRequestRow = {
   updatedAt: new Date('2026-06-30T10:00:00.000Z'),
 };
 
-describe('adapterSourceForId', () => {
-  test('recognizes the cr: prefix and nothing else', () => {
+describe('adapterSourceForId / isAdaptedId', () => {
+  test('recognizes the cr: and exec: prefixes; native ids are not adapted', () => {
     expect(adapterSourceForId('cr:abc')).toBe('cr');
+    expect(adapterSourceForId('exec:abc')).toBe('exec');
     expect(adapterSourceForId('rv-native')).toBeNull();
+    expect(isAdaptedId('cr:abc')).toBe(true);
+    expect(isAdaptedId('exec:abc')).toBe(true);
+    expect(isAdaptedId('rv-native')).toBe(false);
+  });
+});
+
+const baseExec: ExecutorExecutionRow = {
+  executionId: 'ex-1',
+  accountId: 'acc-1',
+  projectId: 'proj-1',
+  connectorId: 'conn-1',
+  actionPath: 'gmail.messages.send',
+  actingUserId: 'user-1',
+  sessionId: null,
+  status: 'pending_approval',
+  risk: 'destructive',
+  requestDigest: 'sha-abc',
+  resultSummary: null,
+  approvedBy: null,
+  createdAt: new Date('2026-06-30T09:00:00.000Z'),
+  resolvedAt: null,
+};
+
+describe('executorExecutionToReviewItem', () => {
+  test('a pending executor call maps to a needs_you approval item', () => {
+    const item = executorExecutionToReviewItem(baseExec);
+    expect(item.review_item_id).toBe(`${EXEC_ID_PREFIX}ex-1`);
+    expect(item.kind).toBe('approval');
+    expect(item.status).toBe('needs_you');
+    expect(item.title).toBe('Approve: gmail.messages.send');
+    expect(item.detail).toMatchObject({ execution_id: 'ex-1', action_path: 'gmail.messages.send' });
+  });
+
+  test('maps executor risk → review risk (read/write/destructive → low/medium/high)', () => {
+    expect(executorExecutionToReviewItem({ ...baseExec, risk: 'read' }).risk).toBe('low');
+    expect(executorExecutionToReviewItem({ ...baseExec, risk: 'write' }).risk).toBe('medium');
+    expect(executorExecutionToReviewItem({ ...baseExec, risk: 'destructive' }).risk).toBe('high');
+    expect(executorExecutionToReviewItem({ ...baseExec, risk: null }).risk).toBe('medium');
   });
 });
 

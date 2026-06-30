@@ -8,10 +8,10 @@
  * core module (./change-requests.ts). See docs/REVIEW_CENTER_DESIGN.md.
  */
 
-import { changeRequests, reviewItems } from '@kortix/db';
+import { changeRequests, executorExecutions, reviewItems } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { changeRequestToReviewItem } from './review-adapters';
+import { changeRequestToReviewItem, executorExecutionToReviewItem } from './review-adapters';
 
 type ReviewItemRow = typeof reviewItems.$inferSelect;
 
@@ -107,11 +107,24 @@ export async function listInboxItems(
   projectId: string,
   opts: { segment?: ReviewSegment; kind?: ReviewItemRow['kind'] } = {},
 ) {
-  const [nativeRows, crRows] = await Promise.all([
+  const [nativeRows, crRows, execRows] = await Promise.all([
     db.select().from(reviewItems).where(eq(reviewItems.projectId, projectId)),
     db.select().from(changeRequests).where(eq(changeRequests.projectId, projectId)),
+    db
+      .select()
+      .from(executorExecutions)
+      .where(
+        and(
+          eq(executorExecutions.projectId, projectId),
+          eq(executorExecutions.status, 'pending_approval'),
+        ),
+      ),
   ]);
-  const items = [...nativeRows.map(serializeReviewItem), ...crRows.map(changeRequestToReviewItem)];
+  const items = [
+    ...nativeRows.map(serializeReviewItem),
+    ...crRows.map(changeRequestToReviewItem),
+    ...execRows.map(executorExecutionToReviewItem),
+  ];
   const segmentStatuses = opts.segment ? statusesForSegment(opts.segment) : null;
   return items
     .filter(

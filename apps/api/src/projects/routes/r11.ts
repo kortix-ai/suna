@@ -14,7 +14,7 @@ import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { normalizeString, readBody } from '../lib/serializers';
-import { CR_ID_PREFIX } from '../review-adapters';
+import { isAdaptedId } from '../review-adapters';
 import {
   type ReviewSegment,
   applyVerdict,
@@ -207,9 +207,10 @@ projectsApp.openapi(
         400,
       );
     }
-    // Adapted items (change requests) act through their own source flow.
-    if (reviewItemId.startsWith(CR_ID_PREFIX)) {
-      return c.json({ error: 'Act on this change request from the Changes view' }, 409);
+    // Adapted items (change requests, executor approvals) act through their own
+    // source flow, not the review act endpoint.
+    if (isAdaptedId(reviewItemId)) {
+      return c.json({ error: 'Act on this item from its source view' }, 409);
     }
     const existing = await getReviewItemById(reviewItemId, projectId);
     if (!existing) return c.json({ error: 'Review item not found' }, 404);

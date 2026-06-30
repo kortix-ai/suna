@@ -9,18 +9,65 @@
  * docs/REVIEW_CENTER_DESIGN.md.
  */
 
-import type { changeRequests } from '@kortix/db';
+import type { changeRequests, executorExecutions } from '@kortix/db';
 import type { serializeReviewItem } from './review-items';
 
 type ReviewItemDTO = ReturnType<typeof serializeReviewItem>;
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
+type ExecutorExecutionRow = typeof executorExecutions.$inferSelect;
 
 export const CR_ID_PREFIX = 'cr:';
+export const EXEC_ID_PREFIX = 'exec:';
 
 /** Source prefixes used by adapted (non-native) review items. */
-export function adapterSourceForId(id: string): 'cr' | null {
+export function adapterSourceForId(id: string): 'cr' | 'exec' | null {
   if (id.startsWith(CR_ID_PREFIX)) return 'cr';
+  if (id.startsWith(EXEC_ID_PREFIX)) return 'exec';
   return null;
+}
+
+/** True if the id belongs to an adapted (source-of-truth-elsewhere) item. */
+export function isAdaptedId(id: string): boolean {
+  return adapterSourceForId(id) !== null;
+}
+
+const EXEC_RISK: Record<'read' | 'write' | 'destructive', ReviewItemDTO['risk']> = {
+  read: 'low',
+  write: 'medium',
+  destructive: 'high',
+};
+
+/**
+ * A pending-approval executor tool call, presented as an `approval` review item.
+ * (Only `pending_approval` executions are adapted; the rest are terminal audit.)
+ */
+export function executorExecutionToReviewItem(ex: ExecutorExecutionRow): ReviewItemDTO {
+  return {
+    review_item_id: `${EXEC_ID_PREFIX}${ex.executionId}`,
+    account_id: ex.accountId,
+    project_id: ex.projectId,
+    origin_session_id: ex.sessionId ?? null,
+    kind: 'approval',
+    status: 'needs_you',
+    risk: ex.risk ? EXEC_RISK[ex.risk] : 'medium',
+    source: 'agent',
+    title: `Approve: ${ex.actionPath}`,
+    summary: `${ex.actionPath} · awaiting approval`,
+    detail: {
+      execution_id: ex.executionId,
+      action_path: ex.actionPath,
+      connector_id: ex.connectorId,
+      request_digest: ex.requestDigest,
+    },
+    agent: '',
+    created_by: ex.actingUserId ?? '',
+    acted_by: ex.approvedBy ?? null,
+    acted_at: null,
+    feedback: null,
+    metadata: { source: 'executor_execution' },
+    created_at: ex.createdAt.toISOString(),
+    updated_at: ex.createdAt.toISOString(),
+  };
 }
 
 /** A Change Request, presented as a `change` review item. */
