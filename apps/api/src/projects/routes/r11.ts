@@ -14,6 +14,7 @@ import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { normalizeString, readBody } from '../lib/serializers';
+import { CR_ID_PREFIX } from '../review-adapters';
 import {
   type ReviewSegment,
   applyVerdict,
@@ -22,7 +23,7 @@ import {
   insertReviewItem,
   isReviewVerdict,
   isSubmittableKind,
-  listReviewItems,
+  listInboxItems,
   serializeReviewItem,
 } from '../review-items';
 
@@ -61,11 +62,11 @@ projectsApp.openapi(
       return c.json({ error: 'Invalid kind' }, 400);
     }
 
-    const rows = await listReviewItems(projectId, {
+    const items = await listInboxItems(projectId, {
       segment: segment as ReviewSegment | undefined,
       kind: kind as (typeof KINDS)[number] | undefined,
     });
-    return c.json({ review_items: rows.map(serializeReviewItem) });
+    return c.json({ review_items: items });
   },
 );
 
@@ -182,7 +183,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(AnyObject, 'The updated review item'),
-      ...errors(400, 404),
+      ...errors(400, 404, 409),
     },
   }),
   async (c: any) => {
@@ -205,6 +206,10 @@ projectsApp.openapi(
         { error: 'verdict must be one of approve, reject, changes, answer, dismiss' },
         400,
       );
+    }
+    // Adapted items (change requests) act through their own source flow.
+    if (reviewItemId.startsWith(CR_ID_PREFIX)) {
+      return c.json({ error: 'Act on this change request from the Changes view' }, 409);
     }
     const existing = await getReviewItemById(reviewItemId, projectId);
     if (!existing) return c.json({ error: 'Review item not found' }, 404);

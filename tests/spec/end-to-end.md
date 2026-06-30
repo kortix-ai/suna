@@ -255,7 +255,7 @@ DB `review_items` (per-project; `kind change|approval|output|decision|batch`, `s
 `RV-1` `GET /projects/:id/review/items?segment=needs_you|waiting|done&kind=…` → `read` → `{review_items:[…]}`. Invalid `segment` → 400; invalid `kind` → 400.
 `RV-2` `GET …/review/items/:reviewItemId` → `read` → `{review_item:{…}}`; unknown id → 404.
 `RV-3` `POST …/review/items {kind(output|decision|batch),title,summary?,risk?,detail?,agent?,session_id?}` → `read` + agent scope `project.review.submit` → 201. Missing `title` → 400; non-submittable `kind` (e.g. `change`) → 400; invalid `risk` → 400.
-`RV-4` `POST …/review/items/:reviewItemId/act {verdict(approve|reject|changes|answer|dismiss),feedback?}` → `write` + `project.review.act` → 200 updated item; invalid `verdict` → 400; unknown id → 404.
+`RV-4` `POST …/review/items/:reviewItemId/act {verdict(approve|reject|changes|answer|dismiss),feedback?}` → `write` + `project.review.act` → 200 updated item; invalid `verdict` → 400; unknown id → 404; adapted (`cr:…`) id → 409 (act from the source view). The list read-model also folds in Change Requests as `kind:change` items (id `cr:<crId>`).
 `RV-5` `POST …/review/bulk {ids:[…],verdict}` → `write` + `project.review.act` → 200 `{updated,review_items}`; empty/missing `ids` → 400.
 `RV-6` access: NONMEMBER list → 403/404; ANON list → 401.
 

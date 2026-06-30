@@ -8,9 +8,10 @@
  * core module (./change-requests.ts). See docs/REVIEW_CENTER_DESIGN.md.
  */
 
-import { reviewItems } from '@kortix/db';
+import { changeRequests, reviewItems } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '../shared/db';
+import { changeRequestToReviewItem } from './review-adapters';
 
 type ReviewItemRow = typeof reviewItems.$inferSelect;
 
@@ -95,6 +96,30 @@ export async function listReviewItems(
     .from(reviewItems)
     .where(and(...where))
     .orderBy(desc(reviewItems.createdAt));
+}
+
+/**
+ * The full inbox read model: native review items UNIONed with adapted sources
+ * (Change Requests now; executor/tunnel approvals next), filtered to a segment /
+ * kind and sorted newest-first. Returns already-serialized DTOs.
+ */
+export async function listInboxItems(
+  projectId: string,
+  opts: { segment?: ReviewSegment; kind?: ReviewItemRow['kind'] } = {},
+) {
+  const [nativeRows, crRows] = await Promise.all([
+    db.select().from(reviewItems).where(eq(reviewItems.projectId, projectId)),
+    db.select().from(changeRequests).where(eq(changeRequests.projectId, projectId)),
+  ]);
+  const items = [...nativeRows.map(serializeReviewItem), ...crRows.map(changeRequestToReviewItem)];
+  const segmentStatuses = opts.segment ? statusesForSegment(opts.segment) : null;
+  return items
+    .filter(
+      (i) =>
+        (!segmentStatuses || segmentStatuses.includes(i.status)) &&
+        (!opts.kind || i.kind === opts.kind),
+    )
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 }
 
 export interface InsertReviewItemInput {
