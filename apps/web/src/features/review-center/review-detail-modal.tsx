@@ -43,7 +43,7 @@ import { SlackPreview } from './slack-preview';
 import { type ApprovalAction, type ReviewItem, type ReviewStatus, isSafeRisk } from './types';
 
 export interface ReviewActions {
-  resolve: (id: string, status: ReviewStatus, toast?: string) => void;
+  resolve: (id: string, status: ReviewStatus, toast?: string, feedback?: string) => void;
   decideAction: (itemId: string, actionId: string, decision: 'approved' | 'denied') => void;
   approveAllSafe: (itemId: string) => void;
 }
@@ -545,6 +545,7 @@ function Footer({
               item.id,
               'changes_requested',
               text ? `Sent to the agent: “${text}”` : `${secondaryLabel} — sent to the agent`,
+              text || undefined,
             );
             onClose();
           }}

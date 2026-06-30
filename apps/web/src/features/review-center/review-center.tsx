@@ -16,6 +16,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Kbd } from '@/components/ui/kbd';
 import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@/components/ui/modal';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Tabs,
   TabsList,
@@ -25,10 +26,12 @@ import {
 } from '@/components/ui/tabs';
 import { infoToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import type { ReviewVerdict } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { CheckCircleSolid, InboxSolid, ShieldCheckSolid, X } from '@mynaui/icons-react';
 import { Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { statusToVerdict } from './map';
 import { MOCK_ITEMS } from './mock-data';
 import { type ReviewActions, ReviewDetailModal } from './review-detail-modal';
 import { KIND_META, RISK_META, SOURCE_META, STATUS_META } from './review-meta';
@@ -197,8 +200,22 @@ function KeyboardHelp({ open, onClose }: { open: boolean; onClose: () => void })
   );
 }
 
-export function ReviewCenter() {
-  const [items, setItems] = useState<ReviewItem[]>(MOCK_ITEMS);
+export function ReviewCenter({
+  initialItems,
+  onAct,
+  onBulkAct,
+  isLoading,
+}: {
+  /** When provided, the inbox renders real data instead of the mock fixtures. */
+  initialItems?: ReviewItem[];
+  /** Connected mode: fire the server verdict for a single item. */
+  onAct?: (id: string, verdict: ReviewVerdict, feedback?: string) => void;
+  /** Connected mode: fire the server verdict for many items (multi-select). */
+  onBulkAct?: (ids: string[], verdict: ReviewVerdict) => void;
+  isLoading?: boolean;
+} = {}) {
+  const connected = !!onAct;
+  const [items, setItems] = useState<ReviewItem[]>(initialItems ?? (connected ? [] : MOCK_ITEMS));
   const [segment, setSegment] = useState<ReviewSegment>('needs_you');
   const [kindFilter, setKindFilter] = useState<ReviewKind | 'all'>('all');
   const [query, setQuery] = useState('');
@@ -235,7 +252,12 @@ export function ReviewCenter() {
       ?.scrollIntoView({ block: 'nearest' });
   }, [focusedIdx]);
 
-  /** Apply a new items array with an Undo affordance in the toast. */
+  // Connected mode: reconcile with the server list as it (re)loads.
+  useEffect(() => {
+    if (initialItems) setItems(initialItems);
+  }, [initialItems]);
+
+  /** Prototype mode: optimistic change with an Undo affordance in the toast. */
   function commit(next: ReviewItem[], message: string, tone: 'success' | 'info' = 'success') {
     undoRef.current = items;
     setItems(next);
@@ -260,13 +282,36 @@ export function ReviewCenter() {
     });
   }
 
+  /**
+   * Apply an optimistic change. Connected mode fires the server mutation and
+   * lets the refetch reconcile (the action is a real state change, so no local
+   * Undo); prototype mode is fully local and undoable.
+   */
+  function apply(
+    next: ReviewItem[],
+    message: string,
+    tone: 'success' | 'info' = 'success',
+    server?: () => void,
+  ) {
+    if (connected) {
+      setItems(next);
+      server?.();
+      (tone === 'info' ? infoToast : successToast)(message);
+    } else {
+      commit(next, message, tone);
+    }
+  }
+
   const actions: ReviewActions = {
-    resolve: (id, status, message) =>
-      commit(
+    resolve: (id, status, message, feedback) => {
+      const verdict = statusToVerdict(status);
+      apply(
         setStatus(items, id, status),
         message ?? 'Updated',
         status === 'rejected' || status === 'changes_requested' ? 'info' : 'success',
-      ),
+        verdict && onAct ? () => onAct(id, verdict, feedback) : undefined,
+      );
+    },
     decideAction: (itemId, actionId, decision) =>
       setItems(decideApprovalAction(items, itemId, actionId, decision)),
     approveAllSafe: (itemId) => setItems(approveAllSafe(items, itemId)),
@@ -277,12 +322,22 @@ export function ReviewCenter() {
       setSelectedId(item.id); // needs a choice — open the detail
       return;
     }
-    commit(setStatus(items, item.id, 'approved'), `${item.primaryAction} · done`);
+    apply(
+      setStatus(items, item.id, 'approved'),
+      `${item.primaryAction} · done`,
+      'success',
+      onAct ? () => onAct(item.id, 'approve') : undefined,
+    );
   };
 
   const quickAskChanges = (item: ReviewItem) => {
     if (item.kind === 'change' || item.kind === 'output') {
-      commit(setStatus(items, item.id, 'changes_requested'), 'Sent back to the agent', 'info');
+      apply(
+        setStatus(items, item.id, 'changes_requested'),
+        'Sent back to the agent',
+        'info',
+        onAct ? () => onAct(item.id, 'changes') : undefined,
+      );
     } else {
       setSelectedId(item.id);
     }
@@ -290,7 +345,12 @@ export function ReviewCenter() {
 
   const dismissIds = (ids: string[]) => {
     if (ids.length === 0) return;
-    commit(bulkSetStatus(items, ids, 'dismissed'), `Dismissed ${ids.length}`, 'info');
+    apply(
+      bulkSetStatus(items, ids, 'dismissed'),
+      `Dismissed ${ids.length}`,
+      'info',
+      onBulkAct ? () => onBulkAct(ids, 'dismiss') : undefined,
+    );
     setSelectedIds(new Set());
   };
 
@@ -302,7 +362,12 @@ export function ReviewCenter() {
       if (!it) continue;
       next = it.kind === 'approval' ? approveAllSafe(next, id) : setStatus(next, id, 'approved');
     }
-    commit(next, `Approved ${ids.length}`);
+    apply(
+      next,
+      `Approved ${ids.length}`,
+      'success',
+      onBulkAct ? () => onBulkAct(ids, 'approve') : undefined,
+    );
     setSelectedIds(new Set());
   };
 
@@ -402,9 +467,11 @@ export function ReviewCenter() {
                 <h1 className="text-foreground text-xl font-medium tracking-tight text-balance">
                   Review Center
                 </h1>
-                <Badge variant="beta" size="xs">
-                  Prototype
-                </Badge>
+                {!connected && (
+                  <Badge variant="beta" size="xs">
+                    Prototype
+                  </Badge>
+                )}
               </div>
               <p className="text-muted-foreground text-sm text-balance">
                 Everything that needs your eyes — changes, approvals, outputs and questions, from
@@ -489,7 +556,15 @@ export function ReviewCenter() {
           </div>
 
           {/* List */}
-          {visible.length === 0 ? (
+          {isLoading && items.length === 0 ? (
+            <ul className="space-y-2">
+              {['a', 'b', 'c', 'd'].map((k) => (
+                <li key={k}>
+                  <Skeleton className="h-[58px] w-full rounded-md" />
+                </li>
+              ))}
+            </ul>
+          ) : visible.length === 0 ? (
             <EmptyState
               icon={CheckCircleSolid}
               size="sm"
