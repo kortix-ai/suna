@@ -2100,10 +2100,18 @@ function ProjectRoleAssignmentsCard({
     [agentsQuery.data],
   );
 
-  function principalLabel(p: IamPolicy): { kind: string; label: string } {
-    if (p.principal_type === 'group') return { kind: 'Dept', label: groupNameById.get(p.principal_id) ?? p.principal_id };
-    if (p.principal_type === 'token') return { kind: 'Agent', label: agentLabelById.get(p.principal_id) ?? p.principal_id };
-    return { kind: 'Member', label: memberLabelById.get(p.principal_id) ?? p.principal_id };
+  function principalLabel(p: IamPolicy): { kind: string; label: string; missing: boolean } {
+    if (p.principal_type === 'group') {
+      return { kind: 'Dept', label: groupNameById.get(p.principal_id) ?? p.principal_id, missing: false };
+    }
+    if (p.principal_type === 'token') {
+      // Agent SAs resolve from the account-wide identity list; a miss means the
+      // agent was deleted/renamed, so the binding is stale. Show a short id and
+      // flag it rather than a bare 36-char UUID.
+      const name = agentLabelById.get(p.principal_id);
+      return { kind: 'Agent', label: name ?? `${p.principal_id.slice(0, 8)}…`, missing: !name };
+    }
+    return { kind: 'Member', label: memberLabelById.get(p.principal_id) ?? p.principal_id, missing: false };
   }
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -2350,7 +2358,7 @@ function ProjectRoleAssignmentsCard({
           <List>
             {visiblePolicies.map((p) => {
             const busy = pendingIds.has(p.policy_id);
-            const { kind, label } = principalLabel(p);
+            const { kind, label, missing } = principalLabel(p);
             return (
               <ListRow
                 key={p.policy_id}
@@ -2369,8 +2377,18 @@ function ProjectRoleAssignmentsCard({
                 }
                 subtitle={
                   <InlineMeta>
-                    <span>
+                    <span className="flex items-center gap-1.5">
                       {kind}: {label}
+                      {missing && (
+                        <Badge
+                          variant="outline"
+                          size="sm"
+                          className="border-amber-300 text-amber-700 dark:border-amber-500/40 dark:text-amber-400"
+                          title="This agent no longer exists (deleted or renamed). The binding is stale — remove it or re-assign the current agent."
+                        >
+                          removed
+                        </Badge>
+                      )}
                     </span>
                     {p.expires_at ? <span>Expires {formatDate(p.expires_at)}</span> : null}
                   </InlineMeta>
