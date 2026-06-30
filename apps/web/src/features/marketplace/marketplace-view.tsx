@@ -88,7 +88,7 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
         <CustomizeSectionWrapper
           title="Marketplace"
           description="Browse skills, agents, and commands from every source."
-          className="max-w-4xl"
+          className="max-w-5xl"
           action={
             <TabsListCompact>
               <TabsTriggerCompact value="browse">Browse</TabsTriggerCompact>

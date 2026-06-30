@@ -1512,7 +1512,7 @@ export function CommandPalette() {
                             <CommandItem
                               key={item.id}
                               value={sanitizeCmdkValue(
-                                item.keywords || `${item.group} ${item.label} ${item.id}`,
+                                `${item.group} ${item.label} ${item.id} ${item.keywords || ''}`,
                               )}
                               onSelect={() =>
                                 submenuPage ? goToPage(submenuPage) : handleRegistryItem(item)
