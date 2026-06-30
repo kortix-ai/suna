@@ -63,8 +63,14 @@ export function createTraceEmitter(
     logTrace(logger, trace);
 
     if (hooks.recordTrace) {
+      // Log only the error MESSAGE, never the raw error: a DB driver error
+      // (e.g. postgres-js) carries `.query` and `.parameters` — the entire LLM
+      // request body — which we must not ship to the log transport on every
+      // failed trace write.
       void hooks.recordTrace(trace).catch((err) =>
-        logger.warn(`[gateway] recordTrace failed for ${requestId}:`, err),
+        logger.warn(
+          `[gateway] recordTrace failed for ${requestId}: ${err instanceof Error ? err.message : String(err)}`,
+        ),
       );
     }
   };
