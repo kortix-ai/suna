@@ -2506,6 +2506,101 @@ export const changeRequestsRelations = relations(changeRequests, ({ one }) => ({
   }),
 }));
 
+// ─── Review Center ─────────────────────────────────────────────────────────
+// A review_item is "one thing a human needs to look at or decide on": an agent
+// output/decision/batch submitted for review, presented in a friendly inbox.
+// The polymorphic `detail` jsonb carries the kind-specific payload. (Change
+// requests and executor/tunnel approvals are folded in by adapters in a later
+// pass — they keep their own source-of-truth tables.) See docs/REVIEW_CENTER_DESIGN.md.
+
+export const reviewItemKindEnum = kortixSchema.enum('review_item_kind', [
+  'change',
+  'approval',
+  'output',
+  'decision',
+  'batch',
+]);
+
+export const reviewItemStatusEnum = kortixSchema.enum('review_item_status', [
+  'needs_you',
+  'waiting',
+  'approved',
+  'changes_requested',
+  'rejected',
+  'done',
+  'dismissed',
+]);
+
+export const reviewItemRiskEnum = kortixSchema.enum('review_item_risk', [
+  'none',
+  'low',
+  'medium',
+  'high',
+]);
+
+export const reviewItemSourceEnum = kortixSchema.enum('review_item_source', [
+  'web',
+  'slack',
+  'agent',
+]);
+
+export const reviewItems = kortixSchema.table(
+  'review_items',
+  {
+    reviewItemId: uuid('review_item_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** Originating session/agent run, if submitted from inside a sandbox. */
+    originSessionId: text('origin_session_id').references(() => projectSessions.sessionId, {
+      onDelete: 'set null',
+    }),
+    kind: reviewItemKindEnum('kind').notNull(),
+    status: reviewItemStatusEnum('status').default('needs_you').notNull(),
+    risk: reviewItemRiskEnum('risk').default('none').notNull(),
+    source: reviewItemSourceEnum('source').default('agent').notNull(),
+    /** Plain-language envelope shown in the inbox. */
+    title: text('title').notNull(),
+    summary: text('summary').default('').notNull(),
+    /** Kind-specific payload: artifact preview, decision options, batch children, … */
+    detail: jsonb('detail').default({}).$type<Record<string, unknown>>().notNull(),
+    /** Attribution label for the originating agent / session. */
+    agent: text('agent').default('').notNull(),
+    createdBy: uuid('created_by').notNull(),
+    /** Set when a human acts (approve / reject / request changes / answer). */
+    actedBy: uuid('acted_by'),
+    actedAt: timestamp('acted_at', { withTimezone: true }),
+    feedback: text('feedback'),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_review_items_project').on(table.projectId),
+    index('idx_review_items_project_status').on(table.projectId, table.status),
+    index('idx_review_items_project_kind').on(table.projectId, table.kind),
+    index('idx_review_items_created').on(table.createdAt),
+  ],
+);
+
+export const reviewItemsRelations = relations(reviewItems, ({ one }) => ({
+  project: one(projects, {
+    fields: [reviewItems.projectId],
+    references: [projects.projectId],
+  }),
+  account: one(accounts, {
+    fields: [reviewItems.accountId],
+    references: [accounts.accountId],
+  }),
+  originSession: one(projectSessions, {
+    fields: [reviewItems.originSessionId],
+    references: [projectSessions.sessionId],
+  }),
+}));
+
 // ─── IAM (Cloudflare-style groups + policies) ──────────────────────────────
 // Layered on top of account_members. A user's effective permissions are the
 // union of: super-admin bypass, the legacy account_role bridge, direct policies
