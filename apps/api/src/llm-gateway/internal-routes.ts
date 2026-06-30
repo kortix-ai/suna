@@ -11,6 +11,7 @@ import {
 import { matchesInternalToken } from './internal-auth';
 import { gatewayModelCatalog } from './models/catalog-models';
 import { resolveCandidates } from './resolution/resolve-candidates';
+import { logger } from '../lib/logger';
 
 // HTTP control plane for the OUT-OF-PROCESS gateway pod. Every handler is a thin
 // wrapper over the shared in-process hooks in ./hooks — the standalone service
@@ -95,7 +96,16 @@ export function createInternalGatewayRoutes() {
   app.post('/trace', async (c) => {
     const { trace } = await c.req.json();
     if (!trace || typeof trace.requestId !== 'string') return c.json({ ok: false }, 400);
-    await persistGatewayTrace(trace as GatewayTrace);
+    // Trace persistence is best-effort observability — never 500 the gateway's
+    // fire-and-forget trace post if the write fails.
+    try {
+      await persistGatewayTrace(trace as GatewayTrace);
+    } catch (err) {
+      logger.warn(`[gateway] persistGatewayTrace failed for ${trace.requestId}`, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return c.json({ ok: false }, 200);
+    }
     return c.json({ ok: true });
   });
 
