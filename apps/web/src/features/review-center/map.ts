@@ -151,6 +151,16 @@ function batchDetail(d: AnyRec, row: ApiReviewItem): BatchDetail {
   };
 }
 
+// A Change Request's API summary embeds the head branch — a Kortix session
+// branch is an opaque UUID, so it just adds noise to the row. Keep the inbox line
+// clean ("#2 → main"); the full ref stays available in the modal's Advanced view.
+function changeSummary(d: AnyRec, fallback: string): string {
+  const number = typeof d.number === 'number' ? d.number : undefined;
+  const base = str(d.base_ref);
+  if (number != null && base) return `#${number} → ${base}`;
+  return fallback;
+}
+
 function normalizeDetail(kind: ReviewKind, row: ApiReviewItem): ReviewItem['detail'] {
   const d = rec(row.detail);
   switch (kind) {
@@ -174,7 +184,7 @@ export function mapApiReviewItem(row: ApiReviewItem, projectName: string): Revie
     id: row.review_item_id,
     kind,
     title: row.title,
-    summary: row.summary,
+    summary: kind === 'change' ? changeSummary(rec(row.detail), row.summary) : row.summary,
     risk: row.risk,
     status: row.status as ReviewStatus,
     source: row.source,

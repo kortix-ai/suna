@@ -82,6 +82,8 @@ describe('mapApiReviewItem', () => {
       'Acme',
     );
     expect(item.kind).toBe('change');
+    // The opaque head branch is dropped from the row summary (kept in Advanced).
+    expect(item.summary).toBe('#7 → main');
     const d = changeDetailOf(item);
     expect(d.whatChanged).toEqual(['Updated the copy', 'Tightened the CTA']);
     expect(Array.isArray(d.verification)).toBe(true);
