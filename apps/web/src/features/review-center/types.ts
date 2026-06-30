@@ -43,6 +43,9 @@ interface ReviewItemBase {
   createdAt: string; // ISO
   primaryAction: string; // plain verb shown on the row + modal
   secondaryAction?: string;
+  /** The session this item came from, when known — lets "request changes"
+   *  deliver the feedback back to that agent's conversation. */
+  sessionId?: string;
 }
 
 /** kind: 'change' — a Change Request, presented in plain language. */

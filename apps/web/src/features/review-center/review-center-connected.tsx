@@ -17,7 +17,9 @@ import {
   useMergeChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
 import type { ReviewVerdict } from '@/lib/projects-client';
+import { useCustomizeStore } from '@/stores/customize-store';
 import { useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { useMemo } from 'react';
 import { useActReviewItem, useBulkActReviewItems, useReviewItems } from './hooks/use-review-items';
 import { mapApiReviewItem } from './map';
@@ -26,10 +28,25 @@ import { ReviewCenter } from './review-center';
 const CR_PREFIX = 'cr:';
 const EXEC_PREFIX = 'exec:';
 
+/** Queue a message to AUTO-SEND to a project session once it opens — the same
+ *  hand-off the project-home composer uses: stash under the project-session key,
+ *  navigate, and the session page migrates it onto the live OpenCode session and
+ *  sends it (so the agent picks it up without the user re-typing). */
+function queueSessionPrompt(sessionId: string, text: string) {
+  try {
+    sessionStorage.setItem(`project_pending_prompt:${sessionId}`, text);
+  } catch {
+    // sessionStorage unavailable (SSR / privacy mode) — navigation still lands
+    // the user in the session, where they can send it manually.
+  }
+}
+
 export function ReviewCenterConnected({ projectName }: { projectName: string }) {
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
   const qc = useQueryClient();
+  const router = useRouter();
+  const closeCustomize = useCustomizeStore((s) => s.close);
   const { data, isLoading } = useReviewItems();
   const act = useActReviewItem();
   const bulk = useBulkActReviewItems();
@@ -65,9 +82,22 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
           onError: (e) => errorToast(e.message),
         });
       } else {
-        infoToast(
-          'To request changes, reply in the session — the agent revises and updates the change.',
-        );
+        // "Request changes" → deliver the feedback to the agent that opened the
+        // change: seed its session composer and jump into the conversation, so
+        // the user sends it (and the agent revises) in context.
+        const target = items.find((i) => i.id === id);
+        if (target?.sessionId && projectId) {
+          const note = (feedback ?? '').trim();
+          const message = note
+            ? `Please revise the change "${target.title}":\n\n${note}`
+            : `Please revise the change "${target.title}".`;
+          queueSessionPrompt(target.sessionId, message);
+          closeCustomize();
+          infoToast('Sending your request to the agent…');
+          router.push(`/projects/${projectId}/sessions/${target.sessionId}`);
+        } else {
+          infoToast('This change has no linked session — open it from Changes to act on it.');
+        }
       }
       return;
     }

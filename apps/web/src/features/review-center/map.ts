@@ -192,6 +192,7 @@ export function mapApiReviewItem(row: ApiReviewItem, projectName: string): Revie
     agent,
     actor: { name: agent, initials: agentInitials(agent) },
     createdAt: row.created_at,
+    sessionId: row.origin_session_id ?? undefined,
     primaryAction: PRIMARY_ACTION[kind],
     secondaryAction: SECONDARY_ACTION[kind],
     // Build a complete, defaulted detail for the kind — never trust the raw jsonb
