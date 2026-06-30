@@ -30,7 +30,6 @@ import {
   type VersionChannel,
 } from '@/lib/platform-client';
 import { setSandboxVersion } from '@/stores/sandbox-connection-store';
-import { useServerStore } from '@/stores/server-store';
 import { type SandboxInfo } from '@/lib/platform-client';
 
 export type { UpdatePhase, SandboxUpdateStatus };
@@ -113,27 +112,9 @@ const POLL_INTERVAL_MS = 2_000;
 const TERMINAL_PHASES: UpdatePhase[] = ['complete', 'failed'];
 
 export function useSandboxUpdate(currentVersion: string | null) {
-  const activeServer = useServerStore((s) => {
-    const entry = s.servers.find((srv) => srv.id === s.activeServerId);
-    return entry ?? null;
-  });
-
-  // Memoize so effect deps are stable (new object every render otherwise would
-  // reset interval timers that watch this value).
-  const sandbox: SandboxInfo | null = useMemo(() => {
-    if (!activeServer?.instanceId) return null;
-    return {
-      sandbox_id: activeServer.instanceId,
-      external_id: activeServer.sandboxId ?? '',
-      name: activeServer.label,
-      provider: (activeServer.provider ?? 'local_docker') as SandboxInfo['provider'],
-      base_url: activeServer.url,
-      status: 'active',
-      created_at: '',
-      updated_at: '',
-    };
-  }, [activeServer?.instanceId, activeServer?.sandboxId, activeServer?.label, activeServer?.provider, activeServer?.url]);
-  const isLocalDocker = sandbox?.provider === 'local_docker';
+  // Cloud sandboxes are platform-managed — there is no in-app image-update flow
+  // for them, so there is no local sandbox descriptor to drive this hook.
+  const sandbox: SandboxInfo | null = null;
 
   // Detect which channel the running instance belongs to
   const currentChannel = useMemo(() => detectChannel(currentVersion), [currentVersion]);
@@ -142,7 +123,7 @@ export function useSandboxUpdate(currentVersion: string | null) {
   const latestQuery = useQuery({
     queryKey: ['sandbox', 'latest-version', currentChannel],
     queryFn: () => getLatestSandboxVersion(currentChannel),
-    enabled: !!sandbox && !isLocalDocker,
+    enabled: !!sandbox,
     staleTime: 5 * 60 * 1000,        // re-fetch from GitHub at most every 5 min
     refetchInterval: 10 * 60 * 1000, // background poll every 10 min
     refetchOnWindowFocus: true,       // re-check when user returns to the tab
@@ -152,13 +133,12 @@ export function useSandboxUpdate(currentVersion: string | null) {
   const latestChannel = (latestQuery.data?.channel as VersionChannel) ?? currentChannel;
 
   const updateAvailable = useMemo(() => {
-    if (isLocalDocker) return false;
     if (!currentVersion || !latestVersion) return false;
     if (currentChannel === 'dev') {
       return isNewerDevVersion(currentVersion, latestVersion);
     }
     return isNewerVersion(currentVersion, latestVersion);
-  }, [currentVersion, latestVersion, currentChannel, isLocalDocker]);
+  }, [currentVersion, latestVersion, currentChannel]);
 
   // ── Live update status (polled while in-progress) ────────────────────────
   const [liveStatus, setLiveStatus] = useState<SandboxUpdateStatus | null>(null);
@@ -224,7 +204,7 @@ export function useSandboxUpdate(currentVersion: string | null) {
   // the tab regains focus so refresh / second-tab handoff can recover active
   // updates without hammering /update/status forever after terminal states.
   useEffect(() => {
-    if (!sandbox || isLocalDocker) return;
+    if (!sandbox) return;
     let cancelled = false;
     const check = async () => {
       try {
@@ -254,14 +234,13 @@ export function useSandboxUpdate(currentVersion: string | null) {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [sandbox, startPolling, isLocalDocker]);
+  }, [sandbox, startPolling]);
 
   // ── Trigger mutation ─────────────────────────────────────────────────────
   const updateMutation = useMutation({
     mutationFn: async (targetVersion?: string) => {
       const versionToInstall = targetVersion || latestVersion;
       if (!sandbox || !versionToInstall) throw new Error('No sandbox or version');
-      if (isLocalDocker) throw new Error('Local Docker updates are manual-only. Rebuild/restart with pnpm dev:sandbox:build.');
       // Start polling immediately — the POST returns immediately (fire-and-forget)
       startPolling();
       return triggerSandboxUpdate(sandbox, versionToInstall);

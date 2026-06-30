@@ -28,3 +28,10 @@ export async function searchWorkspaceFilePaths(
 ): Promise<string[]> {
   return [];
 }
+
+export async function searchWorkspaceFiles(
+  _query: string,
+  _limit = 50,
+): Promise<string[]> {
+  return [];
+}

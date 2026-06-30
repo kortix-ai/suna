@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { CATALOG, MANAGED_MODELS } from '@kortix/shared/llm-catalog';
+import { CATALOG, MANAGED_MODELS } from '@kortix/llm-catalog';
 import {
   connectedByokPickerModels,
   flagshipRefForEnvVar,

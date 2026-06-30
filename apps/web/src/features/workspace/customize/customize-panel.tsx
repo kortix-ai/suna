@@ -32,7 +32,7 @@ import {
   Boxes,
   Container,
   FolderOpen,
-  GitPullRequest,
+  GitCommitHorizontal,
   KeyRound,
   Monitor,
   Plug,
@@ -74,7 +74,7 @@ const GROUPS: readonly RailGroup[] = [
   {
     label: 'Workspace',
     items: [
-      { section: 'changes', label: 'Changes', icon: GitPullRequest },
+      { section: 'changes', label: 'Checkpoints', icon: GitCommitHorizontal },
       { section: 'files', label: 'Files', icon: FolderOpen },
       { section: 'sandbox', label: 'Sandbox', icon: Container },
       { section: 'dev', label: 'Dev', icon: Terminal },

@@ -3,77 +3,16 @@
 import { useEffect, useState } from 'react';
 import { getAuthToken } from '@/lib/auth-token';
 import { useServerStore } from '@/stores/server-store';
+import {
+  buildPreviewAuthEndpoint,
+  isSubdomainPreviewUrl,
+  appendPreviewToken,
+} from '@kortix/sdk/session';
 
-function derivePreviewAuthEndpoint(candidateUrl: string): string | null {
-  try {
-    const url = new URL(candidateUrl);
-
-    if (/^\/proxy\/\d+(?:\/|$)/.test(url.pathname)) {
-      return `${url.origin}/v1/p/auth`;
-    }
-
-    const previewIndex = url.pathname.indexOf('/p/');
-    if (previewIndex !== -1) {
-      return `${url.origin}${url.pathname.slice(0, previewIndex)}/p/auth`;
-    }
-
-    return `${url.origin}/v1/p/auth`;
-  } catch {
-    return null;
-  }
-}
-
-function isPreviewProxyUrl(candidateUrl: string, serverUrl?: string): boolean {
-  try {
-    const url = new URL(candidateUrl);
-    const path = url.pathname;
-    const isPreviewPath = /^\/v1\/p\/[^/]+\/\d+(?:\/|$)/.test(path)
-      || /^\/proxy\/\d+(?:\/|$)/.test(path);
-    if (!isPreviewPath) return false;
-
-    const trustedOrigins = new Set<string>();
-    if (serverUrl) {
-      try {
-        trustedOrigins.add(new URL(serverUrl).origin);
-      } catch {}
-    }
-    if (typeof window !== 'undefined') {
-      trustedOrigins.add(window.location.origin);
-    }
-    return trustedOrigins.size === 0 || trustedOrigins.has(url.origin);
-  } catch {
-    return false;
-  }
-}
-
-export function buildPreviewAuthEndpoint(previewUrl: string, serverUrl?: string): string | null {
-  if (!isPreviewProxyUrl(previewUrl, serverUrl)) return null;
-  return (serverUrl ? derivePreviewAuthEndpoint(serverUrl) : null)
-    ?? derivePreviewAuthEndpoint(previewUrl);
-}
-
-/**
- * Subdomain preview form: `p{port}-{sandbox}.{host}/...`. These can't use the
- * host-only `/v1/p/` session cookie (it never reaches the preview subdomain),
- * so they authenticate via a one-shot `?token` on the first request.
- */
-export function isSubdomainPreviewUrl(candidateUrl: string): boolean {
-  try {
-    return /^p\d+-[^.]+\./.test(new URL(candidateUrl).hostname);
-  } catch {
-    return false;
-  }
-}
-
-export function appendPreviewToken(previewUrl: string, token: string): string {
-  try {
-    const u = new URL(previewUrl);
-    u.searchParams.set('token', token);
-    return u.toString();
-  } catch {
-    return previewUrl;
-  }
-}
+// The preview-proxy auth helpers now live in the SDK (single source of truth,
+// verified against the current `/proxy` + `/v1/p/` surface). Re-exported here so
+// existing import sites keep resolving.
+export { buildPreviewAuthEndpoint, isSubdomainPreviewUrl, appendPreviewToken };
 
 /**
  * Pre-authenticates preview proxy URLs via cookie-based auth.

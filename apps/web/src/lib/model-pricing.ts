@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { getManagedModel } from '@kortix/shared/llm-catalog';
+import { getManagedModel } from '@kortix/llm-catalog';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
 import type { ModelCostRates, ModelPricingLookup } from '@/ui/turns';
 

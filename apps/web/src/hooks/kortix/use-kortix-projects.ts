@@ -60,10 +60,9 @@ interface KortixProjectQueryOptions {
 
 export function useKortixProjects(_args?: undefined, options: KortixProjectQueryOptions = {}) {
   const { user, isLoading: isAuthLoading } = useAuth();
-  const serverVersion = useServerStore((s) => s.serverVersion);
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<KortixProject[]>({
-    queryKey: [...kortixKeys.projects(), user?.id ?? 'anonymous', serverUrl, serverVersion],
+    queryKey: [...kortixKeys.projects(), user?.id ?? 'anonymous', serverUrl],
     queryFn: () => kortixFetch<KortixProject[]>(serverUrl, ''),
     enabled: !isAuthLoading && !!user && !!serverUrl && (options.enabled ?? true),
     staleTime: 30_000,
@@ -76,27 +75,25 @@ export function useKortixProjects(_args?: undefined, options: KortixProjectQuery
 
 export function useKortixProject(id: string) {
   const { user, isLoading: isAuthLoading } = useAuth();
-  const serverVersion = useServerStore((s) => s.serverVersion);
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<KortixProject>({
-    queryKey: [...kortixKeys.project(id), user?.id ?? 'anonymous', serverUrl, serverVersion],
+    queryKey: [...kortixKeys.project(id), user?.id ?? 'anonymous', serverUrl],
     queryFn: () => kortixFetch<KortixProject>(serverUrl, `/${encodeURIComponent(id)}`),
     enabled: !isAuthLoading && !!user && !!serverUrl && !!id,
     staleTime: 15_000,
     gcTime: 5 * 60 * 1000,
     retry: 2,
-    // Keep previous data while a new query (e.g. from a serverVersion bump
-    // when another tab closes) is loading. Prevents the skeleton flash.
+    // Keep previous data while a new query (e.g. from a runtime URL change)
+    // is loading. Prevents the skeleton flash.
     placeholderData: keepPreviousData,
   });
 }
 
 export function useKortixProjectForSession(sessionId: string, options: KortixProjectQueryOptions = {}) {
   const { user, isLoading: isAuthLoading } = useAuth();
-  const serverVersion = useServerStore((s) => s.serverVersion);
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<KortixProject | null>({
-    queryKey: ['kortix', 'projects', 'by-session', sessionId, user?.id ?? 'anonymous', serverUrl, serverVersion],
+    queryKey: ['kortix', 'projects', 'by-session', sessionId, user?.id ?? 'anonymous', serverUrl],
     queryFn: async () => {
       try {
         return await kortixFetch<KortixProject>(serverUrl, `/by-session/${encodeURIComponent(sessionId)}`);
@@ -120,10 +117,9 @@ export function useKortixProjectSessions(
   options: KortixProjectQueryOptions = {},
 ) {
   const { user, isLoading: isAuthLoading } = useAuth();
-  const serverVersion = useServerStore((s) => s.serverVersion);
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<any[]>({
-    queryKey: ['kortix', 'projects', projectId, 'sessions', user?.id ?? 'anonymous', serverUrl, serverVersion],
+    queryKey: ['kortix', 'projects', projectId, 'sessions', user?.id ?? 'anonymous', serverUrl],
     queryFn: () => kortixFetch<any[]>(serverUrl, `/${encodeURIComponent(projectId)}/sessions`),
     enabled: !isAuthLoading && !!user && !!serverUrl && !!projectId && (options.enabled ?? true),
     staleTime: 15_000,

@@ -16,7 +16,6 @@ export const INSTANCE_SCOPED_ROUTES = [
   '/commands',
   '/tools',
   '/configuration',
-  '/deployments',
   '/changelog',
   '/legacy',
   '/credits-explained',

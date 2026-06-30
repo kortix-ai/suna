@@ -50,7 +50,6 @@ import { type LspDiagnostic, parseDiagnosticsFromToolOutput } from '@/stores/dia
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useServerStore } from '@/stores/server-store';
 import {
   getActivePanelSessionId,
   sessionPreviewTabId,
@@ -2346,7 +2345,6 @@ function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[] }) {
               title: s.title || 'Session',
               type: 'session',
               href: `/sessions/${s.id}`,
-              serverId: useServerStore.getState().activeServerId,
             })
           }
           className={cn(

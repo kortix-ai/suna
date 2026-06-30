@@ -1,0 +1,208 @@
+---
+title: Modules
+description: The @kortix/sdk subpath imports — files, session runtime, the opencode client, auth, REST, and the live stores.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Most app code should use the [`createKortix`](/docs/sdk/the-client) facade and the
+[React hooks](/docs/sdk/react) — they cover the whole surface and keep auth,
+caching, and runtime resolution wired for you. The subpath modules below are the
+**lower-level, mostly stateless** pieces those layers are built from. Reach for
+them when you need a single operation without the facade, a pure helper, or direct
+access to a store.
+
+Each is a separate entry point, so you only pull in what you import:
+
+| import | what |
+|---|---|
+| `@kortix/sdk/files` | workspace file operations |
+| `@kortix/sdk/session` · `@kortix/sdk/session/url` | a session's runtime surface — health + URL builders |
+| `@kortix/sdk/opencode-client` | the typed OpenCode v2 client + its full type surface |
+| `@kortix/sdk/auth` | `authenticatedFetch` + token accessors |
+| `@kortix/sdk/projects-client` | the raw REST functions the facade wraps |
+| `@kortix/sdk/api-client` | `backendApi` — the low-level typed HTTP client |
+| `@kortix/sdk/server-store` | active runtime/sandbox state |
+| `@kortix/sdk/sync-store` | the live message/part/status store |
+
+<Callout type="warn">
+A session is the unit of work and **owns its runtime** — there is no top-level
+"sandbox" object. The word never appears in the public surface;
+`@kortix/sdk/session` *is* the runtime surface. Host code imports only from
+`@kortix/sdk/*` — never `@opencode-ai/sdk`, never raw `backendApi` /
+`authenticatedFetch` from elsewhere.
+</Callout>
+
+## `@kortix/sdk/files`
+
+Workspace file operations against the active session's sandbox — read and write,
+search, and status. The `files` object groups every operation; the individual
+functions are exported too.
+
+```ts
+import { files } from '@kortix/sdk/files';
+
+const tree = await files.list('/workspace/src');
+const { content } = await files.read('/workspace/README.md');
+const changed = await files.status();              // git-style changed files
+const hits = await files.findText('TODO');         // ripgrep across the repo
+
+await files.upload(file, '/workspace/uploads');
+await files.mkdir('/workspace/notes');
+await files.rename('/workspace/a.txt', '/workspace/b.txt');
+await files.remove('/workspace/old.txt');
+```
+
+Also: `files.findFiles(query)`, `files.copy`, `files.create`, `files.readBlob`
+(for binary download), `files.toWorkspaceRelative(path)`, and
+`files.health` / `files.isReachable` for the daemon. **When to use:** one-off file
+operations in non-React code (uploads, exports, a file picker). In React, prefer
+the live data hooks; for repo files *outside* a running session, use
+`kortix.project(id).files`.
+
+## `@kortix/sdk/session` and `@kortix/sdk/session/url`
+
+A session's runtime surface: the liveness probe and the proxy/preview URL
+builders. Pure and stateless — the same logic the session handle's `.health()`,
+`.previewUrl()`, and `.proxyUrl()` use under the hood.
+
+```ts
+import { getSessionHealth, isRuntimeReady } from '@kortix/sdk/session';
+
+const result = await getSessionHealth();           // GET /kortix/health, never throws
+if (result.ok && isRuntimeReady(result.health)) {
+  // the runtime is up and OpenCode is ready
+}
+```
+
+`getSessionHealth` returns `{ status, ok, health, body }` and never throws on a
+non-ok HTTP status — the caller decides what a status means. `isRuntimeReady`
+applies the one canonical rule for "runtime is ready" to a health payload.
+
+The `/url` entry holds the URL helpers for reaching ports the agent exposes:
+
+```ts
+import {
+  detectLocalhostUrls,
+  rewriteLocalhostUrl,
+  proxyLocalhostUrl,
+} from '@kortix/sdk/session/url';
+
+// the agent printed "running on http://localhost:3000" — find and rewrite it
+const found = detectLocalhostUrls(logLine);
+const proxied = proxyLocalhostUrl('http://localhost:3000/health', opts);
+const preview = rewriteLocalhostUrl(3000, '/docs', opts);   // proxy URL for a port
+```
+
+Plus `parseLocalhostUrl`, `hasLocalhostUrls`, `isProxiableLocalhostUrl`,
+`buildWebProxyUrl` / `parseWebProxyUrl`, and `isPreviewUrl`. **When to use:**
+rendering agent output that mentions `localhost`, or building a preview iframe
+without going through the session handle.
+
+## `@kortix/sdk/opencode-client`
+
+`getClient()` returns the typed [OpenCode](/docs/concepts/agents) v2 client for the
+**active** runtime, with auth injected. This module also re-exports the *entire*
+OpenCode v2 type surface (`Session`, `Message`, `Part`, `Agent`, `Config`, … and
+the `OpencodeClient` type), so you have one place for runtime types.
+
+```ts
+import { getClient, type Session, type Part } from '@kortix/sdk/opencode-client';
+
+const client = getClient();
+const { data } = await client.session.list({ limit: 100 });
+```
+
+Also `getClientForUrl(url)` (a client pinned to a specific runtime),
+`dropClientForUrl(url)`, and `resetClient()` (used on a runtime switch). **When to
+use:** a typed runtime call the facade doesn't yet wrap. Prefer
+`kortix.session(pid, sid).runtime`, the same client scoped to a session.
+
+## `@kortix/sdk/auth`
+
+The auth seam: a fetch that injects the bearer token, plus token accessors. The
+token comes from the `getToken` you passed to `createKortix` — **one token**, a
+Supabase JWT or a `kortix_pat_…`.
+
+```ts
+import { authenticatedFetch, getAuthToken } from '@kortix/sdk/auth';
+
+const res = await authenticatedFetch(`${runtimeUrl}/kortix/health`);
+const token = await getAuthToken();   // the resolved bearer token, or null
+```
+
+Also `getSupabaseAccessToken`, `getAuthTokenWithRetry`, `invalidateTokenCache`
+(call after a 401), and `setBootstrapAuthToken` (seed a token during setup
+flows). **When to use:** calling a runtime endpoint the SDK doesn't wrap. You
+should not need this in normal app code — the file/session modules and the facade
+already authenticate for you.
+
+## `@kortix/sdk/projects-client`
+
+The raw, flat REST functions for the Kortix platform API — `listProjects`,
+`getProjectDetail`, `createProjectSession`, `startProjectSession`,
+`listProjectSecrets`, `listChangeRequests`, and the rest. The facade's
+`kortix.projects` / `kortix.project(id)` / `kortix.session(...)` handles are
+thin id-binding wrappers over exactly these.
+
+```ts
+import { listProjects, getProjectDetail } from '@kortix/sdk/projects-client';
+
+const projects = await listProjects();
+const detail = await getProjectDetail(projectId);
+```
+
+**When to use:** you want a single REST call without holding a facade instance —
+e.g. in a server action or a script. In app code, prefer the facade so ids are
+bound and the surface stays discoverable.
+
+## `@kortix/sdk/api-client`
+
+`backendApi` is the low-level typed HTTP client every REST function is built on —
+`get` / `post` / `put` / `patch` / `delete` / `upload`, each prefixing the
+configured `backendUrl` and attaching auth.
+
+```ts
+import { backendApi } from '@kortix/sdk/api-client';
+
+const data = await backendApi.get<MyShape>('/some/endpoint');
+await backendApi.post('/some/endpoint', { name: 'x' });
+```
+
+**When to use:** a brand-new endpoint that doesn't have a typed wrapper yet. As a
+wrapper lands in `projects-client`, switch to it. This is the lowest rung — reach
+for it last.
+
+## `@kortix/sdk/server-store` and `@kortix/sdk/sync-store`
+
+<Callout type="warn">
+**Internal plumbing — `useSession` composes these.** A normal host never imports
+them: `useSession(projectId, sessionId)` owns runtime resolution and the live
+thread. They're documented for the in-progress `apps/web` migration and advanced
+cases; new hosts should not reach for them.
+</Callout>
+
+The two zustand stores the runtime layer keeps. `server-store` tracks the **active
+runtime** — which sandbox/server is current and how to reach it; `sync-store`
+holds the **live thread state** that SSE events stream into.
+
+```ts
+import { useServerStore, getActiveOpenCodeUrl } from '@kortix/sdk/server-store';
+import { useSyncStore } from '@kortix/sdk/sync-store';
+
+const runtimeUrl = getActiveOpenCodeUrl();                    // outside React
+const messages = useSyncStore((s) => s.messages[sessionId]); // in React
+```
+
+`server-store` also exports `getActiveServer`, `getActiveSandboxId`,
+`switchToInstance` / `switchToInstanceAsync`, and `activateServerSelection` — the
+machinery that points the SDK at a session's runtime. `sync-store` exports
+`useSyncStore` plus the `ascendingId` id generator. **When to use:** reading
+runtime state outside React, or subscribing to raw store slices. In React UI,
+prefer the [hooks](/docs/sdk/react) (`useSessionSync`) — they derive
+render-stable views over `sync-store` for you.
+
+## Next
+
+- [React hooks](/docs/sdk/react) — the reactive layer built on these modules.
+- [The client](/docs/sdk/the-client) — the imperative facade that wraps them.

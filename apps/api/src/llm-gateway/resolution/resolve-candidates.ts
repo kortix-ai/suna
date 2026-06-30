@@ -3,7 +3,7 @@ import {
   type UpstreamDescriptor,
   resolveCatalogUpstream,
 } from '@kortix/llm-gateway';
-import { getManagedModel, pickAutoModel } from '@kortix/shared/llm-catalog';
+import { getManagedModel, pickAutoModel } from '@kortix/llm-catalog';
 import { getAccountTier } from '../../billing/services/entitlements';
 import { tierGrantsAllModels } from '../../billing/services/tiers';
 import { config } from '../../config';
