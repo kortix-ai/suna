@@ -486,7 +486,167 @@ const beyondTheChatBox: BlogPostEntry = {
   ],
 };
 
+const aiTransformationCompanyOs: BlogPostEntry = {
+  slug: 'ai-transformation-company-os',
+  title: 'AI transformation needs a company OS',
+  description:
+    'Why consultancies and AI-transformation teams need one Git-backed workspace for agents, memory, connectors, policy, and auditable work.',
+  date: '2026-06-29',
+  author: 'team',
+  cover: '/banner.png',
+  tags: ['Enterprise', 'AI Transformation', 'Company OS'],
+  readingTime: 6,
+  blocks: [
+    {
+      type: 'lead',
+      text: 'AI transformation is past the demo phase. The hard part now is not proving that an agent can draft a report, inspect a spreadsheet, or update a CRM record. The hard part is giving every client, department, and delivery team a **repeatable operating layer** where agents, context, connectors, policy, and review live together. That is what a company OS is for.',
+    },
+    {
+      type: 'p',
+      text: 'Kortix is the **Autonomous Company Operating System**: an AI command center where a workforce of agents does real work, and everything that defines the system is files in one Git repo you own. For consultancies and AI-transformation teams, that matters because the deliverable is no longer a single chatbot. The deliverable is a governed workspace the client can keep running after the pilot. If you want the full product spine first, read [Introducing Kortix](/blog/introducing-kortix).',
+    },
+    {
+      type: 'p',
+      text: 'The market is already pointing this way. [Accenture AI Refinery](https://www.accenture.com/us-en/services/ai-data/ai-refinery) frames enterprise AI around agents, knowledge, models, and governance. [Deloitte](https://www.deloitte.com/in/en/services/consulting/services/engineering-ai-data/agentic-ai.html) describes multiagent systems that understand requests, plan workflows, coordinate role-specific agents, collaborate with humans, and validate outputs. The missing question is where all of that lives so it can be owned, reviewed, repeated, and ported into the tools people already use.',
+    },
+    { type: 'h2', text: 'The pilot is not the product' },
+    {
+      type: 'p',
+      text: 'Most AI-transformation work starts with a useful prototype: a support agent, a sales-research assistant, a finance close helper, a legal intake workflow, a marketing campaign planner. The prototype proves demand. Then the real work starts.',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**Who owns the instructions?** If the prompt lives in one vendor dashboard, the client cannot audit or improve it like normal operational IP.',
+        '**Where does the context accumulate?** If every tool stores a different slice of memory, the organization never gets one shared brain.',
+        '**How are tools governed?** Reading a CRM, sending an email, querying Stripe, and posting in Slack should not have the same permission profile.',
+        '**How does the work become official?** A finished deliverable needs review, history, rollback, and a clear path into the client’s source of truth.',
+        '**How do you repeat it for the next department?** The second workspace should be a fork, not a rebuild.',
+      ],
+    },
+    {
+      type: 'p',
+      text: 'A proof of concept can avoid those questions. A production AI-transformation program cannot. The operating layer becomes the product because it decides whether the client gets a one-off demo or a system that keeps improving.',
+    },
+    { type: 'h2', text: 'One client, one repo' },
+    {
+      type: 'p',
+      text: 'In Kortix, a project is a repo. That repo contains the company’s agents, skills, memory, triggers, connector policy, sandbox definition, and operating instructions. One `kortix.toml` defines how the workspace runs. Every session happens on an isolated branch. Every persistent change comes back through a change request.',
+    },
+    {
+      type: 'code',
+      code: `acme-ai-workspace/
+├─ kortix.toml              # project, sandboxes, triggers, connectors, policy
+├─ .kortix/opencode/
+│  ├─ agents/               # role-specific agents: finance, support, sales, legal
+│  ├─ skills/               # repeatable client playbooks and workflows
+│  └─ commands/             # approved operating motions
+├─ memory/                  # durable company context and decisions
+├─ artifacts/               # reports, briefs, packets, launch plans
+└─ docs/                    # source-of-truth operating docs`,
+    },
+    {
+      type: 'p',
+      text: 'That sounds technical because it is. It is also the reason the workspace can be handed to a client without trapping them in your service team forever. Files can be inspected. Diffs can be reviewed. A successful sales-ops workspace can be forked into a recruiting workspace. A regulated client can run the same pattern in their own VPC or on-prem environment. The [docs](/docs) walk through the project, session, and change request model in detail.',
+    },
+    { type: 'h2', text: 'The workspace needs five layers' },
+    {
+      type: 'p',
+      text: 'If you are leading AI transformation for a client, a serious agent workspace needs more than a chat UI. It needs at least five layers working together:',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**Context.** The policies, playbooks, decisions, customer notes, docs, and memory the agents need to act like part of the company.',
+        '**Agents and skills.** Named roles and reusable workflows, not one giant prompt that tries to do everything.',
+        '**Connectors.** Access to the real systems of work — Slack, Gmail, HubSpot, Stripe, Linear, Notion, warehouses, internal APIs — brokered through scoped credentials instead of pasted keys.',
+        '**Policy.** Tool-level allow, ask, and block rules so a workspace can automate research freely and still pause before it sends, pays, deletes, or posts.',
+        '**Review.** A change request path for durable work: what changed, who requested it, what the agent touched, and what a human approved.',
+      ],
+    },
+    {
+      type: 'callout',
+      text: 'The unit of delivery is not “an agent.” The unit of delivery is a governed workspace where many agents can do real work safely.',
+    },
+    { type: 'h2', text: 'Governance belongs in the runtime' },
+    {
+      type: 'p',
+      text: 'Enterprise buyers do not just ask whether the model is good. They ask where secrets live, how access is scoped, what gets logged, how approvals work, how quickly a bad change can be reverted, and whether the system can run under their infrastructure constraints.',
+    },
+    {
+      type: 'p',
+      text: 'Kortix was built around those constraints. Sessions run in disposable Linux sandboxes on their own branches. Connectors are brokered server-side through one scoped token. Secrets are encrypted and injected at runtime, not shown to the model. Work reaches `main` only through reviewed change requests. The same workspace can be used from the web, Slack, Teams, CLI, API, and MCP surfaces instead of forcing every employee into a new destination app.',
+    },
+    {
+      type: 'p',
+      text: 'That is the difference between “we connected an LLM to your tools” and “we gave your organization a controlled workforce.” The first is exciting in a workshop. The second survives procurement, security review, and the third month of production use.',
+    },
+    { type: 'h2', text: 'Why consultancies feel this first' },
+    {
+      type: 'p',
+      text: 'Consultancies and systems integrators are where the repeatability pressure shows up fastest. They do not need one beautiful demo. They need a way to deploy the same architecture across many clients, many departments, and many compliance profiles without rebuilding the plumbing every time.',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**For the AI-transformation partner:** one horizontal platform can become the delivery substrate for many vertical offerings.',
+        '**For the client CTO:** the workspace is Git-backed, self-hostable, and inspectable instead of a vendor-owned service wrapper.',
+        '**For the delivery team:** each department gets its own agents, memory, connectors, and policies without losing the shared pattern.',
+        '**For the end user:** the agent shows up where they already work — Slack, Teams, web, CLI, API — instead of asking the 99% of employees to adopt another AI portal.',
+      ],
+    },
+    {
+      type: 'p',
+      text: 'This is also where open matters. A consultancy cannot credibly tell a bank, manufacturer, or healthcare company that their future operating layer is a closed prompt stack nobody can inspect. The closer agents get to real work, the more the client needs to own the substrate. That is why Kortix is open, self-hostable, and built for enterprise deployment from the start.',
+    },
+    { type: 'h2', text: 'What to build first' },
+    {
+      type: 'p',
+      text: 'The best first workspace is narrow enough to ship and important enough to prove the operating model. Pick one workflow where the client already has documents, tools, approvals, and recurring pain. Then encode it as files.',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**Sales renewal workspace:** read CRM context, summarize account risk, draft renewal plans, open human-reviewed follow-ups.',
+        '**Support triage workspace:** monitor tickets, classify urgency, draft replies from docs, escalate edge cases with evidence.',
+        '**Finance close workspace:** pull reconciliations, produce variance notes, flag missing evidence, create the close packet for review.',
+        '**Recruiting workspace:** source candidates, enrich profiles, draft Marko-style outreach, log every touch, never send without approval.',
+        '**Engineering review workspace:** review PRs, run checks, verify previews, and return concrete blockers instead of vague comments.',
+      ],
+    },
+    {
+      type: 'p',
+      text: 'Those are not abstract use cases for us. Kortix runs internal sweeps for production errors, PR review, docs maintenance, weekly briefs, outbound research, and this SEO/blog loop from the same project-native model: agents with skills, memory, tools, triggers, and a reviewed path for durable changes.',
+    },
+    { type: 'h2', text: 'A quick test for your stack' },
+    {
+      type: 'p',
+      text: 'Before you choose an AI-transformation platform, ask five questions:',
+    },
+    {
+      type: 'ul',
+      items: [
+        'Can the client clone or export the actual operating layer — agents, skills, memory, policy, and triggers — as files?',
+        'Can two hundred agents run in parallel without sharing one fragile machine or one user’s desktop state?',
+        'Can tool access be scoped per person, group, agent, and action?',
+        'Can a security reviewer see what happened after the fact: prompts, tool calls, commits, approvals, and diffs?',
+        'Can the same workspace move from cloud to VPC to on-prem without changing the basic model?',
+      ],
+    },
+    {
+      type: 'p',
+      text: 'If the answer is no, you may still have a good agent demo. You do not yet have a company OS.',
+    },
+    {
+      type: 'cta',
+      title: 'Build the client workspace as files, then run it with agents.',
+      body: 'Start with one department, connect the tools it already uses, and turn the workflow into a Git-backed AI command center the client can own.',
+    },
+  ],
+};
+
 export const BLOG_POSTS: BlogPostEntry[] = [
+  aiTransformationCompanyOs,
   kortixVsClaudeCowork,
   personalAgentsVsCompanyOs,
   beyondTheChatBox,
