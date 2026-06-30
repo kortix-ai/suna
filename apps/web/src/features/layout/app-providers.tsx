@@ -1,6 +1,5 @@
 'use client';
 
-import { SidebarLeft } from '@/components/sidebar/sidebar-left';
 import { SidebarRight } from '@/components/sidebar/sidebar-right';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { RightSidebarProvider } from '@/components/ui/sidebar-right-provider';
@@ -68,7 +67,7 @@ function SidebarLeftSlot({ sidebarContent }: { sidebarContent?: React.ReactNode 
         opacity: hideSidebar ? 0 : 1,
       }}
     >
-      {sidebarContent || <SidebarLeft />}
+      {sidebarContent}
     </div>
   );
 }

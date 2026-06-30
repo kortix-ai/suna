@@ -8,16 +8,14 @@ import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/mod
 import { Icon } from '@/features/icon/icon';
 import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
-import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
+import { BuildView, isBuildSection } from '@/features/workspace/customize/sections/view/build-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
-import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { MeetView } from '@/features/workspace/customize/sections/view/meet-view';
 import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
 import { SettingsView } from '@/features/workspace/customize/sections/view/settings-view';
-import { SkillsView } from '@/features/workspace/customize/sections/view/skills-view';
 import { useIsMobile } from '@/hooks/utils';
 import { type CustomizeSection, DEFAULT_CUSTOMIZE_SECTION } from '@/lib/customize-sections';
 import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
@@ -27,19 +25,19 @@ import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { AlarmClock, ArrowLeft, ChatMessages, Command, Sparkles } from '@mynaui/icons-react';
+import { AlarmClock, ArrowLeft, ChatMessages } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
   AudioLines,
-  Bot,
   Boxes,
   Container,
   FolderOpen,
-  GitPullRequest,
+  GitCommitHorizontal,
   Inbox,
   KeyRound,
   Monitor,
   Plug,
+  SlidersHorizontal,
   Store,
   Terminal,
   Webhook,
@@ -53,14 +51,12 @@ import { DevView } from './sections/view/dev-view';
 import { ReviewView } from './sections/view/review-view';
 import type { RailGroup, RailItem } from './type';
 
+const PLUGINS_ITEM: RailItem = { section: 'agents', label: 'Plugins', icon: SlidersHorizontal };
+
 const GROUPS: readonly RailGroup[] = [
   {
-    label: 'Build',
-    items: [
-      { section: 'agents', label: 'Agents', icon: Bot },
-      { section: 'skills', label: 'Skills', icon: Sparkles },
-      { section: 'commands', label: 'Commands', icon: Command },
-    ],
+    label: 'Plugins',
+    items: [PLUGINS_ITEM],
   },
   {
     label: 'Connect',
@@ -80,7 +76,7 @@ const GROUPS: readonly RailGroup[] = [
   {
     label: 'Workspace',
     items: [
-      { section: 'changes', label: 'Changes', icon: GitPullRequest },
+      { section: 'changes', label: 'Checkpoints', icon: GitCommitHorizontal },
       { section: 'files', label: 'Files', icon: FolderOpen },
       { section: 'sandbox', label: 'Sandbox', icon: Container },
       { section: 'dev', label: 'Dev', icon: Terminal },
@@ -94,6 +90,16 @@ const GROUPS: readonly RailGroup[] = [
     ],
   },
 ];
+
+function isRailItemActive(item: RailItem, section: CustomizeSection) {
+  if (item.section === 'agents') return isBuildSection(section);
+  if (item.section === 'llm-management') return section.startsWith('llm-');
+  return item.section === section;
+}
+
+function isBuildItemAllowed(isSectionAllowed: (s: CustomizeSection) => boolean) {
+  return isSectionAllowed('agents') || isSectionAllowed('skills') || isSectionAllowed('commands');
+}
 
 const LLM_ITEM: RailItem = { section: 'llm-management', label: 'LLM', icon: Boxes };
 
@@ -113,7 +119,7 @@ function railGroups(
   reviewEnabled: boolean,
 ): readonly RailGroup[] {
   return GROUPS.map((g) => {
-    if (g.label === 'Build' && marketplaceEnabled) {
+    if (g.label === 'Plugins' && marketplaceEnabled) {
       return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
     }
     if (g.label === 'Connect') {
@@ -192,7 +198,14 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
     // groups drop out so no orphan header renders.
     () =>
       railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, meetEnabled, reviewEnabled)
-        .map((g) => ({ ...g, items: g.items.filter((item) => isSectionAllowed(item.section)) }))
+        .map((g) => ({
+          ...g,
+          items: g.items.filter((item) =>
+            item.section === 'agents'
+              ? isBuildItemAllowed(isSectionAllowed)
+              : isSectionAllowed(item.section),
+          ),
+        }))
         .filter((g) => g.items.length > 0),
     [
       tunnelEnabled,
@@ -205,9 +218,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
   // `llm-management` stands in for every `llm-*` sub-section so deep-links still work.
-  const sectionVisible = allItems.some((item) =>
-    item.section === 'llm-management' ? section.startsWith('llm-') : item.section === section,
-  );
+  const sectionVisible = allItems.some((item) => isRailItemActive(item, section));
 
   useEffect(() => {
     if (open && !sectionVisible) {
@@ -267,11 +278,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
                     <li key={item.section} className="shrink-0">
                       <RailButton
                         item={item}
-                        active={
-                          item.section === 'llm-management'
-                            ? section.startsWith('llm-')
-                            : section === item.section
-                        }
+                        active={isRailItemActive(item, section)}
                         onClick={() => setSection(item.section)}
                         orientation="horizontal"
                       />
@@ -322,11 +329,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
                           <li key={item.section}>
                             <RailButton
                               item={item}
-                              active={
-                                item.section === 'llm-management'
-                                  ? section.startsWith('llm-')
-                                  : section === item.section
-                              }
+                              active={isRailItemActive(item, section)}
                               onClick={() => setSection(item.section)}
                             />
                           </li>
@@ -406,11 +409,9 @@ function SectionContent({
 
   switch (section) {
     case 'agents':
-      return <AgentsView projectId={projectId} />;
     case 'skills':
-      return <SkillsView projectId={projectId} />;
     case 'commands':
-      return <CommandsView projectId={projectId} />;
+      return <BuildView projectId={projectId} />;
     case 'marketplace':
       return <MarketplaceView projectId={projectId} />;
     case 'connectors':

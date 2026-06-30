@@ -135,7 +135,7 @@ describe('warmSnapshotsEnabledFor (master AND per-provider sub-gate)', () => {
 
   test('unknown provider → false even with master ON', async () => {
     await loadRows(MASTER_ON);
-    expect(warmSnapshotsEnabledFor('local_docker' as never)).toBe(false);
+    expect(warmSnapshotsEnabledFor('unknown_provider' as never)).toBe(false);
   });
 
   test('warmSnapshotsEnabled() (daytona helper) tracks master AND warm target', async () => {

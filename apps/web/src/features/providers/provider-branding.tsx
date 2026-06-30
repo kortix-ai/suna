@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import {
   MODEL_SELECTOR_PROVIDER_IDS as SHARED_MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS as SHARED_PROVIDER_LABELS,
-} from '@kortix/shared/llm-catalog';
+} from '@kortix/llm-catalog';
 
 export const POPULAR_PROVIDER_IDS = [
   'anthropic',

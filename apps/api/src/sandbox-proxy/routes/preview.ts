@@ -503,7 +503,7 @@ export async function forwardToSandbox(
       // of the Daytona proxy (3000-<id>.daytonaproxy01.net). Frameworks that enforce
       // same-origin on mutations (Next.js Server Actions, SvelteKit, Remix, Django CSRF)
       // reject that mismatch as "Invalid Server Actions request." Rewriting Origin (and
-      // pinning x-forwarded-host for single-hop local_docker upstreams) to the upstream
+      // pinning x-forwarded-host for single-hop upstreams) to the upstream
       // origin makes this proxy transparent to ANY framework — no per-project config.
       const upstreamUrl = new URL(previewUrl);
       if (headers.has('origin')) {
@@ -546,10 +546,11 @@ export async function forwardToSandbox(
         // a stream) so aborting only kills the in-flight attempt, never truncates
         // an upload mid-stream.
         signal: AbortSignal.timeout(proxyAttemptTimeoutMs(budgetRemainingMs)),
-        // @ts-ignore — Bun extensions: no decompression (raw byte passthrough), duplex streaming
+        // Bun extensions: no decompression (raw byte passthrough), duplex streaming —
+        // not in the lib RequestInit type.
         decompress: false,
         duplex: 'half',
-      });
+      } as RequestInit);
 
       if (upstream.status >= 300 && upstream.status < 400) {
         const respHeaders = clientResponseHeaders(upstream.headers, origin);

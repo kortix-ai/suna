@@ -95,7 +95,7 @@ function resetState() {
     projectId: PROJECT_ID,
     branchName: SESSION_ID,
     baseRef: 'main',
-    sandboxProvider: 'local_docker',
+    sandboxProvider: 'daytona',
     sandboxId: SESSION_ID,
     sandboxUrl: null,
     opencodeSessionId: null,

@@ -335,7 +335,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
               {/* VS Code / Cursor Config */}
               <CodeSection
                 title="VS Code / Cursor"
-                description="Add this to your SSH config, then connect with: ssh kortix-sandbox"
+                description="Add this to your SSH config, then connect with the host alias below"
                 code={configCmd}
                 copyField="config-cmd"
                 copiedField={copiedField}

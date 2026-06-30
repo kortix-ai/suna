@@ -9,7 +9,7 @@ import { UnifiedMarkdown } from '@/components/markdown';
 import { useLegacyMessages, useMigrateLegacyThread } from '@/hooks/legacy/use-legacy-threads';
 import { useCreateOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
 import { openTabAndNavigate } from '@/stores/tab-store';
-import { useServerStore } from '@/stores/server-store';
+import { getActiveSandboxId } from '@/stores/server-store';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
 	Collapsible,
@@ -326,7 +326,6 @@ export default function LegacyThreadPage({
 				title: 'Continued chat',
 				type: 'session',
 				href: `/sessions/${session.id}`,
-				serverId: useServerStore.getState().activeServerId,
 			});
 		} catch {
 			setForking(false);
@@ -335,15 +334,14 @@ export default function LegacyThreadPage({
 
 	const handleMigrate = useCallback(async () => {
 		if (migrating) return;
-		const server = useServerStore.getState();
-		const active = server.servers.find((s) => s.id === server.activeServerId);
-		if (!active?.sandboxId) return;
+		const sandboxExternalId = getActiveSandboxId();
+		if (!sandboxExternalId) return;
 
 		setMigrating(true);
 		try {
 			const result = await migrate.mutateAsync({
 				threadId,
-				sandboxExternalId: active.sandboxId,
+				sandboxExternalId,
 			});
 
 			openTabAndNavigate({
@@ -351,7 +349,6 @@ export default function LegacyThreadPage({
 				title: 'Migrated session',
 				type: 'session',
 				href: `/sessions/${result.sessionId}`,
-				serverId: server.activeServerId,
 			});
 		} catch {
 			setMigrating(false);

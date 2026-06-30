@@ -70,17 +70,8 @@ interface ShareData {
 
 import { getActiveOpenCodeUrl } from '@/stores/server-store';
 
-const FALLBACK_BASE_URL = `${getEnv().BACKEND_URL.replace(/\/+$/, '')}/p/kortix-sandbox/8000`;
-
-function getOpenCodeBaseUrl(): string {
-  // Use the active server URL if available (resolves correct sandboxId).
-  // Only fall back to the local default for self-hosted / local mode.
-  const active = getActiveOpenCodeUrl();
-  return active || FALLBACK_BASE_URL;
-}
-
 async function fetchShareData(shareId: string): Promise<ShareData> {
-  const baseUrl = getOpenCodeBaseUrl();
+  const baseUrl = getActiveOpenCodeUrl();
   const sessionsRes = await fetch(`${baseUrl}/session`, {
     headers: { 'Accept': 'application/json' },
   });

@@ -1,5 +1,5 @@
 import type { AuthedPrincipal } from '@kortix/llm-gateway';
-import { AUTO_MODEL_ID } from '@kortix/shared/llm-catalog';
+import { AUTO_MODEL_ID } from '@kortix/llm-catalog';
 import {
   type AccountModelDefaults,
   getAccountModelDefaults,

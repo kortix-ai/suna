@@ -936,6 +936,7 @@ export async function loadTriggersForResponse(projectId: string, project: Projec
       name: spec.name,
       type: spec.type,
       agent: spec.agent,
+      model: spec.model,
       enabled: spec.enabled,
       cron: spec.cron,
       run_at: spec.runAt,
@@ -968,6 +969,8 @@ export interface TriggerDraft {
   name: string;
   type: 'cron' | 'webhook';
   agent: string;
+  /** Wire-form model (`provider/model`) or null for "Default" (resolve at fire time). */
+  model: string | null;
   enabled: boolean;
   promptTemplate: string;
   cron: string | null;
@@ -1000,6 +1003,8 @@ export function parseTriggerDraft(
   if (!promptTemplate) return { error: 'prompt_template is required' };
 
   const agent = normalizeString((body as any).agent ?? (body as any).agent_name) ?? 'default';
+  // null/empty model = "Default" — leave it to the resolution chain at fire time.
+  const model = normalizeString((body as any).model) ?? null;
   const enabled = normalizeBoolean((body as any).enabled) ?? true;
 
   const sessionModeRaw = normalizeString((body as any).session_mode ?? (body as any).sessionMode);
@@ -1022,6 +1027,7 @@ export function parseTriggerDraft(
         name,
         type: 'cron',
         agent,
+        model,
         enabled,
         promptTemplate,
         cron: null,
@@ -1038,6 +1044,7 @@ export function parseTriggerDraft(
       name,
       type: 'cron',
       agent,
+      model,
       enabled,
       promptTemplate,
       cron,
@@ -1058,6 +1065,7 @@ export function parseTriggerDraft(
     name,
     type: 'webhook',
     agent,
+    model,
     enabled,
     promptTemplate,
     cron: null,
@@ -1077,6 +1085,7 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     name: spec.name,
     type: spec.type,
     agent: spec.agent,
+    model: spec.model,
     enabled: spec.enabled,
     prompt_template: spec.promptTemplate,
     cron: spec.cron,
@@ -1104,6 +1113,7 @@ export function draftToSpec(draft: TriggerDraft): GitTriggerSpec {
     name: draft.name,
     type: draft.type,
     agent: draft.agent,
+    model: draft.model,
     enabled: draft.enabled,
     promptTemplate: draft.promptTemplate,
     cron: draft.cron,

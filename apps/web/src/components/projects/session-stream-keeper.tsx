@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import type { Event as OpenCodeEvent } from '@opencode-ai/sdk/v2/client';
+import type { Event as OpenCodeEvent } from '@kortix/sdk/opencode-client';
 
 import { getClientForUrl } from '@/lib/opencode-sdk';
 import { getSandboxUrlForExternalId } from '@/stores/server-store';

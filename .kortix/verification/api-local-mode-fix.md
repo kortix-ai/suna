@@ -17,7 +17,7 @@ But the local env generator `scripts/setup-env.sh` intentionally writes the API 
 
 - `ENV_MODE=local`
 - `KORTIX_BILLING_INTERNAL_ENABLED=false`
-- `ALLOWED_SANDBOX_PROVIDERS=local_docker`
+- `ALLOWED_SANDBOX_PROVIDERS=daytona`
 
 Root `.env` is currently staging-oriented (`ENV_MODE=staging`, `KORTIX_BILLING_INTERNAL_ENABLED=true`), but `scripts/setup-env.sh` overrides those for local API dev. The problem is that `apps/api/.env` had drifted from the generated local values.
 

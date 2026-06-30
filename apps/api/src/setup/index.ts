@@ -82,7 +82,7 @@ function getMasterUrlCandidates(): string[] {
   candidates.push('http://sandbox:8000');
 
   // When running the API on the host (dev), sandbox is exposed on this port.
-  candidates.push(`http://localhost:${config.SANDBOX_PORT_BASE || 14000}`);
+  candidates.push('http://localhost:14000');
 
   // De-dupe
   return Array.from(new Set(candidates));
