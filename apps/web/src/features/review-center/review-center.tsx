@@ -30,6 +30,7 @@ import type { ReviewVerdict } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { CheckCircleSolid, InboxSolid, ShieldCheckSolid, X } from '@mynaui/icons-react';
 import { Search } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { statusToVerdict } from './map';
 import { MOCK_ITEMS } from './mock-data';
@@ -51,6 +52,9 @@ import {
   type ReviewStatus,
   segmentForStatus,
 } from './types';
+
+/** Calm, premium easing for the inbox's enter/exit/layout motion. */
+const EASE = [0.2, 0, 0, 1] as const;
 
 function rel(iso: string): string {
   const mins = Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
@@ -120,10 +124,15 @@ function ItemRow({
   const segment = segmentForStatus(item.status);
 
   return (
-    <li
+    <motion.li
       data-idx={idx}
+      layout
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.18, ease: EASE, delay: Math.min(idx * 0.015, 0.08) }}
       className={cn(
-        'group bg-popover relative flex items-center gap-3 rounded-md border px-3 py-2.5 transition-colors',
+        'group bg-popover relative flex items-center gap-3 rounded-md border px-3 py-2.5',
+        'transition-[border-color,box-shadow] hover:shadow-sm',
         focused ? 'border-primary/40 ring-primary/25 ring-2' : 'hover:border-foreground/15',
         selected && 'bg-primary/[0.04]',
       )}
@@ -170,7 +179,7 @@ function ItemRow({
           </Badge>
         )}
       </div>
-    </li>
+    </motion.li>
   );
 }
 
@@ -541,18 +550,28 @@ export function ReviewCenter({
             </div>
 
             {/* Bulk bar (safe approvals across the current view) */}
-            {segment === 'needs_you' && visibleSafePending > 0 && selectionCount === 0 && (
-              <div className="bg-kortix-green/10 border-kortix-green/25 flex flex-wrap items-center gap-3 rounded-md border px-4 py-2.5">
-                <ShieldCheckSolid className="text-kortix-green size-5 shrink-0" />
-                <span className="text-foreground min-w-0 flex-1 text-sm text-pretty">
-                  {visibleSafePending} safe {visibleSafePending === 1 ? 'action' : 'actions'} can be
-                  approved together. Risky ones stay for you to decide.
-                </span>
-                <Button size="sm" onClick={onApproveAllSafeGlobal}>
-                  Approve all safe
-                </Button>
-              </div>
-            )}
+            <AnimatePresence initial={false}>
+              {segment === 'needs_you' && visibleSafePending > 0 && selectionCount === 0 && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2, ease: EASE }}
+                  className="overflow-hidden"
+                >
+                  <div className="bg-kortix-green/10 border-kortix-green/25 flex flex-wrap items-center gap-3 rounded-md border px-4 py-2.5">
+                    <ShieldCheckSolid className="text-kortix-green size-5 shrink-0" />
+                    <span className="text-foreground min-w-0 flex-1 text-sm text-pretty">
+                      {visibleSafePending} safe {visibleSafePending === 1 ? 'action' : 'actions'}{' '}
+                      can be approved together. Risky ones stay for you to decide.
+                    </span>
+                    <Button size="sm" onClick={onApproveAllSafeGlobal}>
+                      Approve all safe
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* List */}
@@ -565,28 +584,36 @@ export function ReviewCenter({
               ))}
             </ul>
           ) : visible.length === 0 ? (
-            <EmptyState
-              icon={CheckCircleSolid}
-              size="sm"
-              title={
-                query
-                  ? 'No matches'
-                  : segment === 'needs_you'
-                    ? "You're all caught up"
-                    : 'Nothing here'
-              }
-              description={
-                query
-                  ? 'Try a different search.'
-                  : segment === 'needs_you'
-                    ? 'When an agent needs a decision, an approval, or eyes on something it finished, it shows up here.'
-                    : segment === 'waiting'
-                      ? 'Items you’ve acted on that the agent is still working through will appear here.'
-                      : 'Approved, rejected and finished items land here.'
-              }
-            />
+            <motion.div
+              key={`empty-${segment}-${query ? 'q' : ''}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.28, ease: EASE }}
+              className="pt-6"
+            >
+              <EmptyState
+                icon={CheckCircleSolid}
+                size="sm"
+                title={
+                  query
+                    ? 'No matches'
+                    : segment === 'needs_you'
+                      ? "You're all caught up"
+                      : 'Nothing here'
+                }
+                description={
+                  query
+                    ? 'Try a different search.'
+                    : segment === 'needs_you'
+                      ? 'When an agent needs a decision, an approval, or eyes on something it finished, it shows up here.'
+                      : segment === 'waiting'
+                        ? 'Items you’ve acted on that the agent is still working through will appear here.'
+                        : 'Approved, rejected and finished items land here.'
+                }
+              />
+            </motion.div>
           ) : (
-            <ul ref={listRef} className="space-y-2">
+            <ul ref={listRef} className="flex flex-col gap-2">
               {visible.map((item, idx) => (
                 <ItemRow
                   key={item.id}
@@ -605,30 +632,38 @@ export function ReviewCenter({
       </div>
 
       {/* Floating multi-select action bar */}
-      {selectionCount > 0 && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-30 flex justify-center px-4">
-          <div className="bg-popover pointer-events-auto flex items-center gap-2 rounded-full border px-2 py-2 shadow-lg">
-            <span className="text-foreground px-2 text-sm font-medium tabular-nums">
-              {selectionCount} selected
-            </span>
-            <Button size="sm" onClick={() => approveIds([...selectedIds])}>
-              Approve
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => dismissIds([...selectedIds])}>
-              Dismiss
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              aria-label="Clear selection"
-              className="size-8"
-              onClick={() => setSelectedIds(new Set())}
-            >
-              <X className="size-4" />
-            </Button>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {selectionCount > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            transition={{ duration: 0.2, ease: EASE }}
+            className="pointer-events-none fixed inset-x-0 bottom-6 z-30 flex justify-center px-4"
+          >
+            <div className="bg-popover pointer-events-auto flex items-center gap-2 rounded-full border px-2 py-2 shadow-lg">
+              <span className="text-foreground px-2 text-sm font-medium tabular-nums">
+                {selectionCount} selected
+              </span>
+              <Button size="sm" onClick={() => approveIds([...selectedIds])}>
+                Approve
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => dismissIds([...selectedIds])}>
+                Dismiss
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label="Clear selection"
+                className="size-8"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <ReviewDetailModal item={selected} actions={actions} onClose={() => setSelectedId(null)} />
       <KeyboardHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
