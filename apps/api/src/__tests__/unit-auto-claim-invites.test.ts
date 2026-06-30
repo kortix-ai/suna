@@ -65,7 +65,7 @@ mock.module('drizzle-orm', () => ({
 }));
 
 mock.module('@kortix/db', () => ({ accounts, accountMembers, accountInvitations }));
-mock.module('../shared/db', () => ({ db: fakeDb }));
+mock.module('../shared/db', () => ({ db: fakeDb, hasDatabase: true }));
 mock.module('../shared/supabase', () => ({
   getSupabase: () => ({
     auth: { admin: { getUserById: async () => ({ data: { user: null } }) } },
