@@ -6,7 +6,19 @@
  */
 
 import type { ApiReviewItem, ReviewVerdict } from '@/lib/projects-client';
-import type { ReviewItem, ReviewKind, ReviewStatus } from './types';
+import type {
+  ApprovalAction,
+  ApprovalActionIcon,
+  ApprovalDetail,
+  BatchDetail,
+  ChangeDetail,
+  DecisionDetail,
+  OutputDetail,
+  ReviewItem,
+  ReviewKind,
+  ReviewRisk,
+  ReviewStatus,
+} from './types';
 
 /** Plain-language primary action per kind (the row's CTA + the modal footer). */
 export const PRIMARY_ACTION: Record<ReviewKind, string> = {
@@ -31,6 +43,130 @@ export function agentInitials(name: string): string {
   return `${parts[0][0] ?? ''}${parts[1]?.[0] ?? ''}`.toUpperCase() || 'AI';
 }
 
+// ── detail normalization ────────────────────────────────────────────────────
+// The API `detail` is polymorphic jsonb that arrives in three different shapes:
+// the rich payload a native agent submission carries, the THIN adapter payload a
+// Change Request produces (`{cr_id, base_ref, head_ref, description}`), or the
+// thin executor-approval payload (`{execution_id, action_path, connector_id}`).
+// The modal bodies expect the full view-model shape, so we never pass the raw
+// detail through — we build a complete, defaulted detail for every kind. This is
+// what stops `ChangeBody` from reading `.map` of an undefined `whatChanged`.
+
+type AnyRec = Record<string, unknown>;
+const rec = (v: unknown): AnyRec =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as AnyRec) : {};
+const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+const arrOf = <T>(v: unknown): T[] | undefined => (Array.isArray(v) ? (v as T[]) : undefined);
+const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
+const lines = (s: string): string[] =>
+  s
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+function changeDetail(d: AnyRec, row: ApiReviewItem): ChangeDetail {
+  const adv = rec(d.advanced);
+  const whatChanged =
+    arrOf<string>(d.whatChanged) ??
+    (str(d.description) ? lines(str(d.description) as string) : row.summary ? [row.summary] : []);
+  return {
+    whatChanged,
+    impact: str(d.impact) ?? '',
+    verification: arrOf<ChangeDetail['verification'][number]>(d.verification) ?? [],
+    previewUrl: str(d.previewUrl) ?? str(d.preview_url),
+    conflicts: arrOf<string>(d.conflicts),
+    advanced: {
+      headRef: str(adv.headRef) ?? str(d.head_ref) ?? '',
+      baseRef: str(adv.baseRef) ?? str(d.base_ref) ?? '',
+      headSha: str(adv.headSha) ?? str(d.head_sha) ?? str(d.head_commit_sha) ?? '',
+      baseSha: str(adv.baseSha) ?? str(d.base_sha) ?? '',
+      additions: num(adv.additions),
+      deletions: num(adv.deletions),
+      files: arrOf<ChangeDetail['advanced']['files'][number]>(adv.files) ?? [],
+      mergeMode: str(adv.mergeMode) ?? 'merge',
+    },
+  };
+}
+
+function approvalDetail(d: AnyRec, row: ApiReviewItem): ApprovalDetail {
+  const given = arrOf<AnyRec>(d.actions);
+  if (given) {
+    return {
+      actions: given.map((a, i) => ({
+        id: str(a.id) ?? `${row.review_item_id}-${i}`,
+        title: str(a.title) ?? 'Action',
+        connector: str(a.connector) ?? '',
+        action: str(a.action) ?? '',
+        consequence: str(a.consequence) ?? '',
+        risk: (str(a.risk) as ReviewRisk) ?? row.risk,
+        icon: (str(a.icon) as ApprovalActionIcon) ?? 'generic',
+        argsPreview: arrOf<ApprovalAction['argsPreview'][number]>(a.argsPreview) ?? [],
+        policySource: str(a.policySource) ?? 'Requires approval',
+        decided: a.decided === 'approved' || a.decided === 'denied' ? a.decided : undefined,
+      })),
+    };
+  }
+  // Executor-approval adapter → a single action built from the call descriptor.
+  const path = str(d.action_path);
+  return {
+    actions: [
+      {
+        id: str(d.execution_id) ?? row.review_item_id,
+        title: row.title || `Run ${path ?? 'action'}`,
+        connector: str(d.connector_id) ?? '',
+        action: path ?? '',
+        consequence: row.summary || 'Awaiting your approval',
+        risk: row.risk,
+        icon: 'generic',
+        argsPreview: [],
+        policySource: 'Requires approval',
+      },
+    ],
+  };
+}
+
+function outputDetail(d: AnyRec, row: ApiReviewItem): OutputDetail {
+  return {
+    artifactKind: (str(d.artifactKind) as OutputDetail['artifactKind']) ?? 'document',
+    artifactLabel: str(d.artifactLabel) ?? 'Output',
+    previewUrl: str(d.previewUrl) ?? str(d.preview_url),
+    preview: str(d.preview),
+    files: arrOf<NonNullable<OutputDetail['files']>[number]>(d.files),
+    note: str(d.note) ?? row.summary ?? '',
+  };
+}
+
+function decisionDetail(d: AnyRec, row: ApiReviewItem): DecisionDetail {
+  return {
+    question: str(d.question) ?? row.title ?? '',
+    context: str(d.context),
+    options: arrOf<DecisionDetail['options'][number]>(d.options) ?? [],
+  };
+}
+
+function batchDetail(d: AnyRec, row: ApiReviewItem): BatchDetail {
+  return {
+    note: str(d.note) ?? row.summary ?? '',
+    children: arrOf<BatchDetail['children'][number]>(d.children) ?? [],
+  };
+}
+
+function normalizeDetail(kind: ReviewKind, row: ApiReviewItem): ReviewItem['detail'] {
+  const d = rec(row.detail);
+  switch (kind) {
+    case 'change':
+      return changeDetail(d, row);
+    case 'approval':
+      return approvalDetail(d, row);
+    case 'output':
+      return outputDetail(d, row);
+    case 'decision':
+      return decisionDetail(d, row);
+    case 'batch':
+      return batchDetail(d, row);
+  }
+}
+
 export function mapApiReviewItem(row: ApiReviewItem, projectName: string): ReviewItem {
   const kind = row.kind as ReviewKind;
   const agent = row.agent || 'Agent';
@@ -48,9 +184,10 @@ export function mapApiReviewItem(row: ApiReviewItem, projectName: string): Revie
     createdAt: row.created_at,
     primaryAction: PRIMARY_ACTION[kind],
     secondaryAction: SECONDARY_ACTION[kind],
-    // `detail` is the kind-specific payload the agent submitted, carried as jsonb;
-    // it can't be statically proven to match the discriminated union here.
-    detail: row.detail,
+    // Build a complete, defaulted detail for the kind — never trust the raw jsonb
+    // to already match the discriminated union (CR/executor adapters are thin).
+    detail: normalizeDetail(kind, row),
+    // kind↔detail correlation can't be statically proven across the switch.
   } as unknown as ReviewItem;
 }
 

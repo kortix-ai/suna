@@ -102,12 +102,15 @@ function ChangeBody({
   onClose: () => void;
 }) {
   const d = item.detail;
+  const whatChanged = d.whatChanged ?? [];
+  const verification = d.verification ?? [];
+  const files = d.advanced?.files ?? [];
   return (
     <>
       <Panel>
         <SectionLabel>What changed</SectionLabel>
         <ul className="space-y-1.5">
-          {d.whatChanged.map((line) => (
+          {whatChanged.map((line) => (
             <li key={line} className="text-foreground flex items-start gap-2 text-sm">
               <Check className="text-kortix-green mt-0.5 size-4 shrink-0" />
               <span className="text-pretty">{line}</span>
@@ -118,7 +121,7 @@ function ChangeBody({
       </Panel>
 
       <div className="flex flex-wrap items-center gap-2">
-        {d.verification.map((v) => (
+        {verification.map((v) => (
           <StatusBadge key={v.label} tone={v.tone}>
             {v.label}
           </StatusBadge>
@@ -158,16 +161,16 @@ function ChangeBody({
       <AdvancedDisclosure>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 font-mono text-xs">
           <dt className="text-muted-foreground">from</dt>
-          <dd className="text-foreground truncate">{d.advanced.headRef}</dd>
+          <dd className="text-foreground truncate">{d.advanced?.headRef || '—'}</dd>
           <dt className="text-muted-foreground">into</dt>
-          <dd className="text-foreground truncate">{d.advanced.baseRef}</dd>
+          <dd className="text-foreground truncate">{d.advanced?.baseRef || '—'}</dd>
           <dt className="text-muted-foreground">commit</dt>
-          <dd className="text-foreground">{d.advanced.headSha.slice(0, 7)}</dd>
+          <dd className="text-foreground">{d.advanced?.headSha?.slice(0, 7) || '—'}</dd>
           <dt className="text-muted-foreground">merge</dt>
-          <dd className="text-foreground">{d.advanced.mergeMode}</dd>
+          <dd className="text-foreground">{d.advanced?.mergeMode || '—'}</dd>
         </dl>
         <div className="mt-3 space-y-1">
-          {d.advanced.files.map((f) => (
+          {files.map((f) => (
             <div key={f.path} className="flex items-center justify-between gap-3 text-xs">
               <span className="text-foreground truncate font-mono">{f.path}</span>
               <DiffStat additions={f.additions} deletions={f.deletions} />
@@ -260,7 +263,7 @@ function ApprovalBody({
   item: Extract<ReviewItem, { kind: 'approval' }>;
   actions: ReviewActions;
 }) {
-  const list = item.detail.actions;
+  const list = item.detail.actions ?? [];
   const safePending = list.filter((a) => isSafeRisk(a.risk) && !a.decided);
   return (
     <>
@@ -372,7 +375,7 @@ function DecisionBody({
         )}
       </Panel>
       <div className="space-y-2">
-        {d.options.map((opt) => (
+        {(d.options ?? []).map((opt) => (
           <button
             key={opt.id}
             type="button"
@@ -410,7 +413,8 @@ function DecisionBody({
 // ── batch ─────────────────────────────────────────────────────────────────
 function BatchBody({ item }: { item: Extract<ReviewItem, { kind: 'batch' }> }) {
   const d = item.detail;
-  const needsReview = d.children.filter((c) => c.status === 'needs_review').length;
+  const children = d.children ?? [];
+  const needsReview = children.filter((c) => c.status === 'needs_review').length;
   return (
     <>
       <Panel>
@@ -418,10 +422,10 @@ function BatchBody({ item }: { item: Extract<ReviewItem, { kind: 'batch' }> }) {
       </Panel>
       <div>
         <SectionLabel>
-          {d.children.length} tasks · {needsReview} need a look
+          {children.length} tasks · {needsReview} need a look
         </SectionLabel>
         <ul className="bg-popover divide-border max-h-72 divide-y overflow-y-auto rounded-md border">
-          {d.children.map((c) => (
+          {children.map((c) => (
             <li key={c.id} className="flex items-center gap-2.5 px-4 py-2">
               {c.status === 'done' ? (
                 <CheckCircleSolid className="text-kortix-green size-4 shrink-0" />
