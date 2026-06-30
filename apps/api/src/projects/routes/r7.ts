@@ -14,7 +14,7 @@ import { db } from '../../shared/db';
 import { roleAllows, parseProjectRole } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, projectGroupGrants, projectSecrets, projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid } from '../lib/access';
 import { AnyObject, GroupGrantSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
@@ -811,7 +811,11 @@ projectsApp.openapi(
 
     // Enumerate grantable resources from the project config (best-effort: a repo
     // that won't load just yields empty lists — the existing grants still show).
-    let resources: { agents: { id: string }[]; skills: { id: string }[]; secrets: { id: string }[] } = { agents: [], skills: [], secrets: [] };
+    let resources: {
+      agents: { id: string; name: string }[];
+      skills: { id: string; name: string }[];
+      secrets: { id: string; name: string }[];
+    } = { agents: [], skills: [], secrets: [] };
     let configLoaded = false;
     try {
       const config = await loadConfigWithFiles(loaded.row);
@@ -826,13 +830,17 @@ projectsApp.openapi(
       });
     }
     // Secrets aren't in the git config — they live in project_secrets. Enumerate
-    // their NAMES (the grant resource_id) so they're grantable in the picker.
+    // their NAMES (the grant resource_id IS the name; name doubles as the label).
     // This always loads (DB, not the repo), independent of configLoaded.
+    // SHARED rows only (owner_user_id IS NULL): a per-secret grant scopes a
+    // project-wide secret to specific members. Personal overrides are already
+    // per-user, so they aren't project-grantable — and listing one would let a
+    // grant on its name strip the secret from its OWN owner's session.
     const secretRows = await db
       .selectDistinct({ name: projectSecrets.name })
       .from(projectSecrets)
-      .where(eq(projectSecrets.projectId, projectId));
-    resources.secrets = secretRows.map((r) => ({ id: r.name }));
+      .where(and(eq(projectSecrets.projectId, projectId), isNull(projectSecrets.ownerUserId)));
+    resources.secrets = secretRows.map((r) => ({ id: r.name, name: r.name }));
 
     // Grants key on the agent NAME / skill SLUG / secret NAME. A rename or delete
     // of the underlying resource leaves the grant ORPHANED — and since an

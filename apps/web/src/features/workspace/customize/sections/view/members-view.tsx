@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Check, Clock, KeyRound, Loader2, Mail, MessageSquare, RefreshCw, Shield, Sparkles, Users, X } from 'lucide-react';
+import { Bot, Check, Clock, KeyRound, Loader2, Mail, MessageSquare, Plus, RefreshCw, Shield, Sparkles, Users, X } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 import {
@@ -16,6 +16,16 @@ import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1664,7 +1674,9 @@ function ResourceAccessCard({
   const hasResources =
     resources.agents.length > 0 || resources.skills.length > 0 || (resources.secrets?.length ?? 0) > 0;
 
-  const [resourceValue, setResourceValue] = useState<string>(''); // "agent:id" | "skill:id" | "secret:id"
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [pickerType, setPickerType] = useState<ResourceGrantType | ''>(''); // step 1
+  const [pickerResourceId, setPickerResourceId] = useState<string>(''); // step 2
   const [principalValue, setPrincipalValue] = useState<string>(''); // "member:id" | "group:id"
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const markPending = (id: string) => setPendingIds((prev) => new Set(prev).add(id));
@@ -1674,6 +1686,33 @@ function ResourceAccessCard({
       next.delete(id);
       return next;
     });
+
+  // Step 1 of the grant flow: pick the resource TYPE. Only offer types that
+  // actually have resources, so the type buttons never lead to an empty list.
+  const typeOptions = useMemo(
+    () =>
+      (
+        [
+          { type: 'agent', label: 'Agent', Icon: Bot, items: resources.agents },
+          { type: 'skill', label: 'Skill', Icon: Sparkles, items: resources.skills },
+          { type: 'secret', label: 'Secret', Icon: KeyRound, items: resources.secrets ?? [] },
+        ] as const
+      ).filter((o) => o.items.length > 0),
+    [resources],
+  );
+  // Step 2 options: only the resources of the chosen type.
+  const activeItems = typeOptions.find((o) => o.type === pickerType)?.items ?? [];
+
+  function resetGrantForm() {
+    setPickerType('');
+    setPickerResourceId('');
+    setPrincipalValue('');
+  }
+
+  function onTypeChange(t: ResourceGrantType) {
+    setPickerType(t);
+    setPickerResourceId(''); // the previous pick belongs to a different type
+  }
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: grantsKey });
@@ -1690,23 +1729,33 @@ function ResourceAccessCard({
 
   const createMutation = useMutation({
     mutationFn: () => {
-      const [resourceType, resourceId] = splitOnce(resourceValue);
       const [principalType, principalId] = splitOnce(principalValue);
       return createProjectResourceGrant(projectId, {
-        resourceType: resourceType as ResourceGrantType,
-        resourceId,
+        resourceType: pickerType as ResourceGrantType,
+        resourceId: pickerResourceId,
         principalType: principalType as 'member' | 'group',
         principalId,
       });
     },
     onSuccess: () => {
       successToast('Resource scoped');
-      setResourceValue('');
-      setPrincipalValue('');
+      resetGrantForm();
+      setDialogOpen(false);
       invalidate();
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to scope resource'),
   });
+
+  function onDialogOpenChange(next: boolean) {
+    if (createMutation.isPending) return;
+    if (next) {
+      // Default the type to the first available so the resource list is live
+      // immediately; the user can still switch types from there.
+      resetGrantForm();
+      setPickerType(typeOptions[0]?.type ?? '');
+    }
+    setDialogOpen(next);
+  }
 
   const removeMutation = useMutation({
     mutationFn: (grantId: string) => deleteProjectResourceGrant(projectId, grantId),
@@ -1719,7 +1768,7 @@ function ResourceAccessCard({
     onError: (err: Error) => errorToast(err.message || 'Failed to remove scope'),
   });
 
-  const canSubmit = !!resourceValue && !!principalValue && !createMutation.isPending;
+  const canSubmit = !!pickerType && !!pickerResourceId && !!principalValue && !createMutation.isPending;
 
   return (
     <SectionCard
@@ -1729,57 +1778,110 @@ function ResourceAccessCard({
       count={grants.length}
       action={
         canManage && hasResources ? (
-          <form
-            className="flex items-center gap-1.5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!canSubmit) return;
-              createMutation.mutate();
-            }}
-          >
-            <Select value={resourceValue} onValueChange={setResourceValue} disabled={createMutation.isPending}>
-              <SelectTrigger className="h-8 w-44 text-xs">
-                <SelectValue placeholder="Agent, skill or secret" />
-              </SelectTrigger>
-              <SelectContent>
-                {resources.agents.map((a) => (
-                  <SelectItem key={`agent:${a.id}`} value={`agent:${a.id}`}>
-                    {a.name} · agent
-                  </SelectItem>
-                ))}
-                {resources.skills.map((s) => (
-                  <SelectItem key={`skill:${s.id}`} value={`skill:${s.id}`}>
-                    {s.name} · skill
-                  </SelectItem>
-                ))}
-                {(resources.secrets ?? []).map((s) => (
-                  <SelectItem key={`secret:${s.id}`} value={`secret:${s.id}`}>
-                    {s.name} · secret
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={principalValue} onValueChange={setPrincipalValue} disabled={createMutation.isPending}>
-              <SelectTrigger className="h-8 w-40 text-xs">
-                <SelectValue placeholder="Member or dept" />
-              </SelectTrigger>
-              <SelectContent>
-                {members.map((m) => (
-                  <SelectItem key={`member:${m.user_id}`} value={`member:${m.user_id}`}>
-                    {userLabel(m)}
-                  </SelectItem>
-                ))}
-                {groups.map((g) => (
-                  <SelectItem key={`group:${g.group_id}`} value={`group:${g.group_id}`}>
-                    {g.name} · dept
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button type="submit" size="sm" variant="outline" disabled={!canSubmit}>
-              Grant
-            </Button>
-          </form>
+          <Dialog open={dialogOpen} onOpenChange={onDialogOpenChange}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline" className="gap-1.5">
+                <Plus className="h-3.5 w-3.5" />
+                Grant access
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Grant resource access</DialogTitle>
+                <DialogDescription>
+                  Scope an agent, skill, or secret to a member or department. Ungranted resources stay
+                  open to everyone with project access.
+                </DialogDescription>
+              </DialogHeader>
+
+              <form
+                id="grant-resource-form"
+                className="space-y-4 py-1"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!canSubmit) return;
+                  createMutation.mutate();
+                }}
+              >
+                <div className="space-y-1.5">
+                  <span className="text-muted-foreground text-xs font-medium">1. Resource type</span>
+                  <div className="flex gap-1.5">
+                    {typeOptions.map(({ type, label, Icon }) => (
+                      <Button
+                        key={type}
+                        type="button"
+                        size="sm"
+                        variant={pickerType === type ? 'default' : 'outline'}
+                        className="flex-1 gap-1.5"
+                        onClick={() => onTypeChange(type)}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="text-muted-foreground text-xs font-medium">
+                    2. {pickerType ? `${pickerType[0].toUpperCase()}${pickerType.slice(1)}` : 'Resource'}
+                  </span>
+                  <Select
+                    value={pickerResourceId}
+                    onValueChange={setPickerResourceId}
+                    disabled={!pickerType || createMutation.isPending}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder={pickerType ? `Select a ${pickerType}` : 'Pick a type first'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeItems.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="text-muted-foreground text-xs font-medium">3. Grant to</span>
+                  <Select
+                    value={principalValue}
+                    onValueChange={setPrincipalValue}
+                    disabled={createMutation.isPending}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Member or department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {members.map((m) => (
+                        <SelectItem key={`member:${m.user_id}`} value={`member:${m.user_id}`}>
+                          {userLabel(m)}
+                        </SelectItem>
+                      ))}
+                      {groups.map((g) => (
+                        <SelectItem key={`group:${g.group_id}`} value={`group:${g.group_id}`}>
+                          {g.name} · dept
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </form>
+
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button type="button" variant="ghost" size="sm">
+                    Cancel
+                  </Button>
+                </DialogClose>
+                <Button type="submit" form="grant-resource-form" size="sm" disabled={!canSubmit}>
+                  {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Grant access'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         ) : null
       }
     >
