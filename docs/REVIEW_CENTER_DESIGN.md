@@ -18,10 +18,27 @@ Built and tested for **native review items** (agent-submitted `output` / `decisi
   live `/act` + `/bulk` mutations with optimistic updates). The presentational inbox is shared with the mock
   prototype.
 
-**Remaining last-mile** (not in this slice): surface the connected inbox in the product (a project "Review"
-customize section or `/projects/:id/review` route + a `requiresExperimental: 'review_center'` nav entry);
-then the deferred passes below — CR/executor/tunnel **adapters**, executor **202→resume** (KORTIX-207), and
-**Slack** cards.
+Also built since:
+
+- **Placement** — the connected inbox is now a flag-gated **"Review" customize section** (`review-view.tsx`,
+  registered in `customize-panel.tsx`; `CustomizeSection`/`project-actions.ts` updated). Visible when the
+  project's `review_center` experimental flag is on.
+- **Adapters** — the inbox read model (`listInboxItems`) now **folds in real Change Requests** (`kind:change`,
+  id `cr:<id>`) and **executor pending-approvals** (`kind:approval`, id `exec:<id>`) via `review-adapters.ts`
+  (unit-tested). Adapted items are read-only in the inbox; acting routes to their source view (act → 409).
+- **Slack** — `channels/slack/review-cards.ts`: the Block Kit **review-card builder** + the
+  `review_<verb>_<id>` action-id codec (unit-tested).
+- **UX/UI polish** — fluid `motion` (row reflow, animated bars, rolling counts, tactile press), calmer
+  `StatusBadge` risk pills, faded empty state.
+
+**Remaining integration** (specced, needs a runtime to verify — not built blind):
+- Executor **202→resume** (KORTIX-207): persist the pending call + a resume/poll so an approval re-runs it
+  and returns the result to the waiting agent. (Note: the executor SDK already returns the structured 202
+  `pending_approval` body — `res.ok` is true for 202 — so the gap is the resume plumbing, not the SDK.)
+- Slack **handler wiring**: `handleReviewAction` (parse `review_<verb>_<id>` → dispatch via the existing
+  `handleQuestionAnswer → spawnAgentTurn` path) + post review cards in-thread + App Home "Needs you (N)".
+- Adapter **act-dispatch**: let the inbox merge/close a CR and approve/deny an executor call directly
+  (currently 409 → source view).
 
 ---
 
