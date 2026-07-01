@@ -107,6 +107,32 @@ describe('static web server live curl e2e', () => {
     expect(res.body).toContain(`<base href="${prefix}/abs${siteDir}/">`)
   })
 
+  it('escapes malicious forwarded prefixes before injecting the <base> tag', async () => {
+    const malicious = 'https://api.kortix.cloud/v1/p/sbx-123/3211" autofocus onfocus="alert(1)'
+    const res = await curl(`${base}/open?path=${encodeURIComponent(indexPath)}`, [
+      '-H',
+      `X-Forwarded-Prefix: ${malicious}`,
+    ])
+    expect(res.status).toBe(200)
+    expect(res.body).not.toContain('autofocus onfocus')
+    expect(res.body).not.toContain('" autofocus')
+    expect(res.body).toContain('%22%20autofocus%20onfocus=')
+    expect(res.body).toContain(
+      `<base href="https://api.kortix.cloud/v1/p/sbx-123/3211%22%20autofocus%20onfocus=%22alert(1)/abs${siteDir}/">`,
+    )
+  })
+
+  it('escapes malicious forwarded prefixes on the help page', async () => {
+    const malicious = 'https://api.kortix.cloud/v1/p/sbx-123/3211"><script>alert(1)</script>'
+    const res = await curl(`${base}/`, [
+      '-H',
+      `X-Forwarded-Prefix: ${malicious}`,
+    ])
+    expect(res.status).toBe(200)
+    expect(res.body).not.toContain('<script>alert(1)</script>')
+    expect(res.body).toContain('%22%3E%3Cscript%3Ealert(1)%3C/script%3E')
+  })
+
   it('serves assets via /abs with the right content-type', async () => {
     const res = await curl(`${base}/abs${siteDir}/style.css`)
     expect(res.status).toBe(200)
