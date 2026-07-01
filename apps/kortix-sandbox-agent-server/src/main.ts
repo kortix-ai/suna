@@ -634,6 +634,8 @@ async function runWarmSeedMode(
             hotswapBaked: llmHotswap,
             proxyUrlSet: !!process.env.KORTIX_LLM_PROXY_URL,
             proxyReady: llmProxyReady(),
+            directGatewayCredsPresent:
+              !!process.env.KORTIX_LLM_API_KEY && !!process.env.KORTIX_LLM_BASE_URL,
           })
         ) {
           logger.warn(
