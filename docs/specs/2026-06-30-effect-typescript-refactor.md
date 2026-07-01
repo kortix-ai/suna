@@ -13,11 +13,13 @@ typed Effect programs.
 
 ## Reference Material
 
-- `repos/effect/` vendors the Effect source repository as read-only agent
-  reference material.
+- Effect source may be cloned locally under `repos/effect/` as read-only agent
+  reference material, but it is intentionally untracked and excluded from this
+  PR. Committing the full upstream repository makes review, secret scanning, and
+  code scanning noisy without changing the application runtime.
 - Runtime code imports from the normal `effect` package dependency, never from
   `repos/effect`.
-- `AGENTS.md` documents that vendored repositories are reference-only and must
+- `AGENTS.md` documents that external source references are local-only and must
   not be imported from application code.
 
 ## Migration Rules
