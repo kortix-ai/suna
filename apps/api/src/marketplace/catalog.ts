@@ -17,6 +17,7 @@ import {
   getStarterFiles,
   isKortixManagedSkillName,
 } from "@kortix/starter";
+import { Effect } from "effect";
 import {
   buildRegistry,
   describeRegistry,
@@ -31,6 +32,8 @@ import {
   type RegistryRef,
 } from "@kortix/registry";
 import type { MarketplaceSource } from "./sources-store";
+import { HttpClient } from "../effect/services";
+import { runEffectOrThrow } from "../effect/http";
 
 export interface ItemCapabilities {
   secrets: string[];
@@ -495,8 +498,14 @@ async function externalRefs(): Promise<ExternalRef[]> {
 const GITHUB_TOKEN =
   process.env.GITHUB_TOKEN || process.env.MANAGED_GIT_GITHUB_TOKEN || "";
 const GITHUB_HOSTS = new Set(["api.github.com", "raw.githubusercontent.com"]);
+const marketplaceFetch: typeof fetch = (async (input, init) =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const client = yield* HttpClient;
+    const perform = client.fetch;
+    return yield* Effect.tryPromise(() => perform(input, init));
+  }))) as typeof fetch;
 const githubFetch: typeof fetch = !GITHUB_TOKEN
-  ? fetch
+  ? marketplaceFetch
   : (((
       input: Parameters<typeof fetch>[0],
       init?: Parameters<typeof fetch>[1],
@@ -519,9 +528,9 @@ const githubFetch: typeof fetch = !GITHUB_TOKEN
         const headers = new Headers(init?.headers);
         if (!headers.has("authorization"))
           headers.set("authorization", `Bearer ${GITHUB_TOKEN}`);
-        return fetch(input, { ...init, headers });
+        return marketplaceFetch(input, { ...init, headers });
       }
-      return fetch(input, init);
+      return marketplaceFetch(input, init);
     }) as typeof fetch);
 
 /** Loader options that authenticate GitHub calls (shared by catalog + install). */

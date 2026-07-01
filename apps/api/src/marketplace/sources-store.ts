@@ -9,7 +9,9 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { platformSettings } from '@kortix/db';
-import { db } from '../shared/db';
+import { Effect } from 'effect';
+import { DatabaseService } from '../effect/services';
+import { runEffectOrThrow } from '../effect/http';
 
 const SOURCES_KEY = 'marketplace.sources';
 
@@ -39,19 +41,29 @@ function normalize(raw: unknown): MarketplaceSource[] {
 }
 
 export async function listSources(): Promise<MarketplaceSource[]> {
-  const rows = await db
-    .select({ value: platformSettings.value })
-    .from(platformSettings)
-    .where(eq(platformSettings.key, SOURCES_KEY))
-    .limit(1);
-  return normalize(rows[0]?.value);
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    const rows = yield* Effect.tryPromise(() =>
+      database
+        .select({ value: platformSettings.value })
+        .from(platformSettings)
+        .where(eq(platformSettings.key, SOURCES_KEY))
+        .limit(1),
+    );
+    return normalize(rows[0]?.value);
+  }));
 }
 
 async function writeSources(sources: MarketplaceSource[]): Promise<void> {
-  await db
-    .insert(platformSettings)
-    .values({ key: SOURCES_KEY, value: sources })
-    .onConflictDoUpdate({ target: platformSettings.key, set: { value: sources, updatedAt: new Date() } });
+  await runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    yield* Effect.tryPromise(() =>
+      database
+        .insert(platformSettings)
+        .values({ key: SOURCES_KEY, value: sources })
+        .onConflictDoUpdate({ target: platformSettings.key, set: { value: sources, updatedAt: new Date() } }),
+    );
+  }));
 }
 
 export async function addSource(input: AddSourceInput): Promise<MarketplaceSource> {
