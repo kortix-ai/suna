@@ -22,7 +22,7 @@ export interface ProjectSessionSandbox {
   session_id: string;
   project_id: string;
   account_id: string;
-  provider: 'daytona' | 'justavps';
+  provider: 'daytona' | 'platinum' | 'local_docker' | 'justavps';
   external_id: string | null;
   base_url: string | null;
   status: ProjectSessionSandboxStatus;
@@ -38,6 +38,8 @@ export type SessionStartStage = 'provisioning' | 'starting' | 'ready' | 'stopped
 export interface SessionStartResult {
   /** Coarse lifecycle stage to render + poll on. */
   stage: SessionStartStage;
+  /** Immutable project-session agent bound at session creation. */
+  agent_name: string;
   /** Whether polling /start again can make progress (false = terminal). */
   retriable: boolean;
   sandbox: ProjectSessionSandbox | null;

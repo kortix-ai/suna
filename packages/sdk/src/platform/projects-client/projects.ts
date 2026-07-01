@@ -9,7 +9,7 @@ import {
 } from './shared';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
-export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'llm_gateway';
+export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'meet' | 'llm_gateway';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {
@@ -71,6 +71,14 @@ export interface ProjectConfigSummary {
     mode: string | null;
     source?: 'opencode' | 'kortix.toml';
     enabled?: boolean;
+    /** Per-agent governance from `kortix.toml [[agents]]` (read-only mirror).
+     *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
+     *  OpenCode-discovered agents (not governed by [[agents]]). */
+    scope?: {
+      env: string[] | 'all';
+      connectors: string[] | 'all';
+      kortix_cli: string[] | 'all';
+    };
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;
   commands: Array<{ name: string; path: string; description: string | null }>;
@@ -169,7 +177,10 @@ export function isManagedGithubProject(project: { metadata?: Record<string, unkn
 
 export async function getProjectDetail(projectId: string, options?: ApiClientOptions) {
   return unwrap(
-    await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, options),
+    await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, {
+      showErrors: false,
+      ...options,
+    }),
   );
 }
 
