@@ -11,7 +11,7 @@
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import { projects } from "@kortix/db";
-import { db } from "../shared/db";
+import { Effect } from "effect";
 import {
   isValidSecretName,
   writeSharedProjectSecret,
@@ -21,6 +21,8 @@ import {
   pipedreamConfigured,
   pipedreamConnectUrl,
 } from "../executor/pipedream";
+import { DatabaseService } from "../effect/services";
+import { runEffectOrThrow } from "../effect/http";
 import { effectHandler, effectMiddleware } from "../effect/hono";
 import { resolveSetupLink } from "./token";
 
@@ -28,12 +30,17 @@ const setupLinksPublicApp = new Hono();
 setupLinksPublicApp.use("*", effectMiddleware);
 
 async function projectName(projectId: string): Promise<string> {
-  const [row] = await db
-    .select({ name: projects.name })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
-    .limit(1);
-  return row?.name ?? "this project";
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    const [row] = yield* Effect.tryPromise(() =>
+      database
+        .select({ name: projects.name })
+        .from(projects)
+        .where(eq(projects.projectId, projectId))
+        .limit(1),
+    );
+    return row?.name ?? "this project";
+  }));
 }
 
 // GET /v1/setup-links/secret/:token — what fields does this link ask for?
