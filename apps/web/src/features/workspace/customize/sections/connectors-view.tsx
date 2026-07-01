@@ -1891,10 +1891,11 @@ export function SlackConnectForm({
 function sharingToAccess(s: ConnectorSharing | null | undefined): {
   mode: 'project' | 'private' | 'members';
   memberIds: string[];
+  groupIds: string[];
 } {
-  if (!s || s.mode === 'project') return { mode: 'project', memberIds: [] };
-  if (s.mode === 'private') return { mode: 'private', memberIds: [] };
-  return { mode: 'members', memberIds: s.memberIds ?? [] };
+  if (!s || s.mode === 'project') return { mode: 'project', memberIds: [], groupIds: [] };
+  if (s.mode === 'private') return { mode: 'private', memberIds: [], groupIds: [] };
+  return { mode: 'members', memberIds: s.memberIds ?? [], groupIds: s.groupIds ?? [] };
 }
 
 function ProfileSection({
@@ -1912,12 +1913,14 @@ function ProfileSection({
   const initialAccess = sharingToAccess(connector.sharing);
   const [access, setAccess] = useState(initialAccess.mode);
   const [memberIds, setMemberIds] = useState<string[]>(initialAccess.memberIds);
+  const [groupIds, setGroupIds] = useState<string[]>(initialAccess.groupIds);
 
   useEffect(() => {
     setCredential(connector.credentialMode);
     const a = sharingToAccess(connector.sharing);
     setAccess(a.mode);
     setMemberIds(a.memberIds);
+    setGroupIds(a.groupIds);
   }, [connector]);
 
   const modeChanged = credential !== connector.credentialMode;
@@ -1926,7 +1929,8 @@ function ProfileSection({
     credential === 'shared' &&
     (access !== saved.mode ||
       (access === 'members' &&
-        memberIds.slice().sort().join() !== saved.memberIds.slice().sort().join()));
+        (memberIds.slice().sort().join() !== saved.memberIds.slice().sort().join() ||
+          groupIds.slice().sort().join() !== saved.groupIds.slice().sort().join())));
   const dirty = modeChanged || accessChanged;
 
   const reset = () => {
@@ -1934,6 +1938,7 @@ function ProfileSection({
     const a = sharingToAccess(connector.sharing);
     setAccess(a.mode);
     setMemberIds(a.memberIds);
+    setGroupIds(a.groupIds);
   };
 
   const save = useMutation({
@@ -1944,7 +1949,7 @@ function ProfileSection({
           ? { mode: 'project' }
           : access === 'private'
             ? { mode: 'private', ownerId: '' }
-            : { mode: 'members', memberIds };
+            : { mode: 'members', memberIds, groupIds };
       if (modeChanged || accessChanged)
         await setConnectorSharing(projectId, connector.slug, intent);
     },
@@ -2013,10 +2018,11 @@ function ProfileSection({
           <SharingPicker
             projectId={projectId}
             showHeading={false}
-            value={{ mode: access, memberIds }}
+            value={{ mode: access, memberIds, groupIds }}
             onChange={(s) => {
               setAccess(s.mode);
               setMemberIds(s.memberIds);
+              setGroupIds(s.groupIds);
             }}
             copy={{
               project: {
@@ -2024,7 +2030,10 @@ function ProfileSection({
                 desc: 'Any member can use the shared profile',
               },
               private: { label: 'Only me', desc: 'Just you' },
-              members: { label: 'Specific members', desc: 'A chosen list of members' },
+              members: {
+                label: 'Specific members or departments',
+                desc: 'A chosen list of members and departments',
+              },
             }}
           />
         </div>
@@ -2033,7 +2042,9 @@ function ProfileSection({
       <SaveBar
         dirty={dirty}
         saving={save.isPending}
-        disabled={credential === 'shared' && access === 'members' && memberIds.length === 0}
+        disabled={
+          credential === 'shared' && access === 'members' && memberIds.length + groupIds.length === 0
+        }
         onSave={() => save.mutate()}
         onReset={reset}
         label={tI18nHardcoded.raw(
@@ -2760,18 +2771,20 @@ interface ConnectorSetup {
   credential: 'shared' | 'per_user';
   access: 'project' | 'private' | 'members';
   memberIds: string[];
+  groupIds: string[];
 }
 
 const DEFAULT_CONNECTOR_SETUP: ConnectorSetup = {
   credential: 'shared',
   access: 'project',
   memberIds: [],
+  groupIds: [],
 };
 
 function setupToSharing(s: ConnectorSetup): ConnectorSharing {
   if (s.access === 'project') return { mode: 'project' };
   if (s.access === 'private') return { mode: 'private', ownerId: '' };
-  return { mode: 'members', memberIds: s.memberIds };
+  return { mode: 'members', memberIds: s.memberIds, groupIds: s.groupIds };
 }
 
 function ConnectorSetupFields({
@@ -2797,7 +2810,7 @@ function ConnectorSetupFields({
             onChange(
               credential === 'shared'
                 ? { ...value, credential }
-                : { ...value, credential, access: 'project', memberIds: [] },
+                : { ...value, credential, access: 'project', memberIds: [], groupIds: [] },
             );
           }}
           className="space-y-2"
@@ -2829,15 +2842,20 @@ function ConnectorSetupFields({
           <SharingPicker
             projectId={projectId}
             showHeading={false}
-            value={{ mode: value.access, memberIds: value.memberIds }}
-            onChange={(s) => onChange({ ...value, access: s.mode, memberIds: s.memberIds })}
+            value={{ mode: value.access, memberIds: value.memberIds, groupIds: value.groupIds }}
+            onChange={(s) =>
+              onChange({ ...value, access: s.mode, memberIds: s.memberIds, groupIds: s.groupIds })
+            }
             copy={{
               project: {
                 label: 'Everyone in the project',
                 desc: 'Any member can use the shared profile',
               },
               private: { label: 'Only me', desc: 'Just you' },
-              members: { label: 'Specific members', desc: 'A chosen list of members' },
+              members: {
+                label: 'Specific members or departments',
+                desc: 'A chosen list of members and departments',
+              },
             }}
           />
         </Field>
@@ -3324,7 +3342,7 @@ function ConfigureAppModal({
             size="sm"
             onClick={() => save.mutate()}
             disabled={
-              save.isPending || (setup.access === 'members' && setup.memberIds.length === 0)
+              save.isPending || (setup.access === 'members' && setup.memberIds.length + setup.groupIds.length === 0)
             }
             className="gap-1.5"
           >
@@ -3661,7 +3679,7 @@ export function CustomConnectorForm({
                 !draft.slug ||
                 save.isPending ||
                 !connectionValid(draft, emailChannelEnabled) ||
-                (setup.access === 'members' && setup.memberIds.length === 0)
+                (setup.access === 'members' && setup.memberIds.length + setup.groupIds.length === 0)
               }
               className="gap-1.5"
             >

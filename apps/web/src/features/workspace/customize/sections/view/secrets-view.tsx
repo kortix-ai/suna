@@ -440,7 +440,9 @@ function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefi
 
 function sharingScopeLabel(sharing: ConnectorSharing | null): string | null {
   if (!sharing || sharing.mode === 'project') return null;
-  return sharing.mode === 'private' ? 'Owner only' : 'Select members';
+  if (sharing.mode === 'private') return 'Owner only';
+  const groups = sharing.groupIds?.length ?? 0;
+  return groups > 0 ? 'Members & departments' : 'Select members';
 }
 
 function effectiveStatusLabel(row: SecretRow): string {
@@ -645,7 +647,7 @@ function SecretDialog({
   const fixedName = row?.name ?? null;
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
-  const [sharing, setSharing] = useState<SharingSelection>({ mode: 'project', memberIds: [] });
+  const [sharing, setSharing] = useState<SharingSelection>({ mode: 'project', memberIds: [], groupIds: [] });
 
   const requiresValue = !row?.sharedConfigured;
 
