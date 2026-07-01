@@ -6,6 +6,7 @@ import { and, eq } from 'drizzle-orm';
 import { accountInvitations, accountMembers } from '@kortix/db';
 import { db } from '../shared/db';
 import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
+import { revokeAllAccountTokensForUser } from '../repositories/account-tokens';
 import { scimError } from '../middleware/scim-auth';
 import { json, errors } from '../openapi';
 import {
@@ -339,6 +340,9 @@ scimRouter.openapi(
         and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)),
       );
     invalidateIamCacheForUser(userId);
+    // IdP-driven offboarding: revoke the user's PATs + live sandbox session
+    // tokens so deactivation is immediate, not just membership-level.
+    await revokeAllAccountTokensForUser(userId, accountId).catch(() => 0);
     await scimAudit(c, {
       accountId,
       action: 'scim.user.deactivate',
@@ -405,6 +409,8 @@ scimRouter.openapi(
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
   invalidateIamCacheForUser(userId);
+  // Revoke PATs + live sandbox session tokens so the deprovision is immediate.
+  await revokeAllAccountTokensForUser(userId, accountId).catch(() => 0);
 
   await scimAudit(c, {
     accountId,
