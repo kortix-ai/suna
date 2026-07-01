@@ -48,10 +48,11 @@ const domainFor = (display: string): string => {
 
 const directInfrastructure = (source: string): string[] => {
   const matches: string[] = [];
+  const sourceWithoutFetchMethods = source.replace(/\basync\s+fetch\s*\(/g, "asyncFetch(");
   if (/from ['"][../]*shared\/db['"]/.test(source)) matches.push("direct shared/db import");
   if (/from ['"][../]*shared\/supabase['"]/.test(source)) matches.push("direct shared/supabase import");
   if (/from ['"][../]*config['"]/.test(source)) matches.push("direct config import");
-  if (/\bfetch\s*\(/.test(source) && !/HttpClient/.test(source)) matches.push("direct fetch");
+  if (/(?<!\.)\bfetch\s*\(/.test(sourceWithoutFetchMethods) && !/HttpClient/.test(source)) matches.push("direct fetch");
   if (/\bnew Promise\s*\(/.test(source)) matches.push("direct Promise construction");
   if (/\bset(?:Timeout|Interval)\s*\(/.test(source)) matches.push("direct timer");
   return matches;

@@ -24,9 +24,11 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { prettyJSON } from "hono/pretty-json";
 import { HTTPException } from "hono/http-exception";
-import { config } from "./config";
+import { Effect, Schedule } from "effect";
 import { BillingError } from "./errors";
 import { effectMiddleware, effectHandler } from "./effect/hono";
+import { runEffectOrThrow } from "./effect/http";
+import { AppConfig, DatabaseService } from "./effect/services";
 
 // ─── Sub-Service Imports ────────────────────────────────────────────────────
 
@@ -42,9 +44,8 @@ import { requestDeadline } from "./middleware/request-deadline";
 // hot reloads — the promise never settles, the handler hangs, and Bun's
 // idleTimeout kills the socket with an empty reply. Frontend-polled routes
 // (maintenance banner, user-roles) must never sit behind a dynamic import.
-import { db, hasDatabase } from "./shared/db";
 import { getPlatformRole } from "./shared/platform-roles";
-import { platformSettings } from "@kortix/db";
+import { platformSettings, type Database } from "@kortix/db";
 import { eq } from "drizzle-orm";
 import { ensureSchema } from "./ensure-schema";
 import {
@@ -162,6 +163,24 @@ const app = new OpenAPIHono();
 // booting the server. See the import.meta.main guard around startup below.
 export { app };
 
+const appConfig = await runEffectOrThrow(Effect.gen(function* () {
+  return yield* AppConfig;
+}));
+
+const hasApiDatabase = () =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const { hasDatabase } = yield* DatabaseService;
+    return hasDatabase;
+  }));
+
+const runApiDatabase = <A>(
+  operation: (database: Database) => Promise<A> | A,
+): Promise<A> =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    return yield* Effect.tryPromise(async () => operation(database));
+  }));
+
 app.use("*", effectMiddleware);
 
 app.use("*", async (c, next) => {
@@ -231,7 +250,7 @@ const corsOrigins = [
 // Their origins are dynamic per PR (Vercel deploy URLs + *.preview.kortix.com
 // aliases) so they can't be enumerated above. Scoped to INTERNAL_KORTIX_ENV=preview
 // only — dev/prod keep the strict static allowlist.
-const allowPreviewOrigins = config.INTERNAL_KORTIX_ENV === "preview";
+const allowPreviewOrigins = appConfig.INTERNAL_KORTIX_ENV === "preview";
 const PREVIEW_ORIGIN =
   /^https:\/\/[a-z0-9-]+\.(vercel\.app|preview\.kortix\.com)$/i;
 
@@ -388,7 +407,7 @@ app.use("*", async (c, next) => {
 });
 
 // Pretty JSON in dev mode for easier debugging
-if (config.INTERNAL_KORTIX_ENV === "dev") {
+if (appConfig.INTERNAL_KORTIX_ENV === "dev") {
   app.use("*", prettyJSON());
 }
 
@@ -446,7 +465,7 @@ const healthHandler = (c: any) =>
     service: "kortix-api",
     version: API_VERSION,
     commit: API_COMMIT,
-    environment: config.INTERNAL_KORTIX_ENV,
+    environment: appConfig.INTERNAL_KORTIX_ENV,
     instance: API_INSTANCE,
     started_at: STARTED_AT,
     uptime_seconds: Math.round(process.uptime()),
@@ -454,7 +473,7 @@ const healthHandler = (c: any) =>
     // the container's memory limit, without needing metrics-server/dashboards.
     memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
     timestamp: new Date().toISOString(),
-    billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
+    billing_enabled: appConfig.KORTIX_BILLING_INTERNAL_ENABLED,
     // Whether the Daytona warm-snapshot path is live in this env (flag + key +
     // warm target all present) — see snapshots/warm-bake.ts. Surfaced here so a
     // misconfigured env var is visible remotely instead of failing silently.
@@ -503,15 +522,15 @@ let eventLoopLagMs = 0;
 {
   const SAMPLE_INTERVAL_MS = 1000;
   let lastSample = performance.now();
-  const lagTimer = setInterval(() => {
-    const now = performance.now();
-    // How much longer than the interval the loop took to come back to this tick.
-    eventLoopLagMs = Math.max(0, now - lastSample - SAMPLE_INTERVAL_MS);
-    lastSample = now;
-    setEventLoopLagSeconds(eventLoopLagMs / 1000);
-  }, SAMPLE_INTERVAL_MS);
-  // Never keep the process alive just for the sampler.
-  (lagTimer as { unref?: () => void }).unref?.();
+  Effect.runFork(
+    Effect.sync(() => {
+      const now = performance.now();
+      // How much longer than the interval the loop took to come back to this tick.
+      eventLoopLagMs = Math.max(0, now - lastSample - SAMPLE_INTERVAL_MS);
+      lastSample = now;
+      setEventLoopLagSeconds(eventLoopLagMs / 1000);
+    }).pipe(Effect.repeat(Schedule.spaced(`${SAMPLE_INTERVAL_MS} millis`))),
+  );
 }
 
 const livenessHandler = (c: any) => {
@@ -619,12 +638,14 @@ app.openapi(
     responses: { 200: json(MaintenanceSchema, "Maintenance config") },
   }),
   effectHandler(async (c: any) => {
-    if (!hasDatabase) return c.json(DEFAULT_MAINTENANCE);
-    const [row] = await db
-      .select({ value: platformSettings.value })
-      .from(platformSettings)
-      .where(eq(platformSettings.key, MAINTENANCE_KEY))
-      .limit(1);
+    if (!(await hasApiDatabase())) return c.json(DEFAULT_MAINTENANCE);
+    const [row] = await runApiDatabase((database) =>
+      database
+        .select({ value: platformSettings.value })
+        .from(platformSettings)
+        .where(eq(platformSettings.key, MAINTENANCE_KEY))
+        .limit(1),
+    );
     return c.json(row?.value ?? DEFAULT_MAINTENANCE);
   }),
 );
@@ -651,24 +672,26 @@ app.openapi(
     if (role !== "admin" && role !== "super_admin") {
       return c.json({ error: "Admin access required" }, 403);
     }
-    if (!hasDatabase) return c.json({ error: "Database not configured" }, 503);
+    if (!(await hasApiDatabase())) return c.json({ error: "Database not configured" }, 503);
     const body = await c.req.json().catch(() => ({}));
     const maintenanceConfig = {
       ...DEFAULT_MAINTENANCE,
       ...body,
       updatedAt: new Date().toISOString(),
     };
-    await db
-      .insert(platformSettings)
-      .values({
-        key: MAINTENANCE_KEY,
-        value: maintenanceConfig,
-        updatedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: platformSettings.key,
-        set: { value: maintenanceConfig, updatedAt: new Date() },
-      });
+    await runApiDatabase((database) =>
+      database
+        .insert(platformSettings)
+        .values({
+          key: MAINTENANCE_KEY,
+          value: maintenanceConfig,
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: platformSettings.key,
+          set: { value: maintenanceConfig, updatedAt: new Date() },
+        }),
+    );
     return c.json(maintenanceConfig);
   }),
 );
@@ -803,7 +826,7 @@ app.route("/v1/setup-links", setupLinksPublicApp); // /v1/setup-links/{secret,co
 
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
-if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
+if (!appConfig.KORTIX_BILLING_INTERNAL_ENABLED) {
   app.route("/v1/setup", setupApp); // /v1/setup/install-status (public), rest (auth inside router)
 }
 // /v1/admin/* — admin console (accounts/users/ledger/credits). supabaseAuth +
@@ -959,25 +982,25 @@ console.log(`
 ╔═══════════════════════════════════════════════════════════╗
 ║                  Kortix API Starting                      ║
 ╠═══════════════════════════════════════════════════════════╣
-║  Port: ${config.PORT.toString().padEnd(49)}║
-║  Env:  ${config.INTERNAL_KORTIX_ENV.padEnd(49)}║
+║  Port: ${appConfig.PORT.toString().padEnd(49)}║
+║  Env:  ${appConfig.INTERNAL_KORTIX_ENV.padEnd(49)}║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Services:                                                ║
 ║    /v1/router     (search, LLM, proxy)                    ║
 ║    /v1/billing    (subscriptions, credits, webhooks)       ║
 ║    /v1/platform   (api keys, sandbox version)               ║
 ║    /v1/projects   (Git-backed projects)                    ║
-${config.KORTIX_APPS_EXPERIMENTAL ? "║    /v1/projects/:id/apps  (experimental [[apps]])         ║\n" : ""}
+${appConfig.KORTIX_APPS_EXPERIMENTAL ? "║    /v1/projects/:id/apps  (experimental [[apps]])         ║\n" : ""}
 ║    /v1/setup      (setup & env management)                 ║
 ║    /v1/tunnel     (reverse-tunnel to local machines)         ║
 ║    /v1/p         (sandbox proxy — local + cloud)            ║
 ╠═══════════════════════════════════════════════════════════╣
-║  Database:   ${config.DATABASE_URL ? "✓ Configured".padEnd(42) : "✗ NOT SET".padEnd(42)}║
-║  Supabase:   ${config.SUPABASE_URL ? "✓ Configured".padEnd(42) : "✗ NOT SET".padEnd(42)}║
-║  Stripe:     ${config.STRIPE_SECRET_KEY ? "✓ Configured".padEnd(42) : "✗ NOT SET".padEnd(42)}║
-║  Billing:    ${(config.KORTIX_BILLING_INTERNAL_ENABLED ? "ENABLED" : "DISABLED").padEnd(42)}║
-║  Tunnel:     ${(config.TUNNEL_ENABLED ? "ENABLED" : "DISABLED").padEnd(42)}║
-║  Providers:  ${config.ALLOWED_SANDBOX_PROVIDERS.join(", ").padEnd(42)}║
+║  Database:   ${appConfig.DATABASE_URL ? "✓ Configured".padEnd(42) : "✗ NOT SET".padEnd(42)}║
+║  Supabase:   ${appConfig.SUPABASE_URL ? "✓ Configured".padEnd(42) : "✗ NOT SET".padEnd(42)}║
+║  Stripe:     ${appConfig.STRIPE_SECRET_KEY ? "✓ Configured".padEnd(42) : "✗ NOT SET".padEnd(42)}║
+║  Billing:    ${(appConfig.KORTIX_BILLING_INTERNAL_ENABLED ? "ENABLED" : "DISABLED").padEnd(42)}║
+║  Tunnel:     ${(appConfig.TUNNEL_ENABLED ? "ENABLED" : "DISABLED").padEnd(42)}║
+║  Providers:  ${appConfig.ALLOWED_SANDBOX_PROVIDERS.join(", ").padEnd(42)}║
 ╚═══════════════════════════════════════════════════════════╝
 `);
 
@@ -1138,7 +1161,7 @@ import {
 } from "./sandbox-proxy/ws-proxy";
 
 export default {
-  port: config.PORT,
+  port: appConfig.PORT,
 
   // Bun's default HTTP idleTimeout is 10s: a handler that hasn't written any
   // bytes by then gets its socket closed with an EMPTY reply — no status, no
@@ -1150,7 +1173,7 @@ export default {
   idleTimeout: 30,
 
   async fetch(req: Request, server: any): Promise<Response | undefined> {
-    const url = getRequestUrl(req, config.PORT);
+    const url = getRequestUrl(req, appConfig.PORT);
     const isWsUpgrade =
       req.headers.get("upgrade")?.toLowerCase() === "websocket";
 
