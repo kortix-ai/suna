@@ -91,7 +91,7 @@ import {
   getRetryMessage,
   splitUserParts,
   isFilePart,
-} from '@/lib/opencode/turns';
+} from '@kortix/sdk/turns';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
