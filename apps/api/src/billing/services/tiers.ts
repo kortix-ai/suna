@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { billingConfig as config } from '../effect';
 import type { DailyCreditConfig, TierConfig, TierEntitlements } from '../../types';
 
 export const TOKEN_PRICE_MULTIPLIER = 1.2;

@@ -12,7 +12,7 @@
 
 import { eq, sql } from 'drizzle-orm';
 import { accountMembers } from '@kortix/db';
-import { db } from '../../shared/db';
+import { billingDb as db } from '../effect';
 import { getStripe } from '../../shared/stripe';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { mintYoloTokenForMember, revokeYoloTokenForMember } from './yolo-tokens';

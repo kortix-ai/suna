@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 if (!process.env.KORTIX_URL) process.env.KORTIX_URL = 'http://localhost:8008';
 
@@ -59,9 +59,7 @@ mock.module('@kortix/db', () => ({
   billingCustomersInBasejump,
 }));
 
-mock.module('../../shared/db', () => ({
-  hasDatabase: true,
-  db: {
+const fakeDb = {
     select() {
       return {
         from(table: any) {
@@ -106,8 +104,16 @@ mock.module('../../shared/db', () => ({
         },
       };
     },
-  },
+  };
+
+mock.module('../../billing/effect', () => ({
+  billingHasDatabase: true,
+  billingDb: fakeDb,
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 const {
   getCustomerByAccountId,

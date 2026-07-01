@@ -1,10 +1,12 @@
 import { Effect } from 'effect';
 import { and, eq, ne } from 'drizzle-orm';
 import { billingCustomers, billingCustomersInBasejump } from '@kortix/db';
-import { DatabaseService } from '../../effect/services';
-import { runEffectOrThrow } from '../../effect/http';
+import { billingDb as database } from '../effect';
 
 type BillingCustomerRow = typeof billingCustomers.$inferSelect;
+
+const runCustomerEffect = <A>(effect: Effect.Effect<A, unknown>) =>
+  Effect.runPromise(effect);
 
 function pickCanonicalCustomer(rows: BillingCustomerRow[]): BillingCustomerRow | null {
   if (rows.length === 0) return null;
@@ -22,7 +24,6 @@ function pickCanonicalCustomer(rows: BillingCustomerRow[]): BillingCustomerRow |
 
 const listKortixCustomersByAccountIdEffect = (accountId: string) =>
   Effect.gen(function* () {
-    const { database } = yield* DatabaseService;
     return yield* Effect.tryPromise(() =>
       database
         .select()
@@ -39,8 +40,7 @@ const listKortixCustomersByAccountIdEffect = (accountId: string) =>
  * several Stripe customers; their machine subs may be on a non-canonical one).
  */
 export async function listAccountStripeCustomerIds(accountId: string): Promise<string[]> {
-  return runEffectOrThrow(Effect.gen(function* () {
-    const { database } = yield* DatabaseService;
+  return runCustomerEffect(Effect.gen(function* () {
     const ids = new Set<string>();
     for (const row of yield* listKortixCustomersByAccountIdEffect(accountId)) {
       if ((row.provider ?? 'stripe') === 'stripe' && row.id) ids.add(row.id);
@@ -58,7 +58,6 @@ export async function listAccountStripeCustomerIds(accountId: string): Promise<s
 
 const getLegacyCustomerByAccountIdEffect = (accountId: string) =>
   Effect.gen(function* () {
-    const { database } = yield* DatabaseService;
     const rows = yield* Effect.tryPromise(() =>
       database
         .select()
@@ -71,7 +70,6 @@ const getLegacyCustomerByAccountIdEffect = (accountId: string) =>
 
 const getLegacyCustomerByStripeIdEffect = (stripeCustomerId: string) =>
   Effect.gen(function* () {
-    const { database } = yield* DatabaseService;
     const [row] = yield* Effect.tryPromise(() =>
       database
         .select()
@@ -94,7 +92,6 @@ const deactivateConflictingCustomersEffect = (accountId: string, canonicalId: st
   }
 
   return Effect.gen(function* () {
-    const { database } = yield* DatabaseService;
     yield* Effect.tryPromise(() =>
       database
         .update(billingCustomers)
@@ -112,7 +109,6 @@ const syncLegacyCustomerToKortixEffect = (legacy: {
   active?: boolean | null;
 }) =>
   Effect.gen(function* () {
-    const { database } = yield* DatabaseService;
     yield* Effect.tryPromise(() =>
       database
         .insert(billingCustomers)
@@ -145,7 +141,7 @@ const syncLegacyCustomerToKortixEffect = (legacy: {
   });
 
 export async function getCustomerByAccountId(accountId: string) {
-  return runEffectOrThrow(Effect.gen(function* () {
+  return runCustomerEffect(Effect.gen(function* () {
     const legacy = yield* getLegacyCustomerByAccountIdEffect(accountId);
     if (legacy) {
       return yield* syncLegacyCustomerToKortixEffect(legacy);
@@ -158,8 +154,7 @@ export async function getCustomerByAccountId(accountId: string) {
 }
 
 export async function getCustomerByStripeId(stripeCustomerId: string) {
-  return runEffectOrThrow(Effect.gen(function* () {
-    const { database } = yield* DatabaseService;
+  return runCustomerEffect(Effect.gen(function* () {
     const [row] = yield* Effect.tryPromise(() =>
       database
         .select()
@@ -186,8 +181,7 @@ export async function upsertCustomer(data: {
   provider?: string | null;
   active?: boolean | null;
 }) {
-  return runEffectOrThrow(Effect.gen(function* () {
-    const { database } = yield* DatabaseService;
+  return runCustomerEffect(Effect.gen(function* () {
     const existing = yield* Effect.promise(() => getCustomerByAccountId(data.accountId));
     if (existing && existing.id !== data.id && existing.provider === (data.provider ?? existing.provider)) {
       yield* Effect.tryPromise(() =>
@@ -236,8 +230,7 @@ export async function upsertCustomer(data: {
  * repointed) that no longer exists, so a fresh one can be created and persisted.
  */
 export async function deleteCustomerByStripeId(stripeCustomerId: string): Promise<void> {
-  return runEffectOrThrow(Effect.gen(function* () {
-    const { database } = yield* DatabaseService;
+  return runCustomerEffect(Effect.gen(function* () {
     yield* Effect.tryPromise(() =>
       database.delete(billingCustomers).where(eq(billingCustomers.id, stripeCustomerId)),
     );

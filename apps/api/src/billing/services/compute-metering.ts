@@ -20,7 +20,7 @@
 // hook can never silently accrue 24h+ of uncharged compute.
 
 import { sandboxComputeSessions } from '@kortix/db';
-import { config } from '../../config';
+import { billingConfig as config } from '../effect';
 import {
   insertComputeSession,
   getOpenComputeSession,

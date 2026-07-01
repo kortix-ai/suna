@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { stripeWebhookEventsProcessed } from '@kortix/db';
-import { db } from '../../shared/db';
+import { billingDb as db } from '../effect';
 
 export async function recordWebhookEvent(eventId: string, eventType: string): Promise<boolean> {
   const inserted = await db

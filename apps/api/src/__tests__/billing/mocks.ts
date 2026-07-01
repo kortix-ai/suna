@@ -77,6 +77,34 @@ export function registerGlobalMocks() {
     },
   }));
 
+  mock.module('../../billing/effect', () => ({
+    billingConfig: {
+      STRIPE_WEBHOOK_SECRET: 'whsec_test',
+      KORTIX_BILLING_INTERNAL_ENABLED: true,
+      INTERNAL_KORTIX_ENV: 'staging',
+      STRIPE_PRICE_ID_6: 'price_tier_6',
+      STRIPE_PRICE_ID_12: 'price_tier_12',
+      STRIPE_PRICE_ID_25: 'price_tier_25',
+      STRIPE_PRICE_ID_50: 'price_tier_50',
+      STRIPE_PRICE_ID_100: 'price_tier_100',
+      STRIPE_PRICE_ID_200: 'price_tier_200',
+      STRIPE_PRICE_ID_400: 'price_tier_400',
+      STRIPE_PRICE_ID_800: 'price_tier_800',
+      STRIPE_COMPUTE_PRICE_ID: 'price_compute',
+      STRIPE_PER_SEAT_PRICE_ID: 'price_seat',
+    },
+    billingDb: {},
+    billingHasDatabase: true,
+    billingSupabase: {
+      rpc: (name: string, params?: any) => {
+        if (mockRegistry.supabaseRpc) return mockRegistry.supabaseRpc.rpc(name, params);
+        return Promise.resolve({ data: null, error: null });
+      },
+    },
+    billingSleep: async () => undefined,
+    runBillingInterval: () => undefined,
+  }));
+
   mock.module('../../shared/resolve-account', () => ({
     resolveAccountId: async (userId: string) =>
       mockRegistry.resolveAccountId ? mockRegistry.resolveAccountId(userId) : userId,

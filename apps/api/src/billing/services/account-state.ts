@@ -2,7 +2,7 @@ import { projectSessions, sandboxes } from '@kortix/db';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { maxConcurrentSessionsForTier } from '../../shared/account-limits';
-import { db } from '../../shared/db';
+import { billingDb as db } from '../effect';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import type { AccountStateResponse, CommitmentInfo, ScheduledChange } from '../../types';
 import { getCreditAccount, getSubscriptionInfo } from '../repositories/credit-accounts';

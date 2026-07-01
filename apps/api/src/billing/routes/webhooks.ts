@@ -1,6 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { Effect } from 'effect';
-import { config } from '../../config';
+import { billingConfig as config } from '../effect';
 import { processStripeWebhook, processRevenueCatWebhook } from '../services/webhooks';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { attemptBilling, billingFail, parseJsonBody, runBillingEffect } from './effect-workflows';

@@ -1,9 +1,12 @@
 import { Context, Effect, Layer } from 'effect';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@kortix/db';
-import { config, SANDBOX_VERSION } from '../config';
+import * as configModule from '../config';
 import { db, hasDatabase } from '../shared/db';
 import { getSupabase } from '../shared/supabase';
+
+const config = configModule.config;
+const SANDBOX_VERSION = configModule.SANDBOX_VERSION ?? process.env.SANDBOX_VERSION ?? 'unknown';
 
 export type AppConfigValue = typeof config & {
   readonly SANDBOX_VERSION: string;

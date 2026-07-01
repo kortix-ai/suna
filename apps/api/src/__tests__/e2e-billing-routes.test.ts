@@ -168,6 +168,27 @@ mock.module('../config', () => ({
   },
 }));
 
+mock.module('../billing/effect', () => ({
+  billingConfig: {
+    STRIPE_WEBHOOK_SECRET: 'whsec_test',
+    INTERNAL_KORTIX_ENV: 'staging',
+    DATABASE_URL: '',
+    FRONTEND_URL: 'http://localhost:3000',
+    KORTIX_BILLING_INTERNAL_ENABLED: true,
+    ALLOWED_SANDBOX_PROVIDERS: ['daytona'],
+    isDaytonaEnabled: () => false,
+    getDefaultProvider: () => 'daytona',
+  },
+  billingDb: {},
+  billingHasDatabase: false,
+  billingSupabase: {
+    rpc: () => Promise.resolve({ data: null, error: null }),
+    auth: { getUser: async () => ({ data: { user: null }, error: 'mocked' }) },
+  },
+  billingSleep: async () => undefined,
+  runBillingInterval: () => undefined,
+}));
+
 // Customers repository mock
 mock.module('../billing/repositories/customers', () => ({
   getCustomerByAccountId: async () => ({ id: 'cus_test_123', accountId: TEST_USER_ID, email: 'test@kortix.dev', provider: 'stripe', active: true }),

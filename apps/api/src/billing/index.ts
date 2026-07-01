@@ -4,7 +4,7 @@ import {
   AUTO_TOPUP_DEFAULT_THRESHOLD,
 } from "@kortix/shared";
 import type { Context } from "hono";
-import { config } from "../config";
+import { billingConfig as config, runBillingInterval } from './effect';
 import { supabaseAuth } from "../middleware/auth";
 import { json, makeOpenApiApp } from "../openapi";
 import type { AppEnv } from "../types";
@@ -123,7 +123,7 @@ billingApp.openapi(
 
 if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
   const YEARLY_ROTATION_INTERVAL_MS = 60 * 60 * 1000;
-  setInterval(async () => {
+  runBillingInterval(async () => {
     try {
       const { processYearlyCreditRotation } =
         await import("./services/yearly-rotation");
@@ -134,7 +134,7 @@ if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
   }, YEARLY_ROTATION_INTERVAL_MS);
 
   const FREE_TIER_ROTATION_INTERVAL_MS = 60 * 60 * 1000;
-  setInterval(async () => {
+  runBillingInterval(async () => {
     try {
       const { processFreeTierCreditRotation } =
         await import("./services/free-tier-rotation");
