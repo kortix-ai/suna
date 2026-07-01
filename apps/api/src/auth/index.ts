@@ -14,12 +14,14 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, eq, sql } from "drizzle-orm";
 import { accountSessionActivity } from "@kortix/db";
-import { db } from "../shared/db";
+import { Effect } from "effect";
 import { supabaseAuth } from "../middleware/auth";
 import type { AppEnv } from "../types";
 import { auditLogout } from "../shared/auth-audit";
 import { makeOpenApiApp, json, errors, auth } from "../openapi";
 import { effectHandler } from "../effect/hono";
+import { DatabaseService } from "../effect/services";
+import { runEffectOrThrow } from "../effect/http";
 
 export const authRouter = makeOpenApiApp<AppEnv>();
 
@@ -68,20 +70,25 @@ authRouter.openapi(
     // on explicit logout.
     let revokedCount = 0;
     if (sessionId) {
-      const rows = await db
-        .update(accountSessionActivity)
-        .set({
-          revokedAt: sql`COALESCE(${accountSessionActivity.revokedAt}, now())`,
-          revokedReason: sql`COALESCE(${accountSessionActivity.revokedReason}, 'user_action')`,
-          revokedBy: userId,
-        })
-        .where(
-          and(
-            eq(accountSessionActivity.userId, userId),
-            eq(accountSessionActivity.sessionId, sessionId),
-          ),
-        )
-        .returning({ accountId: accountSessionActivity.accountId });
+      const rows = await runEffectOrThrow(Effect.gen(function* () {
+        const { database } = yield* DatabaseService;
+        return yield* Effect.tryPromise(() =>
+          database
+            .update(accountSessionActivity)
+            .set({
+              revokedAt: sql`COALESCE(${accountSessionActivity.revokedAt}, now())`,
+              revokedReason: sql`COALESCE(${accountSessionActivity.revokedReason}, 'user_action')`,
+              revokedBy: userId,
+            })
+            .where(
+              and(
+                eq(accountSessionActivity.userId, userId),
+                eq(accountSessionActivity.sessionId, sessionId),
+              ),
+            )
+            .returning({ accountId: accountSessionActivity.accountId }),
+        );
+      }));
       revokedCount = rows.length;
     }
 

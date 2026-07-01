@@ -1,14 +1,15 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { sql } from "drizzle-orm";
+import { Effect } from "effect";
 import type { AppEnv } from "../types";
-import { db } from "../shared/db";
 import { supabaseAuth } from "../middleware/auth";
 import { requireAdmin } from "../middleware/require-admin";
-import { config } from "../config";
 import { getTunnelServiceStatus } from "../tunnel";
 import { isOtelTraceExporterConfigured } from "../lib/otel";
 import { makeOpenApiApp, json, errors, auth } from "../openapi";
 import { effectHandler } from "../effect/hono";
+import { AppConfig, DatabaseService } from "../effect/services";
+import { runEffectOrThrow } from "../effect/http";
 
 export const opsApp = makeOpenApiApp<AppEnv>();
 
@@ -24,15 +25,23 @@ function resultRows<T>(result: unknown): T[] {
   return Array.isArray(rows) ? (rows as T[]) : [];
 }
 
+async function executeQuery<T>(query: ReturnType<typeof sql>): Promise<T[]> {
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    const result = yield* Effect.tryPromise(() => database.execute(query));
+    return resultRows<T>(result);
+  }));
+}
+
 async function oneCount(query: ReturnType<typeof sql>): Promise<number> {
-  const rows = resultRows<CountRow>(await db.execute(query));
+  const rows = await executeQuery<CountRow>(query);
   return Number(rows[0]?.count ?? 0);
 }
 
 async function groupCounts(
   query: ReturnType<typeof sql>,
 ): Promise<Record<string, number>> {
-  const rows = resultRows<GroupCountRow>(await db.execute(query));
+  const rows = await executeQuery<GroupCountRow>(query);
   return Object.fromEntries(
     rows.map((row) => [row.key ?? "unknown", Number(row.count ?? 0)]),
   );
@@ -48,7 +57,7 @@ async function recentAuditEvents() {
     resource_id: string | null;
     occurred_at: Date | string;
   }>(
-    await db.execute(sql`
+    await executeQuery(sql`
     SELECT event_id, account_id, actor_user_id, action, resource_type, resource_id, occurred_at
     FROM kortix.audit_events
     ORDER BY occurred_at DESC
@@ -76,7 +85,7 @@ async function usageLast24h() {
     cached_tokens: number | string | null;
     cost_usd: string | number | null;
   }>(
-    await db.execute(sql`
+    await executeQuery(sql`
     SELECT
       provider,
       count(*)::int AS calls,
@@ -128,6 +137,9 @@ opsApp.openapi(
     },
   }),
   effectHandler(async (c: any) => {
+    const config = await runEffectOrThrow(Effect.gen(function* () {
+      return yield* AppConfig;
+    }));
     const [
       accountCount,
       projectCount,
