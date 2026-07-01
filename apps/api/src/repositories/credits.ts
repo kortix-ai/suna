@@ -1,8 +1,9 @@
+import { Effect } from 'effect';
 import { eq } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { creditAccounts } from '@kortix/db';
-import { db } from '../shared/db';
-import { config } from '../config';
+import { AppConfig, DatabaseService } from '../effect/services';
+import { runEffectOrThrow } from '../effect/http';
 
 interface CreditBalance {
   balance: number;
@@ -29,18 +30,29 @@ export interface CreditDeductResult {
  * Get credit balance for an account.
  * Fast single query.
  */
-async function getCreditBalance(accountId: string): Promise<CreditBalance | null> {
-  try {
-    const [row] = await db
-      .select({
-        balance: creditAccounts.balance,
-        expiringCredits: creditAccounts.expiringCredits,
-        nonExpiringCredits: creditAccounts.nonExpiringCredits,
-        dailyCreditsBalance: creditAccounts.dailyCreditsBalance,
-      })
-      .from(creditAccounts)
-      .where(eq(creditAccounts.accountId, accountId))
-      .limit(1);
+const getCreditBalanceEffect = (accountId: string): Effect.Effect<CreditBalance | null, never, DatabaseService> =>
+  Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    const row = yield* Effect.tryPromise(() =>
+      database
+        .select({
+          balance: creditAccounts.balance,
+          expiringCredits: creditAccounts.expiringCredits,
+          nonExpiringCredits: creditAccounts.nonExpiringCredits,
+          dailyCreditsBalance: creditAccounts.dailyCreditsBalance,
+        })
+        .from(creditAccounts)
+        .where(eq(creditAccounts.accountId, accountId))
+        .limit(1),
+    ).pipe(
+      Effect.map((rows) => rows[0]),
+      Effect.catchAll((err) =>
+        Effect.sync(() => {
+          console.error('getCreditBalance error:', err);
+          return null;
+        }),
+      ),
+    );
 
     if (!row) {
       return null;
@@ -52,11 +64,7 @@ async function getCreditBalance(accountId: string): Promise<CreditBalance | null
       nonExpiringCredits: Number(row.nonExpiringCredits) || 0,
       dailyCreditsBalance: Number(row.dailyCreditsBalance) || 0,
     };
-  } catch (err) {
-    console.error('getCreditBalance error:', err);
-    return null;
-  }
-}
+  });
 
 /**
  * Check if account has sufficient credits.
@@ -66,34 +74,37 @@ export async function checkCredits(
   accountId: string,
   minimumRequired: number = 0.01
 ): Promise<CreditCheckResult> {
-  // Billing disabled: no credit gating
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
-    return { hasCredits: true, balance: 0, message: 'OK' };
-  }
+  return runEffectOrThrow(Effect.gen(function* () {
+    const config = yield* AppConfig;
+    // Billing disabled: no credit gating
+    if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
+      return { hasCredits: true, balance: 0, message: 'OK' };
+    }
 
-  const balance = await getCreditBalance(accountId);
+    const balance = yield* getCreditBalanceEffect(accountId);
 
-  if (!balance) {
+    if (!balance) {
+      return {
+        hasCredits: false,
+        balance: 0,
+        message: 'No credit account found',
+      };
+    }
+
+    if (balance.balance < minimumRequired) {
+      return {
+        hasCredits: false,
+        balance: balance.balance,
+        message: `Insufficient credits. Balance: $${balance.balance.toFixed(4)}`,
+      };
+    }
+
     return {
-      hasCredits: false,
-      balance: 0,
-      message: 'No credit account found',
-    };
-  }
-
-  if (balance.balance < minimumRequired) {
-    return {
-      hasCredits: false,
+      hasCredits: true,
       balance: balance.balance,
-      message: `Insufficient credits. Balance: $${balance.balance.toFixed(4)}`,
+      message: 'OK',
     };
-  }
-
-  return {
-    hasCredits: true,
-    balance: balance.balance,
-    message: 'OK',
-  };
+  }));
 }
 
 /**
@@ -106,17 +117,28 @@ export async function deductCredits(
   amount: number,
   description: string,
 ): Promise<CreditDeductResult> {
-  // Billing disabled: no deduction
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
-    return { success: true, amountDeducted: 0, newBalance: 0 };
-  }
+  return runEffectOrThrow(Effect.gen(function* () {
+    const config = yield* AppConfig;
+    const { database } = yield* DatabaseService;
+    // Billing disabled: no deduction
+    if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
+      return { success: true, amountDeducted: 0, newBalance: 0 };
+    }
 
-  try {
-    const result = await db.execute(sql`SELECT atomic_use_credits(
+    const result = yield* Effect.tryPromise(() => database.execute(sql`SELECT atomic_use_credits(
       ${accountId}::uuid,
       ${amount}::numeric,
       ${description}::text
-    ) as result`);
+    ) as result`)).pipe(
+      Effect.catchAll((err) =>
+        Effect.sync(() => {
+          console.error('deductCredits error:', err);
+          return null;
+        }),
+      ),
+    );
+
+    if (!result) return { success: false, error: 'Deduction error' };
 
     const row = result[0] as Record<string, unknown> | undefined;
     const data = row?.result as {
@@ -143,12 +165,19 @@ export async function deductCredits(
 
     // Fire-and-forget: check if auto-topup should trigger after successful deduction.
     // This repository path backs router billing (LLM/tool proxy), so auto-topup must run here.
-    const { checkAndTriggerAutoTopup } = await import('../billing/services/auto-topup');
-    void checkAndTriggerAutoTopup(accountId);
+    yield* Effect.forkDaemon(
+      Effect.promise(async () => {
+        const { checkAndTriggerAutoTopup } = await import('../billing/services/auto-topup');
+        await checkAndTriggerAutoTopup(accountId);
+      }).pipe(
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            console.warn('[credits] auto-topup check failed', err);
+          }),
+        ),
+      ),
+    );
 
     return output;
-  } catch (err) {
-    console.error('deductCredits error:', err);
-    return { success: false, error: 'Deduction error' };
-  }
+  }));
 }

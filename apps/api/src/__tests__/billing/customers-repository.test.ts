@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
+if (!process.env.KORTIX_URL) process.env.KORTIX_URL = 'http://localhost:8008';
+
 type Row = {
   accountId: string;
   id: string;
@@ -58,6 +60,7 @@ mock.module('@kortix/db', () => ({
 }));
 
 mock.module('../../shared/db', () => ({
+  hasDatabase: true,
   db: {
     select() {
       return {
