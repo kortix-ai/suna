@@ -23,7 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   IconAdd,
   IconApp,
@@ -104,7 +104,7 @@ export function AppsList({ projectId, data, isLoading, onAdd, onEdit, onLogs }: 
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-border/60 flex shrink-0 items-center justify-between gap-3 border-b px-5 py-3">
+      <div className="border-border flex shrink-0 items-center justify-between gap-3 border-b p-5 py-3">
         <div className="min-w-0">
           <p className="text-foreground text-sm font-medium">
             {apps.length} {apps.length === 1 ? 'app' : 'apps'}

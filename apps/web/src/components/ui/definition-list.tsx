@@ -27,18 +27,9 @@ export interface DefinitionListProps {
   children: ReactNode;
 }
 
-export function DefinitionList({
-  dividers,
-  className,
-  children,
-}: DefinitionListProps) {
+export function DefinitionList({ dividers, className, children }: DefinitionListProps) {
   return (
-    <dl
-      className={cn(
-        dividers && 'divide-y divide-border/60 border-y border-border/60',
-        className,
-      )}
-    >
+    <dl className={cn(dividers && 'divide-border border-border/60 divide-y border-y', className)}>
       {children}
     </dl>
   );
@@ -52,24 +43,16 @@ export interface DefinitionRowProps {
   title?: string;
 }
 
-export function DefinitionRow({
-  label,
-  labelWidth = 110,
-  children,
-  title,
-}: DefinitionRowProps) {
+export function DefinitionRow({ label, labelWidth = 110, children, title }: DefinitionRowProps) {
   return (
     <div className="flex items-baseline gap-6 py-2.5">
       <dt
-        className="text-xs text-muted-foreground/70 shrink-0 font-medium"
+        className="text-muted-foreground/70 shrink-0 text-xs font-medium"
         style={{ width: labelWidth }}
       >
         {label}
       </dt>
-      <dd
-        className="text-sm text-foreground/90 min-w-0 flex-1 truncate"
-        title={title}
-      >
+      <dd className="text-foreground/90 min-w-0 flex-1 truncate text-sm" title={title}>
         {children}
       </dd>
     </div>

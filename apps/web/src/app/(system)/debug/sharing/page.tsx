@@ -9,7 +9,7 @@ import { useTranslations } from 'next-intl';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { SharingPicker, type SharingSelection } from '@/features/co-worker/shared/sharing-picker';
+import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
 import type { ProjectAccessResponse } from '@/lib/projects-client';
 
 const DEMO_PROJECT = 'demo';

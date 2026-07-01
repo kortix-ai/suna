@@ -7,40 +7,65 @@ import {
   AlertMedia,
   AlertTitle,
 } from '@/components/ui/alert';
-import { STATUS_BG, STATUS_BORDER, STATUS_TEXT, type StatusTone } from '@/components/ui/status';
+import { type StatusTone } from '@/components/ui/status';
 import { cn } from '@/lib/utils';
+import { cva } from 'class-variance-authority';
 import * as React from 'react';
 
 export type InfoBannerIcon =
-  | React.ComponentType<{ className?: string }>
-  | React.ReactElement<{ className?: string }>;
+  | React.ComponentType<{ className?: string; strokeWidth?: number }>
+  | React.ReactElement<{ className?: string; strokeWidth?: number }>;
+
+const infoBannerVariants = cva(
+  'text-foreground bg-popover flex flex-wrap items-center gap-4 px-4 py-3 text-sm',
+  {
+    variants: {
+      tone: {
+        neutral: 'border-border border ',
+        info: 'border-kortix-yellow/25 ',
+        success: 'border-kortix-green/25 ',
+        warning: 'border-kortix-orange/25 ',
+        destructive: 'border-border border',
+      },
+    },
+    defaultVariants: {
+      tone: 'neutral',
+    },
+  },
+);
+
+/** Status icon tile — mirrors the sandbox template state indicator. */
+const infoBannerMediaVariants = cva(
+  'inline-flex size-10 shrink-0 items-center justify-center self-start rounded-sm border [&_svg]:pointer-events-none [&_svg]:shrink-0',
+  {
+    variants: {
+      tone: {
+        neutral: 'text-muted-foreground border-border',
+        info: 'bg-kortix-yellow/10 text-kortix-yellow',
+        success: 'bg-kortix-green/10 text-kortix-green',
+        warning: 'bg-kortix-orange/10 text-kortix-orange',
+        destructive: 'bg-kortix-red/10 text-kortix-red',
+      },
+    },
+    defaultVariants: {
+      tone: 'neutral',
+    },
+  },
+);
+
+const infoBannerIconVariants = cva('size-6 shrink-0');
 
 function renderBannerIcon(icon: InfoBannerIcon, className: string): React.ReactNode {
   if (React.isValidElement(icon)) {
     return React.cloneElement(icon, {
       className: cn(className, icon.props.className),
+      strokeWidth: icon.props.strokeWidth ?? 1.25,
     });
   }
 
   const IconComponent = icon;
-  return <IconComponent className={className} />;
+  return <IconComponent className={className} strokeWidth={1.25} />;
 }
-
-type AlertVariant = NonNullable<React.ComponentProps<typeof Alert>['variant']>;
-
-const TONE_TO_ALERT_VARIANT: Record<StatusTone, AlertVariant> = {
-  neutral: 'default',
-  info: 'default',
-  success: 'default',
-  warning: 'warning',
-  destructive: 'destructive',
-};
-
-const TONE_SURFACE: Partial<Record<StatusTone, string>> = {
-  neutral: cn(STATUS_BORDER.neutral, STATUS_BG.neutral),
-  info: cn(STATUS_BORDER.info, STATUS_BG.info),
-  success: cn(STATUS_BORDER.success, STATUS_BG.success),
-};
 
 export interface InfoBannerProps extends Omit<React.ComponentProps<'div'>, 'title'> {
   tone?: StatusTone;
@@ -59,18 +84,22 @@ export function InfoBanner({
   ...props
 }: InfoBannerProps) {
   const safeTone = tone ?? 'neutral';
-  const usesAlertToneVariant = safeTone === 'warning' || safeTone === 'destructive';
-  const iconClassName = cn('size-[1.1rem]', !usesAlertToneVariant && STATUS_TEXT[safeTone]);
 
   return (
     <Alert
-      variant={TONE_TO_ALERT_VARIANT[safeTone]}
-      className={cn(TONE_SURFACE[safeTone], className)}
+      variant="default"
+      className={cn(infoBannerVariants({ tone: safeTone }), className)}
       {...props}
     >
-      {icon != null && <AlertMedia>{renderBannerIcon(icon, iconClassName)}</AlertMedia>}
-      {title != null && <AlertTitle>{title}</AlertTitle>}
-      {children != null && <AlertDescription className="font-medium">{children}</AlertDescription>}
+      {icon != null && (
+        <AlertMedia className={infoBannerMediaVariants({ tone: safeTone })}>
+          {renderBannerIcon(icon, infoBannerIconVariants())}
+        </AlertMedia>
+      )}
+      {title != null && (
+        <AlertTitle className="text-foreground w-full max-w-full">{title}</AlertTitle>
+      )}
+      {children != null && <AlertDescription>{children}</AlertDescription>}
       {action != null && <AlertActions>{action}</AlertActions>}
     </Alert>
   );

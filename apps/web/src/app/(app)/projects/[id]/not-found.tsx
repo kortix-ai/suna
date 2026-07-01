@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation';
 import { useMemo } from 'react';
 
 import { NotFoundCard, NotFoundNoise } from '@/components/common/not-found-state';
-import { ProjectShell } from '@/features/co-worker/project-layout/project-shell';
+import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
 
 /**
  * Dashboard 404 — the not-found boundary for `/projects/[id]/*`.
