@@ -81,7 +81,12 @@ export type { ProjectConfigSummary } from '../platform/projects-client';
 // host never touches the sandbox. The primitives below are what it composes —
 // also exported standalone for hosts that want the pieces (a model picker, a boot
 // pill, the new-session hand-off) without a full session.
-export { useSession, type SessionPhase, type UseSessionResult, type UseSessionOptions } from './use-session';
+export {
+  useSession,
+  type SessionPhase,
+  type UseSessionResult,
+  type UseSessionOptions,
+} from './use-session';
 export { useSessionPicks, type SessionPicks } from './use-session-picks';
 export { useRuntimePhase, type RuntimePhase } from './use-runtime-phase';
 export {

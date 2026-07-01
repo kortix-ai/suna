@@ -57,7 +57,7 @@ export function getActiveDbSandboxId(): string | undefined {
 export function getBackendPort(): number {
   try {
     const url = new URL(getBackendUrl());
-    return parseInt(url.port, 10) || (url.protocol === 'https:' ? 443 : 80);
+    return Number.parseInt(url.port, 10) || (url.protocol === 'https:' ? 443 : 80);
   } catch {
     return 8008; // fallback for local dev
   }

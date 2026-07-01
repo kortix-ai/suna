@@ -21,9 +21,9 @@ import { type KortixPlatformConfig, configureKortix } from './platform/config';
 import * as P from './platform/projects-client';
 import { getSessionHealth } from './session/health';
 import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from './session/url';
+import { setCurrentRuntime } from './state/current-runtime';
 import { getActiveSandboxId } from './state/server-store/active';
 import { getSandboxUrlForExternalId } from './state/server-store/url-helpers';
-import { setCurrentRuntime } from './state/current-runtime';
 
 /** A model the agent can run, as the opencode runtime identifies it. */
 export type SessionModel = { providerID: string; modelID: string };

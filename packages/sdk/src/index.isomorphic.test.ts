@@ -19,7 +19,12 @@ const SRC_ROOT = join(import.meta.dir);
 
 function resolveRelative(fromFile: string, spec: string): string | null {
   const base = resolve(dirname(fromFile), spec);
-  for (const candidate of [base + '.ts', base + '.tsx', join(base, 'index.ts'), join(base, 'index.tsx')]) {
+  for (const candidate of [
+    `${base}.ts`,
+    `${base}.tsx`,
+    join(base, 'index.ts'),
+    join(base, 'index.tsx'),
+  ]) {
     if (existsSync(candidate)) return candidate;
   }
   return existsSync(base) ? base : null;
@@ -58,9 +63,7 @@ test('root export graph pulls no react/next/zustand/react-query code', () => {
   const { externals } = collectRootGraph();
   for (const [spec, importers] of externals) {
     const forbidden = FORBIDDEN_MODULES.find((m) => spec === m || spec.startsWith(`${m}/`));
-    expect(
-      forbidden ? `"${spec}" imported by ${importers.join(', ')}` : null,
-    ).toBeNull();
+    expect(forbidden ? `"${spec}" imported by ${importers.join(', ')}` : null).toBeNull();
   }
 });
 
