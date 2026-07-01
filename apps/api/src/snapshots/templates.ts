@@ -12,13 +12,14 @@
  */
 
 import { and, eq, isNull, ne, or } from 'drizzle-orm';
-import { sandboxTemplates, projects } from '@kortix/db';
+import { Effect } from 'effect';
+import { sandboxTemplates, projects, type Database } from '@kortix/db';
 import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
-import { db } from '../shared/db';
 import { readManifest } from '../projects/triggers';
 import { resolveCommitSha, readRepoFile, type GitBackedProject } from '../projects/git';
-import { SANDBOX_VERSION, config } from '../config';
+import { AppConfig, DatabaseService } from '../effect/services';
+import { runEffectOrThrow } from '../effect/http';
 import {
   buildDefaultSandboxTemplate,
   DEFAULT_SANDBOX_SLUG,
@@ -84,6 +85,17 @@ const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v23';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 6);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
+const snapshotTemplateConfig = await runEffectOrThrow(Effect.gen(function* () {
+  return yield* AppConfig;
+}));
+
+const runSnapshotTemplateDatabase = <A>(
+  operation: (database: Database) => Promise<A> | A,
+): Promise<A> =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    return yield* Effect.tryPromise(async () => operation(database));
+  }));
 
 function readPositiveIntEnv(name: string, fallback: number): number {
   const raw = Number.parseInt(process.env[name] || '', 10);
@@ -170,10 +182,12 @@ export async function listTemplatesForProject(
     tomlSyncCache.set(project.projectId, Date.now());
   }
 
-  const rows = await db
-    .select()
-    .from(sandboxTemplates)
-    .where(or(eq(sandboxTemplates.projectId, project.projectId), eq(sandboxTemplates.isShared, true)));
+  const rows = await runSnapshotTemplateDatabase((database) =>
+    database
+      .select()
+      .from(sandboxTemplates)
+      .where(or(eq(sandboxTemplates.projectId, project.projectId), eq(sandboxTemplates.isShared, true))),
+  );
 
   if (rows.length === 0) {
     // No DB rows at all — synthesize a platform default so the system still
@@ -234,11 +248,13 @@ export async function resolveTemplateBySlug(
  * fast path and the startup pre-build that mints the global default image.
  */
 export async function resolveDefaultTemplate(): Promise<ResolvedTemplate> {
-  const [shared] = await db
-    .select()
-    .from(sandboxTemplates)
-    .where(and(eq(sandboxTemplates.slug, DEFAULT_SANDBOX_SLUG), eq(sandboxTemplates.isShared, true)))
-    .limit(1);
+  const [shared] = await runSnapshotTemplateDatabase((database) =>
+    database
+      .select()
+      .from(sandboxTemplates)
+      .where(and(eq(sandboxTemplates.slug, DEFAULT_SANDBOX_SLUG), eq(sandboxTemplates.isShared, true)))
+      .limit(1),
+  );
   return shared ? rowToResolved(shared) : synthesizedDefault();
 }
 
@@ -253,20 +269,24 @@ export async function getTemplateRow(
   const conds = [eq(sandboxTemplates.slug, slug)];
   if (projectId === null) conds.push(isNull(sandboxTemplates.projectId));
   else conds.push(eq(sandboxTemplates.projectId, projectId));
-  const [row] = await db
-    .select()
-    .from(sandboxTemplates)
-    .where(and(...conds))
-    .limit(1);
+  const [row] = await runSnapshotTemplateDatabase((database) =>
+    database
+      .select()
+      .from(sandboxTemplates)
+      .where(and(...conds))
+      .limit(1),
+  );
   return row ?? null;
 }
 
 export async function getTemplateById(templateId: string): Promise<DbSandboxTemplate | null> {
-  const [row] = await db
-    .select()
-    .from(sandboxTemplates)
-    .where(eq(sandboxTemplates.templateId, templateId))
-    .limit(1);
+  const [row] = await runSnapshotTemplateDatabase((database) =>
+    database
+      .select()
+      .from(sandboxTemplates)
+      .where(eq(sandboxTemplates.templateId, templateId))
+      .limit(1),
+  );
   return row ?? null;
 }
 
@@ -287,25 +307,27 @@ export interface CreateTemplateInput {
 /** Insert a new project-scoped template. Slug must be unique per project. */
 export async function createTemplate(input: CreateTemplateInput): Promise<DbSandboxTemplate> {
   validateTemplateMutation(input);
-  const [row] = await db
-    .insert(sandboxTemplates)
-    .values({
-      projectId: input.projectId,
-      accountId: input.accountId,
-      slug: input.slug,
-      name: input.name || input.slug,
-      isShared: false,
-      source: input.source ?? 'ui',
-      provider: 'daytona',
-      image: input.image ?? null,
-      dockerfilePath: input.dockerfilePath ?? null,
-      entrypoint: input.entrypoint ?? null,
-      cpu: clamp(input.cpu, SANDBOX_SPEC_LIMITS.cpu),
-      memoryGb: clamp(input.memoryGb, SANDBOX_SPEC_LIMITS.memory),
-      diskGb: clamp(input.diskGb, SANDBOX_SPEC_LIMITS.disk),
-      providerState: 'missing',
-    })
-    .returning();
+  const [row] = await runSnapshotTemplateDatabase((database) =>
+    database
+      .insert(sandboxTemplates)
+      .values({
+        projectId: input.projectId,
+        accountId: input.accountId,
+        slug: input.slug,
+        name: input.name || input.slug,
+        isShared: false,
+        source: input.source ?? 'ui',
+        provider: 'daytona',
+        image: input.image ?? null,
+        dockerfilePath: input.dockerfilePath ?? null,
+        entrypoint: input.entrypoint ?? null,
+        cpu: clamp(input.cpu, SANDBOX_SPEC_LIMITS.cpu),
+        memoryGb: clamp(input.memoryGb, SANDBOX_SPEC_LIMITS.memory),
+        diskGb: clamp(input.diskGb, SANDBOX_SPEC_LIMITS.disk),
+        providerState: 'missing',
+      })
+      .returning(),
+  );
   invalidateTemplateCache(input.projectId);
   return row;
 }
@@ -356,11 +378,13 @@ export async function updateTemplate(
     dockerfilePath:
       (next.dockerfilePath as string | null | undefined) ?? row.dockerfilePath ?? undefined,
   });
-  const [updated] = await db
-    .update(sandboxTemplates)
-    .set(next)
-    .where(eq(sandboxTemplates.templateId, templateId))
-    .returning();
+  const [updated] = await runSnapshotTemplateDatabase((database) =>
+    database
+      .update(sandboxTemplates)
+      .set(next)
+      .where(eq(sandboxTemplates.templateId, templateId))
+      .returning(),
+  );
   if (updated?.projectId) invalidateTemplateCache(updated.projectId);
   return updated;
 }
@@ -369,7 +393,9 @@ export async function deleteTemplate(templateId: string): Promise<boolean> {
   const row = await getTemplateById(templateId);
   if (!row) return false;
   if (row.isShared) throw new Error('Shared platform templates cannot be deleted.');
-  await db.delete(sandboxTemplates).where(eq(sandboxTemplates.templateId, templateId));
+  await runSnapshotTemplateDatabase((database) =>
+    database.delete(sandboxTemplates).where(eq(sandboxTemplates.templateId, templateId)),
+  );
   if (row.projectId) invalidateTemplateCache(row.projectId);
   return true;
 }
@@ -385,11 +411,13 @@ export async function refreshTemplateState(
   if (!row || !row.providerSnapshotName) return row;
   const adapter = getSandboxProvider(row.provider);
   const state = await adapter.getSnapshotState(row.providerSnapshotName);
-  const [updated] = await db
-    .update(sandboxTemplates)
-    .set({ providerState: state, updatedAt: new Date() })
-    .where(eq(sandboxTemplates.templateId, templateId))
-    .returning();
+  const [updated] = await runSnapshotTemplateDatabase((database) =>
+    database
+      .update(sandboxTemplates)
+      .set({ providerState: state, updatedAt: new Date() })
+      .where(eq(sandboxTemplates.templateId, templateId))
+      .returning(),
+  );
   return updated;
 }
 
@@ -479,27 +507,28 @@ export async function recordTemplateBuilt(
   // Read the row first so we know which snapshot we're about to repoint AWAY
   // from (the predecessor) and on which provider it lives.
   const prev = await getTemplateById(templateId).catch(() => null);
-  await db
-    .update(sandboxTemplates)
-    .set({
-      providerSnapshotName: args.snapshotName,
-      contentHash: args.contentHash,
-      builtFromCommit: args.builtFromCommit ?? null,
-      // swapKey of what we just built — the agent-swap eligibility key (user image
-      // + spec + non-agent runtime). Only overwrite when provided so a state-only
-      // observation doesn't wipe it. The agent-swap fast path requires this stored.
-      ...(args.swapKey !== undefined ? { swapKey: args.swapKey } : {}),
-      providerState: 'active',
-      // Track WHERE it was built — so the build-state is correct per provider
-      // (the trust-the-row fast path checks this) and switching providers
-      // rebuilds instead of reusing the other provider's snapshot.
-      ...(args.provider ? { provider: args.provider as any } : {}),
-      lastBuiltAt: new Date(),
-      lastError: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(sandboxTemplates.templateId, templateId))
-    .catch(() => {});
+  await runSnapshotTemplateDatabase((database) =>
+    database
+      .update(sandboxTemplates)
+      .set({
+        providerSnapshotName: args.snapshotName,
+        contentHash: args.contentHash,
+        builtFromCommit: args.builtFromCommit ?? null,
+        // swapKey of what we just built — the agent-swap eligibility key (user image
+        // + spec + non-agent runtime). Only overwrite when provided so a state-only
+        // observation doesn't wipe it. The agent-swap fast path requires this stored.
+        ...(args.swapKey !== undefined ? { swapKey: args.swapKey } : {}),
+        providerState: 'active',
+        // Track WHERE it was built — so the build-state is correct per provider
+        // (the trust-the-row fast path checks this) and switching providers
+        // rebuilds instead of reusing the other provider's snapshot.
+        ...(args.provider ? { provider: args.provider as any } : {}),
+        lastBuiltAt: new Date(),
+        lastError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(sandboxTemplates.templateId, templateId)),
+  ).catch(() => {});
 
   // Reap-on-repoint: the row now points at the freshly-built snapshot, so the
   // one it referenced before is superseded. Drop it immediately instead of
@@ -530,19 +559,21 @@ async function reapPredecessorSnapshot(
   provider: string,
 ): Promise<void> {
   try {
-    if (!config.KORTIX_SNAPSHOT_REAP_PREDECESSOR) return;
+    if (!snapshotTemplateConfig.KORTIX_SNAPSHOT_REAP_PREDECESSOR) return;
     if (!REAPABLE_SNAPSHOT_PREFIXES.some((p) => snapshotName.startsWith(p))) return;
     // Still referenced by a DIFFERENT template row? Leave it shared.
-    const stillUsed = await db
-      .select({ id: sandboxTemplates.templateId })
-      .from(sandboxTemplates)
-      .where(
-        and(
-          eq(sandboxTemplates.providerSnapshotName, snapshotName),
-          ne(sandboxTemplates.templateId, templateId),
-        ),
-      )
-      .limit(1);
+    const stillUsed = await runSnapshotTemplateDatabase((database) =>
+      database
+        .select({ id: sandboxTemplates.templateId })
+        .from(sandboxTemplates)
+        .where(
+          and(
+            eq(sandboxTemplates.providerSnapshotName, snapshotName),
+            ne(sandboxTemplates.templateId, templateId),
+          ),
+        )
+        .limit(1),
+    );
     if (stillUsed.length > 0) return;
     await getSandboxProvider(provider).deleteSnapshot(snapshotName);
     console.log(`[snapshots] reaped superseded snapshot ${snapshotName} (provider=${provider})`);
@@ -559,15 +590,16 @@ export async function recordTemplateFailed(
   message: string,
 ): Promise<void> {
   if (!templateId) return;
-  await db
-    .update(sandboxTemplates)
-    .set({
-      providerState: 'error',
-      lastError: message.slice(0, 2000),
-      updatedAt: new Date(),
-    })
-    .where(eq(sandboxTemplates.templateId, templateId))
-    .catch(() => {});
+  await runSnapshotTemplateDatabase((database) =>
+    database
+      .update(sandboxTemplates)
+      .set({
+        providerState: 'error',
+        lastError: message.slice(0, 2000),
+        updatedAt: new Date(),
+      })
+      .where(eq(sandboxTemplates.templateId, templateId)),
+  ).catch(() => {});
 }
 
 // ─── Internals ────────────────────────────────────────────────────────────
@@ -629,36 +661,38 @@ async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<v
     const tomlTemplates = extractSandboxTemplates(parsed?.raw ?? null);
     for (const tpl of tomlTemplates) {
       if (tpl.slug === DEFAULT_SANDBOX_SLUG) continue;
-      await db
-        .insert(sandboxTemplates)
-        .values({
-          projectId: project.projectId,
-          accountId: null,
-          slug: tpl.slug,
-          name: tpl.name ?? tpl.slug,
-          isShared: false,
-          source: 'toml',
-          provider: 'daytona',
-          image: tpl.image ?? null,
-          dockerfilePath: tpl.dockerfile ?? null,
-          entrypoint: null,
-          cpu: clamp(tpl.spec.cpu, SANDBOX_SPEC_LIMITS.cpu),
-          memoryGb: clamp(tpl.spec.memory, SANDBOX_SPEC_LIMITS.memory),
-          diskGb: clamp(tpl.spec.disk, SANDBOX_SPEC_LIMITS.disk),
-          providerState: 'missing',
-        })
-        .onConflictDoUpdate({
-          target: [sandboxTemplates.projectId, sandboxTemplates.slug],
-          set: {
+      await runSnapshotTemplateDatabase((database) =>
+        database
+          .insert(sandboxTemplates)
+          .values({
+            projectId: project.projectId,
+            accountId: null,
+            slug: tpl.slug,
             name: tpl.name ?? tpl.slug,
+            isShared: false,
+            source: 'toml',
+            provider: 'daytona',
             image: tpl.image ?? null,
             dockerfilePath: tpl.dockerfile ?? null,
+            entrypoint: null,
             cpu: clamp(tpl.spec.cpu, SANDBOX_SPEC_LIMITS.cpu),
             memoryGb: clamp(tpl.spec.memory, SANDBOX_SPEC_LIMITS.memory),
             diskGb: clamp(tpl.spec.disk, SANDBOX_SPEC_LIMITS.disk),
-            updatedAt: new Date(),
-          },
-        });
+            providerState: 'missing',
+          })
+          .onConflictDoUpdate({
+            target: [sandboxTemplates.projectId, sandboxTemplates.slug],
+            set: {
+              name: tpl.name ?? tpl.slug,
+              image: tpl.image ?? null,
+              dockerfilePath: tpl.dockerfile ?? null,
+              cpu: clamp(tpl.spec.cpu, SANDBOX_SPEC_LIMITS.cpu),
+              memoryGb: clamp(tpl.spec.memory, SANDBOX_SPEC_LIMITS.memory),
+              diskGb: clamp(tpl.spec.disk, SANDBOX_SPEC_LIMITS.disk),
+              updatedAt: new Date(),
+            },
+          }),
+      );
     }
 
     // Persist `[sandbox] default` → projects.metadata.default_sandbox_slug, so
@@ -668,21 +702,25 @@ async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<v
     const wantedDefault = extractSandboxDefault(parsed?.raw ?? null);
     const validDefault =
       wantedDefault && tomlTemplates.some((t) => t.slug === wantedDefault) ? wantedDefault : null;
-    const [projectRow] = await db
-      .select({ metadata: projects.metadata })
-      .from(projects)
-      .where(eq(projects.projectId, project.projectId))
-      .limit(1);
+    const [projectRow] = await runSnapshotTemplateDatabase((database) =>
+      database
+        .select({ metadata: projects.metadata })
+        .from(projects)
+        .where(eq(projects.projectId, project.projectId))
+        .limit(1),
+    );
     const meta = (projectRow?.metadata ?? {}) as Record<string, unknown>;
     const current = typeof meta.default_sandbox_slug === 'string' ? meta.default_sandbox_slug : null;
     if (current !== validDefault) {
       const nextMeta = { ...meta };
       if (validDefault) nextMeta.default_sandbox_slug = validDefault;
       else delete nextMeta.default_sandbox_slug;
-      await db
-        .update(projects)
-        .set({ metadata: nextMeta, updatedAt: new Date() })
-        .where(eq(projects.projectId, project.projectId));
+      await runSnapshotTemplateDatabase((database) =>
+        database
+          .update(projects)
+          .set({ metadata: nextMeta, updatedAt: new Date() })
+          .where(eq(projects.projectId, project.projectId)),
+      );
     }
   } catch (err) {
     console.warn(
@@ -737,8 +775,8 @@ const NON_AGENT_RUNTIME_ARTIFACTS = [
 // binary), so they belong in BOTH fingerprints. The per-process cache re-walks the
 // actual files on every fresh deploy, so an agent-src change between deploys moves
 // the full fingerprint (drift) while leaving the non-agent fingerprint unchanged.
-const runtimeVersionKey = () => `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}`;
-const sandboxVersionStr = () => `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:ab:${AGENT_BROWSER_VERSION}`;
+const runtimeVersionKey = () => `${snapshotTemplateConfig.SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}`;
+const sandboxVersionStr = () => `${snapshotTemplateConfig.SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:ab:${AGENT_BROWSER_VERSION}`;
 
 let runtimeFingerprintCache: { key: string; value: string } | null = null;
 let runtimeFingerprintInflight: Promise<string> | null = null;

@@ -63,7 +63,7 @@ export const SupabaseLive = Layer.succeed(SupabaseService, {
 });
 
 export const HttpClientLive = Layer.succeed(HttpClient, {
-  fetch: globalThis.fetch.bind(globalThis),
+  fetch: ((input, init) => globalThis.fetch(input, init)) as typeof fetch,
 });
 
 export const ApiLiveLayer = Layer.mergeAll(

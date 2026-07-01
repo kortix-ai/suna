@@ -14,11 +14,12 @@
  */
 
 import { and, desc, eq, lt } from 'drizzle-orm';
-import { projectSnapshotBuilds } from '@kortix/db';
-import { db } from '../shared/db';
+import { Effect } from 'effect';
+import { projectSnapshotBuilds, type Database } from '@kortix/db';
 import { resolveCommitSha, type GitBackedProject } from '../projects/git';
 import { getSandboxProvider, type ProviderState, type SandboxProviderAdapter } from './providers';
-import { config } from '../config';
+import { AppConfig, DatabaseService } from '../effect/services';
+import { runEffectOrThrow } from '../effect/http';
 import {
   computeTemplateIdentity,
   listTemplatesForProject,
@@ -33,6 +34,18 @@ import { classifySnapshotError } from './error-classify';
 
 export { resolveCommitSha };
 export { DEFAULT_SANDBOX_SLUG };
+
+const runSnapshotBuilderDatabase = <A>(
+  operation: (database: Database) => Promise<A> | A,
+): Promise<A> =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    return yield* Effect.tryPromise(async () => operation(database));
+  }));
+
+const snapshotBuilderConfig = await runEffectOrThrow(Effect.gen(function* () {
+  return yield* AppConfig;
+}));
 
 class SnapshotBuildError extends Error {
   constructor(message: string, readonly cause?: unknown) {
@@ -503,12 +516,14 @@ export async function listSnapshotBuilds(
   opts: { limit?: number } = {},
 ): Promise<ProjectSnapshotBuildSummary[]> {
   const limit = Math.max(1, Math.min(opts.limit ?? 25, 100));
-  const rows = await db
-    .select()
-    .from(projectSnapshotBuilds)
-    .where(eq(projectSnapshotBuilds.projectId, projectId))
-    .orderBy(desc(projectSnapshotBuilds.startedAt))
-    .limit(limit);
+  const rows = await runSnapshotBuilderDatabase((database) =>
+    database
+      .select()
+      .from(projectSnapshotBuilds)
+      .where(eq(projectSnapshotBuilds.projectId, projectId))
+      .orderBy(desc(projectSnapshotBuilds.startedAt))
+      .limit(limit),
+  );
   return rows.map(rowToSummary);
 }
 
@@ -537,12 +552,14 @@ export async function reconcileStaleBuilds(
   ];
   if (opts.projectId) conds.push(eq(projectSnapshotBuilds.projectId, opts.projectId));
 
-  const rows = await db
-    .select()
-    .from(projectSnapshotBuilds)
-    .where(and(...conds))
-    .orderBy(desc(projectSnapshotBuilds.startedAt))
-    .limit(STALE_BUILD_BATCH);
+  const rows = await runSnapshotBuilderDatabase((database) =>
+    database
+      .select()
+      .from(projectSnapshotBuilds)
+      .where(and(...conds))
+      .orderBy(desc(projectSnapshotBuilds.startedAt))
+      .limit(STALE_BUILD_BATCH),
+  );
   if (rows.length === 0) return { checked: 0, closedReady: 0, closedFailed: 0 };
 
   // Only Daytona today; build-log rows don't carry a provider column, so use
@@ -584,19 +601,21 @@ async function openBuildLog(args: {
   source: SnapshotBuildSource;
 }): Promise<string | null> {
   try {
-    const [row] = await db
-      .insert(projectSnapshotBuilds)
-      .values({
-        accountId: args.accountId,
-        projectId: args.projectId,
-        commitSha: args.commitSha ?? '',
-        branch: args.slug,
-        snapshotName: args.snapshotName,
-        contentHash: args.contentHash,
-        status: 'building',
-        metadata: { source: args.source, slug: args.slug },
-      })
-      .returning({ buildId: projectSnapshotBuilds.buildId });
+    const [row] = await runSnapshotBuilderDatabase((database) =>
+      database
+        .insert(projectSnapshotBuilds)
+        .values({
+          accountId: args.accountId,
+          projectId: args.projectId,
+          commitSha: args.commitSha ?? '',
+          branch: args.slug,
+          snapshotName: args.snapshotName,
+          contentHash: args.contentHash,
+          status: 'building',
+          metadata: { source: args.source, slug: args.slug },
+        })
+        .returning({ buildId: projectSnapshotBuilds.buildId }),
+    );
     return row?.buildId ?? null;
   } catch (err) {
     console.warn('[snapshots] failed to open build log:', err instanceof Error ? err.message : err);
@@ -605,28 +624,30 @@ async function openBuildLog(args: {
 }
 
 async function closeBuildLogReady(buildId: string): Promise<void> {
-  await db
-    .update(projectSnapshotBuilds)
-    .set({ status: 'ready', finishedAt: new Date(), error: null, errorCategory: null })
-    .where(eq(projectSnapshotBuilds.buildId, buildId))
-    .catch((err) =>
-      console.warn('[snapshots] failed to close build log (ready):', err instanceof Error ? err.message : err),
-    );
+  await runSnapshotBuilderDatabase((database) =>
+    database
+      .update(projectSnapshotBuilds)
+      .set({ status: 'ready', finishedAt: new Date(), error: null, errorCategory: null })
+      .where(eq(projectSnapshotBuilds.buildId, buildId)),
+  ).catch((err) =>
+    console.warn('[snapshots] failed to close build log (ready):', err instanceof Error ? err.message : err),
+  );
 }
 
 async function closeBuildLogFailed(buildId: string, message: string): Promise<void> {
-  await db
-    .update(projectSnapshotBuilds)
-    .set({
-      status: 'failed',
-      error: message.slice(0, 2000),
-      errorCategory: classifySnapshotError(message),
-      finishedAt: new Date(),
-    })
-    .where(eq(projectSnapshotBuilds.buildId, buildId))
-    .catch((err) =>
-      console.warn('[snapshots] failed to close build log (failed):', err instanceof Error ? err.message : err),
-    );
+  await runSnapshotBuilderDatabase((database) =>
+    database
+      .update(projectSnapshotBuilds)
+      .set({
+        status: 'failed',
+        error: message.slice(0, 2000),
+        errorCategory: classifySnapshotError(message),
+        finishedAt: new Date(),
+      })
+      .where(eq(projectSnapshotBuilds.buildId, buildId)),
+  ).catch((err) =>
+    console.warn('[snapshots] failed to close build log (failed):', err instanceof Error ? err.message : err),
+  );
 }
 
 /**
@@ -720,7 +741,7 @@ export function kickStartupPreBuild(): void {
   // Gate on the ACTUAL default provider, not daytona specifically — a Platinum-only
   // deploy has no daytona adapter configured, which used to skip the pre-build and
   // leave the first project after a release to pay a lazy "Not built yet" build.
-  const providerId = config.getDefaultProvider();
+  const providerId = snapshotBuilderConfig.getDefaultProvider();
   let provider: SandboxProviderAdapter;
   try {
     provider = getSandboxProvider(providerId);
