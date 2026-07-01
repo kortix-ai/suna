@@ -19,7 +19,9 @@ import {
   useRequestChangesOnChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
 import type { ReviewVerdict } from '@/lib/projects-client';
+import { useCustomizeStore } from '@/stores/customize-store';
 import { useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { useMemo } from 'react';
 import { useActReviewItem, useBulkActReviewItems, useReviewItems } from './hooks/use-review-items';
 import { mapApiReviewItem } from './map';
@@ -32,6 +34,8 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
   const qc = useQueryClient();
+  const router = useRouter();
+  const closeCustomize = useCustomizeStore((s) => s.close);
   const { data, isLoading } = useReviewItems();
   const act = useActReviewItem();
   const bulk = useBulkActReviewItems();
@@ -110,6 +114,10 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
       onBulkAct={(ids, verdict) =>
         bulk.mutate({ ids, verdict }, { onError: (e) => errorToast(e.message) })
       }
+      onOpenSession={(sessionId) => {
+        closeCustomize();
+        router.push(`/projects/${projectId}/sessions/${sessionId}`);
+      }}
     />
   );
 }

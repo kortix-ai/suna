@@ -235,6 +235,7 @@ export function ReviewCenter({
   initialItems,
   onAct,
   onBulkAct,
+  onOpenSession,
   isLoading,
 }: {
   /** When provided, the inbox renders real data instead of the mock fixtures. */
@@ -243,6 +244,8 @@ export function ReviewCenter({
   onAct?: (id: string, verdict: ReviewVerdict, feedback?: string) => void;
   /** Connected mode: fire the server verdict for many items (multi-select). */
   onBulkAct?: (ids: string[], verdict: ReviewVerdict) => void;
+  /** Connected mode: open a session (e.g. to watch the agent revise a change). */
+  onOpenSession?: (sessionId: string) => void;
   isLoading?: boolean;
 } = {}) {
   const connected = !!onAct;
@@ -346,6 +349,7 @@ export function ReviewCenter({
     decideAction: (itemId, actionId, decision) =>
       setItems(decideApprovalAction(items, itemId, actionId, decision)),
     approveAllSafe: (itemId) => setItems(approveAllSafe(items, itemId)),
+    openSession: onOpenSession,
   };
 
   const quickPrimary = (item: ReviewItem) => {

@@ -45,6 +45,8 @@ export interface ReviewActions {
   resolve: (id: string, status: ReviewStatus, toast?: string, feedback?: string) => void;
   decideAction: (itemId: string, actionId: string, decision: 'approved' | 'denied') => void;
   approveAllSafe: (itemId: string) => void;
+  /** Open the item's originating session (e.g. to watch the agent revise). */
+  openSession?: (sessionId: string) => void;
 }
 
 function rel(iso: string): string {
@@ -121,9 +123,23 @@ function ChangeBody({
               </li>
             ))}
           </ul>
-          <div className="text-muted-foreground mt-2.5 text-xs">
-            Sent to the agent — it&apos;ll revise and update this change.
-          </div>
+          {item.sessionId && actions.openSession ? (
+            <button
+              type="button"
+              onClick={() => {
+                actions.openSession?.(item.sessionId as string);
+                onClose();
+              }}
+              className="text-kortix-orange hover:text-kortix-orange/80 mt-2.5 inline-flex items-center gap-1 text-xs font-medium transition-colors"
+            >
+              Sent to the agent — see progress
+              <ArrowUpRight className="size-3" />
+            </button>
+          ) : (
+            <div className="text-muted-foreground mt-2.5 text-xs">
+              Sent to the agent — it&apos;ll revise and update this change.
+            </div>
+          )}
         </Panel>
       )}
       <Panel>
