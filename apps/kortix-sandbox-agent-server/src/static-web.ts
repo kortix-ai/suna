@@ -82,6 +82,54 @@ function isAllowed(absPath: string): boolean {
   return ALLOWED_ROOTS.some((root) => absPath === root || absPath.startsWith(root + '/'))
 }
 
+function stripTrailingSlash(value: string): string {
+  return value.replace(/\/$/, '')
+}
+
+function normalizePublicUrl(raw: string): string | null {
+  try {
+    const parsed = new URL(raw)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    parsed.username = ''
+    parsed.password = ''
+    parsed.search = ''
+    parsed.hash = ''
+    return stripTrailingSlash(parsed.toString())
+  } catch {
+    return null
+  }
+}
+
+function fallbackPublicBaseUrl(url: URL): string {
+  return stripTrailingSlash(`${url.protocol}//${url.host}`)
+}
+
+function publicOriginFromHeaders(req: Request, url: URL): string {
+  const proto = req.headers.get('x-forwarded-proto') || url.protocol.replace(':', '')
+  if (proto !== 'http' && proto !== 'https') return fallbackPublicBaseUrl(url)
+  const host = req.headers.get('x-forwarded-host') || url.host
+  return normalizePublicUrl(`${proto}://${host}`) ?? fallbackPublicBaseUrl(url)
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (ch) => {
+    switch (ch) {
+      case '&':
+        return '&amp;'
+      case '<':
+        return '&lt;'
+      case '>':
+        return '&gt;'
+      case '"':
+        return '&quot;'
+      case "'":
+        return '&#39;'
+      default:
+        return ch
+    }
+  })
+}
+
 /**
  * Resolve the public base URL the *client* used, not the internal one we see.
  *
@@ -103,25 +151,27 @@ function isAllowed(absPath: string): boolean {
 function resolvePublicBaseUrl(req: Request, url: URL): string {
   const xfp = req.headers.get('x-forwarded-prefix')
   if (xfp) {
-    // Full URL convention used by our proxies — use as-is.
-    if (/^https?:\/\//i.test(xfp)) return xfp.replace(/\/$/, '')
+    // Full URL convention used by our proxies.
+    if (/^https?:\/\//i.test(xfp)) {
+      return normalizePublicUrl(xfp) ?? fallbackPublicBaseUrl(url)
+    }
     // Standard convention: path-only prefix. Combine with proto+host.
-    const proto = req.headers.get('x-forwarded-proto') || url.protocol.replace(':', '')
-    const host = req.headers.get('x-forwarded-host') || url.host
-    const prefix = xfp.startsWith('/') ? xfp : `/${xfp}`
-    return `${proto}://${host}${prefix}`.replace(/\/$/, '')
+    const origin = publicOriginFromHeaders(req, url)
+    const prefix = `/${xfp.replace(/^\/+/, '')}`
+    const prefixed = new URL(prefix, `${origin}/`)
+    prefixed.search = ''
+    prefixed.hash = ''
+    return stripTrailingSlash(prefixed.toString())
   }
 
   const xfProto = req.headers.get('x-forwarded-proto')
   const xfHost = req.headers.get('x-forwarded-host')
   if (xfProto || xfHost) {
-    const proto = xfProto || url.protocol.replace(':', '')
-    const host = xfHost || url.host
-    return `${proto}://${host}`
+    return publicOriginFromHeaders(req, url)
   }
 
   // No proxy headers — direct access (curl, local dev). Use what Bun saw.
-  return `${url.protocol}//${url.host}`
+  return fallbackPublicBaseUrl(url)
 }
 
 /**
@@ -135,7 +185,7 @@ function resolvePublicBaseUrl(req: Request, url: URL): string {
 function injectBase(html: string, absFilePath: string, baseUrl: string): string {
   const dir = dirname(absFilePath)
   const baseHref = `${baseUrl}/abs${dir}/`
-  const baseTag = `<base href="${baseHref}">`
+  const baseTag = `<base href="${escapeHtml(baseHref)}">`
 
   // Fix for <base> breaking hash/anchor links (#section). With <base>, clicking
   // <a href="#work"> navigates to baseHref#work (a full page load) instead of
@@ -216,7 +266,8 @@ function serveFile(absPath: string, baseUrl: string, injectBaseTag = false): Res
 }
 
 function buildHelpHtml(baseUrl: string): string {
-  const roots = ALLOWED_ROOTS.map((root) => `<li><code>${root}</code></li>`).join('')
+  const roots = ALLOWED_ROOTS.map((root) => `<li><code>${escapeHtml(root)}</code></li>`).join('')
+  const safeBaseUrl = escapeHtml(baseUrl)
   return `<!doctype html>
 <html>
   <head>
@@ -239,15 +290,15 @@ function buildHelpHtml(baseUrl: string): string {
       <h2>Usage</h2>
       <ul>
         <li>Entry point (injects &lt;base&gt; for relative assets):
-          <code>${baseUrl}/open?path=/workspace/project/index.html</code></li>
-        <li>Direct asset path: <code>${baseUrl}/abs/workspace/project/style.css</code></li>
-        <li>Health check: <code>${baseUrl}/health</code></li>
+          <code>${safeBaseUrl}/open?path=/workspace/project/index.html</code></li>
+        <li>Direct asset path: <code>${safeBaseUrl}/abs/workspace/project/style.css</code></li>
+        <li>Health check: <code>${safeBaseUrl}/health</code></li>
       </ul>
     </div>
     <div class="box">
       <h2>How relative assets work</h2>
       <p>When you open a file via <code>/open?path=…</code>, the server injects a
-      <code>&lt;base href="${baseUrl}/abs/path/to/dir/"&gt;</code> tag so the browser
+      <code>&lt;base href="${safeBaseUrl}/abs/path/to/dir/"&gt;</code> tag so the browser
       resolves <code>./style.css</code>, <code>../images/logo.png</code>, etc. through
       this server automatically — no changes to your HTML required.</p>
     </div>

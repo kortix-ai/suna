@@ -2,6 +2,10 @@ import { Hono } from 'hono'
 import { logger } from '../logger'
 import { readPinnedOpencodeSessionId } from '../main'
 import type { Config } from '../config'
+import {
+  KORTIX_USER_CONTEXT_HEADER,
+  verifyKortixUserContext,
+} from '../kortix-user-context'
 
 // POST /kortix/abort — interrupt the in-flight opencode turn for the pinned
 // session. apps/api calls this when the user clicks "Stop" on the Slack
@@ -11,6 +15,16 @@ export function createAbortRouter(cfg: Config): Hono {
   const app = new Hono()
 
   app.post('/', async (c) => {
+    if (!cfg.sandboxToken) {
+      return c.json({ error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }, 503)
+    }
+
+    const auth = verifyKortixUserContext(c.req.header(KORTIX_USER_CONTEXT_HEADER), cfg.sandboxToken)
+    if (!auth.ok) {
+      logger.warn('[abort] reject', { reason: auth.reason })
+      return c.json({ error: 'unauthorized', reason: auth.reason }, 401)
+    }
+
     const sessionId = readPinnedOpencodeSessionId()
     if (!sessionId) {
       return c.json({ ok: false, error: 'No opencode session pinned.' }, 409)
