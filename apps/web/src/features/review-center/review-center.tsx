@@ -147,16 +147,13 @@ function ItemRow({
     <motion.li
       data-idx={idx}
       layout
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      whileTap={{ scale: 0.994 }}
-      transition={{ duration: 0.18, ease: EASE, delay: Math.min(idx * 0.015, 0.08) }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.15, ease: EASE, delay: Math.min(idx * 0.012, 0.06) }}
       className={cn(
-        'group bg-popover flex items-center gap-3.5 rounded-lg border px-4 py-3.5',
-        'border-border/60 shadow-sm transition-[border-color,box-shadow] duration-200 ease-out',
-        'hover:border-border hover:shadow-md',
-        focused && 'border-primary/40 ring-1 ring-primary/15',
-        selected && 'border-primary/40 bg-primary/[0.04]',
+        'group relative flex items-center gap-3.5 px-4 py-3 transition-colors',
+        focused ? 'bg-primary/[0.06]' : 'hover:bg-muted/40',
+        selected && 'bg-primary/[0.09]',
       )}
     >
       <Checkbox
@@ -647,7 +644,10 @@ export function ReviewCenter({
               />
             </motion.div>
           ) : (
-            <ul ref={listRef} className="flex flex-col gap-2">
+            <ul
+              ref={listRef}
+              className="bg-popover divide-border/60 divide-y overflow-hidden rounded-lg border"
+            >
               {visible.map((item, idx) => (
                 <ItemRow
                   key={item.id}
