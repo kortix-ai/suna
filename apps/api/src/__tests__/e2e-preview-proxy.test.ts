@@ -199,9 +199,7 @@ mock.module('../platform/providers', () => ({
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test-version',
   config: {
-    KORTIX_LOCAL_DOCKER_HOST: 'host.docker.internal',
     isDaytonaEnabled: () => true,
-    isLocalDockerEnabled: () => false,
     isJustAVPSEnabled: () => false,
   },
 }));
@@ -233,8 +231,7 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
   // Let non-proxy URLs through (e.g. internal Hono test requests)
   if (
     !urlStr.startsWith('https://preview.') &&
-    !urlStr.startsWith('http://preview.') &&
-    !urlStr.startsWith('http://host.docker.internal:')
+    !urlStr.startsWith('http://preview.')
   ) {
     return originalFetch(url, init);
   }
@@ -521,7 +518,7 @@ describe('Preview proxy: ownership', () => {
     ];
 
     const app = createProxyTestApp();
-    const res = await app.request(`/v1/p/shared-local-docker-sandbox/${TEST_PORT}/`, {
+    const res = await app.request(`/v1/p/shared-sandbox-ext/${TEST_PORT}/`, {
       headers: { Authorization: 'Bearer test' },
     });
 
@@ -555,24 +552,6 @@ describe('Preview proxy: forwarding', () => {
     });
     expect(res.status).toBe(201);
     expect(mockFetchCalls).toHaveLength(1);
-  });
-
-  test('proxies local_docker sandboxes through the host-mapped port', async () => {
-    mockDbSandbox = {
-      ...mockDbSandbox,
-      provider: 'local_docker',
-      baseUrl: 'http://localhost:18000',
-      metadata: { mappedPorts: { '8000': '18000', '3211': '18001' } },
-    };
-    mockFetchResponses = [{ status: 200, body: '{"runtimeReady":true}' }];
-
-    const app = createProxyTestApp();
-    const res = await app.request(`/v1/p/local-docker-sandbox/8000/kortix/health`, {
-      headers: { Authorization: 'Bearer test' },
-    });
-
-    expect(res.status).toBe(200);
-    expect(mockFetchCalls[0]?.url).toBe('http://host.docker.internal:18000/kortix/health');
   });
 
   test('syncs latest project secrets before forwarding prompt_async', async () => {

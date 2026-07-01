@@ -132,6 +132,7 @@ accountsRouter.openapi(
     tokens.map((t) => ({
       token_id: t.tokenId,
       name: t.name,
+      project_id: t.projectId ?? null,
       public_key: t.publicKey,
       status: t.status,
       expires_at: t.expiresAt?.toISOString() ?? null,
@@ -159,6 +160,7 @@ accountsRouter.openapi(
               name: z.string(),
               account_id: z.string().optional(),
               expires_at: z.string().optional(),
+              project_id: z.string().uuid().optional(),
             }),
           },
         },
@@ -197,9 +199,16 @@ accountsRouter.openapi(
     return c.json({ error: 'expires_at must be ISO-8601' }, 400);
   }
 
+  // Optional project scope. A project-scoped key only ever works on that one
+  // project (the auth middleware enforces the binding); it never widens access.
+  const projectId =
+    typeof body.project_id === 'string' && body.project_id.trim()
+      ? body.project_id.trim()
+      : undefined;
+
   let created;
   try {
-    created = await createAccountToken({ accountId, userId, name, expiresAt });
+    created = await createAccountToken({ accountId, userId, name, expiresAt, projectId });
   } catch (err) {
     if (err instanceof PatPolicyError) {
       return c.json({ error: err.message, code: err.code }, 400);
@@ -210,6 +219,7 @@ accountsRouter.openapi(
     {
       token_id: created.tokenId,
       name: created.name,
+      project_id: created.projectId ?? null,
       public_key: created.publicKey,
       secret_key: created.secretKey,
       status: created.status,

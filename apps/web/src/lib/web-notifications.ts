@@ -15,7 +15,6 @@
 
 import { useWebNotificationStore } from '@/stores/web-notification-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
-import { useServerStore } from '@/stores/server-store';
 import { toast } from '@/lib/toast';
 import { logger } from '@/lib/logger';
 import { normalizeAppPathname } from '@/lib/instance-routes';
@@ -120,7 +119,6 @@ function navigateToSession(sessionId: string, sessionTitle?: string, opts?: { fo
       title: sessionTitle || 'Session',
       type: 'session',
       href,
-      serverId: useServerStore.getState().activeServerId,
     });
     // Only use location.assign for native notification clicks where the
     // browser may be in the background and client-side routing won't work.

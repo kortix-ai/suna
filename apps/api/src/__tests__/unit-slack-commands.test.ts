@@ -33,6 +33,7 @@ mock.module('../channels/slack/selection', () => ({
   ],
   isValidModelId: (s: string) => { const i = s.indexOf('/'); return i > 0 && i < s.length - 1 && !/\s/.test(s); },
   modelLabel: (id: string) => (id === 'anthropic/claude-opus-4-8' ? 'Claude Opus 4.8' : id),
+  setChannelConversationPolicy: async () => undefined,
 }));
 
 // Identity layer — kept out of the db chain so it doesn't disturb dbResults
@@ -41,10 +42,12 @@ let identityRow: { userId: string } | null = null;
 mock.module('../channels/slack/identity', () => ({
   lookupSlackIdentity: async () => identityRow,
   revokeSlackIdentity: async () => true,
+  lookupSlackUserIdForKortixUser: async () => null,
 }));
 mock.module('../accounts/core/app', () => ({
   lookupEmailsByUserIds: async (ids: string[]) =>
     new Map(ids.map((id) => [id, `${id}@example.com`])),
+  defaultAccountName: (email: string | null | undefined) => email ?? 'Account',
 }));
 
 const { config } = await import('../config');

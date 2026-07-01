@@ -1,14 +1,23 @@
 import { isSessionVisibleTo, loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../executor/share';
-import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
+import {
+  PROJECT_ACTIONS,
+  deleteResourceGrant,
+  isResourceType,
+  listResourceGrants,
+  upsertResourceGrant,
+} from '../../iam';
+import { assertAgentScope } from '../../iam/agent-scope';
+import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
+import { projectHasResource, projectResourcesFromConfig, loadConfigWithFiles } from '../lib/project-resources';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
-import { roleAllows } from '../access';
+import { roleAllows, parseProjectRole } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
-import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody } from '../lib/access';
+import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid } from '../lib/access';
 import { AnyObject, GroupGrantSchema, SessionSchema, projectsApp } from '../lib/app';
-import { UUID_V4_REGEX, hasOwn, isProjectRole, normalizeString, readBody, requestAuditContext, serializeSession, serializeSessionSandboxConfig } from '../lib/serializers';
+import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
@@ -152,19 +161,19 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(
-    loaded.userId,
-    loaded.row.accountId,
-    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-    { type: 'project', id: projectId },
-  );
+  // assertProjectCapability (not bare assertAuthorized) so the acting token is
+  // threaded and the agent-grant fold fires: an agent-session token must also
+  // hold project.members.manage to mutate group grants, not just its user.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
   const groupId = normalizeString(body.group_id ?? body.groupId);
-  const role = body.role;
+  // parseProjectRole folds the legacy `viewer` alias into `user`, so a grant
+  // is never persisted with the retired role.
+  const role = parseProjectRole(body.role);
   if (!groupId) return c.json({ error: 'group_id is required' }, 400);
-  if (!isProjectRole(role)) {
-    return c.json({ error: 'role must be manager, editor, or viewer' }, 400);
+  if (!role) {
+    return c.json({ error: 'role must be manager, editor, or user' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
@@ -201,6 +210,7 @@ projectsApp.openapi(
         ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
       },
     });
+  await invalidateIamCacheForGroup(groupId);
 
   return c.json({ project_id: projectId, group_id: groupId, role }, 201);
 },
@@ -231,16 +241,15 @@ projectsApp.openapi(
   const groupId = c.req.param('groupId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(
-    loaded.userId,
-    loaded.row.accountId,
-    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-    { type: 'project', id: projectId },
-  );
+  // assertProjectCapability (not bare assertAuthorized) so the acting token is
+  // threaded and the agent-grant fold fires: an agent-session token must also
+  // hold project.members.manage to mutate group grants, not just its user.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
-  if (!isProjectRole(body.role)) {
-    return c.json({ error: 'role must be manager, editor, or viewer' }, 400);
+  const role = parseProjectRole(body.role);
+  if (!role) {
+    return c.json({ error: 'role must be manager, editor, or user' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
@@ -248,7 +257,7 @@ projectsApp.openapi(
   const result = await db
     .update(projectGroupGrants)
     .set({
-      role: body.role,
+      role,
       updatedAt: new Date(),
       ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
     })
@@ -261,6 +270,7 @@ projectsApp.openapi(
     .returning({ groupId: projectGroupGrants.groupId });
 
   if (result.length === 0) return c.json({ error: 'grant not found' }, 404);
+  await invalidateIamCacheForGroup(groupId);
   return c.json({ project_id: projectId, group_id: groupId, role: body.role });
 },
 );
@@ -289,12 +299,10 @@ projectsApp.openapi(
   const groupId = c.req.param('groupId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(
-    loaded.userId,
-    loaded.row.accountId,
-    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-    { type: 'project', id: projectId },
-  );
+  // assertProjectCapability (not bare assertAuthorized) so the acting token is
+  // threaded and the agent-grant fold fires: an agent-session token must also
+  // hold project.members.manage to mutate group grants, not just its user.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   await db
     .delete(projectGroupGrants)
@@ -304,6 +312,7 @@ projectsApp.openapi(
         eq(projectGroupGrants.groupId, groupId),
       ),
     );
+  await invalidateIamCacheForGroup(groupId);
 
   return c.json({ ok: true });
 },
@@ -334,6 +343,23 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Per-agent gate: starting a session provisions compute. A scoped agent token
+  // must hold project.session.start (no-op for human/PAT tokens).
+  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+  // Per-RESOURCE scoping: a member/department can only launch agents they're
+  // scoped to. No-op when the agent isn't scoped (unscoped = project-wide) and
+  // for owner/admins. Mirrors the agent the session core resolves (sessions.ts).
+  const launchAgent = normalizeString(body.agent_name ?? body.agentName);
+  if (launchAgent) {
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_AGENT_READ,
+      { type: 'agent', id: launchAgent },
+    );
+  }
   const result = await createSession({
     source: 'ui',
     project: loaded.row,
@@ -731,6 +757,9 @@ projectsApp.openapi(
 
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Per-agent gate: tearing down a session. A scoped agent token must hold
+  // project.session.stop (no-op for human/PAT tokens).
+  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
 
   // Stopping a session is reserved for its owner or a project manager.
   const visible = await loadVisibleSession(loaded, sessionId);
@@ -749,4 +778,207 @@ projectsApp.openapi(
   if ('error' in result) return c.json({ error: result.error }, result.status as any);
   return c.json(result);
 },
+);
+
+// ─── Per-resource (agent/skill) scoping ─────────────────────────────────────
+// Scope a member or group to SPECIFIC agents/skills. A resource with >=1 grant
+// is visible/usable only to granted principals; unscoped resources stay
+// project-wide. All three routes gate on project.members.manage (same as the
+// group-grant routes) and thread the acting token so the agent-grant fold fires.
+
+// GET /v1/projects/:projectId/resource-grants
+// Returns the project's grantable resources (for the picker) + every grant,
+// each enriched with a principal label so the UI needn't re-join.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/resource-grants',
+    tags: ['access'],
+    summary: 'GET /:projectId/resource-grants',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'Resource grants + grantable resources'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Manager-only: this is the grant PICKER — it returns the FULL agent/skill
+    // catalogue + granted-member emails, so it must NOT be readable by a scoped
+    // member (who'd otherwise enumerate exactly what they were scoped away from).
+    // Gate identical to the POST/DELETE siblings below.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+
+    // Enumerate grantable resources from the project config (best-effort: a repo
+    // that won't load just yields empty lists — the existing grants still show).
+    let resources: { agents: { id: string }[]; skills: { id: string }[] } = { agents: [], skills: [] };
+    let configLoaded = false;
+    try {
+      const config = await loadConfigWithFiles(loaded.row);
+      resources = projectResourcesFromConfig(config);
+      configLoaded = true;
+    } catch (err) {
+      console.warn('[resource-grants] config load failed', {
+        projectId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    // Grants key on the agent NAME / skill SLUG (file-based ids). A rename or
+    // delete of the underlying agent/skill leaves the grant ORPHANED — and since
+    // an unscoped resource is project-wide, the restriction silently evaporates.
+    // Flag orphaned grants so the manager gets a SIGNAL to re-grant (only when the
+    // config actually loaded — a transient repo failure must not mass-flag).
+    const liveAgentIds = new Set(resources.agents.map((r) => r.id));
+    const liveSkillIds = new Set(resources.skills.map((r) => r.id));
+    const isOrphan = (type: string, id: string) =>
+      configLoaded && (type === 'agent' ? !liveAgentIds.has(id) : type === 'skill' ? !liveSkillIds.has(id) : false);
+
+    const grants = await listResourceGrants(projectId);
+
+    // Resolve principal labels in two batched lookups.
+    const memberIds = [...new Set(grants.filter((g) => g.principalType === 'member').map((g) => g.principalId))];
+    const groupIds = [...new Set(grants.filter((g) => g.principalType === 'group').map((g) => g.principalId))];
+    const emailByUser = memberIds.length ? await lookupEmailsByUserIds(memberIds) : new Map<string, string>();
+    const groupNameById = new Map<string, string>();
+    if (groupIds.length) {
+      const groupRows = await db
+        .select({ groupId: accountGroups.groupId, name: accountGroups.name })
+        .from(accountGroups)
+        .where(and(eq(accountGroups.accountId, loaded.row.accountId), inArray(accountGroups.groupId, groupIds)));
+      for (const g of groupRows) groupNameById.set(g.groupId, g.name);
+    }
+
+    return c.json({
+      resources,
+      grants: grants.map((g) => ({
+        grant_id: g.grantId,
+        resource_type: g.resourceType,
+        resource_id: g.resourceId,
+        principal_type: g.principalType,
+        principal_id: g.principalId,
+        principal_label:
+          g.principalType === 'member'
+            ? emailByUser.get(g.principalId) ?? g.principalId
+            : groupNameById.get(g.principalId) ?? g.principalId,
+        granted_by: g.grantedBy,
+        created_at: g.createdAt.toISOString(),
+        expires_at: g.expiresAt?.toISOString() ?? null,
+        // true = the agent/skill this grant scopes no longer exists (renamed or
+        // deleted); the grant is inert and should be removed or re-pointed.
+        orphaned: isOrphan(g.resourceType, g.resourceId),
+      })),
+    });
+  },
+);
+
+// POST /v1/projects/:projectId/resource-grants
+// Create/update a grant (idempotent on resource+principal). Validates the
+// resource exists in the project and the principal belongs to this account.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/resource-grants',
+    tags: ['access'],
+    summary: 'POST /:projectId/resource-grants',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: { 201: json(z.any(), 'The created grant'), ...errors(400, 404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+
+    const body = await readBody(c);
+    const resourceType = normalizeString(body.resource_type ?? body.resourceType);
+    const resourceId = normalizeString(body.resource_id ?? body.resourceId);
+    const principalType = normalizeString(body.principal_type ?? body.principalType);
+    const principalId = normalizeString(body.principal_id ?? body.principalId);
+    if (!resourceType || !isResourceType(resourceType)) {
+      return c.json({ error: 'resource_type must be agent or skill' }, 400);
+    }
+    if (!resourceId) return c.json({ error: 'resource_id is required' }, 400);
+    if (principalType !== 'member' && principalType !== 'group') {
+      return c.json({ error: 'principal_type must be member or group' }, 400);
+    }
+    if (!principalId) return c.json({ error: 'principal_id is required' }, 400);
+    // principal_id flows into a uuid column — validate the shape first so a
+    // malformed value is a clean 400, not a 22P02 500.
+    if (!isUuid(principalId)) return c.json({ error: 'principal_id must be a valid id' }, 400);
+    const expires = parseExpiresAtBody(body.expires_at);
+    if (!expires.ok) return c.json({ error: expires.error }, 400);
+
+    // The principal must belong to THIS account — never grant a foreign member/
+    // group via a guessed id.
+    if (principalType === 'member') {
+      const [m] = await db
+        .select({ userId: accountMembers.userId })
+        .from(accountMembers)
+        .where(and(eq(accountMembers.accountId, loaded.row.accountId), eq(accountMembers.userId, principalId)))
+        .limit(1);
+      if (!m) return c.json({ error: 'member not found in this account' }, 404);
+    } else {
+      const [g] = await db
+        .select({ groupId: accountGroups.groupId })
+        .from(accountGroups)
+        .where(and(eq(accountGroups.accountId, loaded.row.accountId), eq(accountGroups.groupId, principalId)))
+        .limit(1);
+      if (!g) return c.json({ error: 'group not found in this account' }, 404);
+    }
+
+    // The resource must actually exist in the project — a typo'd grant would be
+    // a silent dead row that scopes a phantom resource.
+    let config;
+    try {
+      config = await loadConfigWithFiles(loaded.row);
+    } catch (err) {
+      return c.json({ error: `project config unavailable: ${err instanceof Error ? err.message : String(err)}` }, 400);
+    }
+    if (!projectHasResource(config, resourceType, resourceId)) {
+      return c.json({ error: `no ${resourceType} '${resourceId}' in this project` }, 400);
+    }
+
+    const { grantId } = await upsertResourceGrant({
+      accountId: loaded.row.accountId,
+      projectId,
+      resourceType,
+      resourceId,
+      principalType,
+      principalId,
+      grantedBy: loaded.userId,
+      expiresAt: expires.value ?? null,
+    });
+    return c.json({ grant_id: grantId, resource_type: resourceType, resource_id: resourceId, principal_type: principalType, principal_id: principalId }, 201);
+  },
+);
+
+// DELETE /v1/projects/:projectId/resource-grants/:grantId
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/resource-grants/{grantId}',
+    tags: ['access'],
+    summary: 'DELETE /:projectId/resource-grants/:grantId',
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), grantId: z.string() }) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const grantId = c.req.param('grantId');
+    // grant_id is a uuid column — a malformed id is a clean 404 (same as missing),
+    // not a 22P02 500.
+    if (!isUuid(grantId)) return c.json({ error: 'grant not found' }, 404);
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+
+    const removed = await deleteResourceGrant(grantId, projectId);
+    if (!removed) return c.json({ error: 'grant not found' }, 404);
+    return c.json({ ok: true });
+  },
 );

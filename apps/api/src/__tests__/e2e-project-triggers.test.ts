@@ -214,7 +214,7 @@ mock.module('../platform/services/session-sandbox', () => ({
 }));
 
 mock.module('../platform/services/provider-balancer', () => ({
-  selectProvider: async () => 'local_docker',
+  selectProvider: async () => 'daytona',
 }));
 
 mock.module('../shared/resolve-account', () => ({
@@ -232,6 +232,7 @@ mock.module('../shared/supabase', () => ({
 }));
 
 mock.module('../billing/repositories/credit-accounts', () => ({
+  upsertCreditAccount: async () => undefined,
   getSubscriptionInfo: async () => ({ tier: 'pro' }),
   // Trigger fire spawns a real session, which runs the billing gate. Return a
   // billing-active account (live sub + ample balance) so the gate passes.

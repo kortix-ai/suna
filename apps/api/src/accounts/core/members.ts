@@ -6,6 +6,7 @@ import { db } from '../../shared/db';
 import { lookupUserIdByEmail } from '../../shared/users';
 import { sendAccountInviteEmail, buildInviteUrl } from '../email';
 import { authorize, ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { onMemberAdded, onMemberRemoved } from '../../billing/services/seat-management';
 import {
   accountsRouter,
@@ -492,6 +493,7 @@ accountsRouter.openapi(
   await db
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, targetUserId)));
+  invalidateIamCacheForUser(targetUserId);
 
   // Billing v2 — revoke per-member YOLO + push -1 seat to Stripe.
   void onMemberRemoved(accountId, targetUserId).catch(() => {});
@@ -580,6 +582,7 @@ accountsRouter.openapi(
       .delete(projectMembers)
       .where(and(eq(projectMembers.accountId, accountId), eq(projectMembers.userId, targetUserId)));
   }
+  invalidateIamCacheForUser(targetUserId);
 
   return c.json({
     user_id: targetUserId,
@@ -626,6 +629,7 @@ accountsRouter.openapi(
   await db
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
+  invalidateIamCacheForUser(userId);
 
   // Billing v2 — revoke YOLO + push -1 seat to Stripe on self-leave.
   void onMemberRemoved(accountId, userId).catch(() => {});

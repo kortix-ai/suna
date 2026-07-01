@@ -76,8 +76,22 @@ export interface AgentSpec {
   connectors: GrantSet;
   /** Kortix CLI/API powers (project-scoped iam actions). `[]` = none (default). */
   kortixCli: GrantSet;
+  /** Project-secret names this agent receives as sandbox env + may read via the
+   *  secrets API. `'all'` = every secret the launching user can see (default when
+   *  the `env` key is omitted — a NEW dimension, so omitting it must not starve
+   *  existing agents); an explicit list narrows it; `[]` = none. */
+  env: GrantSet;
   /** Optional behavior-file path override (defaults to the conventional `.md` by name). */
   file: string | null;
+  /**
+   * The agent's declarative default model (wire form `provider/model`), or null
+   * for "Default" — resolve project → account → platform (`auto`). A
+   * `model_preferences` row (scope=agent), set via the SDK/UI, overrides this at
+   * run time without a code commit. Catalog-availability is validated at the
+   * route/resolver layer (the parser stays catalog-free), same as everywhere the
+   * gateway is the source of truth for entitlement.
+   */
+  model: string | null;
 }
 
 export interface AgentParseError {
@@ -191,7 +205,7 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
 
   const spec = loaded.specs.find((s) => s.name === agentName && s.enabled);
   if (spec) {
-    return { agent: agentName, kortixCli: spec.kortixCli, connectors: spec.connectors };
+    return { agent: agentName, kortixCli: spec.kortixCli, connectors: spec.connectors, env: spec.env };
   }
 
   // The `default` sentinel is non-binding: no agent is ever named `default`, so
@@ -208,8 +222,10 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
   // grant — so this never weakens an intentionally-restricted default.
   if (agentName === DEFAULT_AGENT_SENTINEL) return null;
 
-  // Governance adopted but this concrete agent is unlisted → default-deny.
-  return { agent: agentName, kortixCli: [], connectors: [] };
+  // Governance adopted but this concrete agent is unlisted → default-deny
+  // everything, including secrets/env (an unlisted agent receives no project
+  // secrets).
+  return { agent: agentName, kortixCli: [], connectors: [], env: [] };
 }
 
 /**
@@ -221,10 +237,13 @@ export function agentSpecToTomlEntry(spec: AgentSpec): Record<string, unknown> {
   const entry: Record<string, unknown> = { name: spec.name };
   if (!spec.enabled) entry.enabled = false;
   if (spec.file) entry.file = spec.file;
+  if (spec.model) entry.model = spec.model;
   if (spec.connectors === 'all') entry.connectors = 'all';
   else if (spec.connectors.length > 0) entry.connectors = spec.connectors;
   if (spec.kortixCli === 'all') entry.kortix_cli = 'all';
   else if (spec.kortixCli.length > 0) entry.kortix_cli = spec.kortixCli;
+  // 'all' is the env default, so only emit when narrowed (a list or explicit none).
+  if (spec.env !== 'all') entry.env = spec.env;
   return entry;
 }
 
@@ -237,6 +256,7 @@ export function manifestHashForAgent(spec: AgentSpec): string {
     enabled: spec.enabled,
     connectors: spec.connectors,
     kortixCli: spec.kortixCli,
+    env: spec.env,
     file: spec.file,
   });
   return createHash('sha256').update(canonical).digest('hex');
@@ -261,12 +281,22 @@ function parseAgentEntry(entry: unknown, index: number): ParseOk | ParseErr {
 
   const enabled = coerceBool(row.enabled, true);
   const file = typeof row.file === 'string' && row.file.trim() ? row.file.trim() : null;
+  const model = typeof row.model === 'string' && row.model.trim() ? row.model.trim() : null;
 
   const connectorsParsed = parseGrantSet(name, 'connectors', row.connectors, null);
   if (!connectorsParsed.ok) return connectorsParsed;
 
   const kortixParsed = parseGrantSet(name, 'kortix_cli', row.kortix_cli, validateKortixAction);
   if (!kortixParsed.ok) return kortixParsed;
+
+  // `env` is a NEW dimension — default to 'all' when omitted so existing
+  // [[agents]] keep receiving the secrets they already got; an explicit list
+  // (or "none"/[]) opts into per-agent secret scoping.
+  const envParsed =
+    row.env === undefined || row.env === null
+      ? ({ ok: true as const, value: 'all' as const })
+      : parseGrantSet(name, 'env', row.env, null);
+  if (!envParsed.ok) return envParsed;
 
   return {
     ok: true,
@@ -276,7 +306,9 @@ function parseAgentEntry(entry: unknown, index: number): ParseOk | ParseErr {
       enabled,
       connectors: connectorsParsed.value,
       kortixCli: kortixParsed.value,
+      env: envParsed.value,
       file,
+      model,
     },
   };
 }

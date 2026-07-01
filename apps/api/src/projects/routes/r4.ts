@@ -24,6 +24,16 @@ import {
   downloadSlackFile,
   uploadSlackFile,
 } from "../../channels/slack/file-proxy";
+import {
+  MEET_VOICES,
+  DEFAULT_MEET_BOT_NAME,
+  isMeetVoice,
+  resolveProjectBotName,
+  resolveProjectVoice,
+  setProjectBotName,
+  setProjectVoice,
+} from "../../channels/meet-voices";
+import { previewVoiceB64, speakInMeeting } from "../../channels/meet-tts";
 import { buildSlackInstallUrl } from "../../channels/slack-oauth";
 import { slackOauthMode } from "../../channels/slack-oauth-mode";
 import {
@@ -33,7 +43,7 @@ import {
   relayTurnStep,
   type QuestionInfo,
 } from "../../channels/slack-webhook";
-import { PROJECT_ACTIONS, assertAuthorized } from "../../iam";
+import { PROJECT_ACTIONS } from "../../iam";
 import { auth, errors, json } from "../../openapi";
 import { projectLlmGatewayEnabled } from "../../llm-gateway/enablement";
 import { gatewayModelCatalog } from "../../llm-gateway/models/catalog-models";
@@ -47,7 +57,7 @@ import {
   getAccountModelDefaults,
   upsertAccountModelPreference,
 } from "../../repositories/model-preferences";
-import { AUTO_DEFAULT_MODEL_ID } from "@kortix/shared/llm-catalog";
+import { AUTO_DEFAULT_MODEL_ID } from "@kortix/llm-catalog";
 import { resolveExperimentalFeature } from "../../experimental/features";
 import { db } from "../../shared/db";
 import { extractApps } from "../apps";
@@ -64,7 +74,7 @@ import {
   sessionSandboxes,
 } from "@kortix/db";
 import { and, eq, inArray } from "drizzle-orm";
-import { loadProjectForUser } from "../lib/access";
+import { loadProjectForUser, assertProjectCapability } from "../lib/access";
 import { AnyObject, AppSchema, TriggerSchema, projectsApp } from "../lib/app";
 import {
   APPS_DISABLED_BODY,
@@ -191,12 +201,9 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
     // Specific IAM gate so the audit trail records the precise action.
-    await assertAuthorized(
-      loaded.userId,
-      loaded.row.accountId,
-      PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
-      { type: "project", id: projectId },
-    );
+    // assertProjectCapability (not bare assertAuthorized) so the acting token is
+    // threaded and the agent-grant fold fires.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE);
 
     const draft = parseTriggerDraft(body, { existingSlug: null });
     if ("error" in draft) return c.json({ error: draft.error }, 400);
@@ -280,12 +287,7 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertAuthorized(
-      loaded.userId,
-      loaded.row.accountId,
-      PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
-      { type: "project", id: projectId },
-    );
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE);
     const paused = body.paused;
     if (typeof paused !== "boolean") {
       return c.json({ error: "paused must be a boolean" }, 400);
@@ -328,12 +330,7 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertAuthorized(
-      loaded.userId,
-      loaded.row.accountId,
-      PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
-      { type: "project", id: projectId },
-    );
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE);
 
     let manifest: ParsedManifest;
     try {
@@ -407,12 +404,7 @@ projectsApp.openapi(
     const slug = c.req.param("slug");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertAuthorized(
-      loaded.userId,
-      loaded.row.accountId,
-      PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
-      { type: "project", id: projectId },
-    );
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE);
 
     if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
       return c.json({ error: "Invalid slug" }, 400);
@@ -541,6 +533,9 @@ projectsApp.openapi(
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    // Connecting a Slack workspace is a connector-write capability — a custom
+    // role can withhold it and a scoped agent must hold it (central fold).
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
 
     let body: { bot_token?: string; signing_secret?: string };
     try {
@@ -622,6 +617,8 @@ projectsApp.openapi(
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    // Disconnecting Slack tears down the connector — same connector-write gate.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
     await deleteSlackInstall(projectId);
     // Tear down the auto-materialized Slack connector now that the install is gone.
     await reconcileChannelConnectors(projectId);
@@ -1270,6 +1267,160 @@ projectsApp.openapi(
   },
 );
 
+// GET /v1/projects/:projectId/channels/meet/voices
+// The voice picker: the predefined catalog + the project's current selection,
+// plus whether speaking is wired (ElevenLabs configured).
+projectsApp.openapi(
+  createRoute({
+    method: "get",
+    path: "/{projectId}/channels/meet/voices",
+    tags: ["channels"],
+    summary: "GET /:projectId/channels/meet/voices",
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(z.object({ ok: z.boolean() }).passthrough(), "Voices"),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const [selected, botName] = await Promise.all([
+      resolveProjectVoice(projectId),
+      resolveProjectBotName(projectId),
+    ]);
+    return c.json({
+      ok: true,
+      selected: selected.id,
+      bot_name: botName,
+      default_bot_name: DEFAULT_MEET_BOT_NAME,
+      speak_enabled: Boolean(config.ELEVENLABS_API_KEY),
+      voices: MEET_VOICES.map((v) => ({ id: v.id, name: v.name, desc: v.desc })),
+    });
+  },
+);
+
+// PUT /v1/projects/:projectId/channels/meet/name — set the bot's display name.
+projectsApp.openapi(
+  createRoute({
+    method: "put",
+    path: "/{projectId}/channels/meet/name",
+    tags: ["channels"],
+    summary: "PUT /:projectId/channels/meet/name",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), bot_name: z.string() }).passthrough(), "Saved"),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const body = await readBody(c);
+    const name = String(body.name ?? body.bot_name ?? "");
+    const saved = await setProjectBotName(projectId, name);
+    return c.json({ ok: true, bot_name: saved });
+  },
+);
+
+// PUT /v1/projects/:projectId/channels/meet/voice — choose the meeting voice.
+projectsApp.openapi(
+  createRoute({
+    method: "put",
+    path: "/{projectId}/channels/meet/voice",
+    tags: ["channels"],
+    summary: "PUT /:projectId/channels/meet/voice",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), selected: z.string() }).passthrough(), "Saved"),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const body = await readBody(c);
+    const voiceId = String(body.voice ?? "");
+    if (!isMeetVoice(voiceId)) return c.json({ error: "unknown voice" }, 400);
+    const voice = await setProjectVoice(projectId, voiceId);
+    return c.json({ ok: true, selected: voice.id });
+  },
+);
+
+// POST /v1/projects/:projectId/channels/meet/voices/:voiceId/preview
+// Returns a base64 MP3 of a stock line in that voice (for the picker's preview).
+projectsApp.openapi(
+  createRoute({
+    method: "post",
+    path: "/{projectId}/channels/meet/voices/{voiceId}/preview",
+    tags: ["channels"],
+    summary: "POST /:projectId/channels/meet/voices/:voiceId/preview",
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), voiceId: z.string() }) },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), kind: z.string(), b64: z.string() }).passthrough(), "Preview"),
+      ...errors(400, 404, 502, 503),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const voiceId = c.req.param("voiceId");
+    if (!isMeetVoice(voiceId)) return c.json({ error: "unknown voice" }, 400);
+    const r = await previewVoiceB64(voiceId);
+    if (!r.ok) return c.json({ error: r.error }, r.status as 400 | 404 | 502 | 503);
+    return c.json({ ok: true, kind: "mp3", b64: r.b64 });
+  },
+);
+
+// POST /v1/projects/:projectId/channels/meet/speak — the bot speaks in the call.
+// Server-side proxy: text → ElevenLabs (project voice) → Recall output_audio.
+// Both keys stay server-side; backs `meet speak`.
+projectsApp.openapi(
+  createRoute({
+    method: "post",
+    path: "/{projectId}/channels/meet/speak",
+    tags: ["channels"],
+    summary: "POST /:projectId/channels/meet/speak",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), voice: z.string() }).passthrough(), "Spoken"),
+      ...errors(400, 404, 502, 503),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const body = await readBody(c);
+    const botId = String(body.bot_id ?? body.botId ?? "");
+    const text = String(body.text ?? "");
+    const voice = typeof body.voice === "string" ? body.voice : undefined;
+    if (!botId) return c.json({ error: "bot_id required" }, 400);
+    if (!text.trim()) return c.json({ error: "text required" }, 400);
+    const r = await speakInMeeting(projectId, botId, text, voice);
+    if (!r.ok) return c.json({ error: r.error }, r.status as 400 | 404 | 502 | 503);
+    return c.json({ ok: true, voice: r.voice });
+  },
+);
+
 // GET /v1/projects/:projectId/llm-catalog
 // Server-side source of truth for the gateway model catalog. The seed daemon
 // fetches it at PARK with a sandbox token so the no-restart warm-fork bakes the
@@ -1689,6 +1840,7 @@ projectsApp.openapi(
     const slug = c.req.param("slug");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE);
 
     const { specs } = await loadProjectTriggers(
       await withProjectGitAuth(loaded.row),
@@ -1819,6 +1971,7 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
     const draft = parseAppDraft(body, { existingSlug: null });
     if ("error" in draft) return c.json({ error: draft.error }, 400);
@@ -1880,6 +2033,7 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
     let manifest: ParsedManifest;
     try {
@@ -1936,6 +2090,7 @@ projectsApp.openapi(
     const slug = c.req.param("slug");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
     if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
       return c.json({ error: "Invalid slug" }, 400);

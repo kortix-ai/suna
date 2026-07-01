@@ -123,4 +123,26 @@ describe('ttlMemo', () => {
     memo.clear();
     expect(await memo('a')).toBe(2);
   });
+
+  it('invalidate(key) drops only that entry (others survive)', async () => {
+    const c = counter((n) => n);
+    const memo = ttlMemo({ ttlMs: 60_000, keyFn: (k: string) => k, loader: c.loader, enableInTests: true });
+    await memo('a'); // 1
+    await memo('b'); // 2
+    memo.invalidate('a');
+    expect(await memo('a')).toBe(3); // re-loaded
+    expect(await memo('b')).toBe(2); // untouched
+  });
+
+  it('invalidateByPrefix() drops every entry under the prefix', async () => {
+    const c = counter((n) => n);
+    const memo = ttlMemo({ ttlMs: 60_000, keyFn: (k: string) => k, loader: c.loader, enableInTests: true });
+    await memo('u1|acct'); // 1
+    await memo('u1|proj'); // 2
+    await memo('u2|acct'); // 3
+    memo.invalidateByPrefix('u1|');
+    expect(await memo('u1|acct')).toBe(4); // re-loaded
+    expect(await memo('u1|proj')).toBe(5); // re-loaded
+    expect(await memo('u2|acct')).toBe(3); // different principal — untouched
+  });
 });

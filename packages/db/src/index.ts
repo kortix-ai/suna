@@ -73,7 +73,6 @@ export {
   deployments,
   kortixApiKeys,
   accountTokens,
-  serverEntries,
   workerLeaderLease,
   // Relations
   projectsRelations,
@@ -138,6 +137,12 @@ export {
   projectGroupGrants,
   accountGroupsRelations,
   accountGroupMembersRelations,
+  iamRoles,
+  iamRoleActions,
+  iamPolicies,
+  iamResourceGrants,
+  iamRolesRelations,
+  iamRoleActionsRelations,
   // SCIM
   scimTokens,
   // Audit webhooks
@@ -220,8 +225,6 @@ export type {
   SandboxSelect,
   KortixApiKey,
   NewKortixApiKey,
-  ServerEntry,
-  NewServerEntry,
   TunnelConnection,
   NewTunnelConnection,
   TunnelPermission,

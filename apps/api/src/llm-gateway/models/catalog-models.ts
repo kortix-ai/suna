@@ -4,7 +4,7 @@ import {
   CATALOG,
   type CatalogModel,
   MANAGED_MODELS,
-} from "@kortix/shared/llm-catalog";
+} from "@kortix/llm-catalog";
 import { codexModelIds } from "./codex-models";
 
 interface GatewayModel {

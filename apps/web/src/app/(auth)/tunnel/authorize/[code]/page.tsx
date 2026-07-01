@@ -3,12 +3,12 @@
 import { useTranslations } from 'next-intl';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { CAPABILITY_REGISTRY } from '@/components/tunnel/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
+import { CAPABILITY_REGISTRY } from '@/features/tunnel/types';
 import {
   useApproveDeviceAuth,
   useDenyDeviceAuth,

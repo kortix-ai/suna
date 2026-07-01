@@ -258,6 +258,7 @@ mock.module('../iam/dispatcher', () => {
       if (!decide(userId, action)) throw new HTTPException(403, { message: `forbidden: ${action} (denied)` });
     },
     listAccessibleResources: async () => ({ mode: 'all', ids: [] }),
+    filterAccessibleProjectResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
   };
 });
 

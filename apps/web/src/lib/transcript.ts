@@ -5,7 +5,7 @@
  * packages/opencode/src/cli/cmd/tui/util/transcript.ts
  */
 
-import type { Part, Message } from '@opencode-ai/sdk/v2/client';
+import type { Part, Message } from '@kortix/sdk/opencode-client';
 
 // ============================================================================
 // Types

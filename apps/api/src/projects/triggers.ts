@@ -66,6 +66,13 @@ export interface GitTriggerSpec {
   type: GitTriggerType;
   /** Agent name (default: "default"). */
   agent: string;
+  /**
+   * Model for this trigger's runs (wire form `provider/model`), or null for
+   * "Default" — resolve the chain at fire time (agent → project → account →
+   * platform `auto`). The most-specific *default-time* override for a trigger
+   * run. Catalog-availability is validated at the route layer, not here.
+   */
+  model: string | null;
   /** When false, the scheduler / webhook receiver skip this entry. */
   enabled: boolean;
   /** Mustache-style prompt template — the body sent to the agent on each fire. */
@@ -134,7 +141,12 @@ export async function readManifest(
 ): Promise<ParsedManifest | null> {
   let raw: string;
   try {
-    raw = await readRepoFile(project, MANIFEST_FILENAME, project.defaultBranch);
+    // Honor a project's custom manifest_path. Hardcoding kortix.toml here would
+    // silently read the wrong (often missing) file for such projects → no
+    // [[agents]] parsed → per-agent env/connector scoping turns OFF (the grant
+    // resolves to null = unrestricted). Fall back to the canonical name for
+    // legacy projects whose manifest_path is unset.
+    raw = await readRepoFile(project, project.manifestPath || MANIFEST_FILENAME, project.defaultBranch);
   } catch {
     return null;
   }
@@ -267,8 +279,10 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
     name: spec.name,
     type: spec.type,
     agent: spec.agent,
-    enabled: spec.enabled,
   };
+  // Only emit model when set so manifests on the "Default" path stay byte-stable.
+  if (spec.model) entry.model = spec.model;
+  entry.enabled = spec.enabled;
   // Only emit session_mode when it deviates from the default ('fresh') so
   // existing manifests stay byte-stable on round-trip.
   if (spec.sessionMode === 'reuse') {
@@ -344,6 +358,7 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
     : typeof row.agent_name === 'string' && row.agent_name.trim()
       ? row.agent_name.trim()
       : 'default';
+  const model = typeof row.model === 'string' && row.model.trim() ? row.model.trim() : null;
   const enabled = coerceBool(row.enabled, true);
 
   const sessionModeRaw = typeof row.session_mode === 'string'
@@ -390,6 +405,7 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
           name,
           type: 'cron',
           agent,
+          model,
           enabled,
           promptTemplate: prompt,
           cron: null,
@@ -410,6 +426,7 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
         name,
         type: 'cron',
         agent,
+        model,
         enabled,
         promptTemplate: prompt,
         cron,
@@ -441,6 +458,7 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
       name,
       type: 'webhook',
       agent,
+      model,
       enabled,
       promptTemplate: prompt,
       cron: null,

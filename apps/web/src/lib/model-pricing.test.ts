@@ -46,6 +46,7 @@ describe('buildModelsDevPricingMap', () => {
 describe('createModelPricingLookup', () => {
   test('prefers provider model cost from the live provider list', () => {
     const providers = {
+      default: {},
       all: [
         {
           id: 'kortix',
@@ -59,7 +60,7 @@ describe('createModelPricingLookup', () => {
         },
       ],
       connected: ['kortix'],
-    } as ProviderListResponse;
+    } as unknown as ProviderListResponse;
 
     const lookup = createModelPricingLookup(providers);
     expect(lookup('kortix', 'claude-opus-4.8')).toEqual({

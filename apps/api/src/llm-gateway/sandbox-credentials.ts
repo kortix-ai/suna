@@ -1,4 +1,4 @@
-import { CATALOG } from '@kortix/shared/llm-catalog';
+import { CATALOG } from '@kortix/llm-catalog';
 
 // Provider API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, …). When any of these is
 // present in opencode's process env, opencode auto-connects a NATIVE provider and

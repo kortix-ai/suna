@@ -1,39 +1,40 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import {
-  LayoutGrid,
-  List,
-  Upload,
-  FolderPlus,
-  FilePlus,
-  Plus,
-  ArrowUpDown,
-  RefreshCw,
-  ChevronRight,
-  Home,
-  Download,
-  GitCommitHorizontal,
-  GitPullRequest,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useFilesStore } from '../store/files-store';
-import { useFileList } from '../hooks/use-file-list';
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
+import Loading from '@/components/ui/loading';
+import { Separator } from '@/components/ui/separator';
+import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
+import { HomeSolid, ListSolid } from '@mynaui/icons-react';
+import {
+  ArrowUpDown,
+  ChevronRight,
+  Download,
+  FilePlus,
+  FolderPlus,
+  GitCommitHorizontal,
+  GitPullRequest,
+  LayoutGrid,
+  RefreshCw,
+  Upload,
+} from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFileList } from '../hooks/use-file-list';
 import type { SortField } from '../store/files-store';
+import { useFilesStore } from '../store/files-store';
 import { VersionSelector } from './version-selector';
 
 interface DriveToolbarProps {
@@ -42,31 +43,14 @@ interface DriveToolbarProps {
   onNewFile: () => void;
   onDownloadDir: () => void;
   isDownloading?: boolean;
-  /** When true, hides mutation buttons (New / Upload). */
   readOnly?: boolean;
-  /**
-   * @deprecated read-only state is no longer surfaced as a pill. Prop kept so
-   *             existing callers don't break; the value is ignored.
-   */
   readOnlyLabel?: string;
-  /** When true, shows the Version (Git branch) switcher before breadcrumbs. */
   showVersionSelector?: boolean;
-  /** When set, renders a Checkpoints toggle pill on the right. */
   checkpointsToggle?: { open: boolean; onToggle: () => void };
-  /** When set, renders a Change Requests toggle pill on the right.
-   *  `openCount` adds a numeric badge on the pill so the user can see at a
-   *  glance how many CRs are waiting for review. */
   changeRequestsToggle?: { open: boolean; onToggle: () => void; openCount?: number };
-  /** When set, renders a contextual "Open change request" button (only
-   *  meaningful when the selected version is not the default branch). */
   openChangeRequestAction?: { onClick: () => void; disabled?: boolean };
 }
 
-/**
- * Google Drive-style toolbar.
- *
- * Layout: [Breadcrumbs] ... [New +] [View Toggle] [Sort] [Search] [More]
- */
 export function DriveToolbar({
   onUpload,
   onNewFolder,
@@ -93,30 +77,24 @@ export function DriveToolbar({
 
   const { refetch: refetchFiles, isFetching } = useFileList(currentPath);
 
-  // Home destination: rootPath when sandboxed, otherwise /workspace
   const homePath = rootPath || '/workspace';
-  const homeLabel = rootPath
-    ? rootPath.split('/').filter(Boolean).pop() || 'root'
-    : '/workspace';
+  const homeLabel = rootPath ? rootPath.split('/').filter(Boolean).pop() || 'root' : '/workspace';
 
-  // Breadcrumb segments
   const isRoot = currentPath === '/' || currentPath === '.' || currentPath === '';
   const allSegments = useMemo(
     () => (isRoot ? [] : currentPath.split('/').filter(Boolean)),
     [isRoot, currentPath],
   );
 
-  // When rootPath is set, only show segments at or below it
   const rootSegments = useMemo(
     () => (rootPath ? rootPath.split('/').filter(Boolean) : []),
     [rootPath],
   );
   const segments = useMemo(
-    () => rootPath ? allSegments.slice(rootSegments.length) : allSegments,
+    () => (rootPath ? allSegments.slice(rootSegments.length) : allSegments),
     [rootPath, allSegments, rootSegments],
   );
 
-  // Path editing
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -143,7 +121,6 @@ export function DriveToolbar({
 
   const handleSegmentClick = useCallback(
     (index: number) => {
-      // Offset by rootSegments length to reconstruct the full absolute path
       const absoluteIndex = rootPath ? index + rootSegments.length : index;
       const pathToHere = '/' + allSegments.slice(0, absoluteIndex + 1).join('/');
       navigateToPath(pathToHere);
@@ -159,262 +136,284 @@ export function DriveToolbar({
   };
 
   return (
-    <div className="flex items-center gap-1.5 px-4 h-14 border-b border-border/40 bg-background shrink-0">
-      {/* ── Version (Git branch) selector ── */}
-      {showVersionSelector && (
-        <>
-          <VersionSelector />
-          <div className="h-4 w-px bg-border/50 mx-1 shrink-0" />
-        </>
-      )}
+    <div className="border-border bg-background w-full min-w-0 shrink-0 border-b">
+      <div className="flex w-full flex-col md:flex-row md:items-center md:gap-1.5 md:px-4 md:py-2">
+        <div className="border-border/40 flex w-full min-w-0 items-center gap-1.5 border-b px-3 py-2 md:flex-1 md:border-b-0 md:px-0 md:py-0">
+          {showVersionSelector && (
+            <>
+              <div className="max-w-36 shrink-0 md:max-w-none">
+                <VersionSelector />
+              </div>
+              <Separator orientation="vertical" className="data-[orientation=vertical]:h-[70%]" />
+            </>
+          )}
 
-      {/* ── Breadcrumbs ── */}
-      <div className="flex items-center gap-0.5 min-w-0 flex-1 overflow-hidden">
-        {isEditing ? (
-          <input
-            ref={inputRef}
-            type="text"
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                navigateToPath(editValue.trim() || homePath);
-                setIsEditing(false);
-              }
-              if (e.key === 'Escape') setIsEditing(false);
-            }}
-            onBlur={() => setIsEditing(false)}
-            className="flex-1 min-w-0 h-8 px-3 text-sm bg-card border rounded-2xl outline-none focus:ring-2 focus:ring-primary/50 font-mono"
-            placeholder={homePath}
-          />
-        ) : (
-          <nav
-            className="flex items-center gap-0.5 min-w-0 flex-1 overflow-x-auto"
-            onDoubleClick={handleDoubleClick}
-            title={tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line191JsxAttrTitleDoubleClickToEditPath')}
-          >
-            {/* Home / root */}
-            <Button
-              onClick={() => navigateToPath(homePath)}
-              variant="ghost"
-              size="sm"
-              className={cn(
-                'gap-1.5 shrink-0',
-                segments.length === 0 ? 'text-foreground font-medium' : 'text-muted-foreground',
+          {isEditing ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  navigateToPath(editValue.trim() || homePath);
+                  setIsEditing(false);
+                }
+                if (e.key === 'Escape') setIsEditing(false);
+              }}
+              onBlur={() => setIsEditing(false)}
+              className="bg-card focus:ring-primary/50 h-8 min-w-0 flex-1 rounded-2xl border px-3 font-mono text-sm outline-none focus:ring-2"
+              placeholder={homePath}
+            />
+          ) : (
+            <div
+              className="flex min-w-0 flex-1 items-center gap-0.5"
+              onDoubleClick={handleDoubleClick}
+              title={tHardcodedUi.raw(
+                'featuresProjectFilesComponentsDriveToolbar.line191JsxAttrTitleDoubleClickToEditPath',
               )}
             >
-              <Home className="h-4 w-4" />
-              <span className="font-mono text-xs">{rootPath ? homeLabel : '/workspace'}</span>
+              <Button
+                onClick={() => navigateToPath(homePath)}
+                variant="ghost"
+                size="xs"
+                className={cn('text-foreground shrink-0 font-medium')}
+              >
+                <HomeSolid className="size-4" />
+                <span className="text-xs">{rootPath ? homeLabel : 'workspace'}</span>
+              </Button>
+
+              {segments.length > 0 && (
+                <FadedScrollArea
+                  orientation="horizontal"
+                  fadeColor="from-background"
+                  className="min-w-0 flex-1 overscroll-x-contain"
+                >
+                  <nav className="flex w-max min-w-0 items-center gap-0.5">
+                    {segments.map((segment, index) => {
+                      if (!rootPath && index === 0 && segment === 'workspace') return null;
+                      const isLast = index === segments.length - 1;
+
+                      return (
+                        <div key={index} className="flex shrink-0 items-center gap-0.5">
+                          <ChevronRight className="text-muted-foreground size-3.5 shrink-0" />
+                          <Button
+                            onClick={() => handleSegmentClick(index)}
+                            variant="ghost"
+                            size="xs"
+                            className={cn(
+                              'max-w-[140px] shrink-0 truncate sm:max-w-[200px]',
+                              isLast ? 'text-foreground font-medium' : 'text-muted-foreground',
+                            )}
+                          >
+                            {segment}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </nav>
+                </FadedScrollArea>
+              )}
+            </div>
+          )}
+        </div>
+
+        <FadedScrollArea
+          orientation="horizontal"
+          fadeColor="from-background"
+          className="w-full shrink-0 overscroll-x-contain md:w-auto"
+        >
+          <div className="flex w-max min-w-full items-center gap-0.5 px-3 py-1.5 md:w-auto md:min-w-0 md:justify-end md:px-0 md:py-0">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={toggleViewMode}
+              title={viewMode === 'grid' ? 'Switch to list view' : 'Switch to grid view'}
+            >
+              {viewMode === 'grid' ? <ListSolid /> : <LayoutGrid />}
             </Button>
 
-            {segments.map((segment, index) => {
-              // Skip 'workspace' only when not sandboxed (rootPath null)
-              if (!rootPath && index === 0 && segment === 'workspace') return null;
-              const isLast = index === segments.length - 1;
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" title="Sort">
+                  <ArrowUpDown />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuLabel>
+                  {tHardcodedUi.raw(
+                    'featuresProjectFilesComponentsDriveToolbar.line262JsxTextSortBy',
+                  )}
+                </DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={sortBy}
+                  onValueChange={(v) => setSortBy(v as SortField)}
+                >
+                  <DropdownMenuRadioItem value="name">Name</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="type">Type</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={toggleSortOrder} className="justify-between">
+                  {sortOrder === 'asc' ? 'Descending' : 'Ascending'}
+                  <ArrowUpDown className="size-4" />
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-              return (
-                <div key={index} className="flex items-center gap-0.5 min-w-0 shrink-0">
-                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+            <Separator orientation="vertical" className="data-[orientation=vertical]:h-[70%]" />
+
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => refetchFiles()}
+              disabled={isFetching}
+              title="Refresh"
+            >
+              <RefreshCw className={cn(isFetching && 'animate-spin')} />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={onDownloadDir}
+              disabled={isDownloading}
+              title={tHardcodedUi.raw(
+                'featuresProjectFilesComponentsDriveToolbar.line295JsxAttrTitleDownloadDirectoryAsZip',
+              )}
+            >
+              {isDownloading ? <Loading /> : <Download />}
+            </Button>
+
+            {!readOnly && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
                   <Button
-                    onClick={() => handleSegmentClick(index)}
                     variant="ghost"
-                    size="sm"
-                    className={cn(
-                      'truncate max-w-[200px]',
-                      isLast ? 'text-foreground font-medium' : 'text-muted-foreground',
+                    size="icon-sm"
+                    title={tHardcodedUi.raw(
+                      'featuresProjectFilesComponentsDriveToolbar.line312JsxAttrTitleNewFileOrFolder',
                     )}
                   >
-                    {segment}
+                    <Icon.Plus className="size-4" />
                   </Button>
-                </div>
-              );
-            })}
-          </nav>
-        )}
-      </div>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={onNewFolder}>
+                    <FolderPlus className="size-4" />
+                    {tHardcodedUi.raw(
+                      'featuresProjectFilesComponentsDriveToolbar.line320JsxTextNewFolder',
+                    )}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={onNewFile}>
+                    <FilePlus className="size-4" />
+                    {tHardcodedUi.raw(
+                      'featuresProjectFilesComponentsDriveToolbar.line324JsxTextNewFile',
+                    )}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={onUpload}>
+                    <Upload />
+                    {tHardcodedUi.raw(
+                      'featuresProjectFilesComponentsDriveToolbar.line329JsxTextFileUpload',
+                    )}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
 
-      {/* ── Right Actions ── */}
-      <div className="flex items-center gap-0.5 shrink-0">
-        {/* View / sort / dotfiles group */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-muted-foreground hover:text-foreground"
-          onClick={toggleViewMode}
-          title={viewMode === 'grid' ? 'Switch to list view' : 'Switch to grid view'}
-        >
-          {viewMode === 'grid' ? (
-            <List className="h-4 w-4" />
-          ) : (
-            <LayoutGrid className="h-4 w-4" />
-          )}
-        </Button>
+            {openChangeRequestAction && (
+              <>
+                <Separator orientation="vertical" className="data-[orientation=vertical]:h-[70%]" />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  onClick={openChangeRequestAction.onClick}
+                  disabled={openChangeRequestAction.disabled}
+                  title={tHardcodedUi.raw(
+                    'featuresProjectFilesComponentsDriveToolbar.line348JsxAttrTitleOpenANewChangeRequest',
+                  )}
+                  className="shrink-0"
+                >
+                  <GitPullRequest className="size-4" />
+                  <span className="hidden sm:inline">
+                    {tHardcodedUi.raw(
+                      'featuresProjectFilesComponentsDriveToolbar.line352JsxTextOpenCr',
+                    )}
+                  </span>
+                </Button>
+              </>
+            )}
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              title="Sort"
-            >
-              <ArrowUpDown className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuLabel className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line262JsxTextSortBy')}</DropdownMenuLabel>
-            <DropdownMenuRadioGroup value={sortBy} onValueChange={(v) => setSortBy(v as SortField)}>
-              <DropdownMenuRadioItem value="name">Name</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="type">Type</DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={toggleSortOrder}>
-              <ArrowUpDown className="mr-2 h-4 w-4" />
-              {sortOrder === 'asc' ? 'Descending' : 'Ascending'}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            {checkpointsToggle && (
+              <>
+                <Separator orientation="vertical" className="data-[orientation=vertical]:h-[70%]" />
+                <Button
+                  type="button"
+                  variant={checkpointsToggle.open ? 'secondary' : 'ghost'}
+                  size="xs"
+                  onClick={checkpointsToggle.onToggle}
+                  title={tHardcodedUi.raw(
+                    'featuresProjectFilesComponentsDriveToolbar.line366JsxAttrTitleToggleCheckpointsPanel',
+                  )}
+                  className={cn(
+                    'shrink-0',
+                    !checkpointsToggle.open && 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <GitCommitHorizontal className="size-4" />
+                  <span className="hidden sm:inline">Checkpoints</span>
+                </Button>
+              </>
+            )}
 
-        <div className="h-4 w-px bg-border/50 mx-1 shrink-0" />
-
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-muted-foreground hover:text-foreground"
-          onClick={() => refetchFiles()}
-          disabled={isFetching}
-          title="Refresh"
-        >
-          <RefreshCw className={cn('h-4 w-4', isFetching && 'animate-spin')} />
-        </Button>
-
-        {/* Download dir */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-muted-foreground hover:text-foreground"
-          onClick={onDownloadDir}
-          disabled={isDownloading}
-          title={tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line295JsxAttrTitleDownloadDirectoryAsZip')}
-        >
-          {isDownloading ? (
-            <RefreshCw className="h-4 w-4 animate-spin" />
-          ) : (
-            <Download className="h-4 w-4" />
-          )}
-        </Button>
-
-        {/* New button — hidden in read-only project view */}
-        {!readOnly && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                title={tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line312JsxAttrTitleNewFileOrFolder')}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem onClick={onNewFolder}>
-                <FolderPlus className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line320JsxTextNewFolder')}</DropdownMenuItem>
-              <DropdownMenuItem onClick={onNewFile}>
-                <FilePlus className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line324JsxTextNewFile')}</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onUpload}>
-                <Upload className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line329JsxTextFileUpload')}</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-
-        {/* Quick "+ Open CR" — opens the new-CR dialog with a branch picker.
-            Subtle by design so it doesn't fight the Checkpoints / Change
-            Requests pills, but always visible so opening a CR is reachable
-            from any state. */}
-        {openChangeRequestAction && (
-          <>
-            <div className="h-4 w-px bg-border/50 mx-1 shrink-0" />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={openChangeRequestAction.onClick}
-              disabled={openChangeRequestAction.disabled}
-              title={tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line348JsxAttrTitleOpenANewChangeRequest')}
-              className="h-8 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <GitPullRequest className="h-3.5 w-3.5" />
-              <span>{tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line352JsxTextOpenCr')}</span>
-            </Button>
-          </>
-        )}
-
-        {/* Checkpoints toggle — visual emphasis without harsh "active" state. */}
-        {checkpointsToggle && (
-          <>
-            <div className="h-4 w-px bg-border/50 mx-1 shrink-0" />
-            <Button
-              type="button"
-              variant={checkpointsToggle.open ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={checkpointsToggle.onToggle}
-              title={tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line366JsxAttrTitleToggleCheckpointsPanel')}
-              className={cn(
-                'h-8 text-xs',
-                !checkpointsToggle.open && 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <GitCommitHorizontal className="h-3.5 w-3.5" />
-              <span>Checkpoints</span>
-            </Button>
-          </>
-        )}
-
-        {/* Change Requests toggle — same visual treatment as Checkpoints,
-            with a count badge when CRs are open so reviewers can spot them at
-            a glance. */}
-        {changeRequestsToggle && (() => {
-          const count = changeRequestsToggle.openCount ?? 0;
-          const hasOpen = count > 0;
-          return (
-            <Button
-              type="button"
-              variant={changeRequestsToggle.open ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={changeRequestsToggle.onToggle}
-              title={
-                hasOpen
-                  ? `${count} change request${count === 1 ? '' : 's'} waiting for review`
-                  : 'Toggle Change Requests panel'
-              }
-              className={cn(
-                'h-8 text-xs ml-1',
-                !changeRequestsToggle.open &&
-                  (hasOpen
-                    ? 'text-foreground'
-                    : 'text-muted-foreground hover:text-foreground'),
-              )}
-            >
-              <span className="relative inline-flex">
-                <GitPullRequest className="h-3.5 w-3.5" />
-                {hasOpen && (
-                  <span
-                    className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-background"
-                    aria-hidden
-                  />
-                )}
-              </span>
-              <span>{tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line412JsxTextChangeRequests')}</span>
-              {hasOpen && (
-                <Badge variant="success" size="sm" className="ml-0.5 tabular-nums">
-                  {count}
-                </Badge>
-              )}
-            </Button>
-          );
-        })()}
+            {changeRequestsToggle &&
+              (() => {
+                const count = changeRequestsToggle.openCount ?? 0;
+                const hasOpen = count > 0;
+                return (
+                  <Button
+                    type="button"
+                    variant={changeRequestsToggle.open ? 'secondary' : 'ghost'}
+                    size="xs"
+                    onClick={changeRequestsToggle.onToggle}
+                    title={
+                      hasOpen
+                        ? `${count} change request${count === 1 ? '' : 's'} waiting for review`
+                        : 'Toggle Change Requests panel'
+                    }
+                    className={cn(
+                      'shrink-0',
+                      !changeRequestsToggle.open &&
+                        (hasOpen
+                          ? 'text-foreground'
+                          : 'text-muted-foreground hover:text-foreground'),
+                    )}
+                  >
+                    <span className="relative inline-flex">
+                      <GitPullRequest className="size-4" />
+                      {hasOpen && (
+                        <span
+                          className="ring-background absolute -top-1 -right-1 size-2 rounded-full bg-emerald-500 ring-2"
+                          aria-hidden
+                        />
+                      )}
+                    </span>
+                    <span className="hidden sm:inline">
+                      {tHardcodedUi.raw(
+                        'featuresProjectFilesComponentsDriveToolbar.line412JsxTextChangeRequests',
+                      )}
+                    </span>
+                    {hasOpen && (
+                      <Badge variant="success" size="xs" className="ml-0.5 tabular-nums">
+                        {count}
+                      </Badge>
+                    )}
+                  </Button>
+                );
+              })()}
+          </div>
+        </FadedScrollArea>
       </div>
     </div>
   );

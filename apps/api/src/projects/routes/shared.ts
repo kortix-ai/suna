@@ -258,6 +258,8 @@ export async function allocateRuntimeOnOpen(
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
         opencodeModel,
+        defaultBranch: loaded.row.defaultBranch,
+        manifestPath: loaded.row.manifestPath,
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
       }),
     resolveGitAuthToken: async () =>
@@ -294,7 +296,26 @@ export interface SessionStartResult {
   sandbox: Record<string, unknown> | null;
   /** Canonical OpenCode root pin (resolved client-side once the box is ready). */
   opencode_session_id: string | null;
+  /**
+   * Relative proxy path for this session's OpenCode runtime (port 8000), composed
+   * by the client against the SDK's configured backendUrl. The server owns the
+   * proxy scheme so the client never builds `/p/<id>/<port>` itself — it treats
+   * this as an opaque per-session runtime base. Absent until the box has an
+   * external_id. See `sessionRuntimeUrlPath`.
+   */
+  runtime_url?: string | null;
   reason?: string;
+}
+
+/**
+ * The relative proxy path a client uses for all OpenCode (port 8000) traffic for
+ * a session, resolved against the SDK's configured backendUrl. Keyed by
+ * `external_id` — the same id the preview proxy's `loadSandbox()` looks up — so
+ * the client never has to know the proxy URL scheme. This is the one place the
+ * per-session runtime URL is shaped; the SDK consumes it opaquely.
+ */
+export function sessionRuntimeUrlPath(externalId: string): string {
+  return `/p/${externalId}/8000`;
 }
 
 export function isMissingRuntimeError(error: unknown): boolean {
@@ -570,6 +591,7 @@ export async function openSession(args: {
       retriable: true,
       sandbox: null,
       opencode_session_id: null,
+      runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason:
         providerStatus === 'stopped'
           ? 'runtime_waking'
@@ -598,6 +620,7 @@ export async function openSession(args: {
     retriable: booting,
     sandbox: serializeSandboxRow(row),
     opencode_session_id: ensured.pin,
+    runtime_url: sessionRuntimeUrlPath(row.externalId),
     reason: ensured.reason,
   };
 }

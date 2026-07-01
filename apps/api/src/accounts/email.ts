@@ -151,7 +151,7 @@ export async function sendAccountInviteEmail(opts: {
   inviterEmail: string | null;
   inviteId: string;
   // Display label for the role chip (account: admin|member, project:
-  // manager|editor|viewer). Rendered verbatim (uppercased).
+  // manager|editor|user). Rendered verbatim (uppercased).
   role?: string;
   // When set, the invite is framed as joining this project rather than the
   // whole account/team (project-level /access/invite flow).

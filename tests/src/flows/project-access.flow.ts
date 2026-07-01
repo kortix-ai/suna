@@ -12,8 +12,8 @@
  *  - Account invites the recipient acts on:
  *    GET/accept/decline /account-invites/:inviteId.
  *
- * Project roles are manager|editor|viewer; member-management routes gate on
- * PROJECT_MEMBERS_MANAGE (admin-tier) — a project viewer/editor without manage
+ * Project roles are manager|editor|user; member-management routes gate on
+ * PROJECT_MEMBERS_MANAGE (admin-tier) — a project user/editor without manage
  * is denied. Source of truth: apps/api/src/projects/index.ts (access +
  * group-grants handlers) and apps/api/src/accounts/invites.ts.
  */
@@ -88,7 +88,7 @@ flow(
         .as(editor)
         .put(
           "/v1/projects/:projectId/access/:userId",
-          { role: "viewer" },
+          { role: "user" },
           { params: { projectId: p.id, userId: target.userId! } },
         );
       r.status([403, 404]);
@@ -108,7 +108,7 @@ flow(
         .as(ctx.P.OWNER)
         .put(
           "/v1/projects/:projectId/access/:userId",
-          { role: "viewer" },
+          { role: "user" },
           { params: { projectId: p.id, userId: "00000000-0000-4000-a000-000000000000" } },
         );
       r.status(404);
@@ -128,7 +128,7 @@ flow(
     const member = await team.addMember("member");
     const admin = await team.addMember("admin");
     await ctx.step("grant then revoke a real member → 200", async () => {
-      await team.grantProjectRole(p.id, member.userId!, "viewer");
+      await team.grantProjectRole(p.id, member.userId!, "user");
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .del("/v1/projects/:projectId/access/:userId", {
@@ -310,27 +310,27 @@ flow(
         .as(ctx.P.OWNER)
         .post(
           "/v1/projects/:projectId/group-grants",
-          { group_id: "00000000-0000-4000-a000-000000000000", role: "viewer" },
+          { group_id: "00000000-0000-4000-a000-000000000000", role: "user" },
           { params: { projectId: p.id } },
         );
       r.status(404);
     });
-    await ctx.step("PATCH role to viewer → 200", async () => {
+    await ctx.step("PATCH role to user → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
           "/v1/projects/:projectId/group-grants/:groupId",
-          { role: "viewer" },
+          { role: "user" },
           { params: { projectId: p.id, groupId } },
         );
-      r.status(200).body().has("$.role", "viewer");
+      r.status(200).body().has("$.role", "user");
     });
     await ctx.step("PATCH unknown grant → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
           "/v1/projects/:projectId/group-grants/:groupId",
-          { role: "viewer" },
+          { role: "user" },
           { params: { projectId: p.id, groupId: "00000000-0000-4000-a000-000000000000" } },
         );
       r.status(404);
@@ -530,7 +530,7 @@ flow(
         .as(ctx.P.NONMEMBER)
         .post(
           "/v1/projects/:projectId/access/invite",
-          { email: "stranger@example.com", role: "viewer" },
+          { email: "stranger@example.com", role: "user" },
           { params: { projectId: p.id } },
         );
       r.status(403);

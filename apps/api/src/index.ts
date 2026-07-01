@@ -30,7 +30,6 @@ import { billingApp, accountDeletionApp } from './billing';
 import { platformApp } from './platform';
 import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
-import { serversApp } from './servers';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { requestDeadline } from './middleware/request-deadline';
 // Statically imported (NOT await import() in the handlers): on a long-running
@@ -164,6 +163,9 @@ const cloudOrigins = [
 const localOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
+  // Local dev: the white-label reference app (apps/whitelabel-demo) defaults to :3010.
+  'http://localhost:3010',
+  'http://127.0.0.1:3010',
 ];
 const extraOrigins = process.env.CORS_ALLOWED_ORIGINS
   ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
@@ -661,12 +663,13 @@ app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the 
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
-const { slackWebhookApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp } = await import('./channels');
+const { slackWebhookApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp, meetWebhookApp } = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
 app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
+app.route('/v1/webhooks/meet', meetWebhookApp); // /v1/webhooks/meet/realtime — Recall.ai live transcript/chat relay
 
 const { sandboxWebhooksApp } = await import('./platform/webhooks/routes');
 app.route('/v1/webhooks/sandbox', sandboxWebhooksApp); // /v1/webhooks/sandbox/{daytona,platinum} — provider lifecycle → close billing
@@ -693,10 +696,6 @@ app.route('/v1/admin', adminApp);
 // OAuth2 provider — public token endpoint, auth on authorize/consent
 app.route('/v1/oauth', oauthApp);
 
-// All remaining routes require authentication (JWT or kortix_ token).
-app.use('/v1/servers/*', combinedAuth);
-app.route('/v1/servers', serversApp);        // /v1/servers, /v1/servers/:id, /v1/servers/sync
-
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
 app.route('/v1/tunnel/device-auth', createDeviceAuthPublicRouter());
@@ -712,10 +711,9 @@ app.use('/v1/tunnel/*', async (c, next) => {
 });
 app.route('/v1/tunnel', tunnelApp);
 
-// Preview Proxy — unified route for both cloud (Daytona) and local mode.
-// Pattern: /v1/p/{sandboxId}/{port}/* for ALL modes.
-// Cloud:  sandboxId = Daytona external ID → proxied via Daytona SDK
-// Local:  sandboxId = container name (e.g. 'kortix-sandbox') → Docker DNS resolution
+// Preview Proxy — unified route for sandbox HTTP access.
+// Pattern: /v1/p/{sandboxId}/{port}/* — sandboxId is the provider external ID,
+// resolved to a reachable upstream URL via the provider's resolvePreviewLink.
 // Auth: unified previewProxyAuth (accepts Supabase JWT and kortix_ tokens).
 // MUST be after all explicit routes (wildcard catch-all).
 app.route('/v1/p', sandboxProxyApp);

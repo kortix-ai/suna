@@ -16,6 +16,7 @@ import {
 } from '../../repositories/service-accounts';
 import { iamRouter, AccountIdParam, ServiceAccountSchema } from './app';
 import { auditIam, isUniqueViolation, readBody } from './helpers';
+import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 
 iamRouter.openapi(
   createRoute({
@@ -140,12 +141,22 @@ iamRouter.openapi(
 
   const before = await getServiceAccount(accountId, saId);
   if (!before) return c.json({ error: 'service account not found' }, 404);
+  // Agent identities are system-managed (governed via the Roles UI). Disabling
+  // one here would silently break that agent's sessions; refuse.
+  if (before.agentName) {
+    return c.json({ error: 'Agent identities are managed via Roles, not here' }, 409);
+  }
   const ok = await disableServiceAccount({
     accountId,
     serviceAccountId: saId,
     disabledBy: userId,
   });
   if (!ok) return c.json({ error: 'service account is already disabled' }, 409);
+
+  // Revoke immediately: the engine resolves an SA actor (keyed on its id) with a
+  // 15s positive cache, so without this bust a disabled SA keeps authorizing for
+  // up to the TTL. Same id space as a user, so the user-keyed bust applies.
+  invalidateIamCacheForUser(saId);
 
   await auditIam(c, {
     accountId,
@@ -180,7 +191,15 @@ iamRouter.openapi(
 
   const before = await getServiceAccount(accountId, saId);
   if (!before) return c.json({ error: 'service account not found' }, 404);
+  // Agent identities are system-managed; deleting one CASCADE-kills its live
+  // sessions. Refuse here — they're governed via the Roles UI.
+  if (before.agentName) {
+    return c.json({ error: 'Agent identities are managed via Roles, not here' }, 409);
+  }
   await deleteServiceAccount(accountId, saId);
+  // Same immediate-revoke bust as disable (a deleted SA must stop authorizing now,
+  // not after the 15s cache TTL).
+  invalidateIamCacheForUser(saId);
 
   await auditIam(c, {
     accountId,

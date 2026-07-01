@@ -1,11 +1,7 @@
 import { useAuth } from '@/features/providers/auth-provider';
 import { authenticatedFetch } from '@/lib/auth-token';
 import { ensureSandbox, getSandboxUrl } from '@/lib/platform-client';
-import {
-  getActiveOpenCodeUrl,
-  getServerByInstanceId,
-  resolveServerUrl,
-} from '@/stores/server-store';
+import { getActiveOpenCodeUrl } from '@/stores/server-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -187,12 +183,9 @@ interface ApiRunResponse {
   };
 }
 
-async function resolveSandboxBaseUrl(instanceId?: string | null): Promise<string> {
-  if (instanceId) {
-    const server = getServerByInstanceId(instanceId);
-    if (server) return resolveServerUrl(server).replace(/\/+$/, '');
-  }
-
+async function resolveSandboxBaseUrl(_instanceId?: string | null): Promise<string> {
+  // The active session's runtime is the sandbox — the old per-instance registry
+  // lookup is gone, so resolve straight from the current runtime.
   const activeBaseUrl = getActiveOpenCodeUrl();
   if (activeBaseUrl) return activeBaseUrl.replace(/\/+$/, '');
 

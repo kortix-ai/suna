@@ -20,13 +20,17 @@ interface CompactDialogProps {
   sessionId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Fired when the user confirms compaction (vs. dismissing the modal). Lets a
+   *  caller distinguish a real action from a cancel/Esc. */
+  onCompactStart?: () => void;
 }
 
-export function CompactModal({ sessionId, open, onOpenChange }: CompactDialogProps) {
+export function CompactModal({ sessionId, open, onOpenChange, onCompactStart }: CompactDialogProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const summarize = useSummarizeOpenCodeSession();
 
   const handleCompact = useCallback(() => {
+    onCompactStart?.();
     onOpenChange(false);
 
     void loadingToast('Compacting session...', () => summarize.mutateAsync({ sessionId }), {
@@ -34,7 +38,7 @@ export function CompactModal({ sessionId, open, onOpenChange }: CompactDialogPro
       showErrorToast: true,
       error: (error) => (error instanceof Error ? error.message : 'Failed to compact session'),
     });
-  }, [sessionId, summarize, onOpenChange]);
+  }, [sessionId, summarize, onOpenChange, onCompactStart]);
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>

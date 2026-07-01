@@ -6,20 +6,11 @@ import { useTranslations } from 'next-intl';
 // editor (pick scope_type='token' principal). One bearer per SA;
 // rotation = disable + create new.
 
-import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Bot,
-  Check,
-  Copy,
-  ExternalLink,
-  Loader2,
-  PauseCircle,
-  Plus,
-  Trash2,
-} from 'lucide-react';
-import Link from 'next/link';
 import { toast } from '@/lib/toast';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Bot, Check, Copy, ExternalLink, Loader2, PauseCircle, Plus, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -86,20 +77,25 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
   const sas = sasQuery.data ?? [];
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="border-b border-border/60 px-6 py-4">
+    <section className="border-border/70 bg-card rounded-xl border">
+      <header className="border-border/60 border-b px-6 py-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
-              <Bot className="h-4 w-4 text-muted-foreground" />
-              {tHardcodedUi.raw('componentsIamServiceAccountsCard.line93JsxTextServiceAccounts')}</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {tHardcodedUi.raw('componentsIamServiceAccountsCard.line96JsxTextMachineIdentitiesForCICDAndIntegrationsAttach')}</p>
+            <h2 className="text-foreground flex items-center gap-2 text-base font-semibold">
+              <Bot className="text-muted-foreground h-4 w-4" />
+              {tHardcodedUi.raw('componentsIamServiceAccountsCard.line93JsxTextServiceAccounts')}
+            </h2>
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              {tHardcodedUi.raw(
+                'componentsIamServiceAccountsCard.line96JsxTextMachineIdentitiesForCICDAndIntegrationsAttach',
+              )}
+            </p>
           </div>
           {canManage && (
             <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
               <Plus className="h-4 w-4" />
-              {tHardcodedUi.raw('componentsIamServiceAccountsCard.line104JsxTextNewServiceAccount')}</Button>
+              {tHardcodedUi.raw('componentsIamServiceAccountsCard.line104JsxTextNewServiceAccount')}
+            </Button>
           )}
         </div>
       </header>
@@ -108,28 +104,33 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
         {sasQuery.isLoading ? (
           <Skeleton className="h-16 w-full" />
         ) : sas.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            {tHardcodedUi.raw('componentsIamServiceAccountsCard.line115JsxTextNoServiceAccountsYetCreateOneToGet')}</p>
+          <p className="text-muted-foreground text-xs">
+            {tHardcodedUi.raw(
+              'componentsIamServiceAccountsCard.line115JsxTextNoServiceAccountsYetCreateOneToGet',
+            )}
+          </p>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border/60 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              <tr className="border-border/60 text-muted-foreground border-b text-left text-[10px] font-medium tracking-wider uppercase">
                 <th className="py-2 font-medium">Name</th>
                 <th className="py-2 font-medium">Status</th>
-                <th className="py-2 font-medium">{tHardcodedUi.raw('componentsIamServiceAccountsCard.line124JsxTextLastUsed')}</th>
+                <th className="py-2 font-medium">
+                  {tHardcodedUi.raw('componentsIamServiceAccountsCard.line124JsxTextLastUsed')}
+                </th>
                 <th className="w-32 py-2" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-border/60">
+            <tbody className="divide-border divide-y">
               {sas.map((sa) => (
                 <tr key={sa.service_account_id} className="hover:bg-muted/20">
                   <td className="py-2">
-                    <div className="font-medium text-foreground">{sa.name}</div>
-                    <div className="font-mono text-[10px] text-muted-foreground">
+                    <div className="text-foreground font-medium">{sa.name}</div>
+                    <div className="text-muted-foreground font-mono text-[10px]">
                       {sa.public_prefix}
                     </div>
                     {sa.description && (
-                      <div className="mt-0.5 text-[11px] text-muted-foreground">
+                      <div className="text-muted-foreground mt-0.5 text-[11px]">
                         {sa.description}
                       </div>
                     )}
@@ -147,7 +148,7 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
                       {sa.status}
                     </Badge>
                   </td>
-                  <td className="py-2 text-xs text-muted-foreground">
+                  <td className="text-muted-foreground py-2 text-xs">
                     {sa.last_used_at ? formatRelative(sa.last_used_at) : 'never'}
                   </td>
                   <td className="py-2 text-right">
@@ -157,7 +158,7 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="h-8 w-8 text-muted-foreground hover:text-amber-600"
+                            className="text-muted-foreground h-8 w-8 hover:text-amber-600"
                             onClick={() => setDisableTarget(sa)}
                             aria-label="Disable"
                             title="Disable"
@@ -168,10 +169,12 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          className="text-muted-foreground hover:text-destructive h-8 w-8"
                           onClick={() => setDeleteTarget(sa)}
                           aria-label="Delete"
-                          title={tHardcodedUi.raw('componentsIamServiceAccountsCard.line179JsxAttrTitleDeletePermanently')}
+                          title={tHardcodedUi.raw(
+                            'componentsIamServiceAccountsCard.line179JsxAttrTitleDeletePermanently',
+                          )}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -208,7 +211,9 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
         onOpenChange={(o) => {
           if (!o) setDisableTarget(null);
         }}
-        title={tHardcodedUi.raw('componentsIamServiceAccountsCard.line216JsxAttrTitleDisableServiceAccount')}
+        title={tHardcodedUi.raw(
+          'componentsIamServiceAccountsCard.line216JsxAttrTitleDisableServiceAccount',
+        )}
         description={
           disableTarget
             ? `"${disableTarget.name}" will start failing auth on its next request. Its bearer becomes unusable but the account row is preserved for audit. Re-enable by deleting + creating a new one.`
@@ -227,7 +232,9 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
         onOpenChange={(o) => {
           if (!o) setDeleteTarget(null);
         }}
-        title={tHardcodedUi.raw('componentsIamServiceAccountsCard.line235JsxAttrTitleDeleteServiceAccount')}
+        title={tHardcodedUi.raw(
+          'componentsIamServiceAccountsCard.line235JsxAttrTitleDeleteServiceAccount',
+        )}
         description={
           deleteTarget
             ? `Permanently removes "${deleteTarget.name}" and revokes its bearer. Any IAM policies attached to it are also dropped.`
@@ -280,9 +287,14 @@ function CreateServiceAccountDialog({
     <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{tHardcodedUi.raw('componentsIamServiceAccountsCard.line287JsxTextNewServiceAccount')}</DialogTitle>
+          <DialogTitle>
+            {tHardcodedUi.raw('componentsIamServiceAccountsCard.line287JsxTextNewServiceAccount')}
+          </DialogTitle>
           <DialogDescription>
-            {tHardcodedUi.raw('componentsIamServiceAccountsCard.line289JsxTextABearerTokenWillBeShownOnceAfter')}</DialogDescription>
+            {tHardcodedUi.raw(
+              'componentsIamServiceAccountsCard.line289JsxTextABearerTokenWillBeShownOnceAfter',
+            )}
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -296,11 +308,17 @@ function CreateServiceAccountDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label>{tHardcodedUi.raw('componentsIamServiceAccountsCard.line306JsxTextDescriptionOptional')}</Label>
+            <Label>
+              {tHardcodedUi.raw(
+                'componentsIamServiceAccountsCard.line306JsxTextDescriptionOptional',
+              )}
+            </Label>
             <Input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder={tHardcodedUi.raw('componentsIamServiceAccountsCard.line310JsxAttrPlaceholderGitHubActionsDeployWorker')}
+              placeholder={tHardcodedUi.raw(
+                'componentsIamServiceAccountsCard.line310JsxAttrPlaceholderGitHubActionsDeployWorker',
+              )}
               disabled={mutation.isPending}
             />
           </div>
@@ -351,12 +369,21 @@ function ShowBearerDialog({
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{tHardcodedUi.raw('componentsIamServiceAccountsCard.line360JsxTextSaveThisBearerNow')}</DialogTitle>
+          <DialogTitle>
+            {tHardcodedUi.raw('componentsIamServiceAccountsCard.line360JsxTextSaveThisBearerNow')}
+          </DialogTitle>
           <DialogDescription>
-            {tHardcodedUi.raw('componentsIamServiceAccountsCard.line362JsxTextThisIsTheOnlyTimeWeLlShow')}<strong>{bearer.name}</strong>{tHardcodedUi.raw('componentsIamServiceAccountsCard.line362JsxTextSSecretStoreItInYourSecretsManager')}</DialogDescription>
+            {tHardcodedUi.raw(
+              'componentsIamServiceAccountsCard.line362JsxTextThisIsTheOnlyTimeWeLlShow',
+            )}
+            <strong>{bearer.name}</strong>
+            {tHardcodedUi.raw(
+              'componentsIamServiceAccountsCard.line362JsxTextSSecretStoreItInYourSecretsManager',
+            )}
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div className="rounded-2xl border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs break-all">
+          <div className="border-border/60 bg-muted/30 rounded-2xl border px-3 py-2 font-mono text-xs break-all">
             {bearer.secret}
           </div>
           <div className="flex items-center justify-between gap-2">
@@ -366,9 +393,10 @@ function ShowBearerDialog({
             </Button>
             <Link
               href={`/accounts/${accountId}/tokens/${bearer.service_account_id}`}
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs"
             >
-              {tHardcodedUi.raw('componentsIamServiceAccountsCard.line380JsxTextAttachPolicies')}<ExternalLink className="h-3 w-3" />
+              {tHardcodedUi.raw('componentsIamServiceAccountsCard.line380JsxTextAttachPolicies')}
+              <ExternalLink className="h-3 w-3" />
             </Link>
           </div>
         </div>

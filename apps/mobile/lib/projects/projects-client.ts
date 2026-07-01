@@ -11,7 +11,7 @@ import { createApiRequestError, getUpgradeGate } from '@/lib/billing/upgrade-gat
 // ── Types (mirror web) ─────────────────────────────────────────────────────
 
 export type AccountRole = 'owner' | 'admin' | 'member';
-export type ProjectRole = 'manager' | 'editor' | 'viewer';
+export type ProjectRole = 'manager' | 'editor' | 'user';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
 export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel';

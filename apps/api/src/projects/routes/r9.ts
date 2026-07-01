@@ -8,11 +8,12 @@ import { MANIFEST_FILENAME } from '../triggers';
 import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { loadProjectForUser } from '../lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { normalizeString, readBody } from '../lib/serializers';
 import { assertAgentScope } from '../../iam/agent-scope';
+import { PROJECT_ACTIONS } from '../../iam';
 
 projectsApp.openapi(
   createRoute({
@@ -36,6 +37,11 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  // Human-side capability gate: merging lands code on the base branch. Editors/
+  // managers hold project.gitops.merge today; a custom role can OMIT it to take
+  // Git-Ops merge away from a department without touching the rest of write.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_MERGE);
 
   // Per-agent gate: merging a CR lands code on the base branch — the canonical
   // destructive action. An agent-session token must be granted project.cr.merge
@@ -178,6 +184,10 @@ projectsApp.openapi(
   const crId = c.req.param('crId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Per-agent gate: managing a CR's lifecycle is part of the change-request
+  // capability. A scoped agent token must hold project.cr.open (no-op for
+  // human/PAT tokens).
+  assertAgentScope(c, 'project.cr.open');
 
   const cr = await getCrById(crId, projectId);
   if (!cr) return c.json({ error: 'Change request not found' }, 404);
@@ -221,6 +231,10 @@ projectsApp.openapi(
   const crId = c.req.param('crId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Per-agent gate: managing a CR's lifecycle is part of the change-request
+  // capability. A scoped agent token must hold project.cr.open (no-op for
+  // human/PAT tokens).
+  assertAgentScope(c, 'project.cr.open');
 
   const cr = await getCrById(crId, projectId);
   if (!cr) return c.json({ error: 'Change request not found' }, 404);

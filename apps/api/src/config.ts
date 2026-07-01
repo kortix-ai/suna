@@ -12,7 +12,7 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'local_docker' | 'platinum';
+export type SandboxProviderName = 'daytona' | 'platinum';
 type InternalKortixEnv = 'dev' | 'staging' | 'prod' | 'preview';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -188,6 +188,19 @@ const envSchema = z.object({
   AGENTMAIL_API_KEY:           optStr,
   AGENTMAIL_WEBHOOK_SECRET:    optStr,
 
+  // ── Channels — Recall.ai meeting bot (optional) ──────────────────────────
+  // MEET_ENABLED is the operator master switch (the global gate): when false the
+  // Google Meet experimental feature is unavailable platform-wide regardless of
+  // any per-project choice. RECALL_BASE_URL is the regional gateway (us-west-2 =
+  // pay-as-you-go default; us-east-1 / eu-central-1 / ap-northeast-1 also exist).
+  // The key is sent server-side as `Authorization: Token <key>`; never in a sandbox.
+  MEET_ENABLED:                optBoolFalse,
+  RECALL_BASE_URL:             optUrl('https://us-west-2.recall.ai/api/v1'),
+  RECALL_API_KEY:              optStr,
+  // ElevenLabs TTS — gives the meeting bot a voice (the agent speaks in-call).
+  ELEVENLABS_BASE_URL:         optUrl('https://api.elevenlabs.io'),
+  ELEVENLABS_API_KEY:          optStr,
+
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL:          optUrl('https://openrouter.ai/api/v1'),
   // Single OpenRouter key for BOTH the router (/v1/router) and the managed LLM
@@ -295,12 +308,7 @@ const envSchema = z.object({
   ALLOWED_SANDBOX_PROVIDERS:   optStrDefault('daytona'),
   SANDBOX_IMAGE:               optStr,
   KORTIX_LOCAL_IMAGES:         optBoolFalse,
-  DOCKER_HOST:                 optStr,
   SANDBOX_NETWORK:             optStr,
-  KORTIX_LOCAL_DOCKER_HOST:    optStr,
-  // Default port base for local Docker sandbox port mapping.
-  SANDBOX_PORT_BASE:           optInt(14000),
-  SANDBOX_CONTAINER_NAME:      z.string().optional().transform(v => v || undefined).default('kortix-sandbox'),
 
   // ── Sandbox lifecycle (Daytona auto-stop / auto-archive / auto-delete) ────
   // Set as SDK create() params so a box self-manages even if the API/tunnel
@@ -380,9 +388,9 @@ type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 // Recognised provider names. Source-of-truth for what can legally appear in
 // ALLOWED_SANDBOX_PROVIDERS — adding a new provider is a one-place change
 // here plus a case in `getProvider()` in platform/providers/index.ts.
-const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'local_docker', 'platinum'] as const;
+const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'platinum'] as const;
 
-/** Parse comma-separated provider list (e.g. "daytona,local_docker"). */
+/** Parse comma-separated provider list (e.g. "daytona,platinum"). */
 function parseAllowedProviders(raw: string): SandboxProviderName[] {
   if (!raw) return ['daytona'];
   const names = raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -425,9 +433,6 @@ function validateEnv(): z.infer<typeof envSchema> {
     if (!raw.PLATINUM_API_KEY) issues.push({ var: 'PLATINUM_API_KEY', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
     if (!raw.PLATINUM_API_URL) issues.push({ var: 'PLATINUM_API_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
   }
-  if (providers.includes('local_docker') && !raw.DOCKER_HOST) {
-    issues.push({ var: 'DOCKER_HOST', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "local_docker"', level: 'error' });
-  }
 
   // ── Conditional: Billing enabled → need Stripe keys ────────────────────
   const billingWillBeEnabled = (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === 'true' || (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === true;
@@ -466,6 +471,10 @@ function validateEnv(): z.infer<typeof envSchema> {
     if (raw.LLM_GATEWAY_ENABLED === 'true') {
       issues.push({ var: 'LLM_GATEWAY_ENABLED', message: 'Gateway is on but OPENROUTER_API_KEY is unset — /v1/llm will 500 "openrouterApiKey missing"', level: 'warn' });
     }
+  }
+
+  if (raw.MEET_ENABLED === 'true' && !raw.RECALL_API_KEY) {
+    issues.push({ var: 'RECALL_API_KEY', message: 'MEET_ENABLED is on but RECALL_API_KEY is unset — the meeting bot cannot join or transcribe', level: 'warn' });
   }
 
   // ── Print results ─────────────────────────────────────────────────────
@@ -595,6 +604,13 @@ export const config = {
   AGENTMAIL_API_KEY: env.AGENTMAIL_API_KEY,
   AGENTMAIL_WEBHOOK_SECRET: env.AGENTMAIL_WEBHOOK_SECRET,
 
+  // ─── Channels (Recall.ai meeting bot) ────────────────────────────────────
+  MEET_ENABLED: env.MEET_ENABLED,
+  RECALL_BASE_URL: env.RECALL_BASE_URL,
+  RECALL_API_KEY: env.RECALL_API_KEY,
+  ELEVENLABS_BASE_URL: env.ELEVENLABS_BASE_URL,
+  ELEVENLABS_API_KEY: env.ELEVENLABS_API_KEY,
+
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
@@ -648,11 +664,7 @@ export const config = {
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
   SANDBOX_IMAGE: env.SANDBOX_IMAGE || 'kortix/kortix-sandbox:latest',
   KORTIX_LOCAL_IMAGES: env.KORTIX_LOCAL_IMAGES,
-  DOCKER_HOST: env.DOCKER_HOST,
   SANDBOX_NETWORK: env.SANDBOX_NETWORK,
-  KORTIX_LOCAL_DOCKER_HOST: env.KORTIX_LOCAL_DOCKER_HOST,
-  SANDBOX_PORT_BASE: env.SANDBOX_PORT_BASE,
-  SANDBOX_CONTAINER_NAME: env.SANDBOX_CONTAINER_NAME,
 
   /**
    * INTERNAL_SERVICE_KEY -- direction: kortix-api -> sandbox.
@@ -745,7 +757,6 @@ export const config = {
     if (!this.ALLOWED_SANDBOX_PROVIDERS.includes(name)) return false;
     switch (name) {
       case 'daytona': return !!this.DAYTONA_API_KEY;
-      case 'local_docker': return !!this.DOCKER_HOST;
       case 'platinum': return !!this.PLATINUM_API_KEY;
       default: {
         const exhaustive: never = name;
@@ -767,10 +778,6 @@ export const config = {
 
   isDaytonaEnabled(): boolean {
     return this.ALLOWED_SANDBOX_PROVIDERS.includes('daytona') && !!this.DAYTONA_API_KEY;
-  },
-
-  isLocalDockerEnabled(): boolean {
-    return this.ALLOWED_SANDBOX_PROVIDERS.includes('local_docker') && !!this.DOCKER_HOST;
   },
 
   isPlatinumEnabled(): boolean {

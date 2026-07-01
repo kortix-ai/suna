@@ -50,7 +50,7 @@ describe('ops overview dashboard API', () => {
       { rows: [{ count: 1 }] },
       { rows: [{ key: 'running', count: 4 }, { key: 'failed', count: 1 }] },
       { rows: [{ key: 'active', count: 3 }, { key: 'error', count: 1 }] },
-      { rows: [{ key: 'daytona', count: 2 }, { key: 'local_docker', count: 2 }] },
+      { rows: [{ key: 'daytona', count: 2 }, { key: 'platinum', count: 2 }] },
       { rows: [{ count: 9 }] },
       { rows: [{ key: 'applied', count: 1 }] },
       {
@@ -94,7 +94,7 @@ describe('ops overview dashboard API', () => {
       active_legacy_sandboxes: 1,
     });
     expect(body.sessions.by_status).toMatchObject({ running: 4, failed: 1 });
-    expect(body.sandboxes.by_provider).toMatchObject({ daytona: 2, local_docker: 2 });
+    expect(body.sandboxes.by_provider).toMatchObject({ daytona: 2, platinum: 2 });
     expect(body.queues.queued_total).toBe(0);
     expect(body.queues.trigger_events_by_status).toEqual({});
     expect(body.queues.channel_events_by_status).toEqual({});

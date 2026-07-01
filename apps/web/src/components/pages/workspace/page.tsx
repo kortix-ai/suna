@@ -40,7 +40,6 @@ import {
 } from '@/hooks/opencode/use-opencode-sessions';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-import { useServerStore } from '@/stores/server-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import {
   Blocks,
@@ -442,7 +441,6 @@ export default function WorkspacePage() {
           title: preset.title,
           type: 'session',
           href: `/sessions/${session.id}`,
-          serverId: useServerStore.getState().activeServerId,
         });
         requestAnimationFrame(() =>
           window.dispatchEvent(new CustomEvent('focus-session-textarea')),

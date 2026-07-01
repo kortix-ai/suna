@@ -2,7 +2,7 @@ name: Self-host E2E (full, nightly)
 
 # Heavyweight, comprehensive self-host regression test — builds ALL self-host
 # images and drives the full Docker Compose stack end to end: schema bootstrap,
-# auth, a real local_docker agent session + sandbox health, and the in-place
+# auth, a real agent session + sandbox health, and the in-place
 # update mechanism.
 #
 # This is the nightly counterpart to the always-on `self-host-schema` job in

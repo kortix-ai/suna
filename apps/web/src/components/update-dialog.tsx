@@ -17,7 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { authenticatedFetch } from '@/lib/auth-token';
-import { useServerStore } from '@/stores/server-store';
+import { getActiveSandboxId } from '@/stores/server-store';
 import { getEnv } from '@/lib/env-config';
 import type { UpdatePhase } from '@/hooks/platform/use-sandbox-update';
 import type { ChangelogEntry } from '@/lib/platform-client';
@@ -116,12 +116,11 @@ export function UpdateDialog({
   }, [open]);
 
   const pollHealth = useCallback(async () => {
-    const state = useServerStore.getState();
-    const active = state.servers.find((s) => s.id === state.activeServerId);
-    if (!active?.sandboxId) return false;
+    const sandboxId = getActiveSandboxId();
+    if (!sandboxId) return false;
 
     const backendUrl = (getEnv().BACKEND_URL || 'http://localhost:8008/v1').replace(/\/+$/, '');
-    const url = `${backendUrl}/p/${active.sandboxId}/8000/global/health`;
+    const url = `${backendUrl}/p/${sandboxId}/8000/global/health`;
 
     try {
       const res = await authenticatedFetch(url, { method: 'GET', signal: AbortSignal.timeout(5000) });

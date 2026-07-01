@@ -6,7 +6,7 @@ import { getEnv } from '@/lib/env-config';
 import { markSessionFresh } from '@/lib/fresh-sessions';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
-export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'llm_gateway';
+export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'meet' | 'llm_gateway';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {
@@ -54,7 +54,9 @@ export interface KortixAccount {
 }
 
 export type AccountRole = 'owner' | 'admin' | 'member';
-export type ProjectRole = 'manager' | 'editor' | 'viewer';
+// `user` is the project floor role. `viewer` was folded into it and is no
+// longer assignable or emitted by the API.
+export type ProjectRole = 'manager' | 'editor' | 'user';
 
 export interface AccountDetail {
   account_id: string;
@@ -612,7 +614,7 @@ export async function listProjectAccessRequests(projectId: string, options?: Api
 export async function approveProjectAccessRequest(
   projectId: string,
   requestId: string,
-  role: ProjectRole = 'viewer',
+  role: ProjectRole = 'user',
 ) {
   return unwrap(
     await backendApi.post<{
@@ -811,6 +813,77 @@ export async function detachGroupFromProject(projectId: string, groupId: string)
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
       `/projects/${projectId}/group-grants/${groupId}`,
+    ),
+  );
+}
+
+// ─── Per-resource (agent/skill) scoping ─────────────────────────────────────
+
+export type ResourceGrantType = 'agent' | 'skill';
+
+/** A grantable resource (agent name / skill slug) discovered from the repo. */
+export interface ProjectResourceItem {
+  /** Stable grant key — agent name / skill slug. */
+  id: string;
+  /** Display name. */
+  name: string;
+  description: string | null;
+}
+
+export interface ProjectResourceGrant {
+  grant_id: string;
+  resource_type: ResourceGrantType;
+  resource_id: string;
+  principal_type: 'member' | 'group';
+  principal_id: string;
+  /** Resolved label — member email or group name. */
+  principal_label: string;
+  granted_by: string | null;
+  created_at: string;
+  expires_at: string | null;
+  /** true = the scoped agent/skill no longer exists (renamed/deleted) — the
+   *  grant is inert and the restriction has lapsed; remove or re-point it. */
+  orphaned?: boolean;
+}
+
+export interface ProjectResourceGrantsResponse {
+  resources: { agents: ProjectResourceItem[]; skills: ProjectResourceItem[] };
+  grants: ProjectResourceGrant[];
+}
+
+export async function listProjectResourceGrants(projectId: string) {
+  return unwrap(
+    await backendApi.get<ProjectResourceGrantsResponse>(
+      `/projects/${projectId}/resource-grants`,
+    ),
+  );
+}
+
+export async function createProjectResourceGrant(
+  projectId: string,
+  input: {
+    resourceType: ResourceGrantType;
+    resourceId: string;
+    principalType: 'member' | 'group';
+    principalId: string;
+    expiresAt?: string | null;
+  },
+) {
+  return unwrap(
+    await backendApi.post<{ grant_id: string }>(`/projects/${projectId}/resource-grants`, {
+      resource_type: input.resourceType,
+      resource_id: input.resourceId,
+      principal_type: input.principalType,
+      principal_id: input.principalId,
+      ...(input.expiresAt !== undefined ? { expires_at: input.expiresAt } : {}),
+    }),
+  );
+}
+
+export async function deleteProjectResourceGrant(projectId: string, grantId: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/projects/${projectId}/resource-grants/${grantId}`,
     ),
   );
 }
