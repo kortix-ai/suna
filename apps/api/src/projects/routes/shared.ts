@@ -4,7 +4,6 @@ import {
   reopenComputeForSandbox,
 } from '../../billing/services/compute-metering';
 import { sharedConfig as config, type SandboxProviderName } from '../../shared/effect';
-import { auth, json } from '../../openapi';
 import { getProvider, type SandboxStatus } from '../../platform/providers';
 import { sharedDb as db } from '../../shared/effect';
 import { resolveBranchTip } from '../git';

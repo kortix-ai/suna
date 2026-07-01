@@ -1,5 +1,4 @@
 import type { Effect } from 'effect';
-import { auth } from '../../openapi';
 import { validateAccountToken } from '../../repositories/account-tokens';
 import { validateSecretKey } from '../../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../shared/crypto';

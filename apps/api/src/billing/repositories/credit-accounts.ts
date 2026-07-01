@@ -21,12 +21,17 @@ export async function getCreditAccount(accountId: string) {
 
 /** Whether the account has the self-serve enterprise demo toggled on. */
 export async function isDemoEnterprise(accountId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ demoEnterprise: creditAccounts.demoEnterprise })
-    .from(creditAccounts)
-    .where(eq(creditAccounts.accountId, accountId))
-    .limit(1);
-  return row?.demoEnterprise ?? false;
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    const [row] = yield* Effect.tryPromise(() =>
+      database
+        .select({ demoEnterprise: creditAccounts.demoEnterprise })
+        .from(creditAccounts)
+        .where(eq(creditAccounts.accountId, accountId))
+        .limit(1),
+    );
+    return row?.demoEnterprise ?? false;
+  }));
 }
 
 /**
@@ -35,13 +40,18 @@ export async function isDemoEnterprise(accountId: string): Promise<boolean> {
  * columns fall back to their schema defaults (tier 'free', legacy billing, …).
  */
 export async function setDemoEnterprise(accountId: string, enabled: boolean): Promise<void> {
-  await db
-    .insert(creditAccounts)
-    .values({ accountId, demoEnterprise: enabled })
-    .onConflictDoUpdate({
-      target: creditAccounts.accountId,
-      set: { demoEnterprise: enabled, updatedAt: new Date().toISOString() },
-    });
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    yield* Effect.tryPromise(() =>
+      database
+        .insert(creditAccounts)
+        .values({ accountId, demoEnterprise: enabled })
+        .onConflictDoUpdate({
+          target: creditAccounts.accountId,
+          set: { demoEnterprise: enabled, updatedAt: new Date().toISOString() },
+        }),
+    );
+  }));
 }
 
 export async function getCreditBalance(accountId: string) {

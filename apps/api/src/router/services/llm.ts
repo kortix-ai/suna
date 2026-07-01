@@ -1,6 +1,6 @@
 import type { Effect } from 'effect';
 import { routerConfig as config, KORTIX_MARKUP, routerFetch } from '../effect';
-import { getModel, getAllModels, resolveOpenRouterId, type ModelConfig } from '../config/models';
+import { resolveOpenRouterId, type ModelConfig } from '../config/models';
 
 /**
  * Calculate cost based on token usage and model pricing.

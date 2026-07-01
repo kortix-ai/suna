@@ -15,13 +15,12 @@ import { isAccountManager, type ProjectRole } from "../access";
 import { getBackend, hasBackend, type GitScope } from "../git-backends";
 import { seedRepoViaGitPush } from "../git-backends/seed";
 import {
-  createRepo,
   getGitHubAppInstallation,
   listInstallationRepositories,
   verifyGitHubAppInstallStatePayload,
 } from "../github";
 import { getProjectSecretValue } from "../secrets";
-import { buildStarterFiles, normalizeStarterTemplateId } from "../starter";
+import { normalizeStarterTemplateId } from "../starter";
 import {
   buildProjectSeedFiles,
   normalizeMarketplaceItems,

@@ -551,7 +551,7 @@ projectsApp.openapi(
     // UI can distinguish "no envs declared" from "we couldn't read the manifest".
     let required: string[] = [];
     let optional: string[] = [];
-    let manifestStatus: "loaded" | "missing" | "error" = "missing";
+    let manifestStatus: "loaded" | "missing" | "error";
     let manifestError: string | null = null;
     try {
       const projectConfig = await loadProjectConfig(

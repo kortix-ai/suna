@@ -33,7 +33,7 @@ import { Effect } from 'effect';
 import { projects, type Database } from '@kortix/db';
 import { AppConfig, DatabaseService, HttpClient } from '../effect/services';
 import { runEffectOrThrow } from '../effect/http';
-import { getDaytonaWarm, warmSnapshotsEnabled, warmSnapshotsEnabledFor } from '../shared/daytona';
+import { getDaytonaWarm, warmSnapshotsEnabledFor } from '../shared/daytona';
 import {
   createHealthyBuilder,
   OPENCODE_PORT,

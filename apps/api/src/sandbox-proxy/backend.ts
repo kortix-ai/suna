@@ -23,7 +23,6 @@ import type { Effect } from 'effect';
 
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { sandboxProxyConfig as config } from './effect';
 import { getProvider, type ProviderName } from '../platform/providers';
 import { sandboxProxyDb as db } from './effect';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';

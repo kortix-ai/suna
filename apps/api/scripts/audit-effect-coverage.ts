@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { join, relative } from "node:path";
 
 const SRC_ROOT = join(import.meta.dir, "..", "src");
 

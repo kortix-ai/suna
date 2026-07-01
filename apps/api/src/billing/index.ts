@@ -1,9 +1,5 @@
 import type { Effect } from 'effect';
 import { createRoute, z } from "@hono/zod-openapi";
-import {
-  AUTO_TOPUP_DEFAULT_AMOUNT,
-  AUTO_TOPUP_DEFAULT_THRESHOLD,
-} from "@kortix/shared";
 import type { Context } from "hono";
 import { billingConfig as config, runBillingInterval } from './effect';
 import { supabaseAuth } from "../middleware/auth";

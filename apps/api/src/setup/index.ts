@@ -19,7 +19,7 @@ import { Effect } from "effect";
 import { accounts, type Database } from "@kortix/db";
 import { resolveAccountId } from "../shared/resolve-account";
 import { effectHandler } from "../effect/hono";
-import { AppConfig, DatabaseService, HttpClient, SupabaseService } from "../effect/services";
+import { AppConfig, DatabaseService, SupabaseService } from "../effect/services";
 import { runEffectOrThrow } from "../effect/http";
 /** Shape mirrors the legacy LocalSandboxHealthCheck (now removed) so the
  *  frontend health UI keeps reading the same `{ok, error?}` per check. */
@@ -99,77 +99,6 @@ function findRepoRoot(): string | null {
 
 function getProjectRoot(): string {
   return findRepoRoot() ?? process.cwd();
-}
-
-function getMasterUrlCandidates(): string[] {
-  const candidates: string[] = [];
-  const explicit = process.env.KORTIX_MASTER_URL;
-  if (explicit && explicit.trim()) candidates.push(explicit.trim());
-
-  // Inside docker-compose network, the sandbox service is reachable by name.
-  candidates.push("http://sandbox:8000");
-
-  // When running the API on the host (dev), sandbox is exposed on this port.
-  candidates.push("http://localhost:14000");
-
-  // De-dupe
-  return Array.from(new Set(candidates));
-}
-
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit = {},
-  timeoutMs = 5000,
-): Promise<Response> {
-  return runEffectOrThrow(Effect.gen(function* () {
-    const client = yield* HttpClient;
-    const perform = client.fetch;
-    return yield* Effect.tryPromise(() =>
-      perform(url, { ...init, signal: AbortSignal.timeout(timeoutMs) }),
-    );
-  }));
-}
-
-async function fetchMasterJson<T>(
-  path: string,
-  init: RequestInit = {},
-  timeoutMs = 5000,
-): Promise<T> {
-  const candidates = getMasterUrlCandidates();
-  let lastErr: unknown = null;
-
-  // Inject INTERNAL_SERVICE_KEY for sandbox auth (VPS mode)
-  const serviceKey = process.env.INTERNAL_SERVICE_KEY;
-  if (serviceKey) {
-    const existingHeaders = init.headers
-      ? Object.fromEntries(new Headers(init.headers as HeadersInit).entries())
-      : {};
-    init = {
-      ...init,
-      headers: { ...existingHeaders, Authorization: `Bearer ${serviceKey}` },
-    };
-  }
-
-  for (const base of candidates) {
-    const url = `${base}${path}`;
-    try {
-      const res = await fetchWithTimeout(url, init, timeoutMs);
-      // 503 from /kortix/health means "starting" — still return the JSON body
-      // so callers can inspect the status/opencode fields.
-      if (!res.ok && res.status !== 503) {
-        lastErr = new Error(`Master ${url} returned ${res.status}`);
-        continue;
-      }
-      return (await res.json()) as T;
-    } catch (e) {
-      lastErr = e;
-      continue;
-    }
-  }
-
-  throw lastErr instanceof Error
-    ? lastErr
-    : new Error("Failed to reach sandbox master");
 }
 
 // ─── Routes ─────────────────────────────────────────────────────────────────
