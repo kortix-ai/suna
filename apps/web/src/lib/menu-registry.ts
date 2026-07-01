@@ -18,7 +18,7 @@
  */
 
 import { Icon } from '@/features/icon/icon';
-import type { ExperimentalFeatureKey } from '@/lib/projects-client';
+import type { ExperimentalFeatureKey } from '@kortix/sdk/projects-client';
 import {
   CogOne,
   CogOneSolid,

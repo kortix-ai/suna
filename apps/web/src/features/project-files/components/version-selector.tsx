@@ -5,7 +5,7 @@ import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import type { ProjectBranch } from '@/lib/projects-client';
+import type { ProjectBranch } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { ChevronsUpDown } from '@mynaui/icons-react';
 import { ArrowDownLeft, ArrowUpRight, Check, GitBranch, Search } from 'lucide-react';

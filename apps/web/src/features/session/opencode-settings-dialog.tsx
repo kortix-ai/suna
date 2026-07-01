@@ -21,7 +21,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { ProviderList } from '@/features/providers/provider-list';
 import { modelKeyToWire, setGlobalDefaultModel } from '@/hooks/opencode/use-model-store';
-import { clearModelDefault, setModelDefault } from '@/lib/projects-client';
+import { clearModelDefault, setModelDefault } from '@kortix/sdk/projects-client';
 import { useParams } from 'next/navigation';
 import type { Config } from '@/hooks/opencode/use-opencode-config';
 import { useOpenCodeConfig, useUpdateOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';

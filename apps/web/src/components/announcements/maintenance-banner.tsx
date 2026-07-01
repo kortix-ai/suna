@@ -8,7 +8,7 @@ import { X, ExternalLink, Info, AlertTriangle, AlertCircle, Clock } from 'lucide
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { usePathname } from 'next/navigation';
-import { normalizeAppPathname } from '@/lib/instance-routes';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import type { MaintenanceConfig, MaintenanceLevel } from '@/lib/maintenance-store';
 
 interface MaintenanceBannerProps {

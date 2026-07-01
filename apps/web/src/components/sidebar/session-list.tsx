@@ -48,7 +48,7 @@ import {
   getActiveInstanceIdFromCookie,
   getCurrentInstanceIdFromPathname,
   normalizeAppPathname,
-} from '@/lib/instance-routes';
+} from '@kortix/sdk/instance-routes';
 import { classifySession, isSidebarHidden } from '@/lib/kortix/session-category';
 import { restartSandbox } from '@/lib/platform-client';
 import { toast } from '@/lib/toast';

@@ -11,7 +11,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { deleteProjectSession } from '@/lib/projects-client';
+import { deleteProjectSession } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 

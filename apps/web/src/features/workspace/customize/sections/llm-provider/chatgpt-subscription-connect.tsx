@@ -12,7 +12,7 @@ import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import {
   pollProjectProviderOAuth,
   startProjectProviderOAuth,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, ExternalLink, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';

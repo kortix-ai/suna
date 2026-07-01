@@ -2,7 +2,7 @@ import { accountHasAppAccess } from '@/lib/auth/account-access';
 import { resolveFirstProjectPathForNewUser } from '@/lib/auth/bootstrap-first-project';
 import { buildDesktopBounceHtml, buildMobileBounceHtml } from '@/lib/auth/desktop-bounce';
 import { isInviteReturnUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
-import { ACTIVE_INSTANCE_COOKIE } from '@/lib/instance-routes';
+import { ACTIVE_INSTANCE_COOKIE } from '@kortix/sdk/instance-routes';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import type { NextRequest } from 'next/server';

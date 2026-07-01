@@ -80,7 +80,7 @@ import {
   getActiveInstanceIdFromCookie,
   getCurrentInstanceIdFromPathname,
   normalizeAppPathname,
-} from '@/lib/instance-routes';
+} from '@kortix/sdk/instance-routes';
 import {
   getSandboxUrl,
   listSandboxes,

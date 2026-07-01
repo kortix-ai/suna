@@ -6,7 +6,7 @@ import { I18nProvider } from '@/components/i18n-provider';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider } from '@/features/providers/auth-provider';
 import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
-import { featureFlags } from '@/lib/feature-flags';
+import { featureFlags } from '@kortix/sdk/feature-flags';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import '@/lib/polyfills';
 import { getServerPublicEnv } from '@/lib/public-env-server';

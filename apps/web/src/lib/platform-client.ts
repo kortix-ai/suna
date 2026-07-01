@@ -18,7 +18,7 @@ import {
   type KortixProject,
   type ProjectSession,
   type ProjectSessionSandbox,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 
 // ─── Sandbox Port Constants ──────────────────────────────────────────────────
 

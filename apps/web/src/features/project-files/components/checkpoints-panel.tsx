@@ -7,7 +7,7 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/u
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import type { ProjectCommit } from '@/lib/projects-client';
+import type { ProjectCommit } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import {
   AlertCircle,

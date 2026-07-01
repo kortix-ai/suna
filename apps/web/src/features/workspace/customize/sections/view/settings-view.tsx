@@ -48,7 +48,7 @@ import {
   type ExperimentalFeatureView,
   type KortixProject,
   type ProjectDetail,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { TrashSolid } from '@mynaui/icons-react';
 import CustomizeSectionWrapper from '../component/section-wrapper';

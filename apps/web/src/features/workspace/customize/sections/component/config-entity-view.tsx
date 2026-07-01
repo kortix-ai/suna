@@ -29,7 +29,7 @@ import {
   type ProjectConfigSummary,
   getProjectDetail,
   readProjectFile,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { DangerTriangleSolid, Pencil, Search } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';

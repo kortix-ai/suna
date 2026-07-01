@@ -14,7 +14,7 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/providers/auth-provider';
 import { accountTokensApi } from '@/lib/api/account-tokens';
-import { getAccount } from '@/lib/projects-client';
+import { getAccount } from '@kortix/sdk/projects-client';
 import { usePermission } from '@/lib/use-permission';
 
 function formatDate(iso: string | null | undefined) {

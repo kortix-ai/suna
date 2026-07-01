@@ -99,7 +99,7 @@ import {
   resendAccountInvite,
   updateAccountMemberRole,
   updateAccountName,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { usePermissions } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';

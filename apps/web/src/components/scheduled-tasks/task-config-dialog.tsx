@@ -27,7 +27,7 @@ import {
   type SessionMode,
   type TriggerType,
 } from '@/hooks/scheduled-tasks';
-import { featureFlags } from '@/lib/feature-flags';
+import { featureFlags } from '@kortix/sdk/feature-flags';
 import { getSandboxUrl } from '@/lib/platform-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';

@@ -19,7 +19,7 @@ import {
   getProjectSandboxHealth,
   rebuildProjectSnapshot,
   type ProjectSandboxHealth,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { DangerTriangleSolid, SparklesSolid } from '@mynaui/icons-react';

@@ -18,7 +18,7 @@
  * the cache expires (consistent with usePermission).
  */
 
-import { getProject } from '@/lib/projects-client';
+import { getProject } from '@kortix/sdk/projects-client';
 import { usePermission, usePermissions, type UsePermissionResult } from '@/lib/use-permission';
 import type { PermissionProbeInput } from '@/lib/iam-client';
 import { useQuery } from '@tanstack/react-query';

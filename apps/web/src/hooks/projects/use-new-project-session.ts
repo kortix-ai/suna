@@ -6,8 +6,8 @@ import { useCallback, useRef } from 'react';
 
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { isBillingEnabled } from '@/lib/config';
-import { markSessionFresh } from '@/lib/fresh-sessions';
-import { createProjectSession, prefetchSessionStart } from '@/lib/projects-client';
+import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
+import { createProjectSession, prefetchSessionStart } from '@kortix/sdk/projects-client';
 import { toast } from '@/lib/toast';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 

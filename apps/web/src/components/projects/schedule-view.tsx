@@ -72,7 +72,7 @@ import {
   upsertProjectSecret,
   type ProjectAccessMember,
   type ProjectTrigger,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import {
   AlarmClockSolid,

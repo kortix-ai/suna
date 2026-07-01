@@ -21,10 +21,10 @@ import {
 } from '@/hooks/opencode/use-canonical-opencode-session';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { isBillingEnabled } from '@/lib/config';
-import { clearSessionFresh, isSessionFresh } from '@/lib/fresh-sessions';
-import { setActiveInstanceCookie } from '@/lib/instance-routes';
-import { formatOpenCodeRuntimeError } from '@/lib/opencode-errors';
-import { getProjectDetail, restartProjectSession, sessionStartKey } from '@/lib/projects-client';
+import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
+import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
+import { formatOpenCodeRuntimeError } from '@kortix/sdk/opencode-errors';
+import { getProjectDetail, restartProjectSession, sessionStartKey } from '@kortix/sdk/projects-client';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
 import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';

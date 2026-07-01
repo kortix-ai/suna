@@ -35,7 +35,7 @@ import {
   type MenuItemDef,
   type NavSubGroup,
 } from '@/lib/menu-registry';
-import { normalizeAppPathname } from '@/lib/instance-routes';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { toast } from '@/lib/toast';

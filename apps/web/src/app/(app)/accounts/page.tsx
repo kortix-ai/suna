@@ -11,7 +11,7 @@ import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { useAuth } from '@/features/providers/auth-provider';
-import { listAccounts, type KortixAccount } from '@/lib/projects-client';
+import { listAccounts, type KortixAccount } from '@kortix/sdk/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronRight, Plus } from 'lucide-react';

@@ -1,4 +1,4 @@
-import type { ProjectOpenCodeSession, ProjectSession } from '@/lib/projects-client';
+import type { ProjectOpenCodeSession, ProjectSession } from '@kortix/sdk/projects-client';
 
 /**
  * Canonical helpers for resolving a project session's display label and its

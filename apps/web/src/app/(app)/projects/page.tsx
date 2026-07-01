@@ -40,7 +40,7 @@ import {
   archiveProject,
   listAccounts,
   listProjectsForAccount,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { type ProjectsViewMode, useProjectsViewStore } from '@/stores/projects-view-store';
 import { Search } from '@mynaui/icons-react';
