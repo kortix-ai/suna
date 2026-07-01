@@ -492,39 +492,47 @@ export function ReviewCenter({
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl px-4 pb-28">
-          {/* Header */}
-          <header className="flex flex-col gap-2 pt-10 sm:flex-row sm:items-start sm:justify-between lg:pt-16">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="bg-kortix-base/15 flex size-7 items-center justify-center rounded-sm">
-                  <InboxSolid className="text-kortix-base size-4" />
-                </span>
-                <h1 className="text-foreground text-xl font-medium tracking-tight text-balance">
-                  Review Center
-                </h1>
-                {!connected && (
-                  <Badge variant="beta" size="xs">
-                    Prototype
-                  </Badge>
-                )}
+          {/* Header — dropped when embedded in the customize panel (the rail
+              already names the section); the standalone prototype keeps it. */}
+          {!connected && (
+            <header className="flex flex-col gap-2 pt-10 sm:flex-row sm:items-start sm:justify-between lg:pt-16">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="bg-kortix-base/15 flex size-7 items-center justify-center rounded-sm">
+                    <InboxSolid className="text-kortix-base size-4" />
+                  </span>
+                  <h1 className="text-foreground text-xl font-medium tracking-tight text-balance">
+                    Review Center
+                  </h1>
+                  {!connected && (
+                    <Badge variant="beta" size="xs">
+                      Prototype
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-muted-foreground text-sm text-balance">
+                  Everything that needs your eyes — changes, approvals, outputs and questions, from
+                  the web and Slack.
+                </p>
               </div>
-              <p className="text-muted-foreground text-sm text-balance">
-                Everything that needs your eyes — changes, approvals, outputs and questions, from
-                the web and Slack.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setHelpOpen(true)}
-              className="text-muted-foreground hover:text-foreground hidden items-center gap-1.5 text-xs transition-colors sm:flex"
-            >
-              <Kbd>?</Kbd>
-              shortcuts
-            </button>
-          </header>
+              <button
+                type="button"
+                onClick={() => setHelpOpen(true)}
+                className="text-muted-foreground hover:text-foreground hidden items-center gap-1.5 text-xs transition-colors sm:flex"
+              >
+                <Kbd>?</Kbd>
+                shortcuts
+              </button>
+            </header>
+          )}
 
           {/* Sticky controls */}
-          <div className="bg-background/95 sticky top-0 z-10 space-y-3 py-4 backdrop-blur">
+          <div
+            className={cn(
+              'bg-background/95 sticky top-0 z-10 space-y-3 backdrop-blur',
+              connected ? 'pt-6 pb-3' : 'py-4',
+            )}
+          >
             <Tabs value={segment} onValueChange={(v) => setSegment(v as ReviewSegment)}>
               <TabsList type="underline" className="flex w-full items-center justify-start">
                 {SEGMENTS.map((s) => (

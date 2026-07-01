@@ -20,7 +20,7 @@ import { useIsMobile } from '@/hooks/utils';
 import { type CustomizeSection, DEFAULT_CUSTOMIZE_SECTION } from '@/lib/customize-sections';
 import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { CUSTOMIZE_SECTION_ACCESS, CUSTOMIZE_SECTION_READ_ACTIONS } from '@/lib/project-actions';
-import { getProjectDetail } from '@/lib/projects-client';
+import { getProjectDetail, listReviewItems } from '@/lib/projects-client';
 import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
@@ -192,6 +192,21 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   const llmGatewayAvailable = isLlmGatewayAvailable(detail.data?.project);
   const meetEnabled = detail.data?.project?.experimental?.meet ?? false;
   const reviewEnabled = detail.data?.project?.experimental?.review_center ?? false;
+
+  // "Needs you" count for the Review rail badge. Shares the review inbox's query
+  // key so the badge and the section stay in sync; only fetched when the panel is
+  // open and the flag is on.
+  const reviewItemsQuery = useQuery({
+    queryKey: ['review-center', projectId, 'list'],
+    queryFn: () => listReviewItems(projectId),
+    enabled: open && reviewEnabled && !!projectId,
+    staleTime: 5_000,
+    refetchInterval: open && reviewEnabled ? 15_000 : false,
+  });
+  const reviewNeedsYou = (reviewItemsQuery.data?.review_items ?? []).filter(
+    (i) => i.status === 'needs_you',
+  ).length;
+
   const groups = useMemo(
     // Compose flag-gating with IAM visibility: an item shows only if it passes
     // BOTH its flag check (baked into railGroups) AND its read-leaf probe. Empty
@@ -281,6 +296,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
                         active={isRailItemActive(item, section)}
                         onClick={() => setSection(item.section)}
                         orientation="horizontal"
+                        count={item.section === 'review' ? reviewNeedsYou : undefined}
                       />
                     </li>
                   ))}
@@ -331,6 +347,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
                               item={item}
                               active={isRailItemActive(item, section)}
                               onClick={() => setSection(item.section)}
+                              count={item.section === 'review' ? reviewNeedsYou : undefined}
                             />
                           </li>
                         ))}
@@ -364,14 +381,18 @@ function RailButton({
   active,
   onClick,
   orientation = 'vertical',
+  count,
 }: {
   item: RailItem;
   active: boolean;
   onClick: () => void;
   orientation?: 'vertical' | 'horizontal';
+  /** Optional attention count shown as a pill (e.g. review items needing you). */
+  count?: number;
 }) {
   const Icon = item.icon;
   const horizontal = orientation === 'horizontal';
+  const showCount = count != null && count > 0;
   return (
     <Button
       type="button"
@@ -386,6 +407,17 @@ function RailButton({
     >
       {Icon && <Icon className="size-4 shrink-0" />}
       <span className={cn(!horizontal && 'truncate')}>{item.label}</span>
+      {showCount && (
+        <span
+          className={cn(
+            'shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
+            !horizontal && 'ml-auto',
+            active ? 'bg-primary-foreground/15' : 'bg-kortix-base/15 text-kortix-base',
+          )}
+        >
+          {count}
+        </span>
+      )}
     </Button>
   );
 }
