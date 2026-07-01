@@ -243,6 +243,7 @@ DB `change_requests` (per-project `number`, `status open|merged|closed`).
 `CR-6` `GET …/:crId/merge-preview` → `read` → mergeable / fast-forward / conflicts.
 `CR-7` `POST …/:crId/merge {message?}` → **`write` required** → 200 status `merged` + sha; not-open → 409.
 `CR-8` `POST …/:crId/close` · `POST …/:crId/reopen` → `write`.
+`CR-8b` `POST …/:crId/request-changes {feedback}` → **`write` required** → 200 `{change_request, delivering}` — persists the note under CR metadata `requested_changes` + delivers it to the origin session's agent (Review Center "request changes"). Missing `feedback` → 400; not-open → 409.
 `CR-9` CLI mirror: `kortix cr ls|show|diff|open|merge|close|reopen` (reads `KORTIX_PROJECT_ID` inside sandbox).
 `CR-10` response envelopes (assert shape): list → `{change_requests:[…]}`, get → `{change_request:{…}}`, merge → `{change_request, merge}`. (Project DELETE returns `{ok:true}`, not an echoed status.)
 

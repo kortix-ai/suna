@@ -48,6 +48,13 @@ interface ReviewItemBase {
   sessionId?: string;
 }
 
+/** One recorded "please change this" note, delivered back to the change's agent. */
+export interface RequestedChange {
+  text: string;
+  by?: string;
+  at?: string;
+}
+
 /** kind: 'change' — a Change Request, presented in plain language. */
 export interface ChangeDetail {
   whatChanged: string[];
@@ -55,6 +62,7 @@ export interface ChangeDetail {
   verification: { label: string; tone: 'success' | 'warning' | 'neutral' | 'info' }[];
   previewUrl?: string;
   conflicts?: string[]; // friendly areas, not raw paths
+  requestedChanges?: RequestedChange[]; // human feedback sent to the agent
   advanced: {
     headRef: string;
     baseRef: string;

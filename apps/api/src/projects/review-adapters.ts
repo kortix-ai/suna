@@ -72,8 +72,17 @@ export function executorExecutionToReviewItem(ex: ExecutorExecutionRow): ReviewI
 
 /** A Change Request, presented as a `change` review item. */
 export function changeRequestToReviewItem(cr: ChangeRequestRow): ReviewItemDTO {
+  const rc = (cr.metadata as Record<string, unknown> | null)?.requested_changes;
+  const requested = (Array.isArray(rc) ? rc : []) as Array<{ text?: string }>;
+  const lastFeedback = requested.length > 0 ? (requested[requested.length - 1].text ?? null) : null;
   const status: ReviewItemDTO['status'] =
-    cr.status === 'open' ? 'needs_you' : cr.status === 'merged' ? 'approved' : 'rejected';
+    cr.status === 'merged'
+      ? 'approved'
+      : cr.status === 'closed'
+        ? 'rejected'
+        : requested.length > 0
+          ? 'waiting' // open, but a human asked for changes → the agent is revising
+          : 'needs_you';
   return {
     review_item_id: `${CR_ID_PREFIX}${cr.crId}`,
     account_id: cr.accountId,
@@ -92,12 +101,13 @@ export function changeRequestToReviewItem(cr: ChangeRequestRow): ReviewItemDTO {
       base_ref: cr.baseRef,
       head_ref: cr.headRef,
       description: cr.description,
+      requested_changes: requested,
     },
     agent: '',
     created_by: cr.createdBy,
     acted_by: cr.mergedBy ?? cr.closedBy ?? null,
     acted_at: (cr.mergedAt ?? cr.closedAt)?.toISOString() ?? null,
-    feedback: null,
+    feedback: lastFeedback,
     metadata: { source: 'change_request' },
     created_at: cr.createdAt.toISOString(),
     updated_at: cr.updatedAt.toISOString(),

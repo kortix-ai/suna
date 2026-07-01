@@ -14,6 +14,7 @@ import type {
   ChangeDetail,
   DecisionDetail,
   OutputDetail,
+  RequestedChange,
   ReviewItem,
   ReviewKind,
   ReviewRisk,
@@ -75,6 +76,7 @@ function changeDetail(d: AnyRec, row: ApiReviewItem): ChangeDetail {
     verification: arrOf<ChangeDetail['verification'][number]>(d.verification) ?? [],
     previewUrl: str(d.previewUrl) ?? str(d.preview_url),
     conflicts: arrOf<string>(d.conflicts),
+    requestedChanges: arrOf<RequestedChange>(d.requested_changes) ?? [],
     advanced: {
       headRef: str(adv.headRef) ?? str(d.head_ref) ?? '',
       baseRef: str(adv.baseRef) ?? str(d.base_ref) ?? '',

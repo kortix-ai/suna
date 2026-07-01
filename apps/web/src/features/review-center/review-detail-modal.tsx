@@ -3,9 +3,9 @@
 /**
  * Review Center — per-kind detail modal. Friendly, plain-language content up top
  * with an "Advanced" disclosure that keeps the engineer view (refs, SHAs, raw
- * diff, args) one click away. Each item also shows how it appears in Slack.
+ * diff, args) one click away.
  *
- * Prototype: actions mutate parent state optimistically via the passed handlers.
+ * Actions mutate parent state optimistically via the passed handlers.
  */
 
 import { Badge } from '@/components/ui/badge';
@@ -104,8 +104,28 @@ function ChangeBody({
   const whatChanged = d.whatChanged ?? [];
   const verification = d.verification ?? [];
   const files = d.advanced?.files ?? [];
+  const requested = d.requestedChanges ?? [];
   return (
     <>
+      {requested.length > 0 && (
+        <Panel className="border-kortix-orange/30 bg-kortix-orange/[0.05]">
+          <SectionLabel>You asked for changes</SectionLabel>
+          <ul className="space-y-2">
+            {requested.map((r, i) => (
+              <li key={r.at ?? `${i}`} className="text-foreground flex items-start gap-2 text-sm">
+                <span
+                  className="bg-kortix-orange mt-1.5 size-1.5 shrink-0 rounded-full"
+                  aria-hidden
+                />
+                <span className="text-pretty">{r.text}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="text-muted-foreground mt-2.5 text-xs">
+            Sent to the agent — it&apos;ll revise and update this change.
+          </div>
+        </Panel>
+      )}
       <Panel>
         <SectionLabel>What changed</SectionLabel>
         <ul className="space-y-1.5">

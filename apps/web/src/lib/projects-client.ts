@@ -2083,6 +2083,19 @@ export async function closeChangeRequest(projectId: string, crId: string) {
   );
 }
 
+export async function requestChangesOnChangeRequest(
+  projectId: string,
+  crId: string,
+  feedback: string,
+) {
+  return unwrap(
+    await backendApi.post<{ change_request: ChangeRequest; delivering: boolean }>(
+      `/projects/${projectId}/change-requests/${crId}/request-changes`,
+      { feedback },
+    ),
+  );
+}
+
 export async function reopenChangeRequest(projectId: string, crId: string) {
   return unwrap(
     await backendApi.post<ChangeRequest>(

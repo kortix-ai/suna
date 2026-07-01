@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 455,
+  "count": 445,
   "routes": [
     {
       "method": "GET",
@@ -872,26 +872,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/platform/api-keys"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/platform/api-keys"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/platform/api-keys/:keyId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/platform/api-keys/:keyId/regenerate"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/platform/api-keys/:keyId/revoke"
-    },
-    {
-      "method": "GET",
       "path": "/v1/platform/sandbox/version"
     },
     {
@@ -1045,6 +1025,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/change-requests/:crId/reopen"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/change-requests/:crId/request-changes"
     },
     {
       "method": "POST",
@@ -1625,30 +1609,6 @@
     {
       "method": "POST",
       "path": "/v1/router/web-search"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/servers"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/servers"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/servers/:id"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/servers/:id"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/servers/:id"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/servers/sync"
     },
     {
       "method": "GET",

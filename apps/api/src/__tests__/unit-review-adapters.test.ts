@@ -115,4 +115,23 @@ describe('changeRequestToReviewItem', () => {
     expect(item.status).toBe('rejected');
     expect(item.acted_by).toBe('user-3');
   });
+
+  test('an open CR with requested changes surfaces them and flips to waiting', () => {
+    const item = changeRequestToReviewItem({
+      ...baseCr,
+      metadata: {
+        requested_changes: [
+          { text: 'Fix the first one', by: 'user-9', at: '2026-06-30T11:00:00.000Z' },
+          { text: 'Capitalize each word', by: 'user-9', at: '2026-06-30T12:00:00.000Z' },
+        ],
+      },
+    });
+    // Open + a human asked for changes → the agent is revising.
+    expect(item.status).toBe('waiting');
+    // Top-level feedback reflects the latest note; detail carries the full log.
+    expect(item.feedback).toBe('Capitalize each word');
+    expect(item.detail).toMatchObject({
+      requested_changes: [{ text: 'Fix the first one' }, { text: 'Capitalize each word' }],
+    });
+  });
 });
