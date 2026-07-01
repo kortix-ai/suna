@@ -17,6 +17,7 @@ import { applyExperimentalOverride, isExperimentalFeatureKey } from '../../exper
 import { reconcileComputerConnectors } from '../../executor/sync';
 import { propagateLlmGatewayModeToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { config, type SandboxProviderName } from '../../config';
 
 function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferSelect) {
   return {
@@ -1119,6 +1120,52 @@ projectsApp.openapi(
     if (feature === 'llm_gateway') {
       void propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(row.metadata));
     }
+    return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
+  },
+);
+
+// PATCH /:projectId/sandbox-provider — set or clear the per-project sandbox-provider
+// pin (Customize → Settings). The value must be an ENABLED provider
+// (in ALLOWED_SANDBOX_PROVIDERS and with its API key configured), or null/'' to clear
+// (follow the platform default/distribution). Bypasses the distribution weights by
+// design — pin a project to platinum even when platinum's weight is 0. Same auth as
+// the experimental toggle (project 'manage' + project.customize.write for agents).
+projectsApp.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{projectId}/sandbox-provider',
+    tags: ['projects'],
+    summary: 'Set or clear the per-project sandbox provider override',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(AnyObject, 'Updated project'),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const body = await readBody(c);
+    const raw = body.provider ?? body.sandbox_provider;
+    const provider = raw === null || raw === undefined || raw === '' ? null : String(raw);
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    if (provider !== null && !config.isProviderEnabled(provider as SandboxProviderName)) {
+      return c.json({ error: `Unknown or disabled sandbox provider: ${provider}` }, 400);
+    }
+    const meta: Record<string, unknown> = { ...((loaded.row.metadata as Record<string, unknown> | null) ?? {}) };
+    if (provider === null) delete meta.default_sandbox_provider;
+    else meta.default_sandbox_provider = provider;
+    const [row] = await db
+      .update(projects)
+      .set({ metadata: meta, updatedAt: new Date() })
+      .where(eq(projects.projectId, projectId))
+      .returning();
+    if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
     return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
   },
 );
