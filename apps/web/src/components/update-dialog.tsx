@@ -20,7 +20,7 @@ import { authenticatedFetch } from '@/lib/auth-token';
 import { getActiveSandboxId } from '@/stores/server-store';
 import { getEnv } from '@/lib/env-config';
 import type { UpdatePhase } from '@/hooks/platform/use-sandbox-update';
-import type { ChangelogEntry } from '@/lib/platform-client';
+import type { ChangelogEntry } from '@kortix/sdk/platform-client';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { UpdateChangelogPreview } from '@/components/update-changelog-preview';
 

@@ -28,7 +28,7 @@ import {
   type TriggerType,
 } from '@/hooks/scheduled-tasks';
 import { featureFlags } from '@/lib/feature-flags';
-import { getSandboxUrl } from '@/lib/platform-client';
+import { getSandboxUrl } from '@kortix/sdk/platform-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {

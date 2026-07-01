@@ -86,7 +86,7 @@ import {
   listSandboxes,
   reactivateSandbox,
   type SandboxInfo,
-} from '@/lib/platform-client';
+} from '@kortix/sdk/platform-client';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from '@/lib/toast';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
