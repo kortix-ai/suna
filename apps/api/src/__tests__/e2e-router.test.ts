@@ -33,7 +33,6 @@ let mockProxyError: Error | null = null;
 let lastProxyBody: Record<string, unknown> | null = null;
 let lastProxyTraceHeaders: Record<string, string> | null = null;
 let mockAnthropicProxyResponse: Response | null = null;
-let mockAnthropicProxyError: Error | null = null;
 let lastAnthropicProxyBody: Record<string, unknown> | null = null;
 let lastAnthropicProxyTraceHeaders: Record<string, string> | null = null;
 
@@ -218,7 +217,6 @@ mock.module('../router/services/anthropic', () => ({
   ) => {
     lastAnthropicProxyBody = body;
     lastAnthropicProxyTraceHeaders = traceHeaders ?? null;
-    if (mockAnthropicProxyError) throw mockAnthropicProxyError;
     if (mockAnthropicProxyResponse) return mockAnthropicProxyResponse;
 
     if (body.stream === true) {
@@ -293,7 +291,6 @@ beforeEach(() => {
   lastProxyBody = null;
   lastProxyTraceHeaders = null;
   mockAnthropicProxyResponse = null;
-  mockAnthropicProxyError = null;
   lastAnthropicProxyBody = null;
   lastAnthropicProxyTraceHeaders = null;
 });
