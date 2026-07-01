@@ -156,15 +156,17 @@ function ItemRow({
         selected && 'bg-primary/[0.09]',
       )}
     >
-      <Checkbox
-        checked={selected}
-        onCheckedChange={onToggleSelect}
-        aria-label={`Select ${item.title}`}
-        className={cn(
-          'shrink-0 transition-opacity',
-          showCheck || selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-        )}
-      />
+      {segment === 'needs_you' && (
+        <Checkbox
+          checked={selected}
+          onCheckedChange={onToggleSelect}
+          aria-label={`Select ${item.title}`}
+          className={cn(
+            'shrink-0 transition-opacity',
+            showCheck || selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+          )}
+        />
+      )}
       <span
         className={cn('flex size-9 shrink-0 items-center justify-center rounded-md', kind.tile)}
       >
@@ -253,6 +255,9 @@ export function ReviewCenter({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [focusedIdx, setFocusedIdx] = useState(0);
+  // Only show the focused-row highlight while the user is actually navigating by
+  // keyboard — otherwise the first row looks arbitrarily tinted on load.
+  const [kbNav, setKbNav] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
 
   const undoRef = useRef<ReviewItem[] | null>(null);
@@ -455,6 +460,7 @@ export function ReviewCenter({
       }
       if (visible.length === 0) return;
       const cur = visible[Math.min(focusedIdx, visible.length - 1)];
+      setKbNav(true);
 
       if (e.key === 'j' || e.key === 'ArrowDown') {
         e.preventDefault();
@@ -646,6 +652,7 @@ export function ReviewCenter({
           ) : (
             <ul
               ref={listRef}
+              onPointerMove={() => setKbNav((k) => (k ? false : k))}
               className="bg-popover divide-border/60 divide-y overflow-hidden rounded-lg border"
             >
               {visible.map((item, idx) => (
@@ -653,7 +660,7 @@ export function ReviewCenter({
                   key={item.id}
                   item={item}
                   idx={idx}
-                  focused={idx === focusedIdx}
+                  focused={kbNav && idx === focusedIdx}
                   selected={selectedIds.has(item.id)}
                   showCheck={selectionCount > 0}
                   onOpen={() => setSelectedId(item.id)}
