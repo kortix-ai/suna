@@ -57,6 +57,7 @@ export interface RequestedChange {
 
 /** kind: 'change' — a Change Request, presented in plain language. */
 export interface ChangeDetail {
+  crId?: string; // the underlying Change Request id (connected mode) — enables the live diff
   whatChanged: string[];
   impact: string;
   verification: { label: string; tone: 'success' | 'warning' | 'neutral' | 'info' }[];

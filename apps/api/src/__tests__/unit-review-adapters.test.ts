@@ -116,7 +116,7 @@ describe('changeRequestToReviewItem', () => {
     expect(item.acted_by).toBe('user-3');
   });
 
-  test('an open CR with requested changes surfaces them and flips to waiting', () => {
+  test('an open CR with requested changes surfaces them but stays reviewable', () => {
     const item = changeRequestToReviewItem({
       ...baseCr,
       metadata: {
@@ -126,8 +126,8 @@ describe('changeRequestToReviewItem', () => {
         ],
       },
     });
-    // Open + a human asked for changes → the agent is revising.
-    expect(item.status).toBe('waiting');
+    // Open stays needs_you so you can always read the diff + ship (never stuck).
+    expect(item.status).toBe('needs_you');
     // Top-level feedback reflects the latest note; detail carries the full log.
     expect(item.feedback).toBe('Capitalize each word');
     expect(item.detail).toMatchObject({

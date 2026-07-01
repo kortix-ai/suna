@@ -71,6 +71,7 @@ function changeDetail(d: AnyRec, row: ApiReviewItem): ChangeDetail {
     arrOf<string>(d.whatChanged) ??
     (str(d.description) ? lines(str(d.description) as string) : row.summary ? [row.summary] : []);
   return {
+    crId: str(d.cr_id),
     whatChanged,
     impact: str(d.impact) ?? '',
     verification: arrOf<ChangeDetail['verification'][number]>(d.verification) ?? [],

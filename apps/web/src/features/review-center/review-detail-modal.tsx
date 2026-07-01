@@ -20,7 +20,7 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import { DiffStat, StatusBadge } from '@/components/ui/status';
+import { StatusBadge } from '@/components/ui/status';
 import { infoToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import {
@@ -32,6 +32,7 @@ import {
   SparklesSolid,
 } from '@mynaui/icons-react';
 import { useEffect, useRef, useState } from 'react';
+import { ChangeFilesSection } from './change-files';
 import {
   APPROVAL_ACTION_ICON,
   KIND_META,
@@ -105,14 +106,13 @@ function ChangeBody({
   const d = item.detail;
   const whatChanged = d.whatChanged ?? [];
   const verification = d.verification ?? [];
-  const files = d.advanced?.files ?? [];
   const requested = d.requestedChanges ?? [];
   return (
     <>
       {requested.length > 0 && (
-        <Panel className="border-kortix-orange/30 bg-kortix-orange/[0.05]">
+        <div className="bg-kortix-orange/[0.06] rounded-lg px-4 py-3.5">
           <SectionLabel>You asked for changes</SectionLabel>
-          <ul className="space-y-2">
+          <ul className="space-y-1.5">
             {requested.map((r, i) => (
               <li key={r.at ?? `${i}`} className="text-foreground flex items-start gap-2 text-sm">
                 <span
@@ -140,37 +140,48 @@ function ChangeBody({
               Sent to the agent — it&apos;ll revise and update this change.
             </div>
           )}
-        </Panel>
+        </div>
       )}
-      <Panel>
-        <SectionLabel>What changed</SectionLabel>
-        <ul className="space-y-1.5">
-          {whatChanged.map((line) => (
-            <li key={line} className="text-foreground flex items-start gap-2 text-sm">
-              <Check className="text-kortix-green mt-0.5 size-4 shrink-0" />
-              <span className="text-pretty">{line}</span>
-            </li>
-          ))}
-        </ul>
-        <div className="text-muted-foreground mt-3 text-sm">{d.impact}</div>
-      </Panel>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {verification.map((v) => (
-          <StatusBadge key={v.label} tone={v.tone}>
-            {v.label}
-          </StatusBadge>
-        ))}
-        {d.previewUrl && (
-          <Button variant="outline" size="sm" className="gap-1.5" asChild>
-            <a href={d.previewUrl} target="_blank" rel="noopener noreferrer">
-              <Eye className="size-3.5" />
-              Open preview
-              <ArrowUpRight className="size-3.5" />
-            </a>
-          </Button>
-        )}
-      </div>
+      {(whatChanged.length > 0 || d.impact) && (
+        <div>
+          <SectionLabel>What changed</SectionLabel>
+          {whatChanged.length > 0 && (
+            <ul className="space-y-1.5">
+              {whatChanged.map((line) => (
+                <li key={line} className="text-foreground flex items-start gap-2 text-sm">
+                  <Check className="text-kortix-green mt-0.5 size-4 shrink-0" />
+                  <span className="text-pretty">{line}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {d.impact && (
+            <div className="text-muted-foreground mt-2 text-sm text-pretty">{d.impact}</div>
+          )}
+        </div>
+      )}
+
+      {d.crId ? <ChangeFilesSection crId={d.crId} /> : null}
+
+      {(verification.length > 0 || d.previewUrl) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {verification.map((v) => (
+            <StatusBadge key={v.label} tone={v.tone}>
+              {v.label}
+            </StatusBadge>
+          ))}
+          {d.previewUrl && (
+            <Button variant="outline" size="sm" className="gap-1.5" asChild>
+              <a href={d.previewUrl} target="_blank" rel="noopener noreferrer">
+                <Eye className="size-3.5" />
+                Open preview
+                <ArrowUpRight className="size-3.5" />
+              </a>
+            </Button>
+          )}
+        </div>
+      )}
 
       {d.conflicts && d.conflicts.length > 0 && (
         <InfoBanner
@@ -193,26 +204,16 @@ function ChangeBody({
         </InfoBanner>
       )}
 
-      <AdvancedDisclosure>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 font-mono text-xs">
-          <dt className="text-muted-foreground">from</dt>
-          <dd className="text-foreground truncate">{d.advanced?.headRef || '—'}</dd>
-          <dt className="text-muted-foreground">into</dt>
-          <dd className="text-foreground truncate">{d.advanced?.baseRef || '—'}</dd>
-          <dt className="text-muted-foreground">commit</dt>
-          <dd className="text-foreground">{d.advanced?.headSha?.slice(0, 7) || '—'}</dd>
-          <dt className="text-muted-foreground">merge</dt>
-          <dd className="text-foreground">{d.advanced?.mergeMode || '—'}</dd>
-        </dl>
-        <div className="mt-3 space-y-1">
-          {files.map((f) => (
-            <div key={f.path} className="flex items-center justify-between gap-3 text-xs">
-              <span className="text-foreground truncate font-mono">{f.path}</span>
-              <DiffStat additions={f.additions} deletions={f.deletions} />
-            </div>
-          ))}
-        </div>
-      </AdvancedDisclosure>
+      {(d.advanced?.headRef || d.advanced?.baseRef) && (
+        <AdvancedDisclosure>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 font-mono text-xs">
+            <dt className="text-muted-foreground">from</dt>
+            <dd className="text-foreground truncate">{d.advanced?.headRef || '—'}</dd>
+            <dt className="text-muted-foreground">into</dt>
+            <dd className="text-foreground truncate">{d.advanced?.baseRef || '—'}</dd>
+          </dl>
+        </AdvancedDisclosure>
+      )}
     </>
   );
 }
