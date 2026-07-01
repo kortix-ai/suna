@@ -115,6 +115,14 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
         bulk.mutate({ ids, verdict }, { onError: (e) => errorToast(e.message) })
       }
       onOpenSession={(sessionId) => {
+        // "See progress" only VIEWS the session — feedback delivery goes through
+        // the backend now. Clear any stale queued prompt so navigating can't
+        // auto-send a leftover message (e.g. from an earlier client-side attempt).
+        try {
+          sessionStorage.removeItem(`project_pending_prompt:${sessionId}`);
+        } catch {
+          // ignore (SSR / privacy mode)
+        }
         closeCustomize();
         router.push(`/projects/${projectId}/sessions/${sessionId}`);
       }}
