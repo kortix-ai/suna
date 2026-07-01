@@ -10,7 +10,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { iamPolicies, iamRoleActions, iamRoles, projects, serviceAccounts, accountMembers, accountGroups } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
-import { db } from '../../shared/db';
+import { accountDb as db } from '../effect';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import {
   invalidateIamCacheForPolicyPrincipal,

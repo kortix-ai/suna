@@ -1,4 +1,5 @@
-import { config, type SandboxProviderName } from '../../config';
+import { platformConfig as config, platformDb as db, platformHasDatabase as hasDatabase } from '../effect';
+import type { SandboxProviderName } from '../effect';
 
 // Weighted load-balancing of NEW sandboxes across ALLOWED_SANDBOX_PROVIDERS.
 // Weights live in kortix.platform_settings under 'provider_distribution' as
@@ -15,7 +16,6 @@ async function loadWeights(): Promise<Record<string, number>> {
   if (cache && Date.now() - cache.at < TTL_MS) return cache.weights;
   let weights: Record<string, number> = {};
   try {
-    const { hasDatabase, db } = await import('../../shared/db');
     if (hasDatabase) {
       const { platformSettings } = await import('@kortix/db');
       const { eq } = await import('drizzle-orm');

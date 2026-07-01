@@ -1,3 +1,5 @@
+import { platformDb as db, platformHasDatabase as hasDatabase } from '../effect';
+
 /**
  * DB-backed runtime toggles operators flip from the admin Providers panel —
  * NOT env vars. Stored in kortix.platform_settings (key -> jsonb value),
@@ -67,7 +69,6 @@ export async function refreshRuntimeSettings(): Promise<void> {
   let fallback = def.fallback;
   let warmSnapshot = def.warmSnapshot;
   try {
-    const { hasDatabase, db } = await import('../../shared/db');
     if (hasDatabase) {
       const { platformSettings } = await import('@kortix/db');
       const { inArray } = await import('drizzle-orm');

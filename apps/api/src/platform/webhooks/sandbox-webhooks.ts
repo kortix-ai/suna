@@ -19,7 +19,7 @@
  */
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { config } from '../../config';
+import { platformConfig as config } from '../effect';
 import { recordWebhookEvent } from '../../billing/services/webhook-concurrency';
 import {
   reconcileSandboxStoppedByExternalId,

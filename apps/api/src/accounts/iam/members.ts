@@ -11,7 +11,7 @@ import {
   projectMembers,
   projects,
 } from '@kortix/db';
-import { db } from '../../shared/db';
+import { accountDb as db } from '../effect';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import {
   ACCOUNT_ACTIONS,

@@ -4,7 +4,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { and, asc, eq } from 'drizzle-orm';
 import { projectGroupGrants, projects } from '@kortix/db';
-import { db } from '../../shared/db';
+import { accountDb as db } from '../effect';
 import {
   ACCOUNT_ACTIONS,
   assertAuthorized,

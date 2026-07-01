@@ -2,7 +2,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { Effect, Schema } from "effect";
 import type { AppEnv } from "../../types";
 import { makeOpenApiApp, json } from "../../openapi";
-import { config } from "../../config";
+import { platformConfig as config, platformFetch } from "../effect";
 import { runHttpEffect } from "../../effect/http";
 import { effectHandler } from "../../effect/hono";
 
@@ -115,7 +115,7 @@ function githubHeaders(): Record<string, string> {
 const fetchJsonEffect = (url: string, init: RequestInit, label: string) =>
   Effect.gen(function* () {
     const res = yield* Effect.tryPromise({
-      try: () => fetch(url, init),
+      try: () => platformFetch(url, init),
       catch: (cause) => new Error(`${label} request failed: ${String(cause)}`),
     });
     if (!res.ok) {

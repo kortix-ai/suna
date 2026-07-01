@@ -1,5 +1,6 @@
 import { WarmRuntimeUnavailableError } from '../providers';
 import type { CreateSandboxOpts, ProvisionResult, SandboxProvider } from '../providers';
+import { platformSleep } from '../effect';
 
 export type SandboxInitStatus = 'pending' | 'provisioning' | 'retrying' | 'ready' | 'failed';
 type SandboxHealthStatus = 'healthy' | 'degraded' | 'offline' | 'unknown';
@@ -17,9 +18,7 @@ const RETRY_DELAY_MAX_MS = 4_000;
 const SNAPSHOT_BUILDING_MAX_ATTEMPTS = 30;
 const SNAPSHOT_BUILDING_RETRY_DELAY_MS = 10_000;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+const sleep = platformSleep;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

@@ -3,9 +3,9 @@ import { Effect } from 'effect';
 import { and, eq, isNull } from 'drizzle-orm';
 import { accountInvitations, accountMembers, accounts, projectMembers } from '@kortix/db';
 import type { AppEnv } from '../types';
-import { db } from '../shared/db';
+import { accountDb as db } from './effect';
 import { supabaseAuth } from '../middleware/auth';
-import { getSupabase } from '../shared/supabase';
+import { accountSupabase } from './effect';
 import { createInviteAcceptRateLimitMiddleware } from '../shared/rate-limit';
 import { onMemberAdded } from '../billing/services/seat-management';
 import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
@@ -52,7 +52,7 @@ function isExpired(invite: { expiresAt: Date; acceptedAt: Date | null }): boolea
 async function lookupAuthEmail(userId: string | null): Promise<string | null> {
   if (!userId) return null;
   try {
-    const { data } = await getSupabase().auth.admin.getUserById(userId);
+    const { data } = await accountSupabase.auth.admin.getUserById(userId);
     return data?.user?.email?.trim().toLowerCase() ?? null;
   } catch {
     return null;

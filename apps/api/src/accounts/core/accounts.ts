@@ -4,7 +4,7 @@ import { and, count, eq, sql } from 'drizzle-orm';
 import { json, errors, auth } from '../../openapi';
 import { accountMembers, accounts, accountUser, projects } from '@kortix/db';
 import { bootstrapPersonalAccount } from './bootstrap-personal-account';
-import { db } from '../../shared/db';
+import { accountDb as db } from '../effect';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import {
   accountsRouter,

@@ -15,7 +15,7 @@
 import { platinumJson } from '../../shared/platinum';
 import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
-import { config, SANDBOX_VERSION } from '../../config';
+import { platformConfig as config, platformSandboxVersion as SANDBOX_VERSION } from '../effect';
 import type {
   SandboxProvider,
   ProviderName,

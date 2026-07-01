@@ -1,4 +1,4 @@
-import { config } from '../config';
+import { platformConfig as config } from './effect';
 
 /**
  * The Kortix FRONTEND base URL (no trailing slash) a sandbox is given as

@@ -15,7 +15,7 @@ import { Context } from "hono";
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, asc, desc, eq, gte, like, lt, or, type SQL } from "drizzle-orm";
 import { auditEvents, auditWebhooks } from "@kortix/db";
-import { db } from "../shared/db";
+import { accountDb as db } from "./effect";
 import { generateWebhookSecret } from "../shared/audit-webhooks";
 import { recordAuditEvent } from "../shared/audit";
 import type { AppEnv } from "../types";

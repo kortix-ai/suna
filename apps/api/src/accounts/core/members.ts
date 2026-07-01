@@ -10,7 +10,7 @@ import {
   accounts,
   projectMembers,
 } from '@kortix/db';
-import { db } from '../../shared/db';
+import { accountDb as db } from '../effect';
 import { lookupUserIdByEmail } from '../../shared/users';
 import { sendAccountInviteEmail, buildInviteUrl } from '../email';
 import { authorize, ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';

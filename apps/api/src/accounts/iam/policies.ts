@@ -5,7 +5,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { and, eq, sql } from 'drizzle-orm';
 import { accounts, accountSessionActivity } from '@kortix/db';
-import { db } from '../../shared/db';
+import { accountDb as db } from '../effect';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam, readBody, HttpError } from './helpers';

@@ -10,7 +10,7 @@ import { getDaytona, getDaytonaWarm } from '../../shared/daytona';
 import { warmRestoreScript, WARM_RESTORE_MARKERS, noteWarmPathFailure } from '../../snapshots/warm-bake';
 import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
-import { config, SANDBOX_VERSION } from '../../config';
+import { platformConfig as config, platformSandboxVersion as SANDBOX_VERSION } from '../effect';
 // (DAYTONA_SNAPSHOT was removed — every sandbox boots from its project's
 // own per-project snapshot, resolved by the snapshot builder. Callers
 // must pass `opts.snapshot`; there is no shared platform-wide image.)

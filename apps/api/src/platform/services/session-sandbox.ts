@@ -14,7 +14,7 @@
 
 import { eq } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { db } from '../../shared/db';
+import { platformDb as db } from '../effect';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
@@ -40,7 +40,7 @@ import {
   type EnsureSandboxImageResult,
 } from '../../snapshots/builder';
 import { ensureWarmBaseReady, warmPathPaused } from '../../snapshots/warm-bake';
-import { config } from '../../config';
+import { platformConfig as config } from '../effect';
 import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';
 import { ProvisionTimeline } from './provision-timeline';

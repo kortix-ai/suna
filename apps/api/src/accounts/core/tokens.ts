@@ -3,7 +3,7 @@ import { Effect } from 'effect';
 import { eq } from 'drizzle-orm';
 import { json, errors, auth } from '../../openapi';
 import { accountMembers, accounts } from '@kortix/db';
-import { db } from '../../shared/db';
+import { accountDb as db } from '../effect';
 import { resolveAccountId } from '../../shared/resolve-account';
 import {
   PatPolicyError,
