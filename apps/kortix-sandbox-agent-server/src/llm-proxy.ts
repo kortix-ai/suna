@@ -188,3 +188,70 @@ export const setExecutorProxyToken = (token: string | undefined, upstreamBase?: 
 export const executorProxyReady = () => executor.ready()
 export const executorProxyBaseUrl = () => executor.baseUrl()
 export const stopExecutorProxy = () => executor.stop()
+
+// ── Provider-agnostic LLM runtime resolution ───────────────────────────────────
+// THE single source of truth for what LLM runtime a session ends up with. Daytona
+// (cold: real gateway creds live in opencode's env) and Platinum (warm: gateway
+// reached through the localhost hot-swap proxy) are DIFFERENT transports, but the
+// integrator must not care — the same logical input has to yield the same OBSERVABLE
+// outcome on every provider: a working gateway when a token exists, native fallback
+// when it doesn't. Both boot paths funnel through resolveLlmRuntime so no provider
+// can silently produce a divergent outcome (e.g. Platinum's old "gateway provider
+// mounted but token-less → 503 forever" state, which had no Daytona equivalent).
+// The provider-parity contract test (__tests__/provider-llm-parity.test.ts) enforces
+// this: same logical input → identical observable runtime across providers.
+
+export type LlmRuntimeMode =
+  | { kind: 'gateway'; transport: 'direct' | 'proxy' }
+  | { kind: 'native' }
+
+export interface LlmRuntimeInputs {
+  /** KORTIX_LLM_PROXY_URL is set → the localhost credential-proxy transport exists
+   *  (warm-fork / Platinum). It is only a WORKING gateway once it holds a token. */
+  proxyTransportAvailable: boolean
+  /** The proxy actually holds a usable per-session token (llmProxyReady()). */
+  proxyHasToken: boolean
+  /** Direct gateway creds baked into opencode's env (cold / Daytona):
+   *  KORTIX_LLM_API_KEY + KORTIX_LLM_BASE_URL. */
+  directGatewayCredsPresent: boolean
+}
+
+/**
+ * Resolve the FINAL, adopted-session LLM runtime. Deliberately has no fourth
+ * "gateway mounted but dead" state: a gateway is reported ONLY when it can serve,
+ * so `native` is the identical fallback on every provider. Transport (direct vs
+ * proxy) is an INTERNAL detail the integrator never observes.
+ */
+export function resolveLlmRuntime(i: LlmRuntimeInputs): LlmRuntimeMode {
+  // Warm/proxy transport counts as a gateway ONLY once the token is in the proxy.
+  if (i.proxyTransportAvailable && i.proxyHasToken) return { kind: 'gateway', transport: 'proxy' }
+  // Cold/direct transport: real key + base baked straight into opencode's env.
+  if (i.directGatewayCredsPresent) return { kind: 'gateway', transport: 'direct' }
+  // No usable gateway on either transport → native catalog (identical everywhere).
+  return { kind: 'native' }
+}
+
+/**
+ * Adoption action derived from the shared oracle: a warm seed bakes proxy-mode
+ * opencode (KORTIX_LLM_HOTSWAP=1, Platinum), but if the resolved runtime is NOT the
+ * proxy gateway (no token arrived → unentitled account), the proxy must be TORN DOWN
+ * at adoption so the rebuilt config drops the token-less `kortix` provider and
+ * opencode falls back to whatever a cold/Daytona box would use (native, or direct if
+ * creds exist). Left as-is it would 503 "llm proxy not ready" on every call forever.
+ * Keying off the resolver (not a bespoke boolean) is what keeps the two providers'
+ * observable behavior identical.
+ */
+export function shouldDisableProxyModeGateway(opts: {
+  hotswapBaked: boolean
+  proxyUrlSet: boolean
+  proxyReady: boolean
+  directGatewayCredsPresent?: boolean
+}): boolean {
+  if (!opts.hotswapBaked || !opts.proxyUrlSet) return false
+  const mode = resolveLlmRuntime({
+    proxyTransportAvailable: opts.proxyUrlSet,
+    proxyHasToken: opts.proxyReady,
+    directGatewayCredsPresent: !!opts.directGatewayCredsPresent,
+  })
+  return !(mode.kind === 'gateway' && mode.transport === 'proxy')
+}
