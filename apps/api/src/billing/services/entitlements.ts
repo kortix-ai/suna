@@ -38,7 +38,14 @@ export async function getCachedAccountTier(accountId: string): Promise<string> {
 
 /** The full enterprise entitlement set for an account. */
 export async function getAccountEntitlements(accountId: string): Promise<TierEntitlements> {
-  return getTierEntitlements(await getAccountTier(accountId));
+  const acct = await getCreditAccount(accountId);
+  // Demo/dogfood override: an account can self-enable an interactive demo of the
+  // enterprise surface from account settings. When on, it unlocks EVERY
+  // enterprise entitlement — whatever the `enterprise` tier grants — regardless
+  // of billing tier, so gates added later are covered automatically. This is a
+  // preview, NOT a real Enterprise plan (which is sales-assigned).
+  if (acct?.demoEnterprise) return getTierEntitlements('enterprise');
+  return getTierEntitlements(acct?.tier ?? 'none');
 }
 
 /** Whether an account's plan unlocks a specific enterprise feature. */
@@ -46,5 +53,7 @@ export async function accountHasEntitlement(
   accountId: string,
   key: keyof TierEntitlements,
 ): Promise<boolean> {
-  return tierHasEntitlement(await getAccountTier(accountId), key);
+  const acct = await getCreditAccount(accountId);
+  if (acct?.demoEnterprise) return true;
+  return tierHasEntitlement(acct?.tier ?? 'none', key);
 }

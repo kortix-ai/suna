@@ -40,6 +40,7 @@ import {
   Music,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toSandboxAbsolutePath } from '@/features/files/api/opencode-files';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
 import { CodeHighlight, UnifiedMarkdown } from '@/components/markdown/unified-markdown';
@@ -107,12 +108,6 @@ function isLocalSandboxFilePath(value: string): boolean {
   if (!value) return false;
   if (/^(https?:|data:|blob:)/i.test(value)) return false;
   return value.startsWith('/');
-}
-
-/** Ensure a sandbox file path starts with /workspace/ for the static file server. */
-function ensureWorkspacePath(filePath: string): string {
-  if (filePath.startsWith('/workspace/')) return filePath;
-  return '/workspace/' + filePath.replace(/^\/+/, '');
 }
 
 /** Auto-detect file category from extension — used when type='file' */
@@ -374,7 +369,7 @@ export function ShowContentRenderer({
   // ═════════════════════════════════════════════════════════════════════════
   if ((isHtmlFile || (isHtml && !content)) && sandboxPath && LocalhostPreview) {
     const staticPort = parseInt(SANDBOX_PORTS.STATIC_FILE_SERVER ?? '3211', 10);
-    const normalizedPath = ensureWorkspacePath(sandboxPath);
+    const normalizedPath = toSandboxAbsolutePath(sandboxPath);
     const encodedPath = normalizedPath.split('/').filter(Boolean).map(encodeURIComponent).join('/');
     const staticUrl = `http://localhost:${staticPort}/open?path=/${encodedPath}`;
     return <LocalhostPreview url={staticUrl} label={title || fileName || undefined} />;

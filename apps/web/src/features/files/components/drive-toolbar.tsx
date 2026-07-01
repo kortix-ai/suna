@@ -31,7 +31,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
-import { useFilesStore } from '../store/files-store';
+import { isWithinRoot, useFilesStore } from '../store/files-store';
 import { useCurrentProject } from '../hooks';
 import { useInvalidateFileList } from '../hooks/use-file-list';
 import { cn } from '@/lib/utils';
@@ -78,6 +78,10 @@ export function DriveToolbar({
   const homeLabel = rootPath
     ? rootPath.split('/').filter(Boolean).pop() || 'root'
     : '/workspace';
+
+  // Outside the home root (e.g. /tmp) the crumbs render as an absolute chain
+  // instead of pretending the path nests under /workspace
+  const outsideHome = !rootPath && !isWithinRoot(currentPath, homePath);
 
   // Breadcrumb segments
   const isRoot = currentPath === '/' || currentPath === '.' || currentPath === '';
@@ -181,12 +185,18 @@ export function DriveToolbar({
 
             {segments.map((segment, index) => {
               // Skip 'workspace' only when not sandboxed (rootPath null)
-              if (!rootPath && index === 0 && segment === 'workspace') return null;
+              if (!rootPath && !outsideHome && index === 0 && segment === 'workspace') return null;
               const isLast = index === segments.length - 1;
+              // First crumb of an outside-home path anchors the absolute chain
+              const isAbsoluteAnchor = outsideHome && index === 0;
 
               return (
                 <div key={index} className="flex items-center gap-0.5 min-w-0 shrink-0">
-                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+                  {isAbsoluteAnchor ? (
+                    <span className="text-muted-foreground/40 px-1 text-xs select-none shrink-0">·</span>
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+                  )}
                   <Button
                     onClick={() => handleSegmentClick(index)}
                     variant="ghost"
@@ -194,9 +204,10 @@ export function DriveToolbar({
                     className={cn(
                       'truncate max-w-[200px]',
                       isLast ? 'text-foreground font-medium' : 'text-muted-foreground',
+                      isAbsoluteAnchor && 'font-mono text-xs',
                     )}
                   >
-                    {segment}
+                    {isAbsoluteAnchor ? `/${segment}` : segment}
                   </Button>
                 </div>
               );

@@ -10,7 +10,9 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { DiffStat, STATUS_BG, STATUS_BORDER, STATUS_TEXT, StatusDot } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { toSandboxAbsolutePath } from '@/features/files/api/opencode-files';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
+import { parseImageOutput } from '@/features/session/image-output-path';
 import { QuestionPrompt } from '@/features/session/question-prompt';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import { isShowContentUnavailable, type ShowLoadStatus } from './show-availability';
@@ -190,26 +192,10 @@ function useProxyUrl(localhostUrl: string): { proxyUrl: string; port: number } |
   }, [localhostUrl, proxyUrl]);
 }
 
-const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i;
-
-function normalizeWorkspacePath(path: string): string {
-  const trimmed = path.trim();
-  if (trimmed.startsWith('/workspace/')) return trimmed;
-  if (trimmed === 'workspace') return '/workspace';
-  if (trimmed.startsWith('workspace/')) return `/${trimmed}`;
-  return trimmed;
-}
-
 function isLocalSandboxFilePath(value: string): boolean {
   if (!value) return false;
   if (/^(https?:|data:|blob:)/i.test(value)) return false;
   return value.startsWith('/');
-}
-
-/** Ensure a sandbox file path starts with /workspace/ for the static file server. */
-function ensureWorkspacePath(filePath: string): string {
-  if (filePath.startsWith('/workspace/')) return filePath;
-  return '/workspace/' + filePath.replace(/^\/+/, '');
 }
 
 /**
@@ -4510,44 +4496,8 @@ function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const prompt = input.prompt as string | undefined;
   const action = input.action as string | undefined;
 
-  // Extract image info from output
-  const { imagePath, directUrl } = useMemo(() => {
-    if (!output) return { imagePath: null, directUrl: null };
-    const trimmed = output.trim();
-
-    // 1. Try JSON parse
-    try {
-      const parsed = JSON.parse(trimmed);
-      const p = parsed.path || parsed.image_path || parsed.output_path || null;
-      const url = parsed.replicate_url || parsed.url || parsed.image_url || null;
-      return {
-        imagePath: p ? String(p).trim() : null,
-        directUrl: url ? String(url).trim() : null,
-      };
-    } catch {
-      // not JSON
-    }
-
-    // 2. Check if output itself is a file path
-    const cleaned = trimmed.replace(/^["']+|["']+$/g, '').trim();
-    if (IMAGE_EXT_RE.test(cleaned)) {
-      const normalized =
-        cleaned.startsWith('/workspace/') || cleaned.startsWith('workspace/')
-          ? normalizeWorkspacePath(cleaned)
-          : cleaned;
-      return { imagePath: normalized, directUrl: null };
-    }
-
-    // 3. Extract path from surrounding text
-    const extractedPath = trimmed.match(
-      /\/workspace\/[^\s"']+\.(?:png|jpe?g|gif|webp|svg|bmp|ico)/i,
-    );
-    if (extractedPath?.[0]) {
-      return { imagePath: extractedPath[0], directUrl: null };
-    }
-
-    return { imagePath: null, directUrl: null };
-  }, [output]);
+  // Extract image info from output — recognizes every sandbox root, not just /workspace
+  const { imagePath, directUrl } = useMemo(() => parseImageOutput(output), [output]);
 
   // If we have a direct HTTPS URL (e.g. replicate_url), use it directly — no need to fetch via sandbox
   // If we have a local sandbox path, use useFileContent to get base64 (same as ImagePreview.tsx)
@@ -4945,7 +4895,7 @@ function useShowOpenInTab(props: { type: string; url: string; path: string; titl
     !!path && SHOW_HTML_EXT_RE.test(path) && (type === 'file' || type === 'html');
   const staticFilePort = parseInt(SANDBOX_PORTS.STATIC_FILE_SERVER ?? '3211', 10);
   const htmlStaticUrl = isHtmlFilePath
-    ? `http://localhost:${staticFilePort}/open?path=${encodeURIComponent(ensureWorkspacePath(path))}`
+    ? `http://localhost:${staticFilePort}/open?path=${encodeURIComponent(toSandboxAbsolutePath(path))}`
     : '';
   const htmlStaticProxy = useProxyUrl(htmlStaticUrl);
 
@@ -5006,7 +4956,7 @@ function useShowOpenInTab(props: { type: string; url: string; path: string; titl
 /** Build the static-file-server localhost URL for an HTML file path (for iframe preview). */
 function buildHtmlStaticUrl(filePath: string): string {
   const port = parseInt(SANDBOX_PORTS.STATIC_FILE_SERVER ?? '3211', 10);
-  const normalized = ensureWorkspacePath(filePath);
+  const normalized = toSandboxAbsolutePath(filePath);
   const encoded = normalized.split('/').filter(Boolean).map(encodeURIComponent).join('/');
   return `http://localhost:${port}/open?path=/${encoded}`;
 }

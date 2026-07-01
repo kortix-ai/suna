@@ -149,7 +149,7 @@ interface FilesStoreActions {
 }
 
 /** Check if a path is equal to or a descendant of the root */
-function isWithinRoot(path: string, root: string): boolean {
+export function isWithinRoot(path: string, root: string): boolean {
   const normPath = path.replace(/\/+$/, '') || '/';
   const normRoot = root.replace(/\/+$/, '') || '/';
   return normPath === normRoot || normPath.startsWith(normRoot + '/');

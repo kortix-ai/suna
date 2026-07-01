@@ -52,27 +52,60 @@ async function fetchDaemonJson<T>(relUrl: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-/** Strip the "/workspace" prefix to a worktree-relative path ("" = root). */
-export function toWorkspaceRelative(filePath: string): string {
+/**
+ * Sandbox filesystem roots the daemon serves (mirrors DEFAULT_ALLOWED_ROOTS in
+ * kortix-sandbox-agent-server). The daemon re-validates every path server-side;
+ * this mirror only keeps hosts from mangling non-workspace paths client-side.
+ */
+export const SANDBOX_FS_ROOTS = ['/workspace', '/tmp', '/home', '/opt'] as const;
+
+const NON_WORKSPACE_ROOTS = SANDBOX_FS_ROOTS.filter((root) => root !== '/workspace');
+
+/** Whether a path is absolute under one of the daemon's allowed roots. */
+export function isUnderSandboxRoot(filePath: string): boolean {
+  return SANDBOX_FS_ROOTS.some((root) => filePath === root || filePath.startsWith(`${root}/`));
+}
+
+/**
+ * Resolve any host path to an absolute sandbox path — paths already under an
+ * allowed root pass through, everything else anchors beneath /workspace.
+ */
+export function toSandboxAbsolutePath(filePath: string): string {
+  if (isUnderSandboxRoot(filePath)) return filePath;
+  return `/workspace/${filePath.replace(/^\/+/, '')}`;
+}
+
+/**
+ * Convert a host path to the daemon query path. /workspace paths become
+ * worktree-relative ("" = root); the other allowed roots (/tmp, /home, /opt)
+ * stay absolute — the daemon resolves absolutes against its own allow-list.
+ * Any other absolute path keeps the legacy leading-slash strip, so
+ * "/README.md"-style pseudo-relative paths still resolve under /workspace.
+ */
+export function toDaemonPath(filePath: string): string {
   let s = filePath || '';
   if (s === '/workspace' || s === '/workspace/') return '';
   if (s.startsWith('/workspace/')) s = s.slice('/workspace/'.length);
+  else if (NON_WORKSPACE_ROOTS.some((root) => s === root || s.startsWith(`${root}/`))) return s;
   while (s.startsWith('/')) s = s.slice(1);
   return s;
 }
 
-/** List files/directories at a path. Daemon `GET /file` (worktree-relative). */
+/** @deprecated Use {@link toDaemonPath} — non-workspace roots now pass through absolute. */
+export const toWorkspaceRelative = toDaemonPath;
+
+/** List files/directories at a path. Daemon `GET /file`. */
 export async function listFiles(dirPath: string): Promise<FileNode[]> {
-  const rel = toWorkspaceRelative(dirPath) || '.';
-  const nodes = await fetchDaemonJson<FileNode[]>(`/file?path=${encodeURIComponent(rel)}`);
+  const daemonPath = toDaemonPath(dirPath) || '.';
+  const nodes = await fetchDaemonJson<FileNode[]>(`/file?path=${encodeURIComponent(daemonPath)}`);
   return nodes.map((node) => ({ ...node, path: node.absolute || `/workspace/${node.path}` }));
 }
 
 /** Read a file's content (text, or base64 for binaries). Daemon `GET /file/content`. */
 export async function readFile(filePath: string): Promise<FileContent> {
   const baseUrl = getActiveOpenCodeUrl();
-  const relativePath = toWorkspaceRelative(filePath);
-  const response = await authenticatedFetch(`${baseUrl}/file/content?path=${encodeURIComponent(relativePath)}`);
+  const daemonPath = toDaemonPath(filePath);
+  const response = await authenticatedFetch(`${baseUrl}/file/content?path=${encodeURIComponent(daemonPath)}`);
   if (!response.ok) throw new Error(await errorMessage(response));
   return response.json() as Promise<FileContent>;
 }
@@ -80,8 +113,8 @@ export async function readFile(filePath: string): Promise<FileContent> {
 /** Raw byte read. Daemon `GET /file/raw`. Throws (so callers can fall back). */
 async function readFileRaw(filePath: string, fallbackMime?: string): Promise<Blob> {
   const baseUrl = getActiveOpenCodeUrl();
-  const relativePath = toWorkspaceRelative(filePath);
-  const response = await authenticatedFetch(`${baseUrl}/file/raw?path=${encodeURIComponent(relativePath)}`);
+  const daemonPath = toDaemonPath(filePath);
+  const response = await authenticatedFetch(`${baseUrl}/file/raw?path=${encodeURIComponent(daemonPath)}`);
   if (!response.ok) throw new Error(await errorMessage(response));
   // A misrouted /file/raw can fall through to the web SPA shell (200, text/html).
   if ((response.headers.get('content-type') || '').includes('text/html')) {
@@ -302,5 +335,7 @@ export const files = {
   currentProject: getCurrentProject,
   health: getServerHealth,
   isReachable: isServerReachable,
+  toDaemonPath,
+  toSandboxAbsolutePath,
   toWorkspaceRelative,
 };

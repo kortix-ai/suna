@@ -27,6 +27,10 @@ export {
   readBlob as readFileAsBlob,
   mkdir as mkdirFile,
   toWorkspaceRelative,
+  toDaemonPath,
+  toSandboxAbsolutePath,
+  isUnderSandboxRoot,
+  SANDBOX_FS_ROOTS,
 } from '@kortix/sdk/files';
 export type { UploadResult } from '@kortix/sdk/files';
 
