@@ -1,4 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import { Effect } from 'effect';
 import type { AppEnv } from '../../types';
 import { getStripe } from '../../shared/stripe';
 import { getOrCreateStripeCustomer } from '../services/subscriptions';
@@ -10,10 +11,16 @@ import {
   getUsageRecords,
   insertPurchase,
 } from '../repositories/transactions';
-import { BillingError } from '../../errors';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
 import { resolveBillingWriteAccountId } from '../require-billing-write';
 import { makeOpenApiApp, json, auth, errors } from '../../openapi';
+import {
+  attemptBilling,
+  attemptBillingSync,
+  billingFail,
+  parseJsonBody,
+  runBillingEffect,
+} from './effect-workflows';
 
 export const paymentsRouter = makeOpenApiApp<AppEnv>();
 
@@ -50,57 +57,69 @@ paymentsRouter.openapi(
     // Manual parse: resolveBillingWriteAccountId also reads account_id from the
     // body, and the handler passes through opaque success/cancel URLs. Gated on
     // billing.write — buying credits initiates a charge on the account.
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const email = c.get('userEmail');
-    const body = await c.req.json();
-    const amount = Number(body.amount);
+    const response = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveBillingWriteAccountId(c, 'body'));
+      const email = c.get('userEmail');
+      const body = yield* parseJsonBody<{
+        amount?: number;
+        success_url?: string;
+        cancel_url?: string;
+      }>(c);
+      const amount = Number(body.amount);
 
-    if (!amount || amount <= 0) throw new BillingError('Invalid amount');
+      if (!amount || amount <= 0) yield* billingFail('Invalid amount');
 
-    const account = await getCreditAccount(accountId);
-    const tierName = account?.tier ?? 'free';
+      const account = yield* attemptBilling(() => getCreditAccount(accountId));
+      const tierName = account?.tier ?? 'free';
 
-    if (!canPurchaseCredits(tierName)) {
-      throw new BillingError('Your tier does not allow credit purchases');
-    }
+      if (!canPurchaseCredits(tierName)) {
+        yield* billingFail('Your tier does not allow credit purchases');
+      }
 
-    const customerId = await getOrCreateStripeCustomer(accountId, email);
-    const stripe = getStripe();
+      const customerId = yield* attemptBilling(() => getOrCreateStripeCustomer(accountId, email));
+      const stripe = yield* attemptBillingSync(() => getStripe());
 
-    const purchase = await insertPurchase({
-      accountId,
-      amountDollars: String(amount),
-      status: 'pending',
-      description: `$${amount} credit purchase`,
-      provider: 'stripe',
-    });
+      const purchase = yield* attemptBilling(() =>
+        insertPurchase({
+          accountId,
+          amountDollars: String(amount),
+          status: 'pending',
+          description: `$${amount} credit purchase`,
+          provider: 'stripe',
+        }),
+      );
 
-    const creditPriceId = resolveCreditPriceId(amount);
-    const lineItems = creditPriceId
-      ? [{ price: creditPriceId, quantity: 1 }]
-      : [{
-          price_data: {
-            currency: 'usd',
-            unit_amount: Math.round(amount * 100),
-            product_data: { name: `$${amount} Credits` },
+      const creditPriceId = resolveCreditPriceId(amount);
+      const lineItems = creditPriceId
+        ? [{ price: creditPriceId, quantity: 1 }]
+        : [{
+            price_data: {
+              currency: 'usd',
+              unit_amount: Math.round(amount * 100),
+              product_data: { name: `$${amount} Credits` },
+            },
+            quantity: 1,
+          }];
+
+      const session = yield* attemptBilling(() =>
+        stripe.checkout.sessions.create({
+          customer: customerId,
+          mode: 'payment',
+          line_items: lineItems,
+          success_url: body.success_url,
+          cancel_url: body.cancel_url,
+          metadata: {
+            account_id: accountId,
+            purchase_id: purchase!.id,
+            type: 'credit_purchase',
           },
-          quantity: 1,
-        }];
+        }),
+      );
 
-    const session = await stripe.checkout.sessions.create({
-      customer: customerId,
-      mode: 'payment',
-      line_items: lineItems,
-      success_url: body.success_url,
-      cancel_url: body.cancel_url,
-      metadata: {
-        account_id: accountId,
-        purchase_id: purchase!.id,
-        type: 'credit_purchase',
-      },
-    });
+      return { checkout_url: session.url };
+    }));
 
-    return c.json({ checkout_url: session.url });
+    return c.json(response);
   },
 );
 
@@ -147,37 +166,43 @@ paymentsRouter.openapi(
     },
   }),
   async (c: any) => {
-    const accountId = await resolveScopedAccountId(c, 'query');
-    const limit = Number(c.req.query('limit') ?? 50);
-    const offset = Number(c.req.query('offset') ?? 0);
-    const typeFilterParam = c.req.query('type_filter') || undefined;
-    const typeFilter = typeFilterParam?.includes(',')
-      ? typeFilterParam.split(',').map((value: string) => value.trim()).filter(Boolean)
-      : typeFilterParam;
+    const response = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveScopedAccountId(c, 'query'));
+      const limit = Number(c.req.query('limit') ?? 50);
+      const offset = Number(c.req.query('offset') ?? 0);
+      const typeFilterParam = c.req.query('type_filter') || undefined;
+      const typeFilter = typeFilterParam?.includes(',')
+        ? typeFilterParam.split(',').map((value: string) => value.trim()).filter(Boolean)
+        : typeFilterParam;
 
-    const { rows, total } = await getTransactions(accountId, limit, offset, typeFilter);
+      const { rows, total } = yield* attemptBilling(() =>
+        getTransactions(accountId, limit, offset, typeFilter),
+      );
 
-    const transactions = rows.map((r) => ({
-      id: r.id,
-      created_at: r.createdAt,
-      amount: Number(r.amount),
-      balance_after: Number(r.balanceAfter),
-      type: r.type,
-      description: r.description,
-      is_expiring: r.isExpiring,
-      expires_at: r.expiresAt,
-      metadata: r.metadata,
+      const transactions = rows.map((r) => ({
+        id: r.id,
+        created_at: r.createdAt,
+        amount: Number(r.amount),
+        balance_after: Number(r.balanceAfter),
+        type: r.type,
+        description: r.description,
+        is_expiring: r.isExpiring,
+        expires_at: r.expiresAt,
+        metadata: r.metadata,
+      }));
+
+      return {
+        transactions,
+        pagination: {
+          total,
+          limit,
+          offset,
+          has_more: offset + limit < total,
+        },
+      };
     }));
 
-    return c.json({
-      transactions,
-      pagination: {
-        total,
-        limit,
-        offset,
-        has_more: offset + limit < total,
-      },
-    });
+    return c.json(response);
   },
 );
 
@@ -196,9 +221,12 @@ paymentsRouter.openapi(
     },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'query');
-    const days = Number(c.req.query('days') ?? 30);
-    const summary = await getTransactionsSummary(accountId, days);
+    const summary = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveScopedAccountId(c, 'query'));
+      const days = Number(c.req.query('days') ?? 30);
+      return yield* attemptBilling(() => getTransactionsSummary(accountId, days));
+    }));
+
     return c.json(summary);
   },
 );
@@ -218,9 +246,12 @@ paymentsRouter.openapi(
     },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'query');
-    const { getAutoTopupSettings } = await import('../services/auto-topup');
-    const settings = await getAutoTopupSettings(accountId);
+    const settings = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveScopedAccountId(c, 'query'));
+      const { getAutoTopupSettings } = yield* attemptBilling(() => import('../services/auto-topup'));
+      return yield* attemptBilling(() => getAutoTopupSettings(accountId));
+    }));
+
     return c.json(settings);
   },
 );
@@ -238,9 +269,12 @@ paymentsRouter.openapi(
     },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'query');
-    const { getAutoTopupSetupStatus } = await import('../services/auto-topup');
-    const status = await getAutoTopupSetupStatus(accountId);
+    const status = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveScopedAccountId(c, 'query'));
+      const { getAutoTopupSetupStatus } = yield* attemptBilling(() => import('../services/auto-topup'));
+      return yield* attemptBilling(() => getAutoTopupSetupStatus(accountId));
+    }));
+
     return c.json(status);
   },
 );
@@ -272,15 +306,23 @@ paymentsRouter.openapi(
   }),
   async (c) => {
     // Gated on billing.write — auto-topup sets up recurring charges.
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const body = await c.req.json();
-    const { configureAutoTopup } = await import('../services/auto-topup');
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveBillingWriteAccountId(c, 'body'));
+      const body = yield* parseJsonBody<{
+        enabled?: boolean;
+        threshold?: number;
+        amount?: number;
+      }>(c);
+      const { configureAutoTopup } = yield* attemptBilling(() => import('../services/auto-topup'));
 
-    const result = await configureAutoTopup(accountId, {
-      enabled: Boolean(body.enabled),
-      threshold: Number(body.threshold),
-      amount: Number(body.amount),
-    });
+      return yield* attemptBilling(() =>
+        configureAutoTopup(accountId, {
+          enabled: Boolean(body.enabled),
+          threshold: Number(body.threshold),
+          amount: Number(body.amount),
+        }),
+      );
+    }));
 
     return c.json(result);
   },
@@ -321,20 +363,24 @@ paymentsRouter.openapi(
     },
   }),
   async (c: any) => {
-    const accountId = await resolveScopedAccountId(c, 'query');
-    const limit = Number(c.req.query('limit') ?? 50);
-    const offset = Number(c.req.query('offset') ?? 0);
+    const response = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveScopedAccountId(c, 'query'));
+      const limit = Number(c.req.query('limit') ?? 50);
+      const offset = Number(c.req.query('offset') ?? 0);
 
-    const { rows, total } = await getUsageRecords(accountId, limit, offset);
+      const { rows, total } = yield* attemptBilling(() => getUsageRecords(accountId, limit, offset));
 
-    const records = rows.map((r) => ({
-      id: r.id,
-      amount_dollars: Number(r.amountDollars),
-      description: r.description,
-      usage_type: r.usageType,
-      created_at: r.createdAt,
+      const records = rows.map((r) => ({
+        id: r.id,
+        amount_dollars: Number(r.amountDollars),
+        description: r.description,
+        usage_type: r.usageType,
+        created_at: r.createdAt,
+      }));
+
+      return { records, count: total };
     }));
 
-    return c.json({ records, count: total });
+    return c.json(response);
   },
 );

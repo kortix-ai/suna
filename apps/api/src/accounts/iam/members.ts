@@ -30,6 +30,7 @@ import {
   isResourceType,
 } from './app';
 import { auditIam, readBody } from './helpers';
+import { effectHandler } from '../../effect/hono';
 
 // ─── Super-admin promotion ─────────────────────────────────────────────────
 
@@ -46,7 +47,7 @@ iamRouter.openapi(
       ...errors(400, 401, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const callerId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const targetUserId = c.req.param('userId');
@@ -114,7 +115,7 @@ iamRouter.openapi(
     user_id: updated.userId,
     is_super_admin: updated.isSuperAdmin,
   });
-  },
+  }),
 );
 
 // ─── Member's group memberships ────────────────────────────────────────────
@@ -134,7 +135,7 @@ iamRouter.openapi(
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const callerId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const targetUserId = c.req.param('userId');
@@ -153,7 +154,7 @@ iamRouter.openapi(
       added_at: r.addedAt.toISOString(),
     })),
   });
-  },
+  }),
 );
 
 // V2-only: which projects does this member reach, and at what role?
@@ -177,7 +178,7 @@ iamRouter.openapi(
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const callerId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const targetUserId = c.req.param('userId');
@@ -302,7 +303,7 @@ iamRouter.openapi(
   }
   out.sort((a, b) => a.project_name.localeCompare(b.project_name));
   return c.json({ projects: out });
-  },
+  }),
 );
 
 // ─── Effective permissions probe ───────────────────────────────────────────
@@ -321,7 +322,7 @@ iamRouter.openapi(
       ...errors(400, 401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const callerId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const targetUserId = c.req.param('userId');
@@ -354,7 +355,7 @@ iamRouter.openapi(
     action,
     resource_type: resourceTypeForAction(action),
   });
-  },
+  }),
 );
 
 // Batch variant. UIs that render N capability rows (the "what this member
@@ -377,7 +378,7 @@ iamRouter.openapi(
       ...errors(400, 401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const callerId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const targetUserId = c.req.param('userId');
@@ -475,5 +476,5 @@ iamRouter.openapi(
   );
 
   return c.json({ results });
-  },
+  }),
 );

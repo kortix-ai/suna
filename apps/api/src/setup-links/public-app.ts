@@ -15,9 +15,11 @@ import { db } from '../shared/db';
 import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
 import { pipedreamConfigured, pipedreamConnectUrl } from '../executor/pipedream';
+import { effectMiddleware } from '../effect/hono';
 import { resolveSetupLink } from './token';
 
 const setupLinksPublicApp = new Hono();
+setupLinksPublicApp.use('*', effectMiddleware);
 
 async function projectName(projectId: string): Promise<string> {
   const [row] = await db

@@ -16,12 +16,14 @@ import { loadProjectTriggers } from '../triggers';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
+import { Effect } from 'effect';
 import { createHash, randomUUID } from 'node:crypto';
 import { enforceProjectQuota, grantProjectRole, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, registerGitHubLinkedProject, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeGitHubRepo, serializeProject } from '../lib/serializers';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
+import { attemptRoute, routeJson, runProjectRouteEffect } from './effect-workflows';
 
 projectsApp.use('/*', supabaseAuth);
 
@@ -155,80 +157,88 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const scope = await resolveProjectAccount(c);
-  // Reach through `any` for non-typed context keys set by the auth
-  // middleware (the AppEnv only types userId/userEmail).
-  const actingTokenId =
-    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
-      | string
-      | undefined) ?? undefined;
-  const requestCtx = deriveRequestContext(c);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const scope = yield* attemptRoute(() => resolveProjectAccount(c));
+    // Reach through `any` for non-typed context keys set by the auth
+    // middleware (the AppEnv only types userId/userEmail).
+    const actingTokenId =
+      ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
+        | string
+        | undefined) ?? undefined;
+    const requestCtx = deriveRequestContext(c);
 
-  // Ask the IAM engine which projects the caller can READ. V2 returns
-  // one of: { mode: 'all' } | { mode: 'none' } | { mode: 'allow_only' }.
-  // 'all' = account admin/owner (manager on every project); 'allow_only'
-  // = enumerated project IDs from direct project_members + group grants;
-  // 'none' = no access.
-  const accessible = await listAccessibleResources(
-    scope.userId,
-    scope.accountId,
-    'project.read',
-    'project',
-    actingTokenId,
-    requestCtx,
-  );
+    // Ask the IAM engine which projects the caller can READ. V2 returns
+    // one of: { mode: 'all' } | { mode: 'none' } | { mode: 'allow_only' }.
+    // 'all' = account admin/owner (manager on every project); 'allow_only'
+    // = enumerated project IDs from direct project_members + group grants;
+    // 'none' = no access.
+    const accessible = yield* attemptRoute(() =>
+      listAccessibleResources(
+        scope.userId,
+        scope.accountId,
+        'project.read',
+        'project',
+        actingTokenId,
+        requestCtx,
+      ),
+    );
 
-  if (accessible.mode === 'none') return c.json([]);
+    if (accessible.mode === 'none') return routeJson([]);
 
-  // Build the project rows + per-row project_members metadata used by
-  // the UI to label effective_role. We still consult project_members
-  // because the IAM engine bridges it into authorize() but doesn't
-  // hand the per-row role back here — and the UI wants the original
-  // manager/editor/viewer label, not just "allowed".
-  const grants = await db
-    .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
-    .from(projectMembers)
-    .where(and(
-      eq(projectMembers.accountId, scope.accountId),
-      eq(projectMembers.userId, scope.userId),
-    ));
-  const roleByProject = new Map(
-    grants.map((g) => [g.projectId, g.projectRole as ProjectRole]),
-  );
+    // Build the project rows + per-row project_members metadata used by
+    // the UI to label effective_role. We still consult project_members
+    // because the IAM engine bridges it into authorize() but doesn't
+    // hand the per-row role back here — and the UI wants the original
+    // manager/editor/viewer label, not just "allowed".
+    const grants = yield* attemptRoute(() =>
+      db
+        .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
+        .from(projectMembers)
+        .where(and(
+          eq(projectMembers.accountId, scope.accountId),
+          eq(projectMembers.userId, scope.userId),
+        )),
+    );
+    const roleByProject = new Map(
+      grants.map((g) => [g.projectId, g.projectRole as ProjectRole]),
+    );
 
-  const baseWhere = and(
-    eq(projects.accountId, scope.accountId),
-    eq(projects.status, 'active'),
-  );
+    const baseWhere = and(
+      eq(projects.accountId, scope.accountId),
+      eq(projects.status, 'active'),
+    );
 
-  let rows: Array<typeof projects.$inferSelect>;
-  if (accessible.mode === 'all') {
-    rows = await db.select().from(projects).where(baseWhere).orderBy(desc(projects.updatedAt));
-  } else {
-    // mode === 'allow_only'. The 'none' case was returned above.
-    if (accessible.allowed.size === 0) return c.json([]);
-    rows = await db
-      .select()
-      .from(projects)
-      .where(and(baseWhere, inArray(projects.projectId, [...accessible.allowed])))
-      .orderBy(desc(projects.updatedAt));
-  }
+    let rows: Array<typeof projects.$inferSelect>;
+    if (accessible.mode === 'all') {
+      rows = yield* attemptRoute(() => db.select().from(projects).where(baseWhere).orderBy(desc(projects.updatedAt)));
+    } else {
+      // mode === 'allow_only'. The 'none' case was returned above.
+      if (accessible.allowed.size === 0) return routeJson([]);
+      rows = yield* attemptRoute(() =>
+        db
+          .select()
+          .from(projects)
+          .where(and(baseWhere, inArray(projects.projectId, [...accessible.allowed])))
+          .orderBy(desc(projects.updatedAt)),
+      );
+    }
 
-  // Heuristic for effective_role label (UI only, NOT auth):
-  //   - account-manager → 'manager' (legacy owner/admin gets full label)
-  //   - explicit project_members row → that role
-  //   - otherwise → 'user' (engine allowed read but we don't know the
-  //     exact role; safe minimum for UI affordances)
-  const accountManager = isAccountManager(scope.accountRole);
-  return c.json(
-    rows.map((row) => {
-      const projectRole = roleByProject.get(row.projectId) ?? null;
-      const effectiveRole = accountManager
-        ? 'manager'
-        : projectRole ?? 'user';
-      return serializeProject(row, { projectRole, effectiveRole });
-    }),
-  );
+    // Heuristic for effective_role label (UI only, NOT auth):
+    //   - account-manager → 'manager' (legacy owner/admin gets full label)
+    //   - explicit project_members row → that role
+    //   - otherwise → 'user' (engine allowed read but we don't know the
+    //     exact role; safe minimum for UI affordances)
+    const accountManager = isAccountManager(scope.accountRole);
+    return routeJson(
+      rows.map((row) => {
+        const projectRole = roleByProject.get(row.projectId) ?? null;
+        const effectiveRole = accountManager
+          ? 'manager'
+          : projectRole ?? 'user';
+        return serializeProject(row, { projectRole, effectiveRole });
+      }),
+    );
+  }));
 },
 );
 

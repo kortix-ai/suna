@@ -13,6 +13,7 @@ import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam, readBody } from './helpers';
+import { effectHandler } from '../../effect/hono';
 
 iamRouter.openapi(
   createRoute({
@@ -27,7 +28,7 @@ iamRouter.openapi(
       ...errors(401, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
@@ -39,7 +40,7 @@ iamRouter.openapi(
     .limit(1);
   if (!row) return c.json({ error: 'account not found' }, 404);
   return c.json({ enabled: row.mfaRequired });
-  },
+  }),
 );
 
 // Preview: members who have no VERIFIED MFA factor enrolled. These users
@@ -60,7 +61,7 @@ iamRouter.openapi(
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
@@ -128,7 +129,7 @@ iamRouter.openapi(
     losers,
     will_lock_out_account: willLockOutAccount,
   });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -144,7 +145,7 @@ iamRouter.openapi(
       ...errors(401, 403, 404, 409),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   // Gate on account.write — same level as renaming the account or
@@ -224,5 +225,5 @@ iamRouter.openapi(
   });
 
   return c.json({ enabled });
-  },
+  }),
 );

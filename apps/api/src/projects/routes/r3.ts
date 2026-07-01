@@ -15,11 +15,18 @@ import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSecrets, projects, sessionSandboxes } from '@kortix/db';
+import { Effect } from 'effect';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, getProjectGitRemote, hasServerManagedGitAuth, loadGitProject, resolveProjectGitAuth, upsertProjectGitConnection, upsertProjectGitCredential, withProjectGitAuth } from '../lib/git';
 import { CODEX_AUTH_JSON_SECRET_NAME, isSystemProjectSecretName, loadSecretViewsForUser, normalizeString, readBody, serializeProjectGitConnection } from '../lib/serializers';
+import { attemptRoute, failJson, failNotFound, routeJson, runProjectRouteEffect } from './effect-workflows';
+
+const loadProjectRoute = (c: any, projectId: string, access: 'read' | 'manage') =>
+  attemptRoute(() => loadProjectForUser(c, projectId, access)).pipe(
+    Effect.flatMap((loaded) => (loaded ? Effect.succeed(loaded) : failNotFound())),
+  );
 
 projectsApp.openapi(
   createRoute({
@@ -37,24 +44,25 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const templateId = c.req.param('templateId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Capability gate: building a sandbox template provisions infra. Gated on
-  // project.customize.write so a custom role can withhold it (humans) AND the
-  // agent-grant fold applies (agent sessions). Editors hold it by default.
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    const templateId = c.req.param('templateId');
+    const loaded = yield* loadProjectRoute(c, projectId, 'manage');
+    // Capability gate: building a sandbox template provisions infra. Gated on
+    // project.customize.write so a custom role can withhold it (humans) AND the
+    // agent-grant fold applies (agent sessions). Editors hold it by default.
+    yield* attemptRoute(() => assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE));
 
-  const row = await getTemplateById(templateId);
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  if (row.projectId !== null && row.projectId !== projectId) {
-    return c.json({ error: 'Not found' }, 404);
-  }
+    const row = yield* attemptRoute(() => getTemplateById(templateId));
+    if (!row) return yield* failNotFound();
+    if (row.projectId !== null && row.projectId !== projectId) {
+      return yield* failNotFound();
+    }
 
-  const project = await loadGitProject(loaded);
-  kickPreBuild(project, { slug: row.slug, accountId: loaded.row.accountId, source: 'manual' });
-  return c.json({ status: 'started', template_id: row.templateId, slug: row.slug }, 202);
+    const project = yield* attemptRoute(() => loadGitProject(loaded));
+    yield* Effect.sync(() => kickPreBuild(project, { slug: row.slug, accountId: loaded.row.accountId, source: 'manual' }));
+    return routeJson({ status: 'started', template_id: row.templateId, slug: row.slug }, 202);
+  }));
 },
 );
 
@@ -82,22 +90,23 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  const tokens = await listAccountTokens(loaded.row.accountId, projectId);
-  return c.json({
-    items: tokens.map((t) => ({
-      token_id: t.tokenId,
-      name: t.name,
-      public_key: t.publicKey,
-      status: t.status,
-      expires_at: t.expiresAt?.toISOString() ?? null,
-      last_used_at: t.lastUsedAt?.toISOString() ?? null,
-      created_at: t.createdAt.toISOString(),
-      revoked_at: t.revokedAt?.toISOString() ?? null,
-    })),
-  });
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    const loaded = yield* loadProjectRoute(c, projectId, 'read');
+    const tokens = yield* attemptRoute(() => listAccountTokens(loaded.row.accountId, projectId));
+    return routeJson({
+      items: tokens.map((t) => ({
+        token_id: t.tokenId,
+        name: t.name,
+        public_key: t.publicKey,
+        status: t.status,
+        expires_at: t.expiresAt?.toISOString() ?? null,
+        last_used_at: t.lastUsedAt?.toISOString() ?? null,
+        created_at: t.createdAt.toISOString(),
+        revoked_at: t.revokedAt?.toISOString() ?? null,
+      })),
+    });
+  }));
 },
 );
 
@@ -119,54 +128,54 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Authorization is enforced by loadProjectForUser(... 'manage') above,
-  // which routes through the IAM engine (project.write).
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    const loaded = yield* loadProjectRoute(c, projectId, 'manage');
+    // Authorization is enforced by loadProjectForUser(... 'manage') above,
+    // which routes through the IAM engine (project.write).
 
-  // Privilege-escalation guard: an agent-session token is itself a project
-  // account token carrying a (possibly narrow) AgentGrant. If it could mint a
-  // fresh project token, the new token would carry NO grant — letting a scoped
-  // agent issue an unscoped sibling and escape its own ceiling. Token minting
-  // is a human/manage operation; agents are denied outright.
-  if (getAgentGrant(c)) {
-    return c.json({ error: 'Agent-session tokens cannot mint project tokens' }, 403);
-  }
+    // Privilege-escalation guard: an agent-session token is itself a project
+    // account token carrying a (possibly narrow) AgentGrant. If it could mint a
+    // fresh project token, the new token would carry NO grant — letting a scoped
+    // agent issue an unscoped sibling and escape its own ceiling. Token minting
+    // is a human/manage operation; agents are denied outright.
+    if (getAgentGrant(c)) {
+      return yield* failJson({ error: 'Agent-session tokens cannot mint project tokens' }, 403);
+    }
 
-  // One body field: `name`. Defaults to "cli · <project name>".
-  let body: { name?: unknown } = {};
-  try {
-    body = (await c.req.json()) ?? {};
-  } catch {
-    /* empty body is fine */
-  }
-  const name =
-    typeof body.name === 'string' && body.name.trim()
-      ? body.name.trim().slice(0, 255)
-      : `cli · ${loaded.row.name}`;
+    // One body field: `name`. Defaults to "cli · <project name>".
+    const body = yield* attemptRoute(() => c.req.json() as Promise<{ name?: unknown }>).pipe(
+      Effect.catchAll(() => Effect.succeed({} as { name?: unknown })),
+    );
+    const name =
+      typeof body.name === 'string' && body.name.trim()
+        ? body.name.trim().slice(0, 255)
+        : `cli · ${loaded.row.name}`;
 
-  const userId = c.get('userId') as string;
-  const created = await createAccountToken({
-    accountId: loaded.row.accountId,
-    userId,
-    projectId,
-    name,
-  });
+    const userId = c.get('userId') as string;
+    const created = yield* attemptRoute(() =>
+      createAccountToken({
+        accountId: loaded.row.accountId,
+        userId,
+        projectId,
+        name,
+      }),
+    );
 
-  return c.json(
-    {
-      token_id: created.tokenId,
-      name: created.name,
-      public_key: created.publicKey,
-      secret_key: created.secretKey,
-      status: created.status,
-      project_id: created.projectId,
-      expires_at: created.expiresAt?.toISOString() ?? null,
-      created_at: created.createdAt.toISOString(),
-    },
-    201,
-  );
+    return routeJson(
+      {
+        token_id: created.tokenId,
+        name: created.name,
+        public_key: created.publicKey,
+        secret_key: created.secretKey,
+        status: created.status,
+        project_id: created.projectId,
+        expires_at: created.expiresAt?.toISOString() ?? null,
+        created_at: created.createdAt.toISOString(),
+      },
+      201,
+    );
+  }));
 },
 );
 
@@ -187,20 +196,21 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const tokenId = c.req.param('tokenId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Authorization is enforced by loadProjectForUser(... 'manage') above.
-  // Token management is a human/manage operation: an agent-session token must
-  // not revoke project tokens (it could knock out its own siblings / the human
-  // CLI token as a DoS). Symmetric with the mint guard above.
-  if (getAgentGrant(c)) {
-    return c.json({ error: 'Agent-session tokens cannot manage project tokens' }, 403);
-  }
-  const ok = await revokeAccountToken(tokenId, loaded.row.accountId);
-  if (!ok) return c.json({ error: 'token not found or already revoked' }, 404);
-  return c.json({ ok: true });
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    const tokenId = c.req.param('tokenId');
+    const loaded = yield* loadProjectRoute(c, projectId, 'manage');
+    // Authorization is enforced by loadProjectForUser(... 'manage') above.
+    // Token management is a human/manage operation: an agent-session token must
+    // not revoke project tokens (it could knock out its own siblings / the human
+    // CLI token as a DoS). Symmetric with the mint guard above.
+    if (getAgentGrant(c)) {
+      return yield* failJson({ error: 'Agent-session tokens cannot manage project tokens' }, 403);
+    }
+    const ok = yield* attemptRoute(() => revokeAccountToken(tokenId, loaded.row.accountId));
+    if (!ok) return yield* failJson({ error: 'token not found or already revoked' }, 404);
+    return routeJson({ ok: true });
+  }));
 },
 );
 

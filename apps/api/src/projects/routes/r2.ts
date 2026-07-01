@@ -8,11 +8,18 @@ import { createTemplate, deleteTemplate, getTemplateById, updateTemplate } from 
 import { commitFile, createRepo, getFileSha } from '../github';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
+import { Effect } from 'effect';
 import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, SandboxTemplateSchema, SnapshotSchema, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, createGitHubInstallationInstallUrl, getProjectGitConnection, loadGitProject, registerGitHubLinkedProject, registerPatLinkedProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
 import { deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
 import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
+import { attemptRoute, failJson, failNotFound, routeJson, runProjectRouteEffect } from './effect-workflows';
+
+const loadProjectRoute = (c: any, projectId: string, access: 'read' | 'manage') =>
+  attemptRoute(() => loadProjectForUser(c, projectId, access)).pipe(
+    Effect.flatMap((loaded) => (loaded ? Effect.succeed(loaded) : failNotFound())),
+  );
 
 projectsApp.openapi(
   createRoute({
@@ -311,23 +318,25 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    yield* loadProjectRoute(c, projectId, 'read');
 
-  let body: { raw?: unknown } = {};
-  try { body = (await c.req.json()) ?? {}; } catch { /* empty */ }
-  const raw = typeof body.raw === 'string' ? body.raw : null;
-  if (!raw) {
-    return c.json({ error: 'Missing `raw` (TOML string) in body.' }, 400);
-  }
+    const body = yield* attemptRoute(() => c.req.json() as Promise<{ raw?: unknown }>).pipe(
+      Effect.catchAll(() => Effect.succeed({} as { raw?: unknown })),
+    );
+    const raw = typeof body.raw === 'string' ? body.raw : null;
+    if (!raw) {
+      return yield* failJson({ error: 'Missing `raw` (TOML string) in body.' }, 400);
+    }
 
-  const { validateManifest } = await import('@kortix/manifest-schema');
-  const verdict = validateManifest(raw);
-  return c.json({
-    valid: verdict.valid,
-    issues: verdict.issues,
-  });
+    const { validateManifest } = yield* attemptRoute(() => import('@kortix/manifest-schema'));
+    const verdict = validateManifest(raw);
+    return routeJson({
+      valid: verdict.valid,
+      issues: verdict.issues,
+    });
+  }));
 },
 );
 
@@ -355,21 +364,22 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    const loaded = yield* loadProjectRoute(c, projectId, 'read');
 
-  const project = await loadGitProject(loaded);
-  try {
-    const templates = await listSandboxTemplates(project);
-    return c.json({
+    const project = yield* attemptRoute(() => loadGitProject(loaded));
+    const templates = yield* attemptRoute(() => listSandboxTemplates(project)).pipe(
+      Effect.catchAll((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        return failJson({ error: `Failed to list sandbox templates: ${message}` }, 500);
+      }),
+    );
+    return routeJson({
       items: templates.map((t) => serializeTemplate(t)),
       default_slug: templates.find((t) => t.isDefault)?.slug ?? templates[0]?.slug ?? null,
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return c.json({ error: `Failed to list sandbox templates: ${message}` }, 500);
-  }
+  }));
 },
 );
 
@@ -392,27 +402,32 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    const loaded = yield* loadProjectRoute(c, projectId, 'read');
 
-  const project = await loadGitProject(loaded);
-  let templates: Awaited<ReturnType<typeof listSandboxTemplates>> = [];
-  let templatesError: string | null = null;
-  try {
-    templates = await listSandboxTemplates(project);
-  } catch (err) {
-    templatesError = err instanceof Error ? err.message : String(err);
-  }
-  // Heal any build rows orphaned at "building" by a process restart/crash
-  // before reading them, so the dashboard never shows a permanent "Building".
-  await reconcileStaleBuilds({ projectId }).catch(() => {});
-  const builds = await listSnapshotBuilds(projectId, { limit: 25 }).catch(() => []);
-  return c.json({
-    templates: templates.map((t) => serializeTemplate(t)),
-    templates_error: templatesError,
-    builds: builds.map(serializeBuildSummary),
-  });
+    const project = yield* attemptRoute(() => loadGitProject(loaded));
+    let templates: Awaited<ReturnType<typeof listSandboxTemplates>> = [];
+    let templatesError: string | null = null;
+    const templateResult = yield* Effect.either(attemptRoute(() => listSandboxTemplates(project)));
+    if (templateResult._tag === 'Right') {
+      templates = templateResult.right;
+    } else {
+      const err = templateResult.left;
+      templatesError = err instanceof Error ? err.message : String(err);
+    }
+    // Heal any build rows orphaned at "building" by a process restart/crash
+    // before reading them, so the dashboard never shows a permanent "Building".
+    yield* attemptRoute(() => reconcileStaleBuilds({ projectId })).pipe(Effect.catchAll(() => Effect.void));
+    const builds = yield* attemptRoute(() => listSnapshotBuilds(projectId, { limit: 25 })).pipe(
+      Effect.catchAll(() => Effect.succeed([])),
+    );
+    return routeJson({
+      templates: templates.map((t) => serializeTemplate(t)),
+      templates_error: templatesError,
+      builds: builds.map(serializeBuildSummary),
+    });
+  }));
 },
 );
 
@@ -503,24 +518,22 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    const loaded = yield* loadProjectRoute(c, projectId, 'read');
 
-  let payload: SandboxHealthPayload = SANDBOX_HEALTH_DEGRADED;
-  try {
-    payload = await withTimeout(
-      buildSandboxHealth(loaded, projectId),
-      SANDBOX_HEALTH_BUDGET_MS,
-      'sandbox-health',
+    const payload = yield* attemptRoute(() =>
+      withTimeout(
+        buildSandboxHealth(loaded, projectId),
+        SANDBOX_HEALTH_BUDGET_MS,
+        'sandbox-health',
+      ),
+    ).pipe(
+      Effect.catchAll(() => Effect.succeed(SANDBOX_HEALTH_DEGRADED)),
     );
-  } catch {
-    // Any dependency (git-auth / templates / build-log DB) too slow or
-    // failing — degrade to "unknown" rather than hang to the client's 30s
-    // abort. The losing work settles in the background; the next poll retries.
-  }
 
-  return c.json(payload);
+    return routeJson(payload);
+  }));
 },
 );
 

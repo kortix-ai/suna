@@ -1,4 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import { Effect } from 'effect';
 import type { AppEnv } from '../../types';
 import { deductCredits, calculateTokenCost } from '../services/credits';
 import { getVisibleTiers } from '../services/tiers';
@@ -6,6 +7,7 @@ import { getCreditBalance } from '../repositories/credit-accounts';
 import { getTransactionsSummary } from '../repositories/transactions';
 import type { TokenUsageRequest } from '../../types';
 import { makeOpenApiApp, json, auth } from '../../openapi';
+import { attemptBilling, attemptBillingSync, parseJsonBody, runBillingEffect } from './effect-workflows';
 
 export const creditsRouter = makeOpenApiApp<AppEnv>();
 
@@ -41,28 +43,34 @@ creditsRouter.openapi(
     },
   }),
   async (c) => {
-    const accountId = c.get('userId');
-    // Manual parse: the existing contract accepts the raw TokenUsageRequest and
-    // never rejects on missing/zero fields (cost<=0 short-circuits to success).
-    const body = await c.req.json<TokenUsageRequest>();
+    const response = await runBillingEffect(Effect.gen(function* () {
+      const accountId = c.get('userId');
+      // Manual parse: the existing contract accepts the raw TokenUsageRequest and
+      // never rejects on missing/zero fields (cost<=0 short-circuits to success).
+      const body = yield* parseJsonBody<TokenUsageRequest>(c);
 
-    const cost = calculateTokenCost(body.prompt_tokens, body.completion_tokens, body.model);
-    if (cost <= 0) {
-      return c.json({ success: true, cost: 0, new_balance: 0 });
-    }
+      const cost = calculateTokenCost(body.prompt_tokens, body.completion_tokens, body.model);
+      if (cost <= 0) {
+        return { success: true, cost: 0, new_balance: 0 };
+      }
 
-    const result = await deductCredits(
-      accountId,
-      cost,
-      `LLM: ${body.model} (${body.prompt_tokens}/${body.completion_tokens} tokens)`,
-    );
+      const result = yield* attemptBilling(() =>
+        deductCredits(
+          accountId,
+          cost,
+          `LLM: ${body.model} (${body.prompt_tokens}/${body.completion_tokens} tokens)`,
+        ),
+      );
 
-    return c.json({
-      success: result.success,
-      cost: result.cost,
-      new_balance: result.newBalance,
-      transaction_id: result.transactionId,
-    });
+      return {
+        success: result.success,
+        cost: result.cost,
+        new_balance: result.newBalance,
+        transaction_id: result.transactionId,
+      };
+    }));
+
+    return c.json(response);
   },
 );
 
@@ -87,26 +95,32 @@ creditsRouter.openapi(
     },
   }),
   async (c) => {
-    const accountId = c.get('userId');
-    // Manual parse: contract accepts missing/zero amount (short-circuits to success).
-    const body = await c.req.json<{ amount: number; description?: string }>();
+    const response = await runBillingEffect(Effect.gen(function* () {
+      const accountId = c.get('userId');
+      // Manual parse: contract accepts missing/zero amount (short-circuits to success).
+      const body = yield* parseJsonBody<{ amount: number; description?: string }>(c);
 
-    if (!body.amount || body.amount <= 0) {
-      return c.json({ success: true, cost: 0, new_balance: 0 });
-    }
+      if (!body.amount || body.amount <= 0) {
+        return { success: true, cost: 0, new_balance: 0 };
+      }
 
-    const result = await deductCredits(
-      accountId,
-      body.amount,
-      body.description || `Agent run usage: $${body.amount.toFixed(4)}`,
-    );
+      const result = yield* attemptBilling(() =>
+        deductCredits(
+          accountId,
+          body.amount,
+          body.description || `Agent run usage: $${body.amount.toFixed(4)}`,
+        ),
+      );
 
-    return c.json({
-      success: result.success,
-      cost: result.cost,
-      new_balance: result.newBalance,
-      transaction_id: result.transactionId,
-    });
+      return {
+        success: result.success,
+        cost: result.cost,
+        new_balance: result.newBalance,
+        transaction_id: result.transactionId,
+      };
+    }));
+
+    return c.json(response);
   },
 );
 
@@ -136,14 +150,16 @@ creditsRouter.openapi(
     },
   }),
   async (c) => {
-    const tiers = getVisibleTiers().map((t) => ({
-      name: t.name,
-      display_name: t.displayName,
-      monthly_price: t.monthlyPrice,
-      yearly_price: t.yearlyPrice,
-      monthly_credits: t.monthlyCredits,
-      can_purchase_credits: t.canPurchaseCredits,
-    }));
+    const tiers = await runBillingEffect(attemptBillingSync(() =>
+      getVisibleTiers().map((t) => ({
+        name: t.name,
+        display_name: t.displayName,
+        monthly_price: t.monthlyPrice,
+        yearly_price: t.yearlyPrice,
+        monthly_credits: t.monthlyCredits,
+        can_purchase_credits: t.canPurchaseCredits,
+      })),
+    ));
 
     return c.json({ tiers });
   },
@@ -169,19 +185,23 @@ creditsRouter.openapi(
     },
   }),
   async (c) => {
-    const accountId = c.get('userId');
-    const balance = await getCreditBalance(accountId);
+    const response = await runBillingEffect(Effect.gen(function* () {
+      const accountId = c.get('userId');
+      const balance = yield* attemptBilling(() => getCreditBalance(accountId));
 
-    if (!balance) {
-      return c.json({ total: 0, expiring: 0, non_expiring: 0, daily: 0 });
-    }
+      if (!balance) {
+        return { total: 0, expiring: 0, non_expiring: 0, daily: 0 };
+      }
 
-    return c.json({
-      total: Number(balance.balance),
-      expiring: Number(balance.expiringCredits),
-      non_expiring: Number(balance.nonExpiringCredits),
-      daily: Number(balance.dailyCreditsBalance),
-    });
+      return {
+        total: Number(balance.balance),
+        expiring: Number(balance.expiringCredits),
+        non_expiring: Number(balance.nonExpiringCredits),
+        daily: Number(balance.dailyCreditsBalance),
+      };
+    }));
+
+    return c.json(response);
   },
 );
 
@@ -198,9 +218,12 @@ creditsRouter.openapi(
     },
   }),
   async (c) => {
-    const accountId = c.get('userId');
-    const days = Number(c.req.query('days') ?? 30);
-    const summary = await getTransactionsSummary(accountId, days);
+    const summary = await runBillingEffect(Effect.gen(function* () {
+      const accountId = c.get('userId');
+      const days = Number(c.req.query('days') ?? 30);
+      return yield* attemptBilling(() => getTransactionsSummary(accountId, days));
+    }));
+
     return c.json(summary);
   },
 );

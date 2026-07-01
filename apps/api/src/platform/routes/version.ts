@@ -1,7 +1,9 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import { Effect, Schema } from 'effect';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json } from '../../openapi';
 import { config } from '../../config';
+import { runHttpEffect } from '../../effect/http';
 
 /**
  * Sandbox version and changelog endpoints.
@@ -52,6 +54,24 @@ interface GHRelease {
   prerelease: boolean;
 }
 
+const DockerHubTagSchema = Schema.Struct({
+  name: Schema.String,
+  last_updated: Schema.String,
+});
+
+const DockerHubTagsResponseSchema = Schema.Struct({
+  results: Schema.Array(DockerHubTagSchema),
+});
+
+const GHReleaseSchema = Schema.Struct({
+  tag_name: Schema.String,
+  name: Schema.String,
+  published_at: Schema.String,
+  body: Schema.String,
+  draft: Schema.Boolean,
+  prerelease: Schema.Boolean,
+});
+
 interface CacheEntry<T> {
   data: T;
   cachedAt: number;
@@ -88,127 +108,155 @@ function githubHeaders(): Record<string, string> {
   return headers;
 }
 
-async function githubFetch<T>(path: string): Promise<T> {
-  const res = await fetch(`${GITHUB_API_BASE}${path}`, {
-    headers: githubHeaders(),
-    signal: AbortSignal.timeout(8_000),
+const fetchJsonEffect = (url: string, init: RequestInit, label: string) =>
+  Effect.gen(function* () {
+    const res = yield* Effect.tryPromise({
+      try: () => fetch(url, init),
+      catch: (cause) => new Error(`${label} request failed: ${String(cause)}`),
+    });
+    if (!res.ok) {
+      return yield* Effect.fail(new Error(`${label} failed: ${res.status}`));
+    }
+    return yield* Effect.tryPromise({
+      try: () => res.json(),
+      catch: (cause) => new Error(`${label} returned invalid JSON: ${String(cause)}`),
+    });
   });
-  if (!res.ok) throw new Error(`GitHub API ${path} failed: ${res.status}`);
-  return res.json() as Promise<T>;
-}
 
-async function fetchStableReleases(limit = 20): Promise<GHRelease[]> {
-  try {
-    const releases = await githubFetch<GHRelease[]>(`/repos/${GITHUB_REPO}/releases?per_page=${limit}`);
-    return releases.filter((release) => !release.draft);
-  } catch (err) {
-    console.warn('[version] Failed to fetch GitHub releases:', err);
-    return [];
-  }
-}
-
-async function fetchDockerHubDevTags(limit = 20): Promise<DockerHubTag[]> {
-  try {
-    const res = await fetch(`${DOCKERHUB_TAGS_URL}/?page_size=100&ordering=last_updated`, {
+function fetchStableReleasesEffect(limit = 20): Effect.Effect<GHRelease[]> {
+  const path = `/repos/${GITHUB_REPO}/releases?per_page=${limit}`;
+  return fetchJsonEffect(
+    `${GITHUB_API_BASE}${path}`,
+    {
+      headers: githubHeaders(),
       signal: AbortSignal.timeout(8_000),
-    });
-    if (!res.ok) throw new Error(`Docker Hub API returned ${res.status}`);
-    const data = await res.json() as { results: DockerHubTag[] };
-    return (data.results || [])
-      .filter((tag) => {
-        if (!tag.name.startsWith('dev-')) return false;
-        if (tag.name === 'dev-latest') return false;
-        if (tag.name.endsWith('-amd64') || tag.name.endsWith('-arm64')) return false;
-        return true;
-      })
-      .slice(0, limit);
-  } catch (err) {
-    console.warn('[version] Failed to fetch Docker Hub dev tags:', err);
-    return [];
-  }
+    },
+    `GitHub API ${path}`,
+  ).pipe(
+    Effect.flatMap(Schema.decodeUnknown(Schema.Array(GHReleaseSchema))),
+    Effect.map((releases) => releases.filter((release) => !release.draft)),
+    Effect.catchAll((err) =>
+      Effect.sync(() => {
+        console.warn('[version] Failed to fetch GitHub releases:', err);
+        return [];
+      }),
+    ),
+  );
 }
 
-async function getLatestStable(): Promise<LatestVersionResult> {
-  if (isCacheValid(cache.latestStable)) return cache.latestStable.data;
-
-  const releases = await fetchStableReleases(1);
-  if (releases.length > 0) {
-    const release = releases[0];
-    const version = release.tag_name.replace(/^v/, '');
-    const result: LatestVersionResult = {
-      version,
-      channel: 'stable',
-      date: release.published_at?.split('T')[0],
-      title: release.name || `v${version}`,
-    };
-    cache.latestStable = { data: result, cachedAt: Date.now() };
-    return result;
-  }
-
-  return { version: 'unknown', channel: 'stable', title: 'No stable release available' };
+function fetchDockerHubDevTagsEffect(limit = 20): Effect.Effect<DockerHubTag[]> {
+  return fetchJsonEffect(
+    `${DOCKERHUB_TAGS_URL}/?page_size=100&ordering=last_updated`,
+    { signal: AbortSignal.timeout(8_000) },
+    'Docker Hub API',
+  ).pipe(
+    Effect.flatMap(Schema.decodeUnknown(DockerHubTagsResponseSchema)),
+    Effect.map((data) =>
+      (data.results || [])
+        .filter((tag) => {
+          if (!tag.name.startsWith('dev-')) return false;
+          if (tag.name === 'dev-latest') return false;
+          if (tag.name.endsWith('-amd64') || tag.name.endsWith('-arm64')) return false;
+          return true;
+        })
+        .slice(0, limit),
+    ),
+    Effect.catchAll((err) =>
+      Effect.sync(() => {
+        console.warn('[version] Failed to fetch Docker Hub dev tags:', err);
+        return [];
+      }),
+    ),
+  );
 }
 
-async function getLatestDev(): Promise<LatestVersionResult> {
-  if (isCacheValid(cache.latestDev)) return cache.latestDev.data;
+function getLatestStableEffect(): Effect.Effect<LatestVersionResult> {
+  if (isCacheValid(cache.latestStable)) return Effect.succeed(cache.latestStable.data);
 
-  const tags = await fetchDockerHubDevTags(1);
-  if (tags.length > 0) {
-    const tag = tags[0];
-    const sha8 = tag.name.replace('dev-', '');
-    const result: LatestVersionResult = {
-      version: tag.name,
+  return Effect.gen(function* () {
+    const releases = yield* fetchStableReleasesEffect(1);
+    if (releases.length > 0) {
+      const release = releases[0];
+      const version = release.tag_name.replace(/^v/, '');
+      const result: LatestVersionResult = {
+        version,
+        channel: 'stable',
+        date: release.published_at?.split('T')[0],
+        title: release.name || `v${version}`,
+      };
+      cache.latestStable = { data: result, cachedAt: Date.now() };
+      return result;
+    }
+
+    return { version: 'unknown', channel: 'stable', title: 'No stable release available' };
+  });
+}
+
+function getLatestDevEffect(): Effect.Effect<LatestVersionResult> {
+  if (isCacheValid(cache.latestDev)) return Effect.succeed(cache.latestDev.data);
+
+  return Effect.gen(function* () {
+    const tags = yield* fetchDockerHubDevTagsEffect(1);
+    if (tags.length > 0) {
+      const tag = tags[0];
+      const sha8 = tag.name.replace('dev-', '');
+      const result: LatestVersionResult = {
+        version: tag.name,
+        channel: 'dev',
+        date: tag.last_updated?.split('T')[0],
+        title: `Dev build ${sha8}`,
+        sha: sha8,
+      };
+      cache.latestDev = { data: result, cachedAt: Date.now() };
+      return result;
+    }
+
+    const running = getRunningVersion();
+    return {
+      version: running.startsWith('dev-') ? running : 'dev-unknown',
       channel: 'dev',
-      date: tag.last_updated?.split('T')[0],
-      title: `Dev build ${sha8}`,
-      sha: sha8,
+      title: 'No dev build available',
     };
-    cache.latestDev = { data: result, cachedAt: Date.now() };
-    return result;
-  }
-
-  const running = getRunningVersion();
-  return {
-    version: running.startsWith('dev-') ? running : 'dev-unknown',
-    channel: 'dev',
-    title: 'No dev build available',
-  };
+  });
 }
 
-async function getAllVersions(): Promise<VersionEntry[]> {
-  if (isCacheValid(cache.allVersions)) return cache.allVersions.data;
+function getAllVersionsEffect(): Effect.Effect<VersionEntry[]> {
+  if (isCacheValid(cache.allVersions)) return Effect.succeed(cache.allVersions.data);
 
-  const runningVersion = getRunningVersion();
-  const versions: VersionEntry[] = [];
+  return Effect.gen(function* () {
+    const runningVersion = getRunningVersion();
+    const versions: VersionEntry[] = [];
 
-  const releases = await fetchStableReleases(20);
-  for (const release of releases) {
-    const version = release.tag_name.replace(/^v/, '');
-    versions.push({
-      version,
-      channel: release.prerelease ? 'dev' : 'stable',
-      date: release.published_at?.split('T')[0] ?? '',
-      title: release.name || `v${version}`,
-      body: release.body || undefined,
-      current: version === runningVersion,
-    });
-  }
+    const releases = yield* fetchStableReleasesEffect(20);
+    for (const release of releases) {
+      const version = release.tag_name.replace(/^v/, '');
+      versions.push({
+        version,
+        channel: release.prerelease ? 'dev' : 'stable',
+        date: release.published_at?.split('T')[0] ?? '',
+        title: release.name || `v${version}`,
+        body: release.body || undefined,
+        current: version === runningVersion,
+      });
+    }
 
-  const devTags = await fetchDockerHubDevTags(20);
-  for (const tag of devTags) {
-    const sha8 = tag.name.replace('dev-', '');
-    versions.push({
-      version: tag.name,
-      channel: 'dev',
-      date: tag.last_updated?.split('T')[0] ?? '',
-      title: `Dev build ${sha8}`,
-      sha: sha8,
-      current: tag.name === runningVersion,
-    });
-  }
+    const devTags = yield* fetchDockerHubDevTagsEffect(20);
+    for (const tag of devTags) {
+      const sha8 = tag.name.replace('dev-', '');
+      versions.push({
+        version: tag.name,
+        channel: 'dev',
+        date: tag.last_updated?.split('T')[0] ?? '',
+        title: `Dev build ${sha8}`,
+        sha: sha8,
+        current: tag.name === runningVersion,
+      });
+    }
 
-  versions.sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
-  cache.allVersions = { data: versions, cachedAt: Date.now() };
-  return versions;
+    versions.sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
+    cache.allVersions = { data: versions, cachedAt: Date.now() };
+    return versions;
+  });
 }
 
 const ChannelSchema = z.enum(['stable', 'dev']);
@@ -295,7 +343,9 @@ versionRouter.openapi(
   }),
   async (c) => {
     const channel = (c.req.query('channel') || 'stable') as VersionChannel;
-    const latest = channel === 'dev' ? await getLatestDev() : await getLatestStable();
+    const latest = await runHttpEffect(
+      channel === 'dev' ? getLatestDevEffect() : getLatestStableEffect(),
+    );
     return c.json(latest);
   },
 );
@@ -311,7 +361,7 @@ versionRouter.openapi(
     },
   }),
   async (c) => {
-    const versions = await getAllVersions();
+    const versions = await runHttpEffect(getAllVersionsEffect());
     return c.json({
       versions,
       current: {
@@ -336,43 +386,48 @@ versionRouter.openapi(
     },
   }),
   async (c) => {
-  const channel = c.req.query('channel') || 'all';
-  const entries: Array<Record<string, unknown>> = [];
+    const channel = c.req.query('channel') || 'all';
+    const changelog = await runHttpEffect(
+      Effect.gen(function* () {
+        const entries: Array<Record<string, unknown>> = [];
 
-  if (channel === 'stable' || channel === 'all') {
-    const releases = await fetchStableReleases(20);
-    for (const release of releases) {
-      if (release.prerelease) continue;
-      const version = release.tag_name.replace(/^v/, '');
-      entries.push({
-        version,
-        channel: 'stable',
-        date: release.published_at?.split('T')[0] ?? '',
-        title: release.name || `v${version}`,
-        description: release.body || '',
-        changes: [],
-      });
-    }
-  }
+        if (channel === 'stable' || channel === 'all') {
+          const releases = yield* fetchStableReleasesEffect(20);
+          for (const release of releases) {
+            if (release.prerelease) continue;
+            const version = release.tag_name.replace(/^v/, '');
+            entries.push({
+              version,
+              channel: 'stable',
+              date: release.published_at?.split('T')[0] ?? '',
+              title: release.name || `v${version}`,
+              description: release.body || '',
+              changes: [],
+            });
+          }
+        }
 
-  if (channel === 'dev' || channel === 'all') {
-    const devTags = await fetchDockerHubDevTags(20);
-    for (const tag of devTags) {
-      const sha8 = tag.name.replace('dev-', '');
-      entries.push({
-        version: tag.name,
-        channel: 'dev',
-        date: tag.last_updated?.split('T')[0] ?? '',
-        title: `Dev build ${sha8}`,
-        description: '',
-        changes: [],
-        sha: sha8,
-      });
-    }
-  }
+        if (channel === 'dev' || channel === 'all') {
+          const devTags = yield* fetchDockerHubDevTagsEffect(20);
+          for (const tag of devTags) {
+            const sha8 = tag.name.replace('dev-', '');
+            entries.push({
+              version: tag.name,
+              channel: 'dev',
+              date: tag.last_updated?.split('T')[0] ?? '',
+              title: `Dev build ${sha8}`,
+              description: '',
+              changes: [],
+              sha: sha8,
+            });
+          }
+        }
 
-  entries.sort((a, b) => String(b.date ?? '').localeCompare(String(a.date ?? '')));
-  return c.json({ changelog: entries });
+        entries.sort((a, b) => String(b.date ?? '').localeCompare(String(a.date ?? '')));
+        return entries;
+      }),
+    );
+    return c.json({ changelog });
   },
 );
 

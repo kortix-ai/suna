@@ -13,6 +13,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { roleAllows, parseProjectRole } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
+import { Effect } from 'effect';
 import { accountGroupMembers, accountGroups, accountMembers, projectGroupGrants, projectSecrets, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid } from '../lib/access';
@@ -22,6 +23,12 @@ import { sendSessionCreateError } from '../lib/sessions';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
 import { createSession, deleteSession } from '../session-lifecycle';
+import { attemptRoute, failJson, failNotFound, routeJson, runProjectRouteEffect } from './effect-workflows';
+
+const loadProjectRoute = (c: any, projectId: string, access: 'read' | 'manage') =>
+  attemptRoute(() => loadProjectForUser(c, projectId, access)).pipe(
+    Effect.flatMap((loaded) => (loaded ? Effect.succeed(loaded) : failNotFound())),
+  );
 
 function parseBoundedPositiveInt(
   raw: string | undefined,
@@ -54,28 +61,30 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    const loaded = yield* loadProjectRoute(c, projectId, 'read');
 
-  const rows = await db
-    .select({
-      groupId: projectGroupGrants.groupId,
-      role: projectGroupGrants.role,
-      grantedBy: projectGroupGrants.grantedBy,
-      createdAt: projectGroupGrants.createdAt,
-      expiresAt: projectGroupGrants.expiresAt,
-      groupName: accountGroups.name,
-    })
-    .from(projectGroupGrants)
-    .innerJoin(accountGroups, eq(accountGroups.groupId, projectGroupGrants.groupId))
-    .where(eq(projectGroupGrants.projectId, projectId))
-    // Deterministic order — without ORDER BY, Postgres can return rows
-    // in heap-scan order, which shifts when the row is UPDATEd (e.g., a
-    // role change). The UI list would then visibly reshuffle after a
-    // role flip. Oldest attachments first matches the "Attached <date>"
-    // subtitle most users scan along.
-    .orderBy(asc(projectGroupGrants.createdAt), asc(projectGroupGrants.groupId));
+    const rows = yield* attemptRoute(() =>
+      db
+        .select({
+          groupId: projectGroupGrants.groupId,
+          role: projectGroupGrants.role,
+          grantedBy: projectGroupGrants.grantedBy,
+          createdAt: projectGroupGrants.createdAt,
+          expiresAt: projectGroupGrants.expiresAt,
+          groupName: accountGroups.name,
+        })
+        .from(projectGroupGrants)
+        .innerJoin(accountGroups, eq(accountGroups.groupId, projectGroupGrants.groupId))
+        .where(eq(projectGroupGrants.projectId, projectId))
+        // Deterministic order — without ORDER BY, Postgres can return rows
+        // in heap-scan order, which shifts when the row is UPDATEd (e.g., a
+        // role change). The UI list would then visibly reshuffle after a
+        // role flip. Oldest attachments first matches the "Attached <date>"
+        // subtitle most users scan along.
+        .orderBy(asc(projectGroupGrants.createdAt), asc(projectGroupGrants.groupId)),
+    );
 
   // Per-group member breakdown so the UI can flag attachments where the
   // grant role won't apply uniformly. When a group includes account
@@ -87,21 +96,23 @@ projectsApp.openapi(
   type GroupStats = { total: number; overrideCount: number };
   const statsByGroup = new Map<string, GroupStats>();
   if (groupIds.length > 0) {
-    const memberRows = await db
-      .select({
-        groupId: accountGroupMembers.groupId,
-        accountRole: accountMembers.accountRole,
-        isSuperAdmin: accountMembers.isSuperAdmin,
-      })
-      .from(accountGroupMembers)
-      .innerJoin(
-        accountMembers,
-        and(
-          eq(accountMembers.userId, accountGroupMembers.userId),
-          eq(accountMembers.accountId, loaded.row.accountId),
-        ),
-      )
-      .where(inArray(accountGroupMembers.groupId, groupIds));
+    const memberRows = yield* attemptRoute(() =>
+      db
+        .select({
+          groupId: accountGroupMembers.groupId,
+          accountRole: accountMembers.accountRole,
+          isSuperAdmin: accountMembers.isSuperAdmin,
+        })
+        .from(accountGroupMembers)
+        .innerJoin(
+          accountMembers,
+          and(
+            eq(accountMembers.userId, accountGroupMembers.userId),
+            eq(accountMembers.accountId, loaded.row.accountId),
+          ),
+        )
+        .where(inArray(accountGroupMembers.groupId, groupIds)),
+    );
     for (const m of memberRows) {
       const stats = statsByGroup.get(m.groupId) ?? { total: 0, overrideCount: 0 };
       stats.total += 1;
@@ -116,7 +127,7 @@ projectsApp.openapi(
     }
   }
 
-  return c.json({
+    return routeJson({
     grants: rows.map((r) => {
       const stats = statsByGroup.get(r.groupId) ?? { total: 0, overrideCount: 0 };
       return {
@@ -133,7 +144,8 @@ projectsApp.openapi(
         override_count: stats.overrideCount,
       };
     }),
-  });
+    });
+  }));
 },
 );
 
@@ -158,61 +170,69 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // assertProjectCapability (not bare assertAuthorized) so the acting token is
-  // threaded and the agent-grant fold fires: an agent-session token must also
-  // hold project.members.manage to mutate group grants, not just its user.
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    const loaded = yield* loadProjectRoute(c, projectId, 'manage');
+    // assertProjectCapability (not bare assertAuthorized) so the acting token is
+    // threaded and the agent-grant fold fires: an agent-session token must also
+    // hold project.members.manage to mutate group grants, not just its user.
+    yield* attemptRoute(() => assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE));
 
-  const body = await readBody(c);
-  const groupId = normalizeString(body.group_id ?? body.groupId);
-  // parseProjectRole folds the legacy `viewer` alias into `user`, so a grant
-  // is never persisted with the retired role.
-  const role = parseProjectRole(body.role);
-  if (!groupId) return c.json({ error: 'group_id is required' }, 400);
-  if (!role) {
-    return c.json({ error: 'role must be manager, editor, or user' }, 400);
-  }
-  const expires = parseExpiresAtBody(body.expires_at);
-  if (!expires.ok) return c.json({ error: expires.error }, 400);
+    const body = yield* attemptRoute(() => readBody(c));
+    const groupId = normalizeString(body.group_id ?? body.groupId);
+    // parseProjectRole folds the legacy `viewer` alias into `user`, so a grant
+    // is never persisted with the retired role.
+    const role = parseProjectRole(body.role);
+    if (!groupId) return yield* failJson({ error: 'group_id is required' }, 400);
+    if (!role) {
+      return yield* failJson({ error: 'role must be manager, editor, or user' }, 400);
+    }
+    const expires = parseExpiresAtBody(body.expires_at);
+    if (!expires.ok) {
+      const error = expires.error;
+      return yield* failJson({ error }, 400);
+    }
 
   // Confirm the group exists and belongs to this account — prevents
   // attaching a foreign-account group via a guessed UUID.
-  const [group] = await db
-    .select({ groupId: accountGroups.groupId })
-    .from(accountGroups)
-    .where(
-      and(eq(accountGroups.groupId, groupId), eq(accountGroups.accountId, loaded.row.accountId)),
-    )
-    .limit(1);
-  if (!group) return c.json({ error: 'group not found in this account' }, 404);
+    const [group] = yield* attemptRoute(() =>
+      db
+        .select({ groupId: accountGroups.groupId })
+        .from(accountGroups)
+        .where(
+          and(eq(accountGroups.groupId, groupId), eq(accountGroups.accountId, loaded.row.accountId)),
+        )
+        .limit(1),
+    );
+    if (!group) return yield* failJson({ error: 'group not found in this account' }, 404);
 
-  const now = new Date();
-  await db
-    .insert(projectGroupGrants)
-    .values({
-      projectId,
-      groupId,
-      accountId: loaded.row.accountId,
-      role,
-      grantedBy: loaded.userId,
-      expiresAt: expires.value ?? null,
-    })
-    .onConflictDoUpdate({
-      target: [projectGroupGrants.projectId, projectGroupGrants.groupId],
-      set: {
-        role,
-        grantedBy: loaded.userId,
-        updatedAt: now,
-        // Only overwrite when caller explicitly set the field.
-        ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
-      },
-    });
-  await invalidateIamCacheForGroup(groupId);
+    const now = new Date();
+    yield* attemptRoute(() =>
+      db
+        .insert(projectGroupGrants)
+        .values({
+          projectId,
+          groupId,
+          accountId: loaded.row.accountId,
+          role,
+          grantedBy: loaded.userId,
+          expiresAt: expires.value ?? null,
+        })
+        .onConflictDoUpdate({
+          target: [projectGroupGrants.projectId, projectGroupGrants.groupId],
+          set: {
+            role,
+            grantedBy: loaded.userId,
+            updatedAt: now,
+            // Only overwrite when caller explicitly set the field.
+            ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
+          },
+        }),
+    );
+    yield* attemptRoute(() => invalidateIamCacheForGroup(groupId));
 
-  return c.json({ project_id: projectId, group_id: groupId, role }, 201);
+    return routeJson({ project_id: projectId, group_id: groupId, role }, 201);
+  }));
 },
 );
 

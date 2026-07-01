@@ -15,6 +15,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { compareInstalled, parseLockContent, serializeLock } from '@kortix/registry';
+import { Effect } from 'effect';
 import { auth, errors, json } from '../../openapi';
 import { getCatalogItemDetail, resolveOpencodeDir } from '../../marketplace/catalog';
 import { buildInstall, buildInstallBatch, catalogIdForName, resolveItemFiles } from '../../marketplace/install-service';
@@ -24,6 +25,14 @@ import { loadProjectForUser, assertCommitCapabilities } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
 import { readBody } from '../lib/serializers';
+import { attemptRoute, failJson, failNotFound, routeJson, runProjectRouteEffect } from './effect-workflows';
+
+type LoadedProject = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
+
+const loadMarketplaceProject = (c: any, projectId: string, access: 'read' | 'write') =>
+  attemptRoute(() => loadProjectForUser(c, projectId, access)).pipe(
+    Effect.flatMap((loaded) => (loaded ? Effect.succeed(loaded) : failNotFound())),
+  );
 
 async function repoFileOrNull(project: Parameters<typeof readRepoFile>[0], path: string): Promise<string | null> {
   try {
@@ -33,6 +42,9 @@ async function repoFileOrNull(project: Parameters<typeof readRepoFile>[0], path:
   }
 }
 
+// Deliberate exception: install/update write paths keep the existing linear
+// promise flow around build planning, per-file capability gates, and the git
+// commit so those side effects remain easy to audit.
 async function handleMarketplaceInstall(c: any) {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
@@ -89,39 +101,43 @@ async function handleMarketplaceInstall(c: any) {
 }
 
 async function handleMarketplaceInstalled(c: any) {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    const loaded = yield* loadMarketplaceProject(c, projectId, 'read');
 
-  const project = await loadGitProject(loaded);
-  const lockRaw = await repoFileOrNull(project, 'registry-lock.json');
-  const legacyRaw = await repoFileOrNull(project, 'skills-lock.json');
-  const lock = parseLockContent(lockRaw, legacyRaw);
+    const project = yield* attemptRoute(() => loadGitProject(loaded));
+    const [lockRaw, legacyRaw] = yield* attemptRoute(() => Promise.all([
+      repoFileOrNull(project, 'registry-lock.json'),
+      repoFileOrNull(project, 'skills-lock.json'),
+    ]));
+    const lock = parseLockContent(lockRaw, legacyRaw);
 
-  return c.json({
-    installed: Object.entries(lock.items).map(([name, e]) => ({
-      name,
-      type: e.type,
-      source: e.source,
-      installed_at: e.installedAt ?? null,
-      file_count: e.files.length,
-    })),
-  });
+    return routeJson({
+      installed: Object.entries(lock.items).map(([name, e]) => ({
+        name,
+        type: e.type,
+        source: e.source,
+        installed_at: e.installedAt ?? null,
+        file_count: e.files.length,
+      })),
+    });
+  }));
 }
 
 async function handleMarketplaceUpdates(c: any) {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    const loaded = yield* loadMarketplaceProject(c, projectId, 'read');
 
-  const updates = await resolveMarketplaceUpdates(loaded);
-  return c.json({
-    updates,
-    update_available: updates.filter((u) => u.status === 'update-available').map((u) => u.name),
-  });
+    const updates = yield* attemptRoute(() => resolveMarketplaceUpdates(loaded));
+    return routeJson({
+      updates,
+      update_available: updates.filter((u) => u.status === 'update-available').map((u) => u.name),
+    });
+  }));
 }
 
-async function resolveMarketplaceUpdates(loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>) {
+async function resolveMarketplaceUpdates(loaded: LoadedProject) {
   const project = await loadGitProject(loaded);
   const manifestRaw = await repoFileOrNull(project, 'kortix.toml');
   const configDir = resolveOpencodeDir(manifestRaw);
@@ -246,39 +262,43 @@ async function handleMarketplaceUpdateAll(c: any) {
 }
 
 async function handleMarketplaceRemove(c: any) {
-  const projectId = c.req.param('projectId');
-  const name = c.req.param('name');
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    const name = c.req.param('name');
+    const loaded = yield* loadMarketplaceProject(c, projectId, 'write');
 
-  const project = await loadGitProject(loaded);
-  const lock = parseLockContent(
-    await repoFileOrNull(project, 'registry-lock.json'),
-    await repoFileOrNull(project, 'skills-lock.json'),
-  );
-  const entry = lock.items[name];
-  if (!entry) return c.json({ error: `"${name}" is not installed` }, 404);
+    const project = yield* attemptRoute(() => loadGitProject(loaded));
+    const [lockRaw, legacyRaw] = yield* attemptRoute(() => Promise.all([
+      repoFileOrNull(project, 'registry-lock.json'),
+      repoFileOrNull(project, 'skills-lock.json'),
+    ]));
+    const lock = parseLockContent(lockRaw, legacyRaw);
+    const entry = lock.items[name];
+    if (!entry) return yield* failJson({ error: `"${name}" is not installed` }, 404);
 
-  const deletes = entry.files.map((f) => f.target);
-  // Per-capability gate on the resource type being removed (an agent removal
-  // needs project.agent.write, a skill project.skill.write, …).
-  await assertCommitCapabilities(c, loaded.userId, loaded.row.accountId, projectId, deletes);
-  delete lock.items[name];
+    const deletes = entry.files.map((f) => f.target);
+    // Per-capability gate on the resource type being removed (an agent removal
+    // needs project.agent.write, a skill project.skill.write, …).
+    yield* attemptRoute(() => assertCommitCapabilities(c, loaded.userId, loaded.row.accountId, projectId, deletes));
+    delete lock.items[name];
 
-  const commit = await commitMultipleFilesToBranch(project, {
-    files: [{ path: 'registry-lock.json', content: serializeLock(lock) }],
-    deletes,
-    message: `chore(marketplace): remove ${name}`,
-    branch: project.defaultBranch,
-  });
+    const commit = yield* attemptRoute(() =>
+      commitMultipleFilesToBranch(project, {
+        files: [{ path: 'registry-lock.json', content: serializeLock(lock) }],
+        deletes,
+        message: `chore(marketplace): remove ${name}`,
+        branch: project.defaultBranch,
+      }),
+    );
 
-  return c.json({
-    ok: true,
-    removed: name,
-    commit_sha: commit.commitSha,
-    branch: commit.branch,
-    file_count: deletes.length,
-  });
+    return routeJson({
+      ok: true,
+      removed: name,
+      commit_sha: commit.commitSha,
+      branch: commit.branch,
+      file_count: deletes.length,
+    });
+  }));
 }
 
 projectsApp.openapi(

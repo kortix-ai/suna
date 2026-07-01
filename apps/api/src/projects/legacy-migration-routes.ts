@@ -16,6 +16,7 @@ import { resolveScopedAccountId } from '../shared/resolve-account';
 import type { AppEnv } from '../types';
 import { PHASE_ORDER, startMigration } from './legacy-migration-runner';
 import { shouldListLegacyMigrationItem } from './legacy-migration-visibility';
+import { effectHandler } from '../effect/hono';
 
 // Legacy sandboxes worth offering a migration for. 'archived' is the post-
 // migration end state and is intentionally excluded from the projects grid:
@@ -85,7 +86,7 @@ export function registerLegacyMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
         ...errors(401),
       },
     }),
-    async (c: any) => {
+    effectHandler(async (c: any) => {
       // Scope to the account the UI currently has selected (?account_id=), not the
       // user's primary membership — otherwise the same legacy machines (and their
       // "Migrated → Open" cards) would surface on every account's projects grid.
@@ -136,7 +137,7 @@ export function registerLegacyMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
       // Eligible = at least one machine the user can actually migrate right now.
       const eligible = items.some((i) => i.migratable);
       return c.json({ eligible, sandboxes: items });
-    },
+    }),
   );
 
   // Start (or return the in-flight) migration for one legacy sandbox. Idempotent
@@ -168,7 +169,7 @@ export function registerLegacyMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
         ...errors(401),
       },
     }),
-    async (c: any) => {
+    effectHandler(async (c: any) => {
       const accountId = await resolveScopedAccountId(c, 'body');
       const body = await c.req.json().catch(() => ({}));
       const sandboxId = typeof body?.sandbox_id === 'string' ? body.sandbox_id : null;
@@ -191,7 +192,7 @@ export function registerLegacyMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
 
       const { migration, created } = await startMigration({ database: db, sandboxId, accountId });
       return c.json({ created, migration: serializeMigration(migration) }, created ? 202 : 200);
-    },
+    }),
   );
 
   // Poll a single sandbox's migration progress.
@@ -210,7 +211,7 @@ export function registerLegacyMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
         ...errors(401),
       },
     }),
-    async (c: any) => {
+    effectHandler(async (c: any) => {
       const accountId = await resolveScopedAccountId(c, 'query');
       const sandboxId = c.req.query('sandbox_id');
       if (!sandboxId) return c.json({ error: 'sandbox_id is required' }, 400);
@@ -223,6 +224,6 @@ export function registerLegacyMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
       if (!owned) return c.json({ error: 'Legacy sandbox not found for this account' }, 404);
 
       return c.json({ migration: serializeMigration(await latestMigration(sandboxId)) });
-    },
+    }),
   );
 }

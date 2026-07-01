@@ -8,6 +8,7 @@ import { db } from '../shared/db';
 import { invalidateIamCacheForGroup, invalidateIamCacheForUsers } from '../iam/cache-invalidation';
 import { scimError } from '../middleware/scim-auth';
 import { json, errors } from '../openapi';
+import { effectHandler } from '../effect/hono';
 import {
   scimRouter,
   ScimResource,
@@ -34,7 +35,7 @@ scimRouter.openapi(
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const accountId = c.req.param('accountId');
   const filter = parseFilter(c.req.query('filter'));
 
@@ -66,7 +67,7 @@ scimRouter.openapi(
     filteredRows.map((r) => buildGroup(accountId, r)),
   );
   return c.json(listResponse(resources));
-  },
+  }),
 );
 
 scimRouter.openapi(
@@ -81,7 +82,7 @@ scimRouter.openapi(
       ...errors(401, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
 
@@ -99,7 +100,7 @@ scimRouter.openapi(
   if (!row) return scimError(c, 404, 'Group not found');
 
   return c.json(await buildGroup(accountId, row));
-  },
+  }),
 );
 
 scimRouter.openapi(
@@ -117,7 +118,7 @@ scimRouter.openapi(
       ...errors(400, 401, 403, 409),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const accountId = c.req.param('accountId');
   let body: Record<string, unknown>;
   try {
@@ -206,7 +207,7 @@ scimRouter.openapi(
     .limit(1);
 
   return c.json(await buildGroup(accountId, row!), 201);
-  },
+  }),
 );
 
 /**
@@ -232,7 +233,7 @@ scimRouter.openapi(
       ...errors(400, 401, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
 
@@ -392,7 +393,7 @@ scimRouter.openapi(
     .where(eq(accountGroups.groupId, groupId))
     .limit(1);
   return c.json(await buildGroup(accountId, row!));
-  },
+  }),
 );
 
 scimRouter.openapi(
@@ -407,7 +408,7 @@ scimRouter.openapi(
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
 
@@ -435,5 +436,5 @@ scimRouter.openapi(
     before: { name: rows[0]!.name },
   });
   return c.body(null, 204);
-  },
+  }),
 );

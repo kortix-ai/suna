@@ -20,8 +20,10 @@ import { runWithContext } from '../lib/request-context';
 
 let mockTavilyResults: any[] = [];
 let mockTavilyError: Error | null = null;
+let lastTavilyArgs: { query: string; maxResults: number; searchDepth: string } | null = null;
 let mockSerperResults: any[] = [];
 let mockSerperError: Error | null = null;
+let lastSerperArgs: { query: string; maxResults: number; safeSearch: boolean } | null = null;
 let mockCheckCreditsResult = { hasCredits: true, message: 'OK', balance: 100 };
 let mockDeductResult: any = { success: true, cost: 0.01, newBalance: 99, transactionId: 'tx_mock_001' };
 
@@ -30,6 +32,10 @@ let mockProxyResponse: Response | null = null;
 let mockProxyError: Error | null = null;
 let lastProxyBody: Record<string, unknown> | null = null;
 let lastProxyTraceHeaders: Record<string, string> | null = null;
+let mockAnthropicProxyResponse: Response | null = null;
+let mockAnthropicProxyError: Error | null = null;
+let lastAnthropicProxyBody: Record<string, unknown> | null = null;
+let lastAnthropicProxyTraceHeaders: Record<string, string> | null = null;
 
 const TEST_ACCOUNT_ID = 'acc_test_e2e_001';
 
@@ -77,6 +83,39 @@ function createMockStreamResponse(): Response {
   });
 }
 
+function createMockAnthropicResponse(overrides?: Partial<any>) {
+  return {
+    id: 'msg_mock_001',
+    type: 'message',
+    role: 'assistant',
+    model: 'anthropic/claude-sonnet-4.6',
+    content: [{ type: 'text', text: 'Hello from Anthropic' }],
+    stop_reason: 'end_turn',
+    usage: {
+      input_tokens: 100,
+      output_tokens: 50,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+    },
+    ...overrides,
+  };
+}
+
+function createMockAnthropicStreamResponse(): Response {
+  return new Response(
+    [
+      'data: {"type":"message_start","message":{"usage":{"input_tokens":100,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}',
+      'data: {"type":"content_block_delta","delta":{"text":"Hello"}}',
+      'data: {"type":"message_delta","usage":{"output_tokens":50}}',
+      '',
+    ].join('\n'),
+    {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    },
+  );
+}
+
 // ─── Register mocks ──────────────────────────────────────────────────────────
 
 // Mock apiKeyAuth to always set accountId (bypasses real auth validation)
@@ -103,6 +142,7 @@ mock.module('../middleware/auth', () => ({
 
 mock.module('../router/services/tavily', () => ({
   webSearchTavily: async (query: string, maxResults: number, searchDepth: string) => {
+    lastTavilyArgs = { query, maxResults, searchDepth };
     if (mockTavilyError) throw mockTavilyError;
     return mockTavilyResults;
   },
@@ -110,6 +150,7 @@ mock.module('../router/services/tavily', () => ({
 
 mock.module('../router/services/serper', () => ({
   imageSearchSerper: async (query: string, maxResults: number, safeSearch: boolean) => {
+    lastSerperArgs = { query, maxResults, safeSearch };
     if (mockSerperError) throw mockSerperError;
     return mockSerperResults;
   },
@@ -169,6 +210,37 @@ mock.module('../router/services/llm', () => ({
   resolveOpenRouterId: (id: string) => id,
 }));
 
+mock.module('../router/services/anthropic', () => ({
+  proxyToAnthropic: async (
+    body: Record<string, unknown>,
+    _isStreaming: boolean,
+    traceHeaders?: Record<string, string>,
+  ) => {
+    lastAnthropicProxyBody = body;
+    lastAnthropicProxyTraceHeaders = traceHeaders ?? null;
+    if (mockAnthropicProxyError) throw mockAnthropicProxyError;
+    if (mockAnthropicProxyResponse) return mockAnthropicProxyResponse;
+
+    if (body.stream === true) {
+      return createMockAnthropicStreamResponse();
+    }
+    return new Response(JSON.stringify(createMockAnthropicResponse()), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  },
+  extractAnthropicUsage: (responseBody: any) => {
+    if (!responseBody?.usage) return null;
+    return {
+      inputTokens: responseBody.usage.input_tokens ?? 0,
+      outputTokens: responseBody.usage.output_tokens ?? 0,
+      cacheCreationInputTokens: responseBody.usage.cache_creation_input_tokens ?? 0,
+      cacheReadInputTokens: responseBody.usage.cache_read_input_tokens ?? 0,
+    };
+  },
+  calculateAnthropicCost: () => 0.000108,
+}));
+
 // ─── Import router AFTER mocks ───────────────────────────────────────────────
 
 const { router } = await import('../router/index');
@@ -208,16 +280,22 @@ beforeEach(() => {
     { title: 'Result 2', url: 'https://example.com/2', snippet: 'Second result', published_date: '2025-01-01' },
   ];
   mockTavilyError = null;
+  lastTavilyArgs = null;
   mockSerperResults = [
     { title: 'Image 1', url: 'https://img.com/1.jpg', thumbnail_url: 'https://img.com/1_t.jpg', source_url: 'https://example.com/1', width: 800, height: 600 },
   ];
   mockSerperError = null;
+  lastSerperArgs = null;
   mockCheckCreditsResult = { hasCredits: true, message: 'OK', balance: 100 };
   mockDeductResult = { success: true, cost: 0.01, newBalance: 99, transactionId: 'tx_mock_001' };
   mockProxyResponse = null;
   mockProxyError = null;
   lastProxyBody = null;
   lastProxyTraceHeaders = null;
+  mockAnthropicProxyResponse = null;
+  mockAnthropicProxyError = null;
+  lastAnthropicProxyBody = null;
+  lastAnthropicProxyTraceHeaders = null;
 });
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -249,6 +327,7 @@ describe('Router: web-search', () => {
     expect(body.query).toBe('test query');
     expect(body.cost).toBeDefined();
     expect(body.results[0].title).toBe('Result 1');
+    expect(lastTavilyArgs).toEqual({ query: 'test query', maxResults: 2, searchDepth: 'basic' });
   });
 
   test('returns 400 for missing query', async () => {
@@ -305,6 +384,7 @@ describe('Router: web-search', () => {
       body: JSON.stringify({ query: 'test' }),
     });
     expect(res.status).toBe(200);
+    expect(lastTavilyArgs).toEqual({ query: 'test', maxResults: 5, searchDepth: 'basic' });
   });
 
   test('accepts search_depth=advanced', async () => {
@@ -315,6 +395,7 @@ describe('Router: web-search', () => {
       body: JSON.stringify({ query: 'test', search_depth: 'advanced' }),
     });
     expect(res.status).toBe(200);
+    expect(lastTavilyArgs).toEqual({ query: 'test', maxResults: 5, searchDepth: 'advanced' });
   });
 });
 
@@ -332,6 +413,7 @@ describe('Router: image-search', () => {
     expect(body.query).toBe('cat photos');
     expect(body.cost).toBeDefined();
     expect(body.results[0].title).toBe('Image 1');
+    expect(lastSerperArgs).toEqual({ query: 'cat photos', maxResults: 5, safeSearch: true });
   });
 
   test('returns 400 for missing query', async () => {
@@ -364,6 +446,17 @@ describe('Router: image-search', () => {
       body: JSON.stringify({ query: 'cats' }),
     });
     expect(res.status).toBe(500);
+  });
+
+  test('passes explicit image search options to Serper', async () => {
+    const app = createRouterTestApp();
+    const res = await app.request('/v1/router/image-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TEST_ACCOUNT_ID}` },
+      body: JSON.stringify({ query: 'cats', max_results: 7, safe_search: false }),
+    });
+    expect(res.status).toBe(200);
+    expect(lastSerperArgs).toEqual({ query: 'cats', maxResults: 7, safeSearch: false });
   });
 });
 
@@ -556,6 +649,100 @@ describe('Router: chat/completions (streaming)', () => {
     // Verify the stream contains actual content chunks
     expect(text).toContain('Hello ');
     expect(text).toContain('world!');
+  });
+});
+
+describe('Router: Anthropic messages', () => {
+  test('returns Anthropic-compatible JSON response and preserves request body', async () => {
+    const app = createRouterTestApp();
+    const res = await app.request('/v1/router/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TEST_ACCOUNT_ID}` },
+      body: JSON.stringify({
+        model: 'anthropic/claude-sonnet-4.6',
+        messages: [{ role: 'user', content: 'Hello' }],
+        metadata: { session_id: 'session_123' },
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.type).toBe('message');
+    expect(body.content[0].text).toBe('Hello from Anthropic');
+    expect(lastAnthropicProxyBody?.metadata).toEqual({ session_id: 'session_123' });
+  });
+
+  test('propagates trace headers to Anthropic provider proxy', async () => {
+    const app = createRouterTestApp();
+    const res = await app.request('/v1/router/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${TEST_ACCOUNT_ID}`,
+        traceparent: '00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01',
+      },
+      body: JSON.stringify({
+        model: 'anthropic/claude-sonnet-4.6',
+        messages: [{ role: 'user', content: 'Hello' }],
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastAnthropicProxyTraceHeaders?.traceparent).toMatch(/^00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-[0-9a-f]{16}-01$/);
+    expect(lastAnthropicProxyTraceHeaders?.['X-Request-Id']).toMatch(/^[a-z0-9]+-[a-z0-9]+$/);
+  });
+
+  test('returns 400 for invalid Anthropic JSON body', async () => {
+    const app = createRouterTestApp();
+    const res = await app.request('/v1/router/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TEST_ACCOUNT_ID}` },
+      body: 'not json',
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  test('passes through Anthropic upstream error responses', async () => {
+    mockAnthropicProxyResponse = new Response(
+      JSON.stringify({ error: { message: 'Anthropic model not found' } }),
+      {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    );
+
+    const app = createRouterTestApp();
+    const res = await app.request('/v1/router/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TEST_ACCOUNT_ID}` },
+      body: JSON.stringify({
+        model: 'anthropic/missing',
+        messages: [{ role: 'user', content: 'Hello' }],
+      }),
+    });
+
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error.message).toBe('Anthropic model not found');
+  });
+
+  test('returns Anthropic SSE stream with preserved stream headers', async () => {
+    const app = createRouterTestApp();
+    const res = await app.request('/v1/router/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TEST_ACCOUNT_ID}` },
+      body: JSON.stringify({
+        model: 'anthropic/claude-sonnet-4.6',
+        messages: [{ role: 'user', content: 'Hello' }],
+        stream: true,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    expect(res.headers.get('cache-control')).toBe('no-cache');
+    expect(await res.text()).toContain('message_delta');
   });
 });
 

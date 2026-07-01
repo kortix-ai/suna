@@ -1,4 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import { Effect } from 'effect';
 import type { AppEnv } from '../../types';
 import {
   requestAccountDeletion,
@@ -8,6 +9,7 @@ import {
 } from '../services/account-deletion';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { makeOpenApiApp, json, auth } from '../../openapi';
+import { attemptBilling, parseOptionalJsonBody, runBillingEffect } from './effect-workflows';
 
 export const accountDeletionRouter = makeOpenApiApp<AppEnv>();
 
@@ -32,8 +34,11 @@ accountDeletionRouter.openapi(
     },
   }),
   async (c: any) => {
-    const { accountId } = await resolveDeletionContext(c);
-    const result = await getAccountDeletionStatus(accountId);
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const { accountId } = yield* attemptBilling(() => resolveDeletionContext(c));
+      return yield* attemptBilling(() => getAccountDeletionStatus(accountId));
+    }));
+
     return c.json(result);
   },
 );
@@ -56,12 +61,15 @@ accountDeletionRouter.openapi(
     },
   }),
   async (c: any) => {
-    const { accountId, userId } = await resolveDeletionContext(c);
-    // Manual parse: the body is optional and tolerant of missing/invalid JSON
-    // (defaults to {}); only `reason` is read. valid('json') would reject a
-    // bodyless request, changing the contract.
-    const body = await c.req.json().catch(() => ({}));
-    const result = await requestAccountDeletion(accountId, userId, body.reason);
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const { accountId, userId } = yield* attemptBilling(() => resolveDeletionContext(c));
+      // Manual parse: the body is optional and tolerant of missing/invalid JSON
+      // (defaults to {}); only `reason` is read. valid('json') would reject a
+      // bodyless request, changing the contract.
+      const body = yield* parseOptionalJsonBody<{ reason?: string }>(c, {});
+      return yield* attemptBilling(() => requestAccountDeletion(accountId, userId, body.reason));
+    }));
+
     return c.json(result);
   },
 );
@@ -78,8 +86,11 @@ accountDeletionRouter.openapi(
     },
   }),
   async (c: any) => {
-    const { accountId } = await resolveDeletionContext(c);
-    const result = await cancelAccountDeletion(accountId);
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const { accountId } = yield* attemptBilling(() => resolveDeletionContext(c));
+      return yield* attemptBilling(() => cancelAccountDeletion(accountId));
+    }));
+
     return c.json(result);
   },
 );
@@ -96,8 +107,11 @@ accountDeletionRouter.openapi(
     },
   }),
   async (c: any) => {
-    const { accountId } = await resolveDeletionContext(c);
-    const result = await deleteAccountImmediately(accountId);
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const { accountId } = yield* attemptBilling(() => resolveDeletionContext(c));
+      return yield* attemptBilling(() => deleteAccountImmediately(accountId));
+    }));
+
     return c.json(result);
   },
 );

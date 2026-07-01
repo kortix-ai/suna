@@ -3,6 +3,7 @@ import { createGateway } from '@kortix/llm-gateway';
 import { pickAutoModel } from '@kortix/llm-catalog';
 import { Hono } from 'hono';
 import { config } from '../config';
+import { effectMiddleware } from '../effect/hono';
 import { createInProcessGatewayHooks } from './hooks';
 import { createInternalGatewayRoutes } from './internal-routes';
 
@@ -29,6 +30,7 @@ export function mountLlmGateway(app: OpenAPIHono): void {
         pickAutoModel(model, body, { defaultModel: principal.defaultModel }),
     });
     const llm = new Hono();
+    llm.use('*', effectMiddleware);
     llm.get('/health', (c) =>
       c.json({ status: 'ok', service: 'kortix-llm-gateway', mode: 'in-process' }),
     );

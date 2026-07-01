@@ -9,6 +9,7 @@ import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam, readBody, HttpError } from './helpers';
+import { effectHandler } from '../../effect/hono';
 
 // ─── Session policy ───────────────────────────────────────────────────────
 // Per-account ceilings on session age + idle gap. Null on either field
@@ -29,7 +30,7 @@ iamRouter.openapi(
       ...errors(401, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
@@ -48,7 +49,7 @@ iamRouter.openapi(
     max_lifetime_minutes: row.maxLifetimeMinutes,
     idle_timeout_minutes: row.idleTimeoutMinutes,
   });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -64,7 +65,7 @@ iamRouter.openapi(
       ...errors(400, 401, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -144,7 +145,7 @@ iamRouter.openapi(
     idle_timeout_minutes:
       idleTimeoutMinutes !== undefined ? idleTimeoutMinutes : before.idleTimeoutMinutes,
   });
-  },
+  }),
 );
 
 // ─── Active sessions + force-logout ───────────────────────────────────────
@@ -162,7 +163,7 @@ iamRouter.openapi(
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
@@ -195,7 +196,7 @@ iamRouter.openapi(
       user_agent: r.userAgent,
     })),
   });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -211,7 +212,7 @@ iamRouter.openapi(
       ...errors(401, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const actorUserId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const sessionId = c.req.param('sessionId');
@@ -249,7 +250,7 @@ iamRouter.openapi(
   });
 
   return c.json({ revoked: true });
-  },
+  }),
 );
 
 // ─── PAT lifecycle policy ─────────────────────────────────────────────────
@@ -274,7 +275,7 @@ iamRouter.openapi(
       ...errors(401, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
@@ -295,7 +296,7 @@ iamRouter.openapi(
     require_expiry: row.requireExpiry,
     idle_revoke_days: row.idleRevokeDays,
   });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -311,7 +312,7 @@ iamRouter.openapi(
       ...errors(400, 401, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -405,5 +406,5 @@ iamRouter.openapi(
     idle_revoke_days:
       idleRevokeDays !== undefined ? idleRevokeDays : before.idleRevokeDays,
   });
-  },
+  }),
 );

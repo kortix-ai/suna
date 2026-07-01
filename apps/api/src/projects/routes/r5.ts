@@ -7,12 +7,19 @@ import { loadProjectApps, manifestHashForApp } from '../apps';
 import { archiveRepoSubtree, getBranchDiff, getCommit, getCommitDiff, getFileHistory, grepRepoFiles, listBranches, listCommits, listRepoFiles, loadProjectConfig, readRepoFile, searchRepoFileNames } from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
 import { deployments, projects } from '@kortix/db';
+import { Effect } from 'effect';
 import { eq } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { filterConfigResourcesForUser, denierFromConfig, resourceDenierForRequest } from '../lib/project-resources';
 import { AnyObject, CommitSchema, ProjectSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { normalizeString, readBody, serializeDeploymentRow, serializeProject, serializeProjectGitConnection } from '../lib/serializers';
+import { attemptRoute, failJson, failNotFound, routeJson, runProjectRouteEffect } from './effect-workflows';
+
+const loadProjectRoute = (c: any, projectId: string, access: 'read' | 'manage') =>
+  attemptRoute(() => loadProjectForUser(c, projectId, access)).pipe(
+    Effect.flatMap((loaded) => (loaded ? Effect.succeed(loaded) : failNotFound())),
+  );
 
 function isMissingGitPathError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
@@ -35,34 +42,38 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const slug = c.req.param('slug');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DEPLOY);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    const slug = c.req.param('slug');
+    const loaded = yield* loadProjectRoute(c, projectId, 'manage');
+    yield* attemptRoute(() => assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DEPLOY));
 
-  const { specs } = await loadProjectApps(await withProjectGitAuth(loaded.row));
-  const spec = specs.find((s) => s.slug === slug);
-  if (!spec) return c.json({ error: 'Not found' }, 404);
+    const gitProject = yield* attemptRoute(() => withProjectGitAuth(loaded.row));
+    const { specs } = yield* attemptRoute(() => loadProjectApps(gitProject));
+    const spec = specs.find((s) => s.slug === slug);
+    if (!spec) return yield* failNotFound();
 
-  const latest = await getLatestDeployment(projectId, slug);
-  const status = await deployAppSpec({
-    project: loaded.row,
-    spec,
-    previousVersion: latest?.version ?? 0,
-    manifestHash: manifestHashForApp(spec),
-    source: 'manual',
-  });
+    const latest = yield* attemptRoute(() => getLatestDeployment(projectId, slug));
+    const status = yield* attemptRoute(() =>
+      deployAppSpec({
+        project: loaded.row,
+        spec,
+        previousVersion: latest?.version ?? 0,
+        manifestHash: manifestHashForApp(spec),
+        source: 'manual',
+      }),
+    );
 
-  const fresh = await getLatestDeployment(projectId, slug);
-  return c.json(
-    {
-      status,
-      app_slug: slug,
-      deployment: fresh ? serializeDeploymentRow(fresh) : null,
-    },
-    status === 'active' ? 201 : 502,
-  );
+    const fresh = yield* attemptRoute(() => getLatestDeployment(projectId, slug));
+    return routeJson(
+      {
+        status,
+        app_slug: slug,
+        deployment: fresh ? serializeDeploymentRow(fresh) : null,
+      },
+      status === 'active' ? 201 : 502,
+    );
+  }));
 },
 );
 
@@ -86,31 +97,30 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const slug = c.req.param('slug');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DEPLOY);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    const slug = c.req.param('slug');
+    const loaded = yield* loadProjectRoute(c, projectId, 'manage');
+    yield* attemptRoute(() => assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DEPLOY));
 
-  const latest = await getLatestDeployment(projectId, slug);
-  if (!latest) return c.json({ error: 'No deployment found for this app' }, 404);
+    const latest = yield* attemptRoute(() => getLatestDeployment(projectId, slug));
+    if (!latest) return yield* failJson({ error: 'No deployment found for this app' }, 404);
 
-  const provider = getDeploymentProvider(latest.provider ?? undefined);
-  if (latest.freestyleId) {
-    try {
-      await provider.stop(latest.freestyleId);
-    } catch {
-      // Best-effort — mark as stopped locally regardless.
+    const provider = getDeploymentProvider(latest.provider ?? undefined);
+    if (latest.freestyleId) {
+      yield* attemptRoute(() => provider.stop(latest.freestyleId!)).pipe(Effect.catchAll(() => Effect.void));
     }
-  }
 
-  const [updated] = await db
-    .update(deployments)
-    .set({ status: 'stopped', updatedAt: new Date() })
-    .where(eq(deployments.deploymentId, latest.deploymentId))
-    .returning();
+    const [updated] = yield* attemptRoute(() =>
+      db
+        .update(deployments)
+        .set({ status: 'stopped', updatedAt: new Date() })
+        .where(eq(deployments.deploymentId, latest.deploymentId))
+        .returning(),
+    );
 
-  return c.json({ ok: true, deployment: updated ? serializeDeploymentRow(updated) : null });
+    return routeJson({ ok: true, deployment: updated ? serializeDeploymentRow(updated) : null });
+  }));
 },
 );
 
@@ -133,21 +143,22 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const slug = c.req.param('slug');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    const slug = c.req.param('slug');
+    yield* loadProjectRoute(c, projectId, 'read');
 
-  const latest = await getLatestDeployment(projectId, slug);
-  if (!latest) return c.json({ error: 'No deployment found for this app' }, 404);
+    const latest = yield* attemptRoute(() => getLatestDeployment(projectId, slug));
+    if (!latest) return yield* failJson({ error: 'No deployment found for this app' }, 404);
 
-  const provider = getDeploymentProvider(latest.provider ?? undefined);
-  try {
-    const data = await provider.logs(latest.freestyleId ?? '');
-    return c.json({ ok: true, data });
-  } catch (err) {
-    return c.json({ ok: false, error: err instanceof Error ? err.message : 'logs unavailable' }, 502);
-  }
+    const provider = getDeploymentProvider(latest.provider ?? undefined);
+    const data = yield* attemptRoute(() => provider.logs(latest.freestyleId ?? '')).pipe(
+      Effect.catchAll((err) =>
+        failJson({ ok: false, error: err instanceof Error ? err.message : 'logs unavailable' }, 502),
+      ),
+    );
+    return routeJson({ ok: true, data });
+  }));
 },
 );
 
@@ -169,19 +180,22 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
 
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const loaded = yield* loadProjectRoute(c, projectId, 'read');
 
-  await db
-    .update(projects)
-    .set({ lastOpenedAt: new Date(), updatedAt: new Date() })
-    .where(eq(projects.projectId, projectId));
+    yield* attemptRoute(() =>
+      db
+        .update(projects)
+        .set({ lastOpenedAt: new Date(), updatedAt: new Date() })
+        .where(eq(projects.projectId, projectId)),
+    );
 
-  return c.json(serializeProject(loaded.row, {
-    projectRole: loaded.projectRole,
-    effectiveRole: loaded.effectiveRole,
+    return routeJson(serializeProject(loaded.row, {
+      projectRole: loaded.projectRole,
+      effectiveRole: loaded.effectiveRole,
+    }));
   }));
 },
 );

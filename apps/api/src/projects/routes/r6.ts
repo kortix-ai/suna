@@ -10,6 +10,7 @@ import { foldEffectiveProjectAccess, isAccountManager, parseProjectRole, roleAll
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accounts, projectAccessRequests, projectGroupGrants, projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { Effect } from 'effect';
 import { ensureOrgMembership, grantProjectRole, loadProjectForUser, lookupEmailsByUserIds, resolveUserIdentities, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { notifyProjectAccessRequestManagers } from '../lib/access-requests';
 import { AccessMemberSchema, AnyObject, projectsApp } from '../lib/app';
@@ -19,6 +20,7 @@ import { applyExperimentalOverride, isExperimentalFeatureKey } from '../../exper
 import { reconcileChannelConnectors, reconcileComputerConnectors } from '../../executor/sync';
 import { propagateLlmGatewayModeToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { attemptRoute, attemptRouteSync, failJson, failNotFound, routeJson, runProjectRouteEffect } from './effect-workflows';
 
 function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferSelect) {
   return {
@@ -54,29 +56,31 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const body = yield* attemptRoute(() => readBody(c));
+    const loaded = yield* attemptRoute(() => loadProjectForUser(c, projectId, 'write'));
+    if (!loaded) return yield* failNotFound();
 
-  const completed = body.completed === true;
-  const previousMetadata = (loaded.row.metadata ?? {}) as Record<string, unknown>;
-  const nextMetadata: Record<string, unknown> = { ...previousMetadata };
-  if (completed) {
-    nextMetadata.onboarding_completed_at = new Date().toISOString();
-  } else {
-    delete nextMetadata.onboarding_completed_at;
-  }
+    const completed = body.completed === true;
+    const previousMetadata = (loaded.row.metadata ?? {}) as Record<string, unknown>;
+    const nextMetadata: Record<string, unknown> = { ...previousMetadata };
+    if (completed) {
+      nextMetadata.onboarding_completed_at = new Date().toISOString();
+    } else {
+      delete nextMetadata.onboarding_completed_at;
+    }
 
-  const [row] = await db
-    .update(projects)
-    .set({ metadata: nextMetadata, updatedAt: new Date() })
-    .where(eq(projects.projectId, projectId))
-    .returning();
+    const [row] = yield* attemptRoute(() => db
+      .update(projects)
+      .set({ metadata: nextMetadata, updatedAt: new Date() })
+      .where(eq(projects.projectId, projectId))
+      .returning());
 
-  if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-  return c.json(serializeProject(row, {
-    projectRole: loaded.projectRole,
-    effectiveRole: loaded.effectiveRole,
+    if (!row || row.status === 'archived') return yield* failNotFound();
+    return routeJson(serializeProject(row, {
+      projectRole: loaded.projectRole,
+      effectiveRole: loaded.effectiveRole,
+    }));
   }));
 },
 );
@@ -100,21 +104,23 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Deletion is admin-only. Project Editor explicitly excludes
-  // project.delete; loadProjectForUser('manage') would otherwise let
-  // editors through via project.write.
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const loaded = yield* attemptRoute(() => loadProjectForUser(c, projectId, 'manage'));
+    if (!loaded) return yield* failNotFound();
+    // Deletion is admin-only. Project Editor explicitly excludes
+    // project.delete; loadProjectForUser('manage') would otherwise let
+    // editors through via project.write.
+    yield* attemptRoute(() => assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE));
 
-  const [row] = await db
-    .update(projects)
-    .set({ status: 'archived', updatedAt: new Date() })
-    .where(eq(projects.projectId, projectId))
-    .returning();
+    const [row] = yield* attemptRoute(() => db
+      .update(projects)
+      .set({ status: 'archived', updatedAt: new Date() })
+      .where(eq(projects.projectId, projectId))
+      .returning());
 
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json({ ok: true });
+    if (!row) return yield* failNotFound();
+    return routeJson({ ok: true });
+  }));
 },
 );
 
@@ -388,19 +394,21 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const loaded = yield* attemptRoute(() => loadProjectForUser(c, projectId, 'manage'));
+    if (!loaded) return yield* failNotFound();
 
-  const rows = await db
-    .select()
-    .from(projectAccessRequests)
-    .where(and(
-      eq(projectAccessRequests.projectId, projectId),
-      eq(projectAccessRequests.status, 'pending'),
-    ))
-    .orderBy(desc(projectAccessRequests.createdAt));
+    const rows = yield* attemptRoute(() => db
+      .select()
+      .from(projectAccessRequests)
+      .where(and(
+        eq(projectAccessRequests.projectId, projectId),
+        eq(projectAccessRequests.status, 'pending'),
+      ))
+      .orderBy(desc(projectAccessRequests.createdAt)));
 
-  return c.json({ requests: rows.map(serializeProjectAccessRequest) });
+    return routeJson({ requests: rows.map(serializeProjectAccessRequest) });
+  }));
 },
 );
 
@@ -510,37 +518,39 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const requestId = c.req.param('requestId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Reviewing an access request is membership management — gate on
-  // members.manage (loadProjectForUser('manage') only enforces project.write).
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const loaded = yield* attemptRoute(() => loadProjectForUser(c, projectId, 'manage'));
+    if (!loaded) return yield* failNotFound();
+    // Reviewing an access request is membership management — gate on
+    // members.manage (loadProjectForUser('manage') only enforces project.write).
+    yield* attemptRoute(() => assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE));
 
-  const [request] = await db
-    .select()
-    .from(projectAccessRequests)
-    .where(and(
-      eq(projectAccessRequests.requestId, requestId),
-      eq(projectAccessRequests.projectId, projectId),
-    ))
-    .limit(1);
-  if (!request) return c.json({ error: 'Not found' }, 404);
-  if (request.status !== 'pending') {
-    return c.json({ error: 'Access request has already been reviewed' }, 409);
-  }
+    const [request] = yield* attemptRoute(() => db
+      .select()
+      .from(projectAccessRequests)
+      .where(and(
+        eq(projectAccessRequests.requestId, requestId),
+        eq(projectAccessRequests.projectId, projectId),
+      ))
+      .limit(1));
+    if (!request) return yield* failNotFound();
+    if (request.status !== 'pending') {
+      return yield* failJson({ error: 'Access request has already been reviewed' }, 409);
+    }
 
-  const [updated] = await db
-    .update(projectAccessRequests)
-    .set({
-      status: 'rejected',
-      reviewedBy: loaded.userId,
-      reviewedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(projectAccessRequests.requestId, requestId))
-    .returning();
+    const [updated] = yield* attemptRoute(() => db
+      .update(projectAccessRequests)
+      .set({
+        status: 'rejected',
+        reviewedBy: loaded.userId,
+        reviewedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(projectAccessRequests.requestId, requestId))
+      .returning());
 
-  return c.json({ request: serializeProjectAccessRequest(updated) });
+    return routeJson({ request: serializeProjectAccessRequest(updated) });
+  }));
 },
 );
 
@@ -1115,36 +1125,38 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
-    const feature = body.feature;
-    const enabled = body.enabled;
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Per-agent gate: toggling experimental features is project config. A scoped
-    // agent token must hold project.customize.write (no-op for humans/PATs).
-    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
-    if (!isExperimentalFeatureKey(feature)) {
-      return c.json({ error: `Unknown experimental feature '${feature}'` }, 400);
-    }
-    if (enabled !== null && typeof enabled !== 'boolean') {
-      return c.json({ error: 'enabled must be a boolean or null' }, 400);
-    }
-    const nextMeta = applyExperimentalOverride(loaded.row.metadata, feature, enabled);
-    const [row] = await db
-      .update(projects)
-      .set({ metadata: nextMeta, updatedAt: new Date() })
-      .where(eq(projects.projectId, projectId))
-      .returning();
-    if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-    if (feature === 'agent_tunnel') {
-      void reconcileComputerConnectors(row.accountId);
-    }
-    if (feature === 'meet') {
-      void reconcileChannelConnectors(projectId);
-    }
-    if (feature === 'llm_gateway') {
-      void propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(row.metadata));
-    }
-    return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
+    return runProjectRouteEffect(c, Effect.gen(function* () {
+      const body = yield* attemptRoute(() => readBody(c));
+      const feature = body.feature;
+      const enabled = body.enabled;
+      const loaded = yield* attemptRoute(() => loadProjectForUser(c, projectId, 'manage'));
+      if (!loaded) return yield* failNotFound();
+      // Per-agent gate: toggling experimental features is project config. A scoped
+      // agent token must hold project.customize.write (no-op for humans/PATs).
+      yield* attemptRouteSync(() => assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE));
+      if (!isExperimentalFeatureKey(feature)) {
+        return yield* failJson({ error: `Unknown experimental feature '${feature}'` }, 400);
+      }
+      if (enabled !== null && typeof enabled !== 'boolean') {
+        return yield* failJson({ error: 'enabled must be a boolean or null' }, 400);
+      }
+      const nextMeta = applyExperimentalOverride(loaded.row.metadata, feature, enabled);
+      const [row] = yield* attemptRoute(() => db
+        .update(projects)
+        .set({ metadata: nextMeta, updatedAt: new Date() })
+        .where(eq(projects.projectId, projectId))
+        .returning());
+      if (!row || row.status === 'archived') return yield* failNotFound();
+      if (feature === 'agent_tunnel') {
+        void reconcileComputerConnectors(row.accountId);
+      }
+      if (feature === 'meet') {
+        void reconcileChannelConnectors(projectId);
+      }
+      if (feature === 'llm_gateway') {
+        void propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(row.metadata));
+      }
+      return routeJson(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
+    }));
   },
 );

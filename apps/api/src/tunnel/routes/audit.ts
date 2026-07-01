@@ -5,12 +5,67 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
+import { Effect } from 'effect';
 import { eq, and, desc, count } from 'drizzle-orm';
 import { tunnelAuditLogs, tunnelConnections } from '@kortix/db';
 import { db } from '../../shared/db';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
-import { getTunnelOwnerContext } from './auth';
+import { getTunnelOwnerContextEffect } from './auth';
+import { attemptTunnel, runTunnelEffect, sendTunnelJson, tunnelFail, tunnelJson } from './effect-workflows';
+
+const listAuditLogsEffect = (c: any) =>
+  Effect.gen(function* () {
+    const { ownerClause } = yield* getTunnelOwnerContextEffect(c);
+    const tunnelId = c.req.param('tunnelId');
+    const page = parseInt(c.req.query('page') || '1', 10);
+    const limit = Math.min(parseInt(c.req.query('limit') || '50', 10), 100);
+    const offset = (page - 1) * limit;
+
+    const [tunnel] = yield* attemptTunnel(() =>
+      db
+        .select()
+        .from(tunnelConnections)
+        .where(
+          and(
+            eq(tunnelConnections.tunnelId, tunnelId),
+            ownerClause,
+          ),
+        ),
+    );
+
+    if (!tunnel) {
+      return yield* tunnelFail({ error: 'Tunnel connection not found' }, 404);
+    }
+
+    const [logs, [{ total }]] = yield* Effect.all([
+      attemptTunnel(() =>
+        db
+          .select()
+          .from(tunnelAuditLogs)
+          .where(eq(tunnelAuditLogs.tunnelId, tunnelId))
+          .orderBy(desc(tunnelAuditLogs.createdAt))
+          .limit(limit)
+          .offset(offset),
+      ),
+      attemptTunnel(() =>
+        db
+          .select({ total: count() })
+          .from(tunnelAuditLogs)
+          .where(eq(tunnelAuditLogs.tunnelId, tunnelId)),
+      ),
+    ]);
+
+    return tunnelJson({
+      data: logs,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  });
 
 export function createAuditRouter() {
   const router = makeOpenApiApp<AppEnv>();
@@ -46,49 +101,7 @@ export function createAuditRouter() {
       },
     }),
     async (c: any) => {
-      const { ownerClause } = await getTunnelOwnerContext(c);
-      const tunnelId = c.req.param('tunnelId');
-      const page = parseInt(c.req.query('page') || '1', 10);
-      const limit = Math.min(parseInt(c.req.query('limit') || '50', 10), 100);
-      const offset = (page - 1) * limit;
-
-      const [tunnel] = await db
-        .select()
-        .from(tunnelConnections)
-        .where(
-          and(
-            eq(tunnelConnections.tunnelId, tunnelId),
-            ownerClause,
-          ),
-        );
-
-      if (!tunnel) {
-        return c.json({ error: 'Tunnel connection not found' }, 404);
-      }
-
-      const [logs, [{ total }]] = await Promise.all([
-        db
-          .select()
-          .from(tunnelAuditLogs)
-          .where(eq(tunnelAuditLogs.tunnelId, tunnelId))
-          .orderBy(desc(tunnelAuditLogs.createdAt))
-          .limit(limit)
-          .offset(offset),
-        db
-          .select({ total: count() })
-          .from(tunnelAuditLogs)
-          .where(eq(tunnelAuditLogs.tunnelId, tunnelId)),
-      ]);
-
-      return c.json({
-        data: logs,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      });
+      return sendTunnelJson(c, await runTunnelEffect(listAuditLogsEffect(c)));
     },
   );
 

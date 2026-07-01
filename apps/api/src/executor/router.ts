@@ -16,11 +16,36 @@
  */
 import { createRoute, z, type OpenAPIHono } from '@hono/zod-openapi';
 import { type Context } from 'hono';
-import { handleCall, type GatewayDeps } from './gateway';
-import { agentMayUseConnector } from '../iam/agent-scope';
+import { type GatewayDeps } from './gateway';
 import type { AgentGrant } from '@kortix/db';
-import { parseSharingIntent, type SharingIntent } from './share';
+import { type SharingIntent } from './share';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
+import {
+  adminListConnectorsWorkflow,
+  connectStatusWorkflow,
+  createConnectorWorkflow,
+  deleteConnectorCredentialWorkflow,
+  deleteConnectorWorkflow,
+  gatewayCallWorkflow,
+  gatewayCatalogWorkflow,
+  getConnectorConfigWorkflow,
+  getConnectorPoliciesWorkflow,
+  getProjectPoliciesWorkflow,
+  pipedreamAppsWorkflow,
+  pipedreamConnectWorkflow,
+  pipedreamFinalizeWorkflow,
+  pipedreamWebhookWorkflow,
+  projectCallWorkflow,
+  projectCatalogWorkflow,
+  runExecutorWorkflow,
+  setConnectorCredentialWorkflow,
+  setConnectorNameWorkflow,
+  setConnectorPoliciesWorkflow,
+  setCredentialModeWorkflow,
+  setProjectPoliciesWorkflow,
+  setSharingWorkflow,
+  syncConnectorsWorkflow,
+} from './effect-workflow';
 
 // ── Response schemas ─────────────────────────────────────────────────────────
 // Connector catalog/admin shapes are permissive (opaque tool metadata); the
@@ -222,56 +247,6 @@ const ProjectSlugParam = z.object({ projectId: z.string(), slug: z.string() });
 export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
   const app = makeOpenApiApp();
 
-  // Shared gateway logic — used by BOTH the legacy flat routes (project derived
-  // from a scoped session token) and the project-EXPLICIT routes
-  // (project from the path, any valid principal). One implementation, two faces.
-  const catalogResponse = async (c: any, p: ExecutorPrincipal) => {
-    const connectors = await deps.listCatalog(p);
-    return c.json({ connectors });
-  };
-  const callResponse = async (c: any, p: ExecutorPrincipal) => {
-    let body: any;
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ error: 'invalid_json' }, 400);
-    }
-    const connectorSlug = typeof body?.connector === 'string' ? body.connector.trim() : '';
-    const actionPath = typeof body?.action === 'string' ? body.action.trim() : '';
-    if (!connectorSlug || !actionPath) {
-      return c.json({ error: 'connector and action are required' }, 400);
-    }
-    // Per-agent connector assignment: a scoped agent may call only the connector
-    // profiles its kortix.toml overlay lists. Default-deny otherwise.
-    if (!agentMayUseConnector(p.agentGrant ?? null, connectorSlug)) {
-      return c.json({ ok: false, status: 'denied', reason: 'connector_not_assigned' }, 403);
-    }
-    const args = body?.args && typeof body.args === 'object' ? (body.args as Record<string, unknown>) : {};
-    const result = await handleCall(deps.makeGatewayDeps(p), {
-      projectId: p.projectId,
-      accountId: p.accountId,
-      subject: p.subject,
-      sessionId: p.sessionId,
-      connectorSlug,
-      actionPath,
-      args,
-    });
-    switch (result.status) {
-      case 'ok':
-        return c.json({ ok: true, data: result.data, risk: result.risk });
-      case 'pending_approval':
-        return c.json({ ok: false, status: 'pending_approval', reason: result.reason }, 202);
-      case 'denied':
-        return c.json(
-          { ok: false, status: 'denied', reason: result.reason },
-          result.reason === 'connector_not_found' || result.reason === 'action_not_found' ? 404 : 403,
-        );
-      default:
-        // 500, not 502 — Cloudflare eats 502 bodies (see route schema note).
-        return c.json({ ok: false, status: 'error', reason: result.reason }, 500);
-    }
-  };
-
   // ── Gateway: list usable connectors ──────────────────────────────────────
   app.openapi(
     createRoute({
@@ -286,9 +261,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       },
     }),
     async (c: any) => {
-      const p = await deps.resolvePrincipal(c);
-      if (!p) return c.json({ error: 'unauthorized' }, 401);
-      return catalogResponse(c, p);
+      return runExecutorWorkflow(c, gatewayCatalogWorkflow(deps, c));
     },
   );
 
@@ -336,9 +309,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     // field-required 400 envelopes — typed validation would reject inputs the
     // existing contract accepts.
     async (c: any) => {
-      const p = await deps.resolvePrincipal(c);
-      if (!p) return c.json({ error: 'unauthorized' }, 401);
-      return callResponse(c, p);
+      return runExecutorWorkflow(c, gatewayCallWorkflow(deps, c));
     },
   );
 
@@ -361,9 +332,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const p = await deps.resolveProjectPrincipal(c, projectId);
-      if (!p) return c.json({ error: 'forbidden' }, 403);
-      return catalogResponse(c, p);
+      return runExecutorWorkflow(c, projectCatalogWorkflow(deps, c, projectId));
     },
   );
 
@@ -400,9 +369,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const p = await deps.resolveProjectPrincipal(c, projectId);
-      if (!p) return c.json({ error: 'forbidden' }, 403);
-      return callResponse(c, p);
+      return runExecutorWorkflow(c, projectCallWorkflow(deps, c, projectId));
     },
   );
 
@@ -422,9 +389,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      return c.json({ connectors: await deps.listConnectors(projectId, admin.userId) });
+      return runExecutorWorkflow(c, adminListConnectorsWorkflow(deps, c, projectId));
     },
   );
 
@@ -449,18 +414,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     // downstream; original returns `invalid_json` / `not supported` envelopes.
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.createConnector) return c.json({ error: 'not supported' }, 501);
-      let body: any;
-      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
-      if (body?.sharing !== undefined) {
-        const intent = parseSharingIntent(body.sharing, admin.userId);
-        if (!intent) return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
-        body.sharing = intent;
-      }
-      const result = await deps.createConnector(projectId, admin.accountId, body);
-      return result.ok ? c.json({ ok: true, sync: result.sync }) : c.json({ error: result.error }, result.status as 400);
+      return runExecutorWorkflow(c, createConnectorWorkflow(deps, c, projectId));
     },
   );
 
@@ -481,11 +435,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.deleteConnector) return c.json({ error: 'not supported' }, 501);
-      const result = await deps.deleteConnector(projectId, slug);
-      return result.ok ? c.json({ ok: true }) : c.json({ error: result.error }, result.status as 400);
+      return runExecutorWorkflow(c, deleteConnectorWorkflow(deps, c, projectId, slug));
     },
   );
 
@@ -511,15 +461,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.setConnectorCredential) return c.json({ error: 'not supported' }, 501);
-      let body: any;
-      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
-      const value = typeof body?.value === 'string' ? body.value : '';
-      if (!value) return c.json({ error: 'value is required' }, 400);
-      const result = await deps.setConnectorCredential(projectId, slug, value);
-      return result.ok ? c.json({ ok: true }) : c.json({ error: result.error }, result.status as 400);
+      return runExecutorWorkflow(c, setConnectorCredentialWorkflow(deps, c, projectId, slug));
     },
   );
 
@@ -540,11 +482,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.deleteConnectorCredential) return c.json({ error: 'not supported' }, 501);
-      const result = await deps.deleteConnectorCredential(projectId, slug, admin.userId);
-      return result.ok ? c.json({ ok: true }) : c.json({ error: result.error }, result.status as 404);
+      return runExecutorWorkflow(c, deleteConnectorCredentialWorkflow(deps, c, projectId, slug));
     },
   );
 
@@ -567,11 +505,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.listPipedreamApps) return c.json({ error: 'pipedream not configured' }, 501);
-      const result = await deps.listPipedreamApps(c.req.query('q') || undefined, c.req.query('cursor') || undefined);
-      return c.json(result);
+      return runExecutorWorkflow(c, pipedreamAppsWorkflow(deps, c, projectId));
     },
   );
 
@@ -596,8 +530,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       },
     }),
     async (c: any) => {
-      const configured = !!deps.listPipedreamApps;
-      return c.json({ configured, provider: configured ? 'pipedream' : null });
+      return runExecutorWorkflow(c, connectStatusWorkflow(deps));
     },
   );
 
@@ -617,10 +550,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      const result = await deps.syncConnectors(projectId, admin.accountId);
-      return c.json(result);
+      return runExecutorWorkflow(c, syncConnectorsWorkflow(deps, c, projectId));
     },
   );
 
@@ -646,21 +576,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-
-      let body: any;
-      try {
-        body = await c.req.json();
-      } catch {
-        return c.json({ error: 'invalid_json' }, 400);
-      }
-      const intent = parseSharingIntent(body, admin.userId);
-      if (!intent) return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
-
-      const ok = await deps.setSharing(projectId, slug, intent);
-      if (!ok) return c.json({ error: 'connector or its credential not found' }, 404);
-      return c.json({ ok: true });
+      return runExecutorWorkflow(c, setSharingWorkflow(deps, c, projectId, slug));
     },
   );
 
@@ -684,17 +600,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.setCredentialMode) return c.json({ error: 'not supported' }, 501);
-      let body: any;
-      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
-      const mode = body?.mode;
-      if (mode !== 'shared' && mode !== 'per_user') {
-        return c.json({ error: 'mode must be "shared" or "per_user"' }, 400);
-      }
-      const result = await deps.setCredentialMode(projectId, admin.accountId, slug, mode);
-      return result.ok ? c.json({ ok: true, sync: result.sync }) : c.json({ error: result.error }, result.status as 400);
+      return runExecutorWorkflow(c, setCredentialModeWorkflow(deps, c, projectId, slug));
     },
   );
 
@@ -718,15 +624,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.setConnectorName) return c.json({ error: 'not supported' }, 501);
-      let body: any;
-      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
-      const name = typeof body?.name === 'string' ? body.name : '';
-      if (!name.trim()) return c.json({ error: '`name` is required' }, 400);
-      const result = await deps.setConnectorName(projectId, admin.accountId, slug, name);
-      return result.ok ? c.json({ ok: true, sync: result.sync }) : c.json({ error: result.error }, result.status as 400);
+      return runExecutorWorkflow(c, setConnectorNameWorkflow(deps, c, projectId, slug));
     },
   );
 
@@ -747,12 +645,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.getConnectorPolicies) return c.json({ error: 'not supported' }, 501);
-      const result = await deps.getConnectorPolicies(projectId, slug);
-      if (!result) return c.json({ error: 'connector not found' }, 404);
-      return c.json(result);
+      return runExecutorWorkflow(c, getConnectorPoliciesWorkflow(deps, c, projectId, slug));
     },
   );
 
@@ -773,12 +666,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.getConnectorConfig) return c.json({ error: 'not supported' }, 501);
-      const result = await deps.getConnectorConfig(projectId, slug);
-      if (!result) return c.json({ error: 'connector not found' }, 404);
-      return c.json(result);
+      return runExecutorWorkflow(c, getConnectorConfigWorkflow(deps, c, projectId, slug));
     },
   );
 
@@ -802,15 +690,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.setConnectorPolicies) return c.json({ error: 'not supported' }, 501);
-      let body: any;
-      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
-      const policies = Array.isArray(body?.policies) ? body.policies : null;
-      if (!policies) return c.json({ error: '`policies` must be an array' }, 400);
-      const result = await deps.setConnectorPolicies(projectId, admin.accountId, slug, policies);
-      return result.ok ? c.json({ ok: true, sync: result.sync }) : c.json({ error: result.error }, result.status as 400);
+      return runExecutorWorkflow(c, setConnectorPoliciesWorkflow(deps, c, projectId, slug));
     },
   );
 
@@ -831,21 +711,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.pipedreamConnect) return c.json({ error: 'pipedream not configured' }, 501);
-      // Native clients pass app deep-link redirect URIs so the in-app browser
-      // auto-dismisses back to the app instead of landing on a web page.
-      let redirects: { success?: string; error?: string } | undefined;
-      try {
-        const body = await c.req.json();
-        if (body?.success_redirect_uri || body?.error_redirect_uri) {
-          redirects = { success: body.success_redirect_uri, error: body.error_redirect_uri };
-        }
-      } catch { /* no body */ }
-      const result = await deps.pipedreamConnect(projectId, slug, admin.userId, redirects);
-      if (!result) return c.json({ error: 'not a pipedream connector' }, 404);
-      return c.json(result);
+      return runExecutorWorkflow(c, pipedreamConnectWorkflow(deps, c, projectId, slug));
     },
   );
 
@@ -865,12 +731,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.pipedreamFinalize) return c.json({ error: 'pipedream not configured' }, 501);
-      const result = await deps.pipedreamFinalize(projectId, slug, admin.userId);
-      if (!result) return c.json({ error: 'not a pipedream connector' }, 404);
-      return c.json(result);
+      return runExecutorWorkflow(c, pipedreamFinalizeWorkflow(deps, c, projectId, slug));
     },
   );
 
@@ -890,12 +751,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.getProjectPolicies) return c.json({ error: 'not supported' }, 501);
-      const result = await deps.getProjectPolicies(projectId);
-      if (!result) return c.json({ error: 'project not found' }, 404);
-      return c.json(result);
+      return runExecutorWorkflow(c, getProjectPoliciesWorkflow(deps, c, projectId));
     },
   );
 
@@ -920,31 +776,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     // messages (`policy #N: ...`) and tolerates a partial/missing body.
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.setProjectPolicies) return c.json({ error: 'not supported' }, 501);
-
-      let body: any;
-      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
-
-      const rawPolicies = Array.isArray(body?.policies) ? body.policies : [];
-      const policies: ProjectPolicyView[] = [];
-      for (let i = 0; i < rawPolicies.length; i++) {
-        const p = rawPolicies[i];
-        const match = typeof p?.match === 'string' ? p.match.trim() : '';
-        const action = typeof p?.action === 'string' ? p.action.trim() : '';
-        if (!match) return c.json({ error: `policy #${i + 1}: \`match\` is required` }, 400);
-        if (action !== 'always_run' && action !== 'require_approval' && action !== 'block') {
-          return c.json({ error: `policy #${i + 1}: invalid \`action\` "${action}"` }, 400);
-        }
-        policies.push({ match, action });
-      }
-      const defaultMode = body?.defaultMode === 'risk' ? 'risk' : 'allow_all';
-
-      const result = await deps.setProjectPolicies(projectId, admin.accountId, policies, defaultMode);
-      return result.ok
-        ? c.json({ ok: true, sync: result.sync })
-        : c.json({ error: result.error }, result.status as 400);
+      return runExecutorWorkflow(c, setProjectPoliciesWorkflow(deps, c, projectId));
     },
   );
 
@@ -967,14 +799,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     // Manual parse kept: webhook tolerates an unparseable body (defaults to {})
     // and authenticates via HMAC signature, not a user token.
     async (c: any) => {
-      if (!deps.pipedreamWebhook) return c.json({ error: 'pipedream not configured' }, 501);
-      const sig = c.req.query('sig') ?? null;
-      let body: any;
-      try { body = await c.req.json(); } catch { body = {}; }
-      const extUserId = typeof body?.external_user_id === 'string' ? body.external_user_id : '';
-      if (!extUserId) return c.json({ error: 'missing external_user_id' }, 400);
-      const ok = await deps.pipedreamWebhook(extUserId, sig);
-      return ok ? c.json({ ok: true }) : c.json({ error: 'invalid signature' }, 401);
+      return runExecutorWorkflow(c, pipedreamWebhookWorkflow(deps, c));
     },
   );
 

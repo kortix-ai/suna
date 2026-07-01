@@ -6,9 +6,11 @@ import {
   revokePublicShare,
 } from '../../shared/session-public-shares';
 import { createRoute, z } from '@hono/zod-openapi';
+import { Effect } from 'effect';
 import { loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, readBody } from '../lib/serializers';
+import { attemptRoute, failJson, failNotFound, routeJson, runProjectRouteEffect } from './effect-workflows';
 
 // GET /v1/projects/:projectId/sessions/:sessionId/previews
 // Human-friendly preview candidates. The frontend should pass the active
@@ -32,19 +34,21 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    return runProjectRouteEffect(c, Effect.gen(function* () {
+      if (!UUID_V4_REGEX.test(sessionId)) return yield* failJson({ error: 'Invalid session id' }, 400);
 
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadVisibleSession(loaded, sessionId);
-    if (!visible) return c.json({ error: 'Not found' }, 404);
+      const loaded = yield* attemptRoute(() => loadProjectForUser(c, projectId, 'read'));
+      if (!loaded) return yield* failNotFound();
+      const visible = yield* attemptRoute(() => loadVisibleSession(loaded, sessionId));
+      if (!visible) return yield* failNotFound();
 
-    return c.json({
-      candidates: DEFAULT_PREVIEW_CANDIDATES.map((candidate) => ({
-        ...candidate,
-        status: 'unknown',
-      })),
-    });
+      return routeJson({
+        candidates: DEFAULT_PREVIEW_CANDIDATES.map((candidate) => ({
+          ...candidate,
+          status: 'unknown',
+        })),
+      });
+    }));
   },
 );
 
@@ -68,17 +72,20 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    return runProjectRouteEffect(c, Effect.gen(function* () {
+      if (!UUID_V4_REGEX.test(sessionId)) return yield* failJson({ error: 'Invalid session id' }, 400);
 
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadVisibleSession(loaded, sessionId);
-    if (!visible) return c.json({ error: 'Not found' }, 404);
-    if (!visible.canManageSharing) {
-      return c.json({ error: 'Only the session owner or a project manager can view public shares' }, 403);
-    }
+      const loaded = yield* attemptRoute(() => loadProjectForUser(c, projectId, 'read'));
+      if (!loaded) return yield* failNotFound();
+      const visible = yield* attemptRoute(() => loadVisibleSession(loaded, sessionId));
+      if (!visible) return yield* failNotFound();
+      if (!visible.canManageSharing) {
+        return yield* failJson({ error: 'Only the session owner or a project manager can view public shares' }, 403);
+      }
 
-    return c.json({ shares: await listPublicSharesForSession(sessionId) });
+      const shares = yield* attemptRoute(() => listPublicSharesForSession(sessionId));
+      return routeJson({ shares });
+    }));
   },
 );
 
@@ -103,25 +110,27 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    return runProjectRouteEffect(c, Effect.gen(function* () {
+      if (!UUID_V4_REGEX.test(sessionId)) return yield* failJson({ error: 'Invalid session id' }, 400);
 
-    const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadVisibleSession(loaded, sessionId);
-    if (!visible) return c.json({ error: 'Not found' }, 404);
-    if (!visible.canManageSharing) {
-      return c.json({ error: 'Only the session owner or a project manager can create public shares' }, 403);
-    }
+      const body = yield* attemptRoute(() => readBody(c));
+      const loaded = yield* attemptRoute(() => loadProjectForUser(c, projectId, 'read'));
+      if (!loaded) return yield* failNotFound();
+      const visible = yield* attemptRoute(() => loadVisibleSession(loaded, sessionId));
+      if (!visible) return yield* failNotFound();
+      if (!visible.canManageSharing) {
+        return yield* failJson({ error: 'Only the session owner or a project manager can create public shares' }, 403);
+      }
 
-    const result = await createPublicShare(body, {
-      sessionId,
-      projectId,
-      accountId: visible.row.accountId,
-      userId: loaded.userId,
-    });
-    if (!result.ok) return c.json({ error: result.error }, result.status as any);
-    return c.json({ share: result.share }, 201);
+      const result = yield* attemptRoute(() => createPublicShare(body, {
+        sessionId,
+        projectId,
+        accountId: visible.row.accountId,
+        userId: loaded.userId,
+      }));
+      if (!result.ok) return yield* failJson({ error: result.error }, result.status);
+      return routeJson({ share: result.share }, 201);
+    }));
   },
 );
 
@@ -146,20 +155,22 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     const shareId = c.req.param('shareId');
-    if (!UUID_V4_REGEX.test(sessionId) || !UUID_V4_REGEX.test(shareId)) {
-      return c.json({ error: 'Invalid id' }, 400);
-    }
+    return runProjectRouteEffect(c, Effect.gen(function* () {
+      if (!UUID_V4_REGEX.test(sessionId) || !UUID_V4_REGEX.test(shareId)) {
+        return yield* failJson({ error: 'Invalid id' }, 400);
+      }
 
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadVisibleSession(loaded, sessionId);
-    if (!visible) return c.json({ error: 'Not found' }, 404);
-    if (!visible.canManageSharing) {
-      return c.json({ error: 'Only the session owner or a project manager can revoke public shares' }, 403);
-    }
+      const loaded = yield* attemptRoute(() => loadProjectForUser(c, projectId, 'read'));
+      if (!loaded) return yield* failNotFound();
+      const visible = yield* attemptRoute(() => loadVisibleSession(loaded, sessionId));
+      if (!visible) return yield* failNotFound();
+      if (!visible.canManageSharing) {
+        return yield* failJson({ error: 'Only the session owner or a project manager can revoke public shares' }, 403);
+      }
 
-    const share = await revokePublicShare(sessionId, shareId);
-    if (!share) return c.json({ error: 'Not found' }, 404);
-    return c.json({ share });
+      const share = yield* attemptRoute(() => revokePublicShare(sessionId, shareId));
+      if (!share) return yield* failNotFound();
+      return routeJson({ share });
+    }));
   },
 );

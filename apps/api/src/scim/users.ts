@@ -8,6 +8,7 @@ import { db } from '../shared/db';
 import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
 import { scimError } from '../middleware/scim-auth';
 import { json, errors } from '../openapi';
+import { effectHandler } from '../effect/hono';
 import {
   scimRouter,
   ScimResource,
@@ -38,7 +39,7 @@ scimRouter.openapi(
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const accountId = c.req.param('accountId');
   const filter = parseFilter(c.req.query('filter'));
 
@@ -76,7 +77,7 @@ scimRouter.openapi(
           : [];
 
   return c.json(listResponse(filtered));
-  },
+  }),
 );
 
 scimRouter.openapi(
@@ -91,7 +92,7 @@ scimRouter.openapi(
       ...errors(401, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const accountId = c.req.param('accountId');
   const userId = c.req.param('userId');
 
@@ -111,7 +112,7 @@ scimRouter.openapi(
   if (!email) return scimError(c, 404, 'User has no email on record');
 
   return c.json(buildUser(accountId, member, email));
-  },
+  }),
 );
 
 scimRouter.openapi(
@@ -130,7 +131,7 @@ scimRouter.openapi(
       ...errors(400, 401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const accountId = c.req.param('accountId');
   let body: Record<string, unknown>;
   try {
@@ -254,7 +255,7 @@ scimRouter.openapi(
   });
 
   return c.json(buildUser(accountId, member!, userName), existingMember ? 200 : 201);
-  },
+  }),
 );
 
 /**
@@ -282,7 +283,7 @@ scimRouter.openapi(
       ...errors(400, 401, 403, 404, 409),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const accountId = c.req.param('accountId');
   const userId = c.req.param('userId');
 
@@ -364,7 +365,7 @@ scimRouter.openapi(
   const emails = await emailsByUserId([userId]);
   const email = emails.get(userId);
   return c.json(buildUser(accountId, member, email ?? ''));
-  },
+  }),
 );
 
 scimRouter.openapi(
@@ -379,7 +380,7 @@ scimRouter.openapi(
       ...errors(401, 403, 409),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const accountId = c.req.param('accountId');
   const userId = c.req.param('userId');
 
@@ -414,5 +415,5 @@ scimRouter.openapi(
     before: { user_id: userId, account_role: member.accountRole },
   });
   return c.body(null, 204);
-  },
+  }),
 );

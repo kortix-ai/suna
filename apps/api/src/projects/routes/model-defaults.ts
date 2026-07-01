@@ -9,6 +9,7 @@
 
 import { createRoute, z } from "@hono/zod-openapi";
 import { AUTO_MODEL_ID, getManagedModel } from "@kortix/llm-catalog";
+import { Effect } from "effect";
 import { auth, errors, json } from "../../openapi";
 import { invalidateAccountModelDefaults } from "../../llm-gateway/resolution/default-model";
 import {
@@ -18,6 +19,7 @@ import {
 } from "../../repositories/model-preferences";
 import { loadProjectForUser } from "../lib/access";
 import { projectsApp } from "../lib/app";
+import { attemptRoute, attemptRouteSync, failJson, failNotFound, routeJson, runProjectRouteEffect } from "./effect-workflows";
 
 /** A storable default must be a concrete model — a managed id (bare or
  *  kortix/-prefixed), or a `provider/model` BYOK/direct wire — never the
@@ -47,22 +49,24 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    const accountId = loaded.row.accountId as string;
-    const defaults = await getAccountModelDefaults(accountId);
-    const projectDefault = defaults.projects[projectId] ?? null;
-    return c.json({
-      // The platform default is the synthetic `auto` (the gateway resolves it).
-      platformDefault: AUTO_MODEL_ID,
-      accountDefault: defaults.account,
-      projectDefault,
-      agentDefaults: defaults.agents,
-      // Project/account-level resolution for the caller; agent defaults are
-      // applied per-agent by the client from agentDefaults. No freeTier — the
-      // catalog already encodes availability.
-      resolvedForCaller: projectDefault ?? defaults.account ?? AUTO_MODEL_ID,
-    });
+    return runProjectRouteEffect(c, Effect.gen(function* () {
+      const loaded = yield* attemptRoute(() => loadProjectForUser(c, projectId, "read"));
+      if (!loaded) return yield* failNotFound();
+      const accountId = loaded.row.accountId as string;
+      const defaults = yield* attemptRoute(() => getAccountModelDefaults(accountId));
+      const projectDefault = defaults.projects[projectId] ?? null;
+      return routeJson({
+        // The platform default is the synthetic `auto` (the gateway resolves it).
+        platformDefault: AUTO_MODEL_ID,
+        accountDefault: defaults.account,
+        projectDefault,
+        agentDefaults: defaults.agents,
+        // Project/account-level resolution for the caller; agent defaults are
+        // applied per-agent by the client from agentDefaults. No freeTier — the
+        // catalog already encodes availability.
+        resolvedForCaller: projectDefault ?? defaults.account ?? AUTO_MODEL_ID,
+      });
+    }));
   },
 );
 
@@ -81,25 +85,28 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    const accountId = loaded.row.accountId as string;
-    const userId = c.get("userId") as string;
+    return runProjectRouteEffect(c, Effect.gen(function* () {
+      const loaded = yield* attemptRoute(() => loadProjectForUser(c, projectId, "manage"));
+      if (!loaded) return yield* failNotFound();
+      const accountId = loaded.row.accountId as string;
+      const userId = c.get("userId") as string;
 
-    const parsed = ModelDefaultBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "Invalid body", code: "invalid_body" }, 400);
-    const { scope, agentName, model } = parsed.data;
-    if (scope === "agent" && !agentName) {
-      return c.json({ error: "agentName is required for scope=agent", code: "agent_name_required" }, 400);
-    }
-    if (!isStorableModel(model)) {
-      return c.json({ error: `"${model}" is not a settable model`, code: "invalid_model" }, 400);
-    }
+      const rawBody = yield* attemptRoute(async () => c.req.json().catch(() => null));
+      const parsed = yield* attemptRouteSync(() => ModelDefaultBody.safeParse(rawBody));
+      if (!parsed.success) return yield* failJson({ error: "Invalid body", code: "invalid_body" }, 400);
+      const { scope, agentName, model } = parsed.data;
+      if (scope === "agent" && !agentName) {
+        return yield* failJson({ error: "agentName is required for scope=agent", code: "agent_name_required" }, 400);
+      }
+      if (!isStorableModel(model)) {
+        return yield* failJson({ error: `"${model}" is not a settable model`, code: "invalid_model" }, 400);
+      }
 
-    const scopeKey = scope === "project" ? projectId : scope === "agent" ? agentName! : "";
-    await upsertAccountModelPreference({ accountId, scope, scopeKey, model, updatedBy: userId });
-    invalidateAccountModelDefaults(accountId);
-    return c.json({ ok: true, scope, agentName: scope === "agent" ? agentName : undefined, model });
+      const scopeKey = scope === "project" ? projectId : scope === "agent" ? agentName! : "";
+      yield* attemptRoute(() => upsertAccountModelPreference({ accountId, scope, scopeKey, model, updatedBy: userId }));
+      yield* attemptRouteSync(() => invalidateAccountModelDefaults(accountId));
+      return routeJson({ ok: true, scope, agentName: scope === "agent" ? agentName : undefined, model });
+    }));
   },
 );
 
@@ -121,20 +128,22 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    const accountId = loaded.row.accountId as string;
-    const scope = c.req.query("scope");
-    const agentName = c.req.query("agentName");
-    if (scope !== "account" && scope !== "project" && scope !== "agent") {
-      return c.json({ error: "scope must be 'account', 'project', or 'agent'", code: "invalid_scope" }, 400);
-    }
-    if (scope === "agent" && !agentName) {
-      return c.json({ error: "agentName is required for scope=agent", code: "agent_name_required" }, 400);
-    }
-    const scopeKey = scope === "project" ? projectId : scope === "agent" ? agentName : "";
-    await deleteAccountModelPreference({ accountId, scope, scopeKey });
-    invalidateAccountModelDefaults(accountId);
-    return c.json({ ok: true, scope, agentName: scope === "agent" ? agentName : undefined });
+    return runProjectRouteEffect(c, Effect.gen(function* () {
+      const loaded = yield* attemptRoute(() => loadProjectForUser(c, projectId, "manage"));
+      if (!loaded) return yield* failNotFound();
+      const accountId = loaded.row.accountId as string;
+      const scope = c.req.query("scope");
+      const agentName = c.req.query("agentName");
+      if (scope !== "account" && scope !== "project" && scope !== "agent") {
+        return yield* failJson({ error: "scope must be 'account', 'project', or 'agent'", code: "invalid_scope" }, 400);
+      }
+      if (scope === "agent" && !agentName) {
+        return yield* failJson({ error: "agentName is required for scope=agent", code: "agent_name_required" }, 400);
+      }
+      const scopeKey = scope === "project" ? projectId : scope === "agent" ? agentName : "";
+      yield* attemptRoute(() => deleteAccountModelPreference({ accountId, scope, scopeKey }));
+      yield* attemptRouteSync(() => invalidateAccountModelDefaults(accountId));
+      return routeJson({ ok: true, scope, agentName: scope === "agent" ? agentName : undefined });
+    }));
   },
 );

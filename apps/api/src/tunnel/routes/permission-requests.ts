@@ -1,6 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import { Effect } from 'effect';
 import { eq, and, desc } from 'drizzle-orm';
-import { tunnelPermissionRequests, tunnelPermissions, tunnelConnections } from '@kortix/db';
+import { tunnelPermissionRequests, tunnelPermissions } from '@kortix/db';
 import { db } from '../../shared/db';
 import { tunnelRelay } from '../core/relay';
 import { tunnelRateLimiter } from '../core/rate-limiter';
@@ -8,7 +9,15 @@ import { isValidCapability, validateScope as validateScopeInput } from '../core/
 import { TunnelErrorCode, type TunnelCapability } from 'agent-tunnel';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
-import { getTunnelOwnerContext } from './auth';
+import { getTunnelOwnerContext, getTunnelOwnerContextEffect } from './auth';
+import {
+  attemptTunnel,
+  parseOptionalJsonBody,
+  runTunnelEffect,
+  sendTunnelJson,
+  tunnelFail,
+  tunnelJson,
+} from './effect-workflows';
 
 type SSEWriter = (event: string, data: unknown) => void;
 const sseSubscribers = new Map<string, Set<SSEWriter>>();
@@ -32,6 +41,144 @@ export function notifyTunnelEvent(accountId: string, event: string, data: unknow
 /** Permissive permission-request row shape, as persisted + serialized. */
 const PermissionRequestSchema = z.record(z.string(), z.any());
 
+const listPermissionRequestsEffect = (c: any) =>
+  Effect.gen(function* () {
+    const { accountId } = yield* getTunnelOwnerContextEffect(c);
+
+    const requests = yield* attemptTunnel(() =>
+      db
+        .select()
+        .from(tunnelPermissionRequests)
+        .where(
+          and(
+            eq(tunnelPermissionRequests.accountId, accountId),
+            eq(tunnelPermissionRequests.status, 'pending'),
+          ),
+        )
+        .orderBy(desc(tunnelPermissionRequests.createdAt)),
+    );
+
+    return tunnelJson(requests);
+  });
+
+const approvePermissionRequestEffect = (c: any) =>
+  Effect.gen(function* () {
+    const { accountId } = yield* getTunnelOwnerContextEffect(c);
+    const requestId = c.req.param('requestId');
+    const body = yield* parseOptionalJsonBody<{
+      scope?: Record<string, unknown>;
+      expiresAt?: string;
+    }>(c, {});
+    const rateCheck = tunnelRateLimiter.check('permGrant', accountId);
+    if (!rateCheck.allowed) {
+      return yield* tunnelFail({
+        error: 'Rate limit exceeded',
+        code: TunnelErrorCode.RATE_LIMITED,
+        retryAfterMs: rateCheck.retryAfterMs,
+      }, 429);
+    }
+
+    const [request] = yield* attemptTunnel(() =>
+      db
+        .select()
+        .from(tunnelPermissionRequests)
+        .where(
+          and(
+            eq(tunnelPermissionRequests.requestId, requestId),
+            eq(tunnelPermissionRequests.accountId, accountId),
+          ),
+        ),
+    );
+
+    if (!request) {
+      return yield* tunnelFail({ error: 'Permission request not found' }, 404);
+    }
+
+    if (request.status !== 'pending') {
+      return yield* tunnelFail({ error: `Request already ${request.status}` }, 409);
+    }
+
+    if (!isValidCapability(request.capability)) {
+      return yield* tunnelFail({ error: `Invalid capability: ${request.capability}` }, 400);
+    }
+
+    yield* attemptTunnel(() =>
+      db
+        .update(tunnelPermissionRequests)
+        .set({ status: 'approved', updatedAt: new Date() })
+        .where(eq(tunnelPermissionRequests.requestId, requestId)),
+    );
+
+    const scope = body.scope || request.requestedScope || {};
+    if (scope && Object.keys(scope).length > 0) {
+      const scopeResult = validateScopeInput(request.capability, scope as Record<string, unknown>);
+      if (!scopeResult.valid) {
+        return yield* tunnelFail({ error: `Invalid scope: ${scopeResult.error}` }, 400);
+      }
+    }
+
+    const expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
+
+    const [permission] = yield* attemptTunnel(() =>
+      db
+        .insert(tunnelPermissions)
+        .values({
+          tunnelId: request.tunnelId,
+          accountId,
+          capability: request.capability as TunnelCapability,
+          scope,
+          expiresAt,
+        })
+        .returning(),
+    );
+
+    yield* Effect.sync(() => {
+      tunnelRelay.sendNotification(request.tunnelId, 'tunnel.permission.granted', {
+        permissionId: permission.permissionId,
+        capability: permission.capability,
+        scope: permission.scope,
+        expiresAt: permission.expiresAt?.toISOString() ?? undefined,
+      });
+    });
+
+    return tunnelJson({ success: true, permission });
+  });
+
+const denyPermissionRequestEffect = (c: any) =>
+  Effect.gen(function* () {
+    const { accountId } = yield* getTunnelOwnerContextEffect(c);
+    const requestId = c.req.param('requestId');
+
+    const [request] = yield* attemptTunnel(() =>
+      db
+        .select()
+        .from(tunnelPermissionRequests)
+        .where(
+          and(
+            eq(tunnelPermissionRequests.requestId, requestId),
+            eq(tunnelPermissionRequests.accountId, accountId),
+          ),
+        ),
+    );
+
+    if (!request) {
+      return yield* tunnelFail({ error: 'Permission request not found' }, 404);
+    }
+
+    if (request.status !== 'pending') {
+      return yield* tunnelFail({ error: `Request already ${request.status}` }, 409);
+    }
+
+    yield* attemptTunnel(() =>
+      db
+        .update(tunnelPermissionRequests)
+        .set({ status: 'denied', updatedAt: new Date() })
+        .where(eq(tunnelPermissionRequests.requestId, requestId)),
+    );
+
+    return tunnelJson({ success: true });
+  });
+
 export function createPermissionRequestsRouter() {
   const router = makeOpenApiApp<AppEnv>();
 
@@ -48,20 +195,7 @@ export function createPermissionRequestsRouter() {
       },
     }),
     async (c: any) => {
-      const { accountId } = await getTunnelOwnerContext(c);
-
-      const requests = await db
-        .select()
-        .from(tunnelPermissionRequests)
-        .where(
-          and(
-            eq(tunnelPermissionRequests.accountId, accountId),
-            eq(tunnelPermissionRequests.status, 'pending'),
-          ),
-        )
-        .orderBy(desc(tunnelPermissionRequests.createdAt));
-
-      return c.json(requests);
+      return sendTunnelJson(c, await runTunnelEffect(listPermissionRequestsEffect(c)));
     },
   );
 
@@ -161,74 +295,7 @@ export function createPermissionRequestsRouter() {
       },
     }),
     async (c: any) => {
-      const { accountId } = await getTunnelOwnerContext(c);
-      const requestId = c.req.param('requestId');
-      const body = await c.req.json().catch(() => ({}));
-      const rateCheck = tunnelRateLimiter.check('permGrant', accountId);
-      if (!rateCheck.allowed) {
-        return c.json({
-          error: 'Rate limit exceeded',
-          code: TunnelErrorCode.RATE_LIMITED,
-          retryAfterMs: rateCheck.retryAfterMs,
-        }, 429);
-      }
-
-      const [request] = await db
-        .select()
-        .from(tunnelPermissionRequests)
-        .where(
-          and(
-            eq(tunnelPermissionRequests.requestId, requestId),
-            eq(tunnelPermissionRequests.accountId, accountId),
-          ),
-        );
-
-      if (!request) {
-        return c.json({ error: 'Permission request not found' }, 404);
-      }
-
-      if (request.status !== 'pending') {
-        return c.json({ error: `Request already ${request.status}` }, 409);
-      }
-
-      if (!isValidCapability(request.capability)) {
-        return c.json({ error: `Invalid capability: ${request.capability}` }, 400);
-      }
-
-      await db
-        .update(tunnelPermissionRequests)
-        .set({ status: 'approved', updatedAt: new Date() })
-        .where(eq(tunnelPermissionRequests.requestId, requestId));
-
-      const scope = body.scope || request.requestedScope || {};
-      if (scope && Object.keys(scope).length > 0) {
-        const scopeResult = validateScopeInput(request.capability, scope);
-        if (!scopeResult.valid) {
-          return c.json({ error: `Invalid scope: ${scopeResult.error}` }, 400);
-        }
-      }
-
-      const expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
-
-      const [permission] = await db
-        .insert(tunnelPermissions)
-        .values({
-          tunnelId: request.tunnelId,
-          accountId,
-          capability: request.capability as TunnelCapability,
-          scope,
-          expiresAt,
-        })
-        .returning();
-
-      tunnelRelay.sendNotification(request.tunnelId, 'tunnel.permission.granted', {
-        permissionId: permission.permissionId,
-        capability: permission.capability,
-        scope: permission.scope,
-        expiresAt: permission.expiresAt?.toISOString() ?? undefined,
-      });
-
-      return c.json({ success: true, permission });
+      return sendTunnelJson(c, await runTunnelEffect(approvePermissionRequestEffect(c)));
     },
   );
 
@@ -246,33 +313,7 @@ export function createPermissionRequestsRouter() {
       },
     }),
     async (c: any) => {
-      const { accountId } = await getTunnelOwnerContext(c);
-      const requestId = c.req.param('requestId');
-
-      const [request] = await db
-        .select()
-        .from(tunnelPermissionRequests)
-        .where(
-          and(
-            eq(tunnelPermissionRequests.requestId, requestId),
-            eq(tunnelPermissionRequests.accountId, accountId),
-          ),
-        );
-
-      if (!request) {
-        return c.json({ error: 'Permission request not found' }, 404);
-      }
-
-      if (request.status !== 'pending') {
-        return c.json({ error: `Request already ${request.status}` }, 409);
-      }
-
-      await db
-        .update(tunnelPermissionRequests)
-        .set({ status: 'denied', updatedAt: new Date() })
-        .where(eq(tunnelPermissionRequests.requestId, requestId));
-
-      return c.json({ success: true });
+      return sendTunnelJson(c, await runTunnelEffect(denyPermissionRequestEffect(c)));
     },
   );
 

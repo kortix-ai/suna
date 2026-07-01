@@ -1,4 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import { Effect } from 'effect';
 import { and, eq, isNull } from 'drizzle-orm';
 import { accountInvitations, accountMembers, accounts, projectMembers } from '@kortix/db';
 import type { AppEnv } from '../types';
@@ -8,6 +9,7 @@ import { getSupabase } from '../shared/supabase';
 import { createInviteAcceptRateLimitMiddleware } from '../shared/rate-limit';
 import { onMemberAdded } from '../billing/services/seat-management';
 import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
+import { accountFail, accountResponse, accountTry, runAccountWorkflow } from './effect-workflows';
 
 export const accountInvitesRouter = makeOpenApiApp<AppEnv>();
 
@@ -35,9 +37,7 @@ const InviteAcceptSchema = z
     account_id: z.string(),
     account_role: z.string(),
     already_accepted: z.boolean(),
-    bootstrap_grants_applied: z.array(
-      z.object({ project_id: z.string(), role: z.string() }),
-    ),
+    bootstrap_grants_applied: z.array(z.object({ project_id: z.string(), role: z.string() })),
   })
   .openapi('InviteAccept');
 
@@ -111,6 +111,10 @@ function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
 // membership itself is already committed and shouldn't roll back because a
 // project no longer exists. Each entry is validated first (see
 // validateBootstrapGrant) so a bad jsonb write can't break acceptance.
+//
+// This helper stays as an imperative loop because per-grant failure is part of
+// the contract: each grant has independent validation, independent logging, and
+// must not short-circuit invite acceptance or later grants.
 async function applyBootstrapGrants(
   invite: typeof accountInvitations.$inferSelect,
   userId: string,
@@ -177,64 +181,75 @@ accountInvitesRouter.openapi(
     },
   }),
   async (c: any) => {
-  const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
-  const inviteId = c.req.param('inviteId');
+    return runAccountWorkflow(
+      c,
+      Effect.gen(function* () {
+        const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
+        const inviteId = c.req.param('inviteId');
 
-  const [invite] = await db
-    .select()
-    .from(accountInvitations)
-    .where(eq(accountInvitations.inviteId, inviteId))
-    .limit(1);
+        const [invite] = yield* accountTry(() =>
+          db
+            .select()
+            .from(accountInvitations)
+            .where(eq(accountInvitations.inviteId, inviteId))
+            .limit(1),
+        );
 
-  if (!invite) return c.json({ error: 'Invite not found' }, 404);
+        if (!invite) return yield* accountFail({ error: 'Invite not found' }, 404);
 
-  const expired = isExpired(invite);
-  const emailMatchesCaller = callerEmail === invite.email.toLowerCase();
+        const expired = isExpired(invite);
+        const emailMatchesCaller = callerEmail === invite.email.toLowerCase();
 
-  if (!emailMatchesCaller) {
-    return c.json({
-      invite_id: invite.inviteId,
-      email_matches_caller: false,
-      expired,
-      accepted_at: invite.acceptedAt?.toISOString() ?? null,
-      // Identifying fields intentionally null — don't leak to wrong recipient.
-      account_id: null,
-      account_name: null,
-      email: null,
-      initial_role: null,
-      inviter_email: null,
-      created_at: null,
-      expires_at: null,
-    });
-  }
+        if (!emailMatchesCaller) {
+          return accountResponse({
+            invite_id: invite.inviteId,
+            email_matches_caller: false,
+            expired,
+            accepted_at: invite.acceptedAt?.toISOString() ?? null,
+            // Identifying fields intentionally null — don't leak to wrong recipient.
+            account_id: null,
+            account_name: null,
+            email: null,
+            initial_role: null,
+            inviter_email: null,
+            created_at: null,
+            expires_at: null,
+          });
+        }
 
-  const [accountRow] = await db
-    .select({ name: accounts.name })
-    .from(accounts)
-    .where(eq(accounts.accountId, invite.accountId))
-    .limit(1);
+        const [accountRow] = yield* accountTry(() =>
+          db
+            .select({ name: accounts.name })
+            .from(accounts)
+            .where(eq(accounts.accountId, invite.accountId))
+            .limit(1),
+        );
 
-  const inviterEmail = await lookupAuthEmail(invite.invitedBy);
+        const inviterEmail = yield* accountTry(() => lookupAuthEmail(invite.invitedBy));
 
-  return c.json({
-    invite_id: invite.inviteId,
-    account_id: invite.accountId,
-    account_name: accountRow?.name ?? null,
-    email: invite.email,
-    initial_role: invite.initialRole,
-    inviter_email: inviterEmail,
-    created_at: invite.createdAt.toISOString(),
-    expires_at: invite.expiresAt.toISOString(),
-    accepted_at: invite.acceptedAt?.toISOString() ?? null,
-    email_matches_caller: true,
-    expired,
-  });
+        return accountResponse({
+          invite_id: invite.inviteId,
+          account_id: invite.accountId,
+          account_name: accountRow?.name ?? null,
+          email: invite.email,
+          initial_role: invite.initialRole,
+          inviter_email: inviterEmail,
+          created_at: invite.createdAt.toISOString(),
+          expires_at: invite.expiresAt.toISOString(),
+          accepted_at: invite.acceptedAt?.toISOString() ?? null,
+          email_matches_caller: true,
+          expired,
+        });
+      }),
+    );
   },
 );
 
 // POST /v1/account-invites/:inviteId/accept — accept an invite. Validates email
-// matches caller, invite isn't expired/accepted, then atomically inserts the
-// member row + stamps accepted_at.
+// matches caller, invite isn't expired/accepted, then inserts the member row +
+// stamps accepted_at. This is deliberately not collapsed into a DB transaction:
+// the existing contract is idempotent/self-healing, and bootstrap grant failures
+// must not roll back account membership.
 accountInvitesRouter.openapi(
   createRoute({
     method: 'post',
@@ -251,79 +266,96 @@ accountInvitesRouter.openapi(
     },
   }),
   async (c: any) => {
-  const userId = c.get('userId') as string;
-  const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
-  const inviteId = c.req.param('inviteId');
+    return runAccountWorkflow(
+      c,
+      Effect.gen(function* () {
+        const userId = c.get('userId') as string;
+        const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
+        const inviteId = c.req.param('inviteId');
 
-  const [invite] = await db
-    .select()
-    .from(accountInvitations)
-    .where(eq(accountInvitations.inviteId, inviteId))
-    .limit(1);
+        const [invite] = yield* accountTry(() =>
+          db
+            .select()
+            .from(accountInvitations)
+            .where(eq(accountInvitations.inviteId, inviteId))
+            .limit(1),
+        );
 
-  if (!invite) return c.json({ error: 'Invite not found' }, 404);
+        if (!invite) return yield* accountFail({ error: 'Invite not found' }, 404);
 
-  if (callerEmail !== invite.email.toLowerCase()) {
-    return c.json({ error: 'This invite is addressed to a different account.' }, 403);
-  }
+        if (callerEmail !== invite.email.toLowerCase()) {
+          return yield* accountFail(
+            { error: 'This invite is addressed to a different account.' },
+            403,
+          );
+        }
 
-  const alreadyAccepted = !!invite.acceptedAt;
+        const alreadyAccepted = !!invite.acceptedAt;
 
-  // Only block a *fresh* accept on expiry. An already-accepted invite stays
-  // redeemable for the addressed user so re-entry can heal a grant that was
-  // never written (see below).
-  if (!alreadyAccepted && isExpired(invite)) {
-    return c.json({ error: 'This invite has expired. Ask the owner to send a new one.' }, 410);
-  }
+        // Only block a *fresh* accept on expiry. An already-accepted invite stays
+        // redeemable for the addressed user so re-entry can heal a grant that was
+        // never written (see below).
+        if (!alreadyAccepted && isExpired(invite)) {
+          return yield* accountFail(
+            { error: 'This invite has expired. Ask the owner to send a new one.' },
+            410,
+          );
+        }
 
-  // Ensure account membership. onConflictDoNothing on the (user, account) unique
-  // index keeps this idempotent whether it's a first accept or a re-entry.
-  await db
-    .insert(accountMembers)
-    .values({
-      userId,
-      accountId: invite.accountId,
-      accountRole: invite.initialRole,
-    })
-    .onConflictDoNothing({
-      target: [accountMembers.userId, accountMembers.accountId],
-    });
+        // Ensure account membership. onConflictDoNothing on the (user, account) unique
+        // index keeps this idempotent whether it's a first accept or a re-entry.
+        yield* accountTry(async () => {
+          await db
+            .insert(accountMembers)
+            .values({
+              userId,
+              accountId: invite.accountId,
+              accountRole: invite.initialRole,
+            })
+            .onConflictDoNothing({
+              target: [accountMembers.userId, accountMembers.accountId],
+            });
+        });
 
-  // Stamp accepted_at on first accept. The isNull guard makes concurrent
-  // accepts collapse to a single write without us caring who won — both
-  // callers still go on to (idempotently) apply grants below.
-  if (!alreadyAccepted) {
-    await db
-      .update(accountInvitations)
-      .set({ acceptedAt: new Date() })
-      .where(
-        and(
-          eq(accountInvitations.inviteId, invite.inviteId),
-          isNull(accountInvitations.acceptedAt),
-        ),
-      );
-  }
+        // Stamp accepted_at on first accept. The isNull guard makes concurrent
+        // accepts collapse to a single write without us caring who won — both
+        // callers still go on to (idempotently) apply grants below.
+        if (!alreadyAccepted) {
+          yield* accountTry(async () => {
+            await db
+              .update(accountInvitations)
+              .set({ acceptedAt: new Date() })
+              .where(
+                and(
+                  eq(accountInvitations.inviteId, invite.inviteId),
+                  isNull(accountInvitations.acceptedAt),
+                ),
+              );
+          });
+        }
 
-  // Billing v2 — mint per-member YOLO + push +1 seat to Stripe. No-op for
-  // legacy accounts (guarded inside the service). Idempotent on re-accept.
-  // Fire-and-forget so Stripe hiccups don't block invite acceptance.
-  void onMemberAdded(invite.accountId, userId).catch(() => {});
+        // Billing v2 — mint per-member YOLO + push +1 seat to Stripe. No-op for
+        // legacy accounts (guarded inside the service). Idempotent on re-accept.
+        // Fire-and-forget so Stripe hiccups don't block invite acceptance.
+        void onMemberAdded(invite.accountId, userId).catch(() => {});
 
-  // Apply bootstrap grants on EVERY accept path — this is what makes acceptance
-  // self-healing. Previously grants ran only on the first accept, AFTER
-  // accepted_at was stamped and best-effort; any failure there (or a retried /
-  // concurrent accept hitting the already-accepted early return) left the
-  // member with no project_members row, so the invited project was invisible
-  // to them and re-clicking the link never fixed it. applyBootstrapGrants is
-  // idempotent, so re-running it on re-entry just heals the missing grant.
-  const appliedGrants = await applyBootstrapGrants(invite, userId);
+        // Apply bootstrap grants on EVERY accept path — this is what makes acceptance
+        // self-healing. Previously grants ran only on the first accept, AFTER
+        // accepted_at was stamped and best-effort; any failure there (or a retried /
+        // concurrent accept hitting the already-accepted early return) left the
+        // member with no project_members row, so the invited project was invisible
+        // to them and re-clicking the link never fixed it. applyBootstrapGrants is
+        // idempotent, so re-running it on re-entry just heals the missing grant.
+        const appliedGrants = yield* accountTry(() => applyBootstrapGrants(invite, userId));
 
-  return c.json({
-    account_id: invite.accountId,
-    account_role: invite.initialRole,
-    already_accepted: alreadyAccepted,
-    bootstrap_grants_applied: appliedGrants,
-  });
+        return accountResponse({
+          account_id: invite.accountId,
+          account_role: invite.initialRole,
+          already_accepted: alreadyAccepted,
+          bootstrap_grants_applied: appliedGrants,
+        });
+      }),
+    );
   },
 );
 
@@ -344,27 +376,41 @@ accountInvitesRouter.openapi(
     },
   }),
   async (c: any) => {
-  const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
-  const inviteId = c.req.param('inviteId');
+    return runAccountWorkflow(
+      c,
+      Effect.gen(function* () {
+        const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
+        const inviteId = c.req.param('inviteId');
 
-  const [invite] = await db
-    .select()
-    .from(accountInvitations)
-    .where(eq(accountInvitations.inviteId, inviteId))
-    .limit(1);
+        const [invite] = yield* accountTry(() =>
+          db
+            .select()
+            .from(accountInvitations)
+            .where(eq(accountInvitations.inviteId, inviteId))
+            .limit(1),
+        );
 
-  if (!invite) return c.json({ error: 'Invite not found' }, 404);
+        if (!invite) return yield* accountFail({ error: 'Invite not found' }, 404);
 
-  if (invite.acceptedAt) {
-    return c.json({ error: 'Invite has already been accepted' }, 409);
-  }
+        if (invite.acceptedAt) {
+          return yield* accountFail({ error: 'Invite has already been accepted' }, 409);
+        }
 
-  if (callerEmail !== invite.email.toLowerCase()) {
-    return c.json({ error: 'This invite is addressed to a different account.' }, 403);
-  }
+        if (callerEmail !== invite.email.toLowerCase()) {
+          return yield* accountFail(
+            { error: 'This invite is addressed to a different account.' },
+            403,
+          );
+        }
 
-  await db.delete(accountInvitations).where(eq(accountInvitations.inviteId, invite.inviteId));
+        yield* accountTry(async () => {
+          await db
+            .delete(accountInvitations)
+            .where(eq(accountInvitations.inviteId, invite.inviteId));
+        });
 
-  return c.json({ ok: true });
+        return accountResponse({ ok: true });
+      }),
+    );
   },
 );

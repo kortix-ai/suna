@@ -22,6 +22,7 @@ import { prettyJSON } from 'hono/pretty-json';
 import { HTTPException } from 'hono/http-exception';
 import { config } from './config';
 import { BillingError } from './errors';
+import { effectMiddleware } from './effect/hono';
 
 // ─── Sub-Service Imports ──────────────────────────────────────────────────── 
 
@@ -120,6 +121,8 @@ const app = new OpenAPIHono();
 // Exported so tooling/tests can introspect the route table (app.routes) without
 // booting the server. See the import.meta.main guard around startup below.
 export { app };
+
+app.use('*', effectMiddleware);
 
 app.use('*', async (c, next) => {
   const path = c.req.path;

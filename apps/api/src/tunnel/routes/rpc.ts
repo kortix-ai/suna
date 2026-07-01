@@ -1,12 +1,73 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import { Effect } from 'effect';
 import { eq, and } from 'drizzle-orm';
 import { tunnelConnections } from '@kortix/db';
 import { db } from '../../shared/db';
 import { TunnelErrorCode } from 'agent-tunnel';
 import { executeTunnelRpc } from '../core/rpc-core';
-import { getTunnelReadContext } from './auth';
+import { getTunnelReadContextEffect } from './auth';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
+import {
+  attemptTunnel,
+  parseJsonBody,
+  runTunnelEffect,
+  sendTunnelJson,
+  tunnelFail,
+  tunnelJson,
+} from './effect-workflows';
+
+const relayRpcEffect = (c: any) =>
+  Effect.gen(function* () {
+    const { accountId, ownerClause } = yield* getTunnelReadContextEffect(c);
+    const tunnelId = c.req.param('tunnelId');
+
+    const body = yield* parseJsonBody<any>(c);
+    const { method, params = {} } = body;
+
+    // Ownership / existence: scoped to the caller's account (personal or team).
+    // The shared core then handles rate-limit / capability / permission /
+    // relay / audit — the same path the Executor's `computer` connector uses.
+    const [tunnel] = yield* attemptTunnel(() =>
+      db
+        .select()
+        .from(tunnelConnections)
+        .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause)),
+    );
+
+    if (!tunnel) {
+      return yield* tunnelFail({ error: 'Tunnel connection not found' }, 404);
+    }
+
+    const outcome = yield* attemptTunnel(() =>
+      executeTunnelRpc({ tunnelId, accountId, method, params }),
+    );
+
+    if (outcome.ok) {
+      return tunnelJson({ result: outcome.result });
+    }
+    switch (outcome.kind) {
+      case 'permission_required':
+        return yield* tunnelFail(
+          {
+            error: 'Permission required',
+            code: TunnelErrorCode.PERMISSION_DENIED,
+            requestId: outcome.requestId,
+            message: outcome.message,
+          },
+          403,
+        );
+      case 'rate_limited':
+        return yield* tunnelFail(
+          { error: outcome.message, code: TunnelErrorCode.RATE_LIMITED, retryAfterMs: outcome.retryAfterMs },
+          429,
+        );
+      case 'bad_request':
+        return yield* tunnelFail({ error: outcome.message }, 400);
+      case 'error':
+        return yield* tunnelFail({ error: outcome.message, code: outcome.code }, outcome.httpStatus);
+    }
+  });
 
 export function createRpcRouter() {
   const router = makeOpenApiApp<AppEnv>();
@@ -39,50 +100,7 @@ export function createRpcRouter() {
       },
     }),
     async (c: any) => {
-      const { accountId, ownerClause } = await getTunnelReadContext(c);
-      const tunnelId = c.req.param('tunnelId');
-
-      const body = await c.req.json();
-      const { method, params = {} } = body;
-
-      // Ownership / existence: scoped to the caller's account (personal or team).
-      // The shared core then handles rate-limit / capability / permission /
-      // relay / audit — the same path the Executor's `computer` connector uses.
-      const [tunnel] = await db
-        .select()
-        .from(tunnelConnections)
-        .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause));
-
-      if (!tunnel) {
-        return c.json({ error: 'Tunnel connection not found' }, 404);
-      }
-
-      const outcome = await executeTunnelRpc({ tunnelId, accountId, method, params });
-
-      if (outcome.ok) {
-        return c.json({ result: outcome.result });
-      }
-      switch (outcome.kind) {
-        case 'permission_required':
-          return c.json(
-            {
-              error: 'Permission required',
-              code: TunnelErrorCode.PERMISSION_DENIED,
-              requestId: outcome.requestId,
-              message: outcome.message,
-            },
-            403,
-          );
-        case 'rate_limited':
-          return c.json(
-            { error: outcome.message, code: TunnelErrorCode.RATE_LIMITED, retryAfterMs: outcome.retryAfterMs },
-            429,
-          );
-        case 'bad_request':
-          return c.json({ error: outcome.message }, 400);
-        case 'error':
-          return c.json({ error: outcome.message, code: outcome.code }, outcome.httpStatus);
-      }
+      return sendTunnelJson(c, await runTunnelEffect(relayRpcEffect(c)));
     },
   );
 

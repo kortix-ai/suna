@@ -63,6 +63,19 @@ these as standing rules whenever you touch the data/runtime layer:
   the SDK, and flag legacy/deprecated surfaces in-doc rather than documenting them
   as current.
 
+## Vendored Repositories
+
+This project vendors external source repositories under `repos/`.
+
+- Treat vendored repositories as read-only reference material for coding agents.
+- Prefer examples and patterns from vendored source code over generated guesses
+  or fragmented web-search snippets when working with related libraries.
+- Do not edit files under `repos/` unless explicitly asked.
+- Do not import from `repos/`; application code must import normal package
+  dependencies from `package.json`.
+- When writing Effect code, inspect `repos/effect/` for source, tests, module
+  structure, and idiomatic API usage.
+
 ## You CAN run and verify everything end-to-end. Do it.
 
 This repo ships a **complete, runnable local stack with live cloud sandboxes**.

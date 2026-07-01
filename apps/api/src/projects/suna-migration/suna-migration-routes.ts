@@ -19,6 +19,7 @@ import { json, errors, auth, ErrorSchema } from '../../openapi';
 import { startSunaMigration, latestSunaMigration, PHASE_ORDER } from './suna-migration-runner';
 import { sunaAccountMigrations, type Database } from '@kortix/db';
 import { withTimeout } from '../../shared/with-timeout';
+import { effectHandler } from '../../effect/hono';
 
 type Row = typeof sunaAccountMigrations.$inferSelect;
 
@@ -103,7 +104,7 @@ export function registerSunaMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
       request: { query: z.object({ account_id: z.string().optional() }) },
       responses: { 200: json(z.object({ eligible: z.boolean(), migration: z.any().nullable() }), 'Eligibility + current migration'), ...errors(401) },
     }),
-    async (c: any) => {
+    effectHandler(async (c: any) => {
       const accountId = await resolveScopedAccountId(c, 'query');
       let payload: SunaEligibilityPayload = SUNA_ELIGIBILITY_DEGRADED;
       try {
@@ -118,7 +119,7 @@ export function registerSunaMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
         // the next poll re-checks once the DB recovers.
       }
       return c.json(payload);
-    },
+    }),
   );
 
   app.openapi(
@@ -137,7 +138,7 @@ export function registerSunaMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
         ...errors(401),
       },
     }),
-    async (c: any) => {
+    effectHandler(async (c: any) => {
       const accountId = await resolveScopedAccountId(c, 'body');
       const body = await c.req.json().catch(() => ({}));
       if ((await countSunaProjects(accountId)) === 0) {
@@ -149,7 +150,7 @@ export function registerSunaMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
         offset: typeof body?.offset === 'number' ? body.offset : undefined,
       });
       return c.json({ created, migration: serialize(migration) }, created ? 202 : 200);
-    },
+    }),
   );
 
   app.openapi(
@@ -159,9 +160,9 @@ export function registerSunaMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
       request: { query: z.object({ account_id: z.string().optional() }) },
       responses: { 200: json(z.object({ migration: z.any().nullable() }), 'Migration progress'), ...errors(401) },
     }),
-    async (c: any) => {
+    effectHandler(async (c: any) => {
       const accountId = await resolveScopedAccountId(c, 'query');
       return c.json({ migration: serialize(await latestSunaMigration(db, accountId)) });
-    },
+    }),
   );
 }

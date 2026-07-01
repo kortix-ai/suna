@@ -73,6 +73,7 @@ import {
   projects,
   sessionSandboxes,
 } from "@kortix/db";
+import { Effect } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
 import { loadProjectForUser, assertProjectCapability } from "../lib/access";
 import { AnyObject, AppSchema, TriggerSchema, projectsApp } from "../lib/app";
@@ -105,6 +106,12 @@ import {
   upsertTriggerInManifest,
   withTriggersPaused,
 } from "../lib/triggers";
+import { attemptRoute, failJson, failNotFound, routeJson, runProjectRouteEffect } from "./effect-workflows";
+
+const loadProjectRoute = (c: any, projectId: string, access: "read" | "manage") =>
+  attemptRoute(() => loadProjectForUser(c, projectId, access)).pipe(
+    Effect.flatMap((loaded) => (loaded ? Effect.succeed(loaded) : failNotFound())),
+  );
 
 // Body keys that change the trigger's *repo manifest* (committed to git). An
 // owner-only edit touches none of these, so we can skip the manifest commit and
@@ -171,13 +178,18 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
+    return runProjectRouteEffect(c, Effect.gen(function* () {
+      const projectId = c.req.param("projectId");
+      const loaded = yield* loadProjectRoute(c, projectId, "read");
 
-    return c.json(await loadTriggersForResponse(projectId, loaded.row));
+      return routeJson(yield* attemptRoute(() => loadTriggersForResponse(projectId, loaded.row)));
+    }));
   },
 );
+
+// Deliberate exception: trigger create/update/delete keep the manifest commit
+// path linear because they mix parsing, git writes, DB owner state, and precise
+// 400/409/502 commit result mapping.
 
 projectsApp.openapi(
   createRoute({
@@ -283,26 +295,28 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, "manage");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE);
-    const paused = body.paused;
-    if (typeof paused !== "boolean") {
-      return c.json({ error: "paused must be a boolean" }, 400);
-    }
-    const [row] = await db
-      .update(projects)
-      .set({
-        metadata: withTriggersPaused(loaded.row.metadata, paused),
-        updatedAt: new Date(),
-      })
-      .where(eq(projects.projectId, projectId))
-      .returning();
-    if (!row || row.status === "archived")
-      return c.json({ error: "Not found" }, 404);
-    return c.json(await loadTriggersForResponse(projectId, row));
+    return runProjectRouteEffect(c, Effect.gen(function* () {
+      const projectId = c.req.param("projectId");
+      const body = yield* attemptRoute(() => readBody(c));
+      const loaded = yield* loadProjectRoute(c, projectId, "manage");
+      yield* attemptRoute(() => assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE));
+      const paused = body.paused;
+      if (typeof paused !== "boolean") {
+        return yield* failJson({ error: "paused must be a boolean" }, 400);
+      }
+      const [row] = yield* attemptRoute(() =>
+        db
+          .update(projects)
+          .set({
+            metadata: withTriggersPaused(loaded.row.metadata, paused),
+            updatedAt: new Date(),
+          })
+          .where(eq(projects.projectId, projectId))
+          .returning(),
+      );
+      if (!row || row.status === "archived") return yield* failNotFound();
+      return routeJson(yield* attemptRoute(() => loadTriggersForResponse(projectId, row)));
+    }));
   },
 );
 
@@ -466,11 +480,12 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    const install = await loadSlackInstall(projectId);
-    return c.json(install ?? null);
+    return runProjectRouteEffect(c, Effect.gen(function* () {
+      const projectId = c.req.param("projectId");
+      yield* loadProjectRoute(c, projectId, "read");
+      const install = yield* attemptRoute(() => loadSlackInstall(projectId));
+      return routeJson(install ?? null);
+    }));
   },
 );
 
@@ -495,19 +510,22 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    const mode = slackOauthMode();
-    if (!mode.available) {
-      return c.json({ oauth_available: false, install_url: null });
-    }
-    try {
-      const installUrl = buildSlackInstallUrl(projectId, loaded.userId);
-      return c.json({ oauth_available: true, install_url: installUrl });
-    } catch {
-      return c.json({ oauth_available: false, install_url: null });
-    }
+    return runProjectRouteEffect(c, Effect.gen(function* () {
+      const projectId = c.req.param("projectId");
+      const loaded = yield* loadProjectRoute(c, projectId, "read");
+      const mode = slackOauthMode();
+      if (!mode.available) {
+        return routeJson({ oauth_available: false, install_url: null });
+      }
+      const installUrl = yield* Effect.sync(() => buildSlackInstallUrl(projectId, loaded.userId)).pipe(
+        Effect.catchAll(() => Effect.succeed(null)),
+      );
+      return routeJson(
+        installUrl
+          ? { oauth_available: true, install_url: installUrl }
+          : { oauth_available: false, install_url: null },
+      );
+    }));
   },
 );
 

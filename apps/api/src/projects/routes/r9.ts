@@ -7,6 +7,7 @@ import { invalidateProjectMirror, mergeBranches, readRepoFile } from '../git';
 import { MANIFEST_FILENAME } from '../triggers';
 import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests } from '@kortix/db';
+import { Effect } from 'effect';
 import { eq } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
@@ -14,6 +15,12 @@ import { withProjectGitAuth } from '../lib/git';
 import { normalizeString, readBody } from '../lib/serializers';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
+import { attemptRoute, failJson, failNotFound, routeJson, runProjectRouteEffect } from './effect-workflows';
+
+const loadWritableProject = (c: any, projectId: string) =>
+  attemptRoute(() => loadProjectForUser(c, projectId, 'write')).pipe(
+    Effect.flatMap((loaded) => (loaded ? Effect.succeed(loaded) : failNotFound())),
+  );
 
 projectsApp.openapi(
   createRoute({
@@ -32,6 +39,9 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
+  // Deliberate exception: merge keeps the manifest gate, provider merge, DB
+  // stamp, and detached post-merge reconciliations in the established promise
+  // flow so those side effects stay in their original order.
   const projectId = c.req.param('projectId');
   const crId = c.req.param('crId');
   const body = await readBody(c);
@@ -180,32 +190,35 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const crId = c.req.param('crId');
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Per-agent gate: managing a CR's lifecycle is part of the change-request
-  // capability. A scoped agent token must hold project.cr.open (no-op for
-  // human/PAT tokens).
-  assertAgentScope(c, 'project.cr.open');
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    const crId = c.req.param('crId');
+    const loaded = yield* loadWritableProject(c, projectId);
+    // Per-agent gate: managing a CR's lifecycle is part of the change-request
+    // capability. A scoped agent token must hold project.cr.open (no-op for
+    // human/PAT tokens).
+    yield* attemptRoute(() => Promise.resolve(assertAgentScope(c, 'project.cr.open')));
 
-  const cr = await getCrById(crId, projectId);
-  if (!cr) return c.json({ error: 'Change request not found' }, 404);
-  if (cr.status === 'merged') {
-    return c.json({ error: 'Cannot close a merged change request' }, 409);
-  }
+    const cr = yield* attemptRoute(() => getCrById(crId, projectId));
+    if (!cr) return yield* failJson({ error: 'Change request not found' }, 404);
+    if (cr.status === 'merged') {
+      return yield* failJson({ error: 'Cannot close a merged change request' }, 409);
+    }
 
-  const [row] = await db
-    .update(changeRequests)
-    .set({
-      status: 'closed',
-      closedAt: new Date(),
-      closedBy: loaded.userId,
-      updatedAt: new Date(),
-    })
-    .where(eq(changeRequests.crId, crId))
-    .returning();
-  return c.json(serializeChangeRequest(row));
+    const [row] = yield* attemptRoute(() =>
+      db
+        .update(changeRequests)
+        .set({
+          status: 'closed',
+          closedAt: new Date(),
+          closedBy: loaded.userId,
+          updatedAt: new Date(),
+        })
+        .where(eq(changeRequests.crId, crId))
+        .returning(),
+    );
+    return routeJson(serializeChangeRequest(row));
+  }));
 },
 );
 
@@ -227,31 +240,34 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const crId = c.req.param('crId');
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Per-agent gate: managing a CR's lifecycle is part of the change-request
-  // capability. A scoped agent token must hold project.cr.open (no-op for
-  // human/PAT tokens).
-  assertAgentScope(c, 'project.cr.open');
+  return runProjectRouteEffect(c, Effect.gen(function* () {
+    const projectId = c.req.param('projectId');
+    const crId = c.req.param('crId');
+    yield* loadWritableProject(c, projectId);
+    // Per-agent gate: managing a CR's lifecycle is part of the change-request
+    // capability. A scoped agent token must hold project.cr.open (no-op for
+    // human/PAT tokens).
+    yield* attemptRoute(() => Promise.resolve(assertAgentScope(c, 'project.cr.open')));
 
-  const cr = await getCrById(crId, projectId);
-  if (!cr) return c.json({ error: 'Change request not found' }, 404);
-  if (cr.status !== 'closed') {
-    return c.json({ error: `Cannot reopen a ${cr.status} change request` }, 409);
-  }
+    const cr = yield* attemptRoute(() => getCrById(crId, projectId));
+    if (!cr) return yield* failJson({ error: 'Change request not found' }, 404);
+    if (cr.status !== 'closed') {
+      return yield* failJson({ error: `Cannot reopen a ${cr.status} change request` }, 409);
+    }
 
-  const [row] = await db
-    .update(changeRequests)
-    .set({
-      status: 'open',
-      closedAt: null,
-      closedBy: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(changeRequests.crId, crId))
-    .returning();
-  return c.json(serializeChangeRequest(row));
+    const [row] = yield* attemptRoute(() =>
+      db
+        .update(changeRequests)
+        .set({
+          status: 'open',
+          closedAt: null,
+          closedBy: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(changeRequests.crId, crId))
+        .returning(),
+    );
+    return routeJson(serializeChangeRequest(row));
+  }));
 },
 );
