@@ -1,12 +1,12 @@
-import { createRoute, z } from '@hono/zod-openapi';
-import { Context, Next } from 'hono';
-import { HTTPException } from 'hono/http-exception';
-import { createHash, randomBytes, timingSafeEqual } from 'crypto';
-import { eq, and, inArray, isNull } from 'drizzle-orm';
-import { db } from '../shared/db';
-import { randomAlphanumeric, verifySecretKey } from '../shared/crypto';
-import { supabaseAuth } from '../middleware/auth';
-import { config } from '../config';
+import { createRoute, z } from "@hono/zod-openapi";
+import { Context, Next } from "hono";
+import { HTTPException } from "hono/http-exception";
+import { createHash, randomBytes, timingSafeEqual } from "crypto";
+import { eq, and, inArray, isNull } from "drizzle-orm";
+import { db } from "../shared/db";
+import { randomAlphanumeric, verifySecretKey } from "../shared/crypto";
+import { supabaseAuth } from "../middleware/auth";
+import { config } from "../config";
 import {
   oauthClients,
   oauthAuthorizationCodes,
@@ -14,13 +14,14 @@ import {
   oauthRefreshTokens,
   accountMembers,
   sandboxes,
-} from '@kortix/db';
-import { makeOpenApiApp, json, errors, auth } from '../openapi';
+} from "@kortix/db";
+import { makeOpenApiApp, json, errors, auth } from "../openapi";
+import { effectHandler } from "../effect/hono";
 
 // ─── Token Hashing ──────────────────────────────────────────────────────────
 
 function hashToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
+  return createHash("sha256").update(token).digest("hex");
 }
 
 // ─── Rate Limiter (in-memory, per client_id) ────────────────────────────────
@@ -58,14 +59,16 @@ setInterval(() => {
 // ─── OAuth Access Token Middleware ───────────────────────────────────────────
 
 async function oauthTokenAuth(c: Context, next: Next) {
-  const authHeader = c.req.header('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
-    throw new HTTPException(401, { message: 'Missing or invalid Authorization header' });
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    throw new HTTPException(401, {
+      message: "Missing or invalid Authorization header",
+    });
   }
 
   const token = authHeader.slice(7);
   if (!token) {
-    throw new HTTPException(401, { message: 'Missing token' });
+    throw new HTTPException(401, { message: "Missing token" });
   }
 
   const tokenHash = hashToken(token);
@@ -83,32 +86,31 @@ async function oauthTokenAuth(c: Context, next: Next) {
     .limit(1);
 
   if (!row) {
-    throw new HTTPException(401, { message: 'Invalid access token' });
+    throw new HTTPException(401, { message: "Invalid access token" });
   }
 
   if (row.expiresAt < now) {
-    throw new HTTPException(401, { message: 'Access token expired' });
+    throw new HTTPException(401, { message: "Access token expired" });
   }
 
-  c.set('oauthUserId', row.userId);
-  c.set('oauthAccountId', row.accountId);
-  c.set('oauthClientId', row.clientId);
-  c.set('oauthScopes', row.scopes ?? []);
+  c.set("oauthUserId", row.userId);
+  c.set("oauthAccountId", row.accountId);
+  c.set("oauthClientId", row.clientId);
+  c.set("oauthScopes", row.scopes ?? []);
   await next();
 }
 
 // ─── PKCE Helpers ───────────────────────────────────────────────────────────
 
 function computeCodeChallenge(codeVerifier: string): string {
-  return createHash('sha256')
-    .update(codeVerifier)
-    .digest('base64url');
+  return createHash("sha256").update(codeVerifier).digest("base64url");
 }
 
 function parseRedirectUri(value: string): URL | null {
   try {
     const url = new URL(value);
-    if (['javascript:', 'data:', 'vbscript:', 'file:'].includes(url.protocol)) return null;
+    if (["javascript:", "data:", "vbscript:", "file:"].includes(url.protocol))
+      return null;
     return url;
   } catch {
     return null;
@@ -117,13 +119,24 @@ function parseRedirectUri(value: string): URL | null {
 
 function parseScopeList(value: unknown): string[] {
   if (Array.isArray(value)) {
-    return value.filter((scope): scope is string => typeof scope === 'string' && Boolean(scope.trim())).map((scope) => scope.trim());
+    return value
+      .filter(
+        (scope): scope is string =>
+          typeof scope === "string" && Boolean(scope.trim()),
+      )
+      .map((scope) => scope.trim());
   }
-  if (typeof value !== 'string') return [];
-  return value.split(/\s+/).map((scope) => scope.trim()).filter(Boolean);
+  if (typeof value !== "string") return [];
+  return value
+    .split(/\s+/)
+    .map((scope) => scope.trim())
+    .filter(Boolean);
 }
 
-function validateRequestedScopes(requested: string[], allowed: unknown): string[] | null {
+function validateRequestedScopes(
+  requested: string[],
+  allowed: unknown,
+): string[] | null {
   const allowedSet = new Set(parseScopeList(allowed));
   for (const scope of requested) {
     if (!allowedSet.has(scope)) return null;
@@ -132,10 +145,10 @@ function validateRequestedScopes(requested: string[], allowed: unknown): string[
 }
 
 function requireOAuthScope(c: Context, scope: string): Response | null {
-  const scopes = ((c as any).get('oauthScopes') as string[] | undefined) ?? [];
+  const scopes = ((c as any).get("oauthScopes") as string[] | undefined) ?? [];
   return scopes.includes(scope)
     ? null
-    : c.json({ error: 'insufficient_scope', required_scope: scope }, 403);
+    : c.json({ error: "insufficient_scope", required_scope: scope }, 403);
 }
 
 type PendingAuthorizationRequest = {
@@ -150,10 +163,15 @@ type PendingAuthorizationRequest = {
 };
 
 const AUTH_REQUEST_TTL_MS = 10 * 60 * 1000;
-const pendingAuthorizationRequests = new Map<string, PendingAuthorizationRequest>();
+const pendingAuthorizationRequests = new Map<
+  string,
+  PendingAuthorizationRequest
+>();
 
-function createAuthorizationRequest(request: Omit<PendingAuthorizationRequest, 'expiresAt'>): string {
-  const requestId = randomBytes(32).toString('base64url');
+function createAuthorizationRequest(
+  request: Omit<PendingAuthorizationRequest, "expiresAt">,
+): string {
+  const requestId = randomBytes(32).toString("base64url");
   pendingAuthorizationRequests.set(requestId, {
     ...request,
     expiresAt: Date.now() + AUTH_REQUEST_TTL_MS,
@@ -161,7 +179,9 @@ function createAuthorizationRequest(request: Omit<PendingAuthorizationRequest, '
   return requestId;
 }
 
-function getAuthorizationRequest(requestId: string): PendingAuthorizationRequest | null {
+function getAuthorizationRequest(
+  requestId: string,
+): PendingAuthorizationRequest | null {
   const request = pendingAuthorizationRequests.get(requestId);
   if (!request) return null;
   if (request.expiresAt < Date.now()) {
@@ -171,7 +191,9 @@ function getAuthorizationRequest(requestId: string): PendingAuthorizationRequest
   return request;
 }
 
-function consumeAuthorizationRequest(requestId: string): PendingAuthorizationRequest | null {
+function consumeAuthorizationRequest(
+  requestId: string,
+): PendingAuthorizationRequest | null {
   const request = getAuthorizationRequest(requestId);
   if (!request) return null;
   pendingAuthorizationRequests.delete(requestId);
@@ -196,7 +218,7 @@ function generateRefreshToken(): string {
 }
 
 function generateAuthCode(): string {
-  return randomBytes(48).toString('hex');
+  return randomBytes(48).toString("hex");
 }
 
 // ─── Issue Token Pair ───────────────────────────────────────────────────────
@@ -240,9 +262,9 @@ async function issueTokenPair(params: {
   return {
     access_token: accessToken,
     refresh_token: refreshToken,
-    token_type: 'Bearer' as const,
+    token_type: "Bearer" as const,
     expires_in: 3600,
-    scope: params.scopes.join(' '),
+    scope: params.scopes.join(" "),
   };
 }
 
@@ -251,19 +273,19 @@ async function issueTokenPair(params: {
 export const oauthApp = makeOpenApiApp();
 
 // Route-scoped auth middleware (preserves the original per-route middleware).
-oauthApp.use('/authorize/consent/:requestId', supabaseAuth);
-oauthApp.use('/authorize/consent', supabaseAuth);
-oauthApp.use('/userinfo', oauthTokenAuth);
-oauthApp.use('/claimable-machines', oauthTokenAuth);
+oauthApp.use("/authorize/consent/:requestId", supabaseAuth);
+oauthApp.use("/authorize/consent", supabaseAuth);
+oauthApp.use("/userinfo", oauthTokenAuth);
+oauthApp.use("/claimable-machines", oauthTokenAuth);
 
 // ─── GET /authorize ─────────────────────────────────────────────────────────
 
 oauthApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/authorize',
-    tags: ['oauth'],
-    summary: 'OAuth 2.0 authorization endpoint (PKCE) — redirects to consent',
+    method: "get",
+    path: "/authorize",
+    tags: ["oauth"],
+    summary: "OAuth 2.0 authorization endpoint (PKCE) — redirects to consent",
     request: {
       query: z.object({
         client_id: z.string().optional(),
@@ -276,72 +298,107 @@ oauthApp.openapi(
       }),
     },
     responses: {
-      302: { description: 'Redirect to the consent screen' },
+      302: { description: "Redirect to the consent screen" },
       ...errors(400),
     },
   }),
-  async (c: any) => {
-  const clientId = c.req.query('client_id');
-  const redirectUri = c.req.query('redirect_uri');
-  const responseType = c.req.query('response_type');
-  const scope = c.req.query('scope') ?? '';
-  const state = c.req.query('state') ?? '';
-  const codeChallenge = c.req.query('code_challenge');
-  const codeChallengeMethod = c.req.query('code_challenge_method') ?? 'S256';
+  effectHandler(async (c: any) => {
+    const clientId = c.req.query("client_id");
+    const redirectUri = c.req.query("redirect_uri");
+    const responseType = c.req.query("response_type");
+    const scope = c.req.query("scope") ?? "";
+    const state = c.req.query("state") ?? "";
+    const codeChallenge = c.req.query("code_challenge");
+    const codeChallengeMethod = c.req.query("code_challenge_method") ?? "S256";
 
-  if (!clientId || !redirectUri || responseType !== 'code' || !codeChallenge) {
-    return c.json({ error: 'invalid_request', error_description: 'Missing required parameters: client_id, redirect_uri, response_type=code, code_challenge' }, 400);
-  }
+    if (
+      !clientId ||
+      !redirectUri ||
+      responseType !== "code" ||
+      !codeChallenge
+    ) {
+      return c.json(
+        {
+          error: "invalid_request",
+          error_description:
+            "Missing required parameters: client_id, redirect_uri, response_type=code, code_challenge",
+        },
+        400,
+      );
+    }
 
-  if (codeChallengeMethod !== 'S256') {
-    return c.json({ error: 'invalid_request', error_description: 'Only code_challenge_method=S256 is supported' }, 400);
-  }
+    if (codeChallengeMethod !== "S256") {
+      return c.json(
+        {
+          error: "invalid_request",
+          error_description: "Only code_challenge_method=S256 is supported",
+        },
+        400,
+      );
+    }
 
-  const [client] = await db
-    .select()
-    .from(oauthClients)
-    .where(and(eq(oauthClients.clientId, clientId), eq(oauthClients.active, true)))
-    .limit(1);
+    const [client] = await db
+      .select()
+      .from(oauthClients)
+      .where(
+        and(eq(oauthClients.clientId, clientId), eq(oauthClients.active, true)),
+      )
+      .limit(1);
 
-  if (!client) {
-    return c.json({ error: 'invalid_client', error_description: 'Client not found or inactive' }, 400);
-  }
+    if (!client) {
+      return c.json(
+        {
+          error: "invalid_client",
+          error_description: "Client not found or inactive",
+        },
+        400,
+      );
+    }
 
-  const allowedUris = client.redirectUris ?? [];
-  if (!parseRedirectUri(redirectUri) || !allowedUris.includes(redirectUri)) {
-    return c.json({ error: 'invalid_request', error_description: 'redirect_uri not in allowed list' }, 400);
-  }
-  const scopes = validateRequestedScopes(parseScopeList(scope), client.scopes);
-  if (!scopes) {
-    return c.json({ error: 'invalid_scope' }, 400);
-  }
+    const allowedUris = client.redirectUris ?? [];
+    if (!parseRedirectUri(redirectUri) || !allowedUris.includes(redirectUri)) {
+      return c.json(
+        {
+          error: "invalid_request",
+          error_description: "redirect_uri not in allowed list",
+        },
+        400,
+      );
+    }
+    const scopes = validateRequestedScopes(
+      parseScopeList(scope),
+      client.scopes,
+    );
+    if (!scopes) {
+      return c.json({ error: "invalid_scope" }, 400);
+    }
 
-  const requestId = createAuthorizationRequest({
-    clientId,
-    clientName: client.name,
-    redirectUri,
-    scopes,
-    state,
-    codeChallenge,
-    codeChallengeMethod,
-  });
+    const requestId = createAuthorizationRequest({
+      clientId,
+      clientName: client.name,
+      redirectUri,
+      scopes,
+      state,
+      codeChallenge,
+      codeChallengeMethod,
+    });
 
-  const frontendUrl = config.FRONTEND_URL || 'https://kortix.com';
-  const consentUrl = new URL(`${frontendUrl}/oauth/authorize`);
-  consentUrl.searchParams.set('request_id', requestId);
+    const frontendUrl = config.FRONTEND_URL || "https://kortix.com";
+    const consentUrl = new URL(`${frontendUrl}/oauth/authorize`);
+    consentUrl.searchParams.set("request_id", requestId);
 
-  return c.redirect(consentUrl.toString());
-},
+    return c.redirect(consentUrl.toString());
+  }),
 );
 
 // ─── GET /authorize/consent/:requestId ──────────────────────────────────────
 
 oauthApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/authorize/consent/{requestId}',
-    tags: ['oauth'],
-    summary: 'Fetch a pending authorization request for the consent screen',
+    method: "get",
+    path: "/authorize/consent/{requestId}",
+    tags: ["oauth"],
+    summary: "Fetch a pending authorization request for the consent screen",
     ...auth,
     request: { params: z.object({ requestId: z.string() }) },
     responses: {
@@ -352,201 +409,263 @@ oauthApp.openapi(
           scope: z.string(),
           scopes: z.array(z.string()),
         }),
-        'The pending authorization request',
+        "The pending authorization request",
       ),
       ...errors(400, 401),
     },
   }),
-  async (c: any) => {
-  const requestId = c.req.param('requestId');
-  if (!requestId) {
-    return c.json({ error: 'invalid_request', error_description: 'Missing request id' }, 400);
-  }
-  const request = getAuthorizationRequest(requestId);
-  if (!request) {
-    return c.json({ error: 'invalid_request', error_description: 'Authorization request expired or not found' }, 400);
-  }
+  effectHandler(async (c: any) => {
+    const requestId = c.req.param("requestId");
+    if (!requestId) {
+      return c.json(
+        { error: "invalid_request", error_description: "Missing request id" },
+        400,
+      );
+    }
+    const request = getAuthorizationRequest(requestId);
+    if (!request) {
+      return c.json(
+        {
+          error: "invalid_request",
+          error_description: "Authorization request expired or not found",
+        },
+        400,
+      );
+    }
 
-  return c.json({
-    client_id: request.clientId,
-    client_name: request.clientName,
-    scope: request.scopes.join(' '),
-    scopes: request.scopes,
-  });
-},
+    return c.json({
+      client_id: request.clientId,
+      client_name: request.clientName,
+      scope: request.scopes.join(" "),
+      scopes: request.scopes,
+    });
+  }),
 );
 
 // ─── POST /authorize/consent ────────────────────────────────────────────────
 
 oauthApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/authorize/consent',
-    tags: ['oauth'],
-    summary: 'Approve or deny a pending authorization request',
+    method: "post",
+    path: "/authorize/consent",
+    tags: ["oauth"],
+    summary: "Approve or deny a pending authorization request",
     ...auth,
     request: {
       body: {
         content: {
-          'application/json': {
+          "application/json": {
             // request_id optional at the schema layer so the handler returns the
             // OAuth-spec `{error:"invalid_request"}` (not the generic validation
             // hook) when it's missing — preserves the OAuth error contract.
-            schema: z.object({ request_id: z.string().optional(), approved: z.boolean().optional() }),
+            schema: z.object({
+              request_id: z.string().optional(),
+              approved: z.boolean().optional(),
+            }),
           },
         },
       },
     },
     responses: {
-      200: json(z.object({ redirect_uri: z.string() }), 'Redirect URI to send the user back to'),
+      200: json(
+        z.object({ redirect_uri: z.string() }),
+        "Redirect URI to send the user back to",
+      ),
       ...errors(400, 401),
     },
   }),
-  async (c: any) => {
-  const body = await c.req.json();
-  const requestId = typeof body.request_id === 'string' ? body.request_id : '';
-  const approved = body.approved === true;
+  effectHandler(async (c: any) => {
+    const body = await c.req.json();
+    const requestId =
+      typeof body.request_id === "string" ? body.request_id : "";
+    const approved = body.approved === true;
 
-  if (!requestId) {
-    return c.json({ error: 'invalid_request' }, 400);
-  }
+    if (!requestId) {
+      return c.json({ error: "invalid_request" }, 400);
+    }
 
-  const request = consumeAuthorizationRequest(requestId);
-  if (!request) {
-    return c.json({ error: 'invalid_request', error_description: 'Authorization request expired or already used' }, 400);
-  }
+    const request = consumeAuthorizationRequest(requestId);
+    if (!request) {
+      return c.json(
+        {
+          error: "invalid_request",
+          error_description: "Authorization request expired or already used",
+        },
+        400,
+      );
+    }
 
-  const [client] = await db
-    .select()
-    .from(oauthClients)
-    .where(and(eq(oauthClients.clientId, request.clientId), eq(oauthClients.active, true)))
-    .limit(1);
+    const [client] = await db
+      .select()
+      .from(oauthClients)
+      .where(
+        and(
+          eq(oauthClients.clientId, request.clientId),
+          eq(oauthClients.active, true),
+        ),
+      )
+      .limit(1);
 
-  if (!client) {
-    return c.json({ error: 'invalid_client' }, 400);
-  }
+    if (!client) {
+      return c.json({ error: "invalid_client" }, 400);
+    }
 
-  const allowedUris = client.redirectUris ?? [];
-  const redirect = parseRedirectUri(request.redirectUri);
-  if (!redirect || !allowedUris.includes(request.redirectUri)) {
-    return c.json({ error: 'invalid_request', error_description: 'redirect_uri mismatch' }, 400);
-  }
+    const allowedUris = client.redirectUris ?? [];
+    const redirect = parseRedirectUri(request.redirectUri);
+    if (!redirect || !allowedUris.includes(request.redirectUri)) {
+      return c.json(
+        {
+          error: "invalid_request",
+          error_description: "redirect_uri mismatch",
+        },
+        400,
+      );
+    }
 
-  const scopes = validateRequestedScopes(request.scopes, client.scopes);
-  if (!scopes) {
-    return c.json({ error: 'invalid_scope' }, 400);
-  }
+    const scopes = validateRequestedScopes(request.scopes, client.scopes);
+    if (!scopes) {
+      return c.json({ error: "invalid_scope" }, 400);
+    }
 
-  if (!approved) {
-    redirect.searchParams.set('error', 'access_denied');
-    if (request.state) redirect.searchParams.set('state', request.state);
+    if (!approved) {
+      redirect.searchParams.set("error", "access_denied");
+      if (request.state) redirect.searchParams.set("state", request.state);
+      return c.json({ redirect_uri: redirect.toString() });
+    }
+
+    const userId = (c as any).get("userId") as string;
+
+    const [membership] = await db
+      .select({ accountId: accountMembers.accountId })
+      .from(accountMembers)
+      .where(eq(accountMembers.userId, userId))
+      .limit(1);
+
+    const accountId = membership?.accountId ?? userId;
+
+    const code = generateAuthCode();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+    await db.insert(oauthAuthorizationCodes).values({
+      code,
+      clientId: request.clientId,
+      userId,
+      accountId,
+      redirectUri: request.redirectUri,
+      scopes,
+      codeChallenge: request.codeChallenge,
+      codeChallengeMethod: request.codeChallengeMethod,
+      expiresAt,
+    });
+
+    redirect.searchParams.set("code", code);
+    if (request.state) redirect.searchParams.set("state", request.state);
+
     return c.json({ redirect_uri: redirect.toString() });
-  }
-
-  const userId = (c as any).get('userId') as string;
-
-  const [membership] = await db
-    .select({ accountId: accountMembers.accountId })
-    .from(accountMembers)
-    .where(eq(accountMembers.userId, userId))
-    .limit(1);
-
-  const accountId = membership?.accountId ?? userId;
-
-  const code = generateAuthCode();
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-
-  await db.insert(oauthAuthorizationCodes).values({
-    code,
-    clientId: request.clientId,
-    userId,
-    accountId,
-    redirectUri: request.redirectUri,
-    scopes,
-    codeChallenge: request.codeChallenge,
-    codeChallengeMethod: request.codeChallengeMethod,
-    expiresAt,
-  });
-
-  redirect.searchParams.set('code', code);
-  if (request.state) redirect.searchParams.set('state', request.state);
-
-  return c.json({ redirect_uri: redirect.toString() });
-},
+  }),
 );
 
 // ─── POST /token ────────────────────────────────────────────────────────────
 
 oauthApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/token',
-    tags: ['oauth'],
-    summary: 'OAuth 2.0 token endpoint (authorization_code / refresh_token grants)',
+    method: "post",
+    path: "/token",
+    tags: ["oauth"],
+    summary:
+      "OAuth 2.0 token endpoint (authorization_code / refresh_token grants)",
     request: {
-      body: { content: { 'application/x-www-form-urlencoded': { schema: z.any() } } },
+      body: {
+        content: { "application/x-www-form-urlencoded": { schema: z.any() } },
+      },
     },
     responses: {
       200: json(
-        z.object({
-          access_token: z.string(),
-          refresh_token: z.string(),
-          token_type: z.string(),
-          expires_in: z.number(),
-          scope: z.string(),
-        }).passthrough(),
-        'Token pair',
+        z
+          .object({
+            access_token: z.string(),
+            refresh_token: z.string(),
+            token_type: z.string(),
+            expires_in: z.number(),
+            scope: z.string(),
+          })
+          .passthrough(),
+        "Token pair",
       ),
       ...errors(400, 401, 429),
     },
   }),
-  async (c: any) => {
-  const body = await c.req.parseBody();
-  const grantType = body['grant_type'] as string;
-  const clientId = body['client_id'] as string;
-  const clientSecret = body['client_secret'] as string;
+  effectHandler(async (c: any) => {
+    const body = await c.req.parseBody();
+    const grantType = body["grant_type"] as string;
+    const clientId = body["client_id"] as string;
+    const clientSecret = body["client_secret"] as string;
 
-  if (!clientId || !clientSecret) {
-    return c.json({ error: 'invalid_request', error_description: 'Missing client_id or client_secret' }, 400);
-  }
+    if (!clientId || !clientSecret) {
+      return c.json(
+        {
+          error: "invalid_request",
+          error_description: "Missing client_id or client_secret",
+        },
+        400,
+      );
+    }
 
-  if (!checkTokenRateLimit(clientId)) {
-    return c.json({ error: 'rate_limit_exceeded', error_description: 'Too many token requests' }, 429);
-  }
+    if (!checkTokenRateLimit(clientId)) {
+      return c.json(
+        {
+          error: "rate_limit_exceeded",
+          error_description: "Too many token requests",
+        },
+        429,
+      );
+    }
 
-  const [client] = await db
-    .select()
-    .from(oauthClients)
-    .where(and(eq(oauthClients.clientId, clientId), eq(oauthClients.active, true)))
-    .limit(1);
+    const [client] = await db
+      .select()
+      .from(oauthClients)
+      .where(
+        and(eq(oauthClients.clientId, clientId), eq(oauthClients.active, true)),
+      )
+      .limit(1);
 
-  if (!client) {
-    return c.json({ error: 'invalid_client' }, 401);
-  }
+    if (!client) {
+      return c.json({ error: "invalid_client" }, 401);
+    }
 
-  if (!verifySecretKey(clientSecret, client.clientSecretHash)) {
-    return c.json({ error: 'invalid_client' }, 401);
-  }
+    if (!verifySecretKey(clientSecret, client.clientSecretHash)) {
+      return c.json({ error: "invalid_client" }, 401);
+    }
 
-  if (grantType === 'authorization_code') {
-    return handleAuthorizationCodeGrant(c, body, client);
-  }
+    if (grantType === "authorization_code") {
+      return handleAuthorizationCodeGrant(c, body, client);
+    }
 
-  if (grantType === 'refresh_token') {
-    return handleRefreshTokenGrant(c, body, client);
-  }
+    if (grantType === "refresh_token") {
+      return handleRefreshTokenGrant(c, body, client);
+    }
 
-  return c.json({ error: 'unsupported_grant_type' }, 400);
-},
+    return c.json({ error: "unsupported_grant_type" }, 400);
+  }),
 );
 
-async function handleAuthorizationCodeGrant(c: Context, body: Record<string, any>, client: any) {
-  const code = body['code'] as string;
-  const redirectUri = body['redirect_uri'] as string;
-  const codeVerifier = body['code_verifier'] as string;
+async function handleAuthorizationCodeGrant(
+  c: Context,
+  body: Record<string, any>,
+  client: any,
+) {
+  const code = body["code"] as string;
+  const redirectUri = body["redirect_uri"] as string;
+  const codeVerifier = body["code_verifier"] as string;
 
   if (!code || !redirectUri || !codeVerifier) {
-    return c.json({ error: 'invalid_request', error_description: 'Missing code, redirect_uri, or code_verifier' }, 400);
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "Missing code, redirect_uri, or code_verifier",
+      },
+      400,
+    );
   }
 
   const [authCode] = await db
@@ -561,19 +680,40 @@ async function handleAuthorizationCodeGrant(c: Context, body: Record<string, any
     .limit(1);
 
   if (!authCode) {
-    return c.json({ error: 'invalid_grant', error_description: 'Authorization code not found' }, 400);
+    return c.json(
+      {
+        error: "invalid_grant",
+        error_description: "Authorization code not found",
+      },
+      400,
+    );
   }
 
   if (authCode.usedAt) {
-    return c.json({ error: 'invalid_grant', error_description: 'Authorization code already used' }, 400);
+    return c.json(
+      {
+        error: "invalid_grant",
+        error_description: "Authorization code already used",
+      },
+      400,
+    );
   }
 
   if (authCode.expiresAt < new Date()) {
-    return c.json({ error: 'invalid_grant', error_description: 'Authorization code expired' }, 400);
+    return c.json(
+      {
+        error: "invalid_grant",
+        error_description: "Authorization code expired",
+      },
+      400,
+    );
   }
 
   if (authCode.redirectUri !== redirectUri) {
-    return c.json({ error: 'invalid_grant', error_description: 'redirect_uri mismatch' }, 400);
+    return c.json(
+      { error: "invalid_grant", error_description: "redirect_uri mismatch" },
+      400,
+    );
   }
 
   const computedChallenge = computeCodeChallenge(codeVerifier);
@@ -581,18 +721,35 @@ async function handleAuthorizationCodeGrant(c: Context, body: Record<string, any
 
   const computedBuf = Buffer.from(computedChallenge);
   const storedBuf = Buffer.from(storedChallenge);
-  if (computedBuf.length !== storedBuf.length || !timingSafeEqual(computedBuf, storedBuf)) {
-    return c.json({ error: 'invalid_grant', error_description: 'PKCE verification failed' }, 400);
+  if (
+    computedBuf.length !== storedBuf.length ||
+    !timingSafeEqual(computedBuf, storedBuf)
+  ) {
+    return c.json(
+      { error: "invalid_grant", error_description: "PKCE verification failed" },
+      400,
+    );
   }
 
   const [consumedCode] = await db
     .update(oauthAuthorizationCodes)
     .set({ usedAt: new Date() })
-    .where(and(eq(oauthAuthorizationCodes.id, authCode.id), isNull(oauthAuthorizationCodes.usedAt)))
+    .where(
+      and(
+        eq(oauthAuthorizationCodes.id, authCode.id),
+        isNull(oauthAuthorizationCodes.usedAt),
+      ),
+    )
     .returning();
 
   if (!consumedCode) {
-    return c.json({ error: 'invalid_grant', error_description: 'Authorization code already used' }, 400);
+    return c.json(
+      {
+        error: "invalid_grant",
+        error_description: "Authorization code already used",
+      },
+      400,
+    );
   }
 
   const tokenResponse = await issueTokenPair({
@@ -605,11 +762,18 @@ async function handleAuthorizationCodeGrant(c: Context, body: Record<string, any
   return c.json(tokenResponse);
 }
 
-async function handleRefreshTokenGrant(c: Context, body: Record<string, any>, client: any) {
-  const refreshTokenRaw = body['refresh_token'] as string;
+async function handleRefreshTokenGrant(
+  c: Context,
+  body: Record<string, any>,
+  client: any,
+) {
+  const refreshTokenRaw = body["refresh_token"] as string;
 
   if (!refreshTokenRaw) {
-    return c.json({ error: 'invalid_request', error_description: 'Missing refresh_token' }, 400);
+    return c.json(
+      { error: "invalid_request", error_description: "Missing refresh_token" },
+      400,
+    );
   }
 
   const refreshTokenHash = hashToken(refreshTokenRaw);
@@ -627,22 +791,42 @@ async function handleRefreshTokenGrant(c: Context, body: Record<string, any>, cl
     .limit(1);
 
   if (!refreshRow) {
-    return c.json({ error: 'invalid_grant', error_description: 'Refresh token not found or revoked' }, 400);
+    return c.json(
+      {
+        error: "invalid_grant",
+        error_description: "Refresh token not found or revoked",
+      },
+      400,
+    );
   }
 
   if (refreshRow.expiresAt < new Date()) {
-    return c.json({ error: 'invalid_grant', error_description: 'Refresh token expired' }, 400);
+    return c.json(
+      { error: "invalid_grant", error_description: "Refresh token expired" },
+      400,
+    );
   }
 
   const now = new Date();
   const [consumedRefresh] = await db
     .update(oauthRefreshTokens)
     .set({ revokedAt: now })
-    .where(and(eq(oauthRefreshTokens.id, refreshRow.id), isNull(oauthRefreshTokens.revokedAt)))
+    .where(
+      and(
+        eq(oauthRefreshTokens.id, refreshRow.id),
+        isNull(oauthRefreshTokens.revokedAt),
+      ),
+    )
     .returning();
 
   if (!consumedRefresh) {
-    return c.json({ error: 'invalid_grant', error_description: 'Refresh token already used' }, 400);
+    return c.json(
+      {
+        error: "invalid_grant",
+        error_description: "Refresh token already used",
+      },
+      400,
+    );
   }
 
   await db
@@ -670,46 +854,52 @@ async function handleRefreshTokenGrant(c: Context, body: Record<string, any>, cl
 
 oauthApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/userinfo',
-    tags: ['oauth'],
-    summary: 'OAuth userinfo (requires the `profile` scope)',
+    method: "get",
+    path: "/userinfo",
+    tags: ["oauth"],
+    summary: "OAuth userinfo (requires the `profile` scope)",
     ...auth,
     responses: {
       200: json(
-        z.object({ user_id: z.string(), account_id: z.string(), email: z.string() }),
-        'User info',
+        z.object({
+          user_id: z.string(),
+          account_id: z.string(),
+          email: z.string(),
+        }),
+        "User info",
       ),
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
-  const scopeError = requireOAuthScope(c, 'profile');
-  if (scopeError) return scopeError;
+  effectHandler(async (c: any) => {
+    const scopeError = requireOAuthScope(c, "profile");
+    if (scopeError) return scopeError;
 
-  const userId = (c as any).get('oauthUserId') as string;
-  const accountId = (c as any).get('oauthAccountId') as string;
+    const userId = (c as any).get("oauthUserId") as string;
+    const accountId = (c as any).get("oauthAccountId") as string;
 
-  const { getSupabase } = await import('../shared/supabase');
-  const supabase = getSupabase();
-  const { data: { user } } = await supabase.auth.admin.getUserById(userId);
+    const { getSupabase } = await import("../shared/supabase");
+    const supabase = getSupabase();
+    const {
+      data: { user },
+    } = await supabase.auth.admin.getUserById(userId);
 
-  return c.json({
-    user_id: userId,
-    account_id: accountId,
-    email: user?.email ?? '',
-  });
-},
+    return c.json({
+      user_id: userId,
+      account_id: accountId,
+      email: user?.email ?? "",
+    });
+  }),
 );
 
 // ─── GET /claimable-machines ────────────────────────────────────────────────
 
 oauthApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/claimable-machines',
-    tags: ['oauth'],
-    summary: 'List claimable machines (requires the `machines:read` scope)',
+    method: "get",
+    path: "/claimable-machines",
+    tags: ["oauth"],
+    summary: "List claimable machines (requires the `machines:read` scope)",
     ...auth,
     responses: {
       200: json(
@@ -724,42 +914,42 @@ oauthApp.openapi(
             }),
           ),
         }),
-        'Claimable machines',
+        "Claimable machines",
       ),
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
-  const scopeError = requireOAuthScope(c, 'machines:read');
-  if (scopeError) return scopeError;
+  effectHandler(async (c: any) => {
+    const scopeError = requireOAuthScope(c, "machines:read");
+    if (scopeError) return scopeError;
 
-  const accountId = (c as any).get('oauthAccountId') as string;
+    const accountId = (c as any).get("oauthAccountId") as string;
 
-  const rows = await db
-    .select({
-      sandbox_id: sandboxes.sandboxId,
-      external_id: sandboxes.externalId,
-      name: sandboxes.name,
-      status: sandboxes.status,
-      created_at: sandboxes.createdAt,
-    })
-    .from(sandboxes)
-    .where(
-      and(
-        eq(sandboxes.accountId, accountId),
-        eq(sandboxes.provider, 'justavps'),
-        inArray(sandboxes.status, ['active', 'provisioning']),
-      ),
-    );
+    const rows = await db
+      .select({
+        sandbox_id: sandboxes.sandboxId,
+        external_id: sandboxes.externalId,
+        name: sandboxes.name,
+        status: sandboxes.status,
+        created_at: sandboxes.createdAt,
+      })
+      .from(sandboxes)
+      .where(
+        and(
+          eq(sandboxes.accountId, accountId),
+          eq(sandboxes.provider, "justavps"),
+          inArray(sandboxes.status, ["active", "provisioning"]),
+        ),
+      );
 
-  return c.json({
-    machines: rows.map((r) => ({
-      sandbox_id: r.sandbox_id,
-      external_id: r.external_id,
-      name: r.name,
-      status: r.status,
-      created_at: r.created_at?.toISOString(),
-    })),
-  });
-},
+    return c.json({
+      machines: rows.map((r) => ({
+        sandbox_id: r.sandbox_id,
+        external_id: r.external_id,
+        name: r.name,
+        status: r.status,
+        created_at: r.created_at?.toISOString(),
+      })),
+    });
+  }),
 );

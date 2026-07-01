@@ -1,11 +1,11 @@
-import type { OpenAPIHono } from '@hono/zod-openapi';
-import { createGateway } from '@kortix/llm-gateway';
-import { pickAutoModel } from '@kortix/llm-catalog';
-import { Hono } from 'hono';
-import { config } from '../config';
-import { effectMiddleware } from '../effect/hono';
-import { createInProcessGatewayHooks } from './hooks';
-import { createInternalGatewayRoutes } from './internal-routes';
+import type { OpenAPIHono } from "@hono/zod-openapi";
+import { createGateway } from "@kortix/llm-gateway";
+import { pickAutoModel } from "@kortix/llm-catalog";
+import { Hono } from "hono";
+import { config } from "../config";
+import { effectHandler, effectMiddleware } from "../effect/hono";
+import { createInProcessGatewayHooks } from "./hooks";
+import { createInternalGatewayRoutes } from "./internal-routes";
 
 // Single place that wires every LLM-gateway surface onto the API:
 //
@@ -19,7 +19,10 @@ import { createInternalGatewayRoutes } from './internal-routes';
 //   /v1/llm-gateway/*  Reverse proxy to the standalone gateway (when configured).
 export function mountLlmGateway(app: OpenAPIHono): void {
   if (!config.LLM_GATEWAY_ENABLED) {
-    app.all('/v1/llm/*', (c) => c.json({ error: 'LLM gateway is disabled' }, 503));
+    app.all(
+      "/v1/llm/*",
+      effectHandler((c) => c.json({ error: "LLM gateway is disabled" }, 503)),
+    );
   } else {
     // One gateway instance per process — its circuit breakers are long-lived.
     const gateway = createGateway(createInProcessGatewayHooks(), {
@@ -30,65 +33,91 @@ export function mountLlmGateway(app: OpenAPIHono): void {
         pickAutoModel(model, body, { defaultModel: principal.defaultModel }),
     });
     const llm = new Hono();
-    llm.use('*', effectMiddleware);
-    llm.get('/health', (c) =>
-      c.json({ status: 'ok', service: 'kortix-llm-gateway', mode: 'in-process' }),
+    llm.use("*", effectMiddleware);
+    llm.get(
+      "/health",
+      effectHandler((c) =>
+        c.json({
+          status: "ok",
+          service: "kortix-llm-gateway",
+          mode: "in-process",
+        }),
+      ),
     );
-    llm.post('/chat/completions', async (c) =>
-      gateway.chatCompletions({
-        authorization: c.req.header('authorization'),
-        rawBody: await c.req.text(),
-      }),
+    llm.post(
+      "/chat/completions",
+      effectHandler(async (c) =>
+        gateway.chatCompletions({
+          authorization: c.req.header("authorization"),
+          rawBody: await c.req.text(),
+        }),
+      ),
     );
-    llm.get('/models', (c) => gateway.listModels(c.req.header('authorization')));
-    app.route('/v1/llm', llm);
+    llm.get(
+      "/models",
+      effectHandler((c) => gateway.listModels(c.req.header("authorization"))),
+    );
+    app.route("/v1/llm", llm);
   }
 
-  app.route('/internal/gateway', createInternalGatewayRoutes());
+  app.route("/internal/gateway", createInternalGatewayRoutes());
 
   if (config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET) {
     const rawTarget =
-      config.LLM_GATEWAY_PROXY_TARGET || `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}`;
+      config.LLM_GATEWAY_PROXY_TARGET ||
+      `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}`;
     let proxyBase: string | null = null;
     try {
       const url = new URL(rawTarget);
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
         throw new Error(`unsupported protocol "${url.protocol}"`);
       }
-      proxyBase = rawTarget.replace(/\/+$/, '');
+      proxyBase = rawTarget.replace(/\/+$/, "");
     } catch (err) {
-      console.error('[gateway] invalid LLM_GATEWAY_PROXY_TARGET — reverse proxy disabled:', err);
+      console.error(
+        "[gateway] invalid LLM_GATEWAY_PROXY_TARGET — reverse proxy disabled:",
+        err,
+      );
     }
 
     if (proxyBase) {
       const base = proxyBase;
-      app.all('/v1/llm-gateway/*', async (c) => {
-        const tail = c.req.path.slice('/v1/llm-gateway'.length) || '/';
-        const target = `${base}${tail}`;
-        const init: RequestInit & { duplex?: 'half' } = {
-          method: c.req.method,
-          headers: c.req.raw.headers,
-        };
-        if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
-          init.body = c.req.raw.body;
-          init.duplex = 'half';
-        }
-        try {
-          const upstream = await fetch(target, init);
-          return new Response(upstream.body, {
-            status: upstream.status,
-            headers: upstream.headers,
-          });
-        } catch (err) {
-          // Standalone gateway pod unreachable (network / DNS / pod down).
-          // Without this guard the request rejects unhandled; return 502 instead.
-          console.error('[gateway] reverse proxy to standalone gateway failed:', err);
-          return c.json(
-            { error: 'gateway upstream unreachable', code: 'gateway_proxy_unreachable' },
-            502,
-          );
-        }
-      });
+      app.all(
+        "/v1/llm-gateway/*",
+        effectHandler(async (c) => {
+          const tail = c.req.path.slice("/v1/llm-gateway".length) || "/";
+          const target = `${base}${tail}`;
+          const init: RequestInit & { duplex?: "half" } = {
+            method: c.req.method,
+            headers: c.req.raw.headers,
+          };
+          if (c.req.method !== "GET" && c.req.method !== "HEAD") {
+            init.body = c.req.raw.body;
+            init.duplex = "half";
+          }
+          try {
+            const upstream = await fetch(target, init);
+            return new Response(upstream.body, {
+              status: upstream.status,
+              headers: upstream.headers,
+            });
+          } catch (err) {
+            // Standalone gateway pod unreachable (network / DNS / pod down).
+            // Without this guard the request rejects unhandled; return 502 instead.
+            console.error(
+              "[gateway] reverse proxy to standalone gateway failed:",
+              err,
+            );
+            return c.json(
+              {
+                error: "gateway upstream unreachable",
+                code: "gateway_proxy_unreachable",
+              },
+              502,
+            );
+          }
+        }),
+      );
     }
   }
 }

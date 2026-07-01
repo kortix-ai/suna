@@ -1,15 +1,19 @@
-import { createRoute, z } from '@hono/zod-openapi';
-import { Effect } from 'effect';
-import { eq, and, desc } from 'drizzle-orm';
-import { tunnelPermissionRequests, tunnelPermissions } from '@kortix/db';
-import { db } from '../../shared/db';
-import { tunnelRelay } from '../core/relay';
-import { tunnelRateLimiter } from '../core/rate-limiter';
-import { isValidCapability, validateScope as validateScopeInput } from '../core/scope-validator';
-import { TunnelErrorCode, type TunnelCapability } from 'agent-tunnel';
-import type { AppEnv } from '../../types';
-import { makeOpenApiApp, json, errors } from '../../openapi';
-import { getTunnelOwnerContext, getTunnelOwnerContextEffect } from './auth';
+import { createRoute, z } from "@hono/zod-openapi";
+import { Effect } from "effect";
+import { eq, and, desc } from "drizzle-orm";
+import { tunnelPermissionRequests, tunnelPermissions } from "@kortix/db";
+import { db } from "../../shared/db";
+import { tunnelRelay } from "../core/relay";
+import { tunnelRateLimiter } from "../core/rate-limiter";
+import {
+  isValidCapability,
+  validateScope as validateScopeInput,
+} from "../core/scope-validator";
+import { TunnelErrorCode, type TunnelCapability } from "agent-tunnel";
+import type { AppEnv } from "../../types";
+import { makeOpenApiApp, json, errors } from "../../openapi";
+import { getTunnelOwnerContext, getTunnelOwnerContextEffect } from "./auth";
+import { effectHandler } from "../../effect/hono";
 import {
   attemptTunnel,
   parseOptionalJsonBody,
@@ -17,24 +21,30 @@ import {
   sendTunnelJson,
   tunnelFail,
   tunnelJson,
-} from './effect-workflows';
+} from "./effect-workflows";
 
 type SSEWriter = (event: string, data: unknown) => void;
 const sseSubscribers = new Map<string, Set<SSEWriter>>();
 
-export function notifyPermissionRequest(accountId: string, request: unknown): void {
-  notifyTunnelEvent(accountId, 'permission_request', request);
+export function notifyPermissionRequest(
+  accountId: string,
+  request: unknown,
+): void {
+  notifyTunnelEvent(accountId, "permission_request", request);
 }
 
-export function notifyTunnelEvent(accountId: string, event: string, data: unknown): void {
+export function notifyTunnelEvent(
+  accountId: string,
+  event: string,
+  data: unknown,
+): void {
   const subscribers = sseSubscribers.get(accountId);
   if (!subscribers || subscribers.size === 0) return;
 
   for (const writer of subscribers) {
     try {
       writer(event, data);
-    } catch {
-    }
+    } catch {}
   }
 }
 
@@ -52,7 +62,7 @@ const listPermissionRequestsEffect = (c: any) =>
         .where(
           and(
             eq(tunnelPermissionRequests.accountId, accountId),
-            eq(tunnelPermissionRequests.status, 'pending'),
+            eq(tunnelPermissionRequests.status, "pending"),
           ),
         )
         .orderBy(desc(tunnelPermissionRequests.createdAt)),
@@ -64,18 +74,21 @@ const listPermissionRequestsEffect = (c: any) =>
 const approvePermissionRequestEffect = (c: any) =>
   Effect.gen(function* () {
     const { accountId } = yield* getTunnelOwnerContextEffect(c);
-    const requestId = c.req.param('requestId');
+    const requestId = c.req.param("requestId");
     const body = yield* parseOptionalJsonBody<{
       scope?: Record<string, unknown>;
       expiresAt?: string;
     }>(c, {});
-    const rateCheck = tunnelRateLimiter.check('permGrant', accountId);
+    const rateCheck = tunnelRateLimiter.check("permGrant", accountId);
     if (!rateCheck.allowed) {
-      return yield* tunnelFail({
-        error: 'Rate limit exceeded',
-        code: TunnelErrorCode.RATE_LIMITED,
-        retryAfterMs: rateCheck.retryAfterMs,
-      }, 429);
+      return yield* tunnelFail(
+        {
+          error: "Rate limit exceeded",
+          code: TunnelErrorCode.RATE_LIMITED,
+          retryAfterMs: rateCheck.retryAfterMs,
+        },
+        429,
+      );
     }
 
     const [request] = yield* attemptTunnel(() =>
@@ -91,29 +104,41 @@ const approvePermissionRequestEffect = (c: any) =>
     );
 
     if (!request) {
-      return yield* tunnelFail({ error: 'Permission request not found' }, 404);
+      return yield* tunnelFail({ error: "Permission request not found" }, 404);
     }
 
-    if (request.status !== 'pending') {
-      return yield* tunnelFail({ error: `Request already ${request.status}` }, 409);
+    if (request.status !== "pending") {
+      return yield* tunnelFail(
+        { error: `Request already ${request.status}` },
+        409,
+      );
     }
 
     if (!isValidCapability(request.capability)) {
-      return yield* tunnelFail({ error: `Invalid capability: ${request.capability}` }, 400);
+      return yield* tunnelFail(
+        { error: `Invalid capability: ${request.capability}` },
+        400,
+      );
     }
 
     yield* attemptTunnel(() =>
       db
         .update(tunnelPermissionRequests)
-        .set({ status: 'approved', updatedAt: new Date() })
+        .set({ status: "approved", updatedAt: new Date() })
         .where(eq(tunnelPermissionRequests.requestId, requestId)),
     );
 
     const scope = body.scope || request.requestedScope || {};
     if (scope && Object.keys(scope).length > 0) {
-      const scopeResult = validateScopeInput(request.capability, scope as Record<string, unknown>);
+      const scopeResult = validateScopeInput(
+        request.capability,
+        scope as Record<string, unknown>,
+      );
       if (!scopeResult.valid) {
-        return yield* tunnelFail({ error: `Invalid scope: ${scopeResult.error}` }, 400);
+        return yield* tunnelFail(
+          { error: `Invalid scope: ${scopeResult.error}` },
+          400,
+        );
       }
     }
 
@@ -133,12 +158,16 @@ const approvePermissionRequestEffect = (c: any) =>
     );
 
     yield* Effect.sync(() => {
-      tunnelRelay.sendNotification(request.tunnelId, 'tunnel.permission.granted', {
-        permissionId: permission.permissionId,
-        capability: permission.capability,
-        scope: permission.scope,
-        expiresAt: permission.expiresAt?.toISOString() ?? undefined,
-      });
+      tunnelRelay.sendNotification(
+        request.tunnelId,
+        "tunnel.permission.granted",
+        {
+          permissionId: permission.permissionId,
+          capability: permission.capability,
+          scope: permission.scope,
+          expiresAt: permission.expiresAt?.toISOString() ?? undefined,
+        },
+      );
     });
 
     return tunnelJson({ success: true, permission });
@@ -147,7 +176,7 @@ const approvePermissionRequestEffect = (c: any) =>
 const denyPermissionRequestEffect = (c: any) =>
   Effect.gen(function* () {
     const { accountId } = yield* getTunnelOwnerContextEffect(c);
-    const requestId = c.req.param('requestId');
+    const requestId = c.req.param("requestId");
 
     const [request] = yield* attemptTunnel(() =>
       db
@@ -162,17 +191,20 @@ const denyPermissionRequestEffect = (c: any) =>
     );
 
     if (!request) {
-      return yield* tunnelFail({ error: 'Permission request not found' }, 404);
+      return yield* tunnelFail({ error: "Permission request not found" }, 404);
     }
 
-    if (request.status !== 'pending') {
-      return yield* tunnelFail({ error: `Request already ${request.status}` }, 409);
+    if (request.status !== "pending") {
+      return yield* tunnelFail(
+        { error: `Request already ${request.status}` },
+        409,
+      );
     }
 
     yield* attemptTunnel(() =>
       db
         .update(tunnelPermissionRequests)
-        .set({ status: 'denied', updatedAt: new Date() })
+        .set({ status: "denied", updatedAt: new Date() })
         .where(eq(tunnelPermissionRequests.requestId, requestId)),
     );
 
@@ -184,18 +216,24 @@ export function createPermissionRequestsRouter() {
 
   router.openapi(
     createRoute({
-      method: 'get',
-      path: '/',
-      tags: ['tunnel'],
-      summary: 'List pending permission requests for the account',
+      method: "get",
+      path: "/",
+      tags: ["tunnel"],
+      summary: "List pending permission requests for the account",
       security: [{ bearerAuth: [] }],
       responses: {
-        200: json(z.array(PermissionRequestSchema), 'Pending permission requests'),
+        200: json(
+          z.array(PermissionRequestSchema),
+          "Pending permission requests",
+        ),
         ...errors(401, 403),
       },
     }),
     async (c: any) => {
-      return sendTunnelJson(c, await runTunnelEffect(listPermissionRequestsEffect(c)));
+      return sendTunnelJson(
+        c,
+        await runTunnelEffect(listPermissionRequestsEffect(c)),
+      );
     },
   );
 
@@ -203,21 +241,21 @@ export function createPermissionRequestsRouter() {
   // spec (no JSON body is imposed); the handler returns the raw Response.
   router.openapi(
     createRoute({
-      method: 'get',
-      path: '/stream',
-      tags: ['tunnel'],
-      summary: 'Server-Sent Events stream of permission/tunnel events',
+      method: "get",
+      path: "/stream",
+      tags: ["tunnel"],
+      summary: "Server-Sent Events stream of permission/tunnel events",
       security: [{ bearerAuth: [] }],
       responses: {
         200: {
           description:
-            'A long-lived text/event-stream of permission requests and tunnel lifecycle events.',
-          content: { 'text/event-stream': { schema: z.any() } },
+            "A long-lived text/event-stream of permission requests and tunnel lifecycle events.",
+          content: { "text/event-stream": { schema: z.any() } },
         },
         ...errors(401, 403),
       },
     }),
-    async (c: any) => {
+    effectHandler(async (c: any) => {
       const { accountId } = await getTunnelOwnerContext(c);
 
       return new Response(
@@ -235,49 +273,51 @@ export function createPermissionRequestsRouter() {
             }
             sseSubscribers.get(accountId)!.add(writer);
 
-            writer('connected', { timestamp: Date.now() });
+            writer("connected", { timestamp: Date.now() });
 
             const keepAlive = setInterval(() => {
               try {
-                controller.enqueue(encoder.encode(': keep-alive\n\n'));
+                controller.enqueue(encoder.encode(": keep-alive\n\n"));
               } catch {
                 clearInterval(keepAlive);
               }
             }, 30_000);
 
-            c.req.raw.signal.addEventListener('abort', () => {
+            c.req.raw.signal.addEventListener("abort", () => {
               clearInterval(keepAlive);
               sseSubscribers.get(accountId)?.delete(writer);
               if (sseSubscribers.get(accountId)?.size === 0) {
                 sseSubscribers.delete(accountId);
               }
-              try { controller.close(); } catch {}
+              try {
+                controller.close();
+              } catch {}
             });
           },
         }),
         {
           headers: {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
           },
         },
       ) as any;
-    },
+    }),
   );
 
   router.openapi(
     createRoute({
-      method: 'post',
-      path: '/{requestId}/approve',
-      tags: ['tunnel'],
-      summary: 'Approve a permission request (grants the permission)',
+      method: "post",
+      path: "/{requestId}/approve",
+      tags: ["tunnel"],
+      summary: "Approve a permission request (grants the permission)",
       security: [{ bearerAuth: [] }],
       request: {
         params: z.object({ requestId: z.string() }),
         body: {
           content: {
-            'application/json': {
+            "application/json": {
               schema: z.object({
                 scope: z.record(z.string(), z.any()).optional(),
                 expiresAt: z.string().optional(),
@@ -288,32 +328,41 @@ export function createPermissionRequestsRouter() {
       },
       responses: {
         200: json(
-          z.object({ success: z.boolean(), permission: PermissionRequestSchema }),
-          'The granted permission',
+          z.object({
+            success: z.boolean(),
+            permission: PermissionRequestSchema,
+          }),
+          "The granted permission",
         ),
         ...errors(400, 401, 403, 404, 409, 429),
       },
     }),
     async (c: any) => {
-      return sendTunnelJson(c, await runTunnelEffect(approvePermissionRequestEffect(c)));
+      return sendTunnelJson(
+        c,
+        await runTunnelEffect(approvePermissionRequestEffect(c)),
+      );
     },
   );
 
   router.openapi(
     createRoute({
-      method: 'post',
-      path: '/{requestId}/deny',
-      tags: ['tunnel'],
-      summary: 'Deny a pending permission request',
+      method: "post",
+      path: "/{requestId}/deny",
+      tags: ["tunnel"],
+      summary: "Deny a pending permission request",
       security: [{ bearerAuth: [] }],
       request: { params: z.object({ requestId: z.string() }) },
       responses: {
-        200: json(z.object({ success: z.boolean() }), 'Denial result'),
+        200: json(z.object({ success: z.boolean() }), "Denial result"),
         ...errors(401, 403, 404, 409),
       },
     }),
     async (c: any) => {
-      return sendTunnelJson(c, await runTunnelEffect(denyPermissionRequestEffect(c)));
+      return sendTunnelJson(
+        c,
+        await runTunnelEffect(denyPermissionRequestEffect(c)),
+      );
     },
   );
 

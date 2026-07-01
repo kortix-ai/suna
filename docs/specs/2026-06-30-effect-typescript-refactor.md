@@ -179,7 +179,7 @@ body semantics remain imperative.
 
 ## Final Coverage Sweep
 
-The final pass adds `effectMiddleware` to:
+The final pass makes route coverage explicit and enforceable:
 
 - `makeOpenApiApp()` so all OpenAPI route apps are covered at creation time.
 - The root API app in `apps/api/src/index.ts`.
@@ -187,6 +187,12 @@ The final pass adds `effectMiddleware` to:
   `projectWebhooksApp`, setup-link public routes, in-process LLM gateway
   routes, internal gateway routes, preview proxy routes, and public-share proxy
   routes.
+- Every OpenAPI `createRoute(...)` registration now passes an explicit
+  `effectHandler(...)`, `run*Effect(...)`, or route-family Effect workflow
+  handler. The central middleware remains a safety net, not the only proof.
+- `pnpm --filter kortix-api audit:effect` fails if a future OpenAPI route is
+  registered without an explicit Effect boundary or a raw Hono app is created
+  without Effect middleware/factory coverage.
 
 Files that are mostly schemas, mount order, side-effect route registration, or
 transport helpers can therefore remain thin without being outside the Effect
@@ -205,11 +211,9 @@ Green checks run in the integrated worktree:
 
 - `pnpm --filter kortix-api exec tsc --noEmit --pretty false`
 - `git diff --check`
-- Static coverage scan: every route-shaped `apps/api/src/**/*.ts` file
-  containing `new Hono`, `new OpenAPIHono`, `makeOpenApiApp`, `createRoute`,
-  or `.openapi(` also contains an Effect boundary marker
-  (`Effect`, `effectMiddleware`, `effectHandler`, `makeOpenApiApp`, or a
-  route-family Effect workflow helper).
+- `pnpm --filter kortix-api audit:effect`: 423/423 OpenAPI route
+  registrations have explicit Effect boundaries, and raw Hono app creation is
+  guarded by `effectMiddleware` or `makeOpenApiApp()`.
 - Static import guard: application/packages code imports from the runtime
   `effect` dependency, not from `repos/effect`.
 - Router: `e2e-router.test.ts`, `e2e-session-llm-router.test.ts`

@@ -1,69 +1,133 @@
-import { parseSharingIntent, resolveShareSubject, setSecretSharing } from '../../executor/share';
-import { PROJECT_ACTIONS, filterAccessibleProjectResources } from '../../iam';
-import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
-import { auth, errors, json } from '../../openapi';
-import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
-import { db } from '../../shared/db';
-import { kickPreBuild } from '../../snapshots/builder';
-import { getTemplateById } from '../../snapshots/templates';
-import { roleAllows } from '../access';
-import { loadProjectConfig } from '../git';
-import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
-import { decryptProjectSecret, encryptProjectSecret, isValidSecretName } from '../secrets';
-import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
-import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
-import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
-import { createRoute, z } from '@hono/zod-openapi';
-import { projectSecrets, projects, sessionSandboxes } from '@kortix/db';
-import { Effect } from 'effect';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { loadProjectForUser, assertProjectCapability } from '../lib/access';
-import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
-import { getProjectGitConnection, getProjectGitRemote, hasServerManagedGitAuth, loadGitProject, resolveProjectGitAuth, upsertProjectGitConnection, upsertProjectGitCredential, withProjectGitAuth } from '../lib/git';
-import { CODEX_AUTH_JSON_SECRET_NAME, isSystemProjectSecretName, loadSecretViewsForUser, normalizeString, readBody, serializeProjectGitConnection } from '../lib/serializers';
-import { attemptRoute, failJson, failNotFound, routeJson, runProjectRouteEffect } from './effect-workflows';
+import {
+  parseSharingIntent,
+  resolveShareSubject,
+  setSecretSharing,
+} from "../../executor/share";
+import { PROJECT_ACTIONS, filterAccessibleProjectResources } from "../../iam";
+import { agentMayUseEnv, getAgentGrant } from "../../iam/agent-scope";
+import { auth, errors, json } from "../../openapi";
+import {
+  createAccountToken,
+  listAccountTokens,
+  revokeAccountToken,
+} from "../../repositories/account-tokens";
+import { db } from "../../shared/db";
+import { kickPreBuild } from "../../snapshots/builder";
+import { getTemplateById } from "../../snapshots/templates";
+import { roleAllows } from "../access";
+import { loadProjectConfig } from "../git";
+import {
+  pollCodexDeviceAuth,
+  startCodexDeviceAuth,
+} from "../codex-device-auth";
+import {
+  decryptProjectSecret,
+  encryptProjectSecret,
+  isValidSecretName,
+} from "../secrets";
+import { propagateProjectSecretsToActiveSandboxes } from "../lib/sandbox-env-sync";
+import { isGatewayManagedEnv } from "../../llm-gateway/sandbox-credentials";
+import { seedProjectDefaultModelOnConnect } from "../../llm-gateway/models/seed-default";
+import { createRoute, z } from "@hono/zod-openapi";
+import { projectSecrets, projects, sessionSandboxes } from "@kortix/db";
+import { Effect } from "effect";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { loadProjectForUser, assertProjectCapability } from "../lib/access";
+import { AnyObject, SecretSchema, projectsApp } from "../lib/app";
+import {
+  getProjectGitConnection,
+  getProjectGitRemote,
+  hasServerManagedGitAuth,
+  loadGitProject,
+  resolveProjectGitAuth,
+  upsertProjectGitConnection,
+  upsertProjectGitCredential,
+  withProjectGitAuth,
+} from "../lib/git";
+import {
+  CODEX_AUTH_JSON_SECRET_NAME,
+  isSystemProjectSecretName,
+  loadSecretViewsForUser,
+  normalizeString,
+  readBody,
+  serializeProjectGitConnection,
+} from "../lib/serializers";
+import {
+  attemptRoute,
+  failJson,
+  failNotFound,
+  routeJson,
+  runProjectRouteEffect,
+} from "./effect-workflows";
+import { effectHandler } from "../../effect/hono";
 
-const loadProjectRoute = (c: any, projectId: string, access: 'read' | 'manage') =>
+const loadProjectRoute = (
+  c: any,
+  projectId: string,
+  access: "read" | "manage",
+) =>
   attemptRoute(() => loadProjectForUser(c, projectId, access)).pipe(
-    Effect.flatMap((loaded) => (loaded ? Effect.succeed(loaded) : failNotFound())),
+    Effect.flatMap((loaded) =>
+      loaded ? Effect.succeed(loaded) : failNotFound(),
+    ),
   );
 
 projectsApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/{projectId}/sandbox-templates/{templateId}/build',
-    tags: ['sandboxes'],
-    summary: 'POST /:projectId/sandbox-templates/:templateId/build',
+    method: "post",
+    path: "/{projectId}/sandbox-templates/{templateId}/build",
+    tags: ["sandboxes"],
+    summary: "POST /:projectId/sandbox-templates/:templateId/build",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), templateId: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string(), templateId: z.string() }),
+    },
     responses: {
-        202: json(z.any(), 'OK'),
-        ...errors(404),
+      202: json(z.any(), "OK"),
+      ...errors(404),
     },
   }),
   async (c: any) => {
-  return runProjectRouteEffect(c, Effect.gen(function* () {
-    const projectId = c.req.param('projectId');
-    const templateId = c.req.param('templateId');
-    const loaded = yield* loadProjectRoute(c, projectId, 'manage');
-    // Capability gate: building a sandbox template provisions infra. Gated on
-    // project.customize.write so a custom role can withhold it (humans) AND the
-    // agent-grant fold applies (agent sessions). Editors hold it by default.
-    yield* attemptRoute(() => assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE));
+    return runProjectRouteEffect(
+      c,
+      Effect.gen(function* () {
+        const projectId = c.req.param("projectId");
+        const templateId = c.req.param("templateId");
+        const loaded = yield* loadProjectRoute(c, projectId, "manage");
+        // Capability gate: building a sandbox template provisions infra. Gated on
+        // project.customize.write so a custom role can withhold it (humans) AND the
+        // agent-grant fold applies (agent sessions). Editors hold it by default.
+        yield* attemptRoute(() =>
+          assertProjectCapability(
+            c,
+            loaded.userId,
+            loaded.row.accountId,
+            projectId,
+            PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+          ),
+        );
 
-    const row = yield* attemptRoute(() => getTemplateById(templateId));
-    if (!row) return yield* failNotFound();
-    if (row.projectId !== null && row.projectId !== projectId) {
-      return yield* failNotFound();
-    }
+        const row = yield* attemptRoute(() => getTemplateById(templateId));
+        if (!row) return yield* failNotFound();
+        if (row.projectId !== null && row.projectId !== projectId) {
+          return yield* failNotFound();
+        }
 
-    const project = yield* attemptRoute(() => loadGitProject(loaded));
-    yield* Effect.sync(() => kickPreBuild(project, { slug: row.slug, accountId: loaded.row.accountId, source: 'manual' }));
-    return routeJson({ status: 'started', template_id: row.templateId, slug: row.slug }, 202);
-  }));
-},
+        const project = yield* attemptRoute(() => loadGitProject(loaded));
+        yield* Effect.sync(() =>
+          kickPreBuild(project, {
+            slug: row.slug,
+            accountId: loaded.row.accountId,
+            source: "manual",
+          }),
+        );
+        return routeJson(
+          { status: "started", template_id: row.templateId, slug: row.slug },
+          202,
+        );
+      }),
+    );
+  },
 );
 
 // ─── Project-scoped CLI tokens ─────────────────────────────────────────────
@@ -73,145 +137,165 @@ projectsApp.openapi(
 // auto-minted at session-create time and injected into the sandbox as
 // `KORTIX_TOKEN` so the in-container CLI works with zero config.
 
-
 projectsApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/{projectId}/cli-token',
-    tags: ['projects'],
-    summary: 'GET /:projectId/cli-token',
+    method: "get",
+    path: "/{projectId}/cli-token",
+    tags: ["projects"],
+    summary: "GET /:projectId/cli-token",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404),
+      200: json(z.any(), "OK"),
+      ...errors(404),
     },
   }),
   async (c: any) => {
-  return runProjectRouteEffect(c, Effect.gen(function* () {
-    const projectId = c.req.param('projectId');
-    const loaded = yield* loadProjectRoute(c, projectId, 'read');
-    const tokens = yield* attemptRoute(() => listAccountTokens(loaded.row.accountId, projectId));
-    return routeJson({
-      items: tokens.map((t) => ({
-        token_id: t.tokenId,
-        name: t.name,
-        public_key: t.publicKey,
-        status: t.status,
-        expires_at: t.expiresAt?.toISOString() ?? null,
-        last_used_at: t.lastUsedAt?.toISOString() ?? null,
-        created_at: t.createdAt.toISOString(),
-        revoked_at: t.revokedAt?.toISOString() ?? null,
-      })),
-    });
-  }));
-},
-);
-
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/cli-token',
-    tags: ['projects'],
-    summary: 'POST /:projectId/cli-token',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
-    responses: {
-        201: json(z.any(), 'OK'),
-        ...errors(404),
-    },
-  }),
-  async (c: any) => {
-  return runProjectRouteEffect(c, Effect.gen(function* () {
-    const projectId = c.req.param('projectId');
-    const loaded = yield* loadProjectRoute(c, projectId, 'manage');
-    // Authorization is enforced by loadProjectForUser(... 'manage') above,
-    // which routes through the IAM engine (project.write).
-
-    // Privilege-escalation guard: an agent-session token is itself a project
-    // account token carrying a (possibly narrow) AgentGrant. If it could mint a
-    // fresh project token, the new token would carry NO grant — letting a scoped
-    // agent issue an unscoped sibling and escape its own ceiling. Token minting
-    // is a human/manage operation; agents are denied outright.
-    if (getAgentGrant(c)) {
-      return yield* failJson({ error: 'Agent-session tokens cannot mint project tokens' }, 403);
-    }
-
-    // One body field: `name`. Defaults to "cli · <project name>".
-    const body = yield* attemptRoute(() => c.req.json() as Promise<{ name?: unknown }>).pipe(
-      Effect.catchAll(() => Effect.succeed({} as { name?: unknown })),
-    );
-    const name =
-      typeof body.name === 'string' && body.name.trim()
-        ? body.name.trim().slice(0, 255)
-        : `cli · ${loaded.row.name}`;
-
-    const userId = c.get('userId') as string;
-    const created = yield* attemptRoute(() =>
-      createAccountToken({
-        accountId: loaded.row.accountId,
-        userId,
-        projectId,
-        name,
+    return runProjectRouteEffect(
+      c,
+      Effect.gen(function* () {
+        const projectId = c.req.param("projectId");
+        const loaded = yield* loadProjectRoute(c, projectId, "read");
+        const tokens = yield* attemptRoute(() =>
+          listAccountTokens(loaded.row.accountId, projectId),
+        );
+        return routeJson({
+          items: tokens.map((t) => ({
+            token_id: t.tokenId,
+            name: t.name,
+            public_key: t.publicKey,
+            status: t.status,
+            expires_at: t.expiresAt?.toISOString() ?? null,
+            last_used_at: t.lastUsedAt?.toISOString() ?? null,
+            created_at: t.createdAt.toISOString(),
+            revoked_at: t.revokedAt?.toISOString() ?? null,
+          })),
+        });
       }),
     );
-
-    return routeJson(
-      {
-        token_id: created.tokenId,
-        name: created.name,
-        public_key: created.publicKey,
-        secret_key: created.secretKey,
-        status: created.status,
-        project_id: created.projectId,
-        expires_at: created.expiresAt?.toISOString() ?? null,
-        created_at: created.createdAt.toISOString(),
-      },
-      201,
-    );
-  }));
-},
+  },
 );
-
 
 projectsApp.openapi(
   createRoute({
-    method: 'delete',
-    path: '/{projectId}/cli-token/{tokenId}',
-    tags: ['projects'],
-    summary: 'DELETE /:projectId/cli-token/:tokenId',
+    method: "post",
+    path: "/{projectId}/cli-token",
+    tags: ["projects"],
+    summary: "POST /:projectId/cli-token",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), tokenId: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404),
+      201: json(z.any(), "OK"),
+      ...errors(404),
     },
   }),
   async (c: any) => {
-  return runProjectRouteEffect(c, Effect.gen(function* () {
-    const projectId = c.req.param('projectId');
-    const tokenId = c.req.param('tokenId');
-    const loaded = yield* loadProjectRoute(c, projectId, 'manage');
-    // Authorization is enforced by loadProjectForUser(... 'manage') above.
-    // Token management is a human/manage operation: an agent-session token must
-    // not revoke project tokens (it could knock out its own siblings / the human
-    // CLI token as a DoS). Symmetric with the mint guard above.
-    if (getAgentGrant(c)) {
-      return yield* failJson({ error: 'Agent-session tokens cannot manage project tokens' }, 403);
-    }
-    const ok = yield* attemptRoute(() => revokeAccountToken(tokenId, loaded.row.accountId));
-    if (!ok) return yield* failJson({ error: 'token not found or already revoked' }, 404);
-    return routeJson({ ok: true });
-  }));
-},
+    return runProjectRouteEffect(
+      c,
+      Effect.gen(function* () {
+        const projectId = c.req.param("projectId");
+        const loaded = yield* loadProjectRoute(c, projectId, "manage");
+        // Authorization is enforced by loadProjectForUser(... 'manage') above,
+        // which routes through the IAM engine (project.write).
+
+        // Privilege-escalation guard: an agent-session token is itself a project
+        // account token carrying a (possibly narrow) AgentGrant. If it could mint a
+        // fresh project token, the new token would carry NO grant — letting a scoped
+        // agent issue an unscoped sibling and escape its own ceiling. Token minting
+        // is a human/manage operation; agents are denied outright.
+        if (getAgentGrant(c)) {
+          return yield* failJson(
+            { error: "Agent-session tokens cannot mint project tokens" },
+            403,
+          );
+        }
+
+        // One body field: `name`. Defaults to "cli · <project name>".
+        const body = yield* attemptRoute(
+          () => c.req.json() as Promise<{ name?: unknown }>,
+        ).pipe(Effect.catchAll(() => Effect.succeed({} as { name?: unknown })));
+        const name =
+          typeof body.name === "string" && body.name.trim()
+            ? body.name.trim().slice(0, 255)
+            : `cli · ${loaded.row.name}`;
+
+        const userId = c.get("userId") as string;
+        const created = yield* attemptRoute(() =>
+          createAccountToken({
+            accountId: loaded.row.accountId,
+            userId,
+            projectId,
+            name,
+          }),
+        );
+
+        return routeJson(
+          {
+            token_id: created.tokenId,
+            name: created.name,
+            public_key: created.publicKey,
+            secret_key: created.secretKey,
+            status: created.status,
+            project_id: created.projectId,
+            expires_at: created.expiresAt?.toISOString() ?? null,
+            created_at: created.createdAt.toISOString(),
+          },
+          201,
+        );
+      }),
+    );
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: "delete",
+    path: "/{projectId}/cli-token/{tokenId}",
+    tags: ["projects"],
+    summary: "DELETE /:projectId/cli-token/:tokenId",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), tokenId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), "OK"),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    return runProjectRouteEffect(
+      c,
+      Effect.gen(function* () {
+        const projectId = c.req.param("projectId");
+        const tokenId = c.req.param("tokenId");
+        const loaded = yield* loadProjectRoute(c, projectId, "manage");
+        // Authorization is enforced by loadProjectForUser(... 'manage') above.
+        // Token management is a human/manage operation: an agent-session token must
+        // not revoke project tokens (it could knock out its own siblings / the human
+        // CLI token as a DoS). Symmetric with the mint guard above.
+        if (getAgentGrant(c)) {
+          return yield* failJson(
+            { error: "Agent-session tokens cannot manage project tokens" },
+            403,
+          );
+        }
+        const ok = yield* attemptRoute(() =>
+          revokeAccountToken(tokenId, loaded.row.accountId),
+        );
+        if (!ok)
+          return yield* failJson(
+            { error: "token not found or already revoked" },
+            404,
+          );
+        return routeJson({ ok: true });
+      }),
+    );
+  },
 );
 
 // GET /v1/projects/:projectId/git/clone-credential
@@ -221,87 +305,109 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/{projectId}/git/clone-credential',
-    tags: ['github'],
-    summary: 'GET /:projectId/git/clone-credential',
+    method: "get",
+    path: "/{projectId}/git/clone-credential",
+    tags: ["github"],
+    summary: "GET /:projectId/git/clone-credential",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(403, 404),
+      200: json(z.any(), "OK"),
+      ...errors(403, 404),
     },
   }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const authType = (c as any).get('authType') as string | undefined;
-  const tokenProjectId = (c as any).get('tokenProjectId') as string | undefined;
+  effectHandler(async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const authType = (c as any).get("authType") as string | undefined;
+    const tokenProjectId = (c as any).get("tokenProjectId") as
+      | string
+      | undefined;
 
-  let projectRow: typeof projects.$inferSelect | null = null;
+    let projectRow: typeof projects.$inferSelect | null = null;
 
-  if (authType === 'pat') {
-    if (tokenProjectId !== projectId) {
-      return c.json({ error: 'clone credentials require a project-scoped runtime token' }, 403);
+    if (authType === "pat") {
+      if (tokenProjectId !== projectId) {
+        return c.json(
+          { error: "clone credentials require a project-scoped runtime token" },
+          403,
+        );
+      }
+      const loaded = await loadProjectForUser(c, projectId, "read");
+      if (!loaded) return c.json({ error: "Not found" }, 404);
+      projectRow = loaded.row;
+    } else if (
+      authType === "apiKey" &&
+      (c as any).get("apiKeyType") === "sandbox"
+    ) {
+      const accountId = (c as any).get("accountId") as string | undefined;
+      const sandboxId = (c as any).get("sandboxId") as string | undefined;
+      if (!accountId || !sandboxId) {
+        return c.json(
+          { error: "clone credentials require a sandbox token" },
+          403,
+        );
+      }
+      const [sandbox] = await db
+        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .from(sessionSandboxes)
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, sandboxId),
+            eq(sessionSandboxes.projectId, projectId),
+            eq(sessionSandboxes.accountId, accountId),
+            inArray(sessionSandboxes.status, ["provisioning", "active"]),
+          ),
+        )
+        .limit(1);
+      if (!sandbox) {
+        return c.json(
+          { error: "sandbox token is not scoped to this project" },
+          403,
+        );
+      }
+      const [row] = await db
+        .select()
+        .from(projects)
+        .where(
+          and(
+            eq(projects.projectId, projectId),
+            eq(projects.accountId, accountId),
+          ),
+        )
+        .limit(1);
+      if (!row || row.status === "archived")
+        return c.json({ error: "Not found" }, 404);
+      projectRow = row;
+    } else {
+      return c.json(
+        { error: "clone credentials are only available to runtime tokens" },
+        403,
+      );
     }
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    projectRow = loaded.row;
-  } else if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
-    const accountId = (c as any).get('accountId') as string | undefined;
-    const sandboxId = (c as any).get('sandboxId') as string | undefined;
-    if (!accountId || !sandboxId) {
-      return c.json({ error: 'clone credentials require a sandbox token' }, 403);
-    }
-    const [sandbox] = await db
-      .select({ sandboxId: sessionSandboxes.sandboxId })
-      .from(sessionSandboxes)
-      .where(and(
-        eq(sessionSandboxes.sandboxId, sandboxId),
-        eq(sessionSandboxes.projectId, projectId),
-        eq(sessionSandboxes.accountId, accountId),
-        inArray(sessionSandboxes.status, ['provisioning', 'active']),
-      ))
-      .limit(1);
-    if (!sandbox) {
-      return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
-    }
-    const [row] = await db
-      .select()
-      .from(projects)
-      .where(and(
-        eq(projects.projectId, projectId),
-        eq(projects.accountId, accountId),
-      ))
-      .limit(1);
-    if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-    projectRow = row;
-  } else {
-    return c.json({ error: 'clone credentials are only available to runtime tokens' }, 403);
-  }
-  if (!projectRow) return c.json({ error: 'Not found' }, 404);
+    if (!projectRow) return c.json({ error: "Not found" }, 404);
 
-  const gitAuth = await resolveProjectGitAuth(projectRow);
-  if (!gitAuth.auth?.token) {
+    const gitAuth = await resolveProjectGitAuth(projectRow);
+    if (!gitAuth.auth?.token) {
+      return c.json({
+        repo_url: projectRow.repoUrl,
+        auth: null,
+        source: gitAuth.authSource,
+      });
+    }
+
     return c.json({
       repo_url: projectRow.repoUrl,
-      auth: null,
+      auth: {
+        username: "x-access-token",
+        token: gitAuth.auth.token,
+        type: "basic",
+      },
       source: gitAuth.authSource,
+      expires_at: null,
     });
-  }
-
-  return c.json({
-    repo_url: projectRow.repoUrl,
-    auth: {
-      username: 'x-access-token',
-      token: gitAuth.auth.token,
-      type: 'basic',
-    },
-    source: gitAuth.authSource,
-    expires_at: null,
-  });
-},
+  }),
 );
 
 // PUT /v1/projects/:projectId/git-credential
@@ -312,74 +418,94 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: 'put',
-    path: '/{projectId}/git-credential',
-    tags: ['github'],
-    summary: 'PUT /:projectId/git-credential',
+    method: "put",
+    path: "/{projectId}/git-credential",
+    tags: ["github"],
+    summary: "PUT /:projectId/git-credential",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 404, 409),
+      200: json(z.any(), "OK"),
+      ...errors(400, 404, 409),
     },
   }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Storing a git credential is a connector-write capability — a custom role can
-  // omit project.connector.write to take credential management away from a
-  // department, and an agent grant must include it (central fold) to write one.
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+  effectHandler(async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const body = await readBody(c);
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    // Storing a git credential is a connector-write capability — a custom role can
+    // omit project.connector.write to take credential management away from a
+    // department, and an agent grant must include it (central fold) to write one.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
 
-  if (await hasServerManagedGitAuth(loaded.row)) {
-    return c.json({ error: 'Git auth is already managed by Kortix for this project' }, 409);
-  }
+    if (await hasServerManagedGitAuth(loaded.row)) {
+      return c.json(
+        { error: "Git auth is already managed by Kortix for this project" },
+        409,
+      );
+    }
 
-  const token =
-    typeof body.token === 'string'
-      ? body.token.trim()
-      : typeof body.value === 'string'
-        ? body.value.trim()
-        : '';
-  if (!token) return c.json({ error: 'token is required' }, 400);
+    const token =
+      typeof body.token === "string"
+        ? body.token.trim()
+        : typeof body.value === "string"
+          ? body.value.trim()
+          : "";
+    if (!token) return c.json({ error: "token is required" }, 400);
 
-  const existingConnection = await getProjectGitConnection(projectId);
-  const remote = getProjectGitRemote(loaded.row, existingConnection);
-  const provider = normalizeString(body.provider) ?? (remote.provider === 'github' ? 'generic' : remote.provider);
-  if (provider === 'github') {
-    return c.json({ error: 'GitHub credentials are managed through the GitHub App connection' }, 409);
-  }
+    const existingConnection = await getProjectGitConnection(projectId);
+    const remote = getProjectGitRemote(loaded.row, existingConnection);
+    const provider =
+      normalizeString(body.provider) ??
+      (remote.provider === "github" ? "generic" : remote.provider);
+    if (provider === "github") {
+      return c.json(
+        {
+          error:
+            "GitHub credentials are managed through the GitHub App connection",
+        },
+        409,
+      );
+    }
 
-  const credential = await upsertProjectGitCredential({
-    accountId: loaded.row.accountId,
-    projectId,
-    provider,
-    token,
-    createdBy: loaded.userId,
-  });
-  const connection = await upsertProjectGitConnection({
-    accountId: loaded.row.accountId,
-    projectId,
-    provider,
-    repoUrl: loaded.row.repoUrl,
-    defaultBranch: loaded.row.defaultBranch,
-    authMethod: 'project_credential',
-    credentialRef: credential.credentialId,
-    status: 'connected',
-    metadata: { credential_kind: 'token' },
-  });
+    const credential = await upsertProjectGitCredential({
+      accountId: loaded.row.accountId,
+      projectId,
+      provider,
+      token,
+      createdBy: loaded.userId,
+    });
+    const connection = await upsertProjectGitConnection({
+      accountId: loaded.row.accountId,
+      projectId,
+      provider,
+      repoUrl: loaded.row.repoUrl,
+      defaultBranch: loaded.row.defaultBranch,
+      authMethod: "project_credential",
+      credentialRef: credential.credentialId,
+      status: "connected",
+      metadata: { credential_kind: "token" },
+    });
 
-  return c.json({
-    configured: true,
-    provider,
-    git_connection: serializeProjectGitConnection(connection),
-  }, 200);
-},
+    return c.json(
+      {
+        configured: true,
+        provider,
+        git_connection: serializeProjectGitConnection(connection),
+      },
+      200,
+    );
+  }),
 );
 
 // GET /v1/projects/:projectId/secrets
@@ -390,88 +516,99 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/{projectId}/secrets',
-    tags: ['secrets'],
-    summary: 'GET /:projectId/secrets',
+    method: "get",
+    path: "/{projectId}/secrets",
+    tags: ["secrets"],
+    summary: "GET /:projectId/secrets",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
     responses: {
-        200: json(z.array(SecretSchema), 'Secrets'),
-        ...errors(404),
+      200: json(z.array(SecretSchema), "Secrets"),
+      ...errors(404),
     },
   }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Leaf-gate the read (a custom role can omit project.secret.read) — and, via
-  // the central agent-grant fold, an agent token must hold it in its kortixCli.
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
-
-  const subject = await resolveShareSubject(loaded.userId);
-  const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
-
-  // Manifest is optional — a project without kortix.toml just gets empty
-  // required/optional lists. We surface loaded/missing/error explicitly so the
-  // UI can distinguish "no envs declared" from "we couldn't read the manifest".
-  let required: string[] = [];
-  let optional: string[] = [];
-  let manifestStatus: 'loaded' | 'missing' | 'error' = 'missing';
-  let manifestError: string | null = null;
-  try {
-    const projectConfig = await loadProjectConfig(await withProjectGitAuth(loaded.row), []);
-    required = projectConfig?.env?.required ?? [];
-    optional = projectConfig?.env?.optional ?? [];
-    manifestStatus = projectConfig?.manifest_raw ? 'loaded' : 'missing';
-  } catch (err) {
-    manifestStatus = 'error';
-    manifestError = err instanceof Error ? err.message : String(err);
-    console.warn('[projects] secrets: manifest load failed', {
-      projectId,
-      manifestPath: loaded.row.manifestPath,
-      error: manifestError,
-    });
-  }
-
-  // Per-agent env scoping: a scoped agent token only sees the secret NAMES it's
-  // granted (mirrors the env-injection narrowing), so it can't enumerate keys
-  // outside its allowlist. No-op for non-agent tokens / 'all' / null grants.
-  const agentGrant = getAgentGrant(c);
-  const allItems = (await loadSecretViewsForUser(projectId, subject, canManageShared))
-    .filter((item) => !item.system)
-    .filter((item) => agentMayUseEnv(agentGrant, item.name));
-
-  // Per-resource scoping (members / departments): when a secret is scoped to
-  // specific principals, a non-owner/admin member sees it ONLY if granted.
-  // Unscoped secrets stay project-wide. Mirrors agent/skill scoping; the helper
-  // bypasses for owner/admin (implicit Manager) and service accounts.
-  const accessibleSecrets = new Set(
-    await filterAccessibleProjectResources(
+  effectHandler(async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    // Leaf-gate the read (a custom role can omit project.secret.read) — and, via
+    // the central agent-grant fold, an agent token must hold it in its kortixCli.
+    await assertProjectCapability(
+      c,
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      'secret',
-      allItems.map((i) => i.name),
-      (c.get('iamTokenId') as string | undefined) ?? undefined,
-    ),
-  );
-  const items = allItems.filter((i) => accessibleSecrets.has(i.name));
+      PROJECT_ACTIONS.PROJECT_SECRET_READ,
+    );
 
-  return c.json({
-    items,
-    required,
-    optional,
-    // Page-level: may this member edit shared rows (add/set/share), or only
-    // manage their own overrides?
-    can_manage: canManageShared,
-    manifest_status: manifestStatus,
-    manifest_path: loaded.row.manifestPath,
-    ...(manifestError ? { manifest_error: manifestError } : {}),
-  });
-},
+    const subject = await resolveShareSubject(loaded.userId);
+    const canManageShared = roleAllows(loaded.effectiveRole, "manage");
+
+    // Manifest is optional — a project without kortix.toml just gets empty
+    // required/optional lists. We surface loaded/missing/error explicitly so the
+    // UI can distinguish "no envs declared" from "we couldn't read the manifest".
+    let required: string[] = [];
+    let optional: string[] = [];
+    let manifestStatus: "loaded" | "missing" | "error" = "missing";
+    let manifestError: string | null = null;
+    try {
+      const projectConfig = await loadProjectConfig(
+        await withProjectGitAuth(loaded.row),
+        [],
+      );
+      required = projectConfig?.env?.required ?? [];
+      optional = projectConfig?.env?.optional ?? [];
+      manifestStatus = projectConfig?.manifest_raw ? "loaded" : "missing";
+    } catch (err) {
+      manifestStatus = "error";
+      manifestError = err instanceof Error ? err.message : String(err);
+      console.warn("[projects] secrets: manifest load failed", {
+        projectId,
+        manifestPath: loaded.row.manifestPath,
+        error: manifestError,
+      });
+    }
+
+    // Per-agent env scoping: a scoped agent token only sees the secret NAMES it's
+    // granted (mirrors the env-injection narrowing), so it can't enumerate keys
+    // outside its allowlist. No-op for non-agent tokens / 'all' / null grants.
+    const agentGrant = getAgentGrant(c);
+    const allItems = (
+      await loadSecretViewsForUser(projectId, subject, canManageShared)
+    )
+      .filter((item) => !item.system)
+      .filter((item) => agentMayUseEnv(agentGrant, item.name));
+
+    // Per-resource scoping (members / departments): when a secret is scoped to
+    // specific principals, a non-owner/admin member sees it ONLY if granted.
+    // Unscoped secrets stay project-wide. Mirrors agent/skill scoping; the helper
+    // bypasses for owner/admin (implicit Manager) and service accounts.
+    const accessibleSecrets = new Set(
+      await filterAccessibleProjectResources(
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        "secret",
+        allItems.map((i) => i.name),
+        (c.get("iamTokenId") as string | undefined) ?? undefined,
+      ),
+    );
+    const items = allItems.filter((i) => accessibleSecrets.has(i.name));
+
+    return c.json({
+      items,
+      required,
+      optional,
+      // Page-level: may this member edit shared rows (add/set/share), or only
+      // manage their own overrides?
+      can_manage: canManageShared,
+      manifest_status: manifestStatus,
+      manifest_path: loaded.row.manifestPath,
+      ...(manifestError ? { manifest_error: manifestError } : {}),
+    });
+  }),
 );
 
 // POST /v1/projects/:projectId/secrets
@@ -479,119 +616,149 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/{projectId}/secrets',
-    tags: ['secrets'],
-    summary: 'POST /:projectId/secrets',
+    method: "post",
+    path: "/{projectId}/secrets",
+    tags: ["secrets"],
+    summary: "POST /:projectId/secrets",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
     responses: {
-        200: json(SecretSchema, 'The created secret'),
-        ...errors(400, 404),
+      200: json(SecretSchema, "The created secret"),
+      ...errors(400, 404),
     },
   }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
-
-  const name = normalizeString(body.name)?.toUpperCase();
-  if (!name) return c.json({ error: 'name is required' }, 400);
-  if (!isValidSecretName(name)) {
-    return c.json({ error: 'name must be a valid env var name (A-Z, 0-9, _; max 64 chars)' }, 400);
-  }
-  if (name.startsWith('KORTIX_')) {
-    return c.json({ error: 'KORTIX_* names are reserved for platform/runtime-managed variables' }, 400);
-  }
-  if (name === CODEX_AUTH_JSON_SECRET_NAME) {
-    return c.json({ error: `${CODEX_AUTH_JSON_SECRET_NAME} is managed by ChatGPT subscription onboarding` }, 400);
-  }
-
-  const value = typeof body.value === 'string' ? body.value : null;
-
-  // Optional sharing intent (project | private | members). Absent → leave
-  // sharing as-is (column defaults to 'project' on first insert).
-  let sharing: ReturnType<typeof parseSharingIntent> | undefined;
-  if (body.sharing != null) {
-    sharing = parseSharingIntent(body.sharing, loaded.userId);
-    if (!sharing) {
-      return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
-    }
-  }
-
-  // Look up the existing SHARED row so a sharing-only edit doesn't force
-  // re-entering the value. Creating a brand-new secret still requires a value.
-  const [existing] = await db
-    .select({ secretId: projectSecrets.secretId })
-    .from(projectSecrets)
-    .where(and(
-      eq(projectSecrets.projectId, projectId),
-      eq(projectSecrets.name, name),
-      isNull(projectSecrets.ownerUserId),
-    ))
-    .limit(1);
-  if (!existing && value === null) {
-    return c.json({ error: 'value is required' }, 400);
-  }
-
-  const now = new Date();
-  let secretId: string;
-  if (value !== null) {
-    const [row] = await db
-      .insert(projectSecrets)
-      .values({
-        projectId,
-        name,
-        valueEnc: encryptProjectSecret(projectId, value),
-        createdBy: loaded.userId,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        // The shared row is unique on (project, name) WHERE owner_user_id IS NULL.
-        target: [projectSecrets.projectId, projectSecrets.name],
-        targetWhere: isNull(projectSecrets.ownerUserId),
-        set: {
-          valueEnc: encryptProjectSecret(projectId, value),
-          updatedAt: now,
-        },
-      })
-      .returning({ secretId: projectSecrets.secretId });
-    secretId = row.secretId;
-  } else {
-    // Sharing-only update — touch updatedAt so the list reflects the change.
-    await db
-      .update(projectSecrets)
-      .set({ updatedAt: now })
-      .where(eq(projectSecrets.secretId, existing!.secretId));
-    secretId = existing!.secretId;
-  }
-
-  if (sharing) await setSecretSharing(secretId, sharing);
-
-  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
-
-  // First provider connect on a default-less project → seed a sensible project
-  // default model (that provider's flagship). Detached + idempotent; never seeds
-  // over an existing default.
-  if (value !== null && isGatewayManagedEnv(name)) {
-    void seedProjectDefaultModelOnConnect({
+  effectHandler(async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const body = await readBody(c);
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
       projectId,
-      accountId: loaded.row.accountId,
-      userId: loaded.userId,
-      secretName: name,
-    });
-  }
+      PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
+    );
 
-  const subject = await resolveShareSubject(loaded.userId);
-  const views = await loadSecretViewsForUser(projectId, subject, true);
-  const view = views.find((v) => v.name === name);
-  return c.json(view ?? { name }, 200);
-},
+    const name = normalizeString(body.name)?.toUpperCase();
+    if (!name) return c.json({ error: "name is required" }, 400);
+    if (!isValidSecretName(name)) {
+      return c.json(
+        {
+          error:
+            "name must be a valid env var name (A-Z, 0-9, _; max 64 chars)",
+        },
+        400,
+      );
+    }
+    if (name.startsWith("KORTIX_")) {
+      return c.json(
+        {
+          error:
+            "KORTIX_* names are reserved for platform/runtime-managed variables",
+        },
+        400,
+      );
+    }
+    if (name === CODEX_AUTH_JSON_SECRET_NAME) {
+      return c.json(
+        {
+          error: `${CODEX_AUTH_JSON_SECRET_NAME} is managed by ChatGPT subscription onboarding`,
+        },
+        400,
+      );
+    }
+
+    const value = typeof body.value === "string" ? body.value : null;
+
+    // Optional sharing intent (project | private | members). Absent → leave
+    // sharing as-is (column defaults to 'project' on first insert).
+    let sharing: ReturnType<typeof parseSharingIntent> | undefined;
+    if (body.sharing != null) {
+      sharing = parseSharingIntent(body.sharing, loaded.userId);
+      if (!sharing) {
+        return c.json(
+          { error: "invalid sharing — mode must be project|private|members" },
+          400,
+        );
+      }
+    }
+
+    // Look up the existing SHARED row so a sharing-only edit doesn't force
+    // re-entering the value. Creating a brand-new secret still requires a value.
+    const [existing] = await db
+      .select({ secretId: projectSecrets.secretId })
+      .from(projectSecrets)
+      .where(
+        and(
+          eq(projectSecrets.projectId, projectId),
+          eq(projectSecrets.name, name),
+          isNull(projectSecrets.ownerUserId),
+        ),
+      )
+      .limit(1);
+    if (!existing && value === null) {
+      return c.json({ error: "value is required" }, 400);
+    }
+
+    const now = new Date();
+    let secretId: string;
+    if (value !== null) {
+      const [row] = await db
+        .insert(projectSecrets)
+        .values({
+          projectId,
+          name,
+          valueEnc: encryptProjectSecret(projectId, value),
+          createdBy: loaded.userId,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          // The shared row is unique on (project, name) WHERE owner_user_id IS NULL.
+          target: [projectSecrets.projectId, projectSecrets.name],
+          targetWhere: isNull(projectSecrets.ownerUserId),
+          set: {
+            valueEnc: encryptProjectSecret(projectId, value),
+            updatedAt: now,
+          },
+        })
+        .returning({ secretId: projectSecrets.secretId });
+      secretId = row.secretId;
+    } else {
+      // Sharing-only update — touch updatedAt so the list reflects the change.
+      await db
+        .update(projectSecrets)
+        .set({ updatedAt: now })
+        .where(eq(projectSecrets.secretId, existing!.secretId));
+      secretId = existing!.secretId;
+    }
+
+    if (sharing) await setSecretSharing(secretId, sharing);
+
+    void propagateProjectSecretsToActiveSandboxes(projectId, {
+      refreshModels: isGatewayManagedEnv(name),
+    });
+
+    // First provider connect on a default-less project → seed a sensible project
+    // default model (that provider's flagship). Detached + idempotent; never seeds
+    // over an existing default.
+    if (value !== null && isGatewayManagedEnv(name)) {
+      void seedProjectDefaultModelOnConnect({
+        projectId,
+        accountId: loaded.row.accountId,
+        userId: loaded.userId,
+        secretName: name,
+      });
+    }
+
+    const subject = await resolveShareSubject(loaded.userId);
+    const views = await loadSecretViewsForUser(projectId, subject, true);
+    const view = views.find((v) => v.name === name);
+    return c.json(view ?? { name }, 200);
+  }),
 );
 
 // ─── Provider OAuth device flow (poll-based) ───────────────────────────────
@@ -635,7 +802,7 @@ async function writeCodexAuthSecret(input: {
   const { projectId, userId, value, sharing } = input;
   const now = new Date();
 
-  if (sharing?.mode === 'private') {
+  if (sharing?.mode === "private") {
     await db
       .insert(projectSecrets)
       .values({
@@ -648,7 +815,11 @@ async function writeCodexAuthSecret(input: {
         updatedAt: now,
       })
       .onConflictDoUpdate({
-        target: [projectSecrets.projectId, projectSecrets.name, projectSecrets.ownerUserId],
+        target: [
+          projectSecrets.projectId,
+          projectSecrets.name,
+          projectSecrets.ownerUserId,
+        ],
         targetWhere: sql`${projectSecrets.ownerUserId} is not null`,
         set: {
           valueEnc: encryptProjectSecret(projectId, value),
@@ -678,21 +849,28 @@ async function writeCodexAuthSecret(input: {
     const [row] = await db
       .select({ secretId: projectSecrets.secretId })
       .from(projectSecrets)
-      .where(and(
-        eq(projectSecrets.projectId, projectId),
-        eq(projectSecrets.name, CODEX_AUTH_JSON_SECRET_NAME),
-        isNull(projectSecrets.ownerUserId),
-      ))
+      .where(
+        and(
+          eq(projectSecrets.projectId, projectId),
+          eq(projectSecrets.name, CODEX_AUTH_JSON_SECRET_NAME),
+          isNull(projectSecrets.ownerUserId),
+        ),
+      )
       .limit(1);
     if (sharing && row) await setSecretSharing(row.secretId, sharing);
   }
 
-  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: true });
+  void propagateProjectSecretsToActiveSandboxes(projectId, {
+    refreshModels: true,
+  });
 
   const subject = await resolveShareSubject(userId);
   const views = await loadSecretViewsForUser(projectId, subject, true);
-  return views.find((v) => v.name === CODEX_AUTH_JSON_SECRET_NAME)
-    ?? { name: CODEX_AUTH_JSON_SECRET_NAME };
+  return (
+    views.find((v) => v.name === CODEX_AUTH_JSON_SECRET_NAME) ?? {
+      name: CODEX_AUTH_JSON_SECRET_NAME,
+    }
+  );
 }
 
 // Best-effort token expiry (ms remaining) from a stored auth.json, for display.
@@ -702,7 +880,7 @@ function authExpiresInMs(authJson: string): number | null {
     // opencode auth.json is keyed by provider: { openai: { expires, ... } }.
     for (const entry of Object.values(parsed ?? {})) {
       const expires = (entry as { expires?: unknown })?.expires;
-      if (typeof expires === 'number' && Number.isFinite(expires)) {
+      if (typeof expires === "number" && Number.isFinite(expires)) {
         return Math.max(0, expires - Date.now());
       }
     }
@@ -716,280 +894,358 @@ function authExpiresInMs(authJson: string): number | null {
 // Kick the device flow in a detached background task; return the challenge.
 projectsApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/{projectId}/oauth/{provider}/start',
-    tags: ['secrets'],
-    summary: 'POST /:projectId/oauth/:provider/start',
+    method: "post",
+    path: "/{projectId}/oauth/{provider}/start",
+    tags: ["secrets"],
+    summary: "POST /:projectId/oauth/:provider/start",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), provider: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      params: z.object({ projectId: z.string(), provider: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
     responses: {
-        200: json(z.any(), 'Device challenge'),
-        ...errors(400, 401, 403, 404, 502),
+      200: json(z.any(), "Device challenge"),
+      ...errors(400, 401, 403, 404, 502),
     },
   }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const provider = c.req.param('provider');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  effectHandler(async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const provider = c.req.param("provider");
+    const body = await readBody(c);
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
 
-  if (!OAUTH_PROVIDERS[provider]) {
-    return c.json({ error: `OAuth device flow is not available for "${provider}"` }, 400);
-  }
-
-  let sharing: ReturnType<typeof parseSharingIntent> | undefined;
-  if (body.sharing != null) {
-    sharing = parseSharingIntent(body.sharing, loaded.userId);
-    if (!sharing) {
-      return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
+    if (!OAUTH_PROVIDERS[provider]) {
+      return c.json(
+        { error: `OAuth device flow is not available for "${provider}"` },
+        400,
+      );
     }
-  }
-  // A shared credential is a project SECRET WRITE (the device flow persists it
-  // via writeCodexAuthSecret on poll). Gate on the leaf so a custom role can
-  // withhold it and the agent-grant fold applies — closing the gap where the
-  // flow wrote a shared credential behind only loadProjectForUser('read'). A
-  // private (owner-only) credential is the member's own, so read still suffices.
-  // The poll step is reachable only with the project-key-encrypted flow handle
-  // minted here, so gating start transitively protects the write on poll.
-  if (sharing?.mode !== 'private') {
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
-  }
 
-  // Request a device code straight from OpenAI — a couple HTTPS calls, no
-  // subprocess, no server-side flow record. Everything `poll` needs is sealed
-  // into the opaque `flow_id` (encrypted with the project key), so any replica
-  // can serve any poll and there's nothing to leak or OOM.
-  let challenge;
-  try {
-    challenge = await startCodexDeviceAuth();
-  } catch (err) {
+    let sharing: ReturnType<typeof parseSharingIntent> | undefined;
+    if (body.sharing != null) {
+      sharing = parseSharingIntent(body.sharing, loaded.userId);
+      if (!sharing) {
+        return c.json(
+          { error: "invalid sharing — mode must be project|private|members" },
+          400,
+        );
+      }
+    }
+    // A shared credential is a project SECRET WRITE (the device flow persists it
+    // via writeCodexAuthSecret on poll). Gate on the leaf so a custom role can
+    // withhold it and the agent-grant fold applies — closing the gap where the
+    // flow wrote a shared credential behind only loadProjectForUser('read'). A
+    // private (owner-only) credential is the member's own, so read still suffices.
+    // The poll step is reachable only with the project-key-encrypted flow handle
+    // minted here, so gating start transitively protects the write on poll.
+    if (sharing?.mode !== "private") {
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
+      );
+    }
+
+    // Request a device code straight from OpenAI — a couple HTTPS calls, no
+    // subprocess, no server-side flow record. Everything `poll` needs is sealed
+    // into the opaque `flow_id` (encrypted with the project key), so any replica
+    // can serve any poll and there's nothing to leak or OOM.
+    let challenge;
+    try {
+      challenge = await startCodexDeviceAuth();
+    } catch (err) {
+      return c.json(
+        {
+          error:
+            err instanceof Error
+              ? err.message
+              : "Failed to start ChatGPT authorization",
+        },
+        502,
+      );
+    }
+
+    const expiresAt = Date.now() + DEVICE_AUTH_TTL_MS;
+    const flowId = encryptProjectSecret(
+      projectId,
+      JSON.stringify({
+        d: challenge.deviceAuthId,
+        u: challenge.userCode,
+        s: sharing ?? null,
+        uid: loaded.userId,
+        e: expiresAt,
+      }),
+    );
+
     return c.json({
-      error: err instanceof Error ? err.message : 'Failed to start ChatGPT authorization',
-    }, 502);
-  }
-
-  const expiresAt = Date.now() + DEVICE_AUTH_TTL_MS;
-  const flowId = encryptProjectSecret(
-    projectId,
-    JSON.stringify({
-      d: challenge.deviceAuthId,
-      u: challenge.userCode,
-      s: sharing ?? null,
-      uid: loaded.userId,
-      e: expiresAt,
-    }),
-  );
-
-  return c.json({
-    flow_id: flowId,
-    verification_url: challenge.verificationUrl,
-    user_code: challenge.userCode,
-    expires_at: expiresAt,
-    interval_ms: Math.max(challenge.intervalMs, OAUTH_POLL_INTERVAL_MS),
-  });
-},
+      flow_id: flowId,
+      verification_url: challenge.verificationUrl,
+      user_code: challenge.userCode,
+      expires_at: expiresAt,
+      interval_ms: Math.max(challenge.intervalMs, OAUTH_POLL_INTERVAL_MS),
+    });
+  }),
 );
 
 // ─── POST /v1/projects/:projectId/oauth/:provider/poll ─────────────────────
 // Any replica: read the shared flow row; on success persist the secret.
 projectsApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/{projectId}/oauth/{provider}/poll',
-    tags: ['secrets'],
-    summary: 'POST /:projectId/oauth/:provider/poll',
+    method: "post",
+    path: "/{projectId}/oauth/{provider}/poll",
+    tags: ["secrets"],
+    summary: "POST /:projectId/oauth/:provider/poll",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), provider: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      params: z.object({ projectId: z.string(), provider: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
     responses: {
-        200: json(z.any(), 'Poll result'),
-        ...errors(400, 401, 404),
+      200: json(z.any(), "Poll result"),
+      ...errors(400, 401, 404),
     },
   }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const provider = c.req.param('provider');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  effectHandler(async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const provider = c.req.param("provider");
+    const body = await readBody(c);
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
 
-  const flowId = normalizeString(body.flow_id);
-  if (!flowId) return c.json({ error: 'flow_id is required' }, 400);
+    const flowId = normalizeString(body.flow_id);
+    if (!flowId) return c.json({ error: "flow_id is required" }, 400);
 
-  // Decrypt the opaque flow handle. The key is project-scoped, so a handle from
-  // another project — or a tampered one — simply won't decrypt → expired.
-  let state: { d?: string; u?: string; s?: unknown; uid?: string; e?: number };
-  try {
-    state = JSON.parse(decryptProjectSecret(projectId, flowId));
-  } catch {
-    return c.json({ status: 'expired' });
-  }
-  // Only the member who started it may poll it, and only before it expires.
-  if (
-    !state.d || !state.u ||
-    state.uid !== loaded.userId ||
-    typeof state.e !== 'number' || Date.now() > state.e
-  ) {
-    return c.json({ status: 'expired' });
-  }
+    // Decrypt the opaque flow handle. The key is project-scoped, so a handle from
+    // another project — or a tampered one — simply won't decrypt → expired.
+    let state: {
+      d?: string;
+      u?: string;
+      s?: unknown;
+      uid?: string;
+      e?: number;
+    };
+    try {
+      state = JSON.parse(decryptProjectSecret(projectId, flowId));
+    } catch {
+      return c.json({ status: "expired" });
+    }
+    // Only the member who started it may poll it, and only before it expires.
+    if (
+      !state.d ||
+      !state.u ||
+      state.uid !== loaded.userId ||
+      typeof state.e !== "number" ||
+      Date.now() > state.e
+    ) {
+      return c.json({ status: "expired" });
+    }
 
-  const result = await pollCodexDeviceAuth({ deviceAuthId: state.d, userCode: state.u });
-  if (result.status === 'pending') {
-    return c.json({ status: 'pending', next_poll_ms: OAUTH_POLL_INTERVAL_MS });
-  }
-  if (result.status === 'failed') {
-    return c.json({ status: 'failed', error: result.error });
-  }
+    const result = await pollCodexDeviceAuth({
+      deviceAuthId: state.d,
+      userCode: state.u,
+    });
+    if (result.status === "pending") {
+      return c.json({
+        status: "pending",
+        next_poll_ms: OAUTH_POLL_INTERVAL_MS,
+      });
+    }
+    if (result.status === "failed") {
+      return c.json({ status: "failed", error: result.error });
+    }
 
-  // Authorized — persist the auth.json as the project secret with the sharing
-  // chosen at start time (sealed, tamper-proof, in the flow handle).
-  const sharing = state.s ? (parseSharingIntent(state.s, loaded.userId) ?? undefined) : undefined;
-  await writeCodexAuthSecret({ projectId, userId: loaded.userId, value: result.authJson, sharing });
+    // Authorized — persist the auth.json as the project secret with the sharing
+    // chosen at start time (sealed, tamper-proof, in the flow handle).
+    const sharing = state.s
+      ? (parseSharingIntent(state.s, loaded.userId) ?? undefined)
+      : undefined;
+    await writeCodexAuthSecret({
+      projectId,
+      userId: loaded.userId,
+      value: result.authJson,
+      sharing,
+    });
 
-  return c.json({
-    status: 'success',
-    credential: {
-      provider_id: provider,
-      expires_in_ms: authExpiresInMs(result.authJson),
-      updated_at: new Date().toISOString(),
-    },
-  });
-},
+    return c.json({
+      status: "success",
+      credential: {
+        provider_id: provider,
+        expires_in_ms: authExpiresInMs(result.authJson),
+        updated_at: new Date().toISOString(),
+      },
+    });
+  }),
 );
 
 // ─── GET /v1/projects/:projectId/oauth ─────────────────────────────────────
 // List configured OAuth credentials (derived from the saved project secrets).
 projectsApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/{projectId}/oauth',
-    tags: ['secrets'],
-    summary: 'GET /:projectId/oauth',
+    method: "get",
+    path: "/{projectId}/oauth",
+    tags: ["secrets"],
+    summary: "GET /:projectId/oauth",
     ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+    request: { params: z.object({ projectId: z.string() }) },
     responses: {
-        200: json(z.any(), 'Configured OAuth credentials'),
-        ...errors(401, 404),
+      200: json(z.any(), "Configured OAuth credentials"),
+      ...errors(401, 404),
     },
   }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  effectHandler(async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
 
-  const items: Array<{ provider_id: string; expires_in_ms: number | null; updated_at: string }> = [];
-  for (const [providerId, cfg] of Object.entries(OAUTH_PROVIDERS)) {
-    const [row] = await db
-      .select({ valueEnc: projectSecrets.valueEnc, updatedAt: projectSecrets.updatedAt })
-      .from(projectSecrets)
-      .where(and(
-        eq(projectSecrets.projectId, projectId),
-        eq(projectSecrets.name, cfg.secretName),
-        isNull(projectSecrets.ownerUserId),
-      ))
-      .limit(1);
-    if (!row) continue;
-    let expiresInMs: number | null = null;
-    try {
-      expiresInMs = authExpiresInMs(decryptProjectSecret(projectId, row.valueEnc));
-    } catch {
-      // unreadable — leave unknown
+    const items: Array<{
+      provider_id: string;
+      expires_in_ms: number | null;
+      updated_at: string;
+    }> = [];
+    for (const [providerId, cfg] of Object.entries(OAUTH_PROVIDERS)) {
+      const [row] = await db
+        .select({
+          valueEnc: projectSecrets.valueEnc,
+          updatedAt: projectSecrets.updatedAt,
+        })
+        .from(projectSecrets)
+        .where(
+          and(
+            eq(projectSecrets.projectId, projectId),
+            eq(projectSecrets.name, cfg.secretName),
+            isNull(projectSecrets.ownerUserId),
+          ),
+        )
+        .limit(1);
+      if (!row) continue;
+      let expiresInMs: number | null = null;
+      try {
+        expiresInMs = authExpiresInMs(
+          decryptProjectSecret(projectId, row.valueEnc),
+        );
+      } catch {
+        // unreadable — leave unknown
+      }
+      items.push({
+        provider_id: providerId,
+        expires_in_ms: expiresInMs,
+        updated_at: (row.updatedAt ?? new Date()).toISOString(),
+      });
     }
-    items.push({
-      provider_id: providerId,
-      expires_in_ms: expiresInMs,
-      updated_at: (row.updatedAt ?? new Date()).toISOString(),
-    });
-  }
 
-  return c.json({ items });
-},
+    return c.json({ items });
+  }),
 );
 
 // ─── DELETE /v1/projects/:projectId/oauth/:provider ────────────────────────
 // Remove an OAuth credential (deletes the backing secret).
 projectsApp.openapi(
   createRoute({
-    method: 'delete',
-    path: '/{projectId}/oauth/{provider}',
-    tags: ['secrets'],
-    summary: 'DELETE /:projectId/oauth/:provider',
+    method: "delete",
+    path: "/{projectId}/oauth/{provider}",
+    tags: ["secrets"],
+    summary: "DELETE /:projectId/oauth/:provider",
     ...auth,
-      request: { params: z.object({ projectId: z.string(), provider: z.string() }) },
+    request: {
+      params: z.object({ projectId: z.string(), provider: z.string() }),
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(401, 403, 404),
+      200: json(z.any(), "OK"),
+      ...errors(401, 403, 404),
     },
   }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const provider = c.req.param('provider');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+  effectHandler(async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const provider = c.req.param("provider");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
 
-  const cfg = OAUTH_PROVIDERS[provider];
-  if (!cfg) return c.json({ error: 'Not found' }, 404);
+    const cfg = OAUTH_PROVIDERS[provider];
+    if (!cfg) return c.json({ error: "Not found" }, 404);
 
-  await db
-    .delete(projectSecrets)
-    .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, cfg.secretName)));
-  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(cfg.secretName) });
+    await db
+      .delete(projectSecrets)
+      .where(
+        and(
+          eq(projectSecrets.projectId, projectId),
+          eq(projectSecrets.name, cfg.secretName),
+        ),
+      );
+    void propagateProjectSecretsToActiveSandboxes(projectId, {
+      refreshModels: isGatewayManagedEnv(cfg.secretName),
+    });
 
-  return c.json({ ok: true });
-},
+    return c.json({ ok: true });
+  }),
 );
 
 // DELETE /v1/projects/:projectId/secrets/:name
 
 projectsApp.openapi(
   createRoute({
-    method: 'delete',
-    path: '/{projectId}/secrets/{name}',
-    tags: ['secrets'],
-    summary: 'DELETE /:projectId/secrets/:name',
+    method: "delete",
+    path: "/{projectId}/secrets/{name}",
+    tags: ["secrets"],
+    summary: "DELETE /:projectId/secrets/:name",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), name: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string(), name: z.string() }),
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 403, 404),
+      200: json(z.any(), "OK"),
+      ...errors(400, 403, 404),
     },
   }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const name = c.req.param('name')?.trim().toUpperCase();
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
-  if (!name || !isValidSecretName(name)) {
-    return c.json({ error: 'Invalid secret name' }, 400);
-  }
-  if (isSystemProjectSecretName(name)) {
-    return c.json({ error: `${name} is managed by Kortix and cannot be removed` }, 403);
-  }
+  effectHandler(async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const name = c.req.param("name")?.trim().toUpperCase();
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
+    );
+    if (!name || !isValidSecretName(name)) {
+      return c.json({ error: "Invalid secret name" }, 400);
+    }
+    if (isSystemProjectSecretName(name)) {
+      return c.json(
+        { error: `${name} is managed by Kortix and cannot be removed` },
+        403,
+      );
+    }
 
-  // Only the shared row — members' personal overrides for this key are theirs to
-  // remove (via the /personal route) and are left intact.
-  await db
-    .delete(projectSecrets)
-    .where(and(
-      eq(projectSecrets.projectId, projectId),
-      eq(projectSecrets.name, name),
-      isNull(projectSecrets.ownerUserId),
-    ));
+    // Only the shared row — members' personal overrides for this key are theirs to
+    // remove (via the /personal route) and are left intact.
+    await db
+      .delete(projectSecrets)
+      .where(
+        and(
+          eq(projectSecrets.projectId, projectId),
+          eq(projectSecrets.name, name),
+          isNull(projectSecrets.ownerUserId),
+        ),
+      );
 
-  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
+    void propagateProjectSecretsToActiveSandboxes(projectId, {
+      refreshModels: isGatewayManagedEnv(name),
+    });
 
-  return c.json({ ok: true });
-},
+    return c.json({ ok: true });
+  }),
 );
 
 // PUT /v1/projects/:projectId/secrets/:name/personal
@@ -999,84 +1255,105 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: 'put',
-    path: '/{projectId}/secrets/{name}/personal',
-    tags: ['secrets'],
-    summary: 'PUT /:projectId/secrets/:name/personal',
+    method: "put",
+    path: "/{projectId}/secrets/{name}/personal",
+    tags: ["secrets"],
+    summary: "PUT /:projectId/secrets/:name/personal",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), name: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      params: z.object({ projectId: z.string(), name: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 404),
+      200: json(z.any(), "OK"),
+      ...errors(400, 404),
     },
   }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  effectHandler(async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const body = await readBody(c);
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
 
-  const name = c.req.param('name')?.trim().toUpperCase();
-  if (!name || !isValidSecretName(name)) {
-    return c.json({ error: 'Invalid secret name' }, 400);
-  }
-  if (isSystemProjectSecretName(name)) {
-    return c.json({ error: 'KORTIX_* names are reserved and cannot be overridden' }, 400);
-  }
-  if (name === CODEX_AUTH_JSON_SECRET_NAME) {
-    return c.json({ error: `${CODEX_AUTH_JSON_SECRET_NAME} is managed by ChatGPT subscription onboarding` }, 400);
-  }
-
-  const value = typeof body.value === 'string' ? body.value : null;
-  const active = typeof body.active === 'boolean' ? body.active : undefined;
-  if (value === null && active === undefined) {
-    return c.json({ error: 'value or active is required' }, 400);
-  }
-
-  const [existingMine] = await db
-    .select({ secretId: projectSecrets.secretId })
-    .from(projectSecrets)
-    .where(and(
-      eq(projectSecrets.projectId, projectId),
-      eq(projectSecrets.name, name),
-      eq(projectSecrets.ownerUserId, loaded.userId),
-    ))
-    .limit(1);
-
-  const now = new Date();
-  if (!existingMine) {
-    if (value === null) {
-      return c.json({ error: 'value is required to create an override' }, 400);
+    const name = c.req.param("name")?.trim().toUpperCase();
+    if (!name || !isValidSecretName(name)) {
+      return c.json({ error: "Invalid secret name" }, 400);
     }
-    await db.insert(projectSecrets).values({
-      projectId,
-      name,
-      valueEnc: encryptProjectSecret(projectId, value),
-      ownerUserId: loaded.userId,
-      active: active ?? true,
-      createdBy: loaded.userId,
-      updatedAt: now,
-    });
-  } else {
-    await db
-      .update(projectSecrets)
-      .set({
-        ...(value !== null ? { valueEnc: encryptProjectSecret(projectId, value) } : {}),
-        ...(active !== undefined ? { active } : {}),
+    if (isSystemProjectSecretName(name)) {
+      return c.json(
+        { error: "KORTIX_* names are reserved and cannot be overridden" },
+        400,
+      );
+    }
+    if (name === CODEX_AUTH_JSON_SECRET_NAME) {
+      return c.json(
+        {
+          error: `${CODEX_AUTH_JSON_SECRET_NAME} is managed by ChatGPT subscription onboarding`,
+        },
+        400,
+      );
+    }
+
+    const value = typeof body.value === "string" ? body.value : null;
+    const active = typeof body.active === "boolean" ? body.active : undefined;
+    if (value === null && active === undefined) {
+      return c.json({ error: "value or active is required" }, 400);
+    }
+
+    const [existingMine] = await db
+      .select({ secretId: projectSecrets.secretId })
+      .from(projectSecrets)
+      .where(
+        and(
+          eq(projectSecrets.projectId, projectId),
+          eq(projectSecrets.name, name),
+          eq(projectSecrets.ownerUserId, loaded.userId),
+        ),
+      )
+      .limit(1);
+
+    const now = new Date();
+    if (!existingMine) {
+      if (value === null) {
+        return c.json(
+          { error: "value is required to create an override" },
+          400,
+        );
+      }
+      await db.insert(projectSecrets).values({
+        projectId,
+        name,
+        valueEnc: encryptProjectSecret(projectId, value),
+        ownerUserId: loaded.userId,
+        active: active ?? true,
+        createdBy: loaded.userId,
         updatedAt: now,
-      })
-      .where(eq(projectSecrets.secretId, existingMine.secretId));
-  }
+      });
+    } else {
+      await db
+        .update(projectSecrets)
+        .set({
+          ...(value !== null
+            ? { valueEnc: encryptProjectSecret(projectId, value) }
+            : {}),
+          ...(active !== undefined ? { active } : {}),
+          updatedAt: now,
+        })
+        .where(eq(projectSecrets.secretId, existingMine.secretId));
+    }
 
-  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
+    void propagateProjectSecretsToActiveSandboxes(projectId, {
+      refreshModels: isGatewayManagedEnv(name),
+    });
 
-  const subject = await resolveShareSubject(loaded.userId);
-  const views = await loadSecretViewsForUser(projectId, subject, roleAllows(loaded.effectiveRole, 'manage'));
-  return c.json(views.find((v) => v.name === name) ?? { name }, 200);
-},
+    const subject = await resolveShareSubject(loaded.userId);
+    const views = await loadSecretViewsForUser(
+      projectId,
+      subject,
+      roleAllows(loaded.effectiveRole, "manage"),
+    );
+    return c.json(views.find((v) => v.name === name) ?? { name }, 200);
+  }),
 );
 
 // DELETE /v1/projects/:projectId/secrets/:name/personal
@@ -1084,40 +1361,44 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: 'delete',
-    path: '/{projectId}/secrets/{name}/personal',
-    tags: ['secrets'],
-    summary: 'DELETE /:projectId/secrets/:name/personal',
+    method: "delete",
+    path: "/{projectId}/secrets/{name}/personal",
+    tags: ["secrets"],
+    summary: "DELETE /:projectId/secrets/:name/personal",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), name: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string(), name: z.string() }),
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 404),
+      200: json(z.any(), "OK"),
+      ...errors(400, 404),
     },
   }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const name = c.req.param('name')?.trim().toUpperCase();
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!name || !isValidSecretName(name)) {
-    return c.json({ error: 'Invalid secret name' }, 400);
-  }
+  effectHandler(async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const name = c.req.param("name")?.trim().toUpperCase();
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    if (!name || !isValidSecretName(name)) {
+      return c.json({ error: "Invalid secret name" }, 400);
+    }
 
-  await db
-    .delete(projectSecrets)
-    .where(and(
-      eq(projectSecrets.projectId, projectId),
-      eq(projectSecrets.name, name),
-      eq(projectSecrets.ownerUserId, loaded.userId),
-    ));
+    await db
+      .delete(projectSecrets)
+      .where(
+        and(
+          eq(projectSecrets.projectId, projectId),
+          eq(projectSecrets.name, name),
+          eq(projectSecrets.ownerUserId, loaded.userId),
+        ),
+      );
 
-  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
+    void propagateProjectSecretsToActiveSandboxes(projectId, {
+      refreshModels: isGatewayManagedEnv(name),
+    });
 
-  return c.json({ ok: true });
-},
+    return c.json({ ok: true });
+  }),
 );
 
 // GET /v1/projects/:projectId/triggers
