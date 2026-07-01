@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import { HIDE_BROWSER_TAB } from '@/components/thread/utils';
 import { useFilesStore } from '@/features/files';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
+
+const HIDE_BROWSER_TAB = true;
 
 export type ViewType = 'tools' | 'files' | 'browser' | 'desktop' | 'terminal' | 'changes';
 

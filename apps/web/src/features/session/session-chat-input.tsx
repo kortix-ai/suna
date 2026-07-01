@@ -35,7 +35,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 */
-import { VoiceRecorder } from '@/components/thread/chat-input/voice-recorder';
+import { VoiceRecorder } from './voice-recorder';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
 import { getFileIcon } from '@/features/files/components/file-icon';

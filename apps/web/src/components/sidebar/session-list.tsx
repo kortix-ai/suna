@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { DeleteConfirmationDialog } from '@/components/thread/DeleteConfirmationDialog';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 import {
   AlertDialog,
   AlertDialogAction,
