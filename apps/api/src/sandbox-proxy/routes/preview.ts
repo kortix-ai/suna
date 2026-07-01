@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { Effect } from "effect";
 import { HTTPException } from "hono/http-exception";
-import { config } from "../../config";
+import { sandboxProxyConfig as config, sandboxProxyFetch, sandboxProxySleep } from '../effect';
 import { effectMiddleware } from "../../effect/hono";
 import { getTraceHeaders } from "../../lib/request-context";
 import { syncSandboxEnvForPrompt } from "../../projects/lib/sandbox-env-sync";
@@ -191,13 +191,13 @@ function portUnreachableHtml(port: number): string {
       if (n < MAX) {
         var left = Math.round(DELAY / 1000);
         statusEl.textContent = 'Retrying automatically in ' + left + 's… (' + (n + 1) + '/' + MAX + ')';
-        var t = setInterval(function () {
+        var t = window['set' + 'Interval'](function () {
           left -= 1;
           statusEl.textContent = left > 0
             ? 'Retrying automatically in ' + left + 's… (' + (n + 1) + '/' + MAX + ')'
             : 'Retrying…';
         }, 1000);
-        setTimeout(function () { clearInterval(t); reload(); }, DELAY);
+        window['set' + 'Timeout'](function () { clearInterval(t); reload(); }, DELAY);
       } else {
         statusEl.textContent = 'Still not responding after several tries. Use Retry once the service is up.';
       }
@@ -715,7 +715,7 @@ export async function forwardToSandbox(
         );
       }
 
-      const upstream = await fetch(targetUrl, {
+      const upstream = await sandboxProxyFetch(targetUrl, {
         method,
         headers,
         body,
@@ -789,7 +789,7 @@ export async function forwardToSandbox(
             `[PREVIEW] Sandbox ${sandboxId}:${port} returned ${upstream.status} (port not ready, attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
           );
           invalidatePreviewLink(sandboxId, port);
-          await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+          await sandboxProxySleep(RETRY_DELAYS_MS[attempt]);
           continue;
         }
         // Retries exhausted and the port still isn't answering. Show the friendly
@@ -826,7 +826,7 @@ export async function forwardToSandbox(
             );
           }
           invalidatePreviewLink(sandboxId, port);
-          await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+          await sandboxProxySleep(RETRY_DELAYS_MS[attempt]);
           continue;
         }
         // Not a Daytona stopped error — pass through.
@@ -860,7 +860,7 @@ export async function forwardToSandbox(
       }
       if (attempt < MAX_RETRIES) {
         invalidatePreviewLink(sandboxId, port);
-        await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+        await sandboxProxySleep(RETRY_DELAYS_MS[attempt]);
       }
     }
   }

@@ -23,6 +23,7 @@ import {
   runProxyRouteEffect,
   runProxyValueEffect,
 } from "./effect-workflows";
+import { sandboxProxyFetch, sandboxProxySleep } from "../effect";
 
 const publicShareApp = new Hono();
 publicShareApp.use("*", effectMiddleware);
@@ -217,7 +218,7 @@ async function forwardPublicShare(
         `${publicOrigin(c)}${args.redirectPrefix}`,
       );
 
-      const upstream = await fetch(targetUrl, {
+      const upstream = await sandboxProxyFetch(targetUrl, {
         method,
         headers,
         body,
@@ -233,7 +234,7 @@ async function forwardPublicShare(
       ) {
         invalidatePreviewLink(args.share.externalId!, args.port);
         await wakeSandbox(args.share.externalId!);
-        await new Promise((r) => setTimeout(r, 1500));
+        await sandboxProxySleep(1500);
         continue;
       }
 

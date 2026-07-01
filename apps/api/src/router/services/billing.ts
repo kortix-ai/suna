@@ -1,4 +1,4 @@
-import { config, getToolCost } from '../../config';
+import { routerConfig as config, getToolCost } from '../effect';
 import {
   checkCredits as checkCreditsDb,
   deductCredits as deductCreditsDb,

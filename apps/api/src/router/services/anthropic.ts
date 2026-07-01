@@ -1,4 +1,4 @@
-import { config, KORTIX_MARKUP } from '../../config';
+import { routerConfig as config, KORTIX_MARKUP, routerFetch } from '../effect';
 import type { ModelConfig } from '../config/models';
 import { getTraceHeaders } from '../../lib/request-context';
 
@@ -37,7 +37,7 @@ export async function proxyToAnthropic(
     `[LLM][Anthropic] Proxying via OpenRouter: ${body.model} (stream=${isStreaming})`,
   );
 
-  return fetch(url, {
+  return routerFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

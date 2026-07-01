@@ -21,7 +21,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { projects, tunnelConnections } from '@kortix/db';
-import { db } from '../shared/db';
+import { executorDb as db } from './effect';
 import { COMPUTER_SLUG, computerLabel } from './computers';
 import type { ConnectorSpec } from '../projects/connectors';
 import { MANIFEST_FILENAME } from '../projects/triggers';

@@ -9,7 +9,14 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 let mockPayload: { userId: string; sandboxId: string } | null = null;
 
-mock.module('../shared/db', () => ({ db: {} }));
+mock.module('../sandbox-proxy/effect', () => ({
+  sandboxProxyDb: {},
+  sandboxProxyConfig: { ALLOWED_SANDBOX_PROVIDERS: ['daytona'] },
+  sandboxProxySupabase: {},
+  sandboxProxyFetch: globalThis.fetch,
+  sandboxProxySleep: async () => undefined,
+  runSandboxProxyInterval: () => undefined,
+}));
 mock.module('../shared/daytona', () => ({
   getDaytona: () => ({}),
   getDaytonaWarm: () => ({}),

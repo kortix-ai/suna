@@ -19,7 +19,7 @@ import {
   projectSessionGrants,
   projectSessions,
 } from '@kortix/db';
-import { db } from '../shared/db';
+import { executorDb as db } from './effect';
 
 export type ShareScope = 'project' | 'restricted';
 

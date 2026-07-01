@@ -13,7 +13,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { Effect } from "effect";
 import { validateSecretKey } from "../../repositories/api-keys";
 import { isKortixToken } from "../../shared/crypto";
-import { getSupabase } from "../../shared/supabase";
+import { sandboxProxySupabase } from '../effect';
 import { makeOpenApiApp, json, auth, ErrorSchema } from "../../openapi";
 import {
   ProxyRouteJsonError,
@@ -43,7 +43,7 @@ const validatePreviewBearerEffect = (token: string) =>
 
     const result = yield* Effect.tryPromise({
       try: async () => {
-        const supabase = getSupabase();
+        const supabase = sandboxProxySupabase;
         return supabase.auth.getUser(token);
       },
       catch: () =>

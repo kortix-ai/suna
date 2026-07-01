@@ -115,16 +115,16 @@ mock.module('../shared/db', () => {
             return ordered ? sortPreferredSandboxRows(rows) : rows;
           }
           if (isMembershipQuery) return mockDbMembership ? [mockDbMembership] : [];
-          if (isProjectSessionQuery) return [{ createdBy: TEST_USER_ID }];
+          if (isProjectSessionQuery) return [{ createdBy: TEST_USER_ID, accountId: 'account-001' }];
           // Fallback: empty (unknown query, e.g. accountGroupMembers in
           // resolveShareSubject — the test models no group memberships).
           return [];
         };
-        return {
-          from: (table: any) => ({
-            // `.where(...)` is both awaitable (resolveShareSubject awaits it
-            // directly, expecting an array) and chainable via `.limit(n)`.
-            where: (condition: any) => {
+        const queryFrom = () => ({
+          innerJoin: () => queryFrom(),
+          // `.where(...)` is both awaitable (resolveShareSubject awaits it
+          // directly, expecting an array) and chainable via `.limit(n)`.
+          where: () => {
               let ordered = false;
               const query = {
                 orderBy: () => {
@@ -136,9 +136,9 @@ mock.module('../shared/db', () => {
                   Promise.resolve(rowsFor(ordered)).then(resolve, reject),
               };
               return query;
-            },
-          }),
-        };
+          },
+        });
+        return { from: queryFrom };
       },
       update: (table: unknown) => ({
         set: (updates: Record<string, unknown>) => ({
@@ -150,6 +150,63 @@ mock.module('../shared/db', () => {
     },
   };
 });
+
+mock.module('../sandbox-proxy/effect', () => ({
+  sandboxProxyConfig: {
+    isDaytonaEnabled: () => true,
+    isJustAVPSEnabled: () => false,
+    ALLOWED_SANDBOX_PROVIDERS: ['daytona'],
+  },
+  sandboxProxyDb: {
+    select: (fields: any) => {
+      const fieldKeys = fields ? Object.keys(fields) : [];
+      const isSandboxQuery = fieldKeys.some((key) =>
+        ['accountId', 'sandboxId', 'projectId', 'agentName', 'status', 'config', 'provider', 'baseUrl'].includes(key),
+      );
+      const isMembershipQuery = fieldKeys.includes('accountRole');
+      const isProjectSessionQuery = fieldKeys.includes('createdBy');
+      const rowsFor = (ordered = false): any[] => {
+        if (isSandboxQuery) {
+          const rows = mockSandboxRows();
+          return ordered ? sortPreferredSandboxRows(rows) : rows;
+        }
+        if (isMembershipQuery) return mockDbMembership ? [mockDbMembership] : [];
+        if (isProjectSessionQuery) return [{ createdBy: TEST_USER_ID, accountId: 'account-001' }];
+        return [];
+      };
+      const queryFrom = () => ({
+        innerJoin: () => queryFrom(),
+        where: () => {
+            let ordered = false;
+            const query = {
+              orderBy: () => {
+                ordered = true;
+                return query;
+              },
+              limit: (n: number) => Promise.resolve(rowsFor(ordered).slice(0, n)),
+              then: (resolve: (rows: any[]) => unknown, reject?: (reason: unknown) => unknown) =>
+                Promise.resolve(rowsFor(ordered)).then(resolve, reject),
+            };
+            return query;
+        },
+      });
+      return { from: queryFrom };
+    },
+    update: (table: unknown) => ({
+      set: (updates: Record<string, unknown>) => ({
+        where: async () => {
+          mockDbUpdateCalls.push({ table, updates });
+        },
+      }),
+    }),
+  },
+  sandboxProxySupabase: {
+    auth: { getUser: async () => ({ data: { user: null }, error: 'mocked' }) },
+  },
+  sandboxProxyFetch: (input: string | URL | Request, init?: RequestInit) => globalThis.fetch(input, init),
+  sandboxProxySleep: async () => undefined,
+  runSandboxProxyInterval: () => undefined,
+}));
 
 mock.module('../shared/preview-ownership', () => ({
   canAccessSandboxSession: async ({ userId }: { userId?: string }) =>
@@ -222,6 +279,54 @@ mock.module('../projects/secrets', () => {
     getProjectSecretValue: async () => null,
   };
 });
+
+mock.module('../projects/lib/sandbox-env-sync', () => ({
+  syncSandboxEnvForPrompt: async ({
+    previewUrl,
+    previewToken,
+    serviceKey,
+  }: {
+    previewUrl: string;
+    previewToken: string | null;
+    serviceKey: string | null;
+  }) => {
+    if (!serviceKey) return;
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${serviceKey}`,
+      'Content-Type': 'application/json',
+    };
+    if (previewToken) headers['X-Daytona-Preview-Token'] = previewToken;
+    const res = await globalThis.fetch(`${previewUrl.replace(/\/$/, '')}/kortix/env`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        env: {
+          OPENROUTER_API_KEY: 'sk-live',
+          SENTRY_DSN: 'https://example.test/1',
+        },
+        llmGatewayDenyEnv: '',
+        llmGatewayEnabled: false,
+        names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
+        refreshModels: true,
+        revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`env sync failed: ${res.status}${body ? ` ${body}` : ''}`);
+    }
+  },
+}));
+
+mock.module('../iam', () => ({
+  filterAccessibleProjectResources: async (
+    _userId: string,
+    _accountId: string,
+    _projectId: string,
+    _resourceType: string,
+    resourceIds: string[],
+  ) => resourceIds,
+}));
 
 // Override global fetch for proxy requests
 const originalFetch = globalThis.fetch;

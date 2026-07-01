@@ -1,6 +1,6 @@
 import { HTTPException } from 'hono/http-exception';
 import { type ProxyServiceConfig } from '../../config/proxy-services';
-import { config, KORTIX_MARKUP, PLATFORM_FEE_MARKUP } from '../../../config';
+import { routerConfig as config, KORTIX_MARKUP, PLATFORM_FEE_MARKUP, routerFetch } from '../../effect';
 import { getModel } from '../../config/models';
 import { calculateCost, extractUsage } from '../../services/llm';
 import {
@@ -138,7 +138,7 @@ async function handleKortixProxy(
 
   console.log(`[PROXY] ${service.name} (kortix:${accountId}) ${method} ${subPath} → ${targetUrl} [bill:${billingToolName}]`);
 
-  const upstream = await fetch(targetUrl, {
+  const upstream = await routerFetch(targetUrl, {
     method,
     headers,
     body,
@@ -424,7 +424,7 @@ async function handleKortixPassthrough(
 
   console.log(`[PROXY] ${service.name} (passthrough:${accountId}) ${method} ${subPath} → ${targetUrl} [bill:${billingToolName}@${PLATFORM_FEE_MARKUP}x]`);
 
-  const upstream = await fetch(targetUrl, {
+  const upstream = await routerFetch(targetUrl, {
     method,
     headers,
     body,
@@ -479,7 +479,7 @@ async function handlePassthrough(
 
   console.log(`[PROXY] ${service.name} (passthrough) ${method} ${subPath}`);
 
-  const upstream = await fetch(targetUrl, {
+  const upstream = await routerFetch(targetUrl, {
     method,
     headers,
     body,

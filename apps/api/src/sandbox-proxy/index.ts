@@ -1,4 +1,4 @@
-import { config, type SandboxProviderName } from '../config';
+import { sandboxProxyConfig as config, type SandboxProviderName } from './effect';
 import { combinedAuth } from '../middleware/auth';
 import { preview } from './routes/preview';
 import { getAuthToken } from './routes/auth';

@@ -14,7 +14,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
-import { db } from '../shared/db';
+import { executorDb as db } from './effect';
 import { commitManifest, loadManifestForEdit } from '../projects/index';
 import type { ChannelPlatform } from '../projects/connectors';
 import { channelDefaultSlug, channelLabel } from './channels';

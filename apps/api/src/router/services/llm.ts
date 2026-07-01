@@ -1,4 +1,4 @@
-import { config, KORTIX_MARKUP } from '../../config';
+import { routerConfig as config, KORTIX_MARKUP, routerFetch } from '../effect';
 import { getModel, getAllModels, resolveOpenRouterId, type ModelConfig } from '../config/models';
 
 /**
@@ -62,7 +62,7 @@ export async function proxyToOpenRouter(
 
   console.log(`[LLM] Proxying to OpenRouter: ${modelId} → ${openrouterId} (stream=${isStreaming})`);
 
-  const response = await fetch(url, {
+  const response = await routerFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

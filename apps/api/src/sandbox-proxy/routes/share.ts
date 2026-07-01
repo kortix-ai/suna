@@ -22,6 +22,7 @@ import {
   parseJsonBody,
   runProxyRouteEffect,
 } from "./effect-workflows";
+import { sandboxProxyFetch } from "../effect";
 
 const shareApp = makeOpenApiApp();
 type ResolvedProvider = NonNullable<
@@ -120,7 +121,7 @@ function sandboxShareFetchEffect(
   return Effect.gen(function* () {
     const result = yield* Effect.either(
       attemptProxy(async () => {
-        const resp = await fetch(sandboxUrl, init);
+        const resp = await sandboxProxyFetch(sandboxUrl, init);
         const body = await parseJsonResponse(resp);
         return { body, status: resp.status };
       }),

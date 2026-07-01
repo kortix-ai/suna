@@ -30,11 +30,46 @@ mock.module('../config', () => ({
   },
 }));
 
+mock.module('../router/effect', () => ({
+  routerConfig: {
+    DATABASE_URL: '',
+    API_KEY_SECRET: 'session-llm-test-secret',
+    KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: 100,
+    KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: 1000,
+  },
+  KORTIX_MARKUP: 1,
+  PLATFORM_FEE_MARKUP: 0.1,
+  getToolCost: () => 0.01,
+  routerFetch: globalThis.fetch,
+  routerSleep: async () => undefined,
+  runRouterInterval: () => undefined,
+}));
+
+mock.module('../shared/db', () => ({
+  hasDatabase: false,
+  db: {},
+}));
+
+mock.module('../shared/supabase', () => ({
+  getSupabase: () => ({
+    auth: { getUser: async () => ({ data: { user: null }, error: null }) },
+  }),
+}));
+
 mock.module('../projects/secrets', () => ({
   getProjectSecretValue: async (projectId: string, name: string) => {
     lastSecretLookup = { projectId, name };
     return projectSecretValue;
   },
+}));
+
+mock.module('../billing/repositories/credit-accounts', () => ({
+  getSubscriptionInfo: async () => ({
+    tier: 'free',
+    billingModel: 'legacy',
+    stripeSubscriptionId: null,
+    stripeSubscriptionStatus: null,
+  }),
 }));
 
 mock.module('../router/services/billing', () => ({

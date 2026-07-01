@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { routerConfig as config } from '../effect';
 
 // === Key Injection Methods ===
 

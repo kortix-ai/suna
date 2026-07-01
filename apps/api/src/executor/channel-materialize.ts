@@ -14,7 +14,7 @@ import { listAgentMailInstalls, loadMeetInstall, loadSlackInstall } from '../cha
 import type { ChannelPlatform, ConnectorSpec } from '../projects/connectors';
 import { MANIFEST_FILENAME } from '../projects/triggers';
 import { channelDefaultSlug, channelLabel } from './channels';
-import { db } from '../shared/db';
+import { executorDb as db } from './effect';
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { resolveExperimentalFeature } from '../experimental/features';
