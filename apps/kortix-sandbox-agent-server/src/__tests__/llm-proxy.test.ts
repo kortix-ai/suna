@@ -15,6 +15,7 @@ import {
   executorProxyBaseUrl,
   stopExecutorProxy,
   EXECUTOR_PROXY_PLACEHOLDER_KEY,
+  shouldDisableProxyModeGateway,
 } from '../llm-proxy'
 import { buildOpencodeConfigContent } from '../opencode'
 
@@ -169,5 +170,45 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
     expect(cfg.provider.kortix.options.baseURL).toBe('https://gateway.kortix.test/v1/llm')
     expect(cfg.provider.kortix.options.apiKey).toBe('real-session-llm-key')
     expect(cfg.mcp).toBeUndefined()
+  })
+
+  // The hazard the adoption fix compensates for: with proxy-mode baked but NO
+  // per-session gateway token (unentitled account), the config STILL mounts the
+  // kortix provider pointed at the proxy — so at runtime every call would hit the
+  // token-less proxy and 503 "llm proxy not ready". Locking this makes the reason
+  // the daemon must drop KORTIX_LLM_PROXY_URL for such sessions explicit.
+  test('PROXY mode still mounts the kortix provider even with NO session token (the failure the fix guards)', async () => {
+    const json = await buildOpencodeConfigContent({
+      KORTIX_LLM_PROXY_URL: 'http://127.0.0.1:4319',
+      KORTIX_LLM_CATALOG_FILE: catalog,
+      // no KORTIX_LLM_API_KEY / KORTIX_LLM_BASE_URL — account not entitled
+    } as NodeJS.ProcessEnv)
+    expect(json).toBeDefined()
+    const cfg = JSON.parse(json!)
+    expect(cfg.provider.kortix.options.baseURL).toBe('http://127.0.0.1:4319')
+    expect(cfg.provider.kortix.options.apiKey).toBe(LLM_PROXY_PLACEHOLDER_KEY)
+    expect(cfg.enabled_providers).toEqual(['kortix'])
+  })
+
+  // What the adoption fix produces for an unentitled account: it deletes
+  // KORTIX_LLM_PROXY_URL, so the rebuilt config has no gateway provider at all and
+  // opencode falls back to its native catalog (matching Daytona) — no dead proxy.
+  test('dropping the proxy URL with no session token yields native fallback (no kortix provider)', async () => {
+    expect(await buildOpencodeConfigContent({ KORTIX_LLM_CATALOG_FILE: catalog } as NodeJS.ProcessEnv)).toBeUndefined()
+  })
+})
+
+describe('shouldDisableProxyModeGateway — adoption decision', () => {
+  test('tears proxy-mode down only when it is baked but the proxy holds no token', () => {
+    // Unentitled account: seed baked proxy-mode, but no gateway token was injected
+    // → drop proxy-mode so opencode falls back to native models.
+    expect(shouldDisableProxyModeGateway({ hotswapBaked: true, proxyUrlSet: true, proxyReady: false })).toBe(true)
+    // Entitled: the proxy holds a usable token → keep proxy-mode (even if the fast
+    // hot-swap path was skipped for opencode-not-ok / repo-error reasons).
+    expect(shouldDisableProxyModeGateway({ hotswapBaked: true, proxyUrlSet: true, proxyReady: true })).toBe(false)
+    // Cold / Daytona: proxy-mode was never baked → nothing to tear down.
+    expect(shouldDisableProxyModeGateway({ hotswapBaked: false, proxyUrlSet: false, proxyReady: false })).toBe(false)
+    // Hot-swap flag on but the proxy never started (bind failure) → not our case.
+    expect(shouldDisableProxyModeGateway({ hotswapBaked: true, proxyUrlSet: false, proxyReady: false })).toBe(false)
   })
 })

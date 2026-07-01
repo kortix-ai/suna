@@ -188,3 +188,27 @@ export const setExecutorProxyToken = (token: string | undefined, upstreamBase?: 
 export const executorProxyReady = () => executor.ready()
 export const executorProxyBaseUrl = () => executor.baseUrl()
 export const stopExecutorProxy = () => executor.stop()
+
+// ── Adoption-time decision ─────────────────────────────────────────────────────
+/**
+ * A warm seed bakes proxy-mode opencode (KORTIX_LLM_HOTSWAP=1 — Platinum only): the
+ * `kortix` provider points at THIS localhost proxy with a placeholder key, and the
+ * real per-session gateway token is injected into the proxy at fork adoption. But
+ * an account that is not entitled to the LLM gateway never gets a token injected, so
+ * a session that keeps routing through the token-less proxy 503s "llm proxy not
+ * ready" on EVERY model call forever (and the frontend retries it indefinitely).
+ *
+ * Returns true when proxy-mode must be TORN DOWN at adoption so the rebuilt opencode
+ * config drops the `kortix` provider and opencode falls back to its native catalog —
+ * matching Daytona, which never bakes proxy-mode and already degrades this way. The
+ * decision keys off `proxyReady` (proxy is listening AND holds a usable token), so
+ * an entitled account whose token WAS injected keeps proxy-mode even when the fast
+ * hot-swap path is skipped (opencode not yet `ok`, repo error, …).
+ */
+export function shouldDisableProxyModeGateway(opts: {
+  hotswapBaked: boolean
+  proxyUrlSet: boolean
+  proxyReady: boolean
+}): boolean {
+  return opts.hotswapBaked && opts.proxyUrlSet && !opts.proxyReady
+}

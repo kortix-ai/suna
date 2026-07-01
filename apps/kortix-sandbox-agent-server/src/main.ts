@@ -24,6 +24,8 @@ import {
   setLlmProxyToken,
   llmProxyReady,
   llmProxyBaseUrl,
+  stopLlmProxy,
+  shouldDisableProxyModeGateway,
   startExecutorProxy,
   setExecutorProxyToken,
   executorProxyReady,
@@ -573,22 +575,16 @@ async function runWarmSeedMode(
       await ensureOpencodeConfigDeps(adoptedOpencodeConfigDir).catch((err) =>
         logger.warn('[seed] adoption config deps failed', { err: (err as Error).message }),
       )
-      // NO-RESTART fast path (opt-in, stateful warm-fork only): the seed baked a
-      // session-independent opencode config routed through the localhost LLM +
-      // executor proxies, so inject the per-session tokens LIVE and reuse the
-      // already-warm opencode — skipping the ~8s restart. Engages only when
-      // hot-swap is on, the LLM proxy is up + the seed baked the proxied provider
-      // (KORTIX_LLM_PROXY_URL set), opencode is currently healthy, and the repo
-      // materialized cleanly. Anything missing falls through to restart.
-      let hotSwapped = false
-      if (
-        llmHotswap &&
-        !!process.env.KORTIX_LLM_PROXY_URL &&
-        llmProxyBaseUrl() != null &&
-        opencode.getState() === 'ok' &&
-        !bootState.repoMaterializationError
-      ) {
-        // LLM gateway: required for the session to function.
+      // Inject the per-session tokens into the localhost proxies whenever the warm
+      // seed baked proxy-mode opencode. This MUST run before the no-restart decision
+      // below: the baked opencode config always routes the `kortix` provider through
+      // the proxy, so the proxy has to hold the token for BOTH the fast hot-swap path
+      // AND any subsequent restart path (repo error, or opencode not yet `ok`).
+      // Injecting only inside the fast path left the restart path routed through a
+      // token-less proxy → permanent 503 "llm proxy not ready" even for entitled
+      // accounts. A no-op when this account has no gateway token (unentitled): the
+      // set is guarded on a non-empty token, so llmProxyReady() stays false.
+      if (llmHotswap && !!process.env.KORTIX_LLM_PROXY_URL && llmProxyBaseUrl() != null) {
         setLlmProxyToken(process.env.KORTIX_LLM_API_KEY, process.env.KORTIX_LLM_BASE_URL)
         // Optional Executor MCP compatibility: if the seed enabled that face,
         // the running MCP points at this proxy. The CLI path does not need this;
@@ -596,18 +592,56 @@ async function runWarmSeedMode(
         if (process.env.KORTIX_EXECUTOR_PROXY_URL && executorProxyBaseUrl() != null) {
           setExecutorProxyToken(process.env.KORTIX_EXECUTOR_TOKEN, process.env.KORTIX_API_URL)
         }
-        if (llmProxyReady()) {
-          hotSwapped = true
-          bootMark('adopt-opencode-hotswapped')
-          // Observability only: this confirms the optional executor proxy has a
-          // live token. It does not assert that OpenCode registered MCP tools.
-          if (executorProxyReady()) bootMark('adopt-executor-proxy-ready')
-          logger.info('[seed] fork adoption hot-swap: per-session tokens injected via proxies, opencode not restarted', {
-            executorReady: executorProxyReady(),
-          })
-        }
+      }
+
+      // NO-RESTART fast path (opt-in, stateful warm-fork only): the seed baked a
+      // session-independent opencode config routed through the localhost LLM +
+      // executor proxies, so reuse the already-warm opencode — skipping the ~8s
+      // restart. Engages only when hot-swap is on, the seed baked the proxied
+      // provider (KORTIX_LLM_PROXY_URL set), the LLM proxy now holds a usable token
+      // (llmProxyReady), opencode is currently healthy, and the repo materialized
+      // cleanly. Anything missing falls through to restart.
+      let hotSwapped = false
+      if (
+        llmHotswap &&
+        !!process.env.KORTIX_LLM_PROXY_URL &&
+        llmProxyBaseUrl() != null &&
+        llmProxyReady() &&
+        opencode.getState() === 'ok' &&
+        !bootState.repoMaterializationError
+      ) {
+        hotSwapped = true
+        bootMark('adopt-opencode-hotswapped')
+        // Observability only: this confirms the optional executor proxy has a
+        // live token. It does not assert that OpenCode registered MCP tools.
+        if (executorProxyReady()) bootMark('adopt-executor-proxy-ready')
+        logger.info('[seed] fork adoption hot-swap: per-session tokens injected via proxies, opencode not restarted', {
+          executorReady: executorProxyReady(),
+        })
       }
       if (!hotSwapped) {
+        // If the seed baked proxy-mode opencode but the LLM proxy has no token to
+        // serve (account not entitled to the gateway → no KORTIX_LLM_API_KEY was
+        // injected), tear proxy-mode down so the rebuilt config drops the `kortix`
+        // provider and opencode falls back to its native catalog. Left as-is, every
+        // model call would route through the token-less proxy and 503 "llm proxy not
+        // ready" forever. Daytona never bakes proxy-mode, so this makes Platinum match
+        // it. buildOpencodeConfigContent reads KORTIX_LLM_PROXY_URL from process.env
+        // (never the session env file), so deleting it here is sufficient to drop the
+        // provider on the reconfigure+restart below.
+        if (
+          shouldDisableProxyModeGateway({
+            hotswapBaked: llmHotswap,
+            proxyUrlSet: !!process.env.KORTIX_LLM_PROXY_URL,
+            proxyReady: llmProxyReady(),
+          })
+        ) {
+          logger.warn(
+            '[seed] no per-session LLM gateway token (account not entitled?); disabling proxy-mode gateway provider so opencode falls back to native models instead of 503 "llm proxy not ready"',
+          )
+          delete process.env.KORTIX_LLM_PROXY_URL
+          stopLlmProxy()
+        }
         opencode.reconfigure(cfg2, adoptedOpencodeConfigDir, projectEnv)
         await opencode.restart().catch((err) =>
           logger.warn('[seed] adoption opencode restart failed', { err: (err as Error).message }),
