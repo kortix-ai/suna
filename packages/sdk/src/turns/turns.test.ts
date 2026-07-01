@@ -25,6 +25,7 @@ import {
   getToolInfo,
   getTurnCost,
   groupMessagesIntoTurns,
+  stripAnsi,
 } from './index';
 
 type Extends<A, B> = A extends B ? true : false;
@@ -492,5 +493,34 @@ describe('getChildSessionError', () => {
   test('returns the most recent error when several exist', () => {
     const messages = [childMsg('older error'), childMsg('newest error')];
     expect(getChildSessionError(messages)).toBe('newest error');
+  });
+});
+
+describe('stripAnsi', () => {
+  test('returns empty string for falsy input', () => {
+    expect(stripAnsi('')).toBe('');
+  });
+
+  test('strips SGR color/style codes', () => {
+    expect(stripAnsi('\x1b[31mred\x1b[0m text')).toBe('red text');
+  });
+
+  test('strips cursor-movement sequences', () => {
+    expect(stripAnsi('\x1b[2J\x1b[Hhello')).toBe('hello');
+  });
+
+  test('strips a terminated OSC sequence (e.g. terminal title)', () => {
+    expect(stripAnsi('before\x1b]0;window title\x07after')).toBe('beforeafter');
+  });
+
+  test('leaves plain text untouched', () => {
+    expect(stripAnsi('no escapes here')).toBe('no escapes here');
+  });
+
+  test('does not hang on a long unterminated OSC sequence (ReDoS guard)', () => {
+    const malicious = `\x1b]${'0'.repeat(50_000)}`;
+    const start = performance.now();
+    stripAnsi(malicious);
+    expect(performance.now() - start).toBeLessThan(1000);
   });
 });
