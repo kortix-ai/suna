@@ -22,6 +22,7 @@ WORKDIR /app
 COPY apps/llm-gateway ./apps/llm-gateway
 COPY packages/llm-gateway ./packages/llm-gateway
 COPY packages/shared ./packages/shared
+COPY packages/llm-catalog ./packages/llm-catalog
 
 RUN printf '{"name":"kortix-gateway-build","private":true,"workspaces":["apps/llm-gateway","packages/*"]}\n' > package.json \
     && bun install --no-save
@@ -39,12 +40,13 @@ ARG KORTIX_COMMIT=unknown
 ENV KORTIX_VERSION=${KORTIX_VERSION}
 ENV KORTIX_COMMIT=${KORTIX_COMMIT}
 
-# Hoisted deps + the two workspace package sources the app imports as
-# @kortix/llm-gateway (→ @kortix/shared). package.json "main" points at src, so
-# bun runs the TypeScript directly — no separate build step.
+# Hoisted deps + the workspace package sources the app imports as
+# @kortix/llm-gateway (→ @kortix/shared, @kortix/llm-catalog). package.json "main"
+# points at src, so bun runs the TypeScript directly — no separate build step.
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/package.json ./package.json
 COPY --from=deps /app/packages/shared ./packages/shared
+COPY --from=deps /app/packages/llm-catalog ./packages/llm-catalog
 COPY --from=deps /app/packages/llm-gateway ./packages/llm-gateway
 COPY --from=deps /app/apps/llm-gateway ./apps/llm-gateway
 

@@ -8,7 +8,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { getPtyWebSocketUrl, useUpdatePty } from '@/hooks/opencode/use-opencode-pty';
 import { invalidateTokenCache } from '@/lib/auth-token';
-import type { Pty } from '@opencode-ai/sdk/v2/client';
+import type { Pty } from '@kortix/sdk/opencode-client';
 
 // ============================================================================
 // Theme

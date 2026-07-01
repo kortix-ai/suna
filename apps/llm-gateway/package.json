@@ -11,6 +11,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@kortix/llm-catalog": "workspace:*",
     "@kortix/llm-gateway": "workspace:*",
     "@kortix/shared": "workspace:*",
     "hono": "^4.6.0",

@@ -8,7 +8,6 @@
 
 import { authenticatedFetch } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
-import type { ServerEntry } from '@/stores/server-store';
 import {
   createProjectSession,
   deleteProjectSession,
@@ -39,24 +38,6 @@ export const SANDBOX_PORTS = {
 } as const;
 
 /**
- * Get a URL to access a specific container port on a sandbox.
- * ALL modes route through the backend's unified preview proxy:
- *   {BACKEND_URL}/p/{sandboxId}/{containerPort}
- *
- * Provider-agnostic — sandboxId is the external_id (container name for local,
- * Daytona sandbox ID for cloud).
- */
-export function getDirectPortUrl(
-  server: ServerEntry,
-  containerPort: string,
-): string | null {
-  if (server.sandboxId && server.sandboxId !== 'undefined') {
-    return `${getPlatformUrl()}/p/${server.sandboxId}/${containerPort}`;
-  }
-  return null;
-}
-
-/**
  * Get the base URL for platform API calls.
  *
  * Uses NEXT_PUBLIC_BACKEND_URL directly (includes /v1).
@@ -81,7 +62,7 @@ function isDbSandboxId(sandboxId: string | null | undefined): sandboxId is strin
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'local_docker' | 'justavps';
+export type SandboxProviderName = 'daytona' | 'justavps';
 export type ServerTypeOption = string;
 
 export interface SandboxCreateProgress {
@@ -182,7 +163,7 @@ function projectSessionToSandboxInfo(
     sandbox_id: runtime?.sandbox_id || session.sandbox_id || session.session_id,
     external_id: externalId,
     name: session.name || `${project.name} session`,
-    provider: runtime?.provider || (session.sandbox_provider as SandboxProviderName | null) || 'daytona',
+    provider: (runtime?.provider as SandboxProviderName | null) || (session.sandbox_provider as SandboxProviderName | null) || 'daytona',
     base_url: runtime?.base_url || session.sandbox_url || (runtime?.external_id ? `${getPlatformUrl()}/p/${runtime.external_id}/${SANDBOX_PORTS.KORTIX_MASTER}` : ''),
     status: normalizeSessionStatus(runtime?.status || session.status),
     metadata: {
@@ -283,10 +264,7 @@ async function platformFetch<T>(
  * Build the OpenCode server URL for a sandbox.
  * Provider-agnostic: {BACKEND_URL}/p/{externalId}/8000
  *
- * The external_id is the sandbox identifier used for routing:
- *   - Local Docker: container name (e.g. 'kortix-sandbox') — resolves via Docker DNS
- *   - Daytona (cloud): Daytona sandbox ID
- *
+ * The external_id is the sandbox's Daytona ID, used for proxy routing.
  * Guards against missing external_id to prevent broken URLs.
  */
 export function getSandboxUrl(sandbox: SandboxInfo): string {
@@ -312,21 +290,6 @@ export function getSandboxPortUrl(
     return `${getPlatformUrl()}/p/${sandbox.external_id}/${containerPort}`;
   }
   return null;
-}
-
-/**
- * Extract mappedPorts from sandbox metadata (convenience for storing in ServerEntry).
- * Returns undefined if not available.
- */
-export function extractMappedPorts(
-  sandbox: SandboxInfo,
-): Record<string, string> | undefined {
-  if (sandbox.provider !== 'local_docker') return undefined;
-  const ports = sandbox.metadata?.mappedPorts;
-  if (ports && typeof ports === 'object' && !Array.isArray(ports)) {
-    return ports as Record<string, string>;
-  }
-  return undefined;
 }
 
 /**
@@ -383,9 +346,6 @@ export async function createSandbox(opts?: {
   serverType?: ServerTypeOption;
   name?: string;
 }): Promise<{ sandbox: SandboxInfo }> {
-  if (opts?.provider === 'local_docker') {
-    throw new Error('Local Docker instances are not exposed by the current project-session API');
-  }
 
   const result = await ensureSandbox(opts);
   return { sandbox: result.sandbox };

@@ -23,6 +23,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
     links: [
       { label: 'CLI', href: '/developers' },
       { label: 'Developer', href: '/developers' },
+      { label: 'Marketplace', href: '/marketplace' },
       { label: 'Enterprise', href: '/enterprise' },
       { label: 'Pricing', href: '/pricing' },
     ],

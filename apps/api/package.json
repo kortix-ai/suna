@@ -27,6 +27,7 @@
     "@kortix/db": "workspace:*",
     "@kortix/llm-gateway": "workspace:*",
     "@kortix/manifest-schema": "workspace:*",
+    "@kortix/llm-catalog": "workspace:*",
     "@kortix/registry": "workspace:*",
     "@kortix/shared": "workspace:*",
     "@kortix/starter": "workspace:*",

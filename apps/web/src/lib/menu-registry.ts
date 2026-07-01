@@ -18,6 +18,7 @@
  */
 
 import { Icon } from '@/features/icon/icon';
+import type { ExperimentalFeatureKey } from '@/lib/projects-client';
 import {
   CogOne,
   CogOneSolid,
@@ -31,6 +32,7 @@ import {
   Blocks,
   Bot,
   Boxes,
+  Boxes,
   Cable,
   Calendar,
   Coins,
@@ -42,7 +44,6 @@ import {
   GitPullRequest,
   Globe,
   Hash,
-  Key,
   Keyboard,
   // Settings pages
   KeyRound,
@@ -62,7 +63,6 @@ import {
   Plus,
   Receipt,
   RefreshCw,
-  Rocket,
   ScrollText,
   Search,
   SlidersHorizontal,
@@ -315,14 +315,15 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-customize',
-    label: 'Customize',
+    label: 'Plugins',
     icon: SlidersHorizontal,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/projects/{projectId}/customize',
     requiresProject: true,
-    keywords: 'customize configure project agents skills commands',
+    keywords:
+      'plugins plugin build customize configure project agents agent skills skill commands command',
   },
   {
     id: 'proj-files',
@@ -337,36 +338,36 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-agents',
-    label: 'Customize · Agents',
+    label: 'Plugins · Agents',
     icon: Bot,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/projects/{projectId}/customize/agents',
     requiresProject: true,
-    keywords: 'agents subagents project customize ai',
+    keywords: 'plugins plugin agents agent subagents subagent project customize build ai',
   },
   {
     id: 'proj-skills',
-    label: 'Customize · Skills',
+    label: 'Plugins · Skills',
     icon: Blocks,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/projects/{projectId}/customize/skills',
     requiresProject: true,
-    keywords: 'skills project customize abilities',
+    keywords: 'plugins plugin skills skill project customize build abilities',
   },
   {
     id: 'proj-commands',
-    label: 'Customize · Commands',
+    label: 'Plugins · Commands',
     icon: TerminalSquare,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/projects/{projectId}/customize/commands',
     requiresProject: true,
-    keywords: 'commands slash project customize',
+    keywords: 'plugins plugin commands command slash project customize build',
   },
   {
     id: 'proj-secrets',
@@ -413,6 +414,56 @@ export const menuRegistry: MenuItemDef[] = [
     requiresProject: true,
     keywords:
       'changes change requests review merge pull request diff versions branches project customize',
+  },
+  {
+    id: 'proj-marketplace',
+    label: 'Customize · Marketplace',
+    icon: Store,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/marketplace',
+    requiresProject: true,
+    requiresExperimental: 'marketplace',
+    keywords: 'marketplace store install templates agents skills browse project customize',
+  },
+  {
+    id: 'proj-llm',
+    label: 'Customize · LLM',
+    icon: Boxes,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/llm-management',
+    requiresProject: true,
+    requiresExperimental: 'llm_gateway',
+    keywords:
+      'llm gateway providers models budgets logs api keys overview anthropic openai openrouter google groq xai project customize',
+  },
+  {
+    id: 'proj-computers',
+    label: 'Customize · Computers',
+    icon: Monitor,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/computers',
+    requiresProject: true,
+    requiresExperimental: 'agent_tunnel',
+    keywords:
+      'computers tunnel machines connect reverse local devices remote agent access project customize',
+  },
+  {
+    id: 'proj-changes',
+    label: 'Customize · Checkpoints',
+    icon: GitPullRequest,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/changes',
+    requiresProject: true,
+    keywords:
+      'checkpoint checkpoints changes change requests review merge pull request diff commits git history timeline versions branches project customize',
   },
   {
     id: 'proj-marketplace',
@@ -557,18 +608,6 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'workspace agents skills commands tools build create',
   },
   {
-    id: 'secrets-quick',
-    label: 'Secrets Manager',
-    icon: KeyRound,
-    group: 'quickActions',
-    subGroup: 'security',
-    showIn: ['rightSidebar'],
-    kind: 'navigate',
-    href: '/settings/credentials',
-    tabId: 'settings:secrets',
-    tabType: 'settings',
-  },
-  {
     id: 'providers-quick',
     label: 'LLM Providers',
     icon: Bot,
@@ -577,29 +616,6 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['rightSidebar'],
     kind: 'action',
     actionId: 'openProviderModal',
-  },
-  {
-    id: 'ssh-quick',
-    label: 'SSH',
-    icon: Key,
-    group: 'quickActions',
-    subGroup: 'security',
-    showIn: ['rightSidebar', 'commandPalette'],
-    kind: 'action',
-    actionId: 'generateSSHKey',
-    keywords: 'ssh key generate public private git clone remote',
-  },
-  {
-    id: 'api-keys-quick',
-    label: 'API',
-    icon: Cable,
-    group: 'quickActions',
-    subGroup: 'security',
-    showIn: ['rightSidebar'],
-    kind: 'navigate',
-    href: '/settings/api-keys',
-    tabId: 'settings:api-keys',
-    tabType: 'settings',
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -625,20 +641,6 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/scheduled-tasks',
   },
-  ...(DEPLOYMENTS_ENABLED
-    ? [
-        {
-          id: 'deployments',
-          label: 'Deployments',
-          icon: Rocket,
-          group: 'navigation' as const,
-          subGroup: 'services' as const,
-          showIn: ['commandPalette', 'rightSidebar'] as MenuSurface[],
-          kind: 'navigate' as const,
-          href: '/deployments',
-        },
-      ]
-    : []),
   {
     id: 'running-services',
     label: 'Service Manager',
@@ -779,27 +781,6 @@ export const menuRegistry: MenuItemDef[] = [
   // SETTINGS PAGES (navigate to route)
   // ──────────────────────────────────────────────────────────────────────────
   {
-    id: 'secrets-manager',
-    label: 'Secrets Manager',
-    icon: KeyRound,
-    group: 'settingsPages',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/settings/credentials',
-    tabType: 'settings',
-    keywords: 'secrets manager credentials env environment variables integrations keys',
-  },
-  {
-    id: 'api-keys',
-    label: 'API Keys',
-    icon: CogOneSolid,
-    group: 'settingsPages',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/settings/api-keys',
-    tabType: 'settings',
-  },
-  {
     id: 'llm-providers',
     label: 'LLM Providers',
     icon: Bot,
@@ -892,13 +873,13 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-tokens',
-    label: 'CLI tokens',
+    label: 'API keys',
     icon: KeyRound,
     group: 'account',
     showIn: ['commandPalette', 'userMenu'],
     kind: 'settings',
     settingsTab: 'tokens',
-    keywords: 'cli tokens personal access pat command line authentication',
+    keywords: 'api keys tokens personal access pat cli command line authentication',
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -1050,7 +1031,7 @@ export function getAccountTabs(billingEnabled: boolean): SettingsTab[] {
   const items: SettingsTab[] = [
     { id: 'billing', label: 'Billing', icon: CreditCardSolid },
     { id: 'transactions', label: 'Credits ledger', icon: Receipt },
-    { id: 'tokens', label: 'CLI tokens', icon: KeyRound },
+    { id: 'tokens', label: 'API keys', icon: KeyRound },
   ];
   // Referrals tab disabled for now
   // if (billingEnabled) {

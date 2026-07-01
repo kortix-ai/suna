@@ -80,21 +80,6 @@ export async function ensureSandboxImage(
   const template = await resolveTemplateBySlug(project, opts.slug);
   const buildProvider = opts.provider ?? template.provider;
 
-  // local_docker has no per-project snapshot to bake: the sandbox runs the base
-  // SANDBOX_IMAGE directly and clones the repo at boot. There is deliberately no
-  // `local` snapshot adapter, so short-circuit here — otherwise session boot hits
-  // getSandboxProvider('local_docker') and throws "Unknown sandbox provider".
-  // The local-docker provider ignores this name and creates from SANDBOX_IMAGE.
-  if (buildProvider === 'local_docker') {
-    return {
-      snapshotName: config.SANDBOX_IMAGE || 'kortix/kortix-sandbox:latest',
-      slug: template.slug,
-      contentHash: 'local_docker',
-      built: false,
-      isDefault: !!template.isShared,
-    };
-  }
-
   const provider = getSandboxProvider(buildProvider);
   if (!provider.isConfigured()) {
     throw new SnapshotBuildError(`Sandbox provider ${buildProvider} is not configured`);

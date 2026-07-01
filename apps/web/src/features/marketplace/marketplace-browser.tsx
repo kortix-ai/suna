@@ -21,7 +21,7 @@ import { useMarketplaceItems, useMarketplaces } from '@/hooks/marketplace';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
 import { cn } from '@/lib/utils';
 import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
-import { Check, Search } from '@mynaui/icons-react';
+import { Search } from '@mynaui/icons-react';
 import Loading from '../../components/ui/loading';
 import { Icon } from '../icon/icon';
 import { AddMarketplaceModal } from './add-marketplace-modal';
@@ -107,7 +107,7 @@ export function MarketplaceBrowser({
   }, [items]);
 
   const renderItemGrid = (list: MarketplaceItem[]) => (
-    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+    <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
       {list.map((item) => (
         <div key={item.id} className="border-border overflow-hidden rounded-md border">
           <MarketplaceItemRow
@@ -298,10 +298,10 @@ function MarketplaceItemRow({
           </p>
         ) : null}
       </div>
-      {onAdd ? (
+      {onAdd && !installed ? (
         <div className="flex shrink-0 items-center gap-1.5">
           <Button
-            variant={installed ? 'outline' : 'secondary'}
+            variant="secondary"
             size="sm"
             className="transition-transform active:scale-[0.96]"
             onClick={(e) => {
@@ -309,14 +309,7 @@ function MarketplaceItemRow({
               onAdd(item);
             }}
           >
-            {installed ? (
-              <>
-                <Check className="size-3.5" />
-                Added
-              </>
-            ) : (
-              'Add'
-            )}
+            Add
           </Button>
         </div>
       ) : null}

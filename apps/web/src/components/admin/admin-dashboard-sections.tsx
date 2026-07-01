@@ -22,7 +22,6 @@ import {
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { InstanceSettingsModal } from '@/components/instances/instance-settings-modal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -69,7 +68,6 @@ import {
   useDeleteAdminSandbox,
   type AdminSandbox,
 } from '@/hooks/admin/use-admin-sandboxes';
-import type { SandboxInfo } from '@/lib/platform-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
@@ -185,25 +183,10 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
   });
   const deleteMutation = useDeleteAdminSandbox();
   const [confirmDelete, setConfirmDelete] = useState<AdminSandbox | null>(null);
-  const [selectedSandbox, setSelectedSandbox] = useState<SandboxInfo | null>(null);
 
   const list = data?.sandboxes ?? [];
   const total = data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-  function toSandboxInfo(sandbox: AdminSandbox): SandboxInfo {
-    return {
-      sandbox_id: sandbox.sandboxId,
-      external_id: sandbox.externalId || '',
-      name: sandbox.name || sandbox.sandboxId,
-      provider: (sandbox.provider as SandboxInfo['provider']) || 'justavps',
-      base_url: sandbox.baseUrl || '',
-      status: sandbox.status || 'unknown',
-      metadata: (sandbox.metadata as Record<string, unknown> | undefined) ?? undefined,
-      created_at: sandbox.createdAt,
-      updated_at: sandbox.updatedAt,
-    };
-  }
 
   const handleDelete = useCallback(async () => {
     if (!confirmDelete) return;
@@ -305,7 +288,6 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
               </SelectItem>
               <SelectItem value="justavps">JustAVPS</SelectItem>
               <SelectItem value="daytona">Daytona</SelectItem>
-              <SelectItem value="local_docker">Local</SelectItem>
             </SelectContent>
           </Select>
           <Button
@@ -361,8 +343,7 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
                 {list.map((sandbox) => (
                   <TableRow
                     key={sandbox.sandboxId}
-                    className="group cursor-pointer"
-                    onClick={() => setSelectedSandbox(toSandboxInfo(sandbox))}
+                    className="group"
                   >
                     <TableCell
                       className="text-muted-foreground font-mono text-xs"
@@ -543,14 +524,6 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
             </div>
           </DialogContent>
         </Dialog>
-
-        <InstanceSettingsModal
-          sandbox={selectedSandbox}
-          open={!!selectedSandbox}
-          onOpenChange={(open) => {
-            if (!open) setSelectedSandbox(null);
-          }}
-        />
       </div>
     </div>
   );

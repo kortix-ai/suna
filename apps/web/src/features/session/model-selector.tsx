@@ -45,7 +45,7 @@ import { useCustomizeStore } from '@/stores/customize-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { AUTO_MODEL_ID, DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
+import { AUTO_MODEL_ID, DEFAULT_MANAGED_MODEL_IDS } from '@kortix/llm-catalog';
 import { useQuery } from '@tanstack/react-query';
 import { AutoModelToggle } from './auto-model-toggle';
 import { shouldShowFreeTag } from './model-tags';

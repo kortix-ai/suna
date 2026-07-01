@@ -66,8 +66,10 @@ const RuntimeEnvSchema = z.object({
    *  KORTIX_BILLING_INTERNAL_ENABLED. Set via NEXT_PUBLIC_BILLING_ENABLED. */
   BILLING_ENABLED: z.boolean().default(false),
   APP_URL: z.string().url('APP_URL must be a valid URL').default('http://localhost:3000'),
-  /** Default sandbox container name — used as fallback before the store hydrates */
-  SANDBOX_ID: z.string().optional().default('kortix-sandbox'),
+  /** Self-host/local override for the sandbox id; empty in cloud (the active
+   *  session runtime sandbox is the source of truth). No legacy 'kortix-sandbox'
+   *  default — that masked the real sandbox and produced 403s on cloud sessions. */
+  SANDBOX_ID: z.string().optional().default(''),
   /** Comma-separated list of social auth providers to surface on the auth page (e.g. "google"). Empty = none. */
   AUTH_PROVIDERS: z.string().optional().default(''),
   /** Comma-separated list of email auth methods to surface on the auth page (e.g. "magic,password"). */

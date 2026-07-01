@@ -56,10 +56,7 @@ export function EmptyState({
       <EmptyHeader className={maxW}>
         {IconComponent && (
           <EmptyMedia className="mb-4">
-            <IconComponent
-              className={cn(iconSize, 'text-muted-foreground/20')}
-              strokeWidth={1.25}
-            />
+            <IconComponent className={cn(iconSize, 'text-muted-foreground')} strokeWidth={1.25} />
           </EmptyMedia>
         )}
         <EmptyTitle className="text-foreground text-sm font-semibold tracking-tight">

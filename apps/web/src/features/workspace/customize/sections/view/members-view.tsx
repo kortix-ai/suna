@@ -4,8 +4,9 @@ import { useTranslations } from 'next-intl';
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Check, Clock, Loader2, Mail, MessageSquare, RefreshCw, Shield, Sparkles, Users, X } from 'lucide-react';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Bot, Check, Clock, KeyRound, Loader2, Mail, MessageSquare, Plus, RefreshCw, Shield, Sparkles, User, Users, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { FormEvent, useEffect, useEffect, useMemo, useState } from 'react';
 
 import {
   inheritedFromGroupSummary,
@@ -16,6 +17,16 @@ import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1614,6 +1625,45 @@ function ProjectGroupGrantsCard({
 
 // ─── Per-resource scoping (agents/skills → member/department) ──────────────
 
+/**
+ * A row of filter pills shown above a long list (resource grants, role
+ * bindings). Each pill carries its own count; the active one is solid. Render
+ * only when there's more than one category to switch between — a single-category
+ * list needs no filter chrome.
+ */
+function FilterChips<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string; count: number }[];
+}) {
+  return (
+    <div className="border-border/60 flex flex-wrap items-center gap-1.5 border-b px-6 py-2.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={cn(
+            'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
+            value === o.value
+              ? 'bg-foreground text-background'
+              : 'bg-muted/50 text-muted-foreground hover:bg-muted',
+          )}
+        >
+          {o.label}
+          <span className={cn('tabular-nums', value === o.value ? 'opacity-70' : 'opacity-50')}>
+            {o.count}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ResourceAccessCard({
   projectId,
   accountId,
@@ -1640,7 +1690,7 @@ function ResourceAccessCard({
     staleTime: 60_000,
   });
 
-  const resources = grantsQuery.data?.resources ?? { agents: [], skills: [] };
+  const resources = grantsQuery.data?.resources ?? { agents: [], skills: [], secrets: [] };
   const grants = useMemo(() => {
     const raw = grantsQuery.data?.grants ?? [];
     return [...raw].sort((a, b) => {
@@ -1657,12 +1707,16 @@ function ResourceAccessCard({
     const m = new Map<string, string>();
     for (const a of resources.agents) m.set(`agent:${a.id}`, a.name);
     for (const s of resources.skills) m.set(`skill:${s.id}`, s.name);
+    for (const s of resources.secrets ?? []) m.set(`secret:${s.id}`, s.name);
     return m;
   }, [resources]);
 
-  const hasResources = resources.agents.length > 0 || resources.skills.length > 0;
+  const hasResources =
+    resources.agents.length > 0 || resources.skills.length > 0 || (resources.secrets?.length ?? 0) > 0;
 
-  const [resourceValue, setResourceValue] = useState<string>(''); // "agent:id" | "skill:id"
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [pickerType, setPickerType] = useState<ResourceGrantType | ''>(''); // step 1
+  const [pickerResourceId, setPickerResourceId] = useState<string>(''); // step 2
   const [principalValue, setPrincipalValue] = useState<string>(''); // "member:id" | "group:id"
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const markPending = (id: string) => setPendingIds((prev) => new Set(prev).add(id));
@@ -1672,6 +1726,33 @@ function ResourceAccessCard({
       next.delete(id);
       return next;
     });
+
+  // Step 1 of the grant flow: pick the resource TYPE. Only offer types that
+  // actually have resources, so the type buttons never lead to an empty list.
+  const typeOptions = useMemo(
+    () =>
+      (
+        [
+          { type: 'agent', label: 'Agent', Icon: Bot, items: resources.agents },
+          { type: 'skill', label: 'Skill', Icon: Sparkles, items: resources.skills },
+          { type: 'secret', label: 'Secret', Icon: KeyRound, items: resources.secrets ?? [] },
+        ] as const
+      ).filter((o) => o.items.length > 0),
+    [resources],
+  );
+  // Step 2 options: only the resources of the chosen type.
+  const activeItems = typeOptions.find((o) => o.type === pickerType)?.items ?? [];
+
+  function resetGrantForm() {
+    setPickerType('');
+    setPickerResourceId('');
+    setPrincipalValue('');
+  }
+
+  function onTypeChange(t: ResourceGrantType) {
+    setPickerType(t);
+    setPickerResourceId(''); // the previous pick belongs to a different type
+  }
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: grantsKey });
@@ -1688,23 +1769,33 @@ function ResourceAccessCard({
 
   const createMutation = useMutation({
     mutationFn: () => {
-      const [resourceType, resourceId] = splitOnce(resourceValue);
       const [principalType, principalId] = splitOnce(principalValue);
       return createProjectResourceGrant(projectId, {
-        resourceType: resourceType as ResourceGrantType,
-        resourceId,
+        resourceType: pickerType as ResourceGrantType,
+        resourceId: pickerResourceId,
         principalType: principalType as 'member' | 'group',
         principalId,
       });
     },
     onSuccess: () => {
       successToast('Resource scoped');
-      setResourceValue('');
-      setPrincipalValue('');
+      resetGrantForm();
+      setDialogOpen(false);
       invalidate();
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to scope resource'),
   });
+
+  function onDialogOpenChange(next: boolean) {
+    if (createMutation.isPending) return;
+    if (next) {
+      // Default the type to the first available so the resource list is live
+      // immediately; the user can still switch types from there.
+      resetGrantForm();
+      setPickerType(typeOptions[0]?.type ?? '');
+    }
+    setDialogOpen(next);
+  }
 
   const removeMutation = useMutation({
     mutationFn: (grantId: string) => deleteProjectResourceGrant(projectId, grantId),
@@ -1717,62 +1808,141 @@ function ResourceAccessCard({
     onError: (err: Error) => errorToast(err.message || 'Failed to remove scope'),
   });
 
-  const canSubmit = !!resourceValue && !!principalValue && !createMutation.isPending;
+  // List filter (below): keep a long, mixed grant list scannable by type.
+  const [resourceFilter, setResourceFilter] = useState<'all' | ResourceGrantType>('all');
+  const grantCounts = useMemo(() => {
+    const c: Record<ResourceGrantType, number> = { agent: 0, skill: 0, secret: 0 };
+    for (const g of grants) c[g.resource_type] += 1;
+    return c;
+  }, [grants]);
+  const grantFilterOptions = useMemo(() => {
+    const opts: { value: 'all' | ResourceGrantType; label: string; count: number }[] = [
+      { value: 'all', label: 'All', count: grants.length },
+    ];
+    if (grantCounts.agent) opts.push({ value: 'agent', label: 'Agents', count: grantCounts.agent });
+    if (grantCounts.skill) opts.push({ value: 'skill', label: 'Skills', count: grantCounts.skill });
+    if (grantCounts.secret) opts.push({ value: 'secret', label: 'Secrets', count: grantCounts.secret });
+    return opts;
+  }, [grants.length, grantCounts]);
+  const visibleGrants = useMemo(
+    () => (resourceFilter === 'all' ? grants : grants.filter((g) => g.resource_type === resourceFilter)),
+    [grants, resourceFilter],
+  );
+
+  const canSubmit = !!pickerType && !!pickerResourceId && !!principalValue && !createMutation.isPending;
 
   return (
     <SectionCard
       flush
       title="Resource access"
-      description="Scope specific agents & skills to a member or department. A resource with no grants stays open to everyone with project access; granting one restricts it to just the people or departments you pick."
+      description="Scope specific agents, skills & secrets to a member or department. A resource with no grants stays open to everyone with project access; granting one restricts it to just the people or departments you pick."
       count={grants.length}
       action={
         canManage && hasResources ? (
-          <form
-            className="flex items-center gap-1.5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!canSubmit) return;
-              createMutation.mutate();
-            }}
-          >
-            <Select value={resourceValue} onValueChange={setResourceValue} disabled={createMutation.isPending}>
-              <SelectTrigger className="h-8 w-40 text-xs">
-                <SelectValue placeholder="Agent or skill" />
-              </SelectTrigger>
-              <SelectContent>
-                {resources.agents.map((a) => (
-                  <SelectItem key={`agent:${a.id}`} value={`agent:${a.id}`}>
-                    {a.name} · agent
-                  </SelectItem>
-                ))}
-                {resources.skills.map((s) => (
-                  <SelectItem key={`skill:${s.id}`} value={`skill:${s.id}`}>
-                    {s.name} · skill
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={principalValue} onValueChange={setPrincipalValue} disabled={createMutation.isPending}>
-              <SelectTrigger className="h-8 w-40 text-xs">
-                <SelectValue placeholder="Member or dept" />
-              </SelectTrigger>
-              <SelectContent>
-                {members.map((m) => (
-                  <SelectItem key={`member:${m.user_id}`} value={`member:${m.user_id}`}>
-                    {userLabel(m)}
-                  </SelectItem>
-                ))}
-                {groups.map((g) => (
-                  <SelectItem key={`group:${g.group_id}`} value={`group:${g.group_id}`}>
-                    {g.name} · dept
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button type="submit" size="sm" variant="outline" disabled={!canSubmit}>
-              Grant
-            </Button>
-          </form>
+          <Dialog open={dialogOpen} onOpenChange={onDialogOpenChange}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline" className="gap-1.5">
+                <Plus className="h-3.5 w-3.5" />
+                Grant access
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Grant resource access</DialogTitle>
+                <DialogDescription>
+                  Scope an agent, skill, or secret to a member or department. Ungranted resources stay
+                  open to everyone with project access.
+                </DialogDescription>
+              </DialogHeader>
+
+              <form
+                id="grant-resource-form"
+                className="space-y-4 py-1"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!canSubmit) return;
+                  createMutation.mutate();
+                }}
+              >
+                <div className="space-y-1.5">
+                  <span className="text-muted-foreground text-xs font-medium">1. Resource type</span>
+                  <div className="flex gap-1.5">
+                    {typeOptions.map(({ type, label, Icon }) => (
+                      <Button
+                        key={type}
+                        type="button"
+                        size="sm"
+                        variant={pickerType === type ? 'default' : 'outline'}
+                        className="flex-1 gap-1.5"
+                        onClick={() => onTypeChange(type)}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="text-muted-foreground text-xs font-medium">
+                    2. {pickerType ? `${pickerType[0].toUpperCase()}${pickerType.slice(1)}` : 'Resource'}
+                  </span>
+                  <Select
+                    value={pickerResourceId}
+                    onValueChange={setPickerResourceId}
+                    disabled={!pickerType || createMutation.isPending}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder={pickerType ? `Select a ${pickerType}` : 'Pick a type first'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeItems.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="text-muted-foreground text-xs font-medium">3. Grant to</span>
+                  <Select
+                    value={principalValue}
+                    onValueChange={setPrincipalValue}
+                    disabled={createMutation.isPending}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Member or department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {members.map((m) => (
+                        <SelectItem key={`member:${m.user_id}`} value={`member:${m.user_id}`}>
+                          {userLabel(m)}
+                        </SelectItem>
+                      ))}
+                      {groups.map((g) => (
+                        <SelectItem key={`group:${g.group_id}`} value={`group:${g.group_id}`}>
+                          {g.name} · dept
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </form>
+
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button type="button" variant="ghost" size="sm">
+                    Cancel
+                  </Button>
+                </DialogClose>
+                <Button type="submit" form="grant-resource-form" size="sm" disabled={!canSubmit}>
+                  {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Grant access'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         ) : null
       }
     >
@@ -1785,27 +1955,27 @@ function ResourceAccessCard({
       {!grantsQuery.isLoading && grants.length === 0 && (
         <div className="text-muted-foreground px-6 py-5 text-xs">
           {hasResources
-            ? 'No agents or skills are scoped yet — every member with project access can see and use all of them. Grant one above to restrict it to specific people or departments.'
-            : 'This project has no agents or skills to scope yet. Add some in the Agents and Skills sections, then come back here to limit who can use them.'}
+            ? 'Nothing is scoped yet — every member with project access can see and use all agents, skills, and secrets. Grant one above to restrict it to specific people or departments.'
+            : 'This project has no agents, skills, or secrets to scope yet. Add some first, then come back here to limit who can use them.'}
         </div>
       )}
 
       {!grantsQuery.isLoading && grants.length > 0 && (
-        <List>
-          {grants.map((g: ProjectResourceGrant) => {
-            const busy = pendingIds.has(g.grant_id);
-            const isAgent = g.resource_type === 'agent';
-            const displayName = resourceName.get(`${g.resource_type}:${g.resource_id}`) ?? g.resource_id;
+        <>
+          {grantFilterOptions.length > 2 && (
+            <FilterChips value={resourceFilter} onChange={setResourceFilter} options={grantFilterOptions} />
+          )}
+          <List>
+            {visibleGrants.map((g: ProjectResourceGrant) => {
+              const busy = pendingIds.has(g.grant_id);
+              const displayName = resourceName.get(`${g.resource_type}:${g.resource_id}`) ?? g.resource_id;
+            const ResourceIcon = g.resource_type === 'agent' ? Bot : g.resource_type === 'secret' ? KeyRound : Sparkles;
             return (
               <ListRow
                 key={g.grant_id}
                 leading={
                   <span className="bg-muted/60 flex h-8 w-8 items-center justify-center rounded-full">
-                    {isAgent ? (
-                      <Bot className="text-muted-foreground h-4 w-4" />
-                    ) : (
-                      <Sparkles className="text-muted-foreground h-4 w-4" />
-                    )}
+                    <ResourceIcon className="text-muted-foreground h-4 w-4" />
                   </span>
                 }
                 title={
@@ -1855,7 +2025,8 @@ function ResourceAccessCard({
               />
             );
           })}
-        </List>
+          </List>
+        </>
       )}
     </SectionCard>
   );
@@ -1929,14 +2100,25 @@ function ProjectRoleAssignmentsCard({
     [agentsQuery.data],
   );
 
-  function principalLabel(p: IamPolicy): { kind: string; label: string } {
-    if (p.principal_type === 'group') return { kind: 'Dept', label: groupNameById.get(p.principal_id) ?? p.principal_id };
-    if (p.principal_type === 'token') return { kind: 'Agent', label: agentLabelById.get(p.principal_id) ?? p.principal_id };
-    return { kind: 'Member', label: memberLabelById.get(p.principal_id) ?? p.principal_id };
+  function principalLabel(p: IamPolicy): { kind: string; label: string; missing: boolean } {
+    if (p.principal_type === 'group') {
+      return { kind: 'Dept', label: groupNameById.get(p.principal_id) ?? p.principal_id, missing: false };
+    }
+    if (p.principal_type === 'token') {
+      // Agent SAs resolve from the account-wide identity list; a miss means the
+      // agent was deleted/renamed, so the binding is stale. Show a short id and
+      // flag it rather than a bare 36-char UUID.
+      const name = agentLabelById.get(p.principal_id);
+      return { kind: 'Agent', label: name ?? `${p.principal_id.slice(0, 8)}…`, missing: !name };
+    }
+    return { kind: 'Member', label: memberLabelById.get(p.principal_id) ?? p.principal_id, missing: false };
   }
 
-  const [principalValue, setPrincipalValue] = useState(''); // "member:id" | "group:id" | "token:said"
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [subjectType, setSubjectType] = useState<PrincipalType | ''>(''); // step 1
+  const [subjectId, setSubjectId] = useState(''); // step 2
   const [roleId, setRoleId] = useState('');
+  const [policyFilter, setPolicyFilter] = useState<'all' | PrincipalType>('all');
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const markPending = (id: string) => setPendingIds((prev) => new Set(prev).add(id));
   const clearPending = (id: string) =>
@@ -1949,30 +2131,64 @@ function ProjectRoleAssignmentsCard({
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: policiesKey });
   }
-  function splitOnce(v: string): [string, string] {
-    const i = v.indexOf(':');
-    return i < 0 ? [v, ''] : [v.slice(0, i), v.slice(i + 1)];
+
+  // Step 1 of the assign flow: pick the SUBJECT type. Only offer types that
+  // have someone to assign (no empty "Agent" list when the project has none).
+  const subjectOptions = useMemo(
+    () =>
+      (
+        [
+          { type: 'member', label: 'Member', Icon: User, items: members.map((m) => ({ id: m.user_id, name: userLabel(m) })) },
+          { type: 'group', label: 'Dept', Icon: Users, items: groups.map((g) => ({ id: g.group_id, name: g.name })) },
+          {
+            type: 'token',
+            label: 'Agent',
+            Icon: Bot,
+            items: projectAgents.map((a) => ({ id: a.service_account_id, name: a.agent_name ?? a.name })),
+          },
+        ] as const
+      ).filter((o) => o.items.length > 0),
+    [members, groups, projectAgents],
+  );
+  // Step 2 options: only the subjects of the chosen type.
+  const activeSubjects = subjectOptions.find((o) => o.type === subjectType)?.items ?? [];
+
+  function resetAssignForm() {
+    setSubjectType('');
+    setSubjectId('');
+    setRoleId('');
+  }
+  function onSubjectTypeChange(t: PrincipalType) {
+    setSubjectType(t);
+    setSubjectId(''); // the previous pick belongs to a different subject type
   }
 
   const createMutation = useMutation({
-    mutationFn: () => {
-      const [principalType, principalId] = splitOnce(principalValue);
-      return createPolicy(accountId, {
-        principalType: principalType as PrincipalType,
-        principalId,
+    mutationFn: () =>
+      createPolicy(accountId, {
+        principalType: subjectType as PrincipalType,
+        principalId: subjectId,
         scopeType: 'project',
         scopeId: projectId,
         roleId,
-      });
-    },
+      }),
     onSuccess: () => {
       successToast('Role assigned');
-      setPrincipalValue('');
-      setRoleId('');
+      resetAssignForm();
+      setDialogOpen(false);
       invalidate();
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to assign role'),
   });
+
+  function onDialogOpenChange(next: boolean) {
+    if (createMutation.isPending) return;
+    if (next) {
+      resetAssignForm();
+      setSubjectType(subjectOptions[0]?.type ?? '');
+    }
+    setDialogOpen(next);
+  }
 
   const removeMutation = useMutation({
     mutationFn: (policyId: string) => deletePolicy(accountId, policyId),
@@ -1985,7 +2201,27 @@ function ProjectRoleAssignmentsCard({
     onError: (err: Error) => errorToast(err.message || 'Failed to remove assignment'),
   });
 
-  const canSubmit = !!principalValue && !!roleId && !createMutation.isPending;
+  // List filter (below): segment a long mixed binding list by subject type.
+  const policyCounts = useMemo(() => {
+    const c: Record<string, number> = { member: 0, group: 0, token: 0 };
+    for (const p of policies) c[p.principal_type] = (c[p.principal_type] ?? 0) + 1;
+    return c;
+  }, [policies]);
+  const policyFilterOptions = useMemo(() => {
+    const opts: { value: 'all' | PrincipalType; label: string; count: number }[] = [
+      { value: 'all', label: 'All', count: policies.length },
+    ];
+    if (policyCounts.member) opts.push({ value: 'member', label: 'Members', count: policyCounts.member });
+    if (policyCounts.group) opts.push({ value: 'group', label: 'Depts', count: policyCounts.group });
+    if (policyCounts.token) opts.push({ value: 'token', label: 'Agents', count: policyCounts.token });
+    return opts;
+  }, [policies.length, policyCounts]);
+  const visiblePolicies = useMemo(
+    () => (policyFilter === 'all' ? policies : policies.filter((p) => p.principal_type === policyFilter)),
+    [policies, policyFilter],
+  );
+
+  const canSubmit = !!subjectType && !!subjectId && !!roleId && !createMutation.isPending;
 
   return (
     <SectionCard
@@ -1995,52 +2231,100 @@ function ProjectRoleAssignmentsCard({
       count={policies.length}
       action={
         canManage && customRoles.length > 0 ? (
-          <form
-            className="flex items-center gap-1.5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!canSubmit) return;
-              createMutation.mutate();
-            }}
-          >
-            <Select value={principalValue} onValueChange={setPrincipalValue} disabled={createMutation.isPending}>
-              <SelectTrigger className="h-8 w-40 text-xs">
-                <SelectValue placeholder="Member, dept, agent" />
-              </SelectTrigger>
-              <SelectContent>
-                {members.map((m) => (
-                  <SelectItem key={`member:${m.user_id}`} value={`member:${m.user_id}`}>
-                    {userLabel(m)}
-                  </SelectItem>
-                ))}
-                {groups.map((g) => (
-                  <SelectItem key={`group:${g.group_id}`} value={`group:${g.group_id}`}>
-                    {g.name} · dept
-                  </SelectItem>
-                ))}
-                {projectAgents.map((a) => (
-                  <SelectItem key={`token:${a.service_account_id}`} value={`token:${a.service_account_id}`}>
-                    {a.agent_name ?? a.name} · agent
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={roleId} onValueChange={setRoleId} disabled={createMutation.isPending}>
-              <SelectTrigger className="h-8 w-36 text-xs">
-                <SelectValue placeholder="Custom role" />
-              </SelectTrigger>
-              <SelectContent>
-                {customRoles.map((r) => (
-                  <SelectItem key={r.role_id} value={r.role_id}>
-                    {r.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button type="submit" size="sm" variant="outline" disabled={!canSubmit}>
-              Assign
-            </Button>
-          </form>
+          <Dialog open={dialogOpen} onOpenChange={onDialogOpenChange}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline" className="gap-1.5">
+                <Plus className="h-3.5 w-3.5" />
+                Assign role
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Assign a custom role</DialogTitle>
+                <DialogDescription>
+                  Bind a custom role to a member, department, or agent on this project only.
+                </DialogDescription>
+              </DialogHeader>
+
+              <form
+                id="assign-role-form"
+                className="space-y-4 py-1"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!canSubmit) return;
+                  createMutation.mutate();
+                }}
+              >
+                <div className="space-y-1.5">
+                  <span className="text-muted-foreground text-xs font-medium">1. Assign to</span>
+                  <div className="flex gap-1.5">
+                    {subjectOptions.map(({ type, label, Icon }) => (
+                      <Button
+                        key={type}
+                        type="button"
+                        size="sm"
+                        variant={subjectType === type ? 'default' : 'outline'}
+                        className="flex-1 gap-1.5"
+                        onClick={() => onSubjectTypeChange(type)}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="text-muted-foreground text-xs font-medium">
+                    2. {subjectType === 'group' ? 'Department' : subjectType === 'token' ? 'Agent' : 'Member'}
+                  </span>
+                  <Select
+                    value={subjectId}
+                    onValueChange={setSubjectId}
+                    disabled={!subjectType || createMutation.isPending}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder={subjectType ? 'Select one' : 'Pick a type first'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeSubjects.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="text-muted-foreground text-xs font-medium">3. Custom role</span>
+                  <Select value={roleId} onValueChange={setRoleId} disabled={createMutation.isPending}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select a role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customRoles.map((r) => (
+                        <SelectItem key={r.role_id} value={r.role_id}>
+                          {r.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </form>
+
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button type="button" variant="ghost" size="sm">
+                    Cancel
+                  </Button>
+                </DialogClose>
+                <Button type="submit" form="assign-role-form" size="sm" disabled={!canSubmit}>
+                  {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Assign role'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         ) : null
       }
     >
@@ -2067,10 +2351,14 @@ function ProjectRoleAssignmentsCard({
       )}
 
       {!policiesQuery.isLoading && policies.length > 0 && (
-        <List>
-          {policies.map((p) => {
+        <>
+          {policyFilterOptions.length > 2 && (
+            <FilterChips value={policyFilter} onChange={setPolicyFilter} options={policyFilterOptions} />
+          )}
+          <List>
+            {visiblePolicies.map((p) => {
             const busy = pendingIds.has(p.policy_id);
-            const { kind, label } = principalLabel(p);
+            const { kind, label, missing } = principalLabel(p);
             return (
               <ListRow
                 key={p.policy_id}
@@ -2089,8 +2377,18 @@ function ProjectRoleAssignmentsCard({
                 }
                 subtitle={
                   <InlineMeta>
-                    <span>
+                    <span className="flex items-center gap-1.5">
                       {kind}: {label}
+                      {missing && (
+                        <Badge
+                          variant="outline"
+                          size="sm"
+                          className="border-amber-300 text-amber-700 dark:border-amber-500/40 dark:text-amber-400"
+                          title="This agent no longer exists (deleted or renamed). The binding is stale — remove it or re-assign the current agent."
+                        >
+                          removed
+                        </Badge>
+                      )}
                     </span>
                     {p.expires_at ? <span>Expires {formatDate(p.expires_at)}</span> : null}
                   </InlineMeta>
@@ -2111,7 +2409,8 @@ function ProjectRoleAssignmentsCard({
               />
             );
           })}
-        </List>
+          </List>
+        </>
       )}
     </SectionCard>
   );

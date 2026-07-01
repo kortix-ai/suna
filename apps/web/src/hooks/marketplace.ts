@@ -4,6 +4,8 @@ import {
   addMarketplaceSource,
   getMarketplaceItem,
   getMarketplaceItemFile,
+  getPublicMarketplaceItem,
+  getPublicMarketplaceItemFile,
   installMarketplaceItem,
   listFeaturedMarketplaces,
   listInstalledItems,
@@ -63,19 +65,28 @@ export function useFeaturedMarketplaces() {
   });
 }
 
-export function useMarketplaceItem(id: string | null) {
+export function useMarketplaceItem(id: string | null, opts?: { publicOnly?: boolean }) {
+  const publicOnly = opts?.publicOnly ?? false;
   return useQuery({
-    queryKey: ['marketplace-item', id],
-    queryFn: () => getMarketplaceItem(id!),
+    queryKey: [publicOnly ? 'marketplace-item-public' : 'marketplace-item', id],
+    queryFn: () => (publicOnly ? getPublicMarketplaceItem(id!) : getMarketplaceItem(id!)),
     enabled: !!id,
     staleTime: 60_000,
   });
 }
 
-export function useMarketplaceItemFile(id: string | null, target: string | null) {
+export function useMarketplaceItemFile(
+  id: string | null,
+  target: string | null,
+  opts?: { publicOnly?: boolean },
+) {
+  const publicOnly = opts?.publicOnly ?? false;
   return useQuery({
-    queryKey: ['marketplace-item-file', id, target],
-    queryFn: () => getMarketplaceItemFile(id!, target!),
+    queryKey: [publicOnly ? 'marketplace-item-file-public' : 'marketplace-item-file', id, target],
+    queryFn: () =>
+      publicOnly
+        ? getPublicMarketplaceItemFile(id!, target!)
+        : getMarketplaceItemFile(id!, target!),
     enabled: !!id && !!target,
     staleTime: 5 * 60_000,
   });

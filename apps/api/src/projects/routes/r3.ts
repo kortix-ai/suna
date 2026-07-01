@@ -1,5 +1,5 @@
 import { parseSharingIntent, resolveShareSubject, setSecretSharing } from '../../executor/share';
-import { PROJECT_ACTIONS } from '../../iam';
+import { PROJECT_ACTIONS, filterAccessibleProjectResources } from '../../iam';
 import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
@@ -430,9 +430,25 @@ projectsApp.openapi(
   // granted (mirrors the env-injection narrowing), so it can't enumerate keys
   // outside its allowlist. No-op for non-agent tokens / 'all' / null grants.
   const agentGrant = getAgentGrant(c);
-  const items = (await loadSecretViewsForUser(projectId, subject, canManageShared))
+  const allItems = (await loadSecretViewsForUser(projectId, subject, canManageShared))
     .filter((item) => !item.system)
     .filter((item) => agentMayUseEnv(agentGrant, item.name));
+
+  // Per-resource scoping (members / departments): when a secret is scoped to
+  // specific principals, a non-owner/admin member sees it ONLY if granted.
+  // Unscoped secrets stay project-wide. Mirrors agent/skill scoping; the helper
+  // bypasses for owner/admin (implicit Manager) and service accounts.
+  const accessibleSecrets = new Set(
+    await filterAccessibleProjectResources(
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      'secret',
+      allItems.map((i) => i.name),
+      (c.get('iamTokenId') as string | undefined) ?? undefined,
+    ),
+  );
+  const items = allItems.filter((i) => accessibleSecrets.has(i.name));
 
   return c.json({
     items,

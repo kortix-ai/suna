@@ -209,13 +209,12 @@ $CLI self-host env set --instance "$INSTANCE" \
   "API_PORT=$API_PORT" \
   "SUPABASE_PORT=$SUPABASE_PORT" \
   "POSTGRES_PORT=$POSTGRES_PORT" \
-  "SANDBOX_PORT_BASE=$SANDBOX_PORT_BASE" \
-  "SANDBOX_CONTAINER_NAME=kortix-$INSTANCE-sandbox" \
-  "ALLOWED_SANDBOX_PROVIDERS=local_docker" \
+  "ALLOWED_SANDBOX_PROVIDERS=daytona" \
   "KORTIX_LOCAL_IMAGES=$KORTIX_LOCAL_IMAGES" >/dev/null
-# The e2e runs the full agent-session path hermetically (no external provider
-# account), so it pins the sandbox runtime to local_docker. Real deployments use
-# Daytona/Platinum — that's the `configure` default.
+# Sandbox runtime is Daytona (the only sandbox provider after local_docker was
+# removed). NOTE: this self-host e2e therefore needs Daytona credentials in the
+# environment to provision a sandbox — it is no longer hermetic. If those aren't
+# available in CI, this golden path must be reworked or retired.
 if [ -n "$FRONTEND_IMAGE" ]; then
   $CLI self-host env set --instance "$INSTANCE" "FRONTEND_IMAGE=$FRONTEND_IMAGE" >/dev/null
 fi
@@ -347,11 +346,11 @@ ok "Project and ready snapshot build log seeded: $PROJECT_ID"
 curl -fsS -H "authorization: Bearer $ACCESS_TOKEN" "$API_PUBLIC_URL/v1/projects/$PROJECT_ID/sessions" >/dev/null
 ok "Seeded project is visible to API"
 
-section "Create Local Docker Session"
+section "Create Session"
 SESSION_JSON=$(curl -fsS -X POST "$API_PUBLIC_URL/v1/projects/$PROJECT_ID/sessions" \
   -H "authorization: Bearer $ACCESS_TOKEN" \
   -H 'content-type: application/json' \
-  -d '{"provider":"local_docker","base_ref":"main","name":"self-host e2e","branch_already_created":true}')
+  -d '{"provider":"daytona","base_ref":"main","name":"self-host e2e","branch_already_created":true}')
 SESSION_ID=$(printf '%s' "$SESSION_JSON" | json_get session_id)
 [ -n "$SESSION_ID" ] || die "session create failed: $SESSION_JSON"
 ok "POST /v1/projects/:id/sessions works: $SESSION_ID"

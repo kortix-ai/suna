@@ -5,7 +5,8 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Badge } from '@/components/ui/badge';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
-import { Code2, Monitor, Smartphone, Terminal } from 'lucide-react';
+import { ArrowUpRight, Code2, Monitor, Smartphone, Terminal } from 'lucide-react';
+import Link from 'next/link';
 import type { ComponentType, ReactNode } from 'react';
 import { useState } from 'react';
 
@@ -202,17 +203,21 @@ const CLI_LINES = [
 ];
 
 const SDK_LINES = [
-  'import { Kortix } from "@kortix/sdk";',
+  'import { createKortix, generateSessionId } from "@kortix/sdk";',
   '',
-  'const kortix = new Kortix();',
-  '',
-  '// the same agents your whole company shares',
-  'const run = await kortix.sessions.create({',
-  '  agent: "go-to-market",',
-  '  prompt: "Draft the renewal for Acme",',
+  '// one typed client for the Kortix API + the agent runtime',
+  'const kortix = createKortix({',
+  '  backendUrl: "https://api.kortix.com/v1",',
+  '  getToken: () => process.env.KORTIX_API_KEY!,',
   '});',
   '',
-  'console.log(run.changeRequest.url);',
+  '// the same agents your whole company shares',
+  'const sessionId = generateSessionId();',
+  'await kortix.project(projectId).sessions.create({ session_id: sessionId });',
+  '',
+  'const session = kortix.session(projectId, sessionId);',
+  'await session.start();',
+  'await session.send("Draft the renewal for Acme", { agent: "go-to-market" });',
 ];
 
 function SurfacePanel({ surface }: { surface: SurfaceId }) {
@@ -228,7 +233,18 @@ function SurfacePanel({ surface }: { surface: SurfaceId }) {
     case 'cli':
       return <CodeWindow title="kortix — terminal" lines={CLI_LINES} />;
     case 'sdk':
-      return <CodeWindow title="renewal.ts" lines={SDK_LINES} />;
+      return (
+        <div className="relative h-full">
+          <CodeWindow title="renewal.ts" lines={SDK_LINES} />
+          <Link
+            href="/docs/sdk"
+            className="border-border bg-card/90 text-foreground hover:bg-foreground/[0.04] absolute right-4 bottom-4 inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium shadow-sm backdrop-blur transition-colors duration-fast"
+          >
+            View the SDK docs
+            <ArrowUpRight className="size-3.5" />
+          </Link>
+        </div>
+      );
   }
 }
 

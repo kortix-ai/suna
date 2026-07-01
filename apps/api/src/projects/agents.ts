@@ -83,6 +83,15 @@ export interface AgentSpec {
   env: GrantSet;
   /** Optional behavior-file path override (defaults to the conventional `.md` by name). */
   file: string | null;
+  /**
+   * The agent's declarative default model (wire form `provider/model`), or null
+   * for "Default" — resolve project → account → platform (`auto`). A
+   * `model_preferences` row (scope=agent), set via the SDK/UI, overrides this at
+   * run time without a code commit. Catalog-availability is validated at the
+   * route/resolver layer (the parser stays catalog-free), same as everywhere the
+   * gateway is the source of truth for entitlement.
+   */
+  model: string | null;
 }
 
 export interface AgentParseError {
@@ -228,6 +237,7 @@ export function agentSpecToTomlEntry(spec: AgentSpec): Record<string, unknown> {
   const entry: Record<string, unknown> = { name: spec.name };
   if (!spec.enabled) entry.enabled = false;
   if (spec.file) entry.file = spec.file;
+  if (spec.model) entry.model = spec.model;
   if (spec.connectors === 'all') entry.connectors = 'all';
   else if (spec.connectors.length > 0) entry.connectors = spec.connectors;
   if (spec.kortixCli === 'all') entry.kortix_cli = 'all';
@@ -271,6 +281,7 @@ function parseAgentEntry(entry: unknown, index: number): ParseOk | ParseErr {
 
   const enabled = coerceBool(row.enabled, true);
   const file = typeof row.file === 'string' && row.file.trim() ? row.file.trim() : null;
+  const model = typeof row.model === 'string' && row.model.trim() ? row.model.trim() : null;
 
   const connectorsParsed = parseGrantSet(name, 'connectors', row.connectors, null);
   if (!connectorsParsed.ok) return connectorsParsed;
@@ -297,6 +308,7 @@ function parseAgentEntry(entry: unknown, index: number): ParseOk | ParseErr {
       kortixCli: kortixParsed.value,
       env: envParsed.value,
       file,
+      model,
     },
   };
 }

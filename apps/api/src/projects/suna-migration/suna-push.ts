@@ -7,7 +7,7 @@
  * sandbox separately (rehydrate). We move it out of the tree before pushing.
  */
 import { dirname, join } from 'node:path';
-import { existsSync, mkdirSync, writeFileSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { getDefaultManagedBackend } from '../git-backends/registry';
 import type { GitConnectionRef } from '../git-backends/types';
 import { buildStarterFiles } from '../starter';
@@ -51,9 +51,10 @@ export async function pushBundleAsRepo(accountId: string, bundleDir: string): Pr
   const pushUrl = await backend.authedPushUrl(ref);
 
   // Keep opencode.db + manifest OUT of the repo (chat storage, not source).
+  // repoStep already moved opencode.db aside (keyed by the stable migrationId);
+  // drop any stragglers so chat storage never lands in the commit.
   for (const f of ['opencode.db', 'migration-manifest.json']) {
-    const p = join(bundleDir, f);
-    if (existsSync(p)) renameSync(p, join(dirname(bundleDir), `${projectId}.${f}`));
+    rmSync(join(bundleDir, f), { force: true });
   }
 
   // One synthesized root config for the whole project.

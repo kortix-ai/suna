@@ -73,6 +73,9 @@ const ALLOWED_PROXY_ORIGINS =
       ];
 
 const nextConfig = (): NextConfig => ({
+  // The frontend data layer lives in the @kortix/sdk workspace package (TS
+  // source), so Next must transpile it.
+  transpilePackages: ['@kortix/sdk'],
   // Standalone bundles the app for Docker/Vercel via a slow monorepo-wide
   // file-tracing pass. `next start` (what `pnpm preview` uses) ignores it, so
   // skip it locally for a faster build.
