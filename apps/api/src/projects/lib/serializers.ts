@@ -224,12 +224,17 @@ export function buildSecretView(input: {
   personal?: SecretRow;
   subject: ShareSubject;
   canManageShared: boolean;
+  /** Secrets the subject INHERITS via an agent they're assigned to (the "assign
+   *  human → agent" pyramid). Usable to them even if the share scope wouldn't
+   *  otherwise reach them. */
+  inherited?: ReadonlySet<string>;
 }) {
-  const { name, shared, sharedGrants = [], personal, subject, canManageShared } = input;
+  const { name, shared, sharedGrants = [], personal, subject, canManageShared, inherited } = input;
   const system = isSystemProjectSecretName(name);
   const isGitAuth = name === PROJECT_GIT_AUTH_SECRET_NAME;
   const usableByMe = shared
-    ? isSecretUsableBy(shared.shareScope as 'project' | 'restricted', sharedGrants, subject)
+    ? isSecretUsableBy(shared.shareScope as 'project' | 'restricted', sharedGrants, subject) ||
+      Boolean(inherited?.has(name))
     : false;
   const mineActive = Boolean(personal?.active);
   const effectiveSource: 'mine' | 'shared' | 'none' =
@@ -269,6 +274,7 @@ export async function loadSecretViewsForUser(
   projectId: string,
   subject: ShareSubject,
   canManageShared: boolean,
+  inherited?: ReadonlySet<string>,
 ): Promise<ReturnType<typeof buildSecretView>[]> {
   const rows = await db
     .select()
@@ -296,6 +302,7 @@ export async function loadSecretViewsForUser(
       personal: slot.personal,
       subject,
       canManageShared,
+      inherited,
     }),
   );
 }

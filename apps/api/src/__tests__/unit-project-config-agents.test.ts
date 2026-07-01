@@ -40,7 +40,6 @@ describe('project config agent discovery', () => {
           connectors: 'all',
           kortixCli: 'all',
           env: 'all',
-          inherit: false,
           file: null,
           model: null,
         },
@@ -51,7 +50,6 @@ describe('project config agent discovery', () => {
           connectors: [],
           kortixCli: [],
           env: 'all',
-          inherit: false,
           file: '.kortix/opencode/agents/release-bot.md',
           model: null,
         },
@@ -62,7 +60,6 @@ describe('project config agent discovery', () => {
           connectors: [],
           kortixCli: [],
           env: 'all',
-          inherit: false,
           file: null,
           model: null,
         },
@@ -80,7 +77,7 @@ describe('project config agent discovery', () => {
         mode: 'primary',
         source: 'kortix.toml',
         enabled: true,
-        scope: { env: 'all', connectors: 'all', kortix_cli: 'all', inherit: false },
+        scope: { env: 'all', connectors: 'all', kortix_cli: 'all' },
       },
       {
         name: 'triage',
@@ -89,7 +86,7 @@ describe('project config agent discovery', () => {
         mode: 'subagent',
         source: 'kortix.toml',
         enabled: true,
-        scope: { env: 'all', connectors: [], kortix_cli: [], inherit: false },
+        scope: { env: 'all', connectors: [], kortix_cli: [] },
       },
     ]);
   });
@@ -105,7 +102,6 @@ describe('project config agent discovery', () => {
           connectors: ['stripe'],
           kortixCli: ['project.read'],
           env: ['GITHUB_TOKEN', 'OPENAI_API_KEY'],
-          inherit: false,
           file: null,
           model: null,
         },
@@ -119,7 +115,6 @@ describe('project config agent discovery', () => {
       env: ['GITHUB_TOKEN', 'OPENAI_API_KEY'],
       connectors: ['stripe'],
       kortix_cli: ['project.read'],
-      inherit: false,
     });
   });
 

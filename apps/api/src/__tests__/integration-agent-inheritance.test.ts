@@ -16,6 +16,7 @@ import { db } from '../shared/db';
 import { resolveDeclaredSharedSecrets, writeSharedProjectSecret } from '../projects/secrets';
 import { setSecretSharing } from '../executor/share';
 import { isProjectResourceExplicitlyGranted, upsertResourceGrant } from '../iam';
+import { resolveAssignedAgentNames, unionDeclaredResources } from '../projects/lib/agent-inheritance';
 
 let ctx: { projectId: string; accountId: string } | null = null;
 const grantCleanup: string[] = [];
@@ -115,5 +116,41 @@ describe('agent-inheritance primitives', () => {
     expect(await isProjectResourceExplicitlyGranted(ctx.projectId, 'agent', FREE_AGENT, OTHER, [DEPT])).toBe(true);
     // ASSIGNED is not in DEPT and not named → still not assigned to FREE_AGENT.
     expect(await isProjectResourceExplicitlyGranted(ctx.projectId, 'agent', FREE_AGENT, ASSIGNED, [])).toBe(false);
+  });
+
+  test('resolveAssignedAgentNames returns every agent the subject is assigned to (global set)', async () => {
+    if (!ctx) return;
+    // ASSIGNED is named on AGENT only.
+    const forAssigned = await resolveAssignedAgentNames(ctx.projectId, ASSIGNED, []);
+    expect(forAssigned.has(AGENT)).toBe(true);
+    expect(forAssigned.has(FREE_AGENT)).toBe(false);
+    // OTHER is in DEPT, which is assigned to FREE_AGENT (from the prior test).
+    const forOther = await resolveAssignedAgentNames(ctx.projectId, OTHER, [DEPT]);
+    expect(forOther.has(FREE_AGENT)).toBe(true);
+    expect(forOther.has(AGENT)).toBe(false);
+    // A stranger with no grants and no depts is assigned to nothing.
+    expect((await resolveAssignedAgentNames(ctx.projectId, crypto.randomUUID(), [])).size).toBe(0);
+  });
+});
+
+describe('unionDeclaredResources — pure union over assigned agents', () => {
+  const AGENTS = [
+    { name: 'a', env: ['S1', 'S2'], connectors: ['github'] as string[] },
+    { name: 'b', env: ['S2', 'S3'], connectors: ['stripe'] as string[] },
+    { name: 'c', env: 'all' as const, connectors: 'all' as const },
+    { name: 'd', env: [] as string[], connectors: [] as string[] },
+  ];
+
+  test('unions + de-dupes the CONCRETE lists of only the assigned agents', () => {
+    const { secrets, connectors } = unionDeclaredResources(AGENTS, new Set(['a', 'b']));
+    expect([...secrets].sort()).toEqual(['S1', 'S2', 'S3']);
+    expect([...connectors].sort()).toEqual(['github', 'stripe']);
+  });
+
+  test("'all' contributes no concrete name; unassigned + empty agents add nothing", () => {
+    // Only 'c' ('all') and 'd' ([]) assigned → nothing concrete to inherit.
+    expect(unionDeclaredResources(AGENTS, new Set(['c', 'd']))).toEqual({ secrets: [], connectors: [] });
+    // No assignments → empty.
+    expect(unionDeclaredResources(AGENTS, new Set())).toEqual({ secrets: [], connectors: [] });
   });
 });

@@ -32,7 +32,6 @@ kortix_cli = ["project.deploy", "project.cr.open"]
       connectors: ['github'],
       kortixCli: ['project.deploy', 'project.cr.open'],
       env: 'all', // env key omitted → defaults to 'all' (back-compat for the new dimension)
-      inherit: false,
     });
   });
 
@@ -77,7 +76,6 @@ kortix_cli = "all"
       connectors: 'all',
       kortixCli: 'all',
       env: 'all',
-      inherit: false,
     });
   });
 

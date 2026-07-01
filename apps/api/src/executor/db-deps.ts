@@ -56,6 +56,7 @@ import { meetRealtimeJoinPatch } from '../channels/meet-realtime';
 import { deriveWakeWord, resolveProjectBotName } from '../channels/meet-voices';
 import { hideSupersededSlack } from './channel-rules';
 import { agentMayUseConnector } from '../iam/agent-scope';
+import { resolveInheritedConnectorSlugs } from '../projects/lib/agent-inheritance';
 import {
   finalizePipedreamConnection,
   pipedreamConfigured,
@@ -253,6 +254,8 @@ function makeDbGatewayDeps(): GatewayDeps {
           }
         : null;
     },
+    inheritedConnectorSlugs: (projectId, subject) =>
+      resolveInheritedConnectorSlugs(projectId, subject.userId, subject.groupIds),
     loadPolicies: loadConnectorPoliciesFor,
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,
@@ -397,13 +400,27 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
     loadDefaultModeFor(p.projectId),
   ]);
 
+  // Inheritance pyramid (assign human → agent): resolved lazily and once, only
+  // when a restricted connector the subject can't directly use is encountered
+  // (project-scoped connectors short-circuit isSecretUsableBy). Mirrors the call
+  // gate so the list never shows a tool the caller couldn't actually invoke.
+  let inheritedConns: ReadonlySet<string> | null = null;
+  const inheritedConnsFor = async () => {
+    if (inheritedConns === null) {
+      inheritedConns = await resolveInheritedConnectorSlugs(p.projectId, p.userId, p.subject.groupIds);
+    }
+    return inheritedConns;
+  };
+
   const out: CatalogConnector[] = [];
   for (const row of conns) {
     // Per-agent assignment: an agent only sees connectors its grant lists —
     // consistent with the call gate, so it never lists a tool it can't invoke.
     if (!agentMayUseConnector(p.agentGrant ?? null, row.slug)) continue;
     const grants = grantsByConnector.get(row.connectorId) ?? [];
-    if (!isSecretUsableBy(row.shareScope as 'project' | 'restricted', grants, p.subject)) continue;
+    if (!isSecretUsableBy(row.shareScope as 'project' | 'restricted', grants, p.subject)) {
+      if (!(await inheritedConnsFor()).has(row.slug)) continue;
+    }
     const { hasAuth } = authOf(row);
     if (hasAuth) {
       const uid = row.credentialMode === 'per_user' ? p.userId : null;

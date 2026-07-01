@@ -1438,13 +1438,6 @@ export interface AgentGrant {
    *  agent); an explicit list narrows it; [] = none. Optional for back-compat
    *  with grants minted before this field existed (treated as 'all'). */
   env?: string[] | 'all';
-  /** Inheritance (the "assign human → agent" pyramid). When true, a launcher who
-   *  is EXPLICITLY assigned to this agent (an agent resource grant names them or
-   *  their department) receives the agent's DECLARED `env` secrets in that
-   *  session even if they can't personally see them — removing the double-grant.
-   *  Session-scoped and bounded to the declared allowlist. Default/absent =
-   *  false (today's behavior: the agent gets only what the launcher can see). */
-  inherit?: boolean;
 }
 
 export const accountTokens = kortixSchema.table(

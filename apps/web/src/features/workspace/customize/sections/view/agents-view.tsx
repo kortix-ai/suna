@@ -91,22 +91,10 @@ function AgentScope({ scope }: { scope?: Agent['scope'] }) {
       <ScopeRow label="Secrets" value={scope.env} />
       <ScopeRow label="Connectors" value={scope.connectors} />
       <ScopeRow label="CLI" value={scope.kortix_cli} />
-      {scope.inherit && (
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1.5">
-          <span className="text-muted-foreground/70 w-24 shrink-0 text-[11px] font-medium tracking-wide uppercase">
-            Inherit
-          </span>
-          <Badge variant="outline" size="xs">
-            Assigned members inherit these secrets
-          </Badge>
-        </div>
-      )}
       <p className="text-muted-foreground/50 text-[11px] leading-relaxed">
         Read-only — edit the allowlists in kortix.toml. “All” means every item the launching user
-        can see; “None” means the agent is fully scoped out.
-        {scope.inherit
-          ? ' With inherit on, members you assign to this agent (Members → Resource access) receive its declared secrets in-session even if they can’t otherwise see them.'
-          : ''}
+        can see; “None” means the agent is fully scoped out. Members you assign to this agent
+        (Members → Resource access) inherit its declared secrets &amp; connectors.
       </p>
     </div>
   );

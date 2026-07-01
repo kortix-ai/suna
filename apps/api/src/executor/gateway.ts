@@ -108,6 +108,14 @@ export interface GatewayDeps {
     automaticAudioOutput: unknown;
     botName: string;
   } | null>;
+  /**
+   * Inheritance pyramid (assign human → agent): the connector slugs the subject
+   * inherits because they're assigned to an agent that declares them. Consulted
+   * ONLY when a connector fails the direct share check — a cold, rare path
+   * ('project'-scoped connectors short-circuit as usable). Optional: absent = no
+   * inheritance. Implementations should memoize per (project, subject).
+   */
+  inheritedConnectorSlugs?(projectId: string, subject: ShareSubject): Promise<ReadonlySet<string>>;
   /** Connector-scoped policies (relative patterns over the connector's tool paths). */
   loadPolicies(connectorId: string): Promise<Policy[]>;
   /** Project-scoped policies (fully-qualified patterns over <slug>.<path>). */
@@ -218,13 +226,21 @@ async function resolveConnectorForCall(
 /** Is this connector usable by the subject? Access (connector sharing) + credential (by mode). */
 async function connectorUsable(
   deps: GatewayDeps,
+  projectId: string,
   connector: GatewayConnector,
   subject: ShareSubject,
   credentialOverride?: string | null,
 ): Promise<{ ok: true; secret: string | null } | { ok: false; reason: string }> {
-  // 1. Access — who can use this connector.
+  // 1. Access — who can use this connector. Direct share (project-wide or a
+  // member/department grant), OR inherited via the "assign human → agent"
+  // pyramid: being assigned to an agent that declares this connector grants it.
+  // Inheritance is only consulted on the cold path (a restricted connector the
+  // subject isn't directly granted) — project-scoped connectors short-circuit.
   if (!isSecretUsableBy(connector.shareScope, connector.grants, subject)) {
-    return { ok: false, reason: 'not_shared' };
+    const inherited = await deps.inheritedConnectorSlugs?.(projectId, subject);
+    if (!inherited?.has(connector.slug)) {
+      return { ok: false, reason: 'not_shared' };
+    }
   }
   // 2. Credential — none needed (public), shared, or this member's own (per_user).
   if (!connector.hasAuth) return { ok: true, secret: null };
@@ -299,6 +315,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   const emailExecution = await resolveEmailExecutionContext(deps, input, connector, resolved.slug);
   const usable = await connectorUsable(
     deps,
+    input.projectId,
     connector,
     input.subject,
     emailExecution.secretOverride,

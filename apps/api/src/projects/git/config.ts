@@ -161,7 +161,6 @@ export function resolveConfigAgents(
             env: spec.env,
             connectors: spec.connectors,
             kortix_cli: spec.kortixCli,
-            inherit: spec.inherit,
           },
         };
       }),

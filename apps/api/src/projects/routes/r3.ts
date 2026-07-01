@@ -11,6 +11,7 @@ import { loadProjectConfig } from '../git';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
 import { decryptProjectSecret, encryptProjectSecret, isValidSecretName } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
+import { resolveInheritedResourceNames } from '../lib/agent-inheritance';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -426,11 +427,19 @@ projectsApp.openapi(
     });
   }
 
+  // Inheritance pyramid (read side): secrets declared by an agent the caller is
+  // assigned to become genuinely theirs — surfaced here as usable_by_me even if
+  // the share scope wouldn't otherwise reach them. Fast-paths to empty when the
+  // caller has no agent assignments.
+  const inherited = new Set(
+    (await resolveInheritedResourceNames(loaded.row, loaded.userId, subject.groupIds)).secrets,
+  );
+
   // Per-agent env scoping: a scoped agent token only sees the secret NAMES it's
   // granted (mirrors the env-injection narrowing), so it can't enumerate keys
   // outside its allowlist. No-op for non-agent tokens / 'all' / null grants.
   const agentGrant = getAgentGrant(c);
-  const allItems = (await loadSecretViewsForUser(projectId, subject, canManageShared))
+  const allItems = (await loadSecretViewsForUser(projectId, subject, canManageShared, inherited))
     .filter((item) => !item.system)
     .filter((item) => agentMayUseEnv(agentGrant, item.name));
 
