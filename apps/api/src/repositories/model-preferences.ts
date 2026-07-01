@@ -1,6 +1,8 @@
 import { accountModelPreferences, projectSessions } from '@kortix/db';
+import { Effect } from 'effect';
 import { and, eq } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { DatabaseService } from '../effect/services';
+import { runEffectOrThrow } from '../effect/http';
 
 // Persistent store for account-scoped default model preferences. Drives the
 // server-side resolution of the synthetic `auto` model in the LLM gateway:
@@ -30,22 +32,27 @@ export interface AccountModelDefaults {
 }
 
 export async function getAccountModelDefaults(accountId: string): Promise<AccountModelDefaults> {
-  const rows = await db
-    .select({
-      scope: accountModelPreferences.scope,
-      scopeKey: accountModelPreferences.scopeKey,
-      model: accountModelPreferences.model,
-    })
-    .from(accountModelPreferences)
-    .where(eq(accountModelPreferences.accountId, accountId));
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    const rows = yield* Effect.tryPromise(() =>
+      database
+        .select({
+          scope: accountModelPreferences.scope,
+          scopeKey: accountModelPreferences.scopeKey,
+          model: accountModelPreferences.model,
+        })
+        .from(accountModelPreferences)
+        .where(eq(accountModelPreferences.accountId, accountId)),
+    );
 
-  const defaults: AccountModelDefaults = { account: null, agents: {}, projects: {} };
-  for (const row of rows) {
-    if (row.scope === 'account') defaults.account = row.model;
-    else if (row.scope === 'agent' && row.scopeKey) defaults.agents[row.scopeKey] = row.model;
-    else if (row.scope === 'project' && row.scopeKey) defaults.projects[row.scopeKey] = row.model;
-  }
-  return defaults;
+    const defaults: AccountModelDefaults = { account: null, agents: {}, projects: {} };
+    for (const row of rows) {
+      if (row.scope === 'account') defaults.account = row.model;
+      else if (row.scope === 'agent' && row.scopeKey) defaults.agents[row.scopeKey] = row.model;
+      else if (row.scope === 'project' && row.scopeKey) defaults.projects[row.scopeKey] = row.model;
+    }
+    return defaults;
+  }));
 }
 
 export async function upsertAccountModelPreference(params: {
@@ -57,44 +64,51 @@ export async function upsertAccountModelPreference(params: {
   /** Seed-only: skip the write when a row already exists for this scope (first-connect auto-seed). */
   onlyIfAbsent?: boolean;
 }): Promise<void> {
-  const now = new Date();
-  const scopeKey = preferenceScopeKey(params.scope, params.scopeKey);
-  if (params.onlyIfAbsent) {
-    await db
-      .insert(accountModelPreferences)
-      .values({
-        accountId: params.accountId,
-        scope: params.scope,
-        scopeKey,
-        model: params.model,
-        updatedBy: params.updatedBy ?? null,
-      })
-      .onConflictDoNothing({
-        target: [
-          accountModelPreferences.accountId,
-          accountModelPreferences.scope,
-          accountModelPreferences.scopeKey,
-        ],
-      });
-    return;
-  }
-  await db
-    .insert(accountModelPreferences)
-    .values({
-      accountId: params.accountId,
-      scope: params.scope,
-      scopeKey,
-      model: params.model,
-      updatedBy: params.updatedBy ?? null,
-    })
-    .onConflictDoUpdate({
-      target: [
-        accountModelPreferences.accountId,
-        accountModelPreferences.scope,
-        accountModelPreferences.scopeKey,
-      ],
-      set: { model: params.model, updatedBy: params.updatedBy ?? null, updatedAt: now },
-    });
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    const now = new Date();
+    const scopeKey = preferenceScopeKey(params.scope, params.scopeKey);
+    if (params.onlyIfAbsent) {
+      yield* Effect.tryPromise(() =>
+        database
+          .insert(accountModelPreferences)
+          .values({
+            accountId: params.accountId,
+            scope: params.scope,
+            scopeKey,
+            model: params.model,
+            updatedBy: params.updatedBy ?? null,
+          })
+          .onConflictDoNothing({
+            target: [
+              accountModelPreferences.accountId,
+              accountModelPreferences.scope,
+              accountModelPreferences.scopeKey,
+            ],
+          }),
+      );
+      return;
+    }
+    yield* Effect.tryPromise(() =>
+      database
+        .insert(accountModelPreferences)
+        .values({
+          accountId: params.accountId,
+          scope: params.scope,
+          scopeKey,
+          model: params.model,
+          updatedBy: params.updatedBy ?? null,
+        })
+        .onConflictDoUpdate({
+          target: [
+            accountModelPreferences.accountId,
+            accountModelPreferences.scope,
+            accountModelPreferences.scopeKey,
+          ],
+          set: { model: params.model, updatedBy: params.updatedBy ?? null, updatedAt: now },
+        }),
+    );
+  }));
 }
 
 export async function deleteAccountModelPreference(params: {
@@ -102,16 +116,21 @@ export async function deleteAccountModelPreference(params: {
   scope: ModelPreferenceScope;
   scopeKey?: string;
 }): Promise<void> {
-  const scopeKey = preferenceScopeKey(params.scope, params.scopeKey);
-  await db
-    .delete(accountModelPreferences)
-    .where(
-      and(
-        eq(accountModelPreferences.accountId, params.accountId),
-        eq(accountModelPreferences.scope, params.scope),
-        eq(accountModelPreferences.scopeKey, scopeKey),
-      ),
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    const scopeKey = preferenceScopeKey(params.scope, params.scopeKey);
+    yield* Effect.tryPromise(() =>
+      database
+        .delete(accountModelPreferences)
+        .where(
+          and(
+            eq(accountModelPreferences.accountId, params.accountId),
+            eq(accountModelPreferences.scope, params.scope),
+            eq(accountModelPreferences.scopeKey, scopeKey),
+          ),
+        ),
     );
+  }));
 }
 
 /**
@@ -122,14 +141,19 @@ export async function deleteAccountModelPreference(params: {
 export async function getSessionAgentContext(
   sessionId: string,
 ): Promise<{ agentName: string; opencodeModel: string | null } | null> {
-  const [row] = await db
-    .select({ agentName: projectSessions.agentName, metadata: projectSessions.metadata })
-    .from(projectSessions)
-    .where(eq(projectSessions.sessionId, sessionId))
-    .limit(1);
-  if (!row) return null;
-  const metadata = row.metadata as Record<string, unknown> | null;
-  const opencodeModel =
-    metadata && typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null;
-  return { agentName: row.agentName, opencodeModel };
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    const [row] = yield* Effect.tryPromise(() =>
+      database
+        .select({ agentName: projectSessions.agentName, metadata: projectSessions.metadata })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, sessionId))
+        .limit(1),
+    );
+    if (!row) return null;
+    const metadata = row.metadata as Record<string, unknown> | null;
+    const opencodeModel =
+      metadata && typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null;
+    return { agentName: row.agentName, opencodeModel };
+  }));
 }

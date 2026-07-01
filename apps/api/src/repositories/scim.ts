@@ -6,9 +6,11 @@
 // in the route handler — this file is plain Drizzle.
 
 import { createHash, randomInt } from 'node:crypto';
+import { Effect } from 'effect';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { scimTokens } from '@kortix/db';
-import { db } from '../shared/db';
+import { DatabaseService } from '../effect/services';
+import { runEffectOrThrow } from '../effect/http';
 
 const SCIM_TOKEN_PREFIX = 'kortix_scim_';
 const SCIM_TOKEN_BODY_LEN = 40; // base32-ish alphanumeric, ~200 bits of entropy
@@ -61,29 +63,34 @@ export interface CreateScimTokenResult {
 export async function createScimToken(
   input: CreateScimTokenInput,
 ): Promise<CreateScimTokenResult> {
-  const secret = generateScimSecret();
-  // Display-only fingerprint so admins can recognise tokens after creation
-  // without revealing the full secret. e.g. "kortix_scim_AbCd..."
-  const publicPrefix = secret.slice(0, SCIM_TOKEN_PREFIX.length + 4) + '…';
-  const [row] = await db
-    .insert(scimTokens)
-    .values({
-      accountId: input.accountId,
-      name: input.name,
-      secretHash: hashScimSecret(secret),
-      publicPrefix,
-      createdBy: input.createdBy,
-      expiresAt: input.expiresAt ?? null,
-    })
-    .returning();
-  return {
-    tokenId: row.tokenId,
-    name: row.name,
-    secret,
-    publicPrefix: row.publicPrefix,
-    createdAt: row.createdAt,
-    expiresAt: row.expiresAt,
-  };
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    const secret = generateScimSecret();
+    // Display-only fingerprint so admins can recognise tokens after creation
+    // without revealing the full secret. e.g. "kortix_scim_AbCd..."
+    const publicPrefix = secret.slice(0, SCIM_TOKEN_PREFIX.length + 4) + '…';
+    const [row] = yield* Effect.tryPromise(() =>
+      database
+        .insert(scimTokens)
+        .values({
+          accountId: input.accountId,
+          name: input.name,
+          secretHash: hashScimSecret(secret),
+          publicPrefix,
+          createdBy: input.createdBy,
+          expiresAt: input.expiresAt ?? null,
+        })
+        .returning(),
+    );
+    return {
+      tokenId: row.tokenId,
+      name: row.name,
+      secret,
+      publicPrefix: row.publicPrefix,
+      createdAt: row.createdAt,
+      expiresAt: row.expiresAt,
+    };
+  }));
 }
 
 export interface ScimTokenSummary {
@@ -107,20 +114,25 @@ function tokenStatus(row: {
 }
 
 export async function listScimTokens(accountId: string): Promise<ScimTokenSummary[]> {
-  const rows = await db
-    .select()
-    .from(scimTokens)
-    .where(eq(scimTokens.accountId, accountId))
-    .orderBy(desc(scimTokens.createdAt));
-  return rows.map((r) => ({
-    tokenId: r.tokenId,
-    name: r.name,
-    publicPrefix: r.publicPrefix,
-    status: tokenStatus(r),
-    createdAt: r.createdAt,
-    lastUsedAt: r.lastUsedAt,
-    expiresAt: r.expiresAt,
-    revokedAt: r.revokedAt,
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    const rows = yield* Effect.tryPromise(() =>
+      database
+        .select()
+        .from(scimTokens)
+        .where(eq(scimTokens.accountId, accountId))
+        .orderBy(desc(scimTokens.createdAt)),
+    );
+    return rows.map((r) => ({
+      tokenId: r.tokenId,
+      name: r.name,
+      publicPrefix: r.publicPrefix,
+      status: tokenStatus(r),
+      createdAt: r.createdAt,
+      lastUsedAt: r.lastUsedAt,
+      expiresAt: r.expiresAt,
+      revokedAt: r.revokedAt,
+    }));
   }));
 }
 
@@ -128,18 +140,23 @@ export async function revokeScimToken(
   accountId: string,
   tokenId: string,
 ): Promise<boolean> {
-  const rows = await db
-    .update(scimTokens)
-    .set({ revokedAt: new Date() })
-    .where(
-      and(
-        eq(scimTokens.tokenId, tokenId),
-        eq(scimTokens.accountId, accountId),
-        isNull(scimTokens.revokedAt),
-      ),
-    )
-    .returning({ tokenId: scimTokens.tokenId });
-  return rows.length > 0;
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    const rows = yield* Effect.tryPromise(() =>
+      database
+        .update(scimTokens)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            eq(scimTokens.tokenId, tokenId),
+            eq(scimTokens.accountId, accountId),
+            isNull(scimTokens.revokedAt),
+          ),
+        )
+        .returning({ tokenId: scimTokens.tokenId }),
+    );
+    return rows.length > 0;
+  }));
 }
 
 export interface ValidateScimResult {
@@ -156,25 +173,37 @@ export interface ValidateScimResult {
  */
 export async function validateScimToken(plaintext: string): Promise<ValidateScimResult> {
   if (!isScimSecret(plaintext)) return { ok: false, reason: 'malformed' };
-  const hash = hashScimSecret(plaintext);
-  const [row] = await db
-    .select()
-    .from(scimTokens)
-    .where(eq(scimTokens.secretHash, hash))
-    .limit(1);
-  if (!row) return { ok: false, reason: 'unknown' };
-  if (row.revokedAt) return { ok: false, reason: 'revoked' };
-  if (row.expiresAt && row.expiresAt.getTime() < Date.now()) {
-    return { ok: false, reason: 'expired' };
-  }
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    const hash = hashScimSecret(plaintext);
+    const [row] = yield* Effect.tryPromise(() =>
+      database
+        .select()
+        .from(scimTokens)
+        .where(eq(scimTokens.secretHash, hash))
+        .limit(1),
+    );
+    if (!row) return { ok: false, reason: 'unknown' } satisfies ValidateScimResult;
+    if (row.revokedAt) return { ok: false, reason: 'revoked' } satisfies ValidateScimResult;
+    if (row.expiresAt && row.expiresAt.getTime() < Date.now()) {
+      return { ok: false, reason: 'expired' } satisfies ValidateScimResult;
+    }
 
-  // Async last-used update — never block the validate path on it.
-  db.update(scimTokens)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(scimTokens.tokenId, row.tokenId))
-    .catch((err) => {
-      console.warn('[scim] last_used_at update failed', err);
-    });
+    yield* Effect.forkDaemon(
+      Effect.tryPromise(() =>
+        database
+          .update(scimTokens)
+          .set({ lastUsedAt: new Date() })
+          .where(eq(scimTokens.tokenId, row.tokenId)),
+      ).pipe(
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            console.warn('[scim] last_used_at update failed', err);
+          }),
+        ),
+      ),
+    );
 
-  return { ok: true, accountId: row.accountId, tokenId: row.tokenId };
+    return { ok: true, accountId: row.accountId, tokenId: row.tokenId };
+  }));
 }

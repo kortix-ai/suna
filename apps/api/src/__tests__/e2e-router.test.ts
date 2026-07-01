@@ -17,6 +17,8 @@ import { Effect } from 'effect';
 import { BillingError } from '../errors';
 import { runWithContext } from '../lib/request-context';
 
+if (!process.env.KORTIX_URL) process.env.KORTIX_URL = 'http://localhost:8008';
+
 // ─── Mock tracking ───────────────────────────────────────────────────────────
 
 let mockTavilyResults: any[] = [];
