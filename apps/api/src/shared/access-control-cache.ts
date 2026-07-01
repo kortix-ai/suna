@@ -1,17 +1,17 @@
-import { db } from './db';
 import { platformSettings, accessAllowlist } from '@kortix/db';
 import { eq } from 'drizzle-orm';
+import { runSharedInterval, sharedDb as db, stopSharedTimer, type SharedTimer } from './effect';
 
 const REFRESH_INTERVAL_MS = 60_000;
 
 const globalForAccessControl = globalThis as typeof globalThis & {
-  __kortixAccessControlRefreshTimer?: ReturnType<typeof setInterval> | null;
+  __kortixAccessControlRefreshTimer?: SharedTimer | null;
 };
 
 let signupsEnabled = true; // fail-open default
 let allowedEmails = new Set<string>();
 let allowedDomains = new Set<string>();
-let refreshTimer: ReturnType<typeof setInterval> | null = null;
+let refreshTimer: SharedTimer | null = null;
 
 async function refresh() {
   try {
@@ -41,20 +41,20 @@ async function refresh() {
 
 export function startAccessControlCache() {
   if (globalForAccessControl.__kortixAccessControlRefreshTimer) {
-    clearInterval(globalForAccessControl.__kortixAccessControlRefreshTimer);
+    stopSharedTimer(globalForAccessControl.__kortixAccessControlRefreshTimer);
   }
   refresh(); // initial load (fire-and-forget)
-  refreshTimer = setInterval(refresh, REFRESH_INTERVAL_MS);
+  refreshTimer = runSharedInterval(refresh, REFRESH_INTERVAL_MS);
   globalForAccessControl.__kortixAccessControlRefreshTimer = refreshTimer;
 }
 
 export function stopAccessControlCache() {
   if (refreshTimer) {
-    clearInterval(refreshTimer);
+    stopSharedTimer(refreshTimer);
     refreshTimer = null;
   }
   if (globalForAccessControl.__kortixAccessControlRefreshTimer) {
-    clearInterval(globalForAccessControl.__kortixAccessControlRefreshTimer);
+    stopSharedTimer(globalForAccessControl.__kortixAccessControlRefreshTimer);
     globalForAccessControl.__kortixAccessControlRefreshTimer = null;
   }
 }

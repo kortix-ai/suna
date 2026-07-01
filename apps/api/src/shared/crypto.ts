@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual, randomInt, scryptSync } from 'crypto';
-import { config } from '../config';
+import { sharedConfig as config } from './effect';
 
 const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 

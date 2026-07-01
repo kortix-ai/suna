@@ -6,7 +6,7 @@
  * which adds auth + base URL and surfaces non-2xx as errors with the body.
  */
 
-import { config } from '../config';
+import { sharedConfig as config, sharedFetch } from './effect';
 
 export function isPlatinumConfigured(): boolean {
   return !!config.PLATINUM_API_KEY;
@@ -20,7 +20,7 @@ function platinumBase(): string {
 
 async function platinumFetch(path: string, init: RequestInit = {}): Promise<Response> {
   if (!config.PLATINUM_API_KEY) throw new Error('Missing PLATINUM_API_KEY');
-  return fetch(`${platinumBase()}${path}`, {
+  return sharedFetch(`${platinumBase()}${path}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${config.PLATINUM_API_KEY}`,

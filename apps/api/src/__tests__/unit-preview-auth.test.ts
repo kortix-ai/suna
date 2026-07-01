@@ -96,6 +96,17 @@ mock.module('../shared/supabase', () => ({
   }),
 }));
 
+mock.module('../shared/db', () => ({
+  hasDatabase: false,
+  db: {
+    insert: () => ({
+      values: () => ({
+        returning: async () => [],
+      }),
+    }),
+  },
+}));
+
 mock.module('../config', () => ({
   config: {
     isLocal: () => false,

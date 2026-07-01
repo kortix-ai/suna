@@ -33,6 +33,15 @@ const dbMock = {
 };
 mock.module('../shared/db', () => dbMock);
 mock.module('../../shared/db', () => dbMock);
+mock.module('../shared/effect', () => ({
+  sharedConfig: cfg,
+  sharedDb: dbMock.db,
+  sharedFetch: globalThis.fetch,
+  sharedSleep: async () => undefined,
+  runSharedTimeout: () => undefined,
+  runSharedInterval: () => undefined,
+  stopSharedTimer: () => undefined,
+}));
 mock.module('@kortix/db', () => ({ platformSettings: { key: 'key', value: 'value' } }));
 mock.module('drizzle-orm', () => ({ inArray: () => ({}) }));
 

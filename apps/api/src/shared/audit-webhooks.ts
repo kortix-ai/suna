@@ -6,7 +6,7 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { auditWebhooks } from '@kortix/db';
-import { db } from './db';
+import { sharedDb as db, sharedFetch } from './effect';
 
 /** Payload shape sent to the customer's webhook. Stable contract — bump
  *  schema_version if ever changing the shape. */
@@ -85,11 +85,9 @@ async function deliverOne(
   body: string,
 ): Promise<void> {
   const signature = sign(hook.secret, body);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), DELIVERY_TIMEOUT_MS);
 
   try {
-    const res = await fetch(hook.url, {
+    const res = await sharedFetch(hook.url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -101,7 +99,7 @@ async function deliverOne(
         'User-Agent': 'Kortix-Audit-Webhook/1',
       },
       body,
-      signal: controller.signal,
+      signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
     });
 
     if (res.ok) {
@@ -119,8 +117,6 @@ async function deliverOne(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await recordFailure(hook.webhookId, msg.slice(0, 500));
-  } finally {
-    clearTimeout(timer);
   }
 }
 

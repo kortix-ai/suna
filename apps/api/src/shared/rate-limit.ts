@@ -1,5 +1,5 @@
 import type { Context, Next } from 'hono';
-import { config } from '../config';
+import { sharedConfig as config } from './effect';
 import { recordAuditEvent } from './audit';
 
 interface Bucket {

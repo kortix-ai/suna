@@ -12,7 +12,7 @@
  * fall back to the network call so nothing breaks during cold starts.
  */
 
-import { config } from '../config';
+import { sharedConfig as config, sharedFetch } from './effect';
 
 interface JwkKey {
   alg: string;
@@ -42,7 +42,7 @@ async function loadJwks(): Promise<void> {
   if (!supabaseUrl) return;
 
   try {
-    const res = await fetch(`${supabaseUrl}/auth/v1/.well-known/jwks.json`, {
+    const res = await sharedFetch(`${supabaseUrl}/auth/v1/.well-known/jwks.json`, {
       signal: AbortSignal.timeout(5_000),
     });
     if (!res.ok) return;

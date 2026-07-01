@@ -12,14 +12,42 @@ mock.module('../config', () => ({
   },
 }));
 
-mock.module('../shared/db', () => ({
-  db: {
-    insert: () => ({
-      values: async (values: Record<string, unknown>) => {
+const mockRateLimitConfig = {
+  KORTIX_INVITE_ACCEPT_REQS_PER_MIN: 1,
+  KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: 1,
+  KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: 2,
+  KORTIX_PROXY_REQS_PER_MIN: 1,
+  KORTIX_BILLING_INTERNAL_ENABLED: true,
+};
+
+const mockAuditDb = {
+  insert: () => ({
+    values: (values: Record<string, unknown>) => ({
+      returning: async () => {
         auditRows.push(values);
+        return [];
       },
     }),
-  },
+  }),
+  select: () => ({
+    from: () => ({
+      where: async () => [],
+    }),
+  }),
+};
+
+mock.module('../shared/effect', () => ({
+  sharedConfig: mockRateLimitConfig,
+  sharedDb: mockAuditDb,
+  sharedFetch: globalThis.fetch,
+  sharedSleep: async () => undefined,
+  runSharedTimeout: () => undefined,
+  runSharedInterval: () => undefined,
+  stopSharedTimer: () => undefined,
+}));
+
+mock.module('../shared/db', () => ({
+  db: mockAuditDb,
 }));
 
 const {
