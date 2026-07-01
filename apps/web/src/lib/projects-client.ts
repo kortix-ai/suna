@@ -244,6 +244,8 @@ export interface ProjectConfigSummary {
       env: string[] | 'all';
       connectors: string[] | 'all';
       kortix_cli: string[] | 'all';
+      /** Assigned humans inherit this agent's declared secrets (the pyramid). */
+      inherit: boolean;
     };
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;

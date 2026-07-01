@@ -8,7 +8,8 @@ import { db } from '../../shared/db';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
-import { listProjectSecretsSnapshotForUser } from '../secrets';
+import { listProjectSecretsSnapshotForUser, resolveDeclaredSharedSecrets } from '../secrets';
+import { isProjectResourceExplicitlyGranted } from '../../iam';
 import { resolveAgentGrant } from '../agents';
 import { agentMayUseEnv } from '../../iam/agent-scope';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
@@ -238,14 +239,49 @@ export async function buildSessionSandboxEnvVars(input: {
       manifestPath: input.manifestPath ?? 'kortix.toml',
       gitAuthToken: null,
     }).catch(() => null);
-    if (grant && (grant.env ?? 'all') !== 'all') {
-      const droppedByAgent = Object.keys(runtimeSecrets.env).filter((n) => !agentMayUseEnv(grant, n));
-      for (const name of droppedByAgent) delete runtimeSecrets.env[name];
-      runtimeSecrets.names = runtimeSecrets.names.filter((n) => agentMayUseEnv(grant, n));
-      if (droppedByAgent.length > 0) {
-        console.log(
-          `[session ${input.sessionId}] agent '${input.agentName}' env-scoped out ${droppedByAgent.length} secret(s)`,
+    if (grant) {
+      // Inheritance (the "assign human → agent" pyramid). When an `inherit`=true
+      // agent is launched by someone EXPLICITLY assigned to it (an agent resource
+      // grant names them or their department), provide the agent's DECLARED env
+      // secrets from the shared store — even ones the launcher can't personally
+      // see. This removes the double-grant (declare on the agent OR grant to the
+      // human, not both). Session-scoped + bounded to the declared allowlist; the
+      // narrowing below keeps exactly the declared set. Unscoped agents grant no
+      // one anything (explicit assignment required).
+      if (grant.inherit && Array.isArray(grant.env) && grant.env.length > 0) {
+        const assigned = await isProjectResourceExplicitlyGranted(
+          input.projectId,
+          'agent',
+          input.agentName,
+          input.userId,
+          subject.groupIds,
         );
+        if (assigned) {
+          const inherited = await resolveDeclaredSharedSecrets(input.projectId, grant.env);
+          let added = 0;
+          for (const [name, value] of Object.entries(inherited)) {
+            if (!(name in runtimeSecrets.env)) {
+              runtimeSecrets.env[name] = value;
+              runtimeSecrets.names.push(name);
+              added += 1;
+            }
+          }
+          if (added > 0) {
+            console.log(
+              `[session ${input.sessionId}] agent '${input.agentName}' inherited ${added} secret(s) for an assigned launcher`,
+            );
+          }
+        }
+      }
+      if ((grant.env ?? 'all') !== 'all') {
+        const droppedByAgent = Object.keys(runtimeSecrets.env).filter((n) => !agentMayUseEnv(grant, n));
+        for (const name of droppedByAgent) delete runtimeSecrets.env[name];
+        runtimeSecrets.names = runtimeSecrets.names.filter((n) => agentMayUseEnv(grant, n));
+        if (droppedByAgent.length > 0) {
+          console.log(
+            `[session ${input.sessionId}] agent '${input.agentName}' env-scoped out ${droppedByAgent.length} secret(s)`,
+          );
+        }
       }
     }
   }

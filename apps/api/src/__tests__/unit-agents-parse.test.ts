@@ -183,6 +183,7 @@ describe('[[agents]] — round-trip', () => {
       connectors: ['github'],
       kortixCli: ['project.deploy'],
       env: 'all',
+      inherit: false,
       file: null,
       model: 'anthropic/claude-sonnet-4-6',
     };
@@ -200,7 +201,7 @@ model = "${entry.model}"
 
   test('minimal spec emits only name', () => {
     const entry = agentSpecToTomlEntry({
-      name: 'kortix', path: '', enabled: true, connectors: [], kortixCli: [], env: 'all', file: null, model: null,
+      name: 'kortix', path: '', enabled: true, connectors: [], kortixCli: [], env: 'all', inherit: false, file: null, model: null,
     });
     expect(entry).toEqual({ name: 'kortix' });
   });
@@ -221,6 +222,24 @@ env = ["GITHUB_TOKEN", "OPENAI_API_KEY"]
     // only the narrowed one emits an `env` key
     expect(agentSpecToTomlEntry(noEnv!).env).toBeUndefined();
     expect(agentSpecToTomlEntry(scoped!).env).toEqual(['GITHUB_TOKEN', 'OPENAI_API_KEY']);
+  });
+
+  test('inherit parses (default false) and round-trips only when on', () => {
+    const { specs, errors } = parse(`
+[[agents]]
+name = "release-bot"
+env = ["GITHUB_TOKEN"]
+inherit = true
+
+[[agents]]
+name = "plain"
+`);
+    expect(errors).toEqual([]);
+    expect(specs.find((s) => s.name === 'release-bot')?.inherit).toBe(true);
+    expect(specs.find((s) => s.name === 'plain')?.inherit).toBe(false); // omitted → false
+    // only an inherit=true agent emits the key
+    expect(agentSpecToTomlEntry(specs.find((s) => s.name === 'release-bot')!).inherit).toBe(true);
+    expect(agentSpecToTomlEntry(specs.find((s) => s.name === 'plain')!).inherit).toBeUndefined();
   });
 });
 

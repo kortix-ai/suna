@@ -81,6 +81,10 @@ export interface AgentSpec {
    *  the `env` key is omitted — a NEW dimension, so omitting it must not starve
    *  existing agents); an explicit list narrows it; `[]` = none. */
   env: GrantSet;
+  /** Inheritance opt-in (the "assign human → agent" pyramid). When true, a
+   *  launcher EXPLICITLY assigned to this agent inherits its declared `env`
+   *  secrets in-session even if they can't personally see them. Default false. */
+  inherit: boolean;
   /** Optional behavior-file path override (defaults to the conventional `.md` by name). */
   file: string | null;
   /**
@@ -205,7 +209,7 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
 
   const spec = loaded.specs.find((s) => s.name === agentName && s.enabled);
   if (spec) {
-    return { agent: agentName, kortixCli: spec.kortixCli, connectors: spec.connectors, env: spec.env };
+    return { agent: agentName, kortixCli: spec.kortixCli, connectors: spec.connectors, env: spec.env, inherit: spec.inherit };
   }
 
   // The `default` sentinel is non-binding: no agent is ever named `default`, so
@@ -244,6 +248,7 @@ export function agentSpecToTomlEntry(spec: AgentSpec): Record<string, unknown> {
   else if (spec.kortixCli.length > 0) entry.kortix_cli = spec.kortixCli;
   // 'all' is the env default, so only emit when narrowed (a list or explicit none).
   if (spec.env !== 'all') entry.env = spec.env;
+  if (spec.inherit) entry.inherit = true;
   return entry;
 }
 
@@ -257,6 +262,7 @@ export function manifestHashForAgent(spec: AgentSpec): string {
     connectors: spec.connectors,
     kortixCli: spec.kortixCli,
     env: spec.env,
+    inherit: spec.inherit,
     file: spec.file,
   });
   return createHash('sha256').update(canonical).digest('hex');
@@ -298,6 +304,8 @@ function parseAgentEntry(entry: unknown, index: number): ParseOk | ParseErr {
       : parseGrantSet(name, 'env', row.env, null);
   if (!envParsed.ok) return envParsed;
 
+  const inherit = coerceBool(row.inherit, false);
+
   return {
     ok: true,
     spec: {
@@ -307,6 +315,7 @@ function parseAgentEntry(entry: unknown, index: number): ParseOk | ParseErr {
       connectors: connectorsParsed.value,
       kortixCli: kortixParsed.value,
       env: envParsed.value,
+      inherit,
       file,
       model,
     },

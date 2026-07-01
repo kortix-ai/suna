@@ -58,7 +58,9 @@ function describeAgents(parsed: Record<string, unknown> | null): string {
     // `env` omitted == 'all' (the parser's default), so render it that way rather
     // than as default-deny — otherwise the summary misreports an unscoped agent.
     const env = a?.env === undefined || a?.env === null ? 'all' : a?.env;
-    return `  ${C.cyan}${name}${C.reset}  connectors=[${show(a?.connectors)}]  kortix_cli=[${show(a?.kortix_cli)}]  env=[${show(env)}]`;
+    // Only surface `inherit` when on — assigned humans inherit this agent's env.
+    const inherit = a?.inherit ? `  ${C.dim}inherit=yes${C.reset}` : '';
+    return `  ${C.cyan}${name}${C.reset}  connectors=[${show(a?.connectors)}]  kortix_cli=[${show(a?.kortix_cli)}]  env=[${show(env)}]${inherit}`;
   });
   return `\n${C.dim}Per-agent scope (kortix.toml [[agents]]):${C.reset}\n${lines.join('\n')}\n`;
 }

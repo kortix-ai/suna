@@ -83,6 +83,38 @@ export function isResourceAccessible(
 }
 
 /**
+ * PURE. Is this principal EXPLICITLY assigned to the resource? Unlike
+ * `isResourceAccessible`, an UNSCOPED resource (no grants) means "NOT assigned"
+ * (false), not "open to everyone". Gates agent-resource inheritance: inheriting
+ * an agent's secrets requires a deliberate assignment, never the default-open
+ * state — so declaring `inherit` on an unscoped agent grants nobody anything.
+ */
+export function isResourceExplicitlyGranted(
+  grantsForResource: ResourceGrantPrincipal[] | undefined,
+  userId: string,
+  groupIds: readonly string[],
+): boolean {
+  if (!grantsForResource || grantsForResource.length === 0) return false;
+  const groups = new Set(groupIds);
+  for (const g of grantsForResource) {
+    if (g.principalType === 'member' && g.principalId === userId) return true;
+    if (g.principalType === 'group' && groups.has(g.principalId)) return true;
+  }
+  return false;
+}
+
+export async function isProjectResourceExplicitlyGranted(
+  projectId: string,
+  resourceType: ResourceType,
+  resourceId: string,
+  userId: string,
+  groupIds: readonly string[],
+): Promise<boolean> {
+  const map = await loadProjectResourceGrants(projectId, resourceType);
+  return isResourceExplicitlyGranted(map.get(resourceId), userId, groupIds);
+}
+
+/**
  * project+type keyed map: resourceId → granted principals (non-expired allows).
  * Memoized; the empty map is cached too (the common unscoped case) and busted on
  * mutation. Registered as a project-scoped memo so a grant change drops it.

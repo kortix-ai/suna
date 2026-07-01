@@ -5,7 +5,7 @@ import {
   hkdfSync,
   randomBytes,
 } from 'node:crypto';
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import { projectSecretGrants, projectSecrets } from '@kortix/db';
 import { config } from '../config';
 import { db } from '../shared/db';
@@ -244,6 +244,36 @@ export async function getProjectSecretValue(
     .limit(1);
 
   return row ? decryptProjectSecret(projectId, row.valueEnc) : null;
+}
+
+/**
+ * Decrypted values for the named SHARED secrets — used ONLY for agent-resource
+ * inheritance (an `inherit`=true agent that an EXPLICITLY-ASSIGNED launcher
+ * runs). This deliberately BYPASSES the per-user share scope: the agent DECLARED
+ * (in kortix.toml, PR-reviewed) that it needs these, and the launcher is
+ * explicitly assigned to it. Bounded to the caller's name list; KORTIX_* and
+ * connector-scoped rows are never returned. Do NOT use for general secret reads.
+ */
+export async function resolveDeclaredSharedSecrets(
+  projectId: string,
+  names: string[],
+): Promise<Record<string, string>> {
+  if (names.length === 0) return {};
+  const rows = await db
+    .select({ name: projectSecrets.name, valueEnc: projectSecrets.valueEnc, scope: projectSecrets.scope })
+    .from(projectSecrets)
+    .where(and(
+      eq(projectSecrets.projectId, projectId),
+      isNull(projectSecrets.ownerUserId),
+      inArray(projectSecrets.name, names),
+    ));
+  const env: Record<string, string> = {};
+  for (const row of rows) {
+    if (row.name.toUpperCase().startsWith('KORTIX_')) continue;
+    if (row.scope === 'connector') continue;
+    env[row.name] = decryptProjectSecret(projectId, row.valueEnc);
+  }
+  return env;
 }
 
 // ─── Secret access as resource grants ───────────────────────────────────────
