@@ -13,19 +13,44 @@ import type { AppEnv } from "../types";
 import { existsSync } from "fs";
 import { resolve } from "path";
 import { execSync } from "child_process";
-import { config } from "../config";
 import { supabaseAuth } from "../middleware/auth";
 import { eq, sql } from "drizzle-orm";
-import { accounts } from "@kortix/db";
-import { db, hasDatabase } from "../shared/db";
+import { Effect } from "effect";
+import { accounts, type Database } from "@kortix/db";
 import { resolveAccountId } from "../shared/resolve-account";
-import { getSupabase } from "../shared/supabase";
 import { effectHandler } from "../effect/hono";
+import { AppConfig, DatabaseService, HttpClient, SupabaseService } from "../effect/services";
+import { runEffectOrThrow } from "../effect/http";
 /** Shape mirrors the legacy LocalSandboxHealthCheck (now removed) so the
  *  frontend health UI keeps reading the same `{ok, error?}` per check. */
 type HealthCheck = { ok: boolean; error?: string };
 
 export const setupApp = makeOpenApiApp<AppEnv>();
+
+const setupConfig = () =>
+  runEffectOrThrow(Effect.gen(function* () {
+    return yield* AppConfig;
+  }));
+
+const hasSetupDatabase = () =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const { hasDatabase } = yield* DatabaseService;
+    return hasDatabase;
+  }));
+
+const runSetupDatabase = <A>(
+  operation: (database: Database) => Promise<A> | A,
+): Promise<A> =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    return yield* Effect.tryPromise(async () => operation(database));
+  }));
+
+const getSetupSupabase = () =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const supabaseService = yield* SupabaseService;
+    return yield* supabaseService.client;
+  }));
 
 // ─── Auth ───────────────────────────────────────────────────────────────────
 // All setup routes require Supabase JWT auth EXCEPT /install-status which must
@@ -96,13 +121,13 @@ async function fetchWithTimeout(
   init: RequestInit = {},
   timeoutMs = 5000,
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+  return runEffectOrThrow(Effect.gen(function* () {
+    const client = yield* HttpClient;
+    const perform = client.fetch;
+    return yield* Effect.tryPromise(() =>
+      perform(url, { ...init, signal: AbortSignal.timeout(timeoutMs) }),
+    );
+  }));
 }
 
 async function fetchMasterJson<T>(
@@ -178,7 +203,7 @@ setupApp.openapi(
   }),
   effectHandler(async (c: any) => {
     try {
-      if (!hasDatabase) {
+      if (!(await hasSetupDatabase())) {
         console.warn(
           "[setup] install-status: DATABASE_URL not configured — returning 503",
         );
@@ -190,8 +215,10 @@ setupApp.openapi(
 
       // Query auth.users directly via the existing postgres connection.
       // This is reliable regardless of Supabase version / service role key format.
-      const result = await db.execute(
-        sql`SELECT EXISTS(SELECT 1 FROM auth.users LIMIT 1) AS has_users`,
+      const result = await runSetupDatabase((database) =>
+        database.execute(
+          sql`SELECT EXISTS(SELECT 1 FROM auth.users LIMIT 1) AS has_users`,
+        ),
       );
       const queryResult = result as
         | { rows?: Array<{ has_users?: boolean | "t" | "f" }> }
@@ -243,6 +270,7 @@ setupApp.openapi(
     },
   }),
   effectHandler(async (c: any) => {
+    const config = await setupConfig();
     const available = config.ALLOWED_SANDBOX_PROVIDERS.filter((name) =>
       config.isProviderEnabled(name),
     );
@@ -316,7 +344,7 @@ setupApp.openapi(
     },
   }),
   effectHandler(async (c: any) => {
-    if (!hasDatabase) {
+    if (!(await hasSetupDatabase())) {
       return c.json({ success: false, error: "Database not configured" }, 503);
     }
 
@@ -339,7 +367,7 @@ setupApp.openapi(
         );
       }
 
-      const supabase = getSupabase();
+      const supabase = await getSetupSupabase();
       const listed = await supabase.auth.admin.listUsers({
         page: 1,
         perPage: 1,
@@ -376,14 +404,16 @@ setupApp.openapi(
       if (userId) {
         try {
           const accountId = await resolveAccountId(userId);
-          await db
-            .update(accounts)
-            .set({
-              setupCompleteAt: null,
-              setupWizardStep: 2,
-              updatedAt: new Date(),
-            })
-            .where(eq(accounts.accountId, accountId));
+          await runSetupDatabase((database) =>
+            database
+              .update(accounts)
+              .set({
+                setupCompleteAt: null,
+                setupWizardStep: 2,
+                updatedAt: new Date(),
+              })
+              .where(eq(accounts.accountId, accountId)),
+          );
         } catch {
           // best effort
         }
@@ -423,6 +453,7 @@ setupApp.openapi(
     },
   }),
   effectHandler(async (c: any) => {
+    const config = await setupConfig();
     const root = getProjectRoot();
     const envExists = existsSync(resolve(root, ".env"));
 
@@ -466,6 +497,7 @@ setupApp.openapi(
     },
   }),
   effectHandler(async (c: any) => {
+    const config = await setupConfig();
     const checks: Record<string, HealthCheck> = {};
     // The API itself answered — by definition this check passes.
     checks.api = { ok: true };
@@ -514,17 +546,19 @@ setupApp.openapi(
     },
   }),
   effectHandler(async (c: any) => {
-    if (!hasDatabase) {
+    if (!(await hasSetupDatabase())) {
       return c.json({ complete: false, completedAt: null });
     }
     try {
       const userId = c.get("userId") as string;
       const accountId = await resolveAccountId(userId);
-      const [account] = await db
-        .select({ setupCompleteAt: accounts.setupCompleteAt })
-        .from(accounts)
-        .where(eq(accounts.accountId, accountId))
-        .limit(1);
+      const [account] = await runSetupDatabase((database) =>
+        database
+          .select({ setupCompleteAt: accounts.setupCompleteAt })
+          .from(accounts)
+          .where(eq(accounts.accountId, accountId))
+          .limit(1),
+      );
       const complete = !!account?.setupCompleteAt;
       return c.json({
         complete,
@@ -565,20 +599,22 @@ setupApp.openapi(
     },
   }),
   effectHandler(async (c: any) => {
-    if (!hasDatabase) {
+    if (!(await hasSetupDatabase())) {
       return c.json({ ok: false, error: "Database not configured" }, 500);
     }
     try {
       const userId = c.get("userId") as string;
       const accountId = await resolveAccountId(userId);
-      await db
-        .update(accounts)
-        .set({
-          setupCompleteAt: new Date(),
-          setupWizardStep: 0,
-          updatedAt: new Date(),
-        })
-        .where(eq(accounts.accountId, accountId));
+      await runSetupDatabase((database) =>
+        database
+          .update(accounts)
+          .set({
+            setupCompleteAt: new Date(),
+            setupWizardStep: 0,
+            updatedAt: new Date(),
+          })
+          .where(eq(accounts.accountId, accountId)),
+      );
       return c.json({ ok: true });
     } catch (e) {
       console.error("[setup] setup-complete failed:", e);
@@ -612,20 +648,22 @@ setupApp.openapi(
     },
   }),
   effectHandler(async (c: any) => {
-    if (!hasDatabase) {
+    if (!(await hasSetupDatabase())) {
       return c.json({ step: 0 });
     }
     try {
       const userId = c.get("userId") as string;
       const accountId = await resolveAccountId(userId);
-      const [account] = await db
-        .select({
-          setupWizardStep: accounts.setupWizardStep,
-          setupCompleteAt: accounts.setupCompleteAt,
-        })
-        .from(accounts)
-        .where(eq(accounts.accountId, accountId))
-        .limit(1);
+      const [account] = await runSetupDatabase((database) =>
+        database
+          .select({
+            setupWizardStep: accounts.setupWizardStep,
+            setupCompleteAt: accounts.setupCompleteAt,
+          })
+          .from(accounts)
+          .where(eq(accounts.accountId, accountId))
+          .limit(1),
+      );
       // If setup is already complete, step is 0 regardless of stored value
       if (account?.setupCompleteAt) {
         return c.json({ step: 0 });
@@ -672,7 +710,7 @@ setupApp.openapi(
     },
   }),
   effectHandler(async (c: any) => {
-    if (!hasDatabase) {
+    if (!(await hasSetupDatabase())) {
       return c.json({ ok: false, error: "Database not configured" }, 500);
     }
     try {
@@ -680,10 +718,12 @@ setupApp.openapi(
       const accountId = await resolveAccountId(userId);
       const body = await c.req.json();
       const step = typeof body.step === "number" ? body.step : 0;
-      await db
-        .update(accounts)
-        .set({ setupWizardStep: step, updatedAt: new Date() })
-        .where(eq(accounts.accountId, accountId));
+      await runSetupDatabase((database) =>
+        database
+          .update(accounts)
+          .set({ setupWizardStep: step, updatedAt: new Date() })
+          .where(eq(accounts.accountId, accountId)),
+      );
       return c.json({ ok: true });
     } catch (e) {
       console.error("[setup] setup-wizard-step (set) failed:", e);
