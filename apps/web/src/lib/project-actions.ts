@@ -50,6 +50,10 @@ export const PROJECT_ACTIONS = {
   PROJECT_SECRET_WRITE: 'project.secret.write',
   PROJECT_CONNECTOR_READ: 'project.connector.read',
   PROJECT_CONNECTOR_WRITE: 'project.connector.write',
+
+  PROJECT_REVIEW_READ: 'project.review.read',
+  PROJECT_REVIEW_SUBMIT: 'project.review.submit',
+  PROJECT_REVIEW_ACT: 'project.review.act',
 } as const;
 
 export type ProjectAction = (typeof PROJECT_ACTIONS)[keyof typeof PROJECT_ACTIONS];
@@ -72,18 +76,43 @@ export type ProjectAction = (typeof PROJECT_ACTIONS)[keyof typeof PROJECT_ACTION
  *   the backend asserts (e.g. sandbox rebuild → customize.write, marketplace
  *   install → gitops.push).
  */
-export const CUSTOMIZE_SECTION_ACCESS: Record<CustomizeSection, { read: ProjectAction; write?: ProjectAction }> = {
+export const CUSTOMIZE_SECTION_ACCESS: Record<
+  CustomizeSection,
+  { read: ProjectAction; write?: ProjectAction }
+> = {
   agents: { read: PROJECT_ACTIONS.PROJECT_AGENT_READ, write: PROJECT_ACTIONS.PROJECT_AGENT_WRITE },
   skills: { read: PROJECT_ACTIONS.PROJECT_SKILL_READ, write: PROJECT_ACTIONS.PROJECT_SKILL_WRITE },
-  commands: { read: PROJECT_ACTIONS.PROJECT_COMMAND_READ, write: PROJECT_ACTIONS.PROJECT_COMMAND_WRITE },
-  connectors: { read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ, write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE },
-  secrets: { read: PROJECT_ACTIONS.PROJECT_SECRET_READ, write: PROJECT_ACTIONS.PROJECT_SECRET_WRITE },
-  channels: { read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ, write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE },
-  schedules: { read: PROJECT_ACTIONS.PROJECT_SCHEDULE_READ, write: PROJECT_ACTIONS.PROJECT_SCHEDULE_WRITE },
-  webhooks: { read: PROJECT_ACTIONS.PROJECT_WEBHOOK_READ, write: PROJECT_ACTIONS.PROJECT_WEBHOOK_WRITE },
+  commands: {
+    read: PROJECT_ACTIONS.PROJECT_COMMAND_READ,
+    write: PROJECT_ACTIONS.PROJECT_COMMAND_WRITE,
+  },
+  connectors: {
+    read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+    write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+  },
+  secrets: {
+    read: PROJECT_ACTIONS.PROJECT_SECRET_READ,
+    write: PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
+  },
+  channels: {
+    read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+    write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+  },
+  schedules: {
+    read: PROJECT_ACTIONS.PROJECT_SCHEDULE_READ,
+    write: PROJECT_ACTIONS.PROJECT_SCHEDULE_WRITE,
+  },
+  webhooks: {
+    read: PROJECT_ACTIONS.PROJECT_WEBHOOK_READ,
+    write: PROJECT_ACTIONS.PROJECT_WEBHOOK_WRITE,
+  },
   changes: { read: PROJECT_ACTIONS.PROJECT_GITOPS_READ, write: PROJECT_ACTIONS.PROJECT_CR_OPEN },
+  review: { read: PROJECT_ACTIONS.PROJECT_REVIEW_READ, write: PROJECT_ACTIONS.PROJECT_REVIEW_ACT },
   files: { read: PROJECT_ACTIONS.PROJECT_FILE_READ, write: PROJECT_ACTIONS.PROJECT_FILE_WRITE },
-  members: { read: PROJECT_ACTIONS.PROJECT_MEMBERS_READ, write: PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE },
+  members: {
+    read: PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
+    write: PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+  },
   marketplace: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_GITOPS_PUSH },
   // LLM gateway sections — visible to any project member; the backend enforces
   // the specific gateway capability (logs/spend.read, routing.edit, budget.set,
@@ -100,7 +129,10 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<CustomizeSection, { read: ProjectA
   computers: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE },
   // Meetings (notetaker bot) — connector-backed (materializes kortix_meet), so
   // it follows the connector leaves like channels does.
-  meet: { read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ, write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE },
+  meet: {
+    read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+    write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+  },
 };
 
 /** The distinct read leaves used to gate section visibility — handy for a single
