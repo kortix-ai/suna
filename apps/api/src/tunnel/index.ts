@@ -17,7 +17,6 @@
 import { createWsHandlers, type AuthResult } from 'agent-tunnel';
 import { eq, and, lt } from 'drizzle-orm';
 import { tunnelConnections, tunnelPermissions, tunnelDeviceAuthRequests } from '@kortix/db';
-import { config } from '../config';
 import type { AppEnv } from '../types';
 import { makeOpenApiApp } from '../openapi';
 import { createConnectionsRouter } from './routes/connections';
@@ -41,8 +40,7 @@ import { notifyTunnelEvent } from './routes/permission-requests';
 // and the tunnel is stuck "offline" forever. See the prod-timeout incident note.
 import { isTunnelToken, isKortixToken, hashSecretKey, deriveSigningKey } from '../shared/crypto';
 import { validateSecretKey } from '../repositories/api-keys';
-import { getSupabase } from '../shared/supabase';
-import { db } from '../shared/db';
+import { runSharedInterval, sharedConfig as config, sharedDb as db, sharedSupabase, stopSharedTimer, type SharedTimer } from '../shared/effect';
 
 // ─── Hono Sub-App ────────────────────────────────────────────────────────────
 
@@ -82,8 +80,7 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
       if (result.isValid) accountId = result.accountId!;
     } else {
       try {
-        const supabase = getSupabase();
-        const { data: { user }, error } = await supabase.auth.getUser(token);
+        const { data: { user }, error } = await sharedSupabase.auth.getUser(token);
         if (!error && user) accountId = user.id;
       } catch {}
     }
@@ -116,7 +113,7 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
 
 // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
-let permissionCleanupInterval: ReturnType<typeof setInterval> | null = null;
+let permissionCleanupInterval: SharedTimer | null = null;
 
 function startTunnelService(): void {
   if (!config.TUNNEL_ENABLED) {
@@ -214,7 +211,7 @@ function startTunnelService(): void {
 
   // ── Permission expiry cleanup ────────────────────────────────────────
 
-  permissionCleanupInterval = setInterval(async () => {
+  permissionCleanupInterval = runSharedInterval(async () => {
     try {
       await db
         .update(tunnelPermissions)
@@ -246,7 +243,7 @@ function startTunnelService(): void {
 
 function stopTunnelService(): void {
   if (permissionCleanupInterval) {
-    clearInterval(permissionCleanupInterval);
+    stopSharedTimer(permissionCleanupInterval);
     permissionCleanupInterval = null;
   }
   stopTunnelRpcForwarder();

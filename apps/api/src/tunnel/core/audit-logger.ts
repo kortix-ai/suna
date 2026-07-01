@@ -1,5 +1,5 @@
 import { tunnelAuditLogs } from '@kortix/db';
-import { db } from '../../shared/db';
+import { sharedDb as db } from '../../shared/effect';
 import type { TunnelCapability } from 'agent-tunnel';
 
 export interface AuditLogEntry {

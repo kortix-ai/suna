@@ -1,5 +1,5 @@
 import { HeartbeatManager } from 'agent-tunnel';
-import { config } from '../../config';
+import { sharedConfig as config } from '../../shared/effect';
 import { tunnelRelay } from './relay';
 
 export const heartbeatManager = new HeartbeatManager(tunnelRelay, {

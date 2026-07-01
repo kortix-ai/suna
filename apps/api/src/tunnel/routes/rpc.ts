@@ -2,7 +2,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { Effect } from 'effect';
 import { eq, and } from 'drizzle-orm';
 import { tunnelConnections } from '@kortix/db';
-import { db } from '../../shared/db';
+import { sharedDb as db } from '../../shared/effect';
 import { TunnelErrorCode } from 'agent-tunnel';
 import { executeTunnelRpc } from '../core/rpc-core';
 import { getTunnelReadContextEffect } from './auth';

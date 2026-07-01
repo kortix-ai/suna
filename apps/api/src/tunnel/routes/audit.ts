@@ -8,7 +8,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { Effect } from 'effect';
 import { eq, and, desc, count } from 'drizzle-orm';
 import { tunnelAuditLogs, tunnelConnections } from '@kortix/db';
-import { db } from '../../shared/db';
+import { sharedDb as db } from '../../shared/effect';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelOwnerContextEffect } from './auth';

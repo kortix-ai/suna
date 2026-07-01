@@ -2,7 +2,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { Effect } from 'effect';
 import { eq, and, desc } from 'drizzle-orm';
 import { tunnelPermissions, tunnelConnections } from '@kortix/db';
-import { db } from '../../shared/db';
+import { sharedDb as db } from '../../shared/effect';
 import { tunnelRelay } from '../core/relay';
 import { tunnelRateLimiter } from '../core/rate-limiter';
 import { isValidCapability, validateScope as validateScopeInput } from '../core/scope-validator';

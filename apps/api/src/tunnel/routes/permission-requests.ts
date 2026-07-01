@@ -2,7 +2,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { Effect } from "effect";
 import { eq, and, desc } from "drizzle-orm";
 import { tunnelPermissionRequests, tunnelPermissions } from "@kortix/db";
-import { db } from "../../shared/db";
+import { sharedDb as db, runSharedInterval, stopSharedTimer } from "../../shared/effect";
 import { tunnelRelay } from "../core/relay";
 import { tunnelRateLimiter } from "../core/rate-limiter";
 import {
@@ -275,16 +275,16 @@ export function createPermissionRequestsRouter() {
 
             writer("connected", { timestamp: Date.now() });
 
-            const keepAlive = setInterval(() => {
+            const keepAlive = runSharedInterval(() => {
               try {
                 controller.enqueue(encoder.encode(": keep-alive\n\n"));
               } catch {
-                clearInterval(keepAlive);
+                stopSharedTimer(keepAlive);
               }
             }, 30_000);
 
             c.req.raw.signal.addEventListener("abort", () => {
-              clearInterval(keepAlive);
+              stopSharedTimer(keepAlive);
               sseSubscribers.get(accountId)?.delete(writer);
               if (sseSubscribers.get(accountId)?.size === 0) {
                 sseSubscribers.delete(accountId);

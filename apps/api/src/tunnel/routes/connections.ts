@@ -13,7 +13,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { Effect } from 'effect';
 import { eq, and, desc } from 'drizzle-orm';
 import { tunnelConnections } from '@kortix/db';
-import { db } from '../../shared/db';
+import { runSharedTimeout, sharedDb as db } from '../../shared/effect';
 import { tunnelRelay } from '../core/relay';
 import { generateTunnelToken, hashSecretKey } from '../../shared/crypto';
 import type { AppEnv } from '../../types';
@@ -193,7 +193,7 @@ const rotateConnectionTokenEffect = (c: any) =>
         reason: 'Token rotated by owner',
       });
 
-      setTimeout(() => {
+      runSharedTimeout(() => {
         tunnelRelay.unregisterAgent(tunnelId);
       }, 500);
     });

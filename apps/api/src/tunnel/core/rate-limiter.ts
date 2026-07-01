@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { sharedConfig as config } from '../../shared/effect';
 
 interface Bucket {
   tokens: number;

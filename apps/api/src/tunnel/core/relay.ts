@@ -1,5 +1,5 @@
 import { TunnelRelay } from 'agent-tunnel';
-import { config } from '../../config';
+import { sharedConfig as config } from '../../shared/effect';
 
 export const tunnelRelay = new TunnelRelay({
   rpcTimeoutMs: config.TUNNEL_RPC_TIMEOUT_MS,
