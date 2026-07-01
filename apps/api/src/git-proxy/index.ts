@@ -18,6 +18,7 @@
  * Scope: `git-receive-pack` ⇒ write; `git-upload-pack` ⇒ read.
  */
 import { createRoute, z } from "@hono/zod-openapi";
+import { Effect } from "effect";
 import {
   authorizeGitProxy,
   resolveProjectUpstream,
@@ -33,6 +34,8 @@ import {
 } from "./parse";
 import { makeOpenApiApp } from "../openapi";
 import { effectHandler } from "../effect/hono";
+import { HttpClient } from "../effect/services";
+import { runEffectOrThrow } from "../effect/http";
 
 export const gitProxyApp = makeOpenApiApp();
 
@@ -83,6 +86,16 @@ async function authorize(
   return authorizeGitProxy(token, projectId, scope);
 }
 
+const proxyFetch = (
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1],
+): Promise<Response> =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const client = yield* HttpClient;
+    const perform = client.fetch;
+    return yield* Effect.tryPromise(() => perform(input, init));
+  }));
+
 /**
  * Stream a git smart-HTTP request through to the project's real upstream.
  * `suffix` is the fixed git path appended to the upstream repo URL
@@ -119,7 +132,7 @@ async function forward(
   const method = c.req.method;
   let res: Response;
   try {
-    res = await fetch(target, {
+    res = await proxyFetch(target, {
       method,
       headers,
       body: method === "GET" || method === "HEAD" ? undefined : c.req.raw.body,
