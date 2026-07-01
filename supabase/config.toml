@@ -41,6 +41,15 @@ enable_signup = true
 enable_signup = true
 enable_confirmations = false
 
+# Magic-link sign-in email. The template renders both the one-click link
+# ({{ .ConfirmationURL }}) and the 6-digit code ({{ .Token }}) so users can
+# either click or paste the code into /auth (see apps/web auth verifyOtp).
+# NOTE: this only styles the LOCAL (Inbucket) email. Production uses the
+# hosted Supabase dashboard template — mirror templates/magic_link.html there.
+[auth.email.template.magic_link]
+subject = "Your sign-in code"
+content_path = "./supabase/templates/magic_link.html"
+
 # GitHub OAuth — used by both /auth (sign-in) and the project import flow.
 # Requires a GitHub OAuth App with callback http://127.0.0.1:54321/auth/v1/callback.
 # Set SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID and

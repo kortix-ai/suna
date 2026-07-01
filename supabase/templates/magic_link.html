@@ -1,0 +1,71 @@
+<!--
+  Magic Link sign-in email.
+  Renders BOTH a one-click sign-in link ({{ .ConfirmationURL }}) and the
+  6-digit code ({{ .Token }}) that the /auth page can verify manually.
+  The frontend already accepts either method (see apps/web auth verifyOtp).
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Your sign-in link</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;padding:40px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:440px;background-color:#ffffff;border-radius:12px;border:1px solid #e4e4e7;overflow:hidden;">
+            <tr>
+              <td style="padding:40px 40px 8px 40px;">
+                <h1 style="margin:0 0 12px 0;font-size:20px;line-height:1.3;font-weight:600;color:#09090b;">
+                  Your sign-in link
+                </h1>
+                <p style="margin:0 0 28px 0;font-size:14px;line-height:1.6;color:#52525b;">
+                  Follow the link below to sign in. This link expires shortly and can only be used once.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 40px 28px 40px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+                  <tr>
+                    <td align="center" style="border-radius:8px;background-color:#09090b;">
+                      <a href="{{ .ConfirmationURL }}"
+                         style="display:block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
+                        Sign in
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 40px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+                  <tr>
+                    <td style="border-top:1px solid #e4e4e7;font-size:0;line-height:0;">&nbsp;</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 40px 40px 40px;">
+                <p style="margin:0 0 12px 0;font-size:14px;line-height:1.6;color:#52525b;">
+                  Or enter this 6-digit code on the sign-in page:
+                </p>
+                <div style="font-size:32px;font-weight:700;letter-spacing:8px;color:#09090b;font-family:'SFMono-Regular',ui-monospace,Menlo,Consolas,monospace;">
+                  {{ .Token }}
+                </div>
+              </td>
+            </tr>
+          </table>
+          <p style="max-width:440px;margin:24px auto 0 auto;font-size:12px;line-height:1.6;color:#a1a1aa;text-align:center;">
+            If you didn't request this email, you can safely ignore it.
+          </p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
