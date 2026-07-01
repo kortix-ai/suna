@@ -15,6 +15,7 @@ import { getAccountMembership } from '../lib/git';
 import { readBody, serializeProject } from '../lib/serializers';
 import { applyExperimentalOverride, isExperimentalFeatureKey } from '../../experimental/features';
 import { reconcileComputerConnectors } from '../../executor/sync';
+import { assertAgentScope } from '../../iam/agent-scope';
 import { propagateLlmGatewayModeToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { config, type SandboxProviderName } from '../../config';
@@ -1129,7 +1130,7 @@ projectsApp.openapi(
 // (in ALLOWED_SANDBOX_PROVIDERS and with its API key configured), or null/'' to clear
 // (follow the platform default/distribution). Bypasses the distribution weights by
 // design — pin a project to platinum even when platinum's weight is 0. Same auth as
-// the experimental toggle (project 'manage' + project.customize.write for agents).
+// the experimental toggle (project 'manage' + project.write for agents).
 projectsApp.openapi(
   createRoute({
     method: 'patch',
@@ -1153,7 +1154,7 @@ projectsApp.openapi(
     const provider = raw === null || raw === undefined || raw === '' ? null : String(raw);
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_WRITE);
     if (provider !== null && !config.isProviderEnabled(provider as SandboxProviderName)) {
       return c.json({ error: `Unknown or disabled sandbox provider: ${provider}` }, 400);
     }
