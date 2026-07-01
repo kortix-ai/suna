@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import React from 'react';
-import { FullScreenPresentationViewer } from '@/components/thread/tool-views/presentation-tools/FullScreenPresentationViewer';
+import { FullScreenPresentationViewer } from '@/components/file-renderers/presentation/FullScreenPresentationViewer';
 
 interface PresentationViewerState {
   isOpen: boolean;
