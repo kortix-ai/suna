@@ -3,16 +3,16 @@
  * Detects localhost:PORT URLs in text and renders a preview card.
  */
 
-import React, { useCallback } from 'react';
-import { Pressable, View } from 'react-native';
-import { useColorScheme } from 'nativewind';
-import * as Haptics from 'expo-haptics';
-import { ExternalLink, Globe } from 'lucide-react-native';
-import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Text } from '@/components/ui/text';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getSandboxPortUrl } from '@/lib/platform/client';
 import { useTabStore } from '@/stores/tab-store';
+import * as Haptics from 'expo-haptics';
+import { ExternalLink, Globe } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
+import React, { useCallback } from 'react';
+import { Pressable, View } from 'react-native';
 
 interface SandboxPreviewCardProps {
   /** The port number to preview */
@@ -90,7 +90,7 @@ export function detectLocalhostUrls(text: string): DetectedUrl[] {
   let match;
   LOCALHOST_REGEX.lastIndex = 0;
   while ((match = LOCALHOST_REGEX.exec(text)) !== null) {
-    const port = parseInt(match[1], 10);
+    const port = Number.parseInt(match[1], 10);
     if (!seen.has(port) && port > 0 && port < 65536) {
       seen.add(port);
       urls.push({

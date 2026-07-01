@@ -1,6 +1,6 @@
-import React from 'react';
-import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
+import type React from 'react';
+import { ScrollView, View } from 'react-native';
 
 interface MarkdownRendererProps {
   content: string;
@@ -10,7 +10,7 @@ interface MarkdownRendererProps {
 export function MarkdownRenderer({ content }: MarkdownRendererProps) {
   const processUnicodeContent = (text: string): string => {
     return text
-      .replace(/\\u([0-9a-fA-F]{4})/g, (_, code) => String.fromCharCode(parseInt(code, 16)))
+      .replace(/\\u([0-9a-fA-F]{4})/g, (_, code) => String.fromCharCode(Number.parseInt(code, 16)))
       .replace(/\\r\\n/g, '\n')
       .replace(/\\r/g, '\n')
       .replace(/\\t/g, '  ');
@@ -38,7 +38,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
                 <Text className="text-sm font-roobert text-primary flex-1">{item}</Text>
               </View>
             ))}
-          </View>
+          </View>,
         );
         listItems = [];
         inList = false;
@@ -49,7 +49,10 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
       if (line.startsWith('```')) {
         if (inCodeBlock) {
           elements.push(
-            <View key={getKey()} className="bg-card border border-border rounded-xl overflow-hidden mb-4">
+            <View
+              key={getKey()}
+              className="bg-card border border-border rounded-xl overflow-hidden mb-4"
+            >
               <View className="px-4 py-2 border-b border-border">
                 <Text className="text-xs font-roobert-medium text-primary opacity-50 uppercase tracking-wider">
                   {codeBlockLang || 'Code Block'}
@@ -58,7 +61,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
               <Text className="text-xs font-roobert-mono text-primary leading-5 p-4">
                 {codeBlockContent.join('\n')}
               </Text>
-            </View>
+            </View>,
           );
           codeBlockContent = [];
           codeBlockLang = '';
@@ -75,13 +78,23 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
         const level = line.match(/^#+/)?.[0].length || 1;
         const text = line.replace(/^#+\s*/, '');
 
-        const fontSize = level === 1 ? 'text-2xl' : level === 2 ? 'text-xl' : level === 3 ? 'text-lg' : 'text-base';
+        const fontSize =
+          level === 1
+            ? 'text-2xl'
+            : level === 2
+              ? 'text-xl'
+              : level === 3
+                ? 'text-lg'
+                : 'text-base';
         const marginBottom = level <= 2 ? 'mb-4' : 'mb-3';
 
         elements.push(
-          <Text key={getKey()} className={`font-roobert-semibold text-primary ${fontSize} ${marginBottom}`}>
+          <Text
+            key={getKey()}
+            className={`font-roobert-semibold text-primary ${fontSize} ${marginBottom}`}
+          >
             {text}
-          </Text>
+          </Text>,
         );
       } else if (line.match(/^[-*+]\s+/)) {
         const item = line.replace(/^[-*+]\s+/, '');
@@ -96,10 +109,8 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
         const text = line.replace(/^>\s*/, '');
         elements.push(
           <View key={getKey()} className="border-l-4 border-border pl-4 mb-4">
-            <Text className="text-sm font-roobert text-primary opacity-70 italic">
-              {text}
-            </Text>
-          </View>
+            <Text className="text-sm font-roobert text-primary opacity-70 italic">{text}</Text>
+          </View>,
         );
       } else if (line.trim() === '') {
         flushList();
@@ -117,7 +128,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
         elements.push(
           <Text key={getKey()} className="text-sm font-roobert text-primary leading-6 mb-2">
             {processedLine}
-          </Text>
+          </Text>,
         );
       }
     });
@@ -126,7 +137,10 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
 
     if (inCodeBlock && codeBlockContent.length > 0) {
       elements.push(
-        <View key={getKey()} className="bg-card border border-border rounded-xl overflow-hidden mb-4">
+        <View
+          key={getKey()}
+          className="bg-card border border-border rounded-xl overflow-hidden mb-4"
+        >
           <View className="px-4 py-2 border-b border-border">
             <Text className="text-xs font-roobert-medium text-primary opacity-50 uppercase tracking-wider">
               {codeBlockLang || 'Code Block'}
@@ -135,7 +149,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           <Text className="text-xs font-roobert-mono text-primary leading-5 p-4">
             {codeBlockContent.join('\n')}
           </Text>
-        </View>
+        </View>,
       );
     }
 
@@ -144,9 +158,5 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
 
   const processedContent = processUnicodeContent(content);
 
-  return (
-    <View className="px-4 py-2">
-      {renderMarkdown(processedContent)}
-    </View>
-  );
+  return <View className="px-4 py-2">{renderMarkdown(processedContent)}</View>;
 }

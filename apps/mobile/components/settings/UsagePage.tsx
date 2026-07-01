@@ -5,7 +5,6 @@ import * as Haptics from 'expo-haptics';
 import { UsageContent } from './UsageContent';
 import { PlanPage } from './PlanPage';
 import { useLanguage } from '@/contexts';
-import { useChat } from '@/hooks';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
 import { log } from '@/lib/logger';
@@ -17,7 +16,6 @@ interface UsagePageProps {
 
 export function UsagePage({ visible, onClose }: UsagePageProps) {
   const { t } = useLanguage();
-  const chat = useChat();
   const [isPlanPageVisible, setIsPlanPageVisible] = React.useState(false);
   const { useNativePaywall, presentUpgradePaywall } = useUpgradePaywall();
 
@@ -47,12 +45,9 @@ export function UsagePage({ visible, onClose }: UsagePageProps) {
     (threadId: string, _projectId: string | null) => {
       log.log('🎯 Thread pressed from UsagePage:', threadId);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-      // Load the thread and close the page
-      chat.loadThread(threadId);
       onClose();
     },
-    [chat, onClose]
+    [onClose]
   );
 
   if (!visible) return null;

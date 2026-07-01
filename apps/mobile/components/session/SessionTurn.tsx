@@ -12,8 +12,9 @@ import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
-import { SandboxPreviewCard, detectLocalhostUrls } from '@/components/chat/SandboxPreviewCard';
-import { ReasoningSection, GroupedReasoningCard } from '@/components/chat';
+import { SandboxPreviewCard, detectLocalhostUrls } from '@/components/session/SandboxPreviewCard';
+import { ReasoningSection } from '@/components/session/ReasoningSection';
+import { GroupedReasoningCard } from '@/components/session/GroupedReasoningCard';
 import { SessionErrorBanner } from './SessionErrorBanner';
 import { getSheetBg } from '@/lib/theme-colors';
 import ReAnimated, {
