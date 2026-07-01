@@ -25,23 +25,24 @@
 
 import { and, isNotNull, lt, sql } from 'drizzle-orm';
 import { projectGroupGrants, projectMembers } from '@kortix/db';
-import { db } from '../shared/db';
 import { recordAuditEvent } from '../shared/audit';
+import { runIamDatabase, sleepIam } from './effect';
 
 const TICK_MS = 60_000;
-let timer: ReturnType<typeof setTimeout> | null = null;
+let running = false;
 let stopped = false;
 
-// Recursive setTimeout (not setInterval) so a slow tick can't cause
-// overlapping runs. With setInterval, if runOnce() took longer than
+// Recursive sleep-and-rearm (not interval-based scheduling) so a slow tick can't cause
+// overlapping runs. With interval scheduling, if runOnce() took longer than
 // TICK_MS (large account + slow DB + audit backpressure), the next
 // tick would start before the prior finished — two ticks racing
 // inside one process, same duplicate-audit problem the multi-replica
 // case had before the UPDATE … RETURNING refactor. Re-arming AFTER
 // settle guarantees serial execution per process.
 export function startGrantExpirySweeper(): void {
-  if (timer) return; // already armed, idempotent
+  if (running) return; // already armed, idempotent
   stopped = false;
+  running = true;
   // Fire once on boot so an expiry that happened during downtime is
   // logged immediately rather than waiting up to a minute. The rest
   // of the loop is driven by tickAndRearm() re-scheduling itself.
@@ -55,15 +56,14 @@ async function tickAndRearm(): Promise<void> {
     console.error('[iam expiry sweeper] tick failed', err);
   }
   if (stopped) return;
-  timer = setTimeout(tickAndRearm, TICK_MS);
+  await sleepIam(TICK_MS);
+  if (stopped) return;
+  void tickAndRearm();
 }
 
 export function stopGrantExpirySweeper(): void {
   stopped = true;
-  if (timer) {
-    clearTimeout(timer);
-    timer = null;
-  }
+  running = false;
 }
 
 /**
@@ -88,23 +88,25 @@ export function stopGrantExpirySweeper(): void {
  */
 async function runOnce(): Promise<void> {
   // ── Direct project_members grants ──────────────────────────────────
-  const claimedMembers = await db
-    .update(projectMembers)
-    .set({ updatedAt: sql`now()` })
-    .where(
-      and(
-        isNotNull(projectMembers.expiresAt),
-        lt(projectMembers.expiresAt, sql`now()`),
-        lt(projectMembers.updatedAt, projectMembers.expiresAt),
-      ),
-    )
-    .returning({
-      projectId: projectMembers.projectId,
-      userId: projectMembers.userId,
-      accountId: projectMembers.accountId,
-      projectRole: projectMembers.projectRole,
-      expiresAt: projectMembers.expiresAt,
-    });
+  const claimedMembers = await runIamDatabase((database) =>
+    database
+      .update(projectMembers)
+      .set({ updatedAt: sql`now()` })
+      .where(
+        and(
+          isNotNull(projectMembers.expiresAt),
+          lt(projectMembers.expiresAt, sql`now()`),
+          lt(projectMembers.updatedAt, projectMembers.expiresAt),
+        ),
+      )
+      .returning({
+        projectId: projectMembers.projectId,
+        userId: projectMembers.userId,
+        accountId: projectMembers.accountId,
+        projectRole: projectMembers.projectRole,
+        expiresAt: projectMembers.expiresAt,
+      }),
+  );
 
   await Promise.all(
     claimedMembers.map((m) =>
@@ -128,23 +130,25 @@ async function runOnce(): Promise<void> {
   );
 
   // ── Group-grant attachments ────────────────────────────────────────
-  const claimedGrants = await db
-    .update(projectGroupGrants)
-    .set({ updatedAt: sql`now()` })
-    .where(
-      and(
-        isNotNull(projectGroupGrants.expiresAt),
-        lt(projectGroupGrants.expiresAt, sql`now()`),
-        lt(projectGroupGrants.updatedAt, projectGroupGrants.expiresAt),
-      ),
-    )
-    .returning({
-      projectId: projectGroupGrants.projectId,
-      groupId: projectGroupGrants.groupId,
-      accountId: projectGroupGrants.accountId,
-      role: projectGroupGrants.role,
-      expiresAt: projectGroupGrants.expiresAt,
-    });
+  const claimedGrants = await runIamDatabase((database) =>
+    database
+      .update(projectGroupGrants)
+      .set({ updatedAt: sql`now()` })
+      .where(
+        and(
+          isNotNull(projectGroupGrants.expiresAt),
+          lt(projectGroupGrants.expiresAt, sql`now()`),
+          lt(projectGroupGrants.updatedAt, projectGroupGrants.expiresAt),
+        ),
+      )
+      .returning({
+        projectId: projectGroupGrants.projectId,
+        groupId: projectGroupGrants.groupId,
+        accountId: projectGroupGrants.accountId,
+        role: projectGroupGrants.role,
+        expiresAt: projectGroupGrants.expiresAt,
+      }),
+  );
 
   await Promise.all(
     claimedGrants.map((g) =>

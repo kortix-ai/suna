@@ -20,7 +20,7 @@
 
 import { eq } from 'drizzle-orm';
 import { accountGroupMembers, iamPolicies } from '@kortix/db';
-import { db } from '../shared/db';
+import { runIamDatabase } from './effect';
 
 interface PrincipalScopedMemo {
   invalidateByPrefix: (prefix: string) => void;
@@ -73,10 +73,12 @@ export function invalidateIamCacheForUsers(userIds: Iterable<string | null | und
 export async function invalidateIamCacheForGroup(groupId: string | null | undefined): Promise<void> {
   if (!groupId) return;
   try {
-    const rows = await db
-      .select({ userId: accountGroupMembers.userId })
-      .from(accountGroupMembers)
-      .where(eq(accountGroupMembers.groupId, groupId));
+    const rows = await runIamDatabase((database) =>
+      database
+        .select({ userId: accountGroupMembers.userId })
+        .from(accountGroupMembers)
+        .where(eq(accountGroupMembers.groupId, groupId)),
+    );
     invalidateIamCacheForUsers(rows.map((r) => r.userId));
   } catch (err) {
     console.warn('[iam-cache] group invalidation lookup failed', { groupId, err: (err as Error)?.message });
@@ -91,10 +93,12 @@ export async function invalidateIamCacheForGroup(groupId: string | null | undefi
 export async function invalidateIamCacheForRole(roleId: string | null | undefined): Promise<void> {
   if (!roleId) return;
   try {
-    const policies = await db
-      .select({ principalType: iamPolicies.principalType, principalId: iamPolicies.principalId })
-      .from(iamPolicies)
-      .where(eq(iamPolicies.roleId, roleId));
+    const policies = await runIamDatabase((database) =>
+      database
+        .select({ principalType: iamPolicies.principalType, principalId: iamPolicies.principalId })
+        .from(iamPolicies)
+        .where(eq(iamPolicies.roleId, roleId)),
+    );
     for (const p of policies) {
       if (p.principalType === 'group') {
         await invalidateIamCacheForGroup(p.principalId);

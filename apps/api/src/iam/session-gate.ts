@@ -16,8 +16,8 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { and, eq, sql } from 'drizzle-orm';
 import { accountSessionActivity, accounts } from '@kortix/db';
-import { db } from '../shared/db';
 import { auditSessionFirstSight } from '../shared/auth-audit';
+import { runIamDatabase } from './effect';
 
 /** Skip the update query if last_seen_at was touched more recently than
  *  this. Bounds DB write pressure under chatty clients. */
@@ -40,24 +40,26 @@ async function loadPolicyAndActivity(
   userId: string,
   sessionId: string,
 ): Promise<PolicyAndActivity | null> {
-  const [row] = await db
-    .select({
-      maxLifetimeMinutes: accounts.sessionMaxLifetimeMinutes,
-      idleTimeoutMinutes: accounts.sessionIdleTimeoutMinutes,
-      lastSeenAt: accountSessionActivity.lastSeenAt,
-      revokedAt: accountSessionActivity.revokedAt,
-    })
-    .from(accounts)
-    .leftJoin(
-      accountSessionActivity,
-      and(
-        eq(accountSessionActivity.accountId, accounts.accountId),
-        eq(accountSessionActivity.userId, userId),
-        eq(accountSessionActivity.sessionId, sessionId),
-      ),
-    )
-    .where(eq(accounts.accountId, accountId))
-    .limit(1);
+  const [row] = await runIamDatabase((database) =>
+    database
+      .select({
+        maxLifetimeMinutes: accounts.sessionMaxLifetimeMinutes,
+        idleTimeoutMinutes: accounts.sessionIdleTimeoutMinutes,
+        lastSeenAt: accountSessionActivity.lastSeenAt,
+        revokedAt: accountSessionActivity.revokedAt,
+      })
+      .from(accounts)
+      .leftJoin(
+        accountSessionActivity,
+        and(
+          eq(accountSessionActivity.accountId, accounts.accountId),
+          eq(accountSessionActivity.userId, userId),
+          eq(accountSessionActivity.sessionId, sessionId),
+        ),
+      )
+      .where(eq(accounts.accountId, accountId))
+      .limit(1),
+  );
   return row ?? null;
 }
 
@@ -71,28 +73,30 @@ async function markRevoked(
 ): Promise<void> {
   // Upsert: revoke if the row exists, create-then-revoke if not (race-
   // safe in case we race a first-sight insert).
-  await db
-    .insert(accountSessionActivity)
-    .values({
-      accountId,
-      userId,
-      sessionId,
-      revokedAt: new Date(),
-      revokedReason: reason,
-      ip,
-      userAgent,
-    })
-    .onConflictDoUpdate({
-      target: [
-        accountSessionActivity.accountId,
-        accountSessionActivity.userId,
-        accountSessionActivity.sessionId,
-      ],
-      set: {
-        revokedAt: sql`COALESCE(${accountSessionActivity.revokedAt}, now())`,
-        revokedReason: sql`COALESCE(${accountSessionActivity.revokedReason}, ${reason})`,
-      },
-    });
+  await runIamDatabase((database) =>
+    database
+      .insert(accountSessionActivity)
+      .values({
+        accountId,
+        userId,
+        sessionId,
+        revokedAt: new Date(),
+        revokedReason: reason,
+        ip,
+        userAgent,
+      })
+      .onConflictDoUpdate({
+        target: [
+          accountSessionActivity.accountId,
+          accountSessionActivity.userId,
+          accountSessionActivity.sessionId,
+        ],
+        set: {
+          revokedAt: sql`COALESCE(${accountSessionActivity.revokedAt}, now())`,
+          revokedReason: sql`COALESCE(${accountSessionActivity.revokedReason}, ${reason})`,
+        },
+      }),
+  );
 }
 
 /** Returns true when this call inserted a brand-new activity row
@@ -117,14 +121,16 @@ async function touchActivity(
   // Distinguish first-sight (insert) from refresh (update) using
   // `xmax = 0` — Postgres sets xmax to 0 for new rows but to the
   // current xid for updates. Cheap, single round-trip.
-  const rows = await db.execute<{ first_sight: boolean }>(sql`
-    INSERT INTO kortix.account_session_activity
-      (account_id, user_id, session_id, ip, user_agent)
-    VALUES (${accountId}::uuid, ${userId}::uuid, ${sessionId}::uuid, ${ip}, ${userAgent})
-    ON CONFLICT (account_id, user_id, session_id)
-      DO UPDATE SET last_seen_at = now()
-    RETURNING (xmax = 0) AS first_sight
-  `);
+  const rows = await runIamDatabase((database) =>
+    database.execute<{ first_sight: boolean }>(sql`
+      INSERT INTO kortix.account_session_activity
+        (account_id, user_id, session_id, ip, user_agent)
+      VALUES (${accountId}::uuid, ${userId}::uuid, ${sessionId}::uuid, ${ip}, ${userAgent})
+      ON CONFLICT (account_id, user_id, session_id)
+        DO UPDATE SET last_seen_at = now()
+      RETURNING (xmax = 0) AS first_sight
+    `),
+  );
   const data =
     ((rows as unknown) as { rows: Array<{ first_sight: boolean }> }).rows ?? rows;
   return { firstSight: (data as Array<{ first_sight: boolean }>)[0]?.first_sight === true };

@@ -16,8 +16,8 @@
 
 import { and, eq, inArray } from 'drizzle-orm';
 import { accountGroupMembers, accountMembers } from '@kortix/db';
-import { db } from '../shared/db';
 import { invalidateIamCacheForUser } from './cache-invalidation';
+import { runIamDatabase } from './effect';
 import {
   getSsoProviderBySupabaseId,
   listSsoGroupMappings,
@@ -125,33 +125,37 @@ export async function syncSsoMembership(args: {
 
   // 1. Ensure account membership. If autoCreateMembers is off, we only
   //    sync groups for users an admin has already invited.
-  const [existingMember] = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(
-      and(
-        eq(accountMembers.accountId, provider.accountId),
-        eq(accountMembers.userId, args.userId),
-      ),
-    )
-    .limit(1);
+  const [existingMember] = await runIamDatabase((database) =>
+    database
+      .select({ userId: accountMembers.userId })
+      .from(accountMembers)
+      .where(
+        and(
+          eq(accountMembers.accountId, provider.accountId),
+          eq(accountMembers.userId, args.userId),
+        ),
+      )
+      .limit(1),
+  );
 
   let memberCreated = false;
   if (!existingMember) {
     if (!provider.autoCreateMembers) {
       return { skipped: false, memberCreated: false };
     }
-    await db
-      .insert(accountMembers)
-      .values({
-        accountId: provider.accountId,
-        userId: args.userId,
-        // SAML users default to 'member' — the IAM engine grants nothing
-        // off this alone (strict mode safe) and only reads under the
-        // legacy bridge. Real privileges come from group mappings.
-        accountRole: 'member',
-      })
-      .onConflictDoNothing();
+    await runIamDatabase((database) =>
+      database
+        .insert(accountMembers)
+        .values({
+          accountId: provider.accountId,
+          userId: args.userId,
+          // SAML users default to 'member' — the IAM engine grants nothing
+          // off this alone (strict mode safe) and only reads under the
+          // legacy bridge. Real privileges come from group mappings.
+          accountRole: 'member',
+        })
+        .onConflictDoNothing(),
+    );
     memberCreated = true;
   }
 
@@ -172,15 +176,17 @@ export async function syncSsoMembership(args: {
   // so we don't even consider stripping manual groups.
   const currentRows = mappedGroupIds.size === 0
     ? []
-    : await db
-        .select({ groupId: accountGroupMembers.groupId })
-        .from(accountGroupMembers)
-        .where(
-          and(
-            eq(accountGroupMembers.userId, args.userId),
-            inArray(accountGroupMembers.groupId, [...mappedGroupIds]),
+    : await runIamDatabase((database) =>
+        database
+          .select({ groupId: accountGroupMembers.groupId })
+          .from(accountGroupMembers)
+          .where(
+            and(
+              eq(accountGroupMembers.userId, args.userId),
+              inArray(accountGroupMembers.groupId, [...mappedGroupIds]),
+            ),
           ),
-        );
+      );
   const currentGroupIds = new Set(currentRows.map((r) => r.groupId));
 
   const { toAdd, toRemove } = diffSsoGroups({
@@ -190,26 +196,30 @@ export async function syncSsoMembership(args: {
   });
 
   if (toAdd.length > 0) {
-    await db
-      .insert(accountGroupMembers)
-      .values(
-        toAdd.map((groupId) => ({
-          groupId,
-          userId: args.userId,
-          addedBy: null,
-        })),
-      )
-      .onConflictDoNothing();
+    await runIamDatabase((database) =>
+      database
+        .insert(accountGroupMembers)
+        .values(
+          toAdd.map((groupId) => ({
+            groupId,
+            userId: args.userId,
+            addedBy: null,
+          })),
+        )
+        .onConflictDoNothing(),
+    );
   }
   if (toRemove.length > 0) {
-    await db
-      .delete(accountGroupMembers)
-      .where(
-        and(
-          eq(accountGroupMembers.userId, args.userId),
-          inArray(accountGroupMembers.groupId, toRemove),
+    await runIamDatabase((database) =>
+      database
+        .delete(accountGroupMembers)
+        .where(
+          and(
+            eq(accountGroupMembers.userId, args.userId),
+            inArray(accountGroupMembers.groupId, toRemove),
+          ),
         ),
-      );
+    );
   }
 
   // JIT membership changed on login → bust this user so their group-derived
