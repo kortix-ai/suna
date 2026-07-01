@@ -1,7 +1,3 @@
-'use client';
-
-import { create } from 'zustand';
-
 /**
  * The current session runtime — the ONE OpenCode daemon the app is talking to
  * right now (the sandbox of the session being viewed), as a proxy URL
@@ -13,8 +9,12 @@ import { create } from 'zustand';
  * it; switching sessions just sets a new url. There is no servers[] registry, no
  * `serverVersion`, no reset-cascade. `version` bumps on every change so the SSE
  * stream re-subscribes to the new daemon.
+ *
+ * This module is part of the isomorphic core (reachable from the root
+ * `@kortix/sdk` export), so it is a plain hand-rolled store — no zustand, no
+ * React. The React selector hook lives at `react/use-current-runtime`.
  */
-interface CurrentRuntimeState {
+export interface CurrentRuntimeState {
   url: string | null;
   /** The sandbox's external_id (Daytona id) — used for proxy routing. */
   sandboxId: string | null;
@@ -25,12 +25,27 @@ interface CurrentRuntimeState {
   version: number;
 }
 
-export const useCurrentRuntime = create<CurrentRuntimeState>(() => ({
+let state: CurrentRuntimeState = {
   url: null,
   sandboxId: null,
   dbSandboxId: null,
   version: 0,
-}));
+};
+
+const listeners = new Set<() => void>();
+
+/** Framework-free store over the current runtime (getState/subscribe). */
+export const currentRuntimeStore = {
+  getState(): CurrentRuntimeState {
+    return state;
+  },
+  subscribe(listener: () => void): () => void {
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  },
+};
 
 /**
  * Point the app at a session's runtime. `null` clears it (no active session) — the
@@ -42,22 +57,23 @@ export function setCurrentRuntime(
   sandboxId: string | null = null,
   dbSandboxId: string | null = null,
 ): void {
-  const cur = useCurrentRuntime.getState();
-  if (cur.url === url && cur.sandboxId === sandboxId && cur.dbSandboxId === dbSandboxId) return;
-  useCurrentRuntime.setState({ url, sandboxId, dbSandboxId, version: cur.version + 1 });
+  if (state.url === url && state.sandboxId === sandboxId && state.dbSandboxId === dbSandboxId)
+    return;
+  state = { url, sandboxId, dbSandboxId, version: state.version + 1 };
+  for (const listener of listeners) listener();
 }
 
 /** Read the current runtime url outside React (API modules, the client factory). */
 export function getCurrentRuntimeUrl(): string | null {
-  return useCurrentRuntime.getState().url;
+  return state.url;
 }
 
 /** Read the current runtime sandbox id (external_id) outside React. */
 export function getCurrentRuntimeSandboxId(): string | null {
-  return useCurrentRuntime.getState().sandboxId;
+  return state.sandboxId;
 }
 
 /** Read the current runtime DB sandbox id (platform `sandbox_id`) outside React. */
 export function getCurrentRuntimeDbSandboxId(): string | null {
-  return useCurrentRuntime.getState().dbSandboxId;
+  return state.dbSandboxId;
 }

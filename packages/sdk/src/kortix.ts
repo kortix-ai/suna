@@ -1,4 +1,3 @@
-'use client';
 import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
 import { getClient } from './opencode/client';
 /**
@@ -22,7 +21,8 @@ import { type KortixPlatformConfig, configureKortix } from './platform/config';
 import * as P from './platform/projects-client';
 import { getSessionHealth } from './session/health';
 import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from './session/url';
-import { getActiveSandboxId, getSandboxUrlForExternalId } from './state/server-store';
+import { getActiveSandboxId } from './state/server-store/active';
+import { getSandboxUrlForExternalId } from './state/server-store/url-helpers';
 import { setCurrentRuntime } from './state/current-runtime';
 
 /** A model the agent can run, as the opencode runtime identifies it. */

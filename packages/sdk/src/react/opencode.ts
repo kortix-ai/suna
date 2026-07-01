@@ -31,6 +31,10 @@
 // migration lands they come out of the public surface. New hosts: do not import
 // them — use `useSession`.
 // ─────────────────────────────────────────────────────────────────────────────
+// Router-agnostic route scope: the host injects "the project the user is
+// looking at" here (Next hosts derive it from useParams once, near the root);
+// `useOpenCodeProviders`/`useOpenCodeLocal` resolve it via this context.
+export { KortixProjectProvider, useKortixRouteProjectId } from './route-project';
 export * from './use-opencode-sessions';
 export * from './use-opencode-events';
 export * from './use-opencode-local';
@@ -54,6 +58,9 @@ export {
   type SandboxConnectionStatus,
 } from '../state/sandbox-connection-store';
 export * from './use-session-prefetch';
+// Relocated from `platform/projects-client/session-sandbox` — it types against
+// react-query's QueryClient, which the framework-free REST layer must not.
+export { prefetchSessionStart } from './prefetch-session-start';
 export * from './use-canonical-opencode-session';
 export * from './use-gateway-catalog-sync';
 export * from './use-visible-agents';
