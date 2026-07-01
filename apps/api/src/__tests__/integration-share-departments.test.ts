@@ -22,6 +22,7 @@ import {
 } from '@kortix/db';
 import { db } from '../shared/db';
 import { listProjectSecretsForUser, writeSharedProjectSecret } from '../projects/secrets';
+import { loadSecretViewsForUser } from '../projects/lib/serializers';
 import { loadGrants, resolveShareSubject, scopeToIntent, setSecretSharing } from '../executor/share';
 import { setConnectorSharingDb } from '../executor/credentials';
 
@@ -170,5 +171,20 @@ describe('"Who can use it" — department (group) sharing, real DB', () => {
       .limit(1);
     const intent = scopeToIntent(scope, grants.map((g) => ({ principalType: g.pt, principalId: g.pid })));
     expect(intent).toEqual({ mode: 'members', memberIds: [], groupIds: [DEPT] });
+  });
+
+  test('GET /secrets list: a non-manager cannot even see a secret restricted to others', async () => {
+    if (!ctx) return;
+    // S_DEPT is restricted to the DEPT group; OUTSIDER is not in it.
+    const outsider = await resolveShareSubject(OUTSIDER);
+    const views = await loadSecretViewsForUser(ctx.projectId, outsider, false /* not a manager */);
+    const scoped = views.find((v) => v.name === S_DEPT);
+    expect(scoped?.usable_by_me).toBe(false);
+    // The r3 non-manager filter (usable_by_me || mine) drops it — no name leak.
+    const visibleToMember = views.filter((v) => v.usable_by_me || v.mine).map((v) => v.name);
+    expect(visibleToMember).not.toContain(S_DEPT);
+    // A manager still sees it (canManageShared=true) so they can edit its sharing.
+    const mgrViews = await loadSecretViewsForUser(ctx.projectId, outsider, true);
+    expect(mgrViews.map((v) => v.name)).toContain(S_DEPT);
   });
 });

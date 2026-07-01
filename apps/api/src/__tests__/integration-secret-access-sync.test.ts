@@ -50,14 +50,14 @@ async function cardPrincipals(): Promise<Set<string>> {
 /** What the Secret dialog would show (the share intent). */
 async function dialogIntent() {
   const id = await secretId();
-  return scopeToIntent(await shareScope(), (await loadGrants([id])).get(id) ?? []);
+  return scopeToIntent((await shareScope()) as 'project' | 'restricted', (await loadGrants([id])).get(id) ?? []);
 }
 /** The principals a dialog intent restricts to (mode-agnostic). Note: the share
  *  model labels a single member + no groups as `private` ("Only me"), so we
  *  compare the underlying principals, which is what actually gates access. */
 function intentPrincipals(intent: Awaited<ReturnType<typeof dialogIntent>>): Set<string> {
   if (intent.mode === 'private') return new Set([intent.ownerId]);
-  if (intent.mode === 'members') return new Set([...intent.memberIds, ...intent.groupIds]);
+  if (intent.mode === 'members') return new Set([...(intent.memberIds ?? []), ...(intent.groupIds ?? [])]);
   return new Set();
 }
 

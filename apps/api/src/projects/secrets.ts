@@ -290,34 +290,36 @@ export async function addSecretResourceGrant(input: {
   principalType: 'member' | 'group';
   principalId: string;
 }): Promise<{ grantId: string } | null> {
-  const [secret] = await db
-    .select({ secretId: projectSecrets.secretId })
-    .from(projectSecrets)
-    .where(and(
-      eq(projectSecrets.projectId, input.projectId),
-      eq(projectSecrets.name, input.name),
-      isNull(projectSecrets.ownerUserId),
-    ))
-    .limit(1);
-  if (!secret) return null;
-  await db
-    .insert(projectSecretGrants)
-    .values({ secretId: secret.secretId, principalType: input.principalType, principalId: input.principalId })
-    .onConflictDoNothing();
-  await db
-    .update(projectSecrets)
-    .set({ shareScope: 'restricted', updatedAt: new Date() })
-    .where(eq(projectSecrets.secretId, secret.secretId));
-  const [grant] = await db
-    .select({ grantId: projectSecretGrants.grantId })
-    .from(projectSecretGrants)
-    .where(and(
-      eq(projectSecretGrants.secretId, secret.secretId),
-      eq(projectSecretGrants.principalType, input.principalType),
-      eq(projectSecretGrants.principalId, input.principalId),
-    ))
-    .limit(1);
-  return grant ? { grantId: grant.grantId } : null;
+  // One transaction with a row lock on the secret so a concurrent add/remove on
+  // the same secret can't interleave (which could strand a live grant on a
+  // project-wide — i.e. open — scope). onConflictDoUpdate (no-op set) makes the
+  // insert idempotent AND always RETURN the grant id.
+  return db.transaction(async (tx) => {
+    const [secret] = await tx
+      .select({ secretId: projectSecrets.secretId })
+      .from(projectSecrets)
+      .where(and(
+        eq(projectSecrets.projectId, input.projectId),
+        eq(projectSecrets.name, input.name),
+        isNull(projectSecrets.ownerUserId),
+      ))
+      .for('update')
+      .limit(1);
+    if (!secret) return null;
+    const [grant] = await tx
+      .insert(projectSecretGrants)
+      .values({ secretId: secret.secretId, principalType: input.principalType, principalId: input.principalId })
+      .onConflictDoUpdate({
+        target: [projectSecretGrants.secretId, projectSecretGrants.principalType, projectSecretGrants.principalId],
+        set: { principalId: input.principalId },
+      })
+      .returning({ grantId: projectSecretGrants.grantId });
+    await tx
+      .update(projectSecrets)
+      .set({ shareScope: 'restricted', updatedAt: new Date() })
+      .where(eq(projectSecrets.secretId, secret.secretId));
+    return grant ? { grantId: grant.grantId } : null;
+  });
 }
 
 /**
@@ -326,24 +328,33 @@ export async function addSecretResourceGrant(input: {
  * project-wide (open) — the empty-allow-list-collapses-to-project rule.
  */
 export async function removeSecretResourceGrant(grantId: string, projectId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ secretId: projectSecretGrants.secretId })
-    .from(projectSecretGrants)
-    .innerJoin(projectSecrets, eq(projectSecrets.secretId, projectSecretGrants.secretId))
-    .where(and(eq(projectSecretGrants.grantId, grantId), eq(projectSecrets.projectId, projectId)))
-    .limit(1);
-  if (!row) return false;
-  await db.delete(projectSecretGrants).where(eq(projectSecretGrants.grantId, grantId));
-  const remaining = await db
-    .select({ id: projectSecretGrants.grantId })
-    .from(projectSecretGrants)
-    .where(eq(projectSecretGrants.secretId, row.secretId))
-    .limit(1);
-  if (remaining.length === 0) {
-    await db
-      .update(projectSecrets)
-      .set({ shareScope: 'project', updatedAt: new Date() })
-      .where(eq(projectSecrets.secretId, row.secretId));
-  }
-  return true;
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ secretId: projectSecretGrants.secretId })
+      .from(projectSecretGrants)
+      .innerJoin(projectSecrets, eq(projectSecrets.secretId, projectSecretGrants.secretId))
+      .where(and(eq(projectSecretGrants.grantId, grantId), eq(projectSecrets.projectId, projectId)))
+      .limit(1);
+    if (!row) return false;
+    // Lock the secret so the delete + remaining-count + revert is atomic against
+    // a concurrent addSecretResourceGrant on the same secret.
+    await tx
+      .select({ id: projectSecrets.secretId })
+      .from(projectSecrets)
+      .where(eq(projectSecrets.secretId, row.secretId))
+      .for('update');
+    await tx.delete(projectSecretGrants).where(eq(projectSecretGrants.grantId, grantId));
+    const remaining = await tx
+      .select({ id: projectSecretGrants.grantId })
+      .from(projectSecretGrants)
+      .where(eq(projectSecretGrants.secretId, row.secretId))
+      .limit(1);
+    if (remaining.length === 0) {
+      await tx
+        .update(projectSecrets)
+        .set({ shareScope: 'project', updatedAt: new Date() })
+        .where(eq(projectSecrets.secretId, row.secretId));
+    }
+    return true;
+  });
 }

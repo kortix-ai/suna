@@ -434,11 +434,14 @@ projectsApp.openapi(
     .filter((item) => !item.system)
     .filter((item) => agentMayUseEnv(agentGrant, item.name));
 
-  // Per-member / department scoping is already applied by loadSecretViewsForUser
-  // (the share model, isSecretUsableBy): a non-manager only sees secrets shared
-  // with them; a manager sees all shared rows so they can edit sharing. One
-  // source of truth, shared with the Members "Resource access" card.
-  const items = allItems;
+  // Per-member / department scoping (share model, isSecretUsableBy). A MANAGER
+  // sees every shared row so they can edit its sharing; a plain member sees only
+  // what they can actually use (or have a personal override for) — restricted
+  // secrets they aren't granted are hidden, name and all. One source of truth,
+  // shared with the Members "Resource access" card.
+  const items = canManageShared
+    ? allItems
+    : allItems.filter((i) => i.usable_by_me || i.mine);
 
   return c.json({
     items,
