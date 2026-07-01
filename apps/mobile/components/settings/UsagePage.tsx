@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Pressable, View, ScrollView } from 'react-native';
+import { useRouter } from 'expo-router';
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 import { UsageContent } from './UsageContent';
@@ -16,6 +17,7 @@ interface UsagePageProps {
 
 export function UsagePage({ visible, onClose }: UsagePageProps) {
   const { t } = useLanguage();
+  const router = useRouter();
   const [isPlanPageVisible, setIsPlanPageVisible] = React.useState(false);
   const { useNativePaywall, presentUpgradePaywall } = useUpgradePaywall();
 
@@ -42,12 +44,15 @@ export function UsagePage({ visible, onClose }: UsagePageProps) {
   }, [onClose, useNativePaywall, presentUpgradePaywall]);
 
   const handleThreadPress = React.useCallback(
-    (threadId: string, _projectId: string | null) => {
+    (threadId: string, projectId: string | null) => {
       log.log('🎯 Thread pressed from UsagePage:', threadId);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       onClose();
+      if (projectId) {
+        router.push(`/projects/${projectId}`);
+      }
     },
-    [onClose]
+    [onClose, router]
   );
 
   if (!visible) return null;
