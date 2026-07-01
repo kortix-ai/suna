@@ -77,6 +77,29 @@ export function extractGroupClaims(
 }
 
 /**
+ * Resolve which Kortix group ids a set of IdP claim values map to. Pure —
+ * exported for unit tests.
+ *
+ * Matching is CASE- and whitespace-INSENSITIVE: Azure AD / Entra emits group
+ * values (display names or `sAMAccountName`) whose casing an admin can easily
+ * mistype when creating the mapping, and a silent case mismatch would deny a
+ * user their groups with no error. Object-ID (GUID) values are unaffected —
+ * lowercasing a GUID still matches. Both sides are normalized identically.
+ */
+export function resolveClaimedGroupIds(
+  claims: readonly string[],
+  mappings: ReadonlyArray<{ claimValue: string; groupId: string }>,
+): Set<string> {
+  const norm = (v: string) => v.trim().toLowerCase();
+  const claimSet = new Set(claims.map(norm));
+  const ids = new Set<string>();
+  for (const m of mappings) {
+    if (claimSet.has(norm(m.claimValue))) ids.add(m.groupId);
+  }
+  return ids;
+}
+
+/**
  * Decide what to add/remove based on the claims a user presented vs the
  * mapped groups they currently belong to. Pure — exported for unit tests.
  *
@@ -162,10 +185,7 @@ export async function syncSsoMembership(args: {
   }
 
   const claims = extractGroupClaims(args.jwtPayload, provider.groupClaimName);
-  const claimSet = new Set(claims);
-  const claimedGroupIds = new Set(
-    mappings.filter((m) => claimSet.has(m.claimValue)).map((m) => m.groupId),
-  );
+  const claimedGroupIds = resolveClaimedGroupIds(claims, mappings);
   const mappedGroupIds = new Set(mappings.map((m) => m.groupId));
 
   // Current memberships in this account, restricted to the mapped set
