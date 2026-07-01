@@ -154,7 +154,7 @@ projectsApp.openapi(
         200: json(z.array(ProjectSchema), 'Projects the caller can read'),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const scope = await resolveProjectAccount(c);
   // Reach through `any` for non-typed context keys set by the auth
   // middleware (the AppEnv only types userId/userEmail).
