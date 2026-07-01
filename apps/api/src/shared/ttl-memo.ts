@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Tiny async TTL memoizer with in-flight de-duplication.
  *

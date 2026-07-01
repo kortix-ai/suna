@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Provider-neutral repo seeder: lay down an initial commit on a freshly-created
  * (empty) managed repo by pushing a set of files from a throwaway temp clone.

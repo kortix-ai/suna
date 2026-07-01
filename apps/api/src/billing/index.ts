@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { createRoute, z } from "@hono/zod-openapi";
 import {
   AUTO_TOPUP_DEFAULT_AMOUNT,

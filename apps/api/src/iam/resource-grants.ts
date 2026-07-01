@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * IAM V2 per-RESOURCE scoping — engine + repository for iam_resource_grants.
  *

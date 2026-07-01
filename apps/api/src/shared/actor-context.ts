@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { createHmac, timingSafeEqual } from 'crypto';
 
 const ACTOR_CONTEXT_HEADER = 'X-Kortix-Actor-Context';

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { WarmRuntimeUnavailableError } from '../providers';
 import type { CreateSandboxOpts, ProvisionResult, SandboxProvider } from '../providers';
 import { platformSleep } from '../effect';

@@ -1,11 +1,11 @@
+import type { Effect } from 'effect';
 import { checkBillingActive } from '../../billing/services/billing-gate';
-import { config, type SandboxProviderName } from '../../config';
+import { sharedConfig as config, sharedDb as db, sharedSleep, type SandboxProviderName } from '../../shared/effect';
 import { resolveSessionProvider } from './provider-precedence';
 import { resolveShareSubject } from '../../executor/share';
 import { auth, json } from '../../openapi';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../../shared/account-limits';
 import { recordAuditEvent } from '../../shared/audit';
-import { db } from '../../shared/db';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
@@ -577,7 +577,7 @@ export async function createProjectSession(input: {
       // with gitAuth (folded into the env-build chain, not awaited inline).
       const baseShaPromise = Promise.race([
         resolveCommitSha(project, baseRef).catch(() => undefined),
-        new Promise<undefined>((r) => setTimeout(() => r(undefined), 2000)),
+        sharedSleep(2000).then(() => undefined),
       ]);
       const envPromise = baseShaPromise.then((baseSha) =>
         buildSessionSandboxEnvVars({

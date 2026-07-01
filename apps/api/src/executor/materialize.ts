@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Materialization — map `[[connectors]]` + `[[policies]]` + `[policy]` specs
  * (from kortix.toml) onto the rows the platform stores (executor_connectors,

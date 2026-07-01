@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Commit reads + shared git-log parsing primitives (FIELD/RECORD separators,
 // LOG_FORMAT, parseLogStdout, decodeStatusChar) used by branches.ts and
 // merge.ts as well.

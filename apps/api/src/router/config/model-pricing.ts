@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * models.dev pricing — live LLM pricing from the open-source models database.
  *

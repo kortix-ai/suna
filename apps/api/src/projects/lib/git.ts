@@ -1,8 +1,9 @@
+import type { Effect } from 'effect';
 import { auth } from '../../openapi';
 import { validateAccountToken } from '../../repositories/account-tokens';
 import { validateSecretKey } from '../../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../shared/crypto';
-import { db } from '../../shared/db';
+import { sharedDb as db } from '../../shared/effect';
 import { getBackend, managedGithubInstallId, managedGithubToken, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
 import { isLegacyFreestyleGitConfigured, mintLegacyFreestyleRepoToken } from '../git-backends/legacy-freestyle';
 import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';

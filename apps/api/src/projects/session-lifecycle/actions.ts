@@ -1,7 +1,8 @@
+import type { Effect } from 'effect';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
-import { config, type SandboxProviderName } from '../../config';
+import { sharedConfig as config, type SandboxProviderName } from '../../shared/effect';
 import { getProvider } from '../../platform/providers';
-import { db } from '../../shared/db';
+import { sharedDb as db } from '../../shared/effect';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { withProjectGitAuth } from '../lib/git';

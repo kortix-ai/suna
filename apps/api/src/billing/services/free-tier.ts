@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { billingConfig as config } from '../effect';
 import { getCreditAccount, upsertCreditAccount } from '../repositories/credit-accounts';
 import { calculateNextCreditGrant } from './credit-grant-schedule';

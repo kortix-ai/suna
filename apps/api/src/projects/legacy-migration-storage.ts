@@ -1,5 +1,6 @@
-import { config } from '../config';
-import { getSupabase } from '../shared/supabase';
+import type { Effect } from 'effect';
+import { sharedConfig as config } from '../shared/effect';
+import { sharedSupabase } from '../shared/effect';
 
 const BUCKET = () => config.LEGACY_MIGRATION_BACKUP_BUCKET;
 
@@ -10,7 +11,7 @@ const BUCKET = () => config.LEGACY_MIGRATION_BACKUP_BUCKET;
 const ARCHIVE_FILE_SIZE_LIMIT = 5 * 1024 * 1024 * 1024; // 5GB
 
 export async function ensureBackupBucket(): Promise<void> {
-  const supabase = getSupabase();
+  const supabase = sharedSupabase;
   const { data, error } = await supabase.storage.getBucket(BUCKET());
   if (data) {
     // Best-effort raise of a too-small limit on a pre-existing bucket. Tolerate
@@ -46,7 +47,7 @@ export async function createOpencodeArchiveUploadUrl(
 ): Promise<{ uploadUrl: string; path: string }> {
   await ensureBackupBucket();
   const path = opencodeObjectPath(sandboxId);
-  const supabase = getSupabase();
+  const supabase = sharedSupabase;
   const { data, error } = await supabase.storage
     .from(BUCKET())
     .createSignedUploadUrl(path, { upsert: true });
@@ -62,7 +63,7 @@ export async function uploadOpencodeArchive(
 ): Promise<string> {
   await ensureBackupBucket();
   const path = opencodeObjectPath(sandboxId);
-  const supabase = getSupabase();
+  const supabase = sharedSupabase;
   const { error } = await supabase.storage
     .from(BUCKET())
     .upload(path, tarball, { upsert: true, contentType: 'application/gzip' });
@@ -71,7 +72,7 @@ export async function uploadOpencodeArchive(
 }
 
 export async function downloadOpencodeArchive(sandboxId: string): Promise<Buffer | null> {
-  const supabase = getSupabase();
+  const supabase = sharedSupabase;
   const { data, error } = await supabase.storage
     .from(BUCKET())
     .download(opencodeObjectPath(sandboxId));

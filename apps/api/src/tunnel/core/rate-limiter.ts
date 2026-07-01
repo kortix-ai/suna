@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { sharedConfig as config } from '../../shared/effect';
 
 interface Bucket {

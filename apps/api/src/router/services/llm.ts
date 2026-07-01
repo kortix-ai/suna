@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { routerConfig as config, KORTIX_MARKUP, routerFetch } from '../effect';
 import { getModel, getAllModels, resolveOpenRouterId, type ModelConfig } from '../config/models';
 

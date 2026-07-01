@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { createHmac, timingSafeEqual, randomInt, scryptSync } from 'crypto';
 import { sharedConfig as config } from './effect';
 

@@ -1,6 +1,7 @@
-import { config, type SandboxProviderName } from '../../config';
+import type { Effect } from 'effect';
+import { sharedConfig as config, type SandboxProviderName } from '../../shared/effect';
 import { isSecretUsableBy, loadGrants, scopeToIntent, type SecretGrant, type ShareSubject, visibilityToIntent } from '../../executor/share';
-import { db } from '../../shared/db';
+import { sharedDb as db } from '../../shared/effect';
 import { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
 import { type ProjectRole } from '../access';
 import { resolveAppsEnabled } from '../apps-config';

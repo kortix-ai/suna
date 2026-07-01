@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Barrel for the git-backed-project operations module.
 //
 // This module was split into focused files under ./git/ with ZERO behavior

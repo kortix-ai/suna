@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Authentication for /scim/v2/* endpoints. The protocol uses long-lived
 // bearer tokens minted by the account admin and configured in the IdP
 // (Okta, Azure AD, JumpCloud, etc.). The token implies the account — its

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { z } from 'zod';
 import type { AgentGrant } from '@kortix/db';
 

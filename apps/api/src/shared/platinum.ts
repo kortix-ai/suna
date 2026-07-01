@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Platinum API client (our own Cloud Hypervisor microVM sandbox platform).
  *

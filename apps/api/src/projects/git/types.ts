@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Shared types for the git-backed-project operations module.
 // Pure leaf module: no runtime imports, only type declarations.
 

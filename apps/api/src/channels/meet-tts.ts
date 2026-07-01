@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { sharedConfig as config, sharedFetch } from '../shared/effect';
 import { channelApiBase, channelAuth } from '../executor/channels';
 import { type FetchImpl, executeCall } from '../executor/execute';

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { listProjectSecretsSnapshot } from '../../projects/secrets';
 import { resolveEffectiveModel } from '../resolution/default-model';
 import type { ModelSource } from '../resolution/effective';

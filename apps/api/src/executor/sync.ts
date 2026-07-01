@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Connector materialization sweep — read `[[connectors]]` from kortix.toml,
  * fetch + normalize each connector's catalog, and upsert into the DB

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { listAgentMailInstalls, loadMeetInstall, loadSlackInstall } from '../channels/install-store';
 /**
  * Auto-materialize channel connectors from platform installs.

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // IAM V2 engine. The only authorization path — the V1 policy engine and
 // its accounts.iam_v2_enabled rollout flag were retired in PR5.
 //

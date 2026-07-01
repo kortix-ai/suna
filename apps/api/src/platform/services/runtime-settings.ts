@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { platformDb as db, platformHasDatabase as hasDatabase } from '../effect';
 
 /**

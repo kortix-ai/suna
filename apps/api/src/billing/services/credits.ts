@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { InsufficientCreditsError } from '../../errors';
 import { billingDb as db } from '../effect';
 import { billingSupabase } from '../effect';

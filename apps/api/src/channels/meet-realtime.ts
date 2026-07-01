@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { sharedConfig as config } from '../shared/effect';
 import { SILENT_MP3_B64 } from './meet-voices';

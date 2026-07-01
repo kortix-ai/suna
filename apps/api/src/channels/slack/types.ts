@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import type { StreamTaskChunk } from '../slack-api';
 
 export interface QuestionInfo {

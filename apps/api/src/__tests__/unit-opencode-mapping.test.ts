@@ -3,17 +3,30 @@ import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions } from '@kortix/db';
 
 const dbUpdates: Array<Record<string, unknown>> = [];
-mock.module('../shared/db', () => ({
-  db: {
-    update: (table: unknown) => ({
-      set: (updates: Record<string, unknown>) => ({
-        where: async () => {
-          if (table === projectSessions) dbUpdates.push(updates);
-          return [];
-        },
-      }),
+const fakeDb = {
+  update: (table: unknown) => ({
+    set: (updates: Record<string, unknown>) => ({
+      where: async () => {
+        if (table === projectSessions) dbUpdates.push(updates);
+        return [];
+      },
     }),
-  },
+  }),
+};
+
+mock.module('../shared/db', () => ({
+  db: fakeDb,
+}));
+
+mock.module('../shared/effect', () => ({
+  sharedConfig: {},
+  sharedDb: fakeDb,
+  sharedSupabase: {},
+  sharedFetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
+  sharedSleep: async () => {},
+  runSharedTimeout: () => ({}) as never,
+  runSharedInterval: () => ({}) as never,
+  stopSharedTimer: () => {},
 }));
 
 mock.module('../sandbox-proxy/backend', () => ({

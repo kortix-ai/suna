@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Single source of truth for IAM permission strings.
 //
 // Convention: <resource>.<verb>[.subresource]. The resource prefix MUST match

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Tunnel Sub-Service — reverse-tunnel infrastructure for connecting
  * cloud sandboxes to local machine resources.

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // IAM V2 routes: SCIM provisioning tokens.
 // Bearer credentials configured in the customer's IdP (Okta, Azure AD, …)
 // to drive /scim/v2/accounts/:accountId/*. Treated as account-admin-level

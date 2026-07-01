@@ -476,9 +476,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   updateCreditAccount: async () => {},
 }));
 
-mock.module('../shared/db', () => ({
-  hasDatabase: true,
-  db: {
+const fakeDb = {
     execute: async () => [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
@@ -580,7 +578,36 @@ mock.module('../shared/db', () => ({
         }
       },
     }),
+};
+
+mock.module('../shared/db', () => ({
+  hasDatabase: true,
+  db: fakeDb,
+}));
+
+mock.module('../shared/effect', () => ({
+  sharedConfig: {
+    ALLOWED_SANDBOX_PROVIDERS: ['daytona'],
+    isProviderEnabled: () => true,
+    getDefaultProvider: () => 'daytona',
+    KORTIX_BILLING_INTERNAL_ENABLED: true,
   },
+  sharedDb: fakeDb,
+  sharedSupabase: {
+    auth: {
+      admin: {
+        getUserById: async (uid: string) =>
+          uid === ACCOUNT_ID
+            ? { data: { user: null } }
+            : { data: { user: { email: 'project@example.test' } } },
+      },
+    },
+  },
+  sharedFetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
+  sharedSleep: async () => {},
+  runSharedTimeout: () => ({}) as never,
+  runSharedInterval: () => ({}) as never,
+  stopSharedTimer: () => {},
 }));
 
 const { projectsApp } = await import('../projects/index');

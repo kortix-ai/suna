@@ -20,7 +20,7 @@ import {
   loadConfigWithFiles,
 } from "../lib/project-resources";
 import { auth, errors, json } from "../../openapi";
-import { db } from "../../shared/db";
+import { sharedDb as db } from "../../shared/effect";
 import { roleAllows, parseProjectRole } from "../access";
 import { createRoute, z } from "@hono/zod-openapi";
 import { Effect } from "effect";

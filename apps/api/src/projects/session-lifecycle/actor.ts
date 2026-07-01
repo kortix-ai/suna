@@ -1,6 +1,7 @@
+import type { Effect } from 'effect';
 import { accountMembers } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { sharedDb as db } from '../../shared/effect';
 
 export async function resolveProjectAutomationActor(accountId: string): Promise<string | null> {
   const [row] = await db

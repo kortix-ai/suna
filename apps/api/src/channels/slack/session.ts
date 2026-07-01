@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projects } from '@kortix/db';
 import { sharedDb as db, sharedSleep } from '../../shared/effect';

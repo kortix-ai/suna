@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import Stripe from 'stripe';
 import { getStripe } from '../../shared/stripe';
 import { recordWebhookEvent, withAccountLock } from './webhook-concurrency';

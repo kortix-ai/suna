@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { projectSecrets } from '@kortix/db';
 import { decryptProjectSecret, encryptProjectSecret } from '../../projects/secrets';

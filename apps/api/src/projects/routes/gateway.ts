@@ -9,7 +9,7 @@ import {
 import { callUpstream, type AuthedPrincipal } from "@kortix/llm-gateway";
 import { Effect } from "effect";
 import { resolveCandidates } from "../../llm-gateway/resolution/resolve-candidates";
-import { db } from "../../shared/db";
+import { sharedDb as db } from "../../shared/effect";
 import { auth, errors, json } from "../../openapi";
 import { authorize } from "../../iam";
 import { deriveRequestContext } from "../../iam/cache";
@@ -23,7 +23,7 @@ import {
   revokeGatewayKey,
 } from "../../llm-gateway/gateway-keys";
 import { publicGatewayBaseUrl } from "../../llm-gateway/public-url";
-import { config } from "../../config";
+import { sharedConfig as config } from "../../shared/effect";
 import {
   attemptRoute,
   failJson,

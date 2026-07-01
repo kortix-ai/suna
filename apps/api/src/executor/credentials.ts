@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Connector access + credentials — the split model. Access (who can use a
  * connector) lives on the connector (share_scope + executor_connector_grants).

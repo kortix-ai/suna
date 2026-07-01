@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Phase implementations for the durable legacy-sandbox migration. Each function
  * is one step in the pipeline driven by legacy-migration-runner.ts.

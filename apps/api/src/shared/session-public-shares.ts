@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { createHash, randomUUID } from 'node:crypto';
 import { projectSessionPublicShares, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { accountMembers, chatUserIdentities, projectAccessRequests, projects } from '@kortix/db';
 import { sharedConfig as config, sharedDb as db } from '../../shared/effect';

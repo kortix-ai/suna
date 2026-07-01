@@ -12,7 +12,7 @@
  * for the agent-facing flow.
  */
 import { auth, errors, json } from '../../openapi';
-import { config } from '../../config';
+import { sharedConfig as config } from '../../shared/effect';
 import { createRoute, z } from '@hono/zod-openapi';
 import { Effect } from 'effect';
 import { loadPipedreamConnector } from '../../executor/db-deps';

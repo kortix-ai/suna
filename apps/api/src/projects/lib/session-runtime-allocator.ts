@@ -1,11 +1,12 @@
+import type { Effect } from 'effect';
 import { eq } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { readProjectWarmPointer } from '../../snapshots/warm-project';
-import { db } from '../../shared/db';
-import type { SandboxProviderName } from '../../config';
+import { sharedDb as db } from '../../shared/effect';
+import type { SandboxProviderName } from '../../shared/effect';
 import type { ProjectRow } from './serializers';
 
 type RuntimeProject = Pick<ProjectRow, 'repoUrl' | 'defaultBranch' | 'manifestPath' | 'metadata'>;

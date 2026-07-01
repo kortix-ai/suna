@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Session-status constants — deliberately dependency-free so lean, hot modules
 // (the sandbox reaper, the concurrency-cap counter) can import them without
 // pulling in the heavy serializer graph (config, snapshots, github…).

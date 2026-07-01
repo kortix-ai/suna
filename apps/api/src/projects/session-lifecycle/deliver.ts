@@ -1,4 +1,6 @@
+import type { Effect } from 'effect';
 import type { SessionDeliveryOutcome } from './types';
+import { sharedSleep } from '../../shared/effect';
 
 // After a session's runtime reports `ready` we still have to hand the prompt to
 // the opencode daemon — and a just-woken sandbox is flaky for a beat: the
@@ -11,8 +13,6 @@ import type { SessionDeliveryOutcome } from './types';
 // retrying the hand-off through the transient post-wake window before giving up.
 const DELIVER_DEADLINE_MS = 45_000;
 const DELIVER_RETRY_INTERVAL_MS = 1_500;
-
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export interface DeliveryTarget {
   stage: string;
@@ -36,7 +36,7 @@ export async function deliverWithRetry(input: {
   intervalMs?: number;
 }): Promise<SessionDeliveryOutcome> {
   const now = input.now ?? Date.now;
-  const sleepFn = input.sleepFn ?? sleep;
+  const sleepFn = input.sleepFn ?? sharedSleep;
   const deadlineMs = input.deadlineMs ?? DELIVER_DEADLINE_MS;
   const intervalMs = input.intervalMs ?? DELIVER_RETRY_INTERVAL_MS;
 

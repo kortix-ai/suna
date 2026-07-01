@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // IAM V2 router instance + shared OpenAPI schemas.
 //
 // This is the LEAF module of the accounts/iam/ split: it imports only the

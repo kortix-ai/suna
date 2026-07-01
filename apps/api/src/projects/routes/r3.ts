@@ -11,7 +11,7 @@ import {
   listAccountTokens,
   revokeAccountToken,
 } from "../../repositories/account-tokens";
-import { db } from "../../shared/db";
+import { sharedDb as db } from "../../shared/effect";
 import { kickPreBuild } from "../../snapshots/builder";
 import { getTemplateById } from "../../snapshots/templates";
 import { roleAllows } from "../access";

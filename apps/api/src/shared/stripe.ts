@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import Stripe from 'stripe';
 import { sharedConfig as config } from './effect';
 

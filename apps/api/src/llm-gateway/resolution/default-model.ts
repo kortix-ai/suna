@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import type { AuthedPrincipal } from '@kortix/llm-gateway';
 import { AUTO_MODEL_ID } from '@kortix/llm-catalog';
 import {

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Restore a migrated session's chat into its sandbox DURING provisioning, before
  * the sandbox is marked active.
@@ -19,7 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { legacySandboxMigrations, sandboxes } from '@kortix/db';
-import { db } from '../shared/db';
+import { sharedDb as db, sharedSleep } from '../shared/effect';
 import { getDaytona } from '../shared/daytona';
 import { logger as appLogger } from '../lib/logger';
 import { RESOLVE_WS_OC_SH, execOnLegacyVm, resolveLegacyVmEndpoint } from './legacy-vm-access';
@@ -32,8 +33,6 @@ function sq(value: string): string {
 }
 
 type DaytonaSandbox = Awaited<ReturnType<ReturnType<typeof getDaytona>['get']>>;
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Create a session for the workspace and return its projectID — doubles as an
@@ -56,7 +55,7 @@ async function waitForOpencodeProjectId(sandbox: DaytonaSandbox, timeoutMs: numb
         if (obj.projectID) return obj.projectID;
       }
     } catch { /* opencode not up yet */ }
-    await sleep(3000);
+    await sharedSleep(3000);
   }
   return null;
 }

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Platinum sandbox provider.
  *

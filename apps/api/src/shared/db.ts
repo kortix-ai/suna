@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { createDb, type Database } from '@kortix/db';
 import { config } from '../config';
 

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { and, eq, sql } from 'drizzle-orm';
 import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
 import type { AuthedPrincipal } from '@kortix/llm-gateway';

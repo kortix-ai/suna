@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { sharedFetch, sharedSleep } from '../shared/effect';
 
 const SLACK_API_BASE = 'https://slack.com/api';

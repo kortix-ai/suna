@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Billing v2 — usage breakdown by ledger category.
 //
 // The wallet is fungible (one $balance), but every debit is tagged in

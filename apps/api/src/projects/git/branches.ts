@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Branch listing + mutating ops (create/delete session branch, single-file
 // commit-and-push). These write to the remote, so they own the auth-host +
 // fresh-fetch dance.

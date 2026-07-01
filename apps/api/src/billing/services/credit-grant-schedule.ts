@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 export function calculateNextCreditGrant(from: Date): Date {
   const next = new Date(from);
   const targetMonth = (next.getMonth() + 1) % 12;

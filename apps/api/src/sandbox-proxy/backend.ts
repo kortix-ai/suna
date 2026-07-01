@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Sandbox backend resolution — the single source of truth for "where does this
  * sandbox live, how do I authenticate to it, and is it healthy".

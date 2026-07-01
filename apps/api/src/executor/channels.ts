@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Channel connectors — chat platforms (Slack today; Telegram/Teams next) as
  * first-class Executor connectors. Unlike the spec-driven providers, a channel's

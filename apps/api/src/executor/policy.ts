@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Tool-call policy engine — globbed pattern match, first-match-wins, layered
  * resolution. Mirrors executor.sh's model.

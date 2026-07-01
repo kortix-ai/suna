@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // IAM V2 routes: SAML SSO provider config + group mappings.
 // The Supabase auth.sso_providers row is created out-of-band (via Studio
 // or the auth admin API — admins paste the IdP metadata there). We just

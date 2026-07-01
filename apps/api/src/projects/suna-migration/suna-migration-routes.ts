@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * HTTP surface for the user-triggered Suna → opencode migration. Mirrors
  * legacy-migration-routes. Scoped to the caller's own account.
@@ -12,7 +13,7 @@
  */
 import { createRoute, z, type OpenAPIHono } from '@hono/zod-openapi';
 import { sql } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { sharedDb as db } from '../../shared/effect';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
 import type { AppEnv } from '../../types';
 import { json, errors, auth, ErrorSchema } from '../../openapi';

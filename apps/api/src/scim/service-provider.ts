@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // SCIM discovery route: /ServiceProviderConfig (capabilities discovery).
 // Registers onto the shared scimRouter via side effect.
 

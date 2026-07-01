@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Total wall-clock budget for the preview proxy's auto-wake retry loop. Must
 // stay under the AWS ALB's 60s idle timeout: when every attempt hangs (a cold or
 // errored sandbox whose Daytona upstream never answers) the proxy has to return

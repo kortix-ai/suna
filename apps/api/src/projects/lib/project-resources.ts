@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Project resource registry + per-resource list filtering.
  *

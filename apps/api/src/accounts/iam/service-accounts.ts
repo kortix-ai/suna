@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // IAM V2 routes: service accounts (non-human IAM principals).
 // First-class machine identities owned by the account itself. Policies
 // attach via principal_type='token' with principal_id=service_account_id

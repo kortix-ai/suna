@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * HTTP surface for the lazy, user-triggered legacy migration. Registered onto
  * projectsApp so it inherits supabaseAuth (sets userId). All routes are scoped
@@ -11,7 +12,7 @@ import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { legacySandboxMigrations, sandboxes } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { ErrorSchema, auth, errors, json } from '../openapi';
-import { db } from '../shared/db';
+import { sharedDb as db } from '../shared/effect';
 import { resolveScopedAccountId } from '../shared/resolve-account';
 import type { AppEnv } from '../types';
 import { PHASE_ORDER, startMigration } from './legacy-migration-runner';

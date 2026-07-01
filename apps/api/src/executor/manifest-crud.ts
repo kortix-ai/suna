@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Connector CRUD that round-trips `kortix.toml` — the web UI "Add connector"
  * flow (mirrors triggers/apps). The manifest holds the connector definition +

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { and, eq } from 'drizzle-orm';
 import {
   chatThreadParticipants,

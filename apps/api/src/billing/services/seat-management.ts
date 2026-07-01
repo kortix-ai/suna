@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Billing v2 — seat lifecycle orchestration.
 //
 // One entry point per high-level event: member added, member removed. Each

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { billingConfig as config } from '../effect';
 import type { DailyCreditConfig, TierConfig, TierEntitlements } from '../../types';
 

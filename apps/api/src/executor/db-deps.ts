@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Production wiring for the executor router — DB-backed ExecutorRouterDeps +
  * GatewayDeps. Access lives on the connector; credentials are split per (connector,

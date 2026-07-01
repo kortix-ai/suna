@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Change Requests — Kortix-native PR layer.
  *
@@ -15,7 +16,7 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import { changeRequests } from '@kortix/db';
-import { db } from '../shared/db';
+import { sharedDb as db } from '../shared/effect';
 
 type ChangeRequestStatus = 'open' | 'merged' | 'closed';
 

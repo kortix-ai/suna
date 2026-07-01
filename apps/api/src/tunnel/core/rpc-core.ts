@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Shared tunnel RPC core — the one permission-check → relay → audit pipeline.
  *

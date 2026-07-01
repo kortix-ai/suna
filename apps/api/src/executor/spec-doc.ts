@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Parsing for connector spec documents (OpenAPI, and any other JSON/YAML doc we
  * fetch from a URL or read from the repo). Kept dependency-free (only the `yaml`

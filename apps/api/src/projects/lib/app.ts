@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { makeOpenApiApp } from '../../openapi';
 import { type AppEnv } from '../../types';
 import { z } from '@hono/zod-openapi';

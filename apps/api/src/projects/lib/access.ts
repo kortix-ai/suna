@@ -1,12 +1,13 @@
+import type { Effect } from 'effect';
 import { isSessionVisibleTo, loadSessionGrants, resolveShareSubject, type SecretGrant, type ShareSubject } from '../../executor/share';
 import { authorize, assertAuthorized, PROJECT_ACTIONS } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { auth } from '../../openapi';
 import { preResumeRecentStoppedSessions } from '../routes/shared';
-import { db } from '../../shared/db';
+import { sharedDb as db } from '../../shared/effect';
 import { resolveAccountId } from '../../shared/resolve-account';
-import { getSupabase } from '../../shared/supabase';
+import { sharedSupabase } from '../../shared/effect';
 import { ttlMemo } from '../../shared/ttl-memo';
 import { effectiveProjectRole, roleAllows, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
 import { accountMembers, accountUser, accounts, projectMembers, projectSessions, projects } from '@kortix/db';
@@ -245,7 +246,7 @@ export interface UserIdentity {
 export async function resolveUserIdentities(userIds: string[]): Promise<Map<string, UserIdentity>> {
   const result = new Map<string, UserIdentity>();
   if (userIds.length === 0) return result;
-  const supabase = getSupabase();
+  const supabase = sharedSupabase;
   await Promise.all(
     userIds.map(async (uid) => {
       try {

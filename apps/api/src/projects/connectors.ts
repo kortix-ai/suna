@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * `[[connectors]]` parsing for `kortix.toml`.
  *

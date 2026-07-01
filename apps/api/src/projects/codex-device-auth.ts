@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // OpenAI Codex (ChatGPT Plus/Pro) OAuth device grant — driven directly with
 // plain HTTPS calls to auth.openai.com. No subprocess, no OpenCode `serve`, no
 // pinned pod: `start` requests a device code, `poll` exchanges it once the user
@@ -14,6 +15,7 @@
 //        code_verifier) → {access_token, refresh_token, expires_in, id_token}
 
 import { OPENCODE_USER_AGENT } from '@kortix/shared';
+import { sharedFetch } from '../shared/effect';
 
 const OPENAI_AUTH_BASE = 'https://auth.openai.com';
 const CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
@@ -35,7 +37,7 @@ export type CodexPollResult =
 
 /** Step 1 — request a device code. Returns the user code + the id to poll with. */
 export async function startCodexDeviceAuth(): Promise<CodexDeviceChallenge> {
-  const res = await fetch(`${OPENAI_AUTH_BASE}/api/accounts/deviceauth/usercode`, {
+  const res = await sharedFetch(`${OPENAI_AUTH_BASE}/api/accounts/deviceauth/usercode`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'User-Agent': USER_AGENT },
     body: JSON.stringify({ client_id: CODEX_CLIENT_ID }),
@@ -64,7 +66,7 @@ export async function pollCodexDeviceAuth(input: {
   deviceAuthId: string;
   userCode: string;
 }): Promise<CodexPollResult> {
-  const res = await fetch(`${OPENAI_AUTH_BASE}/api/accounts/deviceauth/token`, {
+  const res = await sharedFetch(`${OPENAI_AUTH_BASE}/api/accounts/deviceauth/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'User-Agent': USER_AGENT },
     body: JSON.stringify({ device_auth_id: input.deviceAuthId, user_code: input.userCode }),
@@ -78,7 +80,7 @@ export async function pollCodexDeviceAuth(input: {
     return { status: 'failed', error: 'OpenAI returned an incomplete authorization' };
   }
 
-  const tokenRes = await fetch(`${OPENAI_AUTH_BASE}/oauth/token`, {
+  const tokenRes = await sharedFetch(`${OPENAI_AUTH_BASE}/oauth/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({

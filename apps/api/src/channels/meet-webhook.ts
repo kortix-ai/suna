@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { createRoute, z } from "@hono/zod-openapi";
 import { continueSession } from "../projects/session-lifecycle";
 import { makeOpenApiApp, json, errors } from "../openapi";

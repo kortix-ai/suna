@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Persist a channel connector (Slack today) into kortix.toml so it's a
  * first-class, git-tracked connector profile — not just an install-driven

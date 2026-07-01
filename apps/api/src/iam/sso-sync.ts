@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // SAML JIT (just-in-time) provisioning. Called from the auth middleware
 // once per request, but no-ops cheaply unless the JWT carries a SAML
 // sso_provider_id and that id is mapped to a kortix account.

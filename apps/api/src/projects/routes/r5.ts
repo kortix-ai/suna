@@ -1,7 +1,7 @@
 import { getProvider as getDeploymentProvider } from "../../deployments/providers";
 import { PROJECT_ACTIONS } from "../../iam";
 import { auth, errors, json } from "../../openapi";
-import { db } from "../../shared/db";
+import { sharedDb as db } from "../../shared/effect";
 import { deployAppSpec, getLatestDeployment } from "../app-sweep";
 import { loadProjectApps, manifestHashForApp } from "../apps";
 import {

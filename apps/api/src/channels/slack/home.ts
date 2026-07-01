@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { chatInstalls, chatThreads, projects } from '@kortix/db';
 import { sharedConfig as config, sharedDb as db } from '../../shared/effect';

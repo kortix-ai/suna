@@ -3,6 +3,7 @@ import type { Database } from '@kortix/db';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AppConfig, DatabaseService, HttpClient, SupabaseService } from '../effect/services';
 import { runEffectOrThrow } from '../effect/http';
+export type { SandboxProviderName } from '../platform/effect';
 
 export const sharedConfig = await runEffectOrThrow(Effect.gen(function* () {
   return yield* AppConfig;

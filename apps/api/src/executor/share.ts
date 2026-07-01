@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Project-secret sharing — who can use a secret (and therefore the connector
  * bound to it). Three dashboard options map onto one mechanism:

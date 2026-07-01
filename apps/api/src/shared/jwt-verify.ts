@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Local JWT verification using Web Crypto API (no network roundtrip).
  *

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Request-context derivation shared by IAM callers.
 
 import type { Context } from 'hono';

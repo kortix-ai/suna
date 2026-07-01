@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Provider sandbox-lifecycle webhook ingress — the DETERMINISTIC billing-close
  * path. The reaper sweep (projects/sandbox-reaper.ts) is the backstop; these

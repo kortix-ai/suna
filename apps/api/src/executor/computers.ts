@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Computer connectors — connected machines reached over the Agent Computer
  * Tunnel, as a first-class Executor connector. Like `channel`, this is a

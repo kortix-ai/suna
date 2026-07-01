@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 export interface SessionRuntimeEnvInput {
   projectId: string;
   sessionId: string;

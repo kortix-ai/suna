@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 export const CODEX_AUTH_SECRET_NAME = 'CODEX_AUTH_JSON';
 
 const DEFAULT_CODEX_MODEL_IDS = ['gpt-5.5', 'gpt-5.4'];

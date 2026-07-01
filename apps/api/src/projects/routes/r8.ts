@@ -1,8 +1,8 @@
+import type { Effect } from 'effect';
 import { checkBillingActive } from '../../billing/services/billing-gate';
-import { config, type SandboxProviderName } from '../../config';
+import { sharedConfig as config, sharedDb as db, sharedFetch, type SandboxProviderName } from '../../shared/effect';
 import { auth, errors, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
-import { db } from '../../shared/db';
 import {
   getCrById,
   getNextCrNumber,
@@ -415,7 +415,7 @@ projectsApp.openapi(
 
     let daemonRes: Response;
     try {
-      daemonRes = await fetch(
+      daemonRes = await sharedFetch(
         `${endpoint.url.replace(/\/$/, '')}/kortix/git/commit-push`,
         {
           method: 'POST',

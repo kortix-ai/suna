@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Stable identity for this API process. HOSTNAME is the pod/container name in
 // managed deployments; startedAt + pid make it unique across restarts where a
 // name can be reused.

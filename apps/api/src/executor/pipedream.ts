@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Pipedream Connect — the 1-click connector path (kept as the primary onboarding
  * for SaaS apps). Adapted from the pre-refactor provider (commit 9078f28e).

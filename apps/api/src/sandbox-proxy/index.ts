@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { sandboxProxyConfig as config, type SandboxProviderName } from './effect';
 import { combinedAuth } from '../middleware/auth';
 import { preview } from './routes/preview';

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { getStripe } from '../../shared/stripe';
 import { BillingError } from '../../errors';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';

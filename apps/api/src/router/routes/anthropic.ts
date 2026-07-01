@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppContext } from '../../types';
 import { resolveActorFromRequest } from '../../shared/actor-context';

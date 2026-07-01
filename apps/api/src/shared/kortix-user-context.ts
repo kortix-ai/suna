@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Signed user-context header sent from the preview proxy to kortix-master.
  *

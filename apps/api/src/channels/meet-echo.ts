@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 const ECHO_TTL_MS = 25_000;
 const MAX_TRACKED_BOTS = 512;
 

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { platformConfig as config, platformDb as db, platformHasDatabase as hasDatabase } from '../effect';
 import type { SandboxProviderName } from '../effect';
 

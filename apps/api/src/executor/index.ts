@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Executor subsystem entry — the production HTTP router, wired to DB-backed deps.
  * Mounted at /v1/executor in the app. Gateway routes (/connectors, /call) use

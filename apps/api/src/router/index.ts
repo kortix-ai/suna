@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { createRoute, z } from "@hono/zod-openapi";
 import { routerConfig as config } from './effect';
 import { apiKeyAuth } from "../middleware/auth";

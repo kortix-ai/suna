@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Per-project gate for the experimental `[[apps]]` deployment surface.
  *

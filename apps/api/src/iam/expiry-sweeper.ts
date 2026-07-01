@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Sweeper for time-bounded V2 grants.
 //
 // The V2 engine already filters expired grants out of authorize() (the

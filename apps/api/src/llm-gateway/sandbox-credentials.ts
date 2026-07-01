@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { CATALOG } from '@kortix/llm-catalog';
 
 // Provider API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, …). When any of these is

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Account-level enterprise entitlement resolution.
 //
 // Maps an account → its billing tier → the tier's enterprise feature gates

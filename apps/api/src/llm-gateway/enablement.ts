@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { resolveExperimentalFeature } from '../experimental/features';
 
 /** True only when the platform gateway is available and this project opted in. */

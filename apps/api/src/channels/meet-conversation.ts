@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { isWake } from './meet-realtime';
 import { runSharedTimeout, stopSharedTimer, type SharedTimer } from '../shared/effect';
 

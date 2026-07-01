@@ -8,7 +8,7 @@ import { assertAgentScope } from "../../iam/agent-scope";
 import { invalidateIamCacheForUser } from "../../iam/cache-invalidation";
 import { deriveRequestContext } from "../../iam/cache";
 import { auth, errors, json } from "../../openapi";
-import { db } from "../../shared/db";
+import { sharedDb as db } from "../../shared/effect";
 import { lookupUserIdByEmail } from "../../shared/users";
 import {
   foldEffectiveProjectAccess,
@@ -55,7 +55,7 @@ import {
 } from "../../executor/sync";
 import { propagateLlmGatewayModeToActiveSandboxes } from "../lib/sandbox-env-sync";
 import { projectLlmGatewayEnabled } from "../../llm-gateway/enablement";
-import { config, type SandboxProviderName } from "../../config";
+import { sharedConfig as config, type SandboxProviderName } from "../../shared/effect";
 import {
   attemptRoute,
   attemptRouteSync,

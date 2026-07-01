@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Background-worker leader election (lease-table based).
  *

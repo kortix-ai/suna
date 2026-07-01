@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Server-side Slack file proxy — the binary/multipart ops the Executor gateway
  * (JSON in/out) can't carry, done with the bot token SERVER-SIDE so the sandbox

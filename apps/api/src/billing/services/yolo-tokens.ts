@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Billing v2 — per-member KORTIX YOLO tokens.
 //
 // One token per (user_id, account_id). Plaintext is generated at mint and

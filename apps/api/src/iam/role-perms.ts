@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // IAM V2 role → permissions mapping. Single source of truth, in code.
 //
 // Fixed roles, no DB-driven role table:

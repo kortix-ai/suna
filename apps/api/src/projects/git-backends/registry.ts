@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Git backend registry. The provider is stored per-project
  * (`projectGitConnections.provider`), so backends can run simultaneously: a

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { sql } from 'drizzle-orm';
 import { stripeWebhookEventsProcessed } from '@kortix/db';
 import { billingDb as db } from '../effect';

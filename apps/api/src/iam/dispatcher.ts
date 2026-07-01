@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Public engine entry points used everywhere outside the iam/ module.
 // V2 is the only authorization path — the V1 policy engine and its
 // flag-based dispatcher were retired in PR5. The wrapper survives

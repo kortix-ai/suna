@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import {
   createHash,
   createCipheriv,
@@ -7,8 +8,8 @@ import {
 } from 'node:crypto';
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { projectSecrets } from '@kortix/db';
-import { config } from '../config';
-import { db } from '../shared/db';
+import { sharedConfig as config } from '../shared/effect';
+import { sharedDb as db } from '../shared/effect';
 import { isSecretUsableBy, loadGrants, type ShareSubject } from '../executor/share';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;

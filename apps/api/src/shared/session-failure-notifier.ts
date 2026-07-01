@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Dependency-inverted hook so the platform provisioning layer can tell a channel
  * (Slack today) that a session it spun up died during async provisioning — WITHOUT

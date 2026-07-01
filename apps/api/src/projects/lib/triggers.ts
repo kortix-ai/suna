@@ -1,6 +1,6 @@
-import { config } from '../../config';
+import type { Effect } from 'effect';
+import { runSharedInterval, sharedConfig as config, sharedDb as db, sharedSleep, stopSharedTimer, type SharedTimer } from '../../shared/effect';
 import { auth, errors } from '../../openapi';
-import { db } from '../../shared/db';
 import { isLeader } from '../../shared/leader-election';
 import { runProjectAppSweep } from '../app-sweep';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
@@ -137,7 +137,7 @@ export async function triggerBackpressureState(accountId: string, projectId: str
 // spawn a session — same as the DB-backed `/v1/webhooks/:triggerId` path,
 // but the source of truth is git.
 
-export type TriggerSchedulerTimer = ReturnType<typeof setInterval>;
+export type TriggerSchedulerTimer = SharedTimer;
 
 
 export const globalForProjectTriggers = globalThis as typeof globalThis & {
@@ -212,17 +212,12 @@ export function triggerSweepTimeoutMs(): number {
  * move on / clear its guard instead of blocking forever on a hung await.
  */
 export async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      p,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+  return await Promise.race([
+    p,
+    sharedSleep(ms).then(() => {
+      throw new Error(`${label} timed out after ${ms}ms`);
+    }),
+  ]);
 }
 
 /**
@@ -833,9 +828,9 @@ export async function runGitTriggerSweep(now: Date, accumulator: {
 export function startProjectTriggerScheduler(): void {
   if ((config as any).KORTIX_TRIGGER_SCHEDULER_ENABLED === false) return;
   if (globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer) {
-    clearInterval(globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer);
+    stopSharedTimer(globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer);
   }
-  triggerSchedulerTimer = setInterval(() => {
+  triggerSchedulerTimer = runSharedInterval(() => {
     // Watchdog: if we're the leader but the sweep has stalled (started and never
     // completed within the stale window), make it LOUD. A silent dead scheduler
     // is what turned a single hung fire into an ~18h fleet-wide outage. The
@@ -899,11 +894,11 @@ export function startProjectTriggerScheduler(): void {
 
 export function stopProjectTriggerScheduler(): void {
   if (triggerSchedulerTimer) {
-    clearInterval(triggerSchedulerTimer);
+    stopSharedTimer(triggerSchedulerTimer);
     triggerSchedulerTimer = null;
   }
   if (globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer) {
-    clearInterval(globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer);
+    stopSharedTimer(globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer);
     globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer = null;
   }
 }

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Shared core for the git-backed-project operations module.
 //
 // Owns the module-level mirror cache + the private clone/mirror/exec internals

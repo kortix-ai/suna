@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { tunnelAuditLogs } from '@kortix/db';
 import { sharedDb as db } from '../../shared/effect';
 import type { TunnelCapability } from 'agent-tunnel';

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { HTTPException } from 'hono/http-exception';
 import {
   matchAllowedRoute,

@@ -17,7 +17,7 @@ import {
   resolveAgentMailApiKey,
   isAgentMailInboxLimitError,
 } from "../../channels/agentmail-api";
-import { config } from "../../config";
+import { sharedConfig as config, sharedFetch } from "../../shared/effect";
 import { getCachedAccountTier } from "../../billing/services/entitlements";
 import { tierGrantsAllModels } from "../../billing/services/tiers";
 import {
@@ -59,7 +59,7 @@ import {
 } from "../../repositories/model-preferences";
 import { AUTO_DEFAULT_MODEL_ID } from "@kortix/llm-catalog";
 import { resolveExperimentalFeature } from "../../experimental/features";
-import { db } from "../../shared/db";
+import { sharedDb as db } from "../../shared/effect";
 import { extractApps } from "../apps";
 import {
   extractTriggers,
@@ -641,7 +641,7 @@ projectsApp.openapi(
 
     let authTest: SlackAuthTest;
     try {
-      const res = await fetch("https://slack.com/api/auth.test", {
+      const res = await sharedFetch("https://slack.com/api/auth.test", {
         method: "POST",
         headers: {
           authorization: `Bearer ${botToken}`,

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Pure parsing/auth helpers for the git proxy — no DB/network imports so they
  * stay trivially unit-testable.

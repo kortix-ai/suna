@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Audit log read surface — backed by the existing kortix.audit_events table
 // the global middleware + IAM mutation helpers write to.
 //

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 const ABSOLUTE_URL_PATTERN = /^[a-zA-Z][a-zA-Z\d+\-.]*:/;
 
 function normalizeForwardedHeader(value: string | null): string | null {

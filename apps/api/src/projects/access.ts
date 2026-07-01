@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // `user` is the floor project role. The retired `viewer` tier folded into it
 // (see parseProjectRole, which still accepts `viewer` as a legacy alias).
 export type ProjectRole = 'manager' | 'editor' | 'user';

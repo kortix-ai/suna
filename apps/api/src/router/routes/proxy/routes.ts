@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { proxy, services } from './app';
 import { handleProxy } from './handlers';
 

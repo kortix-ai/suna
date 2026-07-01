@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Pull a Suna sandbox's /workspace files. The sandboxes are archived (cold
  * storage) but resumable: start() un-archives, we tar+base64 /workspace over

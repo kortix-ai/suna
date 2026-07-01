@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { HTTPException } from "hono/http-exception";
 import { billingConfig as config } from '../effect';
 import { getCreditAccount } from "../repositories/credit-accounts";

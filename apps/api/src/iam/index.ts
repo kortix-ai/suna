@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Public IAM surface for the rest of the codebase.
 //
 // authorize / assertAuthorized / listAccessibleResources all go through

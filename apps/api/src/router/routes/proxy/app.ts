@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { makeOpenApiApp } from '../../../openapi';
 import { getProxyServices } from '../../config/proxy-services';
 import { type ActorContext } from '../../../shared/actor-context';

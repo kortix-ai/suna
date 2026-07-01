@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // IAM engine — public type surface only.
 //
 // The V1 policy-based engine implementation (authorize, listAccessibleResources,

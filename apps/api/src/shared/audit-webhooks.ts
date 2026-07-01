@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Audit webhook delivery — fires HTTP POSTs to customer-configured URLs
 // after every recordAuditEvent. Decoupled from the audit write path: the
 // publisher returns immediately and dispatch happens on a microtask, so

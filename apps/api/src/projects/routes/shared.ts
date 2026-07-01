@@ -1,11 +1,12 @@
+import type { Effect } from 'effect';
 import {
   endComputeSession,
   reopenComputeForSandbox,
 } from '../../billing/services/compute-metering';
-import { config, type SandboxProviderName } from '../../config';
+import { sharedConfig as config, type SandboxProviderName } from '../../shared/effect';
 import { auth, json } from '../../openapi';
 import { getProvider, type SandboxStatus } from '../../platform/providers';
-import { db } from '../../shared/db';
+import { sharedDb as db } from '../../shared/effect';
 import { resolveBranchTip } from '../git';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { rehydrateSessionChat } from '../legacy-migration-rehydrate';

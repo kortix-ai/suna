@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { Daytona } from '@daytonaio/sdk';
 import { sharedConfig as config, sharedFetch } from './effect';
 import { isPlatinumConfigured } from './platinum';

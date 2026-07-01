@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Account-scoped invite email. Self-contained Mailtrap transport — formerly
 // lived under teams/services/notifications.ts (which was sandbox-scoped).
 import { accountConfig as config, accountFetch } from './effect';

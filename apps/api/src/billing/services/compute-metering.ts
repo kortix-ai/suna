@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Billing v2 — sandbox compute metering.
 //
 // Sandboxes declare their reserved spec (cpu / memory / disk / gpu) in

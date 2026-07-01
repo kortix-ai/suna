@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { resolve, normalize } from 'path';
 import { eq, and } from 'drizzle-orm';
 import { tunnelPermissions } from '@kortix/db';

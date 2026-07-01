@@ -1,5 +1,5 @@
 import { auth, errors, json } from "../../openapi";
-import { db } from "../../shared/db";
+import { sharedDb as db } from "../../shared/effect";
 import { kickProjectTemplatePrebuilds } from "../../snapshots/builder";
 import { kickProjectWarmBake } from "../../snapshots/warm-project";
 import { getCrById, serializeChangeRequest } from "../change-requests";

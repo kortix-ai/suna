@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { routerConfig as config, KORTIX_MARKUP, routerFetch } from '../effect';
 import type { ModelConfig } from '../config/models';
 import { getTraceHeaders } from '../../lib/request-context';

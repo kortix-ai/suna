@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { makeOpenApiApp } from '../../openapi';
 
 export const emailWebhookApp = makeOpenApiApp();

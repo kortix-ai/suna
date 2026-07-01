@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 const RESERVED_SANDBOX_ENV_NAMES = new Set([
   'PORT', 'PATH', 'HOME', 'PWD', 'USER', 'LOGNAME', 'SHELL', 'HOSTNAME',
   'TERM', 'TMPDIR', 'NODE_ENV', 'NODE_OPTIONS', 'LD_PRELOAD', 'LD_LIBRARY_PATH',

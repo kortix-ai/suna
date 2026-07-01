@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Executor HTTP surface — one Hono router with two faces:
  *

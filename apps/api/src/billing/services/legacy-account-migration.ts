@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Lazy auto-migration: legacy customer → per-seat on first sign-in.
  *

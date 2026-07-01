@@ -1,7 +1,8 @@
+import type { Effect } from 'effect';
 import { and, eq, inArray } from 'drizzle-orm';
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { db } from '../shared/db';
+import { sharedDb as db } from '../shared/effect';
 import { logger as appLogger } from '../lib/logger';
 import {
   listSandboxOpencodeSessions,

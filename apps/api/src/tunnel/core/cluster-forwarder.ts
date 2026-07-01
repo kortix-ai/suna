@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 import { tunnelConnections, tunnelRpcForwards } from '@kortix/db';
 import { TunnelErrorCode, TunnelRelayError } from 'agent-tunnel';

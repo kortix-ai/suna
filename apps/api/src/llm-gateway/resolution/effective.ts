@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { isManagedModelId } from '@kortix/llm-catalog';
 
 // One definition of how a default model/agent is chosen across scopes, shared by

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Single source of truth for what a sandbox is allowed to receive in its
  * environment.

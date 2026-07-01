@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 export interface AgentMailAddressedMessage {
   inbox_id: string;
   thread_id: string;

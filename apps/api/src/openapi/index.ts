@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Shared OpenAPI wiring for the Kortix API.
  *

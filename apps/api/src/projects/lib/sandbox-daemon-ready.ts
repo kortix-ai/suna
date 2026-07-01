@@ -1,5 +1,7 @@
+import type { Effect } from 'effect';
 // Daemon-readiness polling, factored out of sandbox-env-sync so it can be unit
-// tested without pulling in db/config. No heavy imports here on purpose.
+// tested without pulling in db/config-heavy project modules.
+import { sharedFetch, sharedSleep } from '../../shared/effect';
 
 // When a prompt's env sync changes model-affecting env, the daemon RESTARTS
 // opencode and returns 200 the instant the new process is spawned — while it
@@ -15,8 +17,10 @@ const OPENCODE_READY_WAIT_BUDGET_MS = 18_000;
 const OPENCODE_READY_POLL_INTERVAL_MS = 300;
 const HEALTH_FETCH_TIMEOUT_MS = 2_000;
 
+type DaemonFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
 export interface DaemonReadyDeps {
-  fetchImpl?: typeof fetch;
+  fetchImpl?: DaemonFetch;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
 }
@@ -39,7 +43,7 @@ export function daytonaPreviewHeaders(previewToken: string | null): Record<strin
 async function fetchDaemonOpencodeState(
   previewUrl: string,
   previewToken: string | null,
-  fetchImpl: typeof fetch,
+  fetchImpl: DaemonFetch,
 ): Promise<{ opencode: string | null; status: string | null } | null> {
   try {
     const res = await fetchImpl(`${previewUrl.replace(/\/$/, '')}/kortix/health`, {
@@ -72,8 +76,8 @@ export async function waitForDaemonOpencodeReady(args: {
   budgetMs?: number;
   deps?: DaemonReadyDeps;
 }): Promise<boolean> {
-  const fetchImpl = args.deps?.fetchImpl ?? fetch;
-  const sleep = args.deps?.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const fetchImpl = args.deps?.fetchImpl ?? sharedFetch;
+  const sleep = args.deps?.sleep ?? sharedSleep;
   const now = args.deps?.now ?? Date.now;
   const deadline = now() + (args.budgetMs ?? OPENCODE_READY_WAIT_BUDGET_MS);
   for (;;) {

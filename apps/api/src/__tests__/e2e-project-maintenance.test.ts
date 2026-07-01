@@ -8,41 +8,55 @@ let cacheInvalidations: string[] = [];
 let branchDeletes: string[] = [];
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 let providerStopError: Error | null = null;
+const fakeConfig = { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 };
 
 mock.module('../config', () => ({
-  config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 },
+  config: fakeConfig,
   SANDBOX_VERSION: 'test',
   KORTIX_MARKUP: 1,
   PLATFORM_FEE_MARKUP: 0,
   getToolCost: () => 0,
 }));
 
-mock.module('../shared/db', () => ({
-  hasDatabase: true,
-  db: {
-    select: () => ({
-      from: (table: unknown) => ({
-        where: () => ({
-          limit: async () => {
-            if (table === sessionSandboxes) return sandboxCandidates;
-            return [];
-          },
-        }),
-        innerJoin: () => ({
-          where: () => ({
-            limit: async () => branchCandidates,
-          }),
-        }),
-      }),
-    }),
-    update: (table: unknown) => ({
-      set: (updates: Record<string, unknown>) => ({
-        where: async () => {
-          updateCalls.push({ table, updates });
+const fakeDb = {
+  select: () => ({
+    from: (table: unknown) => ({
+      where: () => ({
+        limit: async () => {
+          if (table === sessionSandboxes) return sandboxCandidates;
+          return [];
         },
       }),
+      innerJoin: () => ({
+        where: () => ({
+          limit: async () => branchCandidates,
+        }),
+      }),
     }),
-  },
+  }),
+  update: (table: unknown) => ({
+    set: (updates: Record<string, unknown>) => ({
+      where: async () => {
+        updateCalls.push({ table, updates });
+      },
+    }),
+  }),
+};
+
+mock.module('../shared/db', () => ({
+  hasDatabase: true,
+  db: fakeDb,
+}));
+
+mock.module('../shared/effect', () => ({
+  sharedConfig: fakeConfig,
+  sharedDb: fakeDb,
+  sharedSupabase: {},
+  sharedFetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
+  sharedSleep: async () => {},
+  runSharedTimeout: () => ({}) as never,
+  runSharedInterval: () => ({}) as never,
+  stopSharedTimer: () => {},
 }));
 
 mock.module('../platform/providers', () => ({
@@ -96,6 +110,18 @@ mock.module('../projects/git', () => ({
   getMergeBase: async () => 'a'.repeat(40),
   diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
   invalidateProjectMirror: () => {},
+}));
+
+mock.module('../billing/services/compute-metering', () => ({
+  tickRunningComputeCharges: async () => ({ settled: 0 }),
+}));
+
+mock.module('../snapshots/builder', () => ({
+  reconcileStaleBuilds: async () => ({ checked: 0, closedReady: 0, closedFailed: 0 }),
+}));
+
+mock.module('../snapshots/quota-gc', () => ({
+  reconcileSnapshotQuota: async () => ({ namespaceCount: 0, eligible: 0, deleted: 0, dryRun: false }),
 }));
 
 mock.module('../projects/sandbox-reaper', () => ({

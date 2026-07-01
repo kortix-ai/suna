@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createGateway } from "@kortix/llm-gateway";
 import { pickAutoModel } from "@kortix/llm-catalog";

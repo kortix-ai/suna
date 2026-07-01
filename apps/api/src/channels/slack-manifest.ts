@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // ─────────────────────────────────────────────────────────────────────────────
 // THE single source of truth for the Kortix Slack app manifest.
 //

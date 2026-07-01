@@ -8,7 +8,7 @@ import {
 import { deriveRequestContext } from "../../iam/cache";
 import { supabaseAuth } from "../../middleware/auth";
 import { auth, errors, json } from "../../openapi";
-import { db } from "../../shared/db";
+import { sharedDb as db } from "../../shared/effect";
 import { kickProjectTemplatePrebuilds } from "../../snapshots/builder";
 import { kickProjectWarmBake } from "../../snapshots/warm-project";
 import { isAccountManager, type ProjectRole } from "../access";

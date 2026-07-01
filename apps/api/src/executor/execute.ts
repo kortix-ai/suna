@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Execution layer — the gateway's "run the call" step. Given a connector's
  * binding + resolved secret + args, build and perform the outbound request to

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // SCIM Groups routes: GET (list), GET/:id, POST, PATCH (member add/remove,
 // rename), DELETE. Registers onto the shared scimRouter via side effect.
 

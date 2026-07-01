@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { gatewayRequestLogs } from '@kortix/db';
 import { db } from './db';
 import { buildGatewayTraceRow, type GatewayTraceInput } from './gateway-trace-row';

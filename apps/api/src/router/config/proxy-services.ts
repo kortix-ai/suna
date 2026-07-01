@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { routerConfig as config } from '../effect';
 
 // === Key Injection Methods ===

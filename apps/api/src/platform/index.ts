@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { createRoute, z } from "@hono/zod-openapi";
 import type { AppEnv } from "../types";
 import { makeOpenApiApp, json } from "../openapi";

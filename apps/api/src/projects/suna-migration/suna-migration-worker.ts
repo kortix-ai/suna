@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Resume loop for durable Suna account migrations — the durability guarantee.
  * Mirrors legacy-migration-worker: each tick finds live rows whose lease went
@@ -7,11 +8,11 @@
  */
 import { and, inArray, isNull, lt, or } from 'drizzle-orm';
 import { sunaAccountMigrations } from '@kortix/db';
-import { db } from '../../shared/db';
+import { runSharedInterval, sharedDb as db, stopSharedTimer, type SharedTimer } from '../../shared/effect';
 import { logger as appLogger } from '../../lib/logger';
 import { driveSunaMigration, LEASE_TTL_MS } from './suna-migration-runner';
 
-type Timer = ReturnType<typeof setInterval>;
+type Timer = SharedTimer;
 const g = globalThis as unknown as { __kortixSunaMigrationTimer?: Timer | null };
 let timer: Timer | null = null;
 let running = false;
@@ -54,14 +55,14 @@ async function tick(): Promise<void> {
 
 export function startSunaMigrationWorker(): void {
   if (process.env.KORTIX_SUNA_MIGRATION_WORKER_ENABLED === 'false') return;
-  if (g.__kortixSunaMigrationTimer) clearInterval(g.__kortixSunaMigrationTimer);
-  timer = setInterval(() => {
+  if (g.__kortixSunaMigrationTimer) stopSharedTimer(g.__kortixSunaMigrationTimer);
+  timer = runSharedInterval(() => {
     tick().catch((err) => appLogger.error('[suna-migration-worker] tick failed', { error: err instanceof Error ? err.message : String(err) }));
   }, intervalMs());
   g.__kortixSunaMigrationTimer = timer;
 }
 
 export function stopSunaMigrationWorker(): void {
-  if (timer) { clearInterval(timer); timer = null; }
-  if (g.__kortixSunaMigrationTimer) { clearInterval(g.__kortixSunaMigrationTimer); g.__kortixSunaMigrationTimer = null; }
+  if (timer) { stopSharedTimer(timer); timer = null; }
+  if (g.__kortixSunaMigrationTimer) { stopSharedTimer(g.__kortixSunaMigrationTimer); g.__kortixSunaMigrationTimer = null; }
 }

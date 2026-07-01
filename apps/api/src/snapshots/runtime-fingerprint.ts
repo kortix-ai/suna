@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { createHash, type Hash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, readdir, readlink } from 'node:fs/promises';

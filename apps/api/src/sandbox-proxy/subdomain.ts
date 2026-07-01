@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Subdomain preview proxy — `p{port}-{sandboxId}.{apiHost}/...`
  *

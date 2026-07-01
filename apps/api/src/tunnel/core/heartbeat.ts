@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { HeartbeatManager } from 'agent-tunnel';
 import { sharedConfig as config } from '../../shared/effect';
 import { tunnelRelay } from './relay';

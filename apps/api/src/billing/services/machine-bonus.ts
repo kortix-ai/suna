@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { grantCredits } from './credits';
 import { MACHINE_CREDIT_BONUS } from './tiers';
 

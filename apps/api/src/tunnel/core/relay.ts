@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { TunnelRelay } from 'agent-tunnel';
 import { sharedConfig as config } from '../../shared/effect';
 

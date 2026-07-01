@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Provider-agnostic sandbox reaper + state/billing reconciler.
  *
@@ -30,12 +31,12 @@
 
 import { and, eq, gt, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { db } from '../shared/db';
+import { sharedDb as db } from '../shared/effect';
 import { getProvider, type ProviderName, type SandboxStatus } from '../platform/providers';
 import { invalidateProviderCache } from '../sandbox-proxy';
 import { pauseComputeSession, endComputeSession } from '../billing/services/compute-metering';
 import { ACTIVE_SESSION_STATUSES } from './lib/session-status';
-import { config } from '../config';
+import { sharedConfig as config } from '../shared/effect';
 
 export const REAP_BATCH_SIZE = 100;
 const REAP_CONCURRENCY = 6;

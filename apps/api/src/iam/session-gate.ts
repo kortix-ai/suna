@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Per-account session policy enforcement. Runs on every authenticated
 // request that targets a specific account (i.e. routes mounted under
 // /:accountId/*). Cheap when no policy is configured — one composite

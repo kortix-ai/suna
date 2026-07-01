@@ -1,8 +1,9 @@
+import type { Effect } from 'effect';
 import { and, eq, inArray } from 'drizzle-orm';
 import { accountMembers, projectMembers, projects } from '@kortix/db';
 import { sendProjectAccessRequestEmail } from '../../accounts/email';
-import { config } from '../../config';
-import { db } from '../../shared/db';
+import { sharedConfig as config } from '../../shared/effect';
+import { sharedDb as db } from '../../shared/effect';
 import { lookupEmailsByUserIds } from './access';
 
 function projectMembersUrl(projectId: string): string {

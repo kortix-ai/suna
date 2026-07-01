@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Create ONE managed repo and push the assembled Suna bundle to it:
  *   <bundle>/legacy/<slug>/…   (his content)         + one synthesized root

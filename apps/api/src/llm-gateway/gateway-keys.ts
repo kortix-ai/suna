@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { and, desc, eq } from 'drizzle-orm';
 import { gatewayApiKeys } from '@kortix/db';
 import { generateGatewayKeyPair, hashSecretKey } from '../shared/crypto';

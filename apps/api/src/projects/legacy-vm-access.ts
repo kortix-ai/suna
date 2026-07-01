@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Minimal reach-and-exec for legacy JustAVPS VMs, used only by the migration.
  *
@@ -8,7 +9,7 @@
  * per-sandbox proxy token (stored in the sandbox row metadata) + the service
  * key. This mirrors the legacy provider's resolveEndpoint + update/exec.ts.
  */
-import { config } from '../config';
+import { sharedConfig as config, sharedFetch } from '../shared/effect';
 import { logger as appLogger } from '../lib/logger';
 
 type LegacySandboxLike = {
@@ -85,7 +86,7 @@ const PROXY_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
 /** Minimal authed call to the JustAVPS control API (mirrors the legacy provider). */
 async function justavpsFetch<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
   const baseUrl = config.JUSTAVPS_API_URL.replace(/\/+$/, '');
-  const res = await fetch(`${baseUrl}${path}`, {
+  const res = await sharedFetch(`${baseUrl}${path}`, {
     method: options.method ?? 'GET',
     headers: {
       Authorization: `Bearer ${config.JUSTAVPS_API_KEY}`,
@@ -179,7 +180,7 @@ export async function execOnLegacyVm(
   command: string,
   timeoutSec = 120,
 ): Promise<LegacyExecResult> {
-  const resp = await fetch(`${endpoint.url}/toolbox/process/execute`, {
+  const resp = await sharedFetch(`${endpoint.url}/toolbox/process/execute`, {
     method: 'POST',
     headers: endpoint.headers,
     body: JSON.stringify({ command, timeout: timeoutSec }),

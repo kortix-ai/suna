@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Auto-materialize the `computer` connector from connected machines.
  *

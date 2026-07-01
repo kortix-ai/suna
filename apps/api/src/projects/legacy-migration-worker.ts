@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Resume loop for durable legacy-sandbox migrations.
  *
@@ -10,11 +11,11 @@
  */
 import { and, inArray, isNull, lt, or } from 'drizzle-orm';
 import { legacySandboxMigrations } from '@kortix/db';
-import { db } from '../shared/db';
+import { runSharedInterval, sharedDb as db, stopSharedTimer, type SharedTimer } from '../shared/effect';
 import { logger as appLogger } from '../lib/logger';
 import { driveMigration, LEASE_TTL_MS } from './legacy-migration-runner';
 
-type Timer = ReturnType<typeof setInterval>;
+type Timer = SharedTimer;
 
 const globalForWorker = globalThis as unknown as {
   __kortixLegacyMigrationTimer?: Timer | null;
@@ -77,9 +78,9 @@ async function tick(): Promise<void> {
 export function startLegacyMigrationWorker(): void {
   if (process.env.KORTIX_LEGACY_MIGRATION_WORKER_ENABLED === 'false') return;
   if (globalForWorker.__kortixLegacyMigrationTimer) {
-    clearInterval(globalForWorker.__kortixLegacyMigrationTimer);
+    stopSharedTimer(globalForWorker.__kortixLegacyMigrationTimer);
   }
-  timer = setInterval(() => {
+  timer = runSharedInterval(() => {
     tick().catch((err) => {
       appLogger.error('[legacy-migration-worker] tick failed', {
         error: err instanceof Error ? err.message : String(err),
@@ -91,11 +92,11 @@ export function startLegacyMigrationWorker(): void {
 
 export function stopLegacyMigrationWorker(): void {
   if (timer) {
-    clearInterval(timer);
+    stopSharedTimer(timer);
     timer = null;
   }
   if (globalForWorker.__kortixLegacyMigrationTimer) {
-    clearInterval(globalForWorker.__kortixLegacyMigrationTimer);
+    stopSharedTimer(globalForWorker.__kortixLegacyMigrationTimer);
     globalForWorker.__kortixLegacyMigrationTimer = null;
   }
 }

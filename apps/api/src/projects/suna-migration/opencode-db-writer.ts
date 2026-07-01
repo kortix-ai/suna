@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Write normalized Suna conversations into an opencode.db (SQLite) that opencode
  * will actually serve.

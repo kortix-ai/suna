@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { usageEvents } from '@kortix/db';
 import { db } from './db';
 

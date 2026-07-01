@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * /v1/marketplace — browse the registry catalog. Read-only routes are public; installing
  * is project-scoped and lives under /v1/projects/:id/registry/* (see r10.ts).

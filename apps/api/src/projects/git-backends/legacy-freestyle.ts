@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { callFreestyle, getFreestyleApiKey } from '../../deployments/providers/freestyle';
 
 async function freestyleJson<T>(

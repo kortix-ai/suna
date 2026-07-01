@@ -1,9 +1,10 @@
+import type { Effect } from 'effect';
 import { and, eq } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
-import { db } from '../../shared/db';
+import { sharedDb as db, sharedFetch } from '../../shared/effect';
 import { resolvePreviewLink } from '../../sandbox-proxy/backend';
 import { resolveShareSubject } from '../../executor/share';
-import { config } from '../../config';
+import { sharedConfig as config } from '../../shared/effect';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import {
@@ -104,7 +105,7 @@ async function postEnvToDaemon(args: {
     ...daytonaPreviewHeaders(args.previewToken),
   };
 
-  const res = await fetch(`${args.previewUrl.replace(/\/$/, '')}/kortix/env`, {
+  const res = await sharedFetch(`${args.previewUrl.replace(/\/$/, '')}/kortix/env`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
