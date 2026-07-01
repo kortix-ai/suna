@@ -31,10 +31,6 @@ export interface ProjectTrigger {
   /** project_secrets key holding the webhook HMAC secret. */
   secret_env: string | null;
   prompt_template: string;
-  /** The project member this trigger's automated runs act AS. A per_user
-   *  connector resolves to this member's connected accounts. null = the
-   *  account owner (default/legacy). */
-  owner_user_id: string | null;
   last_fired_at: string | null;
   /** Public fire URL for webhook triggers; null for cron. */
   webhook_url: string | null;
@@ -82,9 +78,6 @@ export interface CreateProjectTriggerInput {
   timezone?: string;
   /** For type='webhook'. Name of a project_secrets entry. */
   secret_env?: string;
-  /** The member this trigger runs as. Omit to default to the creator;
-   *  null resets to the account owner. */
-  owner_user_id?: string | null;
 }
 
 export interface UpdateProjectTriggerInput {
@@ -95,8 +88,6 @@ export interface UpdateProjectTriggerInput {
   cron?: string;
   timezone?: string;
   secret_env?: string;
-  /** Change who the trigger runs as. null = reset to the account owner. */
-  owner_user_id?: string | null;
 }
 
 export async function listProjectTriggers(projectId: string) {
