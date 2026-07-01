@@ -4,7 +4,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq } from 'drizzle-orm';
 import { accountInvitations, accountMembers } from '@kortix/db';
-import { db } from '../shared/db';
 import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
 import { scimError } from '../middleware/scim-auth';
 import { json, errors } from '../openapi';
@@ -19,6 +18,7 @@ import {
   userIdByEmail,
   buildUser,
   scimAudit,
+  runScimDatabase,
   type UserShape,
 } from './app';
 
@@ -45,14 +45,16 @@ scimRouter.openapi(
 
   // Load every member for the account; cheap because directories that
   // bother with SCIM tend to have <1000 members in a single account.
-  const members = await db
-    .select({
-      userId: accountMembers.userId,
-      scimExternalId: accountMembers.scimExternalId,
-      joinedAt: accountMembers.joinedAt,
-    })
-    .from(accountMembers)
-    .where(eq(accountMembers.accountId, accountId));
+  const members = await runScimDatabase((database) =>
+    database
+      .select({
+        userId: accountMembers.userId,
+        scimExternalId: accountMembers.scimExternalId,
+        joinedAt: accountMembers.joinedAt,
+      })
+      .from(accountMembers)
+      .where(eq(accountMembers.accountId, accountId)),
+  );
 
   const emails = await emailsByUserId(members.map((m) => m.userId));
   const allResources: UserShape[] = members
@@ -96,15 +98,17 @@ scimRouter.openapi(
   const accountId = c.req.param('accountId');
   const userId = c.req.param('userId');
 
-  const [member] = await db
-    .select({
-      userId: accountMembers.userId,
-      scimExternalId: accountMembers.scimExternalId,
-      joinedAt: accountMembers.joinedAt,
-    })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
-    .limit(1);
+  const [member] = await runScimDatabase((database) =>
+    database
+      .select({
+        userId: accountMembers.userId,
+        scimExternalId: accountMembers.scimExternalId,
+        joinedAt: accountMembers.joinedAt,
+      })
+      .from(accountMembers)
+      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+      .limit(1),
+  );
   if (!member) return scimError(c, 404, 'User not found in this account');
 
   const emails = await emailsByUserId([userId]);
@@ -156,20 +160,22 @@ scimRouter.openapi(
     // Create or refresh a pending invitation; the IdP retries on next sync
     // so the eventual sign-up gets reconciled.
     const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
-    const [invite] = await db
-      .insert(accountInvitations)
-      .values({
-        accountId,
-        email: userName.toLowerCase(),
-        initialRole: 'member',
-        expiresAt,
-        invitedBy: null,
-      })
-      .onConflictDoUpdate({
-        target: [accountInvitations.accountId, accountInvitations.email],
-        set: { expiresAt, initialRole: 'member', acceptedAt: null },
-      })
-      .returning();
+    const [invite] = await runScimDatabase((database) =>
+      database
+        .insert(accountInvitations)
+        .values({
+          accountId,
+          email: userName.toLowerCase(),
+          initialRole: 'member',
+          expiresAt,
+          invitedBy: null,
+        })
+        .onConflictDoUpdate({
+          target: [accountInvitations.accountId, accountInvitations.email],
+          set: { expiresAt, initialRole: 'member', acceptedAt: null },
+        })
+        .returning(),
+    );
 
     await scimAudit(c, {
       accountId,
@@ -204,47 +210,55 @@ scimRouter.openapi(
   // User exists in Supabase — make sure they're a member of this account.
   // If already a member, refresh the externalId; otherwise insert. SCIM is
   // expected to be idempotent.
-  const [existingMember] = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(
-      and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, existingUserId)),
-    )
-    .limit(1);
+  const [existingMember] = await runScimDatabase((database) =>
+    database
+      .select({ userId: accountMembers.userId })
+      .from(accountMembers)
+      .where(
+        and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, existingUserId)),
+      )
+      .limit(1),
+  );
 
   if (existingMember) {
     if (externalId) {
-      await db
-        .update(accountMembers)
-        .set({ scimExternalId: externalId })
-        .where(
-          and(
-            eq(accountMembers.accountId, accountId),
-            eq(accountMembers.userId, existingUserId),
+      await runScimDatabase((database) =>
+        database
+          .update(accountMembers)
+          .set({ scimExternalId: externalId })
+          .where(
+            and(
+              eq(accountMembers.accountId, accountId),
+              eq(accountMembers.userId, existingUserId),
+            ),
           ),
-        );
+      );
     }
   } else {
-    await db.insert(accountMembers).values({
-      accountId,
-      userId: existingUserId,
-      accountRole: 'member',
-      scimExternalId: externalId,
-    });
+    await runScimDatabase((database) =>
+      database.insert(accountMembers).values({
+        accountId,
+        userId: existingUserId,
+        accountRole: 'member',
+        scimExternalId: externalId,
+      }),
+    );
     invalidateIamCacheForUser(existingUserId);
   }
 
-  const [member] = await db
-    .select({
-      userId: accountMembers.userId,
-      scimExternalId: accountMembers.scimExternalId,
-      joinedAt: accountMembers.joinedAt,
-    })
-    .from(accountMembers)
-    .where(
-      and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, existingUserId)),
-    )
-    .limit(1);
+  const [member] = await runScimDatabase((database) =>
+    database
+      .select({
+        userId: accountMembers.userId,
+        scimExternalId: accountMembers.scimExternalId,
+        joinedAt: accountMembers.joinedAt,
+      })
+      .from(accountMembers)
+      .where(
+        and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, existingUserId)),
+      )
+      .limit(1),
+  );
 
   await scimAudit(c, {
     accountId,
@@ -308,16 +322,18 @@ scimRouter.openapi(
     for (const k of Object.keys(body)) changes.set(k, body[k]);
   }
 
-  const [member] = await db
-    .select({
-      userId: accountMembers.userId,
-      accountRole: accountMembers.accountRole,
-      scimExternalId: accountMembers.scimExternalId,
-      joinedAt: accountMembers.joinedAt,
-    })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
-    .limit(1);
+  const [member] = await runScimDatabase((database) =>
+    database
+      .select({
+        userId: accountMembers.userId,
+        accountRole: accountMembers.accountRole,
+        scimExternalId: accountMembers.scimExternalId,
+        joinedAt: accountMembers.joinedAt,
+      })
+      .from(accountMembers)
+      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+      .limit(1),
+  );
 
   // Deactivate
   if (changes.get('active') === false) {
@@ -326,19 +342,23 @@ scimRouter.openapi(
     // enforces. Without this an IdP misconfiguration could lock everyone
     // out of an account.
     if (member.accountRole === 'owner') {
-      const owners = await db
-        .select({ userId: accountMembers.userId })
-        .from(accountMembers)
-        .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner')));
+      const owners = await runScimDatabase((database) =>
+        database
+          .select({ userId: accountMembers.userId })
+          .from(accountMembers)
+          .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner'))),
+      );
       if (owners.length <= 1) {
         return scimError(c, 409, 'Cannot deactivate the last owner of this account');
       }
     }
-    await db
-      .delete(accountMembers)
-      .where(
-        and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)),
-      );
+    await runScimDatabase((database) =>
+      database
+        .delete(accountMembers)
+        .where(
+          and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)),
+        ),
+    );
     invalidateIamCacheForUser(userId);
     await scimAudit(c, {
       accountId,
@@ -354,12 +374,14 @@ scimRouter.openapi(
   if (!member) return scimError(c, 404, 'User not found in this account');
 
   if (changes.has('externalId') && typeof changes.get('externalId') === 'string') {
-    await db
-      .update(accountMembers)
-      .set({ scimExternalId: changes.get('externalId') as string })
-      .where(
-        and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)),
-      );
+    await runScimDatabase((database) =>
+      database
+        .update(accountMembers)
+        .set({ scimExternalId: changes.get('externalId') as string })
+        .where(
+          and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)),
+        ),
+    );
   }
 
   const emails = await emailsByUserId([userId]);
@@ -384,27 +406,33 @@ scimRouter.openapi(
   const accountId = c.req.param('accountId');
   const userId = c.req.param('userId');
 
-  const [member] = await db
-    .select({ accountRole: accountMembers.accountRole })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
-    .limit(1);
+  const [member] = await runScimDatabase((database) =>
+    database
+      .select({ accountRole: accountMembers.accountRole })
+      .from(accountMembers)
+      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+      .limit(1),
+  );
   if (!member) return c.body(null, 204);
 
   // Same last-owner guard as PATCH active=false.
   if (member.accountRole === 'owner') {
-    const owners = await db
-      .select({ userId: accountMembers.userId })
-      .from(accountMembers)
-      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner')));
+    const owners = await runScimDatabase((database) =>
+      database
+        .select({ userId: accountMembers.userId })
+        .from(accountMembers)
+        .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner'))),
+    );
     if (owners.length <= 1) {
       return scimError(c, 409, 'Cannot delete the last owner of this account');
     }
   }
 
-  await db
-    .delete(accountMembers)
-    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
+  await runScimDatabase((database) =>
+    database
+      .delete(accountMembers)
+      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId))),
+  );
   invalidateIamCacheForUser(userId);
 
   await scimAudit(c, {
