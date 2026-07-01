@@ -13,7 +13,10 @@
 
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { Effect } from 'effect';
 import { platinumJson, isPlatinumConfigured } from '../../shared/platinum';
+import { HttpClient } from '../../effect/services';
+import { runEffectOrThrow } from '../../effect/http';
 import {
   stageBuildContext,
   stageAgentBinaryGz,
@@ -41,6 +44,17 @@ const BUILD_ATTEMPTS = 3;
 // stops oversize-disk templates from being rejected with a raw "size_mb too_big"
 // 400. Single source of truth for the build-size contract; keep in sync w/ Platinum.
 export const PLATINUM_MAX_BUILD_SIZE_MB = 20480;
+
+const sleep = (ms: number): Promise<void> =>
+  runEffectOrThrow(Effect.sleep(`${ms} millis`));
+
+const uploadFile = (url: string, filePath: string): Promise<Response> =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const client = yield* HttpClient;
+    return yield* Effect.tryPromise(() =>
+      client.fetch(url, { method: 'PUT', body: Bun.file(filePath) }),
+    );
+  }));
 
 /**
  * Retry only stale-context (staging disturbed before the S3 upload — API restart
@@ -104,7 +118,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
         console.warn(
           `[snapshots] platinum build attempt ${attempt}/${BUILD_ATTEMPTS} for ${input.snapshotName} failed — re-staging + retrying: ${msg.slice(0, 120)}`,
         );
-        await new Promise((r) => setTimeout(r, 2_000 * attempt));
+        await sleep(2_000 * attempt);
       }
     }
     throw lastErr;
@@ -135,7 +149,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       // RAM and OOMKilled the 512Mi api pod (exit 137), 502-ing every session
       // whose request hit the crashing replica. Daytona never buffers — its SDK
       // streams the context — so this brings the Platinum path to parity.
-      const put = await fetch(upload_url, { method: 'PUT', body: Bun.file(tarPath) });
+      const put = await uploadFile(upload_url, tarPath);
       if (!put.ok) throw new Error(`build-context S3 upload -> ${put.status} ${(await put.text().catch(() => '')).slice(0, 200)}`);
 
       const diskGb = Math.min(input.spec.diskGb ?? DEFAULT_DISK_GB, SANDBOX_SPEC_LIMITS.disk.max);
@@ -192,7 +206,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       const { upload_url, context_s3_key } = await platinumJson<{ upload_url: string; context_s3_key: string }>(
         '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify({}) },
       );
-      const put = await fetch(upload_url, { method: 'PUT', body: Bun.file(gzPath) }); // streamed — see buildOnce
+      const put = await uploadFile(upload_url, gzPath); // streamed — see buildOnce
       if (!put.ok) throw new Error(`agent-swap upload -> ${put.status} ${(await put.text().catch(() => '')).slice(0, 200)}`);
       // Platinum's GENERAL file-patch primitive: patch our one changed file (the
       // kortix-agent binary) into the predecessor's rootfs — no rebuild. The guest
@@ -242,7 +256,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       if (state !== last) { last = state; tap?.onLine?.(`template ${name}: ${state}`); }
       if (state === 'ready') return;
       if (state === 'failed') throw new Error(`Platinum template ${name} build failed`);
-      await new Promise((r) => setTimeout(r, POLL_MS));
+      await sleep(POLL_MS);
     }
     throw new Error(`Platinum template ${name} did not become ready (last state: ${last})`);
   }

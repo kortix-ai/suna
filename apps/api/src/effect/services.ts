@@ -1,11 +1,13 @@
 import { Context, Effect, Layer } from 'effect';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@kortix/db';
-import { config } from '../config';
+import { config, SANDBOX_VERSION } from '../config';
 import { db, hasDatabase } from '../shared/db';
 import { getSupabase } from '../shared/supabase';
 
-export type AppConfigValue = typeof config;
+export type AppConfigValue = typeof config & {
+  readonly SANDBOX_VERSION: string;
+};
 
 export class AppConfig extends Context.Tag('AppConfig')<
   AppConfig,
@@ -40,7 +42,10 @@ export type ApiServiceContext =
   | SupabaseService
   | HttpClient;
 
-export const AppConfigLive = Layer.succeed(AppConfig, config);
+export const AppConfigLive = Layer.succeed(AppConfig, {
+  ...config,
+  SANDBOX_VERSION,
+});
 
 export const DatabaseLive = Layer.succeed(DatabaseService, {
   database: db,

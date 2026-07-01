@@ -29,8 +29,10 @@
  */
 
 import { isNotNull, sql } from 'drizzle-orm';
-import { sandboxTemplates } from '@kortix/db';
-import { db } from '../shared/db';
+import { Effect } from 'effect';
+import { sandboxTemplates, type Database } from '@kortix/db';
+import { DatabaseService } from '../effect/services';
+import { runEffectOrThrow } from '../effect/http';
 import {
   deleteDaytonaSnapshotById,
   isDaytonaConfigured,
@@ -47,6 +49,14 @@ const QUOTA_GC_MAX_PER_PASS = 15;
 /** A project counts as ACTIVE (its warm snapshot is protected) when it has a
  * session or portal presence within this window. */
 const QUOTA_GC_PROJECT_ACTIVE_MS = 14 * 24 * 60 * 60 * 1000;
+
+const runSnapshotGcDatabase = <A>(
+  operation: (database: Database) => Promise<A> | A,
+): Promise<A> =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    return yield* Effect.tryPromise(async () => operation(database));
+  }));
 
 export interface QuotaGcResult {
   /** Snapshots in our template namespaces (the pressure number). */
@@ -89,10 +99,12 @@ export async function reconcileSnapshotQuota(
   // last-known-good path). Never delete these.
   const referenced = new Set(
     (
-      await db
-        .select({ name: sandboxTemplates.providerSnapshotName })
-        .from(sandboxTemplates)
-        .where(isNotNull(sandboxTemplates.providerSnapshotName))
+      await runSnapshotGcDatabase((database) =>
+        database
+          .select({ name: sandboxTemplates.providerSnapshotName })
+          .from(sandboxTemplates)
+          .where(isNotNull(sandboxTemplates.providerSnapshotName)),
+      )
     ).map((r) => r.name as string),
   );
   // Per-project warm snapshots (kortix-wproj-*) are referenced via
@@ -101,20 +113,22 @@ export async function reconcileSnapshotQuota(
   // projects' snapshots are reclaimable. Pointers of reclaimed snapshots are
   // cleared below so session boot never chases a deleted name.
   const activityCutoff = new Date(now - QUOTA_GC_PROJECT_ACTIVE_MS).toISOString();
-  const pointerRows = await db.execute(sql`
-    SELECT p.project_id AS project_id,
-           p.metadata -> 'warm_snapshot' ->> 'name' AS name,
-           (
-             p.status <> 'archived' AND (
-               EXISTS (
-                 SELECT 1 FROM kortix.project_sessions ps
-                 WHERE ps.project_id = p.project_id AND ps.created_at > ${activityCutoff}::timestamptz
+  const pointerRows = await runSnapshotGcDatabase((database) =>
+    database.execute(sql`
+      SELECT p.project_id AS project_id,
+             p.metadata -> 'warm_snapshot' ->> 'name' AS name,
+             (
+               p.status <> 'archived' AND (
+                 EXISTS (
+                   SELECT 1 FROM kortix.project_sessions ps
+                   WHERE ps.project_id = p.project_id AND ps.created_at > ${activityCutoff}::timestamptz
+                 )
                )
-             )
-           ) AS active
-    FROM kortix.projects p
-    WHERE p.metadata -> 'warm_snapshot' ->> 'name' IS NOT NULL
-  `);
+             ) AS active
+      FROM kortix.projects p
+      WHERE p.metadata -> 'warm_snapshot' ->> 'name' IS NOT NULL
+    `),
+  );
   const pointerList = ((pointerRows as unknown as { rows?: any[] }).rows ?? (pointerRows as unknown as any[])) as Array<{
     project_id: string; name: string; active: boolean;
   }>;
