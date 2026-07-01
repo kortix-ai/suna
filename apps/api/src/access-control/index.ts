@@ -1,27 +1,28 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import postgres from "postgres";
-import { db } from "../shared/db";
+import { sql } from "drizzle-orm";
+import { Effect } from "effect";
 import { accessRequests } from "@kortix/db";
 import { areSignupsEnabled, canSignUp } from "../shared/access-control-cache";
-import { config } from "../config";
 import { makeOpenApiApp, json, errors } from "../openapi";
 import { effectHandler } from "../effect/hono";
+import { DatabaseService } from "../effect/services";
+import { runEffectOrThrow } from "../effect/http";
 
 export const accessControlApp = makeOpenApiApp();
 
 async function userExistsInAuth(email: string): Promise<boolean> {
-  if (!config.DATABASE_URL) return false;
-  const sql = postgres(config.DATABASE_URL, { max: 1 });
-  try {
-    const [row] = await sql`
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database, hasDatabase } = yield* DatabaseService;
+    if (!hasDatabase) return false;
+    const result = yield* Effect.tryPromise(() =>
+      database.execute(sql`
       SELECT 1 FROM auth.users WHERE email = ${email.trim().toLowerCase()} LIMIT 1
-    `;
-    return !!row;
-  } catch {
-    return false;
-  } finally {
-    await sql.end();
-  }
+    `),
+    ).pipe(Effect.catchAll(() => Effect.succeed([])));
+    if (Array.isArray(result)) return result.length > 0;
+    const rows = (result as { rows?: unknown[] } | null)?.rows;
+    return Array.isArray(rows) && rows.length > 0;
+  }));
 }
 
 // ─── Public endpoints (no auth) ───────────────────────────────────────────────
@@ -102,11 +103,16 @@ accessControlApp.openapi(
   }),
   effectHandler(async (c: any) => {
     const body = c.req.valid("json");
-    await db.insert(accessRequests).values({
-      email: body.email.trim().toLowerCase(),
-      company: body.company || null,
-      useCase: body.useCase || null,
-    });
+    await runEffectOrThrow(Effect.gen(function* () {
+      const { database } = yield* DatabaseService;
+      yield* Effect.tryPromise(() =>
+        database.insert(accessRequests).values({
+          email: body.email.trim().toLowerCase(),
+          company: body.company || null,
+          useCase: body.useCase || null,
+        }),
+      );
+    }));
     return c.json({ success: true, message: "Access request submitted" });
   }),
 );

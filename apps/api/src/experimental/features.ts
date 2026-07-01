@@ -21,7 +21,10 @@
  * `resolveExperimentalFeature(metadata, key)`. The UI renders straight from
  * {@link buildExperimentalCatalog}, so a new entry lights up everywhere.
  */
-import { config } from '../config';
+import { Effect } from 'effect';
+import { AppConfig, AppConfigLive } from '../effect/services';
+
+const appConfig = Effect.runSync(Effect.provide(AppConfig, AppConfigLive));
 
 /** Stable identifiers for experimental features. */
 export type ExperimentalFeatureKey =
@@ -70,7 +73,7 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     stability: 'experimental',
     available: () => true,
     // Operator-wide default; flip KORTIX_APPS_EXPERIMENTAL to default the fleet on.
-    platformDefault: () => config.KORTIX_APPS_EXPERIMENTAL,
+    platformDefault: () => appConfig.KORTIX_APPS_EXPERIMENTAL,
   },
   {
     key: 'marketplace',
@@ -89,7 +92,7 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
       'Let agents securely reach a local machine — files, shell, and desktop control — over a permissioned reverse tunnel. Connect a computer, then grant access per capability.',
     stability: 'experimental',
     // The backend service must be running platform-wide for the surface to work.
-    available: () => config.TUNNEL_ENABLED,
+    available: () => appConfig.TUNNEL_ENABLED,
     // Explicit opt-in: off by default even where the service is available.
     platformDefault: () => false,
   },
@@ -111,7 +114,7 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     stability: 'experimental',
     // Master kill switch (the global gate): when off, Meet disappears platform-wide
     // and every project falls back to no meeting bot — mirrors LLM Gateway.
-    available: () => config.MEET_ENABLED,
+    available: () => appConfig.MEET_ENABLED,
     // Explicit opt-in: a project enables Meet in Settings.
     platformDefault: () => false,
   },
@@ -123,11 +126,11 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     stability: 'experimental',
     // Master kill switch: when off, the feature disappears and every project
     // falls back to native OpenCode provider behavior.
-    available: () => config.LLM_GATEWAY_ENABLED,
+    available: () => appConfig.LLM_GATEWAY_ENABLED,
     // Fleet rollout switch. Operators can default the gateway on for every
     // project, while explicit project overrides still win and the master
     // availability gate above remains the emergency kill switch.
-    platformDefault: () => config.LLM_GATEWAY_DEFAULT_ENABLED,
+    platformDefault: () => appConfig.LLM_GATEWAY_DEFAULT_ENABLED,
   },
 ];
 
