@@ -1,4 +1,4 @@
-import { config } from '../config';
+import { sharedConfig as config, sharedFetch } from '../shared/effect';
 
 export interface AgentMailInbox {
   inbox_id: string;
@@ -69,21 +69,19 @@ async function agentMailRequest<T>(
   path: string,
   init: { method?: string; body?: unknown } = {},
 ): Promise<T> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), AGENTMAIL_REQUEST_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(`${baseUrl()}${path}`, {
+    res = await sharedFetch(`${baseUrl()}${path}`, {
       method: init.method ?? 'GET',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(AGENTMAIL_REQUEST_TIMEOUT_MS),
     });
   } catch (err) {
-    const timedOut = controller.signal.aborted;
+    const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
     throw new AgentMailApiError({
       message: timedOut
         ? 'AgentMail request timed out'
@@ -94,8 +92,6 @@ async function agentMailRequest<T>(
       body: null,
       path,
     });
-  } finally {
-    clearTimeout(timeout);
   }
   const text = await res.text();
   let data: any = null;

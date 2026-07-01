@@ -1,17 +1,10 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { createHmac } from "node:crypto";
-import { config } from "../config";
-import {
-  AgentMailApiError,
-  createAgentMailInbox,
-  createAgentMailWebhook,
-  isAgentMailInboxLimitError,
-  resolveAgentMailApiKey,
-} from "../channels/agentmail-api";
 import { verifyAgentMailSignature } from "../channels/email/verify";
 import type { AgentMailMessageReceivedEvent } from "../channels/email/types";
 
 let dbResults: unknown[][] = [];
+const channelConfig: Record<string, unknown> = {};
 
 function makeChain(): any {
   const chain: any = {};
@@ -31,15 +24,36 @@ function makeChain(): any {
   return chain;
 }
 
-mock.module("../shared/db", () => ({
-  db: {
+const fakeDb = {
     select: () => makeChain(),
     insert: () => makeChain(),
     update: () => makeChain(),
     delete: () => makeChain(),
-  },
+};
+
+mock.module("../shared/db", () => ({
+  db: fakeDb,
   hasDatabase: () => true,
 }));
+
+mock.module("../shared/effect", () => ({
+  sharedConfig: channelConfig,
+  sharedDb: fakeDb,
+  sharedSupabase: {},
+  sharedFetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
+  sharedSleep: async () => {},
+  runSharedTimeout: () => ({}) as never,
+  runSharedInterval: () => ({}) as never,
+  stopSharedTimer: () => {},
+}));
+
+const {
+  AgentMailApiError,
+  createAgentMailInbox,
+  createAgentMailWebhook,
+  isAgentMailInboxLimitError,
+  resolveAgentMailApiKey,
+} = await import("../channels/agentmail-api");
 
 let continueCalls: Array<{ sessionId: string; text: string }> = [];
 let createCalls: Array<any> = [];
@@ -133,20 +147,17 @@ describe("AgentMail webhook verification", () => {
 
 describe("AgentMail credential resolution", () => {
   test("supports both project BYO keys and server-managed fallback keys", () => {
-    const original = config.AGENTMAIL_API_KEY;
+    const original = channelConfig.AGENTMAIL_API_KEY;
     try {
-      (config as { AGENTMAIL_API_KEY: string | undefined }).AGENTMAIL_API_KEY =
-        "server-managed-key";
+      channelConfig.AGENTMAIL_API_KEY = "server-managed-key";
       expect(resolveAgentMailApiKey("project-byo-key")).toBe("project-byo-key");
       expect(resolveAgentMailApiKey(null)).toBe("server-managed-key");
       expect(resolveAgentMailApiKey(undefined)).toBe("server-managed-key");
 
-      (config as { AGENTMAIL_API_KEY: string | undefined }).AGENTMAIL_API_KEY =
-        undefined;
+      channelConfig.AGENTMAIL_API_KEY = undefined;
       expect(resolveAgentMailApiKey(null)).toBeNull();
     } finally {
-      (config as { AGENTMAIL_API_KEY: string | undefined }).AGENTMAIL_API_KEY =
-        original;
+      channelConfig.AGENTMAIL_API_KEY = original;
     }
   });
 });
@@ -202,7 +213,7 @@ describe("AgentMail provider errors", () => {
         });
       } catch (err) {
         expect(err).toBeInstanceOf(AgentMailApiError);
-        expect((err as AgentMailApiError).status).toBe(403);
+        expect((err as InstanceType<typeof AgentMailApiError>).status).toBe(403);
         expect(isAgentMailInboxLimitError(err)).toBe(true);
         return;
       }

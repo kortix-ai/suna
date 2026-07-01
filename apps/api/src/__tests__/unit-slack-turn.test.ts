@@ -99,6 +99,29 @@ mock.module('../shared/db', () => ({
   hasDatabase: () => true,
 }));
 
+const fakeDb = {
+  select: () => makeChain('select'),
+  insert: () => makeChain('insert'),
+  update: () => makeChain('update'),
+  delete: () => {
+    dbWrites.push({ op: 'delete' });
+    return makeChain('delete');
+  },
+};
+
+mock.module('../shared/effect', () => ({
+  sharedConfig: {
+    FRONTEND_URL: 'https://dev.kortix.com',
+  },
+  sharedDb: fakeDb,
+  sharedSupabase: {},
+  sharedFetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
+  sharedSleep: async () => {},
+  runSharedTimeout: () => ({}) as never,
+  runSharedInterval: () => ({}) as never,
+  stopSharedTimer: () => {},
+}));
+
 const { finalizeTurn, repaintLivePlan, relayTurnAnswer, relayTurnEnd, relayTurnStep, relayProvisioningFailure } =
   await import('../channels/slack/turn');
 

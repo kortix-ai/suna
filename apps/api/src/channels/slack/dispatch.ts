@@ -7,7 +7,7 @@ import {
   projectSessions,
   projects,
 } from '@kortix/db';
-import { db } from '../../shared/db';
+import { sharedConfig as config, sharedDb as db } from '../../shared/effect';
 import {
   loadSlackBotUserIdForProject,
   loadSlackTokenForProject,
@@ -43,7 +43,6 @@ import {
   inboundMessageKey,
 } from './dedup';
 import { escapeMrkdwn, sessionWebUrl, stripMentions } from './util';
-import { config } from '../../config';
 import type {
   EventClass,
   ProjectResolution,

@@ -1,4 +1,4 @@
-import { config } from '../config';
+import { sharedConfig as config, sharedFetch } from '../shared/effect';
 import { channelApiBase, channelAuth } from '../executor/channels';
 import { type FetchImpl, executeCall } from '../executor/execute';
 import { recordBotSpeech } from './meet-echo';
@@ -23,7 +23,7 @@ type SpeechOk = { ok: true; b64: string };
 const fillerCache = new Map<string, string>();
 
 const httpFetch: FetchImpl = async (url, init) => {
-  const res = await fetch(url, { method: init.method, headers: init.headers, body: init.body });
+  const res = await sharedFetch(url, { method: init.method, headers: init.headers, body: init.body });
   return { status: res.status, ok: res.ok, text: () => res.text() };
 };
 
@@ -33,7 +33,7 @@ export async function synthesizeSpeechB64(text: string, elevenVoiceId: string): 
   if (!config.ELEVENLABS_API_KEY) return { ok: false, error: 'elevenlabs_not_configured', status: 503 };
 
   const url = `${config.ELEVENLABS_BASE_URL.replace(/\/+$/, '')}/v1/text-to-speech/${encodeURIComponent(elevenVoiceId)}`;
-  const res = await fetch(url, {
+  const res = await sharedFetch(url, {
     method: 'POST',
     headers: { 'xi-api-key': config.ELEVENLABS_API_KEY, 'content-type': 'application/json', accept: 'audio/mpeg' },
     body: JSON.stringify({

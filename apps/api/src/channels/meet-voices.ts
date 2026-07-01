@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
-import { db } from '../shared/db';
+import { sharedDb as db } from '../shared/effect';
 
 export interface MeetVoice {
   id: string;

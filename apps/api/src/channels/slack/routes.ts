@@ -3,9 +3,8 @@ import { chatInstalls } from "@kortix/db";
 import { and, eq } from "drizzle-orm";
 import { Effect } from "effect";
 import type { Context } from "hono";
-import { config } from "../../config";
 import { errors, json } from "../../openapi";
-import { db } from "../../shared/db";
+import { sharedConfig as config, sharedDb as db } from "../../shared/effect";
 import {
   ChannelDependencyError,
   dependency,

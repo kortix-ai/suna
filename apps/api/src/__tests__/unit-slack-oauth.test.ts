@@ -16,23 +16,47 @@ function makeSelectChain(): any {
   return chain;
 }
 
+const fakeDb = {
+  select: () => makeSelectChain(),
+};
+
+const fakeConfig = {
+  SLACK_SIGNING_SECRET: 'state-secret',
+  SLACK_CLIENT_ID: 'client-id',
+  SLACK_CLIENT_SECRET: 'client-secret',
+  SLACK_REDIRECT_URI: 'https://dev-api.kortix.com/v1/webhooks/slack/oauth/callback',
+  SLACK_OAUTH_SCOPES: 'app_mentions:read,chat:write,commands',
+  FRONTEND_URL: 'https://dev.kortix.com',
+};
+
 mock.module('../shared/db', () => ({
   hasDatabase: true,
-  db: {
-    select: () => makeSelectChain(),
-  },
+  db: fakeDb,
 }));
 
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test',
-  config: {
-    SLACK_SIGNING_SECRET: 'state-secret',
-    SLACK_CLIENT_ID: 'client-id',
-    SLACK_CLIENT_SECRET: 'client-secret',
-    SLACK_REDIRECT_URI: 'https://dev-api.kortix.com/v1/webhooks/slack/oauth/callback',
-    SLACK_OAUTH_SCOPES: 'app_mentions:read,chat:write,commands',
-    FRONTEND_URL: 'https://dev.kortix.com',
-  },
+  config: fakeConfig,
+}));
+
+mock.module('../shared/effect', () => ({
+  sharedConfig: fakeConfig,
+  sharedDb: fakeDb,
+  sharedSupabase: {},
+  sharedFetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
+  sharedSleep: async () => {},
+  runSharedTimeout: () => ({}) as never,
+  runSharedInterval: () => ({}) as never,
+  stopSharedTimer: () => {},
+}));
+
+mock.module('../effect/hono', () => ({
+  effectHandler: (handler: (c: unknown) => unknown) => handler,
+  effectMiddleware: (_c: unknown, next: () => unknown) => next(),
+}));
+
+mock.module('../channels/slack/identity', () => ({
+  linkSlackIdentity: async () => {},
 }));
 
 mock.module('../channels/install-store', () => ({

@@ -1,7 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { Effect } from 'effect';
 import type { Context } from 'hono';
-import { config } from '../../config';
+import { sharedConfig as config } from '../../shared/effect';
 import { errors, json } from '../../openapi';
 import {
   dependency,

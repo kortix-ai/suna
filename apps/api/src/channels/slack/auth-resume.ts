@@ -1,6 +1,6 @@
 import { and, eq, gt, lt } from 'drizzle-orm';
 import { chatPendingAuthMessages } from '@kortix/db';
-import { db } from '../../shared/db';
+import { sharedDb as db } from '../../shared/effect';
 import { respondViaUrl } from './util';
 import type { SlackEnvelope, SlackEvent } from './types';
 

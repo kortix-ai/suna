@@ -15,10 +15,9 @@ import { projects } from "@kortix/db";
 import { inArray } from "drizzle-orm";
 import { Effect } from "effect";
 import type { Context } from "hono";
-import { config } from "../../config";
 import { combinedAuth } from "../../middleware/auth";
 import { auth, errors, json, makeOpenApiApp } from "../../openapi";
-import { db } from "../../shared/db";
+import { sharedConfig as config, sharedDb as db } from "../../shared/effect";
 import {
   dependency,
   failJson,

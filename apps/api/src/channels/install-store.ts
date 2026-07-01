@@ -1,7 +1,6 @@
 import { and, eq, isNull, like } from "drizzle-orm";
 import { chatInstalls, projectSecrets } from "@kortix/db";
-import { db } from "../shared/db";
-import { config } from "../config";
+import { sharedConfig as config, sharedDb as db } from "../shared/effect";
 import {
   decryptProjectSecret,
   encryptProjectSecret,

@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
-import { config } from '../../config';
+import { sharedConfig as config } from '../../shared/effect';
 
 // Short-lived, integrity-protected token that round-trips a Slack user's
 // identity through the `/login` web page. The payload (team + Slack user id) is

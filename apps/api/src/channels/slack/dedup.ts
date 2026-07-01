@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { chatEventDedup } from '@kortix/db';
-import { db } from '../../shared/db';
+import { sharedDb as db } from '../../shared/effect';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 
 // Cross-replica dedup. Slack can redeliver the same event_id (retries); with >1

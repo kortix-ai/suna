@@ -3,8 +3,7 @@ import type { Context } from "hono";
 import { createHmac, timingSafeEqual, randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { projects } from "@kortix/db";
-import { db } from "../shared/db";
-import { config } from "../config";
+import { sharedConfig as config, sharedDb as db, sharedFetch } from "../shared/effect";
 import { slackOauthMode } from "./slack-oauth-mode";
 import { saveSlackOauthInstall } from "./install-store";
 import { linkSlackIdentity } from "./slack/identity";
@@ -135,7 +134,7 @@ slackOauthApp.openapi(
 
     let tokenJson: SlackOauthResponse;
     try {
-      const tokenRes = await fetch("https://slack.com/api/oauth.v2.access", {
+      const tokenRes = await sharedFetch("https://slack.com/api/oauth.v2.access", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: exchangeBody.toString(),
