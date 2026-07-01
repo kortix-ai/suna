@@ -7,7 +7,6 @@ let providerStops: string[] = [];
 let cacheInvalidations: string[] = [];
 let branchDeletes: string[] = [];
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
-let providerStopError: Error | null = null;
 const fakeConfig = { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 };
 
 mock.module('../config', () => ({
@@ -69,7 +68,6 @@ mock.module('../platform/providers', () => ({
   getProvider: () => ({
     stop: async (externalId: string) => {
       providerStops.push(externalId);
-      if (providerStopError) throw providerStopError;
     },
   }),
 }));
@@ -152,7 +150,6 @@ beforeEach(() => {
   cacheInvalidations = [];
   branchDeletes = [];
   updateCalls = [];
-  providerStopError = null;
   process.env.KORTIX_SANDBOX_IDLE_TTL = '3600000';
   process.env.KORTIX_BRANCH_RETENTION_DAYS = '90';
 });

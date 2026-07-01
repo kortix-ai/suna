@@ -102,7 +102,6 @@ import {
   renderPromptTemplate,
   setGitTriggerOwner,
   specToBody,
-  triggersPausedForProject,
   upsertTriggerInManifest,
   withTriggersPaused,
 } from "../lib/triggers";

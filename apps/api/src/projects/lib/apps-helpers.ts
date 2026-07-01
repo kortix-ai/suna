@@ -1,5 +1,4 @@
 import type { Effect } from 'effect';
-import { errors } from '../../openapi';
 import { sharedDb as db } from '../../shared/effect';
 import { getLatestDeployment } from '../app-sweep';
 import { appSpecToTomlEntry, loadProjectApps, manifestHashForApp, resolveAppDomains, type AppBuildSpec, type AppSourceSpec, type AppSpec } from '../apps';

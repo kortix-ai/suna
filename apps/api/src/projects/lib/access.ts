@@ -3,7 +3,6 @@ import { isSessionVisibleTo, loadSessionGrants, resolveShareSubject, type Secret
 import { authorize, assertAuthorized, PROJECT_ACTIONS } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
-import { auth } from '../../openapi';
 import { preResumeRecentStoppedSessions } from '../routes/shared';
 import { sharedDb as db } from '../../shared/effect';
 import { resolveAccountId } from '../../shared/resolve-account';

@@ -49,7 +49,6 @@ import { recordProviderEvent } from './provider-events';
 import type { GitBackedProject } from '../../projects/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
 import { accountEntitledToLlmGateway } from '../../shared/account-limits';
-import { readManifest } from '../../projects/triggers';
 import { resolveAgentGrant } from '../../projects/agents';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 

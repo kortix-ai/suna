@@ -1,6 +1,5 @@
 import type { Effect } from 'effect';
 import { runSharedInterval, sharedConfig as config, sharedDb as db, sharedSleep, stopSharedTimer, type SharedTimer } from '../../shared/effect';
-import { auth, errors } from '../../openapi';
 import { isLeader } from '../../shared/leader-election';
 import { runProjectAppSweep } from '../app-sweep';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';

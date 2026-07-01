@@ -17,7 +17,6 @@ import {
   getTierByPriceId,
   getMonthlyCredits,
   grantForSeats,
-  isUpgrade,
   mapRevenueCatProductToTier,
   getRevenueCatPeriodType,
   isRevenueCatAnonymous,

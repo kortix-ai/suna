@@ -6,7 +6,7 @@ import { maxConcurrentSessionsForTier } from '../../shared/account-limits';
 import { billingDb as db } from '../effect';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import type { AccountStateResponse, CommitmentInfo, ScheduledChange } from '../../types';
-import { getCreditAccount, getSubscriptionInfo } from '../repositories/credit-accounts';
+import { getSubscriptionInfo } from '../repositories/credit-accounts';
 import { getAutoTopupSettings } from './auto-topup';
 import { getCreditSummary } from './credits';
 import { initializeFreeTierAccount } from './free-tier';

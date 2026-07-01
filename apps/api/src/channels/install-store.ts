@@ -69,16 +69,6 @@ const SLACK_KEYS = [
   SLACK_TEAM_NAME,
 ] as const;
 
-const AGENTMAIL_KEYS = [
-  AGENTMAIL_API_KEY,
-  AGENTMAIL_INBOX_ID,
-  AGENTMAIL_INBOX_EMAIL,
-  AGENTMAIL_INBOX_DISPLAY_NAME,
-  AGENTMAIL_WEBHOOK_ID,
-  AGENTMAIL_WEBHOOK_SECRET,
-  AGENTMAIL_SENDER_POLICY,
-] as const;
-
 export interface AgentMailSenderPolicy {
   mode: "allow_all" | "restricted";
   allowedEmails: string[];

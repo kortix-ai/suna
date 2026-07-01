@@ -26,7 +26,6 @@ import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES, ProjectRow, ProjectSessionRow, RequestAuditContext, UUID_V4_REGEX, deriveKortixApiRoot, normalizeJsonObject, normalizeString } from './serializers';
-import { allocateSessionRuntime } from './session-runtime-allocator';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
 
 export type SessionCreateError = {

@@ -1,5 +1,5 @@
 import { Effect } from 'effect';
-import { eq, and, lte, ne } from 'drizzle-orm';
+import { eq, and, lte } from 'drizzle-orm';
 import { accountDeletionRequests } from '@kortix/db';
 import { DatabaseService } from '../../effect/services';
 import { runEffectOrThrow } from '../../effect/http';
