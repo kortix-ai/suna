@@ -3,10 +3,9 @@ import { Context, Next } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import { eq, and, inArray, isNull } from "drizzle-orm";
-import { db } from "../shared/db";
+import { Effect, Schedule } from "effect";
 import { randomAlphanumeric, verifySecretKey } from "../shared/crypto";
 import { supabaseAuth } from "../middleware/auth";
-import { config } from "../config";
 import {
   oauthClients,
   oauthAuthorizationCodes,
@@ -14,9 +13,12 @@ import {
   oauthRefreshTokens,
   accountMembers,
   sandboxes,
+  type Database,
 } from "@kortix/db";
 import { makeOpenApiApp, json, errors, auth } from "../openapi";
 import { effectHandler } from "../effect/hono";
+import { AppConfig, DatabaseService, SupabaseService } from "../effect/services";
+import { runEffectOrThrow } from "../effect/http";
 
 // ─── Token Hashing ──────────────────────────────────────────────────────────
 
@@ -29,6 +31,27 @@ function hashToken(token: string): string {
 const TOKEN_RATE_LIMIT = 20;
 const TOKEN_RATE_WINDOW_MS = 60_000;
 const tokenRateMap = new Map<string, number[]>();
+
+const runOAuthDatabase = <A>(
+  operation: (database: Database) => Promise<A> | A,
+): Promise<A> =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    return yield* Effect.tryPromise(async () => operation(database));
+  }));
+
+const getOAuthFrontendUrl = (): Promise<string> =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const config = yield* AppConfig;
+    return config.FRONTEND_URL || "https://kortix.com";
+  }));
+
+const getOAuthSupabaseUser = (userId: string) =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const supabaseService = yield* SupabaseService;
+    const supabase = yield* supabaseService.client;
+    return yield* Effect.tryPromise(() => supabase.auth.admin.getUserById(userId));
+  }));
 
 function checkTokenRateLimit(clientId: string): boolean {
   const now = Date.now();
@@ -43,8 +66,7 @@ function checkTokenRateLimit(clientId: string): boolean {
   return true;
 }
 
-// Periodic cleanup (every 5 min)
-setInterval(() => {
+const cleanupTokenRateLimit = () => {
   const now = Date.now();
   for (const [key, timestamps] of tokenRateMap) {
     const recent = timestamps.filter((t) => now - t < TOKEN_RATE_WINDOW_MS);
@@ -54,7 +76,14 @@ setInterval(() => {
       tokenRateMap.set(key, recent);
     }
   }
-}, 5 * 60_000);
+};
+
+Effect.runFork(
+  Effect.repeat(
+    Effect.sync(cleanupTokenRateLimit),
+    Schedule.spaced(`${5 * 60_000} millis`),
+  ),
+);
 
 // ─── OAuth Access Token Middleware ───────────────────────────────────────────
 
@@ -74,16 +103,18 @@ async function oauthTokenAuth(c: Context, next: Next) {
   const tokenHash = hashToken(token);
   const now = new Date();
 
-  const [row] = await db
-    .select()
-    .from(oauthAccessTokens)
-    .where(
-      and(
-        eq(oauthAccessTokens.tokenHash, tokenHash),
-        isNull(oauthAccessTokens.revokedAt),
-      ),
-    )
-    .limit(1);
+  const [row] = await runOAuthDatabase((database) =>
+    database
+      .select()
+      .from(oauthAccessTokens)
+      .where(
+        and(
+          eq(oauthAccessTokens.tokenHash, tokenHash),
+          isNull(oauthAccessTokens.revokedAt),
+        ),
+      )
+      .limit(1),
+  );
 
   if (!row) {
     throw new HTTPException(401, { message: "Invalid access token" });
@@ -200,12 +231,19 @@ function consumeAuthorizationRequest(
   return request;
 }
 
-setInterval(() => {
+const cleanupAuthorizationRequests = () => {
   const now = Date.now();
   for (const [requestId, request] of pendingAuthorizationRequests) {
     if (request.expiresAt < now) pendingAuthorizationRequests.delete(requestId);
   }
-}, 5 * 60_000);
+};
+
+Effect.runFork(
+  Effect.repeat(
+    Effect.sync(cleanupAuthorizationRequests),
+    Schedule.spaced(`${5 * 60_000} millis`),
+  ),
+);
 
 // ─── Token Generation ───────────────────────────────────────────────────────
 
@@ -238,26 +276,30 @@ async function issueTokenPair(params: {
   const accessExpiresAt = new Date(now.getTime() + 3600 * 1000);
   const refreshExpiresAt = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
 
-  const [accessRow] = await db
-    .insert(oauthAccessTokens)
-    .values({
-      tokenHash: accessTokenHash,
+  const [accessRow] = await runOAuthDatabase((database) =>
+    database
+      .insert(oauthAccessTokens)
+      .values({
+        tokenHash: accessTokenHash,
+        clientId: params.clientId,
+        userId: params.userId,
+        accountId: params.accountId,
+        scopes: params.scopes,
+        expiresAt: accessExpiresAt,
+      })
+      .returning(),
+  );
+
+  await runOAuthDatabase((database) =>
+    database.insert(oauthRefreshTokens).values({
+      tokenHash: refreshTokenHash,
+      accessTokenId: accessRow.id,
       clientId: params.clientId,
       userId: params.userId,
       accountId: params.accountId,
-      scopes: params.scopes,
-      expiresAt: accessExpiresAt,
-    })
-    .returning();
-
-  await db.insert(oauthRefreshTokens).values({
-    tokenHash: refreshTokenHash,
-    accessTokenId: accessRow.id,
-    clientId: params.clientId,
-    userId: params.userId,
-    accountId: params.accountId,
-    expiresAt: refreshExpiresAt,
-  });
+      expiresAt: refreshExpiresAt,
+    }),
+  );
 
   return {
     access_token: accessToken,
@@ -337,13 +379,15 @@ oauthApp.openapi(
       );
     }
 
-    const [client] = await db
-      .select()
-      .from(oauthClients)
-      .where(
-        and(eq(oauthClients.clientId, clientId), eq(oauthClients.active, true)),
-      )
-      .limit(1);
+    const [client] = await runOAuthDatabase((database) =>
+      database
+        .select()
+        .from(oauthClients)
+        .where(
+          and(eq(oauthClients.clientId, clientId), eq(oauthClients.active, true)),
+        )
+        .limit(1),
+    );
 
     if (!client) {
       return c.json(
@@ -383,7 +427,7 @@ oauthApp.openapi(
       codeChallengeMethod,
     });
 
-    const frontendUrl = config.FRONTEND_URL || "https://kortix.com";
+    const frontendUrl = await getOAuthFrontendUrl();
     const consentUrl = new URL(`${frontendUrl}/oauth/authorize`);
     consentUrl.searchParams.set("request_id", requestId);
 
@@ -495,16 +539,18 @@ oauthApp.openapi(
       );
     }
 
-    const [client] = await db
-      .select()
-      .from(oauthClients)
-      .where(
-        and(
-          eq(oauthClients.clientId, request.clientId),
-          eq(oauthClients.active, true),
-        ),
-      )
-      .limit(1);
+    const [client] = await runOAuthDatabase((database) =>
+      database
+        .select()
+        .from(oauthClients)
+        .where(
+          and(
+            eq(oauthClients.clientId, request.clientId),
+            eq(oauthClients.active, true),
+          ),
+        )
+        .limit(1),
+    );
 
     if (!client) {
       return c.json({ error: "invalid_client" }, 400);
@@ -535,28 +581,32 @@ oauthApp.openapi(
 
     const userId = (c as any).get("userId") as string;
 
-    const [membership] = await db
-      .select({ accountId: accountMembers.accountId })
-      .from(accountMembers)
-      .where(eq(accountMembers.userId, userId))
-      .limit(1);
+    const [membership] = await runOAuthDatabase((database) =>
+      database
+        .select({ accountId: accountMembers.accountId })
+        .from(accountMembers)
+        .where(eq(accountMembers.userId, userId))
+        .limit(1),
+    );
 
     const accountId = membership?.accountId ?? userId;
 
     const code = generateAuthCode();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-    await db.insert(oauthAuthorizationCodes).values({
-      code,
-      clientId: request.clientId,
-      userId,
-      accountId,
-      redirectUri: request.redirectUri,
-      scopes,
-      codeChallenge: request.codeChallenge,
-      codeChallengeMethod: request.codeChallengeMethod,
-      expiresAt,
-    });
+    await runOAuthDatabase((database) =>
+      database.insert(oauthAuthorizationCodes).values({
+        code,
+        clientId: request.clientId,
+        userId,
+        accountId,
+        redirectUri: request.redirectUri,
+        scopes,
+        codeChallenge: request.codeChallenge,
+        codeChallengeMethod: request.codeChallengeMethod,
+        expiresAt,
+      }),
+    );
 
     redirect.searchParams.set("code", code);
     if (request.state) redirect.searchParams.set("state", request.state);
@@ -621,13 +671,15 @@ oauthApp.openapi(
       );
     }
 
-    const [client] = await db
-      .select()
-      .from(oauthClients)
-      .where(
-        and(eq(oauthClients.clientId, clientId), eq(oauthClients.active, true)),
-      )
-      .limit(1);
+    const [client] = await runOAuthDatabase((database) =>
+      database
+        .select()
+        .from(oauthClients)
+        .where(
+          and(eq(oauthClients.clientId, clientId), eq(oauthClients.active, true)),
+        )
+        .limit(1),
+    );
 
     if (!client) {
       return c.json({ error: "invalid_client" }, 401);
@@ -668,16 +720,18 @@ async function handleAuthorizationCodeGrant(
     );
   }
 
-  const [authCode] = await db
-    .select()
-    .from(oauthAuthorizationCodes)
-    .where(
-      and(
-        eq(oauthAuthorizationCodes.code, code),
-        eq(oauthAuthorizationCodes.clientId, client.clientId),
-      ),
-    )
-    .limit(1);
+  const [authCode] = await runOAuthDatabase((database) =>
+    database
+      .select()
+      .from(oauthAuthorizationCodes)
+      .where(
+        and(
+          eq(oauthAuthorizationCodes.code, code),
+          eq(oauthAuthorizationCodes.clientId, client.clientId),
+        ),
+      )
+      .limit(1),
+  );
 
   if (!authCode) {
     return c.json(
@@ -731,16 +785,18 @@ async function handleAuthorizationCodeGrant(
     );
   }
 
-  const [consumedCode] = await db
-    .update(oauthAuthorizationCodes)
-    .set({ usedAt: new Date() })
-    .where(
-      and(
-        eq(oauthAuthorizationCodes.id, authCode.id),
-        isNull(oauthAuthorizationCodes.usedAt),
-      ),
-    )
-    .returning();
+  const [consumedCode] = await runOAuthDatabase((database) =>
+    database
+      .update(oauthAuthorizationCodes)
+      .set({ usedAt: new Date() })
+      .where(
+        and(
+          eq(oauthAuthorizationCodes.id, authCode.id),
+          isNull(oauthAuthorizationCodes.usedAt),
+        ),
+      )
+      .returning(),
+  );
 
   if (!consumedCode) {
     return c.json(
@@ -778,17 +834,19 @@ async function handleRefreshTokenGrant(
 
   const refreshTokenHash = hashToken(refreshTokenRaw);
 
-  const [refreshRow] = await db
-    .select()
-    .from(oauthRefreshTokens)
-    .where(
-      and(
-        eq(oauthRefreshTokens.tokenHash, refreshTokenHash),
-        eq(oauthRefreshTokens.clientId, client.clientId),
-        isNull(oauthRefreshTokens.revokedAt),
-      ),
-    )
-    .limit(1);
+  const [refreshRow] = await runOAuthDatabase((database) =>
+    database
+      .select()
+      .from(oauthRefreshTokens)
+      .where(
+        and(
+          eq(oauthRefreshTokens.tokenHash, refreshTokenHash),
+          eq(oauthRefreshTokens.clientId, client.clientId),
+          isNull(oauthRefreshTokens.revokedAt),
+        ),
+      )
+      .limit(1),
+  );
 
   if (!refreshRow) {
     return c.json(
@@ -808,16 +866,18 @@ async function handleRefreshTokenGrant(
   }
 
   const now = new Date();
-  const [consumedRefresh] = await db
-    .update(oauthRefreshTokens)
-    .set({ revokedAt: now })
-    .where(
-      and(
-        eq(oauthRefreshTokens.id, refreshRow.id),
-        isNull(oauthRefreshTokens.revokedAt),
-      ),
-    )
-    .returning();
+  const [consumedRefresh] = await runOAuthDatabase((database) =>
+    database
+      .update(oauthRefreshTokens)
+      .set({ revokedAt: now })
+      .where(
+        and(
+          eq(oauthRefreshTokens.id, refreshRow.id),
+          isNull(oauthRefreshTokens.revokedAt),
+        ),
+      )
+      .returning(),
+  );
 
   if (!consumedRefresh) {
     return c.json(
@@ -829,16 +889,20 @@ async function handleRefreshTokenGrant(
     );
   }
 
-  await db
-    .update(oauthAccessTokens)
-    .set({ revokedAt: now })
-    .where(eq(oauthAccessTokens.id, refreshRow.accessTokenId));
+  await runOAuthDatabase((database) =>
+    database
+      .update(oauthAccessTokens)
+      .set({ revokedAt: now })
+      .where(eq(oauthAccessTokens.id, refreshRow.accessTokenId)),
+  );
 
-  const [oldAccess] = await db
-    .select({ scopes: oauthAccessTokens.scopes })
-    .from(oauthAccessTokens)
-    .where(eq(oauthAccessTokens.id, refreshRow.accessTokenId))
-    .limit(1);
+  const [oldAccess] = await runOAuthDatabase((database) =>
+    database
+      .select({ scopes: oauthAccessTokens.scopes })
+      .from(oauthAccessTokens)
+      .where(eq(oauthAccessTokens.id, refreshRow.accessTokenId))
+      .limit(1),
+  );
 
   const tokenResponse = await issueTokenPair({
     clientId: client.clientId,
@@ -878,11 +942,9 @@ oauthApp.openapi(
     const userId = (c as any).get("oauthUserId") as string;
     const accountId = (c as any).get("oauthAccountId") as string;
 
-    const { getSupabase } = await import("../shared/supabase");
-    const supabase = getSupabase();
     const {
       data: { user },
-    } = await supabase.auth.admin.getUserById(userId);
+    } = await getOAuthSupabaseUser(userId);
 
     return c.json({
       user_id: userId,
@@ -925,22 +987,24 @@ oauthApp.openapi(
 
     const accountId = (c as any).get("oauthAccountId") as string;
 
-    const rows = await db
-      .select({
-        sandbox_id: sandboxes.sandboxId,
-        external_id: sandboxes.externalId,
-        name: sandboxes.name,
-        status: sandboxes.status,
-        created_at: sandboxes.createdAt,
-      })
-      .from(sandboxes)
-      .where(
-        and(
-          eq(sandboxes.accountId, accountId),
-          eq(sandboxes.provider, "justavps"),
-          inArray(sandboxes.status, ["active", "provisioning"]),
+    const rows = await runOAuthDatabase((database) =>
+      database
+        .select({
+          sandbox_id: sandboxes.sandboxId,
+          external_id: sandboxes.externalId,
+          name: sandboxes.name,
+          status: sandboxes.status,
+          created_at: sandboxes.createdAt,
+        })
+        .from(sandboxes)
+        .where(
+          and(
+            eq(sandboxes.accountId, accountId),
+            eq(sandboxes.provider, "justavps"),
+            inArray(sandboxes.status, ["active", "provisioning"]),
+          ),
         ),
-      );
+    );
 
     return c.json({
       machines: rows.map((r) => ({
