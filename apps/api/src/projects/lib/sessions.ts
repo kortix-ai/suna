@@ -11,7 +11,6 @@ import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { listProjectSecretsSnapshotForUser } from '../secrets';
 import { resolveAgentGrant } from '../agents';
 import { agentMayUseEnv } from '../../iam/agent-scope';
-import { filterAccessibleProjectResources } from '../../iam';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { projectSessions } from '@kortix/db';
@@ -250,34 +249,13 @@ export async function buildSessionSandboxEnvVars(input: {
       }
     }
   }
-  // Per-MEMBER / department secret scoping: drop secrets the LAUNCHING USER
-  // isn't granted, so a scoped-out secret never reaches the sandbox env — not
-  // just the GET /secrets list. This is the runtime teeth of per-secret grants:
-  // a member who can't see TEST_KEY in the UI also can't read it from $ENV in
-  // their session. Owner/admin (implicit Manager) + service accounts bypass.
-  // Re-applied on every (re)provision, so adding/removing a grant takes effect
-  // on the member's NEXT session (or a restart) — a running sandbox keeps the
-  // env it booted with.
-  const grantableNames = Object.keys(runtimeSecrets.env);
-  if (grantableNames.length > 0) {
-    const accessible = new Set(
-      await filterAccessibleProjectResources(
-        input.userId,
-        input.accountId,
-        input.projectId,
-        'secret',
-        grantableNames,
-      ),
-    );
-    const droppedByGrant = grantableNames.filter((n) => !accessible.has(n));
-    for (const name of droppedByGrant) delete runtimeSecrets.env[name];
-    runtimeSecrets.names = runtimeSecrets.names.filter((n) => accessible.has(n));
-    if (droppedByGrant.length > 0) {
-      console.log(
-        `[session ${input.sessionId}] per-secret grant scoped out ${droppedByGrant.length} secret(s) for the launching user`,
-      );
-    }
-  }
+  // Per-MEMBER / department secret scoping is already applied UPSTREAM by the
+  // share model: listProjectSecretsSnapshotForUser (above) resolves secrets AS
+  // the launching user, so a secret shared only with specific members/depts —
+  // set via the Secret "Who can access this" dialog OR the Members "Resource
+  // access" card, one source of truth — never enters `runtimeSecrets` for a
+  // member outside its allow-list. No second gate needed here.
+
   // Restore the session's channel binding on EVERY (re)provision. A session
   // created from a chat channel (e.g. Slack) persists its binding in
   // metadata.slack; the in-box relay gates turn-end/answer on SLACK_THREAD_TS /

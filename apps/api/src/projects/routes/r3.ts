@@ -1,5 +1,5 @@
 import { parseSharingIntent, resolveShareSubject, setSecretSharing } from '../../executor/share';
-import { PROJECT_ACTIONS, filterAccessibleProjectResources } from '../../iam';
+import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
@@ -434,21 +434,11 @@ projectsApp.openapi(
     .filter((item) => !item.system)
     .filter((item) => agentMayUseEnv(agentGrant, item.name));
 
-  // Per-resource scoping (members / departments): when a secret is scoped to
-  // specific principals, a non-owner/admin member sees it ONLY if granted.
-  // Unscoped secrets stay project-wide. Mirrors agent/skill scoping; the helper
-  // bypasses for owner/admin (implicit Manager) and service accounts.
-  const accessibleSecrets = new Set(
-    await filterAccessibleProjectResources(
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      'secret',
-      allItems.map((i) => i.name),
-      (c.get('iamTokenId') as string | undefined) ?? undefined,
-    ),
-  );
-  const items = allItems.filter((i) => accessibleSecrets.has(i.name));
+  // Per-member / department scoping is already applied by loadSecretViewsForUser
+  // (the share model, isSecretUsableBy): a non-manager only sees secrets shared
+  // with them; a manager sees all shared rows so they can edit sharing. One
+  // source of truth, shared with the Members "Resource access" card.
+  const items = allItems;
 
   return c.json({
     items,

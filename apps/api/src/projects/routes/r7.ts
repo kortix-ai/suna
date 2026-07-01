@@ -19,6 +19,7 @@ import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExp
 import { AnyObject, GroupGrantSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
+import { addSecretResourceGrant, listSecretResourceGrants, removeSecretResourceGrant } from '../secrets';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
 import { createSession, deleteSession } from '../session-lifecycle';
@@ -857,7 +858,21 @@ projectsApp.openapi(
       return type === 'agent' ? !liveAgentIds.has(id) : type === 'skill' ? !liveSkillIds.has(id) : false;
     };
 
-    const grants = await listResourceGrants(projectId);
+    // Agents/skills come from iam_resource_grants; SECRETS come from the share
+    // model (project_secret_grants) — one source of truth shared with the Secret
+    // "Who can access this" dialog. Any legacy iam secret rows are ignored.
+    const iamGrants = (await listResourceGrants(projectId)).filter((g) => g.resourceType !== 'secret');
+    const secretGrants = (await listSecretResourceGrants(projectId)).map((s) => ({
+      grantId: s.grantId,
+      resourceType: 'secret' as const,
+      resourceId: s.name,
+      principalType: s.principalType,
+      principalId: s.principalId,
+      expiresAt: null as Date | null,
+      grantedBy: null as string | null,
+      createdAt: s.createdAt,
+    }));
+    const grants = [...iamGrants, ...secretGrants];
 
     // Resolve principal labels in two batched lookups.
     const memberIds = [...new Set(grants.filter((g) => g.principalType === 'member').map((g) => g.principalId))];
@@ -954,26 +969,27 @@ projectsApp.openapi(
       if (!g) return c.json({ error: 'group not found in this account' }, 404);
     }
 
-    // The resource must actually exist in the project — a typo'd grant would be
-    // a silent dead row that scopes a phantom resource. Secrets live in the DB
-    // (project_secrets); agents/skills live in the git config.
+    // SECRETS are governed by the share model (project_secret_grants) — the SAME
+    // data the Secret "Who can access this" dialog writes — so a grant here shows
+    // there and vice-versa. Granting to a member/dept restricts the secret to its
+    // allow-list. (expires_at isn't part of the share model; the card doesn't set
+    // it for secrets.)
     if (resourceType === 'secret') {
-      const [s] = await db
-        .select({ name: projectSecrets.name })
-        .from(projectSecrets)
-        .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, resourceId)))
-        .limit(1);
-      if (!s) return c.json({ error: `no secret '${resourceId}' in this project` }, 400);
-    } else {
-      let config;
-      try {
-        config = await loadConfigWithFiles(loaded.row);
-      } catch (err) {
-        return c.json({ error: `project config unavailable: ${err instanceof Error ? err.message : String(err)}` }, 400);
-      }
-      if (!projectHasResource(config, resourceType, resourceId)) {
-        return c.json({ error: `no ${resourceType} '${resourceId}' in this project` }, 400);
-      }
+      const added = await addSecretResourceGrant({ projectId, name: resourceId, principalType, principalId });
+      if (!added) return c.json({ error: `no secret '${resourceId}' in this project` }, 400);
+      return c.json({ grant_id: added.grantId, resource_type: 'secret', resource_id: resourceId, principal_type: principalType, principal_id: principalId }, 201);
+    }
+
+    // Agents/skills live in the git config → validate there, store in
+    // iam_resource_grants. A typo'd grant would be a silent dead row.
+    let config;
+    try {
+      config = await loadConfigWithFiles(loaded.row);
+    } catch (err) {
+      return c.json({ error: `project config unavailable: ${err instanceof Error ? err.message : String(err)}` }, 400);
+    }
+    if (!projectHasResource(config, resourceType, resourceId)) {
+      return c.json({ error: `no ${resourceType} '${resourceId}' in this project` }, 400);
     }
 
     const { grantId } = await upsertResourceGrant({
@@ -1011,7 +1027,11 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
-    const removed = await deleteResourceGrant(grantId, projectId);
+    // The id belongs to either an agent/skill grant (iam_resource_grants) or a
+    // secret grant (project_secret_grants). Try the IAM table first, then the
+    // share model; removing a secret's last grant reverts it to project-wide.
+    const removed =
+      (await deleteResourceGrant(grantId, projectId)) || (await removeSecretResourceGrant(grantId, projectId));
     if (!removed) return c.json({ error: 'grant not found' }, 404);
     return c.json({ ok: true });
   },

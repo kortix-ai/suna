@@ -6,7 +6,7 @@ import {
   randomBytes,
 } from 'node:crypto';
 import { and, eq, isNull, or } from 'drizzle-orm';
-import { projectSecrets } from '@kortix/db';
+import { projectSecretGrants, projectSecrets } from '@kortix/db';
 import { config } from '../config';
 import { db } from '../shared/db';
 import { isSecretUsableBy, loadGrants, type ShareSubject } from '../executor/share';
@@ -244,4 +244,106 @@ export async function getProjectSecretValue(
     .limit(1);
 
   return row ? decryptProjectSecret(projectId, row.valueEnc) : null;
+}
+
+// ─── Secret access as resource grants ───────────────────────────────────────
+// The "Resource access" card (Members) and the Secret "Who can access this"
+// dialog both operate on ONE source of truth for secret audience: the share
+// model (project_secret_grants + share_scope). These helpers expose that model
+// in the resource-grant shape the card speaks, so a change in either surface
+// shows in both. (Agents/skills still live in iam_resource_grants.)
+
+export interface SecretResourceGrant {
+  grantId: string;
+  /** The secret NAME — the resource id the card keys on. */
+  name: string;
+  principalType: 'member' | 'group';
+  principalId: string;
+  createdAt: Date;
+}
+
+/** Every member/department grant on the project's SHARED, restricted secrets. */
+export async function listSecretResourceGrants(projectId: string): Promise<SecretResourceGrant[]> {
+  const rows = await db
+    .select({
+      grantId: projectSecretGrants.grantId,
+      name: projectSecrets.name,
+      principalType: projectSecretGrants.principalType,
+      principalId: projectSecretGrants.principalId,
+      createdAt: projectSecretGrants.createdAt,
+    })
+    .from(projectSecretGrants)
+    .innerJoin(projectSecrets, eq(projectSecrets.secretId, projectSecretGrants.secretId))
+    .where(and(eq(projectSecrets.projectId, projectId), isNull(projectSecrets.ownerUserId)));
+  return rows.map((r) => ({ ...r, principalType: r.principalType as 'member' | 'group' }));
+}
+
+/**
+ * Grant a shared secret to a member/department. Adding the first grant flips the
+ * secret from project-wide to restricted (its allow-list) — the same semantic as
+ * the dialog's "Specific members or departments". Idempotent on (secret,principal).
+ * Returns null if the secret doesn't exist.
+ */
+export async function addSecretResourceGrant(input: {
+  projectId: string;
+  name: string;
+  principalType: 'member' | 'group';
+  principalId: string;
+}): Promise<{ grantId: string } | null> {
+  const [secret] = await db
+    .select({ secretId: projectSecrets.secretId })
+    .from(projectSecrets)
+    .where(and(
+      eq(projectSecrets.projectId, input.projectId),
+      eq(projectSecrets.name, input.name),
+      isNull(projectSecrets.ownerUserId),
+    ))
+    .limit(1);
+  if (!secret) return null;
+  await db
+    .insert(projectSecretGrants)
+    .values({ secretId: secret.secretId, principalType: input.principalType, principalId: input.principalId })
+    .onConflictDoNothing();
+  await db
+    .update(projectSecrets)
+    .set({ shareScope: 'restricted', updatedAt: new Date() })
+    .where(eq(projectSecrets.secretId, secret.secretId));
+  const [grant] = await db
+    .select({ grantId: projectSecretGrants.grantId })
+    .from(projectSecretGrants)
+    .where(and(
+      eq(projectSecretGrants.secretId, secret.secretId),
+      eq(projectSecretGrants.principalType, input.principalType),
+      eq(projectSecretGrants.principalId, input.principalId),
+    ))
+    .limit(1);
+  return grant ? { grantId: grant.grantId } : null;
+}
+
+/**
+ * Remove a secret grant by id (scoped to the project so a guessed id can't touch
+ * a foreign project). When the last grant goes, the secret reverts to
+ * project-wide (open) — the empty-allow-list-collapses-to-project rule.
+ */
+export async function removeSecretResourceGrant(grantId: string, projectId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ secretId: projectSecretGrants.secretId })
+    .from(projectSecretGrants)
+    .innerJoin(projectSecrets, eq(projectSecrets.secretId, projectSecretGrants.secretId))
+    .where(and(eq(projectSecretGrants.grantId, grantId), eq(projectSecrets.projectId, projectId)))
+    .limit(1);
+  if (!row) return false;
+  await db.delete(projectSecretGrants).where(eq(projectSecretGrants.grantId, grantId));
+  const remaining = await db
+    .select({ id: projectSecretGrants.grantId })
+    .from(projectSecretGrants)
+    .where(eq(projectSecretGrants.secretId, row.secretId))
+    .limit(1);
+  if (remaining.length === 0) {
+    await db
+      .update(projectSecrets)
+      .set({ shareScope: 'project', updatedAt: new Date() })
+      .where(eq(projectSecrets.secretId, row.secretId));
+  }
+  return true;
 }
