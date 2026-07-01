@@ -147,10 +147,25 @@ describe('unionDeclaredResources — pure union over assigned agents', () => {
     expect([...connectors].sort()).toEqual(['github', 'stripe']);
   });
 
+  test('preserves PROVENANCE: a name shared by two agents lists both, order = first-seen', () => {
+    const { secretSources, connectorSources } = unionDeclaredResources(AGENTS, new Set(['a', 'b']));
+    // S2 is declared by both a and b → both are credited.
+    expect(secretSources.get('S2')).toEqual(['a', 'b']);
+    expect(secretSources.get('S1')).toEqual(['a']);
+    expect(secretSources.get('S3')).toEqual(['b']);
+    expect(connectorSources.get('github')).toEqual(['a']);
+    expect(connectorSources.get('stripe')).toEqual(['b']);
+  });
+
   test("'all' contributes no concrete name; unassigned + empty agents add nothing", () => {
     // Only 'c' ('all') and 'd' ([]) assigned → nothing concrete to inherit.
-    expect(unionDeclaredResources(AGENTS, new Set(['c', 'd']))).toEqual({ secrets: [], connectors: [] });
+    const onlyAllAndEmpty = unionDeclaredResources(AGENTS, new Set(['c', 'd']));
+    expect(onlyAllAndEmpty.secrets).toEqual([]);
+    expect(onlyAllAndEmpty.connectors).toEqual([]);
+    expect(onlyAllAndEmpty.secretSources.size).toBe(0);
     // No assignments → empty.
-    expect(unionDeclaredResources(AGENTS, new Set())).toEqual({ secrets: [], connectors: [] });
+    const none = unionDeclaredResources(AGENTS, new Set());
+    expect(none.secrets).toEqual([]);
+    expect(none.connectors).toEqual([]);
   });
 });

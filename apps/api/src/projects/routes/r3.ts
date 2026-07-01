@@ -427,19 +427,22 @@ projectsApp.openapi(
     });
   }
 
-  // Inheritance pyramid (read side): secrets declared by an agent the caller is
-  // assigned to become genuinely theirs — surfaced here as usable_by_me even if
-  // the share scope wouldn't otherwise reach them. Fast-paths to empty when the
-  // caller has no agent assignments.
-  const inherited = new Set(
-    (await resolveInheritedResourceNames(loaded.row, loaded.userId, subject.groupIds)).secrets,
-  );
-
   // Per-agent env scoping: a scoped agent token only sees the secret NAMES it's
   // granted (mirrors the env-injection narrowing), so it can't enumerate keys
   // outside its allowlist. No-op for non-agent tokens / 'all' / null grants.
   const agentGrant = getAgentGrant(c);
-  const allItems = (await loadSecretViewsForUser(projectId, subject, canManageShared, inherited))
+
+  // Inheritance pyramid (read side): secrets declared by an agent the caller is
+  // assigned to become genuinely theirs — surfaced here as usable_by_me, and
+  // tagged with `inherited_from` (the agents that grant them) so the UI can
+  // explain WHY. Provenance is HUMAN-facing governance data: an AGENT token must
+  // not learn which agents declare a secret, so it gets no inherited_from (and we
+  // skip the config read entirely). Fast-paths to empty with no assignments.
+  const inheritedSources = agentGrant
+    ? new Map<string, string[]>()
+    : (await resolveInheritedResourceNames(loaded.row, loaded.userId, subject.groupIds)).secretSources;
+
+  const allItems = (await loadSecretViewsForUser(projectId, subject, canManageShared, inheritedSources))
     .filter((item) => !item.system)
     .filter((item) => agentMayUseEnv(agentGrant, item.name));
 
@@ -580,7 +583,12 @@ projectsApp.openapi(
   }
 
   const subject = await resolveShareSubject(loaded.userId);
-  const views = await loadSecretViewsForUser(projectId, subject, true);
+  // Provenance so the write response carries the same inherited_from as GET
+  // /secrets (no post-write flicker). Agent tokens get none (see GET handler).
+  const inheritedSources = getAgentGrant(c)
+    ? undefined
+    : (await resolveInheritedResourceNames(loaded.row, loaded.userId, subject.groupIds)).secretSources;
+  const views = await loadSecretViewsForUser(projectId, subject, true, inheritedSources);
   const view = views.find((v) => v.name === name);
   return c.json(view ?? { name }, 200);
 },
@@ -1066,7 +1074,11 @@ projectsApp.openapi(
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
 
   const subject = await resolveShareSubject(loaded.userId);
-  const views = await loadSecretViewsForUser(projectId, subject, roleAllows(loaded.effectiveRole, 'manage'));
+  // Provenance so the write response matches GET /secrets; agent tokens get none.
+  const inheritedSources = getAgentGrant(c)
+    ? undefined
+    : (await resolveInheritedResourceNames(loaded.row, loaded.userId, subject.groupIds)).secretSources;
+  const views = await loadSecretViewsForUser(projectId, subject, roleAllows(loaded.effectiveRole, 'manage'), inheritedSources);
   return c.json(views.find((v) => v.name === name) ?? { name }, 200);
 },
 );

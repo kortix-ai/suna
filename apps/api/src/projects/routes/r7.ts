@@ -813,7 +813,15 @@ projectsApp.openapi(
     // Enumerate grantable resources from the project config (best-effort: a repo
     // that won't load just yields empty lists — the existing grants still show).
     let resources: {
-      agents: { id: string; name: string }[];
+      // Agents carry their DECLARED scope so the grant UI can preview the blast
+      // radius — "assigning this agent also grants these secrets + connectors"
+      // (the inheritance pyramid). `'all'` = every secret/connector the assignee
+      // can already see (nothing extra inherited).
+      agents: {
+        id: string;
+        name: string;
+        declares?: { secrets: string[] | 'all'; connectors: string[] | 'all' };
+      }[];
       skills: { id: string; name: string }[];
       secrets: { id: string; name: string }[];
     } = { agents: [], skills: [], secrets: [] };
@@ -821,7 +829,14 @@ projectsApp.openapi(
     try {
       const config = await loadConfigWithFiles(loaded.row);
       const fromConfig = projectResourcesFromConfig(config);
-      resources.agents = fromConfig.agents;
+      const scopeByAgent = new Map(config.agents.map((a) => [a.name, a.scope]));
+      resources.agents = fromConfig.agents.map((a) => ({
+        ...a,
+        declares: {
+          secrets: scopeByAgent.get(a.id)?.env ?? 'all',
+          connectors: scopeByAgent.get(a.id)?.connectors ?? 'all',
+        },
+      }));
       resources.skills = fromConfig.skills;
       configLoaded = true;
     } catch (err) {

@@ -398,6 +398,10 @@ export interface ProjectSecret {
   sharing?: ConnectorSharing | null;
   /** The shared value reaches me (project-wide, or I'm in the allow-list). */
   usable_by_me: boolean;
+  /** Provenance for `usable_by_me`: the agent(s) I'm assigned to that declare this
+   *  secret. Non-null ONLY when inheritance is the reason I can use it (the share
+   *  scope wouldn't otherwise reach me) — the "assign human → agent" pyramid. */
+  inherited_from?: string[] | null;
   /** My own per-key override (value never returned), and whether it's active. */
   mine: { active: boolean; updated_at: string } | null;
   /** What actually runs in my sessions for this key. */
@@ -838,6 +842,14 @@ export interface ProjectResourceItem {
   description: string | null;
 }
 
+/** An agent resource, enriched with its DECLARED scope so the grant UI can
+ *  preview the blast radius of an assignment (the inheritance pyramid): assigning
+ *  the agent also grants these secrets + connectors. `'all'` = every one the
+ *  assignee can already see (nothing extra inherited). */
+export interface ProjectAgentResourceItem extends ProjectResourceItem {
+  declares?: { secrets: string[] | 'all'; connectors: string[] | 'all' };
+}
+
 export interface ProjectResourceGrant {
   grant_id: string;
   resource_type: ResourceGrantType;
@@ -855,7 +867,7 @@ export interface ProjectResourceGrant {
 }
 
 export interface ProjectResourceGrantsResponse {
-  resources: { agents: ProjectResourceItem[]; skills: ProjectResourceItem[]; secrets: ProjectResourceItem[] };
+  resources: { agents: ProjectAgentResourceItem[]; skills: ProjectResourceItem[]; secrets: ProjectResourceItem[] };
   grants: ProjectResourceGrant[];
 }
 

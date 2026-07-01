@@ -32,23 +32,59 @@ export async function resolveAssignedAgentNames(
 }
 
 /**
+ * The result of unioning declared resources across assigned agents. The `secrets`
+ * / `connectors` arrays are the de-duplicated names (what most callers need); the
+ * `*Sources` maps carry PROVENANCE — name → the assigned agents that declare it —
+ * so the UI can answer "you inherit STRIPE_KEY from agent `billing-bot`."
+ */
+export interface DeclaredResourceUnion {
+  secrets: string[];
+  connectors: string[];
+  /** secret name → assigned agents that declare it (order = first-seen). */
+  secretSources: Map<string, string[]>;
+  /** connector slug → assigned agents that declare it. */
+  connectorSources: Map<string, string[]>;
+}
+
+/** Fresh empty union — a factory, NOT a shared singleton, so a caller that reads
+ *  (or accidentally mutates) the returned maps can never corrupt a later call. */
+function emptyUnion(): DeclaredResourceUnion {
+  return { secrets: [], connectors: [], secretSources: new Map(), connectorSources: new Map() };
+}
+
+function addSource(map: Map<string, string[]>, key: string, agent: string): void {
+  const existing = map.get(key);
+  if (existing) {
+    if (!existing.includes(agent)) existing.push(agent);
+  } else {
+    map.set(key, [agent]);
+  }
+}
+
+/**
  * Pure union of the CONCRETE env/connector allowlists declared by the `assigned`
- * agents. `'all'` contributes nothing concrete — it already means "everything the
- * launcher can see," so there is no specific name to inherit — only explicit lists
- * are inheritable. De-duplicated across agents.
+ * agents, WITH provenance. `'all'` contributes nothing concrete — it already means
+ * "everything the launcher can see," so there is no specific name to inherit —
+ * only explicit lists are inheritable. De-duplicated across agents; each name
+ * keeps the list of agents that contributed it.
  */
 export function unionDeclaredResources(
   agents: ReadonlyArray<{ name: string; env?: GrantSet; connectors?: GrantSet }>,
   assigned: ReadonlySet<string>,
-): { secrets: string[]; connectors: string[] } {
-  const secrets = new Set<string>();
-  const connectors = new Set<string>();
+): DeclaredResourceUnion {
+  const secretSources = new Map<string, string[]>();
+  const connectorSources = new Map<string, string[]>();
   for (const a of agents) {
     if (!assigned.has(a.name)) continue;
-    if (Array.isArray(a.env)) for (const s of a.env) secrets.add(s);
-    if (Array.isArray(a.connectors)) for (const c of a.connectors) connectors.add(c);
+    if (Array.isArray(a.env)) for (const s of a.env) addSource(secretSources, s, a.name);
+    if (Array.isArray(a.connectors)) for (const c of a.connectors) addSource(connectorSources, c, a.name);
   }
-  return { secrets: [...secrets], connectors: [...connectors] };
+  return {
+    secrets: [...secretSources.keys()],
+    connectors: [...connectorSources.keys()],
+    secretSources,
+    connectorSources,
+  };
 }
 
 /**
@@ -63,12 +99,12 @@ export async function resolveInheritedResourceNames(
   row: Parameters<typeof loadConfigWithFiles>[0] & { projectId: string },
   userId: string,
   groupIds: readonly string[],
-): Promise<{ secrets: string[]; connectors: string[] }> {
+): Promise<DeclaredResourceUnion> {
   const assigned = await resolveAssignedAgentNames(row.projectId, userId, groupIds);
-  if (assigned.size === 0) return { secrets: [], connectors: [] };
+  if (assigned.size === 0) return emptyUnion();
 
   const config = await loadConfigWithFiles(row).catch(() => null);
-  if (!config) return { secrets: [], connectors: [] };
+  if (!config) return emptyUnion();
 
   return unionDeclaredResources(
     config.agents.map((a) => ({ name: a.name, env: a.scope?.env, connectors: a.scope?.connectors })),

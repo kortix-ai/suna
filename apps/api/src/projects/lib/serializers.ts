@@ -225,17 +225,25 @@ export function buildSecretView(input: {
   subject: ShareSubject;
   canManageShared: boolean;
   /** Secrets the subject INHERITS via an agent they're assigned to (the "assign
-   *  human → agent" pyramid). Usable to them even if the share scope wouldn't
-   *  otherwise reach them. */
-  inherited?: ReadonlySet<string>;
+   *  human → agent" pyramid): name → the agents that declare it. Usable to them
+   *  even if the share scope wouldn't otherwise reach them, and surfaced as
+   *  `inherited_from` so the UI can explain WHY it's usable. */
+  inheritedSources?: ReadonlyMap<string, string[]>;
 }) {
-  const { name, shared, sharedGrants = [], personal, subject, canManageShared, inherited } = input;
+  const { name, shared, sharedGrants = [], personal, subject, canManageShared, inheritedSources } = input;
   const system = isSystemProjectSecretName(name);
   const isGitAuth = name === PROJECT_GIT_AUTH_SECRET_NAME;
-  const usableByMe = shared
-    ? isSecretUsableBy(shared.shareScope as 'project' | 'restricted', sharedGrants, subject) ||
-      Boolean(inherited?.has(name))
+  // Does the share scope alone reach me (project-wide, or a member/dept grant)?
+  const directlyUsable = shared
+    ? isSecretUsableBy(shared.shareScope as 'project' | 'restricted', sharedGrants, subject)
     : false;
+  // Agents I'm assigned to that DECLARE this secret. `inherited_from` names them
+  // only when inheritance is the REASON I can use it — i.e. the share scope
+  // wouldn't otherwise reach me. A project-wide secret I'd have anyway is NOT
+  // labelled inherited. Requires a configured value to inherit (a shared row).
+  const declaredBy = shared ? inheritedSources?.get(name) ?? null : null;
+  const inheritedFrom = !directlyUsable && declaredBy ? declaredBy : null;
+  const usableByMe = directlyUsable || inheritedFrom !== null;
   const mineActive = Boolean(personal?.active);
   const effectiveSource: 'mine' | 'shared' | 'none' =
     personal && mineActive ? 'mine' : usableByMe ? 'shared' : 'none';
@@ -256,6 +264,10 @@ export function buildSecretView(input: {
     share_scope: shared?.shareScope ?? 'project',
     sharing: shared ? scopeToIntent(shared.shareScope as 'project' | 'restricted', sharedGrants) : null,
     usable_by_me: usableByMe,
+    // Provenance for usable_by_me: the agent(s) I'm assigned to that declare this
+    // secret. Non-null means I can use it BECAUSE of that assignment (the
+    // inheritance pyramid), which the UI surfaces as an "Inherited from" badge.
+    inherited_from: inheritedFrom,
     // MY private override (value never returned), and whether I'm using it.
     mine: personal ? { active: personal.active, updated_at: personal.updatedAt.toISOString() } : null,
     // What actually gets injected into my sessions for this key.
@@ -274,7 +286,7 @@ export async function loadSecretViewsForUser(
   projectId: string,
   subject: ShareSubject,
   canManageShared: boolean,
-  inherited?: ReadonlySet<string>,
+  inheritedSources?: ReadonlyMap<string, string[]>,
 ): Promise<ReturnType<typeof buildSecretView>[]> {
   const rows = await db
     .select()
@@ -302,7 +314,7 @@ export async function loadSecretViewsForUser(
       personal: slot.personal,
       subject,
       canManageShared,
-      inherited,
+      inheritedSources,
     }),
   );
 }

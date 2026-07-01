@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, MoreHorizontal, Plug, Plus } from 'lucide-react';
+import { CornerDownRight, KeyRound, MoreHorizontal, Plug, Plus } from 'lucide-react';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -97,6 +97,9 @@ interface SecretRow {
   shareScope: 'project' | 'restricted';
   sharing: ConnectorSharing | null;
   usableByMe: boolean;
+  // Agent(s) the viewer is assigned to that grant this secret (the inheritance
+  // pyramid). Non-null only when inheritance is WHY it's usable.
+  inheritedFrom: string[] | null;
   // The viewer's private override.
   mine: { active: boolean } | null;
   // What actually runs in the viewer's sessions for this key.
@@ -415,6 +418,7 @@ function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefi
     shareScope: item?.share_scope ?? 'project',
     sharing: item?.sharing ?? null,
     usableByMe: Boolean(item?.usable_by_me),
+    inheritedFrom: item?.inherited_from ?? null,
     mine: item?.mine ?? null,
     effectiveSource: item?.effective_source ?? 'none',
     system: Boolean(item?.system),
@@ -445,10 +449,19 @@ function sharingScopeLabel(sharing: ConnectorSharing | null): string | null {
   return groups > 0 ? 'Members & departments' : 'Select members';
 }
 
+function inheritedFromLabel(agents: string[]): string {
+  if (agents.length === 1) return `Inherited from agent ${agents[0]}`;
+  if (agents.length === 2) return `Inherited from agents ${agents[0]} & ${agents[1]}`;
+  return `Inherited from ${agents.length} agents (${agents[0]} +${agents.length - 1})`;
+}
+
 function effectiveStatusLabel(row: SecretRow): string {
   if (row.system) return row.sharedConfigured ? 'Managed by Kortix' : 'Not set';
   if (row.effectiveSource === 'mine') return 'Using your own value';
-  if (row.effectiveSource === 'shared') return 'Using the shared value';
+  if (row.effectiveSource === 'shared') {
+    // Inheritance is the reason it reaches me — say so, not just "shared value".
+    return row.inheritedFrom ? `Using the shared value · ${inheritedFromLabel(row.inheritedFrom)}` : 'Using the shared value';
+  }
   if (row.sharedConfigured && !row.usableByMe) {
     return "Shared value exists but isn't shared with you";
   }
@@ -511,6 +524,17 @@ function SecretTableRow({
             {scopeLabel && (
               <Badge variant="outline" size="xs">
                 {scopeLabel}
+              </Badge>
+            )}
+            {row.inheritedFrom && (
+              <Badge
+                variant="muted"
+                size="xs"
+                className="gap-1"
+                title={`${inheritedFromLabel(row.inheritedFrom)}. You can use this because you're assigned to ${row.inheritedFrom.length > 1 ? 'these agents' : 'this agent'}.`}
+              >
+                <CornerDownRight className="size-3 shrink-0" />
+                Inherited
               </Badge>
             )}
           </div>

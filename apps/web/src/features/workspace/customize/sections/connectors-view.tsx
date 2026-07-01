@@ -4,6 +4,7 @@ import { useCustomizeStore } from '@/stores/customize-store';
 import { createFrontendClient } from '@pipedream/sdk/browser';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  Bot,
   Boxes,
   Check,
   ChevronDown,
@@ -106,7 +107,9 @@ import {
   getConnectorPolicies,
   getConnectStatus,
   getProject,
+  getProjectDetail,
   listConnectors,
+  listProjectAccess,
   listPipedreamApps,
   pipedreamConnect,
   pipedreamFinalize,
@@ -1910,6 +1913,34 @@ function ProfileSection({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const isChannel = connector.provider === 'channel' || connector.provider === 'computer';
   const [credential, setCredential] = useState<'shared' | 'per_user'>(connector.credentialMode);
+  // Which agents DECLARE this connector? Members assigned to them inherit access
+  // regardless of the sharing below (the inheritance pyramid) — surfaced so the
+  // admin sees the true blast radius, not just the direct share list. Manager-only
+  // (an agent→connector map is governance data), gated on a live can_manage.
+  const accessQuery = useQuery({
+    queryKey: ['project-access', projectId],
+    queryFn: () => listProjectAccess(projectId),
+    staleTime: 20_000,
+  });
+  const canManage = Boolean(accessQuery.data?.can_manage);
+  const configQuery = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    enabled: canManage,
+    staleTime: 30_000,
+  });
+  const declaringAgents = useMemo(
+    () =>
+      !canManage
+        ? []
+        : (configQuery.data?.config.agents ?? [])
+            .filter((a) => {
+              const conns = a.scope?.connectors;
+              return Array.isArray(conns) && conns.includes(connector.slug);
+            })
+            .map((a) => a.name),
+    [canManage, configQuery.data, connector.slug],
+  );
   const initialAccess = sharingToAccess(connector.sharing);
   const [access, setAccess] = useState(initialAccess.mode);
   const [memberIds, setMemberIds] = useState<string[]>(initialAccess.memberIds);
@@ -2036,6 +2067,27 @@ function ProfileSection({
               },
             }}
           />
+        </div>
+      )}
+
+      {declaringAgents.length > 0 && (
+        <div className="border-border/60 bg-muted/20 mt-4 space-y-2 rounded-lg border p-3">
+          <div className="flex items-center gap-1.5">
+            <Bot className="text-muted-foreground/70 size-3.5 shrink-0" />
+            <span className="text-foreground/80 text-xs font-medium">Also usable via agent assignment</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {declaringAgents.map((name) => (
+              <Badge key={name} variant="outline" size="xs" className="font-mono">
+                {name}
+              </Badge>
+            ))}
+          </div>
+          <p className="text-muted-foreground/60 text-[11px] leading-relaxed">
+            {declaringAgents.length === 1 ? 'This agent declares' : 'These agents declare'} this connector,
+            so anyone assigned to {declaringAgents.length === 1 ? 'it' : 'them'} (Members → Resource access)
+            can use it — regardless of the sharing above.
+          </p>
         </div>
       )}
 
