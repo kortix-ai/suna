@@ -9,10 +9,16 @@
  */
 
 import { join } from 'node:path';
-import postgres from 'postgres';
-import { config } from './config';
+import { sql } from 'drizzle-orm';
+import { Effect } from 'effect';
+import { AppConfig, DatabaseService } from './effect/services';
+import { runEffectOrThrow } from './effect/http';
 
 export async function ensureSchema(): Promise<void> {
+  const config = await runEffectOrThrow(Effect.gen(function* () {
+    return yield* AppConfig;
+  }));
+
   if (!config.DATABASE_URL) {
     console.log('[schema] No DATABASE_URL configured — skipping');
     return;
@@ -71,7 +77,6 @@ export async function ensureSchema(): Promise<void> {
  * before the first 500 hits a route.
  */
 async function warnIfCriticalTablesMissing(): Promise<void> {
-  if (!config.DATABASE_URL) return;
   // Critical tables for IAM + auth + vault paths. Keep this list
   // small and stable — extending it for every new migration would be
   // noise. We check only tables in the `kortix` schema (no tuple
@@ -87,13 +92,22 @@ async function warnIfCriticalTablesMissing(): Promise<void> {
     'project_secrets',
     'projects',
   ];
-  const db = postgres(config.DATABASE_URL, { max: 1 });
+
   try {
-    const rows = (await db`
-      SELECT table_name
-      FROM information_schema.tables
-      WHERE table_schema = 'kortix' AND table_name IN ${db(required)}
-    `) as Array<{ table_name: string }>;
+    const tableNames = sql.join(required.map((name) => sql`${name}`), sql`, `);
+    const result = await runEffectOrThrow(Effect.gen(function* () {
+      const { database } = yield* DatabaseService;
+      return yield* Effect.tryPromise(() =>
+        database.execute(sql`
+          SELECT table_name
+          FROM information_schema.tables
+          WHERE table_schema = 'kortix' AND table_name IN (${tableNames})
+        `),
+      );
+    }));
+    const rows = (Array.isArray(result) ? result : (result as { rows?: unknown[] }).rows ?? []) as Array<{
+      table_name: string;
+    }>;
     const present = new Set(rows.map((r) => r.table_name));
     const missing = required.filter((n) => !present.has(n));
     if (missing.length > 0) {
@@ -103,7 +117,5 @@ async function warnIfCriticalTablesMissing(): Promise<void> {
     }
   } catch (err) {
     console.warn('[schema] could not verify table presence:', (err as Error).message ?? err);
-  } finally {
-    await db.end();
   }
 }
