@@ -14,8 +14,20 @@
  * between blocks.
  */
 
+import { Icon } from '@/components/ui/icon';
+import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
+import type { ReasoningPart } from '@/lib/opencode/types';
+import { Brain, ChevronRight, Loader2 } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Pressable, LayoutAnimation, Platform, UIManager, Text as RNText } from 'react-native';
+import {
+  LayoutAnimation,
+  Platform,
+  Pressable,
+  Text as RNText,
+  UIManager,
+  View,
+} from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -26,11 +38,6 @@ import Animated, {
   FadeIn,
   FadeOut,
 } from 'react-native-reanimated';
-import { Brain, ChevronRight, Loader2 } from 'lucide-react-native';
-import { Icon } from '@/components/ui/icon';
-import { useColorScheme } from 'nativewind';
-import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
-import type { ReasoningPart } from '@/lib/opencode/types';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -268,9 +275,7 @@ export function GroupedReasoningCard({ parts, isStreaming = false }: GroupedReas
         >
           {nonEmptyParts.map((p, i) => (
             <View key={p.id ?? i} style={{ marginBottom: i < nonEmptyParts.length - 1 ? 10 : 0 }}>
-              <SelectableMarkdownText isDark={isDark}>
-                {p.text!}
-              </SelectableMarkdownText>
+              <SelectableMarkdownText isDark={isDark}>{p.text!}</SelectableMarkdownText>
             </View>
           ))}
         </Animated.View>

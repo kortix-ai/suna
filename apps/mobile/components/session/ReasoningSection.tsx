@@ -3,8 +3,22 @@
  * Adapted from frontend design with React Native animations
  */
 
+import { ShimmerText } from '@/components/ui/ShimmerText';
+import { Icon } from '@/components/ui/icon';
+import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
+import { Text } from '@/components/ui/text';
+import { cn } from '@/lib/utils/utils';
+import { ChevronDown } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { View, Pressable, LayoutAnimation, Platform, UIManager, TextStyle } from 'react-native';
+import {
+  LayoutAnimation,
+  Platform,
+  Pressable,
+  type TextStyle,
+  UIManager,
+  View,
+} from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -16,13 +30,6 @@ import Animated, {
   FadeIn,
   FadeOut,
 } from 'react-native-reanimated';
-import { ChevronDown } from 'lucide-react-native';
-import { Text } from '@/components/ui/text';
-import { Icon } from '@/components/ui/icon';
-import { useColorScheme } from 'nativewind';
-import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
-import { cn } from '@/lib/utils/utils';
-import { ShimmerText } from '@/components/ui/ShimmerText';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -59,18 +66,24 @@ export function ReasoningSection({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const isCompact = variant === 'compact';
-  const contentStyle = useMemo<TextStyle>(() => ({
-    fontSize: isCompact ? 12 : 13,
-    lineHeight: isCompact ? 18 : 22,
-    color: isDark ? 'rgba(248,248,248,0.55)' : 'rgba(18,18,21,0.55)',
-    fontFamily: 'Roobert-Regular',
-  }), [isCompact, isDark]);
-  const placeholderStyle = useMemo<TextStyle>(() => ({
-    fontSize: isCompact ? 12 : 13,
-    lineHeight: isCompact ? 18 : 20,
-    color: isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)',
-    fontFamily: 'Roobert-Regular',
-  }), [isCompact, isDark]);
+  const contentStyle = useMemo<TextStyle>(
+    () => ({
+      fontSize: isCompact ? 12 : 13,
+      lineHeight: isCompact ? 18 : 22,
+      color: isDark ? 'rgba(248,248,248,0.55)' : 'rgba(18,18,21,0.55)',
+      fontFamily: 'Roobert-Regular',
+    }),
+    [isCompact, isDark],
+  );
+  const placeholderStyle = useMemo<TextStyle>(
+    () => ({
+      fontSize: isCompact ? 12 : 13,
+      lineHeight: isCompact ? 18 : 20,
+      color: isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)',
+      fontFamily: 'Roobert-Regular',
+    }),
+    [isCompact, isDark],
+  );
 
   // Support both controlled and uncontrolled modes - start collapsed by default
   const [internalExpanded, setInternalExpanded] = useState(false);
@@ -154,11 +167,7 @@ export function ReasoningSection({
             </Text>
           )}
           <Animated.View style={chevronAnimatedStyle}>
-            <Icon
-              as={ChevronDown}
-              size={16}
-              className="text-muted-foreground"
-            />
+            <Icon as={ChevronDown} size={16} className="text-muted-foreground" />
           </Animated.View>
         </Pressable>
       </View>
@@ -175,17 +184,11 @@ export function ReasoningSection({
           }}
         >
           {hasContent ? (
-            <SelectableMarkdownText
-              isDark={isDark}
-              style={contentStyle}
-            >
+            <SelectableMarkdownText isDark={isDark} style={contentStyle}>
               {displayContent}
             </SelectableMarkdownText>
           ) : (
-            <Text
-              className="text-sm"
-              style={placeholderStyle}
-            >
+            <Text className="text-sm" style={placeholderStyle}>
               Waiting for reasoning content...
             </Text>
           )}

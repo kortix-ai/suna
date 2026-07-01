@@ -59,7 +59,7 @@ import { SandboxHealthPill } from './SandboxHealthPill';
 import { useRouter } from 'expo-router';
 import { useAudioRecorder } from '@/hooks/media/useAudioRecorder';
 import { useAudioRecordingHandlers } from '@/hooks/media/useAudioRecordingHandlers';
-import { transcribeAudio } from '@/lib/chat/transcription';
+import { transcribeAudio } from '@/lib/transcription';
 import { SessionTurn } from './SessionTurn';
 import { QuestionPrompt } from './QuestionPrompt';
 import { useSessions } from '@/lib/platform/hooks';
