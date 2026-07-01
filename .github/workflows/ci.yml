@@ -59,6 +59,7 @@ jobs:
               - *pnpm
               - 'apps/api/**'
               - 'packages/agent-tunnel/**'
+              - 'packages/api-contract/**'
               - 'packages/db/**'
               - 'packages/manifest-schema/**'
               - 'packages/shared/**'

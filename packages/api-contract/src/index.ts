@@ -12,7 +12,8 @@
  *      the inferred types below, so any added/renamed/retyped field fails
  *      typecheck (object-literal excess-property checks catch additions);
  *   2. runtime — apps/api's unit suite parses real serializer output against
- *      these schemas (see apps/api/src/__tests__/unit-api-contract.test.ts).
+ *      these schemas (see
+ *      apps/api/src/__tests__/unit-api-contract-serializers.test.ts).
  */
 import { z } from 'zod';
 

@@ -58,6 +58,7 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 
 # Copy the target app and workspace packages it depends on
 COPY ${SERVICE} ./${SERVICE}
+COPY packages/api-contract ./packages/api-contract
 COPY packages/shared ./packages/shared
 COPY packages/llm-catalog ./packages/llm-catalog
 COPY packages/db ./packages/db
@@ -145,6 +146,9 @@ COPY --from=deps /app/packages/starter/templates ./packages/starter/templates
 COPY --from=deps /app/packages/manifest-schema/src ./packages/manifest-schema/src
 COPY --from=deps /app/packages/manifest-schema/package.json ./packages/manifest-schema/package.json
 COPY --from=deps /app/packages/manifest-schema/tsconfig.json ./packages/manifest-schema/tsconfig.json
+COPY --from=deps /app/packages/api-contract/src ./packages/api-contract/src
+COPY --from=deps /app/packages/api-contract/package.json ./packages/api-contract/package.json
+COPY --from=deps /app/packages/api-contract/tsconfig.json ./packages/api-contract/tsconfig.json
 COPY --from=deps /app/packages/registry/src ./packages/registry/src
 COPY --from=deps /app/packages/registry/package.json ./packages/registry/package.json
 COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconfig.json
@@ -188,7 +192,8 @@ RUN rm -rf \
     apps/kortix-sandbox-agent-server/src/__tests__ \
     apps/cli/src/__tests__ \
     packages/starter/src/__tests__ \
-    packages/manifest-schema/src/__tests__
+    packages/manifest-schema/src/__tests__ \
+    packages/api-contract/src/__tests__
 
 WORKDIR /app/${SERVICE}
 
