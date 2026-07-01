@@ -1,7 +1,7 @@
+import type { Effect } from 'effect';
 import { and, eq } from 'drizzle-orm';
 import { accountMembers, projects } from '@kortix/db';
-import { db } from '../../shared/db';
-import { config } from '../../config';
+import { sharedConfig as config, sharedDb as db } from '../../shared/effect';
 import { getAccountTier } from '../../billing/services/entitlements';
 import { tierGrantsAllModels } from '../../billing/services/tiers';
 import { type ChannelCtx, currentChannelSelection } from './selection';

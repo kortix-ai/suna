@@ -1,7 +1,15 @@
 import { HTTPException } from 'hono/http-exception';
+import { Effect, Either } from 'effect';
 import { eq, or } from 'drizzle-orm';
 import { tunnelConnections } from '@kortix/db';
 import { resolveAccountId } from '../../shared/resolve-account';
+import { attemptTunnel, attemptTunnelSync } from './effect-workflows';
+
+async function runAuthEffect<A, E>(effect: Effect.Effect<A, E>): Promise<A> {
+  const result = await Effect.runPromise(Effect.either(effect));
+  if (Either.isRight(result)) return result.right;
+  throw result.left;
+}
 
 /**
  * Tunnel auth model — two tiers:
@@ -27,36 +35,53 @@ export function requireUserCredential(c: any): void {
   }
 }
 
+export const requireUserCredentialEffect = (c: any) =>
+  attemptTunnelSync(() => requireUserCredential(c));
+
 /**
  * Resolve the account + ownership clause for tunnel READ / RPC access. Works
  * for both user credentials (userId set) and the sandbox apiKey (accountId set,
  * userId absent). Does NOT require a user credential.
  */
+export const getTunnelReadContextEffect = (c: any) =>
+  Effect.gen(function* () {
+    const userId = c.get('userId') as string | undefined;
+    const ctxAccountId = c.get('accountId') as string | undefined;
+    const accountId = ctxAccountId || (userId
+      ? yield* attemptTunnel(() => resolveAccountId(userId))
+      : undefined);
+
+    if (!accountId) {
+      return yield* Effect.fail(
+        new HTTPException(401, {
+          message: 'Unable to resolve an account for tunnel access',
+        }),
+      );
+    }
+
+    // Personal-account installs store the tunnel under the user id; team accounts
+    // under the account id. Match either when they differ.
+    const ownerClause = userId && userId !== accountId
+      ? or(eq(tunnelConnections.accountId, accountId), eq(tunnelConnections.accountId, userId))
+      : eq(tunnelConnections.accountId, accountId);
+
+    return { userId, accountId, ownerClause };
+  });
+
 export async function getTunnelReadContext(c: any) {
-  const userId = c.get('userId') as string | undefined;
-  const ctxAccountId = c.get('accountId') as string | undefined;
-  const accountId = ctxAccountId || (userId ? await resolveAccountId(userId) : undefined);
-
-  if (!accountId) {
-    throw new HTTPException(401, {
-      message: 'Unable to resolve an account for tunnel access',
-    });
-  }
-
-  // Personal-account installs store the tunnel under the user id; team accounts
-  // under the account id. Match either when they differ.
-  const ownerClause = userId && userId !== accountId
-    ? or(eq(tunnelConnections.accountId, accountId), eq(tunnelConnections.accountId, userId))
-    : eq(tunnelConnections.accountId, accountId);
-
-  return { userId, accountId, ownerClause };
+  return runAuthEffect(getTunnelReadContextEffect(c));
 }
 
 /**
  * Resolve the account + ownership clause for tunnel MANAGEMENT. Same as the
  * read context, but first rejects apiKey credentials.
  */
+export const getTunnelOwnerContextEffect = (c: any) =>
+  Effect.gen(function* () {
+    yield* requireUserCredentialEffect(c);
+    return yield* getTunnelReadContextEffect(c);
+  });
+
 export async function getTunnelOwnerContext(c: any) {
-  requireUserCredential(c);
-  return getTunnelReadContext(c);
+  return runAuthEffect(getTunnelOwnerContextEffect(c));
 }

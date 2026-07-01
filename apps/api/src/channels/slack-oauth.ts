@@ -1,15 +1,16 @@
-import { createRoute, z } from '@hono/zod-openapi';
-import type { Context } from 'hono';
-import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
-import { eq } from 'drizzle-orm';
-import { projects } from '@kortix/db';
-import { db } from '../shared/db';
-import { config } from '../config';
-import { slackOauthMode } from './slack-oauth-mode';
-import { saveSlackOauthInstall } from './install-store';
-import { linkSlackIdentity } from './slack/identity';
-import { reconcileChannelConnectors } from '../executor/sync';
-import { makeOpenApiApp, errors } from '../openapi';
+import type { Effect } from 'effect';
+import { createRoute, z } from "@hono/zod-openapi";
+import type { Context } from "hono";
+import { createHmac, timingSafeEqual, randomBytes } from "node:crypto";
+import { eq } from "drizzle-orm";
+import { projects } from "@kortix/db";
+import { sharedConfig as config, sharedDb as db, sharedFetch } from "../shared/effect";
+import { slackOauthMode } from "./slack-oauth-mode";
+import { saveSlackOauthInstall } from "./install-store";
+import { linkSlackIdentity } from "./slack/identity";
+import { reconcileChannelConnectors } from "../executor/sync";
+import { makeOpenApiApp, errors } from "../openapi";
+import { effectHandler } from "../effect/hono";
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -21,45 +22,66 @@ interface StatePayload {
 }
 
 function stateSigningKey(): string {
-  return config.SLACK_SIGNING_SECRET ?? 'kortix-dev-state-key';
+  return config.SLACK_SIGNING_SECRET ?? "kortix-dev-state-key";
 }
 
-function signState(payload: Omit<StatePayload, 'nonce'>): string {
-  const full: StatePayload = { ...payload, nonce: randomBytes(8).toString('hex') };
-  const body = Buffer.from(JSON.stringify(full)).toString('base64url');
-  const mac = createHmac('sha256', stateSigningKey()).update(body).digest('base64url');
+function signState(payload: Omit<StatePayload, "nonce">): string {
+  const full: StatePayload = {
+    ...payload,
+    nonce: randomBytes(8).toString("hex"),
+  };
+  const body = Buffer.from(JSON.stringify(full)).toString("base64url");
+  const mac = createHmac("sha256", stateSigningKey())
+    .update(body)
+    .digest("base64url");
   return `${body}.${mac}`;
 }
 
 function verifyState(token: string): StatePayload | null {
-  const [body, mac] = token.split('.');
+  const [body, mac] = token.split(".");
   if (!body || !mac) return null;
-  const expected = createHmac('sha256', stateSigningKey()).update(body).digest('base64url');
+  const expected = createHmac("sha256", stateSigningKey())
+    .update(body)
+    .digest("base64url");
   const a = Buffer.from(mac);
   const b = Buffer.from(expected);
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
   try {
-    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as StatePayload;
-    if (typeof payload.exp !== 'number' || payload.exp < Date.now()) return null;
-    if (typeof payload.projectId !== 'string' || typeof payload.userId !== 'string') return null;
+    const payload = JSON.parse(
+      Buffer.from(body, "base64url").toString("utf8"),
+    ) as StatePayload;
+    if (typeof payload.exp !== "number" || payload.exp < Date.now())
+      return null;
+    if (
+      typeof payload.projectId !== "string" ||
+      typeof payload.userId !== "string"
+    )
+      return null;
     return payload;
   } catch {
     return null;
   }
 }
 
-export function buildSlackInstallUrl(projectId: string, userId: string): string {
+export function buildSlackInstallUrl(
+  projectId: string,
+  userId: string,
+): string {
   const mode = slackOauthMode();
   if (!mode.available || !mode.clientId) {
-    throw new Error('Slack OAuth is not configured on this server.');
+    throw new Error("Slack OAuth is not configured on this server.");
   }
-  const state = signState({ projectId, userId, exp: Date.now() + STATE_TTL_MS });
+  const state = signState({
+    projectId,
+    userId,
+    exp: Date.now() + STATE_TTL_MS,
+  });
   const params = new URLSearchParams({
     client_id: mode.clientId,
     scope: mode.scopes,
     state,
   });
-  if (mode.redirectUri) params.set('redirect_uri', mode.redirectUri);
+  if (mode.redirectUri) params.set("redirect_uri", mode.redirectUri);
   return `https://slack.com/oauth/v2/authorize?${params.toString()}`;
 }
 
@@ -67,10 +89,10 @@ export const slackOauthApp = makeOpenApiApp();
 
 slackOauthApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/callback',
-    tags: ['channels'],
-    summary: 'Slack OAuth install callback (redirects to dashboard)',
+    method: "get",
+    path: "/callback",
+    tags: ["channels"],
+    summary: "Slack OAuth install callback (redirects to dashboard)",
     request: {
       query: z.object({
         code: z.string().optional(),
@@ -79,114 +101,136 @@ slackOauthApp.openapi(
       }),
     },
     responses: {
-      302: { description: 'Redirect to the Kortix dashboard' },
+      302: { description: "Redirect to the Kortix dashboard" },
       ...errors(400, 503),
     },
   }),
-  async (c: any) => {
-  const mode = slackOauthMode();
-  if (!mode.available || !mode.clientId || !mode.clientSecret) {
-    return c.json({ error: 'Slack OAuth is not configured on this server.' }, 503);
-  }
+  effectHandler(async (c: any) => {
+    const mode = slackOauthMode();
+    if (!mode.available || !mode.clientId || !mode.clientSecret) {
+      return c.json(
+        { error: "Slack OAuth is not configured on this server." },
+        503,
+      );
+    }
 
-  const code = c.req.query('code');
-  const state = c.req.query('state');
-  const slackError = c.req.query('error');
-  const payload = state ? verifyState(state) : null;
-  if (slackError) return redirectToDashboard(c, { projectId: payload?.projectId, error: slackError });
-  if (!code || !state) return c.json({ error: 'Missing code or state' }, 400);
-  if (!payload) return c.json({ error: 'Invalid or expired state' }, 400);
-
-  const exchangeBody = new URLSearchParams({
-    code,
-    client_id: mode.clientId,
-    client_secret: mode.clientSecret,
-  });
-  if (mode.redirectUri) exchangeBody.set('redirect_uri', mode.redirectUri);
-
-  let tokenJson: SlackOauthResponse;
-  try {
-    const tokenRes = await fetch('https://slack.com/api/oauth.v2.access', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: exchangeBody.toString(),
-    });
-    tokenJson = (await tokenRes.json()) as SlackOauthResponse;
-  } catch (err) {
-    console.error('[slack-oauth] token exchange failed', {
-      projectId: payload.projectId,
-      error: (err as Error).message,
-    });
-    return redirectToDashboard(c, { projectId: payload.projectId, error: 'oauth_exchange_failed' });
-  }
-  if (!tokenJson.ok || !tokenJson.access_token || !tokenJson.team?.id) {
-    return redirectToDashboard(c, {
-      projectId: payload.projectId,
-      error: tokenJson.error ?? 'oauth_exchange_failed',
-    });
-  }
-
-  let project: { projectId: string } | undefined;
-  try {
-    [project] = await db
-      .select({ projectId: projects.projectId })
-      .from(projects)
-      .where(eq(projects.projectId, payload.projectId))
-      .limit(1);
-  } catch (err) {
-    console.error('[slack-oauth] project lookup failed', {
-      projectId: payload.projectId,
-      workspaceId: tokenJson.team.id,
-      error: (err as Error).message,
-    });
-    return redirectToDashboard(c, { projectId: payload.projectId, error: 'project_lookup_failed' });
-  }
-  if (!project) {
-    return redirectToDashboard(c, { projectId: payload.projectId, error: 'project_not_found' });
-  }
-
-  try {
-    await saveSlackOauthInstall({
-      projectId: payload.projectId,
-      workspaceId: tokenJson.team.id,
-      botToken: tokenJson.access_token,
-      botUserId: tokenJson.bot_user_id ?? '',
-      teamName: tokenJson.team.name ?? null,
-    });
-  } catch (err) {
-    console.error('[slack-oauth] install save failed', {
-      projectId: payload.projectId,
-      workspaceId: tokenJson.team.id,
-      error: (err as Error).message,
-    });
-    return redirectToDashboard(c, { projectId: payload.projectId, error: 'slack_install_save_failed' });
-  }
-
-  // Seed the installer's identity so the admin who just connected is linked
-  // immediately and never hits the `/login` block on their own messages. Slack
-  // returns the authorizing user as `authed_user.id`. Best-effort, and only when
-  // the per-user identity feature is enabled (the whole feature is flag-gated).
-  if (config.SLACK_REQUIRE_USER_IDENTITY && tokenJson.authed_user?.id) {
-    try {
-      await linkSlackIdentity({
-        teamId: tokenJson.team.id,
-        slackUserId: tokenJson.authed_user.id,
-        userId: payload.userId,
+    const code = c.req.query("code");
+    const state = c.req.query("state");
+    const slackError = c.req.query("error");
+    const payload = state ? verifyState(state) : null;
+    if (slackError)
+      return redirectToDashboard(c, {
+        projectId: payload?.projectId,
+        error: slackError,
       });
+    if (!code || !state) return c.json({ error: "Missing code or state" }, 400);
+    if (!payload) return c.json({ error: "Invalid or expired state" }, 400);
+
+    const exchangeBody = new URLSearchParams({
+      code,
+      client_id: mode.clientId,
+      client_secret: mode.clientSecret,
+    });
+    if (mode.redirectUri) exchangeBody.set("redirect_uri", mode.redirectUri);
+
+    let tokenJson: SlackOauthResponse;
+    try {
+      const tokenRes = await sharedFetch("https://slack.com/api/oauth.v2.access", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: exchangeBody.toString(),
+      });
+      tokenJson = (await tokenRes.json()) as SlackOauthResponse;
     } catch (err) {
-      console.warn('[slack-oauth] installer identity seed failed', {
+      console.error("[slack-oauth] token exchange failed", {
         projectId: payload.projectId,
         error: (err as Error).message,
       });
+      return redirectToDashboard(c, {
+        projectId: payload.projectId,
+        error: "oauth_exchange_failed",
+      });
     }
-  }
+    if (!tokenJson.ok || !tokenJson.access_token || !tokenJson.team?.id) {
+      return redirectToDashboard(c, {
+        projectId: payload.projectId,
+        error: tokenJson.error ?? "oauth_exchange_failed",
+      });
+    }
 
-  // Materialize the Slack channel connector so it appears in the Executor right
-  // after connecting (best-effort; never blocks the redirect).
-  void reconcileChannelConnectors(payload.projectId);
+    let project: { projectId: string } | undefined;
+    try {
+      [project] = await db
+        .select({ projectId: projects.projectId })
+        .from(projects)
+        .where(eq(projects.projectId, payload.projectId))
+        .limit(1);
+    } catch (err) {
+      console.error("[slack-oauth] project lookup failed", {
+        projectId: payload.projectId,
+        workspaceId: tokenJson.team.id,
+        error: (err as Error).message,
+      });
+      return redirectToDashboard(c, {
+        projectId: payload.projectId,
+        error: "project_lookup_failed",
+      });
+    }
+    if (!project) {
+      return redirectToDashboard(c, {
+        projectId: payload.projectId,
+        error: "project_not_found",
+      });
+    }
 
-  return redirectToDashboard(c, { projectId: payload.projectId, success: '1' });
-},
+    try {
+      await saveSlackOauthInstall({
+        projectId: payload.projectId,
+        workspaceId: tokenJson.team.id,
+        botToken: tokenJson.access_token,
+        botUserId: tokenJson.bot_user_id ?? "",
+        teamName: tokenJson.team.name ?? null,
+      });
+    } catch (err) {
+      console.error("[slack-oauth] install save failed", {
+        projectId: payload.projectId,
+        workspaceId: tokenJson.team.id,
+        error: (err as Error).message,
+      });
+      return redirectToDashboard(c, {
+        projectId: payload.projectId,
+        error: "slack_install_save_failed",
+      });
+    }
+
+    // Seed the installer's identity so the admin who just connected is linked
+    // immediately and never hits the `/login` block on their own messages. Slack
+    // returns the authorizing user as `authed_user.id`. Best-effort, and only when
+    // the per-user identity feature is enabled (the whole feature is flag-gated).
+    if (config.SLACK_REQUIRE_USER_IDENTITY && tokenJson.authed_user?.id) {
+      try {
+        await linkSlackIdentity({
+          teamId: tokenJson.team.id,
+          slackUserId: tokenJson.authed_user.id,
+          userId: payload.userId,
+        });
+      } catch (err) {
+        console.warn("[slack-oauth] installer identity seed failed", {
+          projectId: payload.projectId,
+          error: (err as Error).message,
+        });
+      }
+    }
+
+    // Materialize the Slack channel connector so it appears in the Executor right
+    // after connecting (best-effort; never blocks the redirect).
+    void reconcileChannelConnectors(payload.projectId);
+
+    return redirectToDashboard(c, {
+      projectId: payload.projectId,
+      success: "1",
+    });
+  }),
 );
 
 function redirectToDashboard(
@@ -196,7 +240,10 @@ function redirectToDashboard(
   // Mirror dashboardBaseUrl()'s fallback chain so an OAuth callback never
   // redirects to localhost in a deployed environment where FRONTEND_URL
   // happens to be unset.
-  const base = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
+  const base = (config.FRONTEND_URL || "https://kortix.com").replace(
+    /\/+$/,
+    "",
+  );
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(qs)) {
     if (v) params.set(k, v);
@@ -204,7 +251,7 @@ function redirectToDashboard(
   // Land on the real project page, then let the web shell open Customize from
   // query params. The /customize shim renders null while client routing runs,
   // which is too fragile as an external OAuth callback target.
-  if (qs.projectId) params.set('customize', 'connectors');
+  if (qs.projectId) params.set("customize", "connectors");
   const target = qs.projectId
     ? `${base}/projects/${qs.projectId}?${params.toString()}`
     : `${base}/?${params.toString()}`;

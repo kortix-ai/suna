@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // IAM V2 routes: service accounts (non-human IAM principals).
 // First-class machine identities owned by the account itself. Policies
 // attach via principal_type='token' with principal_id=service_account_id
@@ -17,6 +18,7 @@ import {
 import { iamRouter, AccountIdParam, ServiceAccountSchema } from './app';
 import { auditIam, isUniqueViolation, readBody } from './helpers';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
+import { effectHandler } from '../../effect/hono';
 
 iamRouter.openapi(
   createRoute({
@@ -31,7 +33,7 @@ iamRouter.openapi(
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_READ);
@@ -49,7 +51,7 @@ iamRouter.openapi(
       disabled_at: sa.disabledAt?.toISOString() ?? null,
     })),
   });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -65,7 +67,7 @@ iamRouter.openapi(
       ...errors(400, 401, 403, 409),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_CREATE);
@@ -117,7 +119,7 @@ iamRouter.openapi(
     }
     throw err;
   }
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -133,7 +135,7 @@ iamRouter.openapi(
       ...errors(401, 403, 404, 409),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const saId = c.req.param('saId');
@@ -167,7 +169,7 @@ iamRouter.openapi(
     after: { name: before.name, status: 'disabled' },
   });
   return c.json({ disabled: true });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -183,7 +185,7 @@ iamRouter.openapi(
       ...errors(401, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const saId = c.req.param('saId');
@@ -209,5 +211,5 @@ iamRouter.openapi(
     before: { name: before.name },
   });
   return c.json({ deleted: true });
-  },
+  }),
 );

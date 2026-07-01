@@ -1,7 +1,7 @@
+import type { Effect } from 'effect';
 import { and, eq, isNull, like } from "drizzle-orm";
 import { chatInstalls, projectSecrets } from "@kortix/db";
-import { db } from "../shared/db";
-import { config } from "../config";
+import { sharedConfig as config, sharedDb as db } from "../shared/effect";
 import {
   decryptProjectSecret,
   encryptProjectSecret,
@@ -67,16 +67,6 @@ const SLACK_KEYS = [
   SLACK_TEAM_ID,
   SLACK_BOT_USER_ID,
   SLACK_TEAM_NAME,
-] as const;
-
-const AGENTMAIL_KEYS = [
-  AGENTMAIL_API_KEY,
-  AGENTMAIL_INBOX_ID,
-  AGENTMAIL_INBOX_EMAIL,
-  AGENTMAIL_INBOX_DISPLAY_NAME,
-  AGENTMAIL_WEBHOOK_ID,
-  AGENTMAIL_WEBHOOK_SECRET,
-  AGENTMAIL_SENDER_POLICY,
 ] as const;
 
 export interface AgentMailSenderPolicy {

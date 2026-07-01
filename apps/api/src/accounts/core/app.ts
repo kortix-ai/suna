@@ -1,11 +1,11 @@
+import type { Effect } from 'effect';
 import { Context } from 'hono';
 import { z } from '@hono/zod-openapi';
 import { and, count, eq, gt, isNull, sql } from 'drizzle-orm';
 import { makeOpenApiApp } from '../../openapi';
 import { accountInvitations, accountMembers, accounts } from '@kortix/db';
 import type { AppEnv } from '../../types';
-import { db } from '../../shared/db';
-import { getSupabase } from '../../shared/supabase';
+import { accountDb as db, accountSupabase } from '../effect';
 import { resolveAccountId } from '../../shared/resolve-account';
 
 // ─── Public router (leaf module — no route imports here to avoid cycles) ─────
@@ -197,7 +197,7 @@ export async function countOwners(accountId: string): Promise<number> {
 export async function lookupEmailsByUserIds(userIds: string[]): Promise<Map<string, string | null>> {
   const result = new Map<string, string | null>();
   if (userIds.length === 0) return result;
-  const supabase = getSupabase();
+  const supabase = accountSupabase;
   await Promise.all(
     userIds.map(async (uid) => {
       try {

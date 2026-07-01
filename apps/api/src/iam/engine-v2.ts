@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // IAM V2 engine. The only authorization path — the V1 policy engine and
 // its accounts.iam_v2_enabled rollout flag were retired in PR5.
 //
@@ -31,10 +32,10 @@ import {
   serviceAccounts,
   type AgentGrant,
 } from '@kortix/db';
-import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
 import { agentMayPerform } from './agent-scope';
 import { registerPrincipalScopedMemo } from './cache-invalidation';
+import { runIamDatabase } from './effect';
 import {
   filterAccessibleResourceIds,
   isResourceAccessible,
@@ -159,53 +160,55 @@ async function resolveActorV2Uncached(
   // The custom-policy query is self-contained (group membership via a subquery)
   // so all three run in ONE parallel batch — no added latency depth. It returns
   // [] for the overwhelmingly common account with no custom roles.
-  const [memberRows, groups, policyRows] = await Promise.all([
-    db
-      .select({
-        isSuperAdmin: accountMembers.isSuperAdmin,
-        accountRole: accountMembers.accountRole,
-        mfaRequired: accounts.mfaRequired,
-      })
-      .from(accountMembers)
-      .innerJoin(accounts, eq(accounts.accountId, accountMembers.accountId))
-      .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
-      .limit(1),
-    db
-      .select({ groupId: accountGroupMembers.groupId })
-      .from(accountGroupMembers)
-      .where(eq(accountGroupMembers.userId, userId)),
-    db
-      .select({
-        scopeType: iamPolicies.scopeType,
-        scopeId: iamPolicies.scopeId,
-        action: iamRoleActions.action,
-      })
-      .from(iamPolicies)
-      .innerJoin(iamRoleActions, eq(iamRoleActions.roleId, iamPolicies.roleId))
-      .where(
-        and(
-          eq(iamPolicies.accountId, accountId),
-          or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
-          or(
-            and(eq(iamPolicies.principalType, 'member'), eq(iamPolicies.principalId, userId)),
-            and(
-              eq(iamPolicies.principalType, 'group'),
-              inArray(
-                iamPolicies.principalId,
-                db
-                  .select({ gid: accountGroupMembers.groupId })
-                  .from(accountGroupMembers)
-                  .where(eq(accountGroupMembers.userId, userId)),
+  const [memberRows, groups, policyRows] = await runIamDatabase((database) =>
+    Promise.all([
+      database
+        .select({
+          isSuperAdmin: accountMembers.isSuperAdmin,
+          accountRole: accountMembers.accountRole,
+          mfaRequired: accounts.mfaRequired,
+        })
+        .from(accountMembers)
+        .innerJoin(accounts, eq(accounts.accountId, accountMembers.accountId))
+        .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
+        .limit(1),
+      database
+        .select({ groupId: accountGroupMembers.groupId })
+        .from(accountGroupMembers)
+        .where(eq(accountGroupMembers.userId, userId)),
+      database
+        .select({
+          scopeType: iamPolicies.scopeType,
+          scopeId: iamPolicies.scopeId,
+          action: iamRoleActions.action,
+        })
+        .from(iamPolicies)
+        .innerJoin(iamRoleActions, eq(iamRoleActions.roleId, iamPolicies.roleId))
+        .where(
+          and(
+            eq(iamPolicies.accountId, accountId),
+            or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
+            or(
+              and(eq(iamPolicies.principalType, 'member'), eq(iamPolicies.principalId, userId)),
+              and(
+                eq(iamPolicies.principalType, 'group'),
+                inArray(
+                  iamPolicies.principalId,
+                  database
+                    .select({ gid: accountGroupMembers.groupId })
+                    .from(accountGroupMembers)
+                    .where(eq(accountGroupMembers.userId, userId)),
+                ),
               ),
+              // Service-account principal: a token policy keyed on this id. Harmless
+              // for a human request (SA ids and user ids are disjoint uuids, so this
+              // matches nothing), load-bearing for an SA request (its standing role).
+              and(eq(iamPolicies.principalType, 'token'), eq(iamPolicies.principalId, userId)),
             ),
-            // Service-account principal: a token policy keyed on this id. Harmless
-            // for a human request (SA ids and user ids are disjoint uuids, so this
-            // matches nothing), load-bearing for an SA request (its standing role).
-            and(eq(iamPolicies.principalType, 'token'), eq(iamPolicies.principalId, userId)),
           ),
         ),
-      ),
-  ]);
+    ]),
+  );
   const customActions: CustomAction[] = policyRows.map((r) => ({
     scopeType: r.scopeType,
     scopeId: r.scopeId,
@@ -230,41 +233,45 @@ async function resolveActorV2Uncached(
   // so the extra query never touches the hot human/PAT path.) A service account
   // has NO membership baseline and NO built-in role: its entire authority is its
   // own iam_policies (principal_type='token'), already loaded into customActions.
-  const saRows = await db
-    .select({ id: serviceAccounts.serviceAccountId })
-    .from(serviceAccounts)
-    .where(
-      and(
-        eq(serviceAccounts.serviceAccountId, userId),
-        eq(serviceAccounts.accountId, accountId),
-        eq(serviceAccounts.status, 'active'),
-      ),
-    )
-    .limit(1);
+  const saRows = await runIamDatabase((database) =>
+    database
+      .select({ id: serviceAccounts.serviceAccountId })
+      .from(serviceAccounts)
+      .where(
+        and(
+          eq(serviceAccounts.serviceAccountId, userId),
+          eq(serviceAccounts.accountId, accountId),
+          eq(serviceAccounts.status, 'active'),
+        ),
+      )
+      .limit(1),
+  );
   if (saRows[0]) {
     // Activation = the SA has ANY policy binding (even to a zero-action role).
     // This is what lets the agent-session opt-in switch flip ON, and lets an
     // admin pin an agent to deny-by-default (bind a minimal role) vs. leaving it
     // unmanaged (no binding → the session falls back to the launching user).
-    const bindingRows = await db
-      .select({ id: iamPolicies.policyId })
-      .from(iamPolicies)
-      .where(
-        and(
-          eq(iamPolicies.principalType, 'token'),
-          eq(iamPolicies.principalId, userId),
-          eq(iamPolicies.accountId, accountId),
-          // Respect expiry, same as the customActions query — otherwise an
-          // EXPIRED-only binding reads as activated:true with empty actions =
-          // permanent deny-all (bricked agent). With this, an expired/removed
-          // binding → activated:false → the session reverts to the baseline
-          // (launching user ∩ grant), the pre-standing-identity containment. To
-          // LOCK an agent down, bind it a live restrictive role (activated, but
-          // its omitted leaves deny); removing the binding un-manages it.
-          or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
-        ),
-      )
-      .limit(1);
+    const bindingRows = await runIamDatabase((database) =>
+      database
+        .select({ id: iamPolicies.policyId })
+        .from(iamPolicies)
+        .where(
+          and(
+            eq(iamPolicies.principalType, 'token'),
+            eq(iamPolicies.principalId, userId),
+            eq(iamPolicies.accountId, accountId),
+            // Respect expiry, same as the customActions query — otherwise an
+            // EXPIRED-only binding reads as activated:true with empty actions =
+            // permanent deny-all (bricked agent). With this, an expired/removed
+            // binding → activated:false → the session reverts to the baseline
+            // (launching user ∩ grant), the pre-standing-identity containment. To
+            // LOCK an agent down, bind it a live restrictive role (activated, but
+            // its omitted leaves deny); removing the binding un-manages it.
+            or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
+          ),
+        )
+        .limit(1),
+    );
     return {
       kind: 'service_account',
       activated: bindingRows.length > 0,
@@ -328,37 +335,39 @@ const loadProjectRoleRows = ttlMemo({
   keyFn: (userId: string, projectId: string, groupIds: string[]) =>
     `${userId}|${projectId}|${groupIds.join(',')}`,
   loader: async (userId: string, projectId: string, groupIds: string[]) => {
-    const [directRows, grantRows] = await Promise.all([
-      db
-        .select({ role: projectMembers.projectRole })
-        .from(projectMembers)
-        .where(
-          and(
-            eq(projectMembers.projectId, projectId),
-            eq(projectMembers.userId, userId),
-            or(
-              isNull(projectMembers.expiresAt),
-              gt(projectMembers.expiresAt, sql`now()`),
-            ),
-          ),
-        )
-        .limit(1),
-      groupIds.length > 0
-        ? db
-            .select({ role: projectGroupGrants.role })
-            .from(projectGroupGrants)
-            .where(
-              and(
-                eq(projectGroupGrants.projectId, projectId),
-                inArray(projectGroupGrants.groupId, groupIds),
-                or(
-                  isNull(projectGroupGrants.expiresAt),
-                  gt(projectGroupGrants.expiresAt, sql`now()`),
-                ),
+    const [directRows, grantRows] = await runIamDatabase((database) =>
+      Promise.all([
+        database
+          .select({ role: projectMembers.projectRole })
+          .from(projectMembers)
+          .where(
+            and(
+              eq(projectMembers.projectId, projectId),
+              eq(projectMembers.userId, userId),
+              or(
+                isNull(projectMembers.expiresAt),
+                gt(projectMembers.expiresAt, sql`now()`),
               ),
-            )
-        : Promise.resolve([] as Array<{ role: string }>),
-    ]);
+            ),
+          )
+          .limit(1),
+        groupIds.length > 0
+          ? database
+              .select({ role: projectGroupGrants.role })
+              .from(projectGroupGrants)
+              .where(
+                and(
+                  eq(projectGroupGrants.projectId, projectId),
+                  inArray(projectGroupGrants.groupId, groupIds),
+                  or(
+                    isNull(projectGroupGrants.expiresAt),
+                    gt(projectGroupGrants.expiresAt, sql`now()`),
+                  ),
+                ),
+              )
+          : Promise.resolve([] as Array<{ role: string }>),
+      ]),
+    );
     return {
       // Normalize at the DB-read boundary so a legacy `viewer` row resolves
       // to `user` (the tier it was folded into) rather than an unknown role.
@@ -407,15 +416,17 @@ const loadTokenProjectBinding = ttlMemo({
   loader: async (
     tokenId: string,
   ): Promise<{ projectId: string | null; agentGrant: AgentGrant | null; serviceAccountId: string | null } | null> => {
-    const [row] = await db
-      .select({
-        projectId: accountTokens.projectId,
-        agentGrant: accountTokens.agentGrant,
-        serviceAccountId: accountTokens.serviceAccountId,
-      })
-      .from(accountTokens)
-      .where(eq(accountTokens.tokenId, tokenId))
-      .limit(1);
+    const [row] = await runIamDatabase((database) =>
+      database
+        .select({
+          projectId: accountTokens.projectId,
+          agentGrant: accountTokens.agentGrant,
+          serviceAccountId: accountTokens.serviceAccountId,
+        })
+        .from(accountTokens)
+        .where(eq(accountTokens.tokenId, tokenId))
+        .limit(1),
+    );
     return row
       ? { projectId: row.projectId, agentGrant: row.agentGrant ?? null, serviceAccountId: row.serviceAccountId ?? null }
       : null;
@@ -736,38 +747,42 @@ export async function listAccessibleProjectsV2(
     gt(projectGroupGrants.expiresAt, sql`now()`),
   );
 
-  const directRows = await db
-    .select({
-      projectId: projectMembers.projectId,
-      role: projectMembers.projectRole,
-    })
-    .from(projectMembers)
-    .innerJoin(projects, eq(projects.projectId, projectMembers.projectId))
-    .where(
-      and(
-        // principalId, not userId: an SA session lists the SA's memberships
-        // (none — empty, correct), not the launching human's.
-        eq(projectMembers.userId, principalId),
-        eq(projects.accountId, accountId),
-        notExpiredMember,
+  const directRows = await runIamDatabase((database) =>
+    database
+      .select({
+        projectId: projectMembers.projectId,
+        role: projectMembers.projectRole,
+      })
+      .from(projectMembers)
+      .innerJoin(projects, eq(projects.projectId, projectMembers.projectId))
+      .where(
+        and(
+          // principalId, not userId: an SA session lists the SA's memberships
+          // (none — empty, correct), not the launching human's.
+          eq(projectMembers.userId, principalId),
+          eq(projects.accountId, accountId),
+          notExpiredMember,
+        ),
       ),
-    );
+  );
 
   let groupRows: Array<{ projectId: string; role: ProjectRole }> = [];
   if (actor.groupIds.length > 0) {
-    const rows = await db
-      .select({
-        projectId: projectGroupGrants.projectId,
-        role: projectGroupGrants.role,
-      })
-      .from(projectGroupGrants)
-      .where(
-        and(
-          eq(projectGroupGrants.accountId, accountId),
-          inArray(projectGroupGrants.groupId, actor.groupIds),
-          notExpiredGrant,
+    const rows = await runIamDatabase((database) =>
+      database
+        .select({
+          projectId: projectGroupGrants.projectId,
+          role: projectGroupGrants.role,
+        })
+        .from(projectGroupGrants)
+        .where(
+          and(
+            eq(projectGroupGrants.accountId, accountId),
+            inArray(projectGroupGrants.groupId, actor.groupIds),
+            notExpiredGrant,
+          ),
         ),
-      );
+    );
     groupRows = rows.flatMap((r) => {
       // Normalize at the DB-read boundary: a legacy `viewer` grant folds into
       // `user`. Drop anything unrecognized rather than feed it to the rank map.

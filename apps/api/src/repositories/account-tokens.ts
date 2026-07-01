@@ -1,6 +1,8 @@
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import { accountTokens, accounts } from '@kortix/db';
-import { db } from '../shared/db';
+import { Effect } from 'effect';
+import { DatabaseService } from '../effect/services';
+import { runEffectOrThrow } from '../effect/http';
 import {
   hashSecretKey,
   candidateSecretKeyHashes,
@@ -94,22 +96,26 @@ export class PatPolicyError extends Error {
   }
 }
 
-async function loadPatPolicy(accountId: string): Promise<{
+const loadPatPolicyEffect = (accountId: string): Effect.Effect<{
   maxLifetimeDays: number | null;
   requireExpiry: boolean;
   idleRevokeDays: number | null;
-} | null> {
-  const [row] = await db
-    .select({
-      maxLifetimeDays: accounts.patMaxLifetimeDays,
-      requireExpiry: accounts.patRequireExpiry,
-      idleRevokeDays: accounts.patIdleRevokeDays,
-    })
-    .from(accounts)
-    .where(eq(accounts.accountId, accountId))
-    .limit(1);
-  return row ?? null;
-}
+} | null, unknown, DatabaseService> =>
+  Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    const [row] = yield* Effect.tryPromise(() =>
+      database
+        .select({
+          maxLifetimeDays: accounts.patMaxLifetimeDays,
+          requireExpiry: accounts.patRequireExpiry,
+          idleRevokeDays: accounts.patIdleRevokeDays,
+        })
+        .from(accounts)
+        .where(eq(accounts.accountId, accountId))
+        .limit(1),
+    );
+    return row ?? null;
+  });
 
 /**
  * Mint a new CLI Personal Access Token.
@@ -126,64 +132,69 @@ async function loadPatPolicy(accountId: string): Promise<{
 export async function createAccountToken(
   params: CreateAccountTokenParams,
 ): Promise<CreateAccountTokenResult> {
-  if (!isApiKeySecretConfigured()) {
-    throw new Error('API_KEY_SECRET not configured');
-  }
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    if (!isApiKeySecretConfigured()) {
+      throw new Error('API_KEY_SECRET not configured');
+    }
 
-  if (!params.projectId) {
-    const policy = await loadPatPolicy(params.accountId);
-    if (policy) {
-      if (policy.requireExpiry && !params.expiresAt) {
-        throw new PatPolicyError(
-          'expiry_required',
-          'This account requires every PAT to have an expiry date.',
-        );
-      }
-      if (policy.maxLifetimeDays != null && params.expiresAt) {
-        const maxMs = policy.maxLifetimeDays * 24 * 60 * 60 * 1000;
-        if (params.expiresAt.getTime() - Date.now() > maxMs) {
+    if (!params.projectId) {
+      const policy = yield* loadPatPolicyEffect(params.accountId);
+      if (policy) {
+        if (policy.requireExpiry && !params.expiresAt) {
           throw new PatPolicyError(
-            'expiry_too_far',
-            `Expiry cannot be more than ${policy.maxLifetimeDays} days from now.`,
+            'expiry_required',
+            'This account requires every PAT to have an expiry date.',
           );
+        }
+        if (policy.maxLifetimeDays != null && params.expiresAt) {
+          const maxMs = policy.maxLifetimeDays * 24 * 60 * 60 * 1000;
+          if (params.expiresAt.getTime() - Date.now() > maxMs) {
+            throw new PatPolicyError(
+              'expiry_too_far',
+              `Expiry cannot be more than ${policy.maxLifetimeDays} days from now.`,
+            );
+          }
         }
       }
     }
-  }
 
-  const { publicKey, secretKey } = generateAccountTokenPair();
-  const secretKeyHash = hashSecretKey(secretKey);
+    const { publicKey, secretKey } = generateAccountTokenPair();
+    const secretKeyHash = hashSecretKey(secretKey);
 
-  const [row] = await db
-    .insert(accountTokens)
-    .values({
-      accountId: params.accountId,
-      userId: params.userId,
-      projectId: params.projectId ?? null,
-      sessionId: params.sessionId ?? null,
-      name: params.name,
-      publicKey,
-      secretKeyHash,
-      expiresAt: params.expiresAt ?? null,
-      agentGrant: params.agentGrant ?? null,
-      serviceAccountId: params.serviceAccountId ?? null,
-    })
-    .returning();
+    const [row] = yield* Effect.tryPromise(() =>
+      database
+        .insert(accountTokens)
+        .values({
+          accountId: params.accountId,
+          userId: params.userId,
+          projectId: params.projectId ?? null,
+          sessionId: params.sessionId ?? null,
+          name: params.name,
+          publicKey,
+          secretKeyHash,
+          expiresAt: params.expiresAt ?? null,
+          agentGrant: params.agentGrant ?? null,
+          serviceAccountId: params.serviceAccountId ?? null,
+        })
+        .returning(),
+    );
 
-  if (!row) {
-    throw new Error('Failed to create account token');
-  }
+    if (!row) {
+      throw new Error('Failed to create account token');
+    }
 
-  return {
-    tokenId: row.tokenId,
-    publicKey: row.publicKey,
-    secretKey, // plaintext — shown once
-    name: row.name,
-    status: row.status,
-    projectId: row.projectId,
-    expiresAt: row.expiresAt,
-    createdAt: row.createdAt,
-  };
+    return {
+      tokenId: row.tokenId,
+      publicKey: row.publicKey,
+      secretKey, // plaintext — shown once
+      name: row.name,
+      status: row.status,
+      projectId: row.projectId,
+      expiresAt: row.expiresAt,
+      createdAt: row.createdAt,
+    };
+  }));
 }
 
 /** List tokens for an account. If `projectId` is provided, narrows to
@@ -193,24 +204,29 @@ export async function listAccountTokens(
   accountId: string,
   projectId?: string,
 ): Promise<AccountTokenListEntry[]> {
-  const filter = projectId
-    ? and(eq(accountTokens.accountId, accountId), eq(accountTokens.projectId, projectId))
-    : eq(accountTokens.accountId, accountId);
-  return db
-    .select({
-      tokenId: accountTokens.tokenId,
-      publicKey: accountTokens.publicKey,
-      name: accountTokens.name,
-      status: accountTokens.status,
-      projectId: accountTokens.projectId,
-      expiresAt: accountTokens.expiresAt,
-      lastUsedAt: accountTokens.lastUsedAt,
-      createdAt: accountTokens.createdAt,
-      revokedAt: accountTokens.revokedAt,
-    })
-    .from(accountTokens)
-    .where(filter)
-    .orderBy(desc(accountTokens.createdAt));
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    const filter = projectId
+      ? and(eq(accountTokens.accountId, accountId), eq(accountTokens.projectId, projectId))
+      : eq(accountTokens.accountId, accountId);
+    return yield* Effect.tryPromise(() =>
+      database
+        .select({
+          tokenId: accountTokens.tokenId,
+          publicKey: accountTokens.publicKey,
+          name: accountTokens.name,
+          status: accountTokens.status,
+          projectId: accountTokens.projectId,
+          expiresAt: accountTokens.expiresAt,
+          lastUsedAt: accountTokens.lastUsedAt,
+          createdAt: accountTokens.createdAt,
+          revokedAt: accountTokens.revokedAt,
+        })
+        .from(accountTokens)
+        .where(filter)
+        .orderBy(desc(accountTokens.createdAt)),
+    );
+  }));
 }
 
 /** Revoke a token (soft-delete — sets status='revoked' + revoked_at). */
@@ -218,19 +234,24 @@ export async function revokeAccountToken(
   tokenId: string,
   accountId: string,
 ): Promise<boolean> {
-  const result = await db
-    .update(accountTokens)
-    .set({ status: 'revoked', revokedAt: new Date() })
-    .where(
-      and(
-        eq(accountTokens.tokenId, tokenId),
-        eq(accountTokens.accountId, accountId),
-        eq(accountTokens.status, 'active'),
-      ),
-    )
-    .returning({ tokenId: accountTokens.tokenId });
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    const result = yield* Effect.tryPromise(() =>
+      database
+        .update(accountTokens)
+        .set({ status: 'revoked', revokedAt: new Date() })
+        .where(
+          and(
+            eq(accountTokens.tokenId, tokenId),
+            eq(accountTokens.accountId, accountId),
+            eq(accountTokens.status, 'active'),
+          ),
+        )
+        .returning({ tokenId: accountTokens.tokenId }),
+    );
 
-  return result.length > 0;
+    return result.length > 0;
+  }));
 }
 
 // ─── Validation ──────────────────────────────────────────────────────────────
@@ -242,42 +263,45 @@ export async function revokeAccountToken(
 export async function validateAccountToken(
   secretKey: string,
 ): Promise<AccountTokenValidationResult> {
-  if (!isApiKeySecretConfigured()) {
-    return { isValid: false, error: 'API_KEY_SECRET not configured' };
-  }
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    if (!isApiKeySecretConfigured()) {
+      return { isValid: false, error: 'API_KEY_SECRET not configured' };
+    }
 
-  if (!isAccountToken(secretKey)) {
-    return { isValid: false, error: 'Invalid PAT format — expected kortix_pat_ prefix' };
-  }
+    if (!isAccountToken(secretKey)) {
+      return { isValid: false, error: 'Invalid PAT format — expected kortix_pat_ prefix' };
+    }
 
-  try {
     const secretKeyHashes = candidateSecretKeyHashes(secretKey);
 
     // Join the owning account so we can apply idle-revoke without a
     // second round-trip on the hot path.
-    const [row] = await db
-      .select({
-        tokenId: accountTokens.tokenId,
-        accountId: accountTokens.accountId,
-        userId: accountTokens.userId,
-        projectId: accountTokens.projectId,
-        sessionId: accountTokens.sessionId,
-        status: accountTokens.status,
-        expiresAt: accountTokens.expiresAt,
-        lastUsedAt: accountTokens.lastUsedAt,
-        createdAt: accountTokens.createdAt,
-        agentGrant: accountTokens.agentGrant,
-        patIdleRevokeDays: accounts.patIdleRevokeDays,
-      })
-      .from(accountTokens)
-      .innerJoin(accounts, eq(accounts.accountId, accountTokens.accountId))
-      .where(
-        and(
-          inArray(accountTokens.secretKeyHash, secretKeyHashes),
-          eq(accountTokens.status, 'active'),
-        ),
-      )
-      .limit(1);
+    const [row] = yield* Effect.tryPromise(() =>
+      database
+        .select({
+          tokenId: accountTokens.tokenId,
+          accountId: accountTokens.accountId,
+          userId: accountTokens.userId,
+          projectId: accountTokens.projectId,
+          sessionId: accountTokens.sessionId,
+          status: accountTokens.status,
+          expiresAt: accountTokens.expiresAt,
+          lastUsedAt: accountTokens.lastUsedAt,
+          createdAt: accountTokens.createdAt,
+          agentGrant: accountTokens.agentGrant,
+          patIdleRevokeDays: accounts.patIdleRevokeDays,
+        })
+        .from(accountTokens)
+        .innerJoin(accounts, eq(accounts.accountId, accountTokens.accountId))
+        .where(
+          and(
+            inArray(accountTokens.secretKeyHash, secretKeyHashes),
+            eq(accountTokens.status, 'active'),
+          ),
+        )
+        .limit(1),
+    );
 
     if (!row) {
       return { isValid: false, error: 'PAT not found or revoked' };
@@ -296,18 +320,25 @@ export async function validateAccountToken(
       const idleMs = Date.now() - reference.getTime();
       const maxIdleMs = row.patIdleRevokeDays * 24 * 60 * 60 * 1000;
       if (idleMs > maxIdleMs) {
-        // Soft-revoke in the background; don't block the response on it.
-        db.update(accountTokens)
-          .set({ status: 'revoked', revokedAt: new Date() })
-          .where(eq(accountTokens.tokenId, row.tokenId))
-          .catch((err) => {
-            console.warn('PAT idle auto-revoke failed:', err);
-          });
+        yield* Effect.forkDaemon(
+          Effect.tryPromise(() =>
+            database
+              .update(accountTokens)
+              .set({ status: 'revoked', revokedAt: new Date() })
+              .where(eq(accountTokens.tokenId, row.tokenId)),
+          ).pipe(
+            Effect.catchAll((err) =>
+              Effect.sync(() => {
+                console.warn('PAT idle auto-revoke failed:', err);
+              }),
+            ),
+          ),
+        );
         return { isValid: false, error: 'PAT auto-revoked due to inactivity' };
       }
     }
 
-    updateLastUsedThrottled(row.tokenId).catch(() => {});
+    yield* Effect.forkDaemon(updateLastUsedThrottledEffect(row.tokenId));
 
     return {
       isValid: true,
@@ -318,33 +349,43 @@ export async function validateAccountToken(
       sessionId: row.sessionId ?? null,
       agentGrant: row.agentGrant ?? null,
     };
-  } catch (err) {
-    console.error('Account token validation error:', err);
-    return { isValid: false, error: 'Validation error' };
-  }
+  }).pipe(
+    Effect.catchAll((err) =>
+      Effect.sync(() => {
+        console.error('Account token validation error:', err);
+        return { isValid: false, error: 'Validation error' };
+      }),
+    ),
+  ));
 }
 
 // ─── Internal ────────────────────────────────────────────────────────────────
 
-async function updateLastUsedThrottled(tokenId: string): Promise<void> {
-  const now = Date.now();
-  const lastUpdate = lastUsedCache.get(tokenId) || 0;
-  if (now - lastUpdate < THROTTLE_MS) return;
+const updateLastUsedThrottledEffect = (tokenId: string) =>
+  Effect.gen(function* () {
+    const now = Date.now();
+    const lastUpdate = lastUsedCache.get(tokenId) || 0;
+    if (now - lastUpdate < THROTTLE_MS) return;
 
-  lastUsedCache.set(tokenId, now);
-  if (lastUsedCache.size > 1000) {
-    const cutoff = now - THROTTLE_MS * 2;
-    for (const [k, v] of lastUsedCache.entries()) {
-      if (v < cutoff) lastUsedCache.delete(k);
+    lastUsedCache.set(tokenId, now);
+    if (lastUsedCache.size > 1000) {
+      const cutoff = now - THROTTLE_MS * 2;
+      for (const [k, v] of lastUsedCache.entries()) {
+        if (v < cutoff) lastUsedCache.delete(k);
+      }
     }
-  }
 
-  try {
-    await db
-      .update(accountTokens)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(accountTokens.tokenId, tokenId));
-  } catch (err) {
-    console.warn('Failed to update account_tokens.last_used_at:', err);
-  }
-}
+    const { database } = yield* DatabaseService;
+    yield* Effect.tryPromise(() =>
+      database
+        .update(accountTokens)
+        .set({ lastUsedAt: new Date() })
+        .where(eq(accountTokens.tokenId, tokenId)),
+    ).pipe(
+      Effect.catchAll((err) =>
+        Effect.sync(() => {
+          console.warn('Failed to update account_tokens.last_used_at:', err);
+        }),
+      ),
+    );
+  });

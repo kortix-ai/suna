@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Dependency-free Prometheus exposition. Avoids prom-client (Node-oriented; its
 // default-metric collectors are flaky under Bun) by maintaining a tiny in-memory
 // registry and rendering the text format directly. Scope is the SLO signals:

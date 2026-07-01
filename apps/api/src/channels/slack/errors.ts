@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Slack turn-error classification — turns an opencode turn failure into honest,
  * human copy for the thread.

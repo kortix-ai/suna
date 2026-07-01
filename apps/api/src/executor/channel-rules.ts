@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Pure rules for the Slack-as-a-first-class-channel consolidation. No DB / git
  * imports so they're cheap to unit test. Used by:

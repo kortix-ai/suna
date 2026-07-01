@@ -1,5 +1,6 @@
-import { config, KORTIX_MARKUP } from '../../config';
-import { getModel, getAllModels, resolveOpenRouterId, type ModelConfig } from '../config/models';
+import type { Effect } from 'effect';
+import { routerConfig as config, KORTIX_MARKUP, routerFetch } from '../effect';
+import { resolveOpenRouterId, type ModelConfig } from '../config/models';
 
 /**
  * Calculate cost based on token usage and model pricing.
@@ -62,7 +63,7 @@ export async function proxyToOpenRouter(
 
   console.log(`[LLM] Proxying to OpenRouter: ${modelId} → ${openrouterId} (stream=${isStreaming})`);
 
-  const response = await fetch(url, {
+  const response = await routerFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
+if (!process.env.KORTIX_URL) process.env.KORTIX_URL = 'http://localhost:8008';
+
 // Account/agent/PROJECT-scoped default model preferences. A FIFO-ish chain mock
 // captures select rows + insert values without a real DB.
 

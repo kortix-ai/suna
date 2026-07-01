@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // File-tree reads over the bare mirror: listing, name/content search, single
 // file reads, subtree archive streaming, and per-file/at-ref history.
 

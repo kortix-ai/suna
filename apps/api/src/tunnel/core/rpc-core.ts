@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Shared tunnel RPC core — the one permission-check → relay → audit pipeline.
  *
@@ -14,7 +15,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { tunnelConnections, tunnelPermissionRequests } from '@kortix/db';
-import { db } from '../../shared/db';
+import { sharedDb as db } from '../../shared/effect';
 import { TunnelRelayError, TunnelMethods, TunnelErrorCode, type TunnelCapability } from 'agent-tunnel';
 import { checkPermission } from './permission-checker';
 import { writeAuditLog, buildRequestSummary } from './audit-logger';

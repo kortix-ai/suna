@@ -12,8 +12,9 @@
  * for the agent-facing flow.
  */
 import { auth, errors, json } from '../../openapi';
-import { config } from '../../config';
+import { sharedConfig as config } from '../../shared/effect';
 import { createRoute, z } from '@hono/zod-openapi';
+import { Effect } from 'effect';
 import { loadPipedreamConnector } from '../../executor/db-deps';
 import { pipedreamConfigured } from '../../executor/pipedream';
 import { mintSetupLink, type SecretFieldSpec } from '../../setup-links/token';
@@ -21,6 +22,7 @@ import { isValidSecretName } from '../secrets';
 import { loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { CODEX_AUTH_JSON_SECRET_NAME, normalizeString, readBody } from '../lib/serializers';
+import { attemptRoute, attemptRouteSync, failJson, failNotFound, routeJson, runProjectRouteEffect } from './effect-workflows';
 
 function frontendBase(): string {
   return (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
@@ -48,59 +50,63 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    return runProjectRouteEffect(c, Effect.gen(function* () {
+      const body = yield* attemptRoute(() => readBody(c));
+      const loaded = yield* attemptRoute(() => loadProjectForUser(c, projectId, 'manage'));
+      if (!loaded) return yield* failNotFound();
 
-    // Accept `names: [...]` or a single `name`.
-    const rawNames: unknown[] = Array.isArray(body.names)
-      ? body.names
-      : body.name != null
-        ? [body.name]
-        : [];
-    const names = rawNames
-      .map((n) => normalizeString(n)?.toUpperCase())
-      .filter((n): n is string => !!n);
-    if (names.length === 0) return c.json({ error: 'names is required (one or more env var names)' }, 400);
+      // Accept `names: [...]` or a single `name`.
+      const rawNames: unknown[] = Array.isArray(body.names)
+        ? body.names
+        : body.name != null
+          ? [body.name]
+          : [];
+      const names = rawNames
+        .map((n) => normalizeString(n)?.toUpperCase())
+        .filter((n): n is string => !!n);
+      if (names.length === 0) {
+        return yield* failJson({ error: 'names is required (one or more env var names)' }, 400);
+      }
 
-    const labels = (body.labels ?? {}) as Record<string, unknown>;
-    const descriptions = (body.descriptions ?? {}) as Record<string, unknown>;
+      const labels = (body.labels ?? {}) as Record<string, unknown>;
+      const descriptions = (body.descriptions ?? {}) as Record<string, unknown>;
 
-    const fields: SecretFieldSpec[] = [];
-    const seen = new Set<string>();
-    for (const name of names) {
-      if (seen.has(name)) continue;
-      seen.add(name);
-      if (!isValidSecretName(name)) {
-        return c.json({ error: `"${name}" is not a valid env var name (A-Z, 0-9, _; max 64 chars)` }, 400);
+      const fields: SecretFieldSpec[] = [];
+      const seen = new Set<string>();
+      for (const name of names) {
+        if (seen.has(name)) continue;
+        seen.add(name);
+        if (!isValidSecretName(name)) {
+          return yield* failJson({ error: `"${name}" is not a valid env var name (A-Z, 0-9, _; max 64 chars)` }, 400);
+        }
+        if (name.startsWith('KORTIX_')) {
+          return yield* failJson({ error: 'KORTIX_* names are reserved for platform/runtime-managed variables' }, 400);
+        }
+        if (name === CODEX_AUTH_JSON_SECRET_NAME) {
+          return yield* failJson({ error: `${CODEX_AUTH_JSON_SECRET_NAME} is managed by ChatGPT subscription onboarding` }, 400);
+        }
+        fields.push({
+          name,
+          label: normalizeString(labels[name]) ?? undefined,
+          description: normalizeString(descriptions[name]) ?? undefined,
+        });
       }
-      if (name.startsWith('KORTIX_')) {
-        return c.json({ error: 'KORTIX_* names are reserved for platform/runtime-managed variables' }, 400);
-      }
-      if (name === CODEX_AUTH_JSON_SECRET_NAME) {
-        return c.json({ error: `${CODEX_AUTH_JSON_SECRET_NAME} is managed by ChatGPT subscription onboarding` }, 400);
-      }
-      fields.push({
-        name,
-        label: normalizeString(labels[name]) ?? undefined,
-        description: normalizeString(descriptions[name]) ?? undefined,
+
+      const scope = normalizeString(body.scope) === 'connector' ? 'connector' : 'runtime';
+      const { token, expiresAt } = yield* attemptRouteSync(() => mintSetupLink(
+        projectId,
+        { kind: 'secret', fields, scope, uid: loaded.userId },
+        { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
+      ));
+
+      return routeJson({
+        kind: 'secret',
+        url: `${frontendBase()}/secret-intake/${token}`,
+        names: fields.map((f) => f.name),
+        scope,
+        expires_at: new Date(expiresAt).toISOString(),
       });
-    }
-
-    const scope = normalizeString(body.scope) === 'connector' ? 'connector' : 'runtime';
-    const { token, expiresAt } = mintSetupLink(
-      projectId,
-      { kind: 'secret', fields, scope, uid: loaded.userId },
-      { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
-    );
-
-    return c.json({
-      kind: 'secret',
-      url: `${frontendBase()}/secret-intake/${token}`,
-      names: fields.map((f) => f.name),
-      scope,
-      expires_at: new Date(expiresAt).toISOString(),
-    });
+    }));
   },
 );
 
@@ -127,35 +133,39 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    return runProjectRouteEffect(c, Effect.gen(function* () {
+      const body = yield* attemptRoute(() => readBody(c));
+      const loaded = yield* attemptRoute(() => loadProjectForUser(c, projectId, 'manage'));
+      if (!loaded) return yield* failNotFound();
 
-    if (!pipedreamConfigured()) return c.json({ error: 'Pipedream is not configured on this deployment' }, 501);
+      if (!pipedreamConfigured()) {
+        return yield* failJson({ error: 'Pipedream is not configured on this deployment' }, 501);
+      }
 
-    const slug = normalizeString(body.slug);
-    if (!slug) return c.json({ error: 'slug is required' }, 400);
+      const slug = normalizeString(body.slug);
+      if (!slug) return yield* failJson({ error: 'slug is required' }, 400);
 
-    const conn = await loadPipedreamConnector(projectId, slug);
-    if (!conn) {
-      return c.json(
-        { error: `"${slug}" is not a connected-via-Pipedream connector on this project. Add it to kortix.toml first.` },
-        404,
-      );
-    }
+      const conn = yield* attemptRoute(() => loadPipedreamConnector(projectId, slug));
+      if (!conn) {
+        return yield* failJson(
+          { error: `"${slug}" is not a connected-via-Pipedream connector on this project. Add it to kortix.toml first.` },
+          404,
+        );
+      }
 
-    const { token, expiresAt } = mintSetupLink(
-      projectId,
-      { kind: 'connector', slug, app: conn.app, mode: conn.mode, uid: loaded.userId },
-      { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
-    );
+      const { token, expiresAt } = yield* attemptRouteSync(() => mintSetupLink(
+        projectId,
+        { kind: 'connector', slug, app: conn.app, mode: conn.mode, uid: loaded.userId },
+        { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
+      ));
 
-    return c.json({
-      kind: 'connector',
-      url: `${frontendBase()}/connect/${token}`,
-      slug,
-      app: conn.app,
-      expires_at: new Date(expiresAt).toISOString(),
-    });
+      return routeJson({
+        kind: 'connector',
+        url: `${frontendBase()}/connect/${token}`,
+        slug,
+        app: conn.app,
+        expires_at: new Date(expiresAt).toISOString(),
+      });
+    }));
   },
 );

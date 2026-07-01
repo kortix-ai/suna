@@ -1,4 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import { Effect } from 'effect';
 import type { AppEnv } from '../../types';
 import {
   createCheckoutSession,
@@ -20,6 +21,12 @@ import { resolveBillingWriteAccountId } from '../require-billing-write';
 import { syncSeatQuantity } from '../services/seat-management';
 import { maybeMigrateLegacyAccount } from '../services/legacy-account-migration';
 import { makeOpenApiApp, json, auth, errors } from '../../openapi';
+import {
+  attemptBilling,
+  parseJsonBody,
+  parseOptionalJsonBody,
+  runBillingEffect,
+} from './effect-workflows';
 
 export const subscriptionsRouter = makeOpenApiApp<AppEnv>();
 
@@ -51,8 +58,11 @@ subscriptionsRouter.openapi(
     },
   }),
   async (c: any) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const result = await maybeMigrateLegacyAccount(accountId);
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveBillingWriteAccountId(c, 'body'));
+      return yield* attemptBilling(() => maybeMigrateLegacyAccount(accountId));
+    }));
+
     if (result.status === 'failed') {
       return c.json({ ok: false, status: result.status, error: result.reason ?? 'Migration failed' }, 400);
     }
@@ -78,21 +88,25 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Checkout session result') },
   }),
   async (c) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const email = c.get('userEmail');
-    const body = await c.req.json();
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveBillingWriteAccountId(c, 'body'));
+      const email = c.get('userEmail');
+      const body = yield* parseJsonBody<any>(c);
 
-    const result = await createCheckoutSession({
-      accountId,
-      email,
-      tierKey: body.tier_key,
-      successUrl: body.success_url,
-      cancelUrl: body.cancel_url,
-      commitmentType: body.commitment_type,
-      locale: body.locale,
-      serverType: body.server_type,
-      location: body.location,
-    });
+      return yield* attemptBilling(() =>
+        createCheckoutSession({
+          accountId,
+          email,
+          tierKey: body.tier_key,
+          successUrl: body.success_url,
+          cancelUrl: body.cancel_url,
+          commitmentType: body.commitment_type,
+          locale: body.locale,
+          serverType: body.server_type,
+          location: body.location,
+        }),
+      );
+    }));
 
     return c.json(result);
   },
@@ -111,17 +125,21 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Checkout session result') },
   }),
   async (c) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const email = c.get('userEmail');
-    const body = await c.req.json();
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveBillingWriteAccountId(c, 'body'));
+      const email = c.get('userEmail');
+      const body = yield* parseJsonBody<any>(c);
 
-    const result = await createPerSeatCheckoutSession({
-      accountId,
-      email,
-      successUrl: body.success_url,
-      cancelUrl: body.cancel_url,
-      locale: body.locale,
-    });
+      return yield* attemptBilling(() =>
+        createPerSeatCheckoutSession({
+          accountId,
+          email,
+          successUrl: body.success_url,
+          cancelUrl: body.cancel_url,
+          locale: body.locale,
+        }),
+      );
+    }));
 
     return c.json(result);
   },
@@ -141,8 +159,11 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Seat sync result') },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'body');
-    const result = await syncSeatQuantity(accountId);
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveScopedAccountId(c, 'body'));
+      return yield* attemptBilling(() => syncSeatQuantity(accountId));
+    }));
+
     return c.json(result);
   },
 );
@@ -158,17 +179,21 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Inline checkout result') },
   }),
   async (c) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const email = c.get('userEmail');
-    const body = await c.req.json();
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveBillingWriteAccountId(c, 'body'));
+      const email = c.get('userEmail');
+      const body = yield* parseJsonBody<any>(c);
 
-    const result = await createInlineCheckout({
-      accountId,
-      email,
-      tierKey: body.tier_key,
-      billingPeriod: body.billing_period,
-      promoCode: body.promo_code,
-    });
+      return yield* attemptBilling(() =>
+        createInlineCheckout({
+          accountId,
+          email,
+          tierKey: body.tier_key,
+          billingPeriod: body.billing_period,
+          promoCode: body.promo_code,
+        }),
+      );
+    }));
 
     return c.json(result);
   },
@@ -185,14 +210,18 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Inline checkout confirmation result') },
   }),
   async (c) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const body = await c.req.json();
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveBillingWriteAccountId(c, 'body'));
+      const body = yield* parseJsonBody<any>(c);
 
-    const result = await confirmInlineCheckout({
-      accountId,
-      subscriptionId: body.subscription_id,
-      tierKey: body.tier_key,
-    });
+      return yield* attemptBilling(() =>
+        confirmInlineCheckout({
+          accountId,
+          subscriptionId: body.subscription_id,
+          tierKey: body.tier_key,
+        }),
+      );
+    }));
 
     return c.json(result);
   },
@@ -209,10 +238,13 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Portal session result') },
   }),
   async (c) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const email = c.get('userEmail');
-    const body = await c.req.json();
-    const result = await createPortalSession(accountId, body.return_url, email);
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveBillingWriteAccountId(c, 'body'));
+      const email = c.get('userEmail');
+      const body = yield* parseJsonBody<any>(c);
+      return yield* attemptBilling(() => createPortalSession(accountId, body.return_url, email));
+    }));
+
     return c.json(result);
   },
 );
@@ -228,9 +260,12 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Cancellation result') },
   }),
   async (c) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const body = await c.req.json().catch(() => ({}));
-    const result = await cancelSubscription(accountId, body.feedback);
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveBillingWriteAccountId(c, 'body'));
+      const body = yield* parseOptionalJsonBody<{ feedback?: string }>(c, {});
+      return yield* attemptBilling(() => cancelSubscription(accountId, body.feedback));
+    }));
+
     return c.json(result);
   },
 );
@@ -246,8 +281,11 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Reactivation result') },
   }),
   async (c) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const result = await reactivateSubscription(accountId);
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveBillingWriteAccountId(c, 'body'));
+      return yield* attemptBilling(() => reactivateSubscription(accountId));
+    }));
+
     return c.json(result);
   },
 );
@@ -263,9 +301,14 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Downgrade scheduling result') },
   }),
   async (c) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const body = await c.req.json();
-    const result = await scheduleDowngrade(accountId, body.target_tier_key, body.commitment_type);
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveBillingWriteAccountId(c, 'body'));
+      const body = yield* parseJsonBody<any>(c);
+      return yield* attemptBilling(() =>
+        scheduleDowngrade(accountId, body.target_tier_key, body.commitment_type),
+      );
+    }));
+
     return c.json(result);
   },
 );
@@ -281,8 +324,11 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Cancellation result') },
   }),
   async (c) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const result = await cancelScheduledChange(accountId);
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveBillingWriteAccountId(c, 'body'));
+      return yield* attemptBilling(() => cancelScheduledChange(accountId));
+    }));
+
     return c.json(result);
   },
 );
@@ -298,8 +344,11 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Sync result') },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'body');
-    const result = await syncSubscription(accountId);
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveScopedAccountId(c, 'body'));
+      return yield* attemptBilling(() => syncSubscription(accountId));
+    }));
+
     return c.json(result);
   },
 );
@@ -320,12 +369,18 @@ subscriptionsRouter.openapi(
     },
   }),
   async (c: any) => {
-    const accountId = await resolveScopedAccountId(c, 'query');
-    const newPriceId = c.req.query('new_price_id');
-    if (!newPriceId) return c.json({ error: 'new_price_id required' }, 400);
+    const response = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveScopedAccountId(c, 'query'));
+      const newPriceId = c.req.query('new_price_id');
+      if (!newPriceId) {
+        return { status: 400, body: { error: 'new_price_id required' } };
+      }
 
-    const result = await getProrationPreview(accountId, newPriceId);
-    return c.json(result);
+      const result = yield* attemptBilling(() => getProrationPreview(accountId, newPriceId));
+      return { status: 200, body: result };
+    }));
+
+    return c.json(response.body, response.status as any);
   },
 );
 
@@ -340,8 +395,11 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Checkout session details') },
   }),
   async (c) => {
-    const sessionId = c.req.param('sessionId');
-    const result = await getCheckoutSessionDetails(sessionId);
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const sessionId = c.req.param('sessionId');
+      return yield* attemptBilling(() => getCheckoutSessionDetails(sessionId));
+    }));
+
     return c.json(result);
   },
 );
@@ -360,15 +418,23 @@ subscriptionsRouter.openapi(
     },
   }),
   async (c: any) => {
-    const accountId = await resolveScopedAccountId(c, 'body');
-    const body = (await c.req.json()) as { session_id?: string };
-    if (!body.session_id) return c.json({ error: 'session_id required' }, 400);
+    const response = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveScopedAccountId(c, 'body'));
+      const body = yield* parseJsonBody<{ session_id?: string }>(c);
+      if (!body.session_id) {
+        return { status: 400, body: { error: 'session_id required' } };
+      }
 
-    const result = await confirmCheckoutSession({
-      accountId,
-      sessionId: body.session_id,
-    });
+      const result = yield* attemptBilling(() =>
+        confirmCheckoutSession({
+          accountId,
+          sessionId: body.session_id!,
+        }),
+      );
 
-    return c.json(result);
+      return { status: 200, body: result };
+    }));
+
+    return c.json(response.body, response.status as any);
   },
 );

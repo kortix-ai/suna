@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Persist a channel connector (Slack today) into kortix.toml so it's a
  * first-class, git-tracked connector profile — not just an install-driven
@@ -14,7 +15,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
-import { db } from '../shared/db';
+import { executorDb as db } from './effect';
 import { commitManifest, loadManifestForEdit } from '../projects/index';
 import type { ChannelPlatform } from '../projects/connectors';
 import { channelDefaultSlug, channelLabel } from './channels';

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Pure OpenCode root-session resolution. Dependency-free so it can be unit
  * tested in isolation and shared by the mapping module. Mirrors the frontend's

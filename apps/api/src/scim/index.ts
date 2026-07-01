@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // SCIM 2.0 protocol surface for Okta / Azure AD / JumpCloud / etc.
 //
 // Mounted at /scim/v2/accounts/:accountId/* — the URL carries the tenant

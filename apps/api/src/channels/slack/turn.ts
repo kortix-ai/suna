@@ -1,8 +1,8 @@
+import type { Effect } from 'effect';
 import { and, eq, lt } from 'drizzle-orm';
 import { chatEventDedup, chatTurnStreams } from '@kortix/db';
-import { db } from '../../shared/db';
+import { runSharedInterval, sharedConfig as config, sharedDb as db } from '../../shared/effect';
 import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
-import { config } from '../../config';
 import { sessionWebUrl } from './util';
 import { loadSlackTokenForProject } from '../install-store';
 import {
@@ -120,7 +120,7 @@ const LIVE_PLAN_TITLE = 'Working on it…';
 // (it's housekeeping, not a keep-alive); claimFinalize keeps it single-winner.
 const STALE_AFTER_MS = 30 * 60 * 1000;
 
-setInterval(() => {
+runSharedInterval(() => {
   void (async () => {
     try {
       const now = new Date();
@@ -159,7 +159,7 @@ setInterval(() => {
       console.warn('[slack-webhook] gc tick failed', err);
     }
   })();
-}, 5 * 60 * 1000).unref();
+}, 5 * 60 * 1000);
 
 export async function startTurn(
   projectId: string,

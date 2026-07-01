@@ -20,13 +20,26 @@ function makeChain(result: unknown[] = []): any {
   return chain;
 }
 
+const fakeDb = {
+  insert: () => makeChain([]),
+  update: () => makeChain([]),
+  select: () => makeChain([]),
+  delete: () => makeChain([]),
+};
+
 mock.module('../shared/db', () => ({
-  db: {
-    insert: () => makeChain([]),
-    update: () => makeChain([]),
-    select: () => makeChain([]),
-    delete: () => makeChain([]),
-  },
+  db: fakeDb,
+}));
+
+mock.module('../shared/effect', () => ({
+  sharedConfig: {},
+  sharedDb: fakeDb,
+  sharedSupabase: {},
+  sharedFetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
+  sharedSleep: async () => {},
+  runSharedTimeout: () => ({}) as never,
+  runSharedInterval: () => ({}) as never,
+  stopSharedTimer: () => {},
 }));
 
 mock.module('../projects/secrets', () => ({

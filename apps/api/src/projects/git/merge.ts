@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Branch diffing & merging (powers the change-request layer) + diffStat.
 
 import { validateRef, validateSha } from '../git-ref';

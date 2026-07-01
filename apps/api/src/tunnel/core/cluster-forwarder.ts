@@ -1,8 +1,8 @@
+import type { Effect } from 'effect';
 import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 import { tunnelConnections, tunnelRpcForwards } from '@kortix/db';
 import { TunnelErrorCode, TunnelRelayError } from 'agent-tunnel';
-import { config } from '../../config';
-import { db } from '../../shared/db';
+import { runSharedTimeout, sharedConfig as config, sharedDb as db, sharedSleep, stopSharedTimer, type SharedTimer } from '../../shared/effect';
 import { API_INSTANCE, API_INSTANCE_ID, API_STARTED_AT } from '../../shared/instance';
 import { tunnelRelay } from './relay';
 
@@ -14,7 +14,7 @@ const FORWARD_TTL_PAD_MS = 5_000;
 
 type ForwardRow = typeof tunnelRpcForwards.$inferSelect;
 
-let forwarderTimer: ReturnType<typeof setTimeout> | null = null;
+let forwarderTimer: SharedTimer | null = null;
 let forwarderRunning = false;
 let forwarderStopped = true;
 
@@ -184,17 +184,14 @@ export function startTunnelRpcForwarder(): void {
 export function stopTunnelRpcForwarder(): void {
   forwarderStopped = true;
   if (forwarderTimer) {
-    clearTimeout(forwarderTimer);
+    stopSharedTimer(forwarderTimer);
     forwarderTimer = null;
   }
 }
 
 function scheduleForwarder(delayMs: number): void {
   if (forwarderStopped) return;
-  forwarderTimer = setTimeout(() => {
-    void runForwarderTick();
-  }, delayMs);
-  forwarderTimer.unref?.();
+  forwarderTimer = runSharedTimeout(() => void runForwarderTick(), delayMs);
 }
 
 async function runForwarderTick(): Promise<void> {
@@ -287,5 +284,5 @@ async function expireOldForwards(): Promise<void> {
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return sharedSleep(ms);
 }

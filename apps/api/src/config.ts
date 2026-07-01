@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { z } from 'zod';
 import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
 

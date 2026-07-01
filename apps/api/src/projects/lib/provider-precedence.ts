@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Pure sandbox-provider precedence for new sessions. No deps — config/db are
 // injected as `allowed` + `isEnabled` — so it unit-tests without env/DB and stays
 // importable in isolation. Used by createProjectSession (projects/lib/sessions.ts).

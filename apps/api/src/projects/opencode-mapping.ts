@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Backend-owned OpenCode ↔ Kortix session mapping.
  *
@@ -25,7 +26,7 @@
 import { and, eq } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
-import { db } from '../shared/db';
+import { sharedDb as db, sharedFetch } from '../shared/effect';
 import {
   KORTIX_USER_CONTEXT_HEADER,
   encodeKortixUserContext,
@@ -82,7 +83,7 @@ export async function listSandboxOpencodeSessions(
     // call stack and 500ing the caller (e.g. the session list title-sync).
     const ep = await sandboxOpencodeEndpoint(externalId, userId);
     if (!ep) return { ok: false, reason: 'no_key' };
-    const res = await fetch(
+    const res = await sharedFetch(
       `${ep.url}/session?directory=${encodeURIComponent(WORKSPACE)}`,
       // Fail FAST: a healthy daemon answers this list in <300ms; an 8s budget
       // only ever bought riding out a wedged first connection to a freshly

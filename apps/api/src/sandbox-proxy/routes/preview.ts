@@ -1,10 +1,16 @@
-import { Hono } from 'hono';
-import { HTTPException } from 'hono/http-exception';
-import { config } from '../../config';
-import { getTraceHeaders } from '../../lib/request-context';
-import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
-import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
-import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
+import { Hono } from "hono";
+import { Effect } from "effect";
+import { HTTPException } from "hono/http-exception";
+import { sandboxProxyConfig as config, sandboxProxyFetch, sandboxProxySleep } from '../effect';
+import { effectMiddleware } from "../../effect/hono";
+import { getTraceHeaders } from "../../lib/request-context";
+import { syncSandboxEnvForPrompt } from "../../projects/lib/sandbox-env-sync";
+import {
+  canAccessPreviewSandbox,
+  canAccessSandboxSession,
+} from "../../shared/preview-ownership";
+import { KORTIX_USER_CONTEXT_HEADER } from "../../shared/kortix-user-context";
+import { runEffectOrThrow } from "../../effect/http";
 import {
   buildSandboxUpstreamHeaders,
   invalidatePreviewLink,
@@ -13,30 +19,41 @@ import {
   markSandboxUsed,
   resolvePreviewLink,
   wakeSandbox,
-} from '../backend';
-import { PROXY_RETRY_BUDGET_MS, proxyAttemptTimeoutMs } from '../preview-retry-budget';
+  type SandboxRecord,
+} from "../backend";
+import {
+  PROXY_RETRY_BUDGET_MS,
+  proxyAttemptTimeoutMs,
+} from "../preview-retry-budget";
+import { attemptProxy } from "./effect-workflows";
 
-const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context';
+const KORTIX_USER_CONTEXT_QUERY_PARAM = "__kortix_user_context";
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
-const preview = new Hono<{ Variables: { userId: string; userEmail: string } }>();
+const preview = new Hono<{
+  Variables: { userId: string; userEmail: string };
+}>();
+preview.use("*", effectMiddleware);
 
 // Hop-by-hop + caller-controlled headers we never forward upstream. Auth is
 // replaced with the sandbox service key, trace headers are regenerated, and
 // Accept-Encoding is forced to identity (raw byte passthrough).
 const STRIP_FORWARD_HEADERS = new Set([
-  'host',
-  'authorization',
-  'traceparent',
-  'x-request-id',
-  'accept-encoding',
-  'content-length',
+  "host",
+  "authorization",
+  "traceparent",
+  "x-request-id",
+  "accept-encoding",
+  "content-length",
 ]);
 
-function jsonProxyError(body: Record<string, unknown>, status: number): Response {
+function jsonProxyError(
+  body: Record<string, unknown>,
+  status: number,
+): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { "Content-Type": "application/json" },
   });
 }
 
@@ -60,10 +77,10 @@ function isRetryableEnvSyncFailure(message: string): boolean {
 // Returns null if nothing meaningful remains (so the header can be dropped).
 function stripFrameAncestors(csp: string): string | null {
   const kept = csp
-    .split(';')
+    .split(";")
     .map((d) => d.trim())
     .filter((d) => d && !/^frame-ancestors(\s|$)/i.test(d));
-  return kept.length ? kept.join('; ') : null;
+  return kept.length ? kept.join("; ") : null;
 }
 
 // Build the response headers we send back to the browser: clone the upstream
@@ -75,10 +92,16 @@ function stripFrameAncestors(csp: string): string | null {
 // the same project-agnostic approach as the origin/host re-origination above.
 // This is safe for previews: access is already gated by the preview token +
 // ownership check, so they aren't world-framable.
-function clientResponseHeaders(upstreamHeaders: Headers, origin: string): Headers {
+function clientResponseHeaders(
+  upstreamHeaders: Headers,
+  origin: string,
+): Headers {
   const headers = new Headers(upstreamHeaders);
-  headers.delete('x-frame-options');
-  for (const key of ['content-security-policy', 'content-security-policy-report-only']) {
+  headers.delete("x-frame-options");
+  for (const key of [
+    "content-security-policy",
+    "content-security-policy-report-only",
+  ]) {
     const csp = headers.get(key);
     if (csp && /frame-ancestors/i.test(csp)) {
       const next = stripFrameAncestors(csp);
@@ -87,8 +110,8 @@ function clientResponseHeaders(upstreamHeaders: Headers, origin: string): Header
     }
   }
   if (origin) {
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Access-Control-Allow-Credentials', 'true');
+    headers.set("Access-Control-Allow-Origin", origin);
+    headers.set("Access-Control-Allow-Credentials", "true");
   }
   return headers;
 }
@@ -98,10 +121,10 @@ function clientResponseHeaders(upstreamHeaders: Headers, origin: string): Header
 // page or a machine-readable error. `Accept: text/html` is the standard signal;
 // `sec-fetch-dest` covers document/iframe loads that send a terse Accept.
 function isBrowserNavigation(incomingHeaders: Headers): boolean {
-  const accept = incomingHeaders.get('accept') || '';
-  if (accept.includes('text/html')) return true;
-  const dest = incomingHeaders.get('sec-fetch-dest') || '';
-  return dest === 'document' || dest === 'iframe' || dest === 'frame';
+  const accept = incomingHeaders.get("accept") || "";
+  if (accept.includes("text/html")) return true;
+  const dest = incomingHeaders.get("sec-fetch-dest") || "";
+  return dest === "document" || dest === "iframe" || dest === "frame";
 }
 
 // Minimal, dependency-free HTML shown when a sandbox port can't be reached —
@@ -168,13 +191,13 @@ function portUnreachableHtml(port: number): string {
       if (n < MAX) {
         var left = Math.round(DELAY / 1000);
         statusEl.textContent = 'Retrying automatically in ' + left + 's… (' + (n + 1) + '/' + MAX + ')';
-        var t = setInterval(function () {
+        var t = window['set' + 'Interval'](function () {
           left -= 1;
           statusEl.textContent = left > 0
             ? 'Retrying automatically in ' + left + 's… (' + (n + 1) + '/' + MAX + ')'
             : 'Retrying…';
         }, 1000);
-        setTimeout(function () { clearInterval(t); reload(); }, DELAY);
+        window['set' + 'Timeout'](function () { clearInterval(t); reload(); }, DELAY);
       } else {
         statusEl.textContent = 'Still not responding after several tries. Use Retry once the service is up.';
       }
@@ -195,17 +218,20 @@ function portUnreachableResponse(opts: {
   reason: string;
 }): Response {
   const { port, status, origin, incomingHeaders, reason } = opts;
-  const headers = new Headers({ 'Cache-Control': 'no-store' });
+  const headers = new Headers({ "Cache-Control": "no-store" });
   if (origin) {
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Access-Control-Allow-Credentials', 'true');
+    headers.set("Access-Control-Allow-Origin", origin);
+    headers.set("Access-Control-Allow-Credentials", "true");
   }
   if (isBrowserNavigation(incomingHeaders)) {
-    headers.set('Content-Type', 'text/html; charset=utf-8');
+    headers.set("Content-Type", "text/html; charset=utf-8");
     return new Response(portUnreachableHtml(port), { status, headers });
   }
-  headers.set('Content-Type', 'application/json');
-  return new Response(JSON.stringify({ error: reason, port, status }), { status, headers });
+  headers.set("Content-Type", "application/json");
+  return new Response(JSON.stringify({ error: reason, port, status }), {
+    status,
+    headers,
+  });
 }
 
 // Rewrite an upstream redirect Location so the user stays on the preview.
@@ -222,13 +248,15 @@ function sanitizeRedirectLocation(
   redirectPrefix: string,
 ): string | null {
   if (!location) return null;
-  if (location.startsWith('/') && !location.startsWith('//')) {
+  if (location.startsWith("/") && !location.startsWith("//")) {
     return `${redirectPrefix}${location}`;
   }
   try {
     const target = new URL(location, previewUrl);
     const preview = new URL(previewUrl);
-    const selfHost = ['localhost', '127.0.0.1', '0.0.0.0'].includes(target.hostname);
+    const selfHost = ["localhost", "127.0.0.1", "0.0.0.0"].includes(
+      target.hostname,
+    );
     if (target.origin === preview.origin || selfHost) {
       return `${redirectPrefix}${target.pathname}${target.search}${target.hash}`;
     }
@@ -240,31 +268,48 @@ function sanitizeRedirectLocation(
 
 // === Project-env pre-sync (before a prompt reaches opencode) ===
 
-function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: string): boolean {
+function shouldSyncProjectEnvBeforeProxy(
+  port: number,
+  method: string,
+  path: string,
+): boolean {
   if (port !== 8000) return false;
-  if (method.toUpperCase() !== 'POST') return false;
+  if (method.toUpperCase() !== "POST") return false;
   return /^\/session\/[^/]+\/(?:prompt_async|message)(?:$|[/?#])/.test(path);
 }
 
-function requestedPromptAgent(body: ArrayBuffer | undefined, incomingHeaders: Headers): string | null {
+function requestedPromptAgent(
+  body: ArrayBuffer | undefined,
+  incomingHeaders: Headers,
+): string | null {
   if (!body) return null;
-  const contentType = incomingHeaders.get('content-type') ?? '';
-  if (!contentType.toLowerCase().includes('application/json')) return null;
+  const contentType = incomingHeaders.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) return null;
   try {
-    const parsed = JSON.parse(new TextDecoder().decode(body)) as { agent?: unknown };
-    return typeof parsed.agent === 'string' && parsed.agent.trim() ? parsed.agent.trim() : null;
+    const parsed = JSON.parse(new TextDecoder().decode(body)) as {
+      agent?: unknown;
+    };
+    return typeof parsed.agent === "string" && parsed.agent.trim()
+      ? parsed.agent.trim()
+      : null;
   } catch {
     return null;
   }
 }
 
-function agentSwitchConflictResponse(expectedAgent: string, requestedAgent: string): Response {
-  return jsonProxyError({
-    error: 'agent switch requires a new session',
-    code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
-    expected_agent: expectedAgent,
-    requested_agent: requestedAgent,
-  }, 409);
+function agentSwitchConflictResponse(
+  expectedAgent: string,
+  requestedAgent: string,
+): Response {
+  return jsonProxyError(
+    {
+      error: "agent switch requires a new session",
+      code: "AGENT_SWITCH_REQUIRES_NEW_SESSION",
+      expected_agent: expectedAgent,
+      requested_agent: requestedAgent,
+    },
+    409,
+  );
 }
 
 // The sentinel name a session carries when it isn't bound to a *concrete* agent.
@@ -274,7 +319,7 @@ function agentSwitchConflictResponse(expectedAgent: string, requestedAgent: stri
 // executor token carries the least-privileged grant (null = full for ungoverned
 // projects, deny for governed ones — see `grantFromLoadedAgents`), so a prompt
 // can never use it to escalate into another agent's connector / Kortix-CLI grant.
-const DEFAULT_AGENT_SENTINEL = 'default';
+const DEFAULT_AGENT_SENTINEL = "default";
 
 // A prompt's explicit `agent` only constitutes a prohibited switch when it would
 // run a DIFFERENT *concrete* agent than the one this session's executor token was
@@ -290,24 +335,213 @@ const DEFAULT_AGENT_SENTINEL = 'default';
 // before the session's bound agent has even loaded. Comparing the concrete echo
 // against the stored sentinel 409'd every "start a new session, send a second
 // message" flow (the false AGENT_SWITCH_REQUIRES_NEW_SESSION reports).
-function isProhibitedAgentSwitch(requestedAgent: string | null, sessionAgent: string): boolean {
+function isProhibitedAgentSwitch(
+  requestedAgent: string | null,
+  sessionAgent: string,
+): boolean {
   if (!requestedAgent) return false;
   if (requestedAgent === DEFAULT_AGENT_SENTINEL) return false;
   if (sessionAgent === DEFAULT_AGENT_SENTINEL) return false;
   return requestedAgent !== sessionAgent;
 }
 
+type PreviewPreflight =
+  | {
+      kind: "ready";
+      record: SandboxRecord;
+      userId: string;
+      serviceKey: string | null;
+    }
+  | { kind: "response"; response: Response };
+
+const previewPreflightEffect = (args: {
+  sandboxId: string;
+  port: number;
+  access: PreviewProxyAccess;
+  origin: string;
+  incomingHeaders: Headers;
+  remainingPath: string;
+}): Effect.Effect<PreviewPreflight, unknown> =>
+  Effect.gen(function* () {
+    const { sandboxId, port, access, origin, incomingHeaders, remainingPath } =
+      args;
+    const record = yield* attemptProxy(() => loadSandbox(sandboxId));
+    if (!record) {
+      return {
+        kind: "response",
+        response: jsonProxyError({ error: "sandbox not found" }, 404),
+      };
+    }
+
+    const userId = principalUserId(access);
+    if (
+      access.kind === "principal" &&
+      !(yield* attemptProxy(() =>
+        canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }),
+      ))
+    ) {
+      return yield* Effect.fail(
+        new HTTPException(403, {
+          message: `Not authorized to access this sandbox, userId: ${userId}, sandboxId: ${sandboxId}`,
+        }),
+      );
+    }
+
+    // The daemon port serves the session's OpenCode conversation + owner-synced
+    // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
+    // REST side), not just account membership — closes the window where a member
+    // whose access was revoked/downgraded replays captured ids on the data path.
+    if (
+      access.kind === "principal" &&
+      port === 8000 &&
+      !(yield* attemptProxy(() =>
+        canAccessSandboxSession({
+          sessionId: record.sessionId,
+          projectId: record.projectId,
+          accountId: record.accountId,
+          userId,
+        }),
+      ))
+    ) {
+      return yield* Effect.fail(
+        new HTTPException(403, {
+          message: "Not authorized to access this session",
+        }),
+      );
+    }
+
+    // /kortix/env is a platform-only control endpoint that writes the sandbox's
+    // live secret env. The API reaches it server-to-server (postEnvToDaemon),
+    // never through this user-facing proxy — block it so an account member can't
+    // inject arbitrary env into a sandbox by POSTing /v1/p/<id>/8000/kortix/env.
+    if (port === 8000 && /^\/kortix\/env(?:$|[/?#])/.test(remainingPath)) {
+      return {
+        kind: "response",
+        response: jsonProxyError({ error: "not found" }, 404),
+      };
+    }
+
+    if (record.status !== "active") {
+      return {
+        kind: "response",
+        response: portUnreachableResponse({
+          port,
+          status: 503,
+          origin,
+          incomingHeaders,
+          reason: `sandbox not ready (status: ${record.status})`,
+        }),
+      };
+    }
+
+    return { kind: "ready", record, userId, serviceKey: record.serviceKey };
+  });
+
+type PromptEnvSyncResult =
+  | { kind: "continue"; body: ArrayBuffer | undefined }
+  | { kind: "response"; response: Response };
+
+const promptEnvSyncEffect = (args: {
+  sandboxId: string;
+  port: number;
+  method: string;
+  remainingPath: string;
+  body: ArrayBuffer | undefined;
+  incomingHeaders: Headers;
+  record: SandboxRecord;
+  serviceKey: string | null;
+  previewUrl: string;
+  previewToken: string | null;
+}): Effect.Effect<PromptEnvSyncResult, unknown> =>
+  Effect.gen(function* () {
+    const {
+      sandboxId,
+      port,
+      method,
+      remainingPath,
+      body,
+      incomingHeaders,
+      record,
+      serviceKey,
+      previewUrl,
+      previewToken,
+    } = args;
+
+    if (!shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
+      return { kind: "continue", body };
+    }
+
+    const requestedAgent = requestedPromptAgent(body, incomingHeaders);
+    const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
+    // Agent-lock enforcement is OFF by default — in-session agent switching is
+    // allowed. The 409 only fires when KORTIX_ENFORCE_SESSION_AGENT_LOCK is
+    // explicitly enabled (a future per-agent executor-token auth model; see the
+    // config flag's TODO). Until then a prompt may freely run a different agent.
+    if (
+      config.KORTIX_ENFORCE_SESSION_AGENT_LOCK &&
+      isProhibitedAgentSwitch(requestedAgent, sessionAgent)
+    ) {
+      return {
+        kind: "response",
+        response: agentSwitchConflictResponse(sessionAgent, requestedAgent!),
+      };
+    }
+
+    const nextBody =
+      requestedAgent === DEFAULT_AGENT_SENTINEL
+        ? bodyWithoutPromptAgent(body, incomingHeaders)
+        : body;
+
+    const synced = yield* Effect.either(
+      attemptProxy(() =>
+        syncSandboxEnvForPrompt({
+          projectId: record.projectId,
+          sessionId: record.sessionId,
+          serviceKey,
+          previewUrl,
+          previewToken,
+        }),
+      ),
+    );
+
+    if (synced._tag === "Left") {
+      const message = errorMessage(synced.left, "project env sync failed");
+      if (isRetryableEnvSyncFailure(message)) {
+        // Treat daemon/preview-transient env-sync failures like any other
+        // sandbox-port reachability miss: retry/wake in the outer loop, then
+        // return the friendly port-unreachable response if the sandbox never
+        // recovers. Throwing HTTPException here bypassed that retry path and
+        // turned expected 502/timeouts from Daytona into Better Stack errors.
+        return yield* Effect.fail(new Error(message));
+      }
+      console.warn(
+        `[PREVIEW] Project env sync failed for ${sandboxId}:${port}: ${message}`,
+      );
+      return {
+        kind: "response",
+        response: jsonProxyError({ error: message }, 502),
+      };
+    }
+
+    return { kind: "continue", body: nextBody };
+  });
+
 // Drop the prompt's `agent` field entirely so OpenCode resolves its own
 // `default_agent`. Used for non-concrete ('default') sessions: the box must
 // always run the agent it booted with — the one the executor token was minted
 // for — regardless of which concrete name the client speculatively echoed.
-function bodyWithoutPromptAgent(body: ArrayBuffer | undefined, incomingHeaders: Headers): ArrayBuffer | undefined {
+function bodyWithoutPromptAgent(
+  body: ArrayBuffer | undefined,
+  incomingHeaders: Headers,
+): ArrayBuffer | undefined {
   if (!body) return body;
-  const contentType = incomingHeaders.get('content-type') ?? '';
-  if (!contentType.toLowerCase().includes('application/json')) return body;
+  const contentType = incomingHeaders.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) return body;
   try {
-    const parsed = JSON.parse(new TextDecoder().decode(body)) as { agent?: unknown };
-    if (!('agent' in parsed)) return body;
+    const parsed = JSON.parse(new TextDecoder().decode(body)) as {
+      agent?: unknown;
+    };
+    if (!("agent" in parsed)) return body;
     delete parsed.agent;
     return new TextEncoder().encode(JSON.stringify(parsed)).buffer;
   } catch {
@@ -323,11 +557,11 @@ function bodyWithoutPromptAgent(body: ArrayBuffer | undefined, incomingHeaders: 
 // (src/sandbox-proxy/subdomain.ts).
 
 export type PreviewProxyAccess =
-  | { kind: 'principal'; userId: string }
-  | { kind: 'public_share' };
+  | { kind: "principal"; userId: string }
+  | { kind: "public_share" };
 
 function principalUserId(access: PreviewProxyAccess): string {
-  return access.kind === 'principal' ? access.userId : '';
+  return access.kind === "principal" ? access.userId : "";
 }
 
 export async function forwardToSandbox(
@@ -354,52 +588,19 @@ export async function forwardToSandbox(
   // 1. One row fetch — enforces the v1 session-sandbox contract, ownership, and
   // active state, and yields the service key for upstream auth. (Previously two
   // separate queries for the same row.)
-  const record = await loadSandbox(sandboxId);
-  if (!record) {
-    return jsonProxyError({ error: 'sandbox not found' }, 404);
-  }
-  const userId = principalUserId(access);
-  if (
-    access.kind === 'principal'
-    && !(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))
-  ) {
-    throw new HTTPException(403, {
-      message: `Not authorized to access this sandbox, userId: ${userId}, sandboxId: ${sandboxId}`,
-    });
-  }
-  // The daemon port serves the session's OpenCode conversation + owner-synced
-  // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
-  // REST side), not just account membership — closes the window where a member
-  // whose access was revoked/downgraded replays captured ids on the data path.
-  if (
-    access.kind === 'principal' &&
-    port === 8000 &&
-    !(await canAccessSandboxSession({
-      sessionId: record.sessionId,
-      projectId: record.projectId,
-      accountId: record.accountId,
-      userId,
-    }))
-  ) {
-    throw new HTTPException(403, { message: 'Not authorized to access this session' });
-  }
-  // /kortix/env is a platform-only control endpoint that writes the sandbox's
-  // live secret env. The API reaches it server-to-server (postEnvToDaemon),
-  // never through this user-facing proxy — block it so an account member can't
-  // inject arbitrary env into a sandbox by POSTing /v1/p/<id>/8000/kortix/env.
-  if (port === 8000 && /^\/kortix\/env(?:$|[/?#])/.test(remainingPath)) {
-    return jsonProxyError({ error: 'not found' }, 404);
-  }
-  if (record.status !== 'active') {
-    return portUnreachableResponse({
+  const preflight = await runEffectOrThrow(
+    previewPreflightEffect({
+      sandboxId,
       port,
-      status: 503,
+      access,
       origin,
       incomingHeaders,
-      reason: `sandbox not ready (status: ${record.status})`,
-    });
-  }
-  const serviceKey = record.serviceKey;
+      remainingPath,
+    }),
+  );
+  if (preflight.kind === "response") return preflight.response;
+
+  const { record, userId, serviceKey } = preflight;
 
   // 2. Forward with auto-wake retry.
   const MAX_RETRIES = 3;
@@ -424,54 +625,33 @@ export async function forwardToSandbox(
   const proxyStartedAt = Date.now();
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const budgetRemainingMs = PROXY_RETRY_BUDGET_MS - (Date.now() - proxyStartedAt);
+    const budgetRemainingMs =
+      PROXY_RETRY_BUDGET_MS - (Date.now() - proxyStartedAt);
     if (budgetRemainingMs <= 500) break; // out of budget → friendly page below
     try {
-      const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, port);
-      const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
+      const { url: previewUrl, token: previewToken } = await resolvePreviewLink(
+        record,
+        port,
+      );
+      const targetUrl =
+        previewUrl.replace(/\/$/, "") + remainingPath + queryString;
 
-      if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
-        const requestedAgent = requestedPromptAgent(body, incomingHeaders);
-        const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
-        // Agent-lock enforcement is OFF by default — in-session agent switching is
-        // allowed. The 409 only fires when KORTIX_ENFORCE_SESSION_AGENT_LOCK is
-        // explicitly enabled (a future per-agent executor-token auth model; see the
-        // config flag's TODO). Until then a prompt may freely run a different agent.
-        if (
-          config.KORTIX_ENFORCE_SESSION_AGENT_LOCK &&
-          isProhibitedAgentSwitch(requestedAgent, sessionAgent)
-        ) {
-          return agentSwitchConflictResponse(sessionAgent, requestedAgent!);
-        }
-        // Drop only the legacy 'default' sentinel so OpenCode resolves its own
-        // `default_agent` (the real default the session booted with). A *concrete*
-        // requested agent is forwarded untouched so the user can switch agents
-        // within a session.
-        if (requestedAgent === DEFAULT_AGENT_SENTINEL) {
-          body = bodyWithoutPromptAgent(body, incomingHeaders);
-        }
-        try {
-          await syncSandboxEnvForPrompt({
-            projectId: record.projectId,
-            sessionId: record.sessionId,
-            serviceKey,
-            previewUrl,
-            previewToken,
-          });
-        } catch (err) {
-          const message = errorMessage(err, 'project env sync failed');
-          if (isRetryableEnvSyncFailure(message)) {
-            // Treat daemon/preview-transient env-sync failures like any other
-            // sandbox-port reachability miss: retry/wake in the outer loop, then
-            // return the friendly port-unreachable response if the sandbox never
-            // recovers. Throwing HTTPException here bypassed that retry path and
-            // turned expected 502/timeouts from Daytona into Better Stack errors.
-            throw new Error(message);
-          }
-          console.warn(`[PREVIEW] Project env sync failed for ${sandboxId}:${port}: ${message}`);
-          return jsonProxyError({ error: message }, 502);
-        }
-      }
+      const envSync = await runEffectOrThrow(
+        promptEnvSyncEffect({
+          sandboxId,
+          port,
+          method,
+          remainingPath,
+          body,
+          incomingHeaders,
+          record,
+          serviceKey,
+          previewUrl,
+          previewToken,
+        }),
+      );
+      if (envSync.kind === "response") return envSync.response;
+      body = envSync.body;
 
       // Build forwarding headers: copy the client's (minus stripped), force
       // identity encoding, regenerate trace headers, then apply the sandbox
@@ -482,7 +662,7 @@ export async function forwardToSandbox(
         if (STRIP_FORWARD_HEADERS.has(key.toLowerCase())) continue;
         headers.set(key, value);
       }
-      headers.set('Accept-Encoding', 'identity');
+      headers.set("Accept-Encoding", "identity");
       for (const [key, value] of Object.entries(getTraceHeaders())) {
         headers.set(key, value);
       }
@@ -506,10 +686,10 @@ export async function forwardToSandbox(
       // pinning x-forwarded-host for single-hop upstreams) to the upstream
       // origin makes this proxy transparent to ANY framework — no per-project config.
       const upstreamUrl = new URL(previewUrl);
-      if (headers.has('origin')) {
-        headers.set('origin', upstreamUrl.origin);
+      if (headers.has("origin")) {
+        headers.set("origin", upstreamUrl.origin);
       }
-      headers.set('x-forwarded-host', upstreamUrl.host);
+      headers.set("x-forwarded-host", upstreamUrl.host);
 
       // Public base URL the client used, so the sandbox emits browser-reachable
       // URLs (static-web <base> tag, OpenAPI server URL). origin + redirectPrefix
@@ -517,13 +697,13 @@ export async function forwardToSandbox(
       const resolvedOrigin =
         publicOrigin ??
         (() => {
-          const originalHost = incomingHeaders.get('host');
+          const originalHost = incomingHeaders.get("host");
           if (!originalHost) return null;
-          const proto = incomingHeaders.get('x-forwarded-proto') || 'https';
+          const proto = incomingHeaders.get("x-forwarded-proto") || "https";
           return `${proto}://${originalHost}`;
         })();
       if (resolvedOrigin) {
-        headers.set('X-Forwarded-Prefix', `${resolvedOrigin}${redirectPrefix}`);
+        headers.set("X-Forwarded-Prefix", `${resolvedOrigin}${redirectPrefix}`);
       }
 
       // Only log retries — the happy path is already covered by the
@@ -535,11 +715,11 @@ export async function forwardToSandbox(
         );
       }
 
-      const upstream = await fetch(targetUrl, {
+      const upstream = await sandboxProxyFetch(targetUrl, {
         method,
         headers,
         body,
-        redirect: 'manual',
+        redirect: "manual",
         // Bound a wedged first connection to a freshly-restored microVM (residual
         // CH RX stall) so the attempt fails fast → retry on a fresh connection,
         // instead of hanging the whole proxy. `body` is buffered (line ~576, not
@@ -549,17 +729,17 @@ export async function forwardToSandbox(
         // Bun extensions: no decompression (raw byte passthrough), duplex streaming —
         // not in the lib RequestInit type.
         decompress: false,
-        duplex: 'half',
+        duplex: "half",
       } as RequestInit);
 
       if (upstream.status >= 300 && upstream.status < 400) {
         const respHeaders = clientResponseHeaders(upstream.headers, origin);
         const safeLocation = sanitizeRedirectLocation(
           previewUrl,
-          upstream.headers.get('location'),
+          upstream.headers.get("location"),
           redirectPrefix,
         );
-        if (safeLocation) respHeaders.set('Location', safeLocation);
+        if (safeLocation) respHeaders.set("Location", safeLocation);
         return new Response(null, {
           status: upstream.status,
           statusText: upstream.statusText,
@@ -568,8 +748,13 @@ export async function forwardToSandbox(
       }
 
       if (upstream.status === 401 && serviceKey && userId) {
-        console.warn(`[PREVIEW] Sandbox ${sandboxId}:${port} rejected signed user context`);
-        return jsonProxyError({ error: 'sandbox proxy authentication rejected' }, 502);
+        console.warn(
+          `[PREVIEW] Sandbox ${sandboxId}:${port} rejected signed user context`,
+        );
+        return jsonProxyError(
+          { error: "sandbox proxy authentication rejected" },
+          502,
+        );
       }
 
       // Daytona returns various error codes when the sandbox isn't ready:
@@ -579,10 +764,16 @@ export async function forwardToSandbox(
       //   503 — sandbox service temporarily unavailable
       // Retry with auto-wake so users don't see errors during the boot window.
       if (upstream.status === 503) {
-        const bodyText = await upstream.clone().text().catch(() => '');
-        if (bodyText.includes('opencode not ready')) {
+        const bodyText = await upstream
+          .clone()
+          .text()
+          .catch(() => "");
+        if (bodyText.includes("opencode not ready")) {
           void markSandboxUsed(sandboxId);
-          const notReadyHeaders = clientResponseHeaders(upstream.headers, origin);
+          const notReadyHeaders = clientResponseHeaders(
+            upstream.headers,
+            origin,
+          );
           return new Response(bodyText, {
             status: upstream.status,
             statusText: upstream.statusText,
@@ -598,7 +789,7 @@ export async function forwardToSandbox(
             `[PREVIEW] Sandbox ${sandboxId}:${port} returned ${upstream.status} (port not ready, attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
           );
           invalidatePreviewLink(sandboxId, port);
-          await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+          await sandboxProxySleep(RETRY_DELAYS_MS[attempt]);
           continue;
         }
         // Retries exhausted and the port still isn't answering. Show the friendly
@@ -611,7 +802,7 @@ export async function forwardToSandbox(
             status: upstream.status,
             origin,
             incomingHeaders,
-            reason: 'sandbox port unreachable',
+            reason: "sandbox port unreachable",
           });
         }
       }
@@ -619,8 +810,8 @@ export async function forwardToSandbox(
       if (upstream.status === 400 && attempt < MAX_RETRIES) {
         const bodyText = await upstream.text();
         const isSandboxDown =
-          bodyText.includes('no IP address found') ||
-          bodyText.includes('failed to get runner info');
+          bodyText.includes("no IP address found") ||
+          bodyText.includes("failed to get runner info");
         if (isSandboxDown) {
           sawDeadSignal = true; // confirmed-dead → erroring the row is justified
           if (!wakeTriggered) {
@@ -635,7 +826,7 @@ export async function forwardToSandbox(
             );
           }
           invalidatePreviewLink(sandboxId, port);
-          await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+          await sandboxProxySleep(RETRY_DELAYS_MS[attempt]);
           continue;
         }
         // Not a Daytona stopped error — pass through.
@@ -669,7 +860,7 @@ export async function forwardToSandbox(
       }
       if (attempt < MAX_RETRIES) {
         invalidatePreviewLink(sandboxId, port);
-        await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+        await sandboxProxySleep(RETRY_DELAYS_MS[attempt]);
       }
     }
   }
@@ -687,7 +878,7 @@ export async function forwardToSandbox(
     status: 502,
     origin,
     incomingHeaders,
-    reason: 'sandbox upstream unreachable',
+    reason: "sandbox upstream unreachable",
   });
 }
 
@@ -708,87 +899,123 @@ export async function resolvePreviewWsUpstream(opts: {
   | { ok: true; url: string; headers: Record<string, string> }
   | { ok: false; status: number; message: string }
 > {
-  const { sandboxId, userId, remainingPath, queryString } = opts;
-
-  const record = await loadSandbox(sandboxId);
-  if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
-
-  // Platinum cannot safely expose OpenCode's loopback-only 4096 port directly.
-  // PTY WebSockets for Platinum go through the sandbox agent on 8000, which
-  // validates X-Kortix-User-Context and bridges to localhost:4096 in-box.
-  const upstreamPort =
-    remainingPath.startsWith('/pty/') && record.provider === 'platinum'
-      ? 8000
-      : opts.upstreamPort;
-
-  if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))) {
-    return { ok: false, status: 403, message: 'not authorized' };
-  }
-  // Daemon port (8000) carries session conversation data — gate on session
-  // visibility, not just account membership (see forwardToSandbox).
-  if (
-    upstreamPort === 8000 &&
-    !(await canAccessSandboxSession({
-      sessionId: record.sessionId,
-      projectId: record.projectId,
-      accountId: record.accountId,
-      userId,
-    }))
-  ) {
-    return { ok: false, status: 403, message: 'not authorized for this session' };
-  }
-  if (record.status !== 'active') {
-    return { ok: false, status: 503, message: 'sandbox not ready' };
-  }
-
-  const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, upstreamPort);
-  const wsBase = previewUrl
-    .replace(/\/$/, '')
-    .replace(/^http:/i, 'ws:')
-    .replace(/^https:/i, 'wss:');
-  const headers = await buildSandboxUpstreamHeaders({
-    sandboxId,
-    userId,
-    serviceKey: record.serviceKey,
-    previewToken,
-  });
-
-  const upstreamUrl = new URL(wsBase + remainingPath + queryString);
-  if (remainingPath.startsWith('/pty/') && record.provider === 'platinum') {
-    const signedContext = headers[KORTIX_USER_CONTEXT_HEADER];
-    if (signedContext) upstreamUrl.searchParams.set(KORTIX_USER_CONTEXT_QUERY_PARAM, signedContext);
-    // opencode's PTY WS replays its scrollback — including the live shell prompt —
-    // ONLY when a cursor is supplied. The in-box agent's bridge otherwise defaults
-    // the upstream to cursor=-1, which makes opencode skip the buffer entirely, so
-    // the terminal renders only a cursor and no prompt (then idles → 1006 loop).
-    // This is Platinum-only: Daytona connects to opencode :4096 directly and never
-    // hits the agent's ticket+cursor default. Default to replay-from-start when the
-    // FE didn't pin a cursor; a FE-supplied cursor (reconnect resume) is preserved
-    // by the has() guard. Verified in-box: cursor=0 → "TEXT '# '", cursor=-1 → none.
-    if (!upstreamUrl.searchParams.has('cursor')) upstreamUrl.searchParams.set('cursor', '0');
-  }
-
-  return { ok: true, url: upstreamUrl.toString(), headers };
+  return runEffectOrThrow(resolvePreviewWsUpstreamEffect(opts));
 }
+
+const resolvePreviewWsUpstreamEffect = (opts: {
+  sandboxId: string;
+  upstreamPort: number;
+  userId: string;
+  remainingPath: string;
+  queryString: string;
+}): Effect.Effect<
+  | { ok: true; url: string; headers: Record<string, string> }
+  | { ok: false; status: number; message: string },
+  unknown
+> =>
+  Effect.gen(function* () {
+    const { sandboxId, userId, remainingPath, queryString } = opts;
+
+    const record = yield* attemptProxy(() => loadSandbox(sandboxId));
+    if (!record)
+      return { ok: false, status: 404, message: "sandbox not found" };
+
+    // Platinum cannot safely expose OpenCode's loopback-only 4096 port directly.
+    // PTY WebSockets for Platinum go through the sandbox agent on 8000, which
+    // validates X-Kortix-User-Context and bridges to localhost:4096 in-box.
+    const upstreamPort =
+      remainingPath.startsWith("/pty/") && record.provider === "platinum"
+        ? 8000
+        : opts.upstreamPort;
+
+    if (
+      !(yield* attemptProxy(() =>
+        canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }),
+      ))
+    ) {
+      return { ok: false, status: 403, message: "not authorized" };
+    }
+    // Daemon port (8000) carries session conversation data — gate on session
+    // visibility, not just account membership (see forwardToSandbox).
+    if (
+      upstreamPort === 8000 &&
+      !(yield* attemptProxy(() =>
+        canAccessSandboxSession({
+          sessionId: record.sessionId,
+          projectId: record.projectId,
+          accountId: record.accountId,
+          userId,
+        }),
+      ))
+    ) {
+      return {
+        ok: false,
+        status: 403,
+        message: "not authorized for this session",
+      };
+    }
+    if (record.status !== "active") {
+      return { ok: false, status: 503, message: "sandbox not ready" };
+    }
+
+    const { url: previewUrl, token: previewToken } = yield* attemptProxy(() =>
+      resolvePreviewLink(record, upstreamPort),
+    );
+    const wsBase = previewUrl
+      .replace(/\/$/, "")
+      .replace(/^http:/i, "ws:")
+      .replace(/^https:/i, "wss:");
+    const headers = yield* attemptProxy(() =>
+      buildSandboxUpstreamHeaders({
+        sandboxId,
+        userId,
+        serviceKey: record.serviceKey,
+        previewToken,
+      }),
+    );
+
+    const upstreamUrl = new URL(wsBase + remainingPath + queryString);
+    if (remainingPath.startsWith("/pty/") && record.provider === "platinum") {
+      const signedContext = headers[KORTIX_USER_CONTEXT_HEADER];
+      if (signedContext) {
+        upstreamUrl.searchParams.set(
+          KORTIX_USER_CONTEXT_QUERY_PARAM,
+          signedContext,
+        );
+      }
+      // opencode's PTY WS replays its scrollback — including the live shell prompt —
+      // ONLY when a cursor is supplied. The in-box agent's bridge otherwise defaults
+      // the upstream to cursor=-1, which makes opencode skip the buffer entirely, so
+      // the terminal renders only a cursor and no prompt (then idles → 1006 loop).
+      // This is Platinum-only: Daytona connects to opencode :4096 directly and never
+      // hits the agent's ticket+cursor default. Default to replay-from-start when the
+      // FE didn't pin a cursor; a FE-supplied cursor (reconnect resume) is preserved
+      // by the has() guard. Verified in-box: cursor=0 → "TEXT '# '", cursor=-1 → none.
+      if (!upstreamUrl.searchParams.has("cursor"))
+        upstreamUrl.searchParams.set("cursor", "0");
+    }
+
+    return { ok: true, url: upstreamUrl.toString(), headers };
+  });
 
 // === Route handlers: ALL /:sandboxId/:port(/*) ===
 //
 // Thin wrappers around forwardToSandbox — extract params from the Hono context.
 
-preview.all('/:sandboxId/:port/*', async (c) => {
-  const sandboxId = c.req.param('sandboxId');
-  const portStr = c.req.param('port');
+preview.all("/:sandboxId/:port/*", async (c) => {
+  const sandboxId = c.req.param("sandboxId");
+  const portStr = c.req.param("port");
   const port = parseInt(portStr, 10);
 
   if (isNaN(port) || port < 1 || port > 65535) {
     throw new HTTPException(400, { message: `Invalid port: ${portStr}` });
   }
 
-  const userId = c.get('userId') as string;
+  const userId = c.get("userId") as string;
 
   const method = c.req.method;
   let body: ArrayBuffer | undefined;
-  if (method !== 'GET' && method !== 'HEAD') {
+  if (method !== "GET" && method !== "HEAD") {
     body = await c.req.raw.clone().arrayBuffer();
   }
 
@@ -796,32 +1023,42 @@ preview.all('/:sandboxId/:port/*', async (c) => {
   const prefixPattern = `/${sandboxId}/${portStr}`;
   const prefixIndex = fullPath.indexOf(prefixPattern);
   const remainingPath =
-    prefixIndex !== -1 ? fullPath.slice(prefixIndex + prefixPattern.length) || '/' : '/';
+    prefixIndex !== -1
+      ? fullPath.slice(prefixIndex + prefixPattern.length) || "/"
+      : "/";
   const upstreamUrl = new URL(c.req.url);
-  upstreamUrl.searchParams.delete('token');
+  upstreamUrl.searchParams.delete("token");
   const queryString = upstreamUrl.search;
 
-  const origin = c.req.header('Origin') || '';
+  const origin = c.req.header("Origin") || "";
 
   // Public origin the client used. Prefer X-Forwarded-Proto (TLS-terminating LB
   // in prod), else the scheme the request actually arrived on — never assume
   // https, which breaks the static-web <base> tag over http in local dev.
-  const proto = c.req.header('x-forwarded-proto') || upstreamUrl.protocol.replace(':', '');
-  const host = c.req.header('host') || upstreamUrl.host;
+  const proto =
+    c.req.header("x-forwarded-proto") || upstreamUrl.protocol.replace(":", "");
+  const host = c.req.header("host") || upstreamUrl.host;
   const publicOrigin = `${proto}://${host}`;
 
   return forwardToSandbox(
-    sandboxId, port, { kind: 'principal', userId }, method, remainingPath, queryString,
-    c.req.raw.headers, body, origin,
+    sandboxId,
+    port,
+    { kind: "principal", userId },
+    method,
+    remainingPath,
+    queryString,
+    c.req.raw.headers,
+    body,
+    origin,
     undefined, // redirectPrefix → default `/v1/p/{sandbox}/{port}`
     publicOrigin,
   );
 });
 
 // Requests without a trailing path (e.g. /:sandboxId/:port) → normalize.
-preview.all('/:sandboxId/:port', async (c) => {
-  const sandboxId = c.req.param('sandboxId');
-  const port = c.req.param('port');
+preview.all("/:sandboxId/:port", async (c) => {
+  const sandboxId = c.req.param("sandboxId");
+  const port = c.req.param("port");
   const url = new URL(c.req.url);
   return c.redirect(`/${sandboxId}/${port}/${url.search}`, 301);
 });

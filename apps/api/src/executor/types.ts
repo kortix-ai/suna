@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Executor shared types. The normalized catalog shape every provider produces —
  * the one thing the gateway, discovery, and policy layer all speak.

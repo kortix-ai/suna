@@ -1,8 +1,10 @@
+import type { Effect } from 'effect';
 // SCIM discovery route: /ServiceProviderConfig (capabilities discovery).
 // Registers onto the shared scimRouter via side effect.
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors } from '../openapi';
+import { effectHandler } from '../effect/hono';
 import { scimRouter, ScimResource } from './app';
 
 // ─── Discovery ────────────────────────────────────────────────────────────
@@ -19,7 +21,7 @@ scimRouter.openapi(
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   return c.json({
     schemas: ['urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig'],
     documentationUri: 'https://docs.kortix.com/scim',
@@ -38,5 +40,5 @@ scimRouter.openapi(
     ],
     meta: { resourceType: 'ServiceProviderConfig' },
   });
-  },
+  }),
 );

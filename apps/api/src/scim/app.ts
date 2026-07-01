@@ -9,13 +9,14 @@
 
 import { Context } from 'hono';
 import { z } from '@hono/zod-openapi';
+import { Effect } from 'effect';
 import { eq } from 'drizzle-orm';
-import { accountGroupMembers } from '@kortix/db';
-import { db } from '../shared/db';
-import { getSupabase } from '../shared/supabase';
+import { accountGroupMembers, type Database } from '@kortix/db';
 import { recordAuditEvent } from '../shared/audit';
 import { scimAuth } from '../middleware/scim-auth';
 import { makeOpenApiApp } from '../openapi';
+import { DatabaseService, SupabaseService } from '../effect/services';
+import { runEffectOrThrow } from '../effect/http';
 
 // SCIM payloads are large/dynamic — model permissively.
 export const ScimResource = z.record(z.string(), z.any());
@@ -64,44 +65,59 @@ export function locationFor(accountId: string, kind: 'Users' | 'Groups', id: str
   return `/scim/v2/accounts/${accountId}/${kind}/${id}`;
 }
 
+export const runScimDatabase = <A>(
+  operation: (database: Database) => Promise<A> | A,
+): Promise<A> =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    return yield* Effect.tryPromise(async () => operation(database));
+  }));
+
 /**
  * Bulk Supabase-email lookup for the user IDs we have. Used to render
  * `userName` / `emails` on SCIM User resources. Returns a map so the
  * caller can build resources in O(n).
  */
 export async function emailsByUserId(userIds: string[]): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-  if (userIds.length === 0) return map;
-  const supabase = getSupabase();
-  await Promise.all(
-    userIds.map(async (uid) => {
-      try {
-        const { data } = await supabase.auth.admin.getUserById(uid);
-        if (data?.user?.email) map.set(uid, data.user.email);
-      } catch {
-        /* ignore — surface as missing email */
-      }
-    }),
-  );
-  return map;
+  return runEffectOrThrow(Effect.gen(function* () {
+    const map = new Map<string, string>();
+    if (userIds.length === 0) return map;
+    const supabaseService = yield* SupabaseService;
+    const supabase = yield* supabaseService.client;
+    yield* Effect.forEach(
+      userIds,
+      (uid) =>
+        Effect.tryPromise(() => supabase.auth.admin.getUserById(uid)).pipe(
+          Effect.tap(({ data }) =>
+            Effect.sync(() => {
+              if (data?.user?.email) map.set(uid, data.user.email);
+            }),
+          ),
+          Effect.catchAll(() => Effect.void),
+        ),
+      { concurrency: 'unbounded' },
+    );
+    return map;
+  }));
 }
 
 export async function userIdByEmail(email: string): Promise<string | null> {
-  const supabase = getSupabase();
-  try {
+  return runEffectOrThrow(Effect.gen(function* () {
+    const supabaseService = yield* SupabaseService;
+    const supabase = yield* supabaseService.client;
     // Supabase admin doesn't expose a direct email-lookup; use the paginated
     // list with a small page and filter client-side. For directories this
     // small it's acceptable; a real production deployment should add a
     // local email→user_id table.
     const normalized = email.trim().toLowerCase();
-    const { data } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    const { data } = yield* Effect.tryPromise(() =>
+      supabase.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+    ).pipe(Effect.catchAll(() => Effect.succeed({ data: null })));
     const found = data?.users?.find(
       (u) => (u.email ?? '').trim().toLowerCase() === normalized,
     );
     return found?.id ?? null;
-  } catch {
-    return null;
-  }
+  }));
 }
 
 export function buildUser(
@@ -137,25 +153,31 @@ export async function scimAudit(
     after?: Record<string, unknown> | null;
   },
 ) {
-  try {
-    await recordAuditEvent({
-      accountId: args.accountId,
-      actorUserId: null, // SCIM has no human actor; the token IS the actor
-      action: args.action,
-      resourceType: args.resourceType,
-      resourceId: args.resourceId ?? null,
-      before: args.before ?? null,
-      after: args.after ?? null,
-      ip:
-        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
-        c.req.header('x-real-ip') ||
-        null,
-      userAgent: c.req.header('user-agent') || null,
-      metadata: { scim_token_id: c.get('scimTokenId') as string | undefined },
-    });
-  } catch (err) {
-    console.warn('[scim audit] failed to record', args.action, err);
-  }
+  return runEffectOrThrow(
+    Effect.tryPromise(() =>
+      recordAuditEvent({
+        accountId: args.accountId,
+        actorUserId: null, // SCIM has no human actor; the token IS the actor
+        action: args.action,
+        resourceType: args.resourceType,
+        resourceId: args.resourceId ?? null,
+        before: args.before ?? null,
+        after: args.after ?? null,
+        ip:
+          c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
+          c.req.header('x-real-ip') ||
+          null,
+        userAgent: c.req.header('user-agent') || null,
+        metadata: { scim_token_id: c.get('scimTokenId') as string | undefined },
+      }),
+    ).pipe(
+      Effect.catchAll((err) =>
+        Effect.sync(() => {
+          console.warn('[scim audit] failed to record', args.action, err);
+        }),
+      ),
+    ),
+  );
 }
 
 export interface GroupShape {
@@ -177,10 +199,12 @@ export async function buildGroup(
     updatedAt: Date;
   },
 ): Promise<GroupShape> {
-  const memberRows = await db
-    .select({ userId: accountGroupMembers.userId })
-    .from(accountGroupMembers)
-    .where(eq(accountGroupMembers.groupId, group.groupId));
+  const memberRows = await runScimDatabase((database) =>
+    database
+      .select({ userId: accountGroupMembers.userId })
+      .from(accountGroupMembers)
+      .where(eq(accountGroupMembers.groupId, group.groupId)),
+  );
   return {
     schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
     id: group.groupId,

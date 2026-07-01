@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Auto-deploy sweep for `[[apps]]` in `kortix.toml`.
  *
@@ -12,7 +13,7 @@
  */
 import { and, desc, eq } from 'drizzle-orm';
 import { deployments, projects } from '@kortix/db';
-import { db } from '../shared/db';
+import { sharedDb as db } from '../shared/effect';
 import { DEFAULT_PROVIDER_NAME, getProvider } from '../deployments/providers';
 import type { DeploymentRequest } from '../deployments/providers';
 import {

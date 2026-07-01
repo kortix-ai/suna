@@ -1,9 +1,10 @@
+import type { Effect } from 'effect';
 import { accountMembers, accounts } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
 import { initializeFreeTierAccount } from '../../billing/services/free-tier';
-import { config } from '../../config';
-import { db } from '../../shared/db';
+import { accountConfig as config } from '../effect';
+import { accountDb as db } from '../effect';
 import { defaultAccountName } from './app';
 
 /**

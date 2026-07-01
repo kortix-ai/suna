@@ -11,16 +11,28 @@ import { MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
 // Mutable knobs the mocks read.
 let billingEnabled = true;
 let currentTier: string | null = 'free';
+const fakeConfig = new Proxy(
+  {},
+  {
+    get: (_t, key) => (key === 'KORTIX_BILLING_INTERNAL_ENABLED' ? billingEnabled : undefined),
+  },
+);
 
 // A Proxy config so any unrelated key read elsewhere is a harmless `undefined`;
 // only KORTIX_BILLING_INTERNAL_ENABLED matters to the policy.
 mock.module('../config', () => ({
-  config: new Proxy(
-    {},
-    {
-      get: (_t, key) => (key === 'KORTIX_BILLING_INTERNAL_ENABLED' ? billingEnabled : undefined),
-    },
-  ),
+  config: fakeConfig,
+}));
+
+mock.module('../shared/effect', () => ({
+  sharedConfig: fakeConfig,
+  sharedDb: {},
+  sharedSupabase: {},
+  sharedFetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
+  sharedSleep: async () => {},
+  runSharedTimeout: () => ({}) as never,
+  runSharedInterval: () => ({}) as never,
+  stopSharedTimer: () => {},
 }));
 
 mock.module('../billing/repositories/credit-accounts', () => ({
@@ -44,9 +56,9 @@ describe('maxProjectsForAccount — plan → project cap', () => {
     currentTier = 'free';
   });
 
-  test('free tier → FREE_TIER_PROJECT_LIMIT (1)', async () => {
+  test('free tier → FREE_TIER_PROJECT_LIMIT (3)', async () => {
     currentTier = 'free';
-    expect(FREE_TIER_PROJECT_LIMIT).toBe(1);
+    expect(FREE_TIER_PROJECT_LIMIT).toBe(3);
     expect(await maxProjectsForAccount(nextAccount())).toBe(FREE_TIER_PROJECT_LIMIT);
   });
 

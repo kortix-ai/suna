@@ -1,7 +1,9 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { config } from '../../config';
+import { Effect } from 'effect';
+import { billingConfig as config } from '../effect';
 import { processStripeWebhook, processRevenueCatWebhook } from '../services/webhooks';
 import { makeOpenApiApp, json, errors } from '../../openapi';
+import { attemptBilling, billingFail, parseJsonBody, runBillingEffect } from './effect-workflows';
 
 export const webhooksRouter = makeOpenApiApp();
 
@@ -21,12 +23,14 @@ webhooksRouter.openapi(
     },
   }),
   async (c: any) => {
-    const signature = c.req.header('stripe-signature');
-    if (!signature) return c.json({ error: 'Missing stripe-signature header' }, 400);
-    if (!config.STRIPE_WEBHOOK_SECRET) return c.json({ error: 'Webhook not configured' }, 500);
+    const result = await runBillingEffect(Effect.gen(function* () {
+      const signature = c.req.header('stripe-signature');
+      if (!signature) return yield* billingFail('Missing stripe-signature header', 400);
+      if (!config.STRIPE_WEBHOOK_SECRET) return yield* billingFail('Webhook not configured', 500);
 
-    const rawBody = await c.req.text();
-    const result = await processStripeWebhook(rawBody, signature);
+      const rawBody = yield* attemptBilling<string>(() => c.req.text());
+      return yield* attemptBilling(() => processStripeWebhook(rawBody, signature));
+    }));
     return c.json(result);
   },
 );
@@ -43,17 +47,19 @@ webhooksRouter.openapi(
     },
   }),
   async (c: any) => {
-    if (!config.REVENUECAT_WEBHOOK_SECRET) {
-      return c.json({ error: 'Webhook not configured' }, 500);
-    }
+    const result = await runBillingEffect(Effect.gen(function* () {
+      if (!config.REVENUECAT_WEBHOOK_SECRET) {
+        return yield* billingFail('Webhook not configured', 500);
+      }
 
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader || authHeader !== `Bearer ${config.REVENUECAT_WEBHOOK_SECRET}`) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
+      const authHeader = c.req.header('Authorization');
+      if (!authHeader || authHeader !== `Bearer ${config.REVENUECAT_WEBHOOK_SECRET}`) {
+        return yield* billingFail('Unauthorized', 401);
+      }
 
-    const body = await c.req.json();
-    const result = await processRevenueCatWebhook(body);
+      const body = yield* parseJsonBody<Record<string, unknown>>(c);
+      return yield* attemptBilling(() => processRevenueCatWebhook(body));
+    }));
     return c.json(result);
   },
 );

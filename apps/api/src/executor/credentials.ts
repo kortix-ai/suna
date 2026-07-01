@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Connector access + credentials — the split model. Access (who can use a
  * connector) lives on the connector (share_scope + executor_connector_grants).
@@ -12,7 +13,7 @@ import {
   executorConnectors,
   executorCredentials,
 } from '@kortix/db';
-import { db } from '../shared/db';
+import { executorDb as db } from './effect';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
 import { intentToScope, type SecretGrant, type ShareScope, type SharingIntent } from './share';
 

@@ -11,24 +11,34 @@
  * service). Stripe customer id/email are still returned as null (no join yet);
  * the legacy env/exec/schema endpoints are intentionally NOT restored.
  */
-import { createRoute, z } from '@hono/zod-openapi';
-import type { AppEnv } from '../types';
-import { supabaseAuth } from '../middleware/auth';
-import { requireAdmin } from '../middleware/require-admin';
-import { makeOpenApiApp, json, errors, auth } from '../openapi';
+import { createRoute, z } from "@hono/zod-openapi";
+import type { AppEnv } from "../types";
+import { supabaseAuth } from "../middleware/auth";
+import { requireAdmin } from "../middleware/require-admin";
+import { makeOpenApiApp, json, errors, auth } from "../openapi";
+import { effectHandler } from "../effect/hono";
+import { Effect } from "effect";
+import { HttpClient } from "../effect/services";
+import { runEffectOrThrow } from "../effect/http";
 
 export const adminApp = makeOpenApiApp<AppEnv>();
 
+const adminFetch = (url: string, init: RequestInit): Promise<Response> =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const client = yield* HttpClient;
+    return yield* Effect.tryPromise(() => client.fetch(url, init));
+  }));
+
 // Every admin route requires a logged-in platform admin.
-adminApp.use('*', supabaseAuth, requireAdmin);
+adminApp.use("*", supabaseAuth, requireAdmin);
 
 // ── List accounts ────────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/api/accounts',
-    tags: ['admin'],
-    summary: 'List accounts (admin console)',
+    method: "get",
+    path: "/api/accounts",
+    tags: ["admin"],
+    summary: "List accounts (admin console)",
     ...auth,
     request: {
       query: z.object({
@@ -46,161 +56,216 @@ adminApp.openapi(
       }),
     },
     responses: {
-      200: json(z.record(z.string(), z.any()), 'Accounts page'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
+      200: json(z.record(z.string(), z.any()), "Accounts page"),
+      500: json(z.record(z.string(), z.any()), "Server error"),
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
-  try {
-    const { db } = await import('../shared/db');
-    const { accounts, creditAccounts } = await import('@kortix/db');
-    const { and, asc, desc, eq, ilike, gte, lte, inArray, notInArray, isNotNull, isNull, or, sql } =
-      await import('drizzle-orm');
-    const { membersTableSql } = await import('./members-table');
-    const { parseAdminAccountsListQuery, UNPAID_TIERS } = await import('./accounts-query');
-    const mt = await membersTableSql();
+  effectHandler(async (c: any) => {
+    try {
+      const { db } = await import("../shared/db");
+      const { accounts, creditAccounts } = await import("@kortix/db");
+      const {
+        and,
+        asc,
+        desc,
+        eq,
+        ilike,
+        gte,
+        lte,
+        inArray,
+        notInArray,
+        isNotNull,
+        isNull,
+        or,
+        sql,
+      } = await import("drizzle-orm");
+      const { membersTableSql } = await import("./members-table");
+      const { parseAdminAccountsListQuery, UNPAID_TIERS } =
+        await import("./accounts-query");
+      const mt = await membersTableSql();
 
-    const {
-      search,
-      tierValues,
-      paymentStatusValues,
-      paidOnly,
-      hasSubscription,
-      minBalance,
-      maxBalance,
-      sortBy,
-      sortDir,
-      page,
-      limit,
-      offset,
-    } = parseAdminAccountsListQuery((k: string) => c.req.query(k));
-    const dir = sortDir === 'asc' ? asc : desc;
+      const {
+        search,
+        tierValues,
+        paymentStatusValues,
+        paidOnly,
+        hasSubscription,
+        minBalance,
+        maxBalance,
+        sortBy,
+        sortDir,
+        page,
+        limit,
+        offset,
+      } = parseAdminAccountsListQuery((k: string) => c.req.query(k));
+      const dir = sortDir === "asc" ? asc : desc;
 
-    const ownerEmail = sql<string | null>`(
+      const ownerEmail = sql<string | null>`(
       SELECT au.email FROM auth.users au
       INNER JOIN ${mt} am ON am.user_id = au.id
       WHERE am.account_id = ${accounts.accountId}
       ORDER BY CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, au.email ASC
       LIMIT 1)`;
-    const memberCount = sql<number>`(
+      const memberCount = sql<number>`(
       SELECT count(*)::int FROM ${mt} am WHERE am.account_id = ${accounts.accountId})`;
 
-    const conds: any[] = [];
-    if (search) {
-      conds.push(
-        or(
-          ilike(accounts.name, `%${search}%`),
-          sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN ${mt} am ON am.user_id = au.id
-                      WHERE am.account_id = ${accounts.accountId} AND au.email ILIKE ${'%' + search + '%'})`,
-        ),
+      const conds: any[] = [];
+      if (search) {
+        conds.push(
+          or(
+            ilike(accounts.name, `%${search}%`),
+            sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN ${mt} am ON am.user_id = au.id
+                      WHERE am.account_id = ${accounts.accountId} AND au.email ILIKE ${"%" + search + "%"})`,
+          ),
+        );
+      }
+      if (tierValues.length)
+        conds.push(inArray(creditAccounts.tier, tierValues));
+      // "Paid only" → any tier that isn't free/none (matches isPaidTier semantics).
+      if (paidOnly) {
+        conds.push(
+          and(
+            isNotNull(creditAccounts.tier),
+            notInArray(creditAccounts.tier, [...UNPAID_TIERS]),
+          ),
+        );
+      }
+      if (paymentStatusValues.length)
+        conds.push(inArray(creditAccounts.paymentStatus, paymentStatusValues));
+      // "Has subscription" → a Stripe or RevenueCat subscription is on file.
+      if (hasSubscription === true) {
+        conds.push(
+          or(
+            isNotNull(creditAccounts.stripeSubscriptionId),
+            isNotNull(creditAccounts.revenuecatSubscriptionId),
+          ),
+        );
+      } else if (hasSubscription === false) {
+        conds.push(
+          and(
+            isNull(creditAccounts.stripeSubscriptionId),
+            isNull(creditAccounts.revenuecatSubscriptionId),
+          ),
+        );
+      }
+      if (minBalance) conds.push(gte(creditAccounts.balance, minBalance));
+      if (maxBalance) conds.push(lte(creditAccounts.balance, maxBalance));
+      const where = conds.length ? and(...conds) : undefined;
+
+      const sortCol =
+        sortBy === "balance"
+          ? creditAccounts.balance
+          : sortBy === "name"
+            ? accounts.name
+            : accounts.createdAt;
+
+      const rows = await db
+        .select({
+          accountId: accounts.accountId,
+          name: accounts.name,
+          createdAt: accounts.createdAt,
+          balance: creditAccounts.balance,
+          expiringCredits: creditAccounts.expiringCredits,
+          nonExpiringCredits: creditAccounts.nonExpiringCredits,
+          dailyCreditsBalance: creditAccounts.dailyCreditsBalance,
+          tier: creditAccounts.tier,
+          paymentStatus: creditAccounts.paymentStatus,
+          provider: creditAccounts.provider,
+          planType: creditAccounts.planType,
+          stripeSubscriptionId: creditAccounts.stripeSubscriptionId,
+          ownerEmail,
+          memberCount,
+        })
+        .from(accounts)
+        .leftJoin(
+          creditAccounts,
+          eq(creditAccounts.accountId, accounts.accountId),
+        )
+        .where(where)
+        .orderBy(dir(sortCol))
+        .limit(limit)
+        .offset(offset);
+
+      const [{ total }] = await db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(accounts)
+        .leftJoin(
+          creditAccounts,
+          eq(creditAccounts.accountId, accounts.accountId),
+        )
+        .where(where);
+
+      const list = rows.map((r) => ({
+        accountId: r.accountId,
+        name: r.name,
+        ownerEmail: r.ownerEmail ?? null,
+        memberCount: Number(r.memberCount ?? 0),
+        balance: r.balance ?? null,
+        expiringCredits: r.expiringCredits ?? null,
+        nonExpiringCredits: r.nonExpiringCredits ?? null,
+        dailyCreditsBalance: r.dailyCreditsBalance ?? null,
+        tier: r.tier ?? null,
+        paymentStatus: r.paymentStatus ?? null,
+        provider: r.provider ?? null,
+        planType: r.planType ?? null,
+        stripeSubscriptionId: r.stripeSubscriptionId ?? null,
+        // Stripe customer id/email aren't on credit_accounts — left null until a
+        // billing-customers join is added; the console degrades gracefully.
+        billingCustomerId: null,
+        billingCustomerEmail: null,
+        createdAt: r.createdAt
+          ? new Date(r.createdAt as any).toISOString()
+          : null,
+      }));
+
+      return c.json({
+        accounts: list,
+        total: Number(total ?? 0),
+        page,
+        limit,
+        summary: null,
+      });
+    } catch (e: any) {
+      return c.json(
+        {
+          accounts: [],
+          total: 0,
+          page: 1,
+          limit: 50,
+          summary: null,
+          error: e?.message || String(e),
+        },
+        500,
       );
     }
-    if (tierValues.length) conds.push(inArray(creditAccounts.tier, tierValues));
-    // "Paid only" → any tier that isn't free/none (matches isPaidTier semantics).
-    if (paidOnly) {
-      conds.push(and(isNotNull(creditAccounts.tier), notInArray(creditAccounts.tier, [...UNPAID_TIERS])));
-    }
-    if (paymentStatusValues.length) conds.push(inArray(creditAccounts.paymentStatus, paymentStatusValues));
-    // "Has subscription" → a Stripe or RevenueCat subscription is on file.
-    if (hasSubscription === true) {
-      conds.push(
-        or(isNotNull(creditAccounts.stripeSubscriptionId), isNotNull(creditAccounts.revenuecatSubscriptionId)),
-      );
-    } else if (hasSubscription === false) {
-      conds.push(
-        and(isNull(creditAccounts.stripeSubscriptionId), isNull(creditAccounts.revenuecatSubscriptionId)),
-      );
-    }
-    if (minBalance) conds.push(gte(creditAccounts.balance, minBalance));
-    if (maxBalance) conds.push(lte(creditAccounts.balance, maxBalance));
-    const where = conds.length ? and(...conds) : undefined;
-
-    const sortCol =
-      sortBy === 'balance' ? creditAccounts.balance : sortBy === 'name' ? accounts.name : accounts.createdAt;
-
-    const rows = await db
-      .select({
-        accountId: accounts.accountId,
-        name: accounts.name,
-        createdAt: accounts.createdAt,
-        balance: creditAccounts.balance,
-        expiringCredits: creditAccounts.expiringCredits,
-        nonExpiringCredits: creditAccounts.nonExpiringCredits,
-        dailyCreditsBalance: creditAccounts.dailyCreditsBalance,
-        tier: creditAccounts.tier,
-        paymentStatus: creditAccounts.paymentStatus,
-        provider: creditAccounts.provider,
-        planType: creditAccounts.planType,
-        stripeSubscriptionId: creditAccounts.stripeSubscriptionId,
-        ownerEmail,
-        memberCount,
-      })
-      .from(accounts)
-      .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
-      .where(where)
-      .orderBy(dir(sortCol))
-      .limit(limit)
-      .offset(offset);
-
-    const [{ total }] = await db
-      .select({ total: sql<number>`count(*)::int` })
-      .from(accounts)
-      .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
-      .where(where);
-
-    const list = rows.map((r) => ({
-      accountId: r.accountId,
-      name: r.name,
-      ownerEmail: r.ownerEmail ?? null,
-      memberCount: Number(r.memberCount ?? 0),
-      balance: r.balance ?? null,
-      expiringCredits: r.expiringCredits ?? null,
-      nonExpiringCredits: r.nonExpiringCredits ?? null,
-      dailyCreditsBalance: r.dailyCreditsBalance ?? null,
-      tier: r.tier ?? null,
-      paymentStatus: r.paymentStatus ?? null,
-      provider: r.provider ?? null,
-      planType: r.planType ?? null,
-      stripeSubscriptionId: r.stripeSubscriptionId ?? null,
-      // Stripe customer id/email aren't on credit_accounts — left null until a
-      // billing-customers join is added; the console degrades gracefully.
-      billingCustomerId: null,
-      billingCustomerEmail: null,
-      createdAt: r.createdAt ? new Date(r.createdAt as any).toISOString() : null,
-    }));
-
-    return c.json({ accounts: list, total: Number(total ?? 0), page, limit, summary: null });
-  } catch (e: any) {
-    return c.json({ accounts: [], total: 0, page: 1, limit: 50, summary: null, error: e?.message || String(e) }, 500);
-  }
-  },
+  }),
 );
 
 // ── Account members ──────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/api/accounts/{id}/users',
-    tags: ['admin'],
-    summary: 'List members of an account',
+    method: "get",
+    path: "/api/accounts/{id}/users",
+    tags: ["admin"],
+    summary: "List members of an account",
     ...auth,
     request: { params: z.object({ id: z.string() }) },
     responses: {
-      200: json(z.object({ users: z.array(z.any()) }), 'Account members'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
+      200: json(z.object({ users: z.array(z.any()) }), "Account members"),
+      500: json(z.record(z.string(), z.any()), "Server error"),
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
-  try {
-    const accountId = c.req.param('id');
-    const { db } = await import('../shared/db');
-    const { sql } = await import('drizzle-orm');
-    const { membersTableSql } = await import('./members-table');
-    const mt = await membersTableSql();
+  effectHandler(async (c: any) => {
+    try {
+      const accountId = c.req.param("id");
+      const { db } = await import("../shared/db");
+      const { sql } = await import("drizzle-orm");
+      const { membersTableSql } = await import("./members-table");
+      const mt = await membersTableSql();
 
-    const result: any = await db.execute(sql`
+      const result: any = await db.execute(sql`
       SELECT au.id AS user_id, au.email,
              am.account_role AS account_role,
              au.created_at AS signed_up_at,
@@ -213,65 +278,71 @@ adminApp.openapi(
       INNER JOIN auth.users au ON au.id = am.user_id
       WHERE am.account_id = ${accountId}
       ORDER BY CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, au.email ASC`);
-    const users = Array.isArray(result) ? result : (result?.rows ?? []);
-    return c.json({ users });
-  } catch (e: any) {
-    return c.json({ users: [], error: e?.message || String(e) }, 500);
-  }
-  },
+      const users = Array.isArray(result) ? result : (result?.rows ?? []);
+      return c.json({ users });
+    } catch (e: any) {
+      return c.json({ users: [], error: e?.message || String(e) }, 500);
+    }
+  }),
 );
 
 // ── Credit ledger ────────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/api/accounts/{id}/ledger',
-    tags: ['admin'],
-    summary: 'List credit ledger entries for an account',
+    method: "get",
+    path: "/api/accounts/{id}/ledger",
+    tags: ["admin"],
+    summary: "List credit ledger entries for an account",
     ...auth,
     request: {
       params: z.object({ id: z.string() }),
       query: z.object({ limit: z.string().optional() }),
     },
     responses: {
-      200: json(z.object({ entries: z.array(z.any()) }), 'Credit ledger entries'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
+      200: json(
+        z.object({ entries: z.array(z.any()) }),
+        "Credit ledger entries",
+      ),
+      500: json(z.record(z.string(), z.any()), "Server error"),
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
-  try {
-    const accountId = c.req.param('id');
-    const limit = Math.min(200, Math.max(1, parseInt(c.req.query('limit') || '50', 10)));
-    const { db } = await import('../shared/db');
-    const { creditLedger } = await import('@kortix/db');
-    const { eq, desc } = await import('drizzle-orm');
-    const entries = await db
-      .select()
-      .from(creditLedger)
-      .where(eq(creditLedger.accountId, accountId))
-      .orderBy(desc(creditLedger.createdAt))
-      .limit(limit);
-    return c.json({ entries });
-  } catch (e: any) {
-    return c.json({ entries: [], error: e?.message || String(e) }, 500);
-  }
-  },
+  effectHandler(async (c: any) => {
+    try {
+      const accountId = c.req.param("id");
+      const limit = Math.min(
+        200,
+        Math.max(1, parseInt(c.req.query("limit") || "50", 10)),
+      );
+      const { db } = await import("../shared/db");
+      const { creditLedger } = await import("@kortix/db");
+      const { eq, desc } = await import("drizzle-orm");
+      const entries = await db
+        .select()
+        .from(creditLedger)
+        .where(eq(creditLedger.accountId, accountId))
+        .orderBy(desc(creditLedger.createdAt))
+        .limit(limit);
+      return c.json({ entries });
+    } catch (e: any) {
+      return c.json({ entries: [], error: e?.message || String(e) }, 500);
+    }
+  }),
 );
 
 // ── Grant credits ────────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/api/accounts/{id}/credits',
-    tags: ['admin'],
-    summary: 'Grant credits to an account',
+    method: "post",
+    path: "/api/accounts/{id}/credits",
+    tags: ["admin"],
+    summary: "Grant credits to an account",
     ...auth,
     request: {
       params: z.object({ id: z.string() }),
       body: {
         content: {
-          'application/json': {
+          "application/json": {
             schema: z.object({
               amount: z.number(),
               description: z.string().optional(),
@@ -282,45 +353,56 @@ adminApp.openapi(
       },
     },
     responses: {
-      200: json(z.object({ ok: z.boolean(), balance: z.any() }), 'Grant result'),
-      400: json(z.record(z.string(), z.any()), 'Bad request'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
+      200: json(
+        z.object({ ok: z.boolean(), balance: z.any() }),
+        "Grant result",
+      ),
+      400: json(z.record(z.string(), z.any()), "Bad request"),
+      500: json(z.record(z.string(), z.any()), "Server error"),
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
-  try {
-    const accountId = c.req.param('id');
-    const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
-    const amount = Number(body.amount);
-    const description = String(body.description || 'Admin credit grant');
-    const isExpiring = body.isExpiring !== false;
-    if (!Number.isFinite(amount) || amount <= 0) return c.json({ error: 'amount must be a positive number' }, 400);
+  effectHandler(async (c: any) => {
+    try {
+      const accountId = c.req.param("id");
+      const actorUserId = c.get("userId") as string | undefined;
+      const body = await c.req.json().catch(() => ({}));
+      const amount = Number(body.amount);
+      const description = String(body.description || "Admin credit grant");
+      const isExpiring = body.isExpiring !== false;
+      if (!Number.isFinite(amount) || amount <= 0)
+        return c.json({ error: "amount must be a positive number" }, 400);
 
-    const { grantCredits, getBalance } = await import('../billing/services/credits');
-    await grantCredits(accountId, amount, 'admin_grant', `${description} (by admin ${actorUserId ?? 'unknown'})`, isExpiring);
-    const balance = await getBalance(accountId);
-    return c.json({ ok: true, balance });
-  } catch (e: any) {
-    return c.json({ error: e?.message || String(e) }, 500);
-  }
-  },
+      const { grantCredits, getBalance } =
+        await import("../billing/services/credits");
+      await grantCredits(
+        accountId,
+        amount,
+        "admin_grant",
+        `${description} (by admin ${actorUserId ?? "unknown"})`,
+        isExpiring,
+      );
+      const balance = await getBalance(accountId);
+      return c.json({ ok: true, balance });
+    } catch (e: any) {
+      return c.json({ error: e?.message || String(e) }, 500);
+    }
+  }),
 );
 
 // ── Debit credits ────────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/api/accounts/{id}/credits/debit',
-    tags: ['admin'],
-    summary: 'Debit credits from an account',
+    method: "post",
+    path: "/api/accounts/{id}/credits/debit",
+    tags: ["admin"],
+    summary: "Debit credits from an account",
     ...auth,
     request: {
       params: z.object({ id: z.string() }),
       body: {
         content: {
-          'application/json': {
+          "application/json": {
             schema: z.object({
               amount: z.number(),
               description: z.string().optional(),
@@ -330,29 +412,40 @@ adminApp.openapi(
       },
     },
     responses: {
-      200: json(z.object({ ok: z.boolean(), balance: z.any() }), 'Debit result'),
-      400: json(z.record(z.string(), z.any()), 'Bad request'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
+      200: json(
+        z.object({ ok: z.boolean(), balance: z.any() }),
+        "Debit result",
+      ),
+      400: json(z.record(z.string(), z.any()), "Bad request"),
+      500: json(z.record(z.string(), z.any()), "Server error"),
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
-  try {
-    const accountId = c.req.param('id');
-    const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
-    const amount = Number(body.amount);
-    const description = String(body.description || 'Admin credit debit');
-    if (!Number.isFinite(amount) || amount <= 0) return c.json({ error: 'amount must be a positive number' }, 400);
+  effectHandler(async (c: any) => {
+    try {
+      const accountId = c.req.param("id");
+      const actorUserId = c.get("userId") as string | undefined;
+      const body = await c.req.json().catch(() => ({}));
+      const amount = Number(body.amount);
+      const description = String(body.description || "Admin credit debit");
+      if (!Number.isFinite(amount) || amount <= 0)
+        return c.json({ error: "amount must be a positive number" }, 400);
 
-    const { grantCredits, getBalance } = await import('../billing/services/credits');
-    await grantCredits(accountId, -Math.abs(amount), 'admin_debit', `${description} (by admin ${actorUserId ?? 'unknown'})`, false);
-    const balance = await getBalance(accountId);
-    return c.json({ ok: true, balance });
-  } catch (e: any) {
-    return c.json({ error: e?.message || String(e) }, 500);
-  }
-  },
+      const { grantCredits, getBalance } =
+        await import("../billing/services/credits");
+      await grantCredits(
+        accountId,
+        -Math.abs(amount),
+        "admin_debit",
+        `${description} (by admin ${actorUserId ?? "unknown"})`,
+        false,
+      );
+      const balance = await getBalance(accountId);
+      return c.json({ ok: true, balance });
+    } catch (e: any) {
+      return c.json({ error: e?.message || String(e) }, 500);
+    }
+  }),
 );
 
 // ── Set plan tier (e.g. activate Enterprise) ─────────────────────────────────
@@ -362,72 +455,76 @@ adminApp.openapi(
 // and clears the tier cache so the change takes effect immediately.
 adminApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/api/accounts/{id}/tier',
-    tags: ['admin'],
+    method: "post",
+    path: "/api/accounts/{id}/tier",
+    tags: ["admin"],
     summary: "Set an account's plan tier (e.g. activate Enterprise)",
     ...auth,
     request: {
       params: z.object({ id: z.string() }),
       body: {
         content: {
-          'application/json': {
+          "application/json": {
             schema: z.object({ tier: z.string() }),
           },
         },
       },
     },
     responses: {
-      200: json(z.object({ ok: z.boolean(), tier: z.string() }), 'Updated tier'),
-      400: json(z.record(z.string(), z.any()), 'Bad request'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
+      200: json(
+        z.object({ ok: z.boolean(), tier: z.string() }),
+        "Updated tier",
+      ),
+      400: json(z.record(z.string(), z.any()), "Bad request"),
+      500: json(z.record(z.string(), z.any()), "Server error"),
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
-  try {
-    const accountId = c.req.param('id');
-    const actorUserId = c.get('userId') as string | undefined;
-    const body = await c.req.json().catch(() => ({}));
-    const tier = String(body.tier || '').trim();
-
-    const { isValidTier } = await import('../billing/services/tiers');
-    if (!isValidTier(tier)) return c.json({ error: `unknown tier "${tier}"` }, 400);
-
-    const { getSubscriptionInfo, upsertCreditAccount } = await import(
-      '../billing/repositories/credit-accounts'
-    );
-    const before = await getSubscriptionInfo(accountId);
-    await upsertCreditAccount(accountId, { tier });
-
-    // Tier feeds resolveAccountTier's 60s cache (LLM-gateway entitlement); clear
-    // so the change is visible immediately. The per-request entitlement read
-    // (SSO/SCIM gates) is uncached and already sees it.
-    const { clearAccountLimitCache } = await import('../shared/account-limits');
-    clearAccountLimitCache();
-
+  effectHandler(async (c: any) => {
     try {
-      const { recordAuditEvent } = await import('../shared/audit');
-      await recordAuditEvent({
-        accountId,
-        actorUserId,
-        action: 'admin.account.tier.set',
-        resourceType: 'credit_account',
-        resourceId: accountId,
-        before: { tier: before?.tier ?? null },
-        after: { tier },
-        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
-        userAgent: c.req.header('user-agent') || null,
-      });
-    } catch {
-      /* audit is best-effort — never block the tier change */
-    }
+      const accountId = c.req.param("id");
+      const actorUserId = c.get("userId") as string | undefined;
+      const body = await c.req.json().catch(() => ({}));
+      const tier = String(body.tier || "").trim();
 
-    return c.json({ ok: true, tier });
-  } catch (e: any) {
-    return c.json({ error: e?.message || String(e) }, 500);
-  }
-  },
+      const { isValidTier } = await import("../billing/services/tiers");
+      if (!isValidTier(tier))
+        return c.json({ error: `unknown tier "${tier}"` }, 400);
+
+      const { getSubscriptionInfo, upsertCreditAccount } =
+        await import("../billing/repositories/credit-accounts");
+      const before = await getSubscriptionInfo(accountId);
+      await upsertCreditAccount(accountId, { tier });
+
+      // Tier feeds resolveAccountTier's 60s cache (LLM-gateway entitlement); clear
+      // so the change is visible immediately. The per-request entitlement read
+      // (SSO/SCIM gates) is uncached and already sees it.
+      const { clearAccountLimitCache } =
+        await import("../shared/account-limits");
+      clearAccountLimitCache();
+
+      try {
+        const { recordAuditEvent } = await import("../shared/audit");
+        await recordAuditEvent({
+          accountId,
+          actorUserId,
+          action: "admin.account.tier.set",
+          resourceType: "credit_account",
+          resourceId: accountId,
+          before: { tier: before?.tier ?? null },
+          after: { tier },
+          ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || null,
+          userAgent: c.req.header("user-agent") || null,
+        });
+      } catch {
+        /* audit is best-effort — never block the tier change */
+      }
+
+      return c.json({ ok: true, tier });
+    } catch (e: any) {
+      return c.json({ error: e?.message || String(e) }, 500);
+    }
+  }),
 );
 
 // ── Provider load-balancing: split weights ───────────────────────────────────
@@ -435,46 +532,83 @@ adminApp.openapi(
 // (platform/services/provider-balancer); unset/zero -> first allowed provider.
 adminApp.openapi(
   createRoute({
-    method: 'get', path: '/api/provider-distribution', tags: ['admin'],
-    summary: 'Get provider split weights', ...auth,
-    responses: { 200: json(z.record(z.string(), z.any()), 'weights'), ...errors(401, 403) },
+    method: "get",
+    path: "/api/provider-distribution",
+    tags: ["admin"],
+    summary: "Get provider split weights",
+    ...auth,
+    responses: {
+      200: json(z.record(z.string(), z.any()), "weights"),
+      ...errors(401, 403),
+    },
   }),
-  async (c: any) => {
-    const { config } = await import('../config');
-    const { db } = await import('../shared/db');
-    const { platformSettings } = await import('@kortix/db');
-    const { eq } = await import('drizzle-orm');
-    const { PROVIDER_DISTRIBUTION_KEY } = await import('../platform/services/provider-balancer');
-    const [row] = await db.select({ value: platformSettings.value }).from(platformSettings)
-      .where(eq(platformSettings.key, PROVIDER_DISTRIBUTION_KEY)).limit(1);
-    return c.json({ allowed: config.ALLOWED_SANDBOX_PROVIDERS, default: config.getDefaultProvider(), weights: row?.value ?? {} });
-  },
+  effectHandler(async (c: any) => {
+    const { config } = await import("../config");
+    const { db } = await import("../shared/db");
+    const { platformSettings } = await import("@kortix/db");
+    const { eq } = await import("drizzle-orm");
+    const { PROVIDER_DISTRIBUTION_KEY } =
+      await import("../platform/services/provider-balancer");
+    const [row] = await db
+      .select({ value: platformSettings.value })
+      .from(platformSettings)
+      .where(eq(platformSettings.key, PROVIDER_DISTRIBUTION_KEY))
+      .limit(1);
+    return c.json({
+      allowed: config.ALLOWED_SANDBOX_PROVIDERS,
+      default: config.getDefaultProvider(),
+      weights: row?.value ?? {},
+    });
+  }),
 );
 
 // PUT new weights ({ platinum: 70, daytona: 30 }). Filtered to allowed providers.
 adminApp.openapi(
   createRoute({
-    method: 'put', path: '/api/provider-distribution', tags: ['admin'],
-    summary: 'Set provider split weights', ...auth,
-    request: { body: { content: { 'application/json': { schema: z.record(z.string(), z.number()) } } } },
-    responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(401, 403) },
+    method: "put",
+    path: "/api/provider-distribution",
+    tags: ["admin"],
+    summary: "Set provider split weights",
+    ...auth,
+    request: {
+      body: {
+        content: {
+          "application/json": { schema: z.record(z.string(), z.number()) },
+        },
+      },
+    },
+    responses: {
+      200: json(z.record(z.string(), z.any()), "ok"),
+      ...errors(401, 403),
+    },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const body = await c.req.json().catch(() => ({}));
-    const src = (body && typeof body.weights === 'object') ? body.weights : body;
-    const { config } = await import('../config');
+    const src = body && typeof body.weights === "object" ? body.weights : body;
+    const { config } = await import("../config");
     const weights: Record<string, number> = {};
     for (const p of config.ALLOWED_SANDBOX_PROVIDERS) {
-      const w = Number(src?.[p]); if (Number.isFinite(w) && w >= 0) weights[p] = w;
+      const w = Number(src?.[p]);
+      if (Number.isFinite(w) && w >= 0) weights[p] = w;
     }
-    const { db } = await import('../shared/db');
-    const { platformSettings } = await import('@kortix/db');
-    const { PROVIDER_DISTRIBUTION_KEY, invalidateProviderDistributionCache } = await import('../platform/services/provider-balancer');
-    await db.insert(platformSettings).values({ key: PROVIDER_DISTRIBUTION_KEY, value: weights, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: platformSettings.key, set: { value: weights, updatedAt: new Date() } });
+    const { db } = await import("../shared/db");
+    const { platformSettings } = await import("@kortix/db");
+    const { PROVIDER_DISTRIBUTION_KEY, invalidateProviderDistributionCache } =
+      await import("../platform/services/provider-balancer");
+    await db
+      .insert(platformSettings)
+      .values({
+        key: PROVIDER_DISTRIBUTION_KEY,
+        value: weights,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: platformSettings.key,
+        set: { value: weights, updatedAt: new Date() },
+      });
     invalidateProviderDistributionCache();
     return c.json({ ok: true, weights });
-  },
+  }),
 );
 
 // ── Warm-fork snapshots (per-project ~2s session start; DB-backed, not env) ──
@@ -483,36 +617,64 @@ adminApp.openapi(
 // platinum host). Default ON — pure upside (a failed bake degrades to cold).
 adminApp.openapi(
   createRoute({
-    method: 'get', path: '/api/warm-snapshot-config', tags: ['admin'],
-    summary: 'Get warm snapshot config', ...auth,
-    responses: { 200: json(z.record(z.string(), z.any()), 'config'), ...errors(401, 403) },
+    method: "get",
+    path: "/api/warm-snapshot-config",
+    tags: ["admin"],
+    summary: "Get warm snapshot config",
+    ...auth,
+    responses: {
+      200: json(z.record(z.string(), z.any()), "config"),
+      ...errors(401, 403),
+    },
   }),
-  async (c: any) => {
-    const { warmSnapshotSetting } = await import('../platform/services/runtime-settings');
+  effectHandler(async (c: any) => {
+    const { warmSnapshotSetting } =
+      await import("../platform/services/runtime-settings");
     return c.json(warmSnapshotSetting());
-  },
+  }),
 );
 
 // PUT warm-snapshot toggle ({ enabled }). OFF = every session cold-clones its repo.
 adminApp.openapi(
   createRoute({
-    method: 'put', path: '/api/warm-snapshot-config', tags: ['admin'],
-    summary: 'Set warm snapshot config', ...auth,
-    request: { body: { content: { 'application/json': { schema: z.object({ enabled: z.boolean() }) } } } },
-    responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(401, 403) },
+    method: "put",
+    path: "/api/warm-snapshot-config",
+    tags: ["admin"],
+    summary: "Set warm snapshot config",
+    ...auth,
+    request: {
+      body: {
+        content: {
+          "application/json": { schema: z.object({ enabled: z.boolean() }) },
+        },
+      },
+    },
+    responses: {
+      200: json(z.record(z.string(), z.any()), "ok"),
+      ...errors(401, 403),
+    },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const body = await c.req.json().catch(() => ({}));
     const value = { enabled: body?.enabled === true };
-    const { db } = await import('../shared/db');
-    const { platformSettings } = await import('@kortix/db');
-    const { WARM_SNAPSHOT_KEY, invalidateRuntimeSettings, refreshRuntimeSettings } = await import('../platform/services/runtime-settings');
-    await db.insert(platformSettings).values({ key: WARM_SNAPSHOT_KEY, value, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: platformSettings.key, set: { value, updatedAt: new Date() } });
+    const { db } = await import("../shared/db");
+    const { platformSettings } = await import("@kortix/db");
+    const {
+      WARM_SNAPSHOT_KEY,
+      invalidateRuntimeSettings,
+      refreshRuntimeSettings,
+    } = await import("../platform/services/runtime-settings");
+    await db
+      .insert(platformSettings)
+      .values({ key: WARM_SNAPSHOT_KEY, value, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: platformSettings.key,
+        set: { value, updatedAt: new Date() },
+      });
     invalidateRuntimeSettings();
     await refreshRuntimeSettings();
     return c.json({ ok: true, ...value });
-  },
+  }),
 );
 
 // ── Provider failover (one-shot, on session init; DB-backed, not env) ────────
@@ -520,65 +682,119 @@ adminApp.openapi(
 // session at birth hands off once to the next allowed provider. Default OFF.
 adminApp.openapi(
   createRoute({
-    method: 'get', path: '/api/provider-fallback', tags: ['admin'],
-    summary: 'Get provider failover config', ...auth,
-    responses: { 200: json(z.record(z.string(), z.any()), 'config'), ...errors(401, 403) },
+    method: "get",
+    path: "/api/provider-fallback",
+    tags: ["admin"],
+    summary: "Get provider failover config",
+    ...auth,
+    responses: {
+      200: json(z.record(z.string(), z.any()), "config"),
+      ...errors(401, 403),
+    },
   }),
-  async (c: any) => {
-    const { providerFallbackSetting } = await import('../platform/services/runtime-settings');
+  effectHandler(async (c: any) => {
+    const { providerFallbackSetting } =
+      await import("../platform/services/runtime-settings");
     return c.json(providerFallbackSetting());
-  },
+  }),
 );
 
 // PUT failover toggle ({ enabled }).
 adminApp.openapi(
   createRoute({
-    method: 'put', path: '/api/provider-fallback', tags: ['admin'],
-    summary: 'Set provider failover config', ...auth,
-    request: { body: { content: { 'application/json': { schema: z.object({ enabled: z.boolean() }) } } } },
-    responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(401, 403) },
+    method: "put",
+    path: "/api/provider-fallback",
+    tags: ["admin"],
+    summary: "Set provider failover config",
+    ...auth,
+    request: {
+      body: {
+        content: {
+          "application/json": { schema: z.object({ enabled: z.boolean() }) },
+        },
+      },
+    },
+    responses: {
+      200: json(z.record(z.string(), z.any()), "ok"),
+      ...errors(401, 403),
+    },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const body = await c.req.json().catch(() => ({}));
     const value = { enabled: body?.enabled === true };
-    const { db } = await import('../shared/db');
-    const { platformSettings } = await import('@kortix/db');
-    const { PROVIDER_FALLBACK_KEY, invalidateRuntimeSettings, refreshRuntimeSettings } = await import('../platform/services/runtime-settings');
-    await db.insert(platformSettings).values({ key: PROVIDER_FALLBACK_KEY, value, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: platformSettings.key, set: { value, updatedAt: new Date() } });
+    const { db } = await import("../shared/db");
+    const { platformSettings } = await import("@kortix/db");
+    const {
+      PROVIDER_FALLBACK_KEY,
+      invalidateRuntimeSettings,
+      refreshRuntimeSettings,
+    } = await import("../platform/services/runtime-settings");
+    await db
+      .insert(platformSettings)
+      .values({ key: PROVIDER_FALLBACK_KEY, value, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: platformSettings.key,
+        set: { value, updatedAt: new Date() },
+      });
     invalidateRuntimeSettings();
     await refreshRuntimeSettings();
     return c.json({ ok: true, ...value });
-  },
+  }),
 );
 
 // ── Sandboxes: list all with provider + a per-provider count ─────────────────
 adminApp.openapi(
   createRoute({
-    method: 'get', path: '/api/sandboxes', tags: ['admin'],
-    summary: 'List sandboxes with provider type', ...auth,
-    request: { query: z.object({ limit: z.string().optional(), provider: z.string().optional(), status: z.string().optional() }) },
-    responses: { 200: json(z.record(z.string(), z.any()), 'sandboxes'), ...errors(401, 403) },
+    method: "get",
+    path: "/api/sandboxes",
+    tags: ["admin"],
+    summary: "List sandboxes with provider type",
+    ...auth,
+    request: {
+      query: z.object({
+        limit: z.string().optional(),
+        provider: z.string().optional(),
+        status: z.string().optional(),
+      }),
+    },
+    responses: {
+      200: json(z.record(z.string(), z.any()), "sandboxes"),
+      ...errors(401, 403),
+    },
   }),
-  async (c: any) => {
-    const { db } = await import('../shared/db');
-    const { sessionSandboxes } = await import('@kortix/db');
-    const { desc, eq, and, sql } = await import('drizzle-orm');
-    const limit = Math.min(Number(c.req.query('limit') || 200), 1000);
+  effectHandler(async (c: any) => {
+    const { db } = await import("../shared/db");
+    const { sessionSandboxes } = await import("@kortix/db");
+    const { desc, eq, and, sql } = await import("drizzle-orm");
+    const limit = Math.min(Number(c.req.query("limit") || 200), 1000);
     const conds: any[] = [];
-    const prov = c.req.query('provider'); const st = c.req.query('status');
+    const prov = c.req.query("provider");
+    const st = c.req.query("status");
     if (prov) conds.push(eq(sessionSandboxes.provider, prov as any));
     if (st) conds.push(eq(sessionSandboxes.status, st as any));
-    const rows = await db.select({
-      sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId,
-      accountId: sessionSandboxes.accountId, projectId: sessionSandboxes.projectId,
-      provider: sessionSandboxes.provider, externalId: sessionSandboxes.externalId,
-      status: sessionSandboxes.status, lastUsedAt: sessionSandboxes.lastUsedAt,
-    }).from(sessionSandboxes).where(conds.length ? and(...conds) : undefined)
-      .orderBy(desc(sessionSandboxes.updatedAt)).limit(limit);
-    const byProvider = await db.execute(sql`SELECT provider AS provider, count(*)::int AS count FROM kortix.session_sandboxes WHERE status <> 'archived' GROUP BY provider`);
-    return c.json({ sandboxes: rows, byProvider: (byProvider as any).rows ?? byProvider });
-  },
+    const rows = await db
+      .select({
+        sandboxId: sessionSandboxes.sandboxId,
+        sessionId: sessionSandboxes.sessionId,
+        accountId: sessionSandboxes.accountId,
+        projectId: sessionSandboxes.projectId,
+        provider: sessionSandboxes.provider,
+        externalId: sessionSandboxes.externalId,
+        status: sessionSandboxes.status,
+        lastUsedAt: sessionSandboxes.lastUsedAt,
+      })
+      .from(sessionSandboxes)
+      .where(conds.length ? and(...conds) : undefined)
+      .orderBy(desc(sessionSandboxes.updatedAt))
+      .limit(limit);
+    const byProvider = await db.execute(
+      sql`SELECT provider AS provider, count(*)::int AS count FROM kortix.session_sandboxes WHERE status <> 'archived' GROUP BY provider`,
+    );
+    return c.json({
+      sandboxes: rows,
+      byProvider: (byProvider as any).rows ?? byProvider,
+    });
+  }),
 );
 
 // ── Migrate a session's sandbox to another provider ──────────────────────────
@@ -586,64 +802,126 @@ adminApp.openapi(
 // rebuild statelessly), then async-removes the old provider's box.
 adminApp.openapi(
   createRoute({
-    method: 'post', path: '/api/sandboxes/{sessionId}/migrate', tags: ['admin'],
-    summary: 'Migrate sandbox to another provider', ...auth,
-    request: { params: z.object({ sessionId: z.string() }), body: { content: { 'application/json': { schema: z.object({ targetProvider: z.string() }) } } } },
-    responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(400, 401, 403, 404) },
+    method: "post",
+    path: "/api/sandboxes/{sessionId}/migrate",
+    tags: ["admin"],
+    summary: "Migrate sandbox to another provider",
+    ...auth,
+    request: {
+      params: z.object({ sessionId: z.string() }),
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({ targetProvider: z.string() }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.record(z.string(), z.any()), "ok"),
+      ...errors(400, 401, 403, 404),
+    },
   }),
-  async (c: any) => {
-    const sessionId = c.req.param('sessionId');
+  effectHandler(async (c: any) => {
+    const sessionId = c.req.param("sessionId");
     const body = await c.req.json().catch(() => ({}));
-    const target = String(body.targetProvider || '');
-    const { config } = await import('../config');
-    if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(target)) return c.json({ error: 'invalid targetProvider' }, 400);
-    const { db } = await import('../shared/db');
-    const { sessionSandboxes, projectSessions, projects } = await import('@kortix/db');
-    const { eq } = await import('drizzle-orm');
-    const [sb] = await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.sessionId, sessionId)).limit(1);
-    if (!sb) return c.json({ error: 'sandbox not found' }, 404);
-    if (sb.provider === target) return c.json({ error: 'already on target provider' }, 400);
-    const [sess] = await db.select().from(projectSessions).where(eq(projectSessions.sessionId, sessionId)).limit(1);
-    if (!sess) return c.json({ error: 'session not found' }, 404);
-    const [proj] = await db.select().from(projects).where(eq(projects.projectId, sess.projectId)).limit(1);
-    if (!proj) return c.json({ error: 'project not found' }, 404);
-    const oldProvider = sb.provider; const oldExternalId = sb.externalId;
-    const { getProvider } = await import('../platform/providers');
+    const target = String(body.targetProvider || "");
+    const { config } = await import("../config");
+    if (
+      !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(target)
+    )
+      return c.json({ error: "invalid targetProvider" }, 400);
+    const { db } = await import("../shared/db");
+    const { sessionSandboxes, projectSessions, projects } =
+      await import("@kortix/db");
+    const { eq } = await import("drizzle-orm");
+    const [sb] = await db
+      .select()
+      .from(sessionSandboxes)
+      .where(eq(sessionSandboxes.sessionId, sessionId))
+      .limit(1);
+    if (!sb) return c.json({ error: "sandbox not found" }, 404);
+    if (sb.provider === target)
+      return c.json({ error: "already on target provider" }, 400);
+    const [sess] = await db
+      .select()
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, sessionId))
+      .limit(1);
+    if (!sess) return c.json({ error: "session not found" }, 404);
+    const [proj] = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.projectId, sess.projectId))
+      .limit(1);
+    if (!proj) return c.json({ error: "project not found" }, 404);
+    const oldProvider = sb.provider;
+    const oldExternalId = sb.externalId;
+    const { getProvider } = await import("../platform/providers");
     // Data migration is via the session git branch (KORTIX_BRANCH_NAME=sessionId):
     // the target re-clones it, so only *committed* work crosses over. Flush the
     // old box's working tree to the branch first (best-effort, only while it's
     // still active) so uncommitted changes survive the move. Same daemon contract
     // as the /commit-push route — resolveEndpoint injects the service Bearer.
-    if (oldExternalId && sb.status === 'active') {
+    if (oldExternalId && sb.status === "active") {
       try {
-        const ep = await getProvider(oldProvider as any).resolveEndpoint(oldExternalId);
-        const res = await fetch(`${ep.url.replace(/\/$/, '')}/kortix/git/commit-push`, {
-          method: 'POST', headers: ep.headers,
-          body: JSON.stringify({ message: `chore: flush before migrate ${oldProvider}→${target}` }),
-          signal: AbortSignal.timeout(30_000),
-        });
-        console.log(`[migrate] flush ${sessionId} ${oldProvider}: ${res.status}`);
+        const ep = await getProvider(oldProvider as any).resolveEndpoint(
+          oldExternalId,
+        );
+        const res = await adminFetch(
+          `${ep.url.replace(/\/$/, "")}/kortix/git/commit-push`,
+          {
+            method: "POST",
+            headers: ep.headers,
+            body: JSON.stringify({
+              message: `chore: flush before migrate ${oldProvider}→${target}`,
+            }),
+            signal: AbortSignal.timeout(30_000),
+          },
+        );
+        console.log(
+          `[migrate] flush ${sessionId} ${oldProvider}: ${res.status}`,
+        );
       } catch (e: any) {
-        console.warn('[migrate] pre-teardown commit-push failed (committed work still migrates):', e?.message ?? e);
+        console.warn(
+          "[migrate] pre-teardown commit-push failed (committed work still migrates):",
+          e?.message ?? e,
+        );
       }
     }
     if (oldExternalId) {
-      getProvider(oldProvider as any).remove(oldExternalId).catch((e: any) => console.warn('[migrate] old remove failed:', e?.message ?? e));
+      getProvider(oldProvider as any)
+        .remove(oldExternalId)
+        .catch((e: any) =>
+          console.warn("[migrate] old remove failed:", e?.message ?? e),
+        );
     }
-    await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sessionId, sessionId));
-    const { allocateRuntimeOnOpen } = await import('../projects/routes/shared');
+    await db
+      .delete(sessionSandboxes)
+      .where(eq(sessionSandboxes.sessionId, sessionId));
+    const { allocateRuntimeOnOpen } = await import("../projects/routes/shared");
     await allocateRuntimeOnOpen(
-      { row: proj as any, userId: sess.createdBy ?? '' },
-      { sandboxProvider: target, baseRef: sess.baseRef, agentName: sess.agentName },
-      sess.projectId, sessionId,
+      { row: proj as any, userId: sess.createdBy ?? "" },
+      {
+        sandboxProvider: target,
+        baseRef: sess.baseRef,
+        agentName: sess.agentName,
+      },
+      sess.projectId,
+      sessionId,
     );
-    const { recordProviderEvent } = await import('../platform/services/provider-events');
+    const { recordProviderEvent } =
+      await import("../platform/services/provider-events");
     recordProviderEvent({
-      provider: target, kind: 'migrate', outcome: 'ok', fromProvider: oldProvider,
-      sessionId, accountId: (proj as any).accountId ?? null,
+      provider: target,
+      kind: "migrate",
+      outcome: "ok",
+      fromProvider: oldProvider,
+      sessionId,
+      accountId: (proj as any).accountId ?? null,
     });
     return c.json({ ok: true, sessionId, from: oldProvider, to: target });
-  },
+  }),
 );
 
 // ── Provider analytics ───────────────────────────────────────────────────────
@@ -653,42 +931,60 @@ adminApp.openapi(
 // and aggregate in JS rather than push percentiles into SQL.
 adminApp.openapi(
   createRoute({
-    method: 'get', path: '/api/provider-analytics', tags: ['admin'],
-    summary: 'Provider performance analytics', ...auth,
+    method: "get",
+    path: "/api/provider-analytics",
+    tags: ["admin"],
+    summary: "Provider performance analytics",
+    ...auth,
     request: { query: z.object({ days: z.string().optional() }) },
-    responses: { 200: json(z.record(z.string(), z.any()), 'analytics'), ...errors(401, 403) },
+    responses: {
+      200: json(z.record(z.string(), z.any()), "analytics"),
+      ...errors(401, 403),
+    },
   }),
-  async (c: any) => {
-    const { db } = await import('../shared/db');
-    const { providerEvents } = await import('@kortix/db');
-    const { gte, desc } = await import('drizzle-orm');
-    const days = Math.min(Math.max(Number(c.req.query('days') || 7), 1), 90);
+  effectHandler(async (c: any) => {
+    const { db } = await import("../shared/db");
+    const { providerEvents } = await import("@kortix/db");
+    const { gte, desc } = await import("drizzle-orm");
+    const days = Math.min(Math.max(Number(c.req.query("days") || 7), 1), 90);
     const cutoff = new Date(Date.now() - days * 86_400_000);
-    const rows = await db.select().from(providerEvents)
+    const rows = await db
+      .select()
+      .from(providerEvents)
       .where(gte(providerEvents.createdAt, cutoff))
-      .orderBy(desc(providerEvents.createdAt)).limit(20_000);
+      .orderBy(desc(providerEvents.createdAt))
+      .limit(20_000);
 
     const pct = (xs: number[], p: number): number => {
       if (!xs.length) return 0;
       const s = [...xs].sort((a, b) => a - b);
-      return Math.round(s[Math.min(s.length - 1, Math.floor((p / 100) * (s.length - 1)))]);
+      return Math.round(
+        s[Math.min(s.length - 1, Math.floor((p / 100) * (s.length - 1)))],
+      );
     };
     const normLabel = (l: string): string =>
-      l.startsWith('provider-create') ? 'provider-create'
-        : (l === 'image-built' || l === 'image-cached') ? 'image' : l;
+      l.startsWith("provider-create")
+        ? "provider-create"
+        : l === "image-built" || l === "image-cached"
+          ? "image"
+          : l;
     const dayKey = (d: Date): string => new Date(d).toISOString().slice(0, 10);
 
-    const provision = rows.filter((r: any) => r.kind === 'provision');
-    const migrate = rows.filter((r: any) => r.kind === 'migrate');
-    const provNames = Array.from(new Set(provision.map((r: any) => r.provider))).sort();
+    const provision = rows.filter((r: any) => r.kind === "provision");
+    const migrate = rows.filter((r: any) => r.kind === "migrate");
+    const provNames = Array.from(
+      new Set(provision.map((r: any) => r.provider)),
+    ).sort();
 
     // Per-provider summary + phase breakdown.
     const providers = provNames.map((p) => {
       const evs = provision.filter((r: any) => r.provider === p);
-      const ok = evs.filter((r: any) => r.outcome === 'ok');
-      const error = evs.filter((r: any) => r.outcome === 'error');
-      const stopped = evs.filter((r: any) => r.outcome === 'stopped');
-      const okMs = ok.map((r: any) => r.totalMs ?? 0).filter((n: number) => n > 0);
+      const ok = evs.filter((r: any) => r.outcome === "ok");
+      const error = evs.filter((r: any) => r.outcome === "error");
+      const stopped = evs.filter((r: any) => r.outcome === "stopped");
+      const okMs = ok
+        .map((r: any) => r.totalMs ?? 0)
+        .filter((n: number) => n > 0);
       const finished = ok.length + error.length;
       const phaseTotals: Record<string, { sum: number; n: number }> = {};
       for (const r of ok) {
@@ -699,13 +995,24 @@ adminApp.openapi(
           phaseTotals[k].n += 1;
         }
       }
-      const phases = Object.entries(phaseTotals).map(([label, v]) => ({ label, avgMs: Math.round(v.sum / v.n) }));
+      const phases = Object.entries(phaseTotals).map(([label, v]) => ({
+        label,
+        avgMs: Math.round(v.sum / v.n),
+      }));
       return {
         provider: p,
-        provisions: evs.length, ok: ok.length, error: error.length, stopped: stopped.length,
+        provisions: evs.length,
+        ok: ok.length,
+        error: error.length,
+        stopped: stopped.length,
         successRate: finished ? Math.round((ok.length / finished) * 100) : null,
-        p50Ms: pct(okMs, 50), p95Ms: pct(okMs, 95),
-        avgMs: okMs.length ? Math.round(okMs.reduce((a: number, b: number) => a + b, 0) / okMs.length) : 0,
+        p50Ms: pct(okMs, 50),
+        p95Ms: pct(okMs, 95),
+        avgMs: okMs.length
+          ? Math.round(
+              okMs.reduce((a: number, b: number) => a + b, 0) / okMs.length,
+            )
+          : 0,
         phases,
       };
     });
@@ -714,20 +1021,23 @@ adminApp.openapi(
     const dayBuckets: Record<string, Record<string, number[]>> = {};
     for (const r of provision as any[]) {
       const dk = dayKey(r.createdAt);
-      ((dayBuckets[dk] ||= {})[r.provider] ||= []);
-      if (r.outcome === 'ok' && r.totalMs) dayBuckets[dk][r.provider].push(r.totalMs);
+      (dayBuckets[dk] ||= {})[r.provider] ||= [];
+      if (r.outcome === "ok" && r.totalMs)
+        dayBuckets[dk][r.provider].push(r.totalMs);
     }
     const allDays: string[] = [];
-    for (let i = days - 1; i >= 0; i--) allDays.push(dayKey(new Date(Date.now() - i * 86_400_000)));
+    for (let i = days - 1; i >= 0; i--)
+      allDays.push(dayKey(new Date(Date.now() - i * 86_400_000)));
     const countByDay: Record<string, Record<string, number>> = {};
     for (const r of provision as any[]) {
       const dk = dayKey(r.createdAt);
-      (countByDay[dk] ||= {});
+      countByDay[dk] ||= {};
       countByDay[dk][r.provider] = (countByDay[dk][r.provider] || 0) + 1;
     }
     const latencyByDay = allDays.map((d) => {
       const row: Record<string, unknown> = { date: d };
-      for (const p of provNames) row[p] = dayBuckets[d]?.[p]?.length ? pct(dayBuckets[d][p], 50) : null;
+      for (const p of provNames)
+        row[p] = dayBuckets[d]?.[p]?.length ? pct(dayBuckets[d][p], 50) : null;
       return row;
     });
     const volumeByDay = allDays.map((d) => {
@@ -739,27 +1049,42 @@ adminApp.openapi(
     // Migration flows.
     const flowMap: Record<string, number> = {};
     for (const r of migrate as any[]) {
-      const key = `${r.fromProvider ?? '?'}→${r.provider}`;
+      const key = `${r.fromProvider ?? "?"}→${r.provider}`;
       flowMap[key] = (flowMap[key] || 0) + 1;
     }
-    const migrations = Object.entries(flowMap).map(([flow, count]) => ({ flow, count }));
+    const migrations = Object.entries(flowMap).map(([flow, count]) => ({
+      flow,
+      count,
+    }));
 
-    const okTot = provision.filter((r: any) => r.outcome === 'ok').length;
-    const errTot = provision.filter((r: any) => r.outcome === 'error').length;
+    const okTot = provision.filter((r: any) => r.outcome === "ok").length;
+    const errTot = provision.filter((r: any) => r.outcome === "error").length;
     const recentErrors = (rows as any[])
-      .filter((r) => r.outcome === 'error')
+      .filter((r) => r.outcome === "error")
       .slice(0, 10)
-      .map((r) => ({ provider: r.provider, errorClass: r.errorClass, error: r.error, createdAt: r.createdAt }));
+      .map((r) => ({
+        provider: r.provider,
+        errorClass: r.errorClass,
+        error: r.error,
+        createdAt: r.createdAt,
+      }));
 
     return c.json({
       days,
       totals: {
-        provisions: provision.length, ok: okTot, error: errTot,
-        stopped: provision.filter((r: any) => r.outcome === 'stopped').length,
+        provisions: provision.length,
+        ok: okTot,
+        error: errTot,
+        stopped: provision.filter((r: any) => r.outcome === "stopped").length,
         migrations: migrate.length,
-        successRate: okTot + errTot ? Math.round((okTot / (okTot + errTot)) * 100) : null,
+        successRate:
+          okTot + errTot ? Math.round((okTot / (okTot + errTot)) * 100) : null,
       },
-      providers, latencyByDay, volumeByDay, migrations, recentErrors,
+      providers,
+      latencyByDay,
+      volumeByDay,
+      migrations,
+      recentErrors,
     });
-  },
+  }),
 );

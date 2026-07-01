@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Install service — resolve a catalog entry (inline for the starter pack,
  * fetched-from-source for external registries), plan its install with

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Project-secret sharing — who can use a secret (and therefore the connector
  * bound to it). Three dashboard options map onto one mechanism:
@@ -19,7 +20,7 @@ import {
   projectSessionGrants,
   projectSessions,
 } from '@kortix/db';
-import { db } from '../shared/db';
+import { executorDb as db } from './effect';
 
 export type ShareScope = 'project' | 'restricted';
 

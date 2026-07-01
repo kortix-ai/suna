@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { HTTPException } from 'hono/http-exception';
 import {
   matchAllowedRoute,
@@ -5,7 +6,7 @@ import {
 } from '../../config/proxy-services';
 import { validateSecretKey } from '../../../repositories/api-keys';
 import { isKortixToken } from '../../../shared/crypto';
-import { config, getToolCost } from '../../../config';
+import { routerConfig as config, getToolCost } from '../../effect';
 import { deductToolCredits, deductLLMCredits } from '../../services/billing';
 import { getModel } from '../../config/models';
 import { calculateCost } from '../../services/llm';

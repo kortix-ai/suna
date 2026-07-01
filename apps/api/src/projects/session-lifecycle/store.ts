@@ -1,6 +1,7 @@
+import type { Effect } from 'effect';
 import { sessionLifecycleCommands } from '@kortix/db';
 import { and, asc, eq, isNull, lte, or } from 'drizzle-orm';
-import { db } from '../../shared/db';
+import { sharedDb as db } from '../../shared/effect';
 import type {
   CreateSessionCommand,
   QueuedCreateSessionPayload,

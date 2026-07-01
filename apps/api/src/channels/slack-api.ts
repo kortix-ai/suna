@@ -1,3 +1,6 @@
+import type { Effect } from 'effect';
+import { sharedFetch, sharedSleep } from '../shared/effect';
+
 const SLACK_API_BASE = 'https://slack.com/api';
 
 interface SlackApiResult {
@@ -18,7 +21,7 @@ const TRANSIENT_SLACK_ERRORS = new Set([
   'request_timeout',
 ]);
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = sharedSleep;
 
 async function slackApiCall(
   token: string,
@@ -37,7 +40,7 @@ async function slackApiCall(
   let last: SlackApiResult = { ok: false, error: 'unknown' };
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const res = await fetch(`${SLACK_API_BASE}/${method}`, {
+      const res = await sharedFetch(`${SLACK_API_BASE}/${method}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json; charset=utf-8',

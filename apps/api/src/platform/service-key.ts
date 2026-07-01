@@ -1,6 +1,7 @@
+import type { Effect } from 'effect';
 import { eq } from 'drizzle-orm';
 import { sandboxes, sessionSandboxes } from '@kortix/db';
-import { db } from '../shared/db';
+import { platformDb as db } from './effect';
 
 /**
  * The serviceKey == the sandbox's KORTIX_TOKEN — the bearer the daemon's

@@ -37,11 +37,16 @@ import {
   OPENCODE_VERSION,
   PLAYWRIGHT_VERSION,
 } from '@kortix/shared';
-import { config } from '../config';
+import { Effect } from 'effect';
+import { AppConfig } from '../effect/services';
+import { runEffectOrThrow } from '../effect/http';
 import { getDaytonaWarm, warmSnapshotsEnabled } from '../shared/daytona';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
+const warmBakeConfig = await runEffectOrThrow(Effect.gen(function* () {
+  return yield* AppConfig;
+}));
 
 // Same artifact set the Dockerfile snapshot bakes (snapshots/providers/daytona.ts).
 const AGENT_BIN_PATH = process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH
@@ -92,6 +97,9 @@ export class WarmBakeError extends Error {
 export type WarmSandbox = Awaited<ReturnType<ReturnType<typeof getDaytonaWarm>['create']>>;
 type Sandbox = WarmSandbox;
 
+const sleep = (ms: number): Promise<void> =>
+  runEffectOrThrow(Effect.sleep(`${ms} millis`));
+
 /** Run a multi-line script in the sandbox, base64-piped to dodge shell quoting. */
 export async function runScript(sb: Sandbox, script: string, timeoutS: number): Promise<{ exitCode: number; out: string }> {
   const b64 = Buffer.from(script, 'utf8').toString('base64');
@@ -129,9 +137,9 @@ export async function createHealthyBuilder(baseSnapshot: string, onLog?: (l: str
       box = await daytona.create(
         {
           snapshot: baseSnapshot,
-          autoStopInterval: Math.max(1, config.KORTIX_SANDBOX_AUTOSTOP_MINUTES || 15),
-          autoArchiveInterval: config.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
-          autoDeleteInterval: config.KORTIX_SANDBOX_AUTODELETE_MINUTES,
+          autoStopInterval: Math.max(1, warmBakeConfig.KORTIX_SANDBOX_AUTOSTOP_MINUTES || 15),
+          autoArchiveInterval: warmBakeConfig.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
+          autoDeleteInterval: warmBakeConfig.KORTIX_SANDBOX_AUTODELETE_MINUTES,
         },
         { timeout: CREATE_TIMEOUT_S },
       );
@@ -157,7 +165,7 @@ export async function createHealthyBuilder(baseSnapshot: string, onLog?: (l: str
       // A create-throw leaves an error-state box behind org-side (we never got
       // a handle). Sweep them so the dashboard doesn't fill with corpses.
       void reapErroredWarmBoxes(baseSnapshot, onLog);
-      await new Promise((r) => setTimeout(r, 2_000 * attempt));
+      await sleep(2_000 * attempt);
     }
   }
   throw new WarmBakeError(
@@ -218,7 +226,7 @@ async function stageBuildContext(): Promise<{ tarball: string; cleanup: () => vo
 async function resolveBuilderBaseSnapshot(onLog?: (l: string) => void): Promise<string> {
   try {
     const { listDaytonaSnapshots } = await import('../shared/daytona');
-    const warmRegion = config.DAYTONA_WARM_TARGET;
+    const warmRegion = warmBakeConfig.DAYTONA_WARM_TARGET;
     const candidates = (await listDaytonaSnapshots())
       .filter(
         (s) =>
@@ -234,7 +242,7 @@ async function resolveBuilderBaseSnapshot(onLog?: (l: string) => void): Promise<
   } catch (err) {
     onLog?.(`[warm-bake] builder-base lookup failed, using stock base: ${err instanceof Error ? err.message : String(err)}`);
   }
-  return config.DAYTONA_WARM_BASE_SNAPSHOT;
+  return warmBakeConfig.DAYTONA_WARM_BASE_SNAPSHOT;
 }
 
 /**
@@ -258,7 +266,7 @@ export async function bakeWarmSnapshot(opts: {
   const { tarball, cleanup } = await stageBuildContext();
   onLog?.(`[warm-bake] staged build context (${(statSync(tarball).size / 1048576).toFixed(1)} MB)`);
 
-  onLog?.(`[warm-bake] booting builder from ${baseSnapshot} on target "${config.DAYTONA_WARM_TARGET}"`);
+  onLog?.(`[warm-bake] booting builder from ${baseSnapshot} on target "${warmBakeConfig.DAYTONA_WARM_TARGET}"`);
   const sb = await createHealthyBuilder(baseSnapshot, onLog);
 
   try {
@@ -467,7 +475,7 @@ function snapState(snap: unknown): string {
 export function warmBaseUsable(snap: unknown): boolean {
   if (snapState(snap) !== 'active') return false;
   const regions = (snap as { regionIds?: unknown } | null)?.regionIds;
-  return !Array.isArray(regions) || regions.includes(config.DAYTONA_WARM_TARGET);
+  return !Array.isArray(regions) || regions.includes(warmBakeConfig.DAYTONA_WARM_TARGET);
 }
 
 // Warm-snapshot usability is content-addressed + region-bound and changes only
@@ -488,7 +496,7 @@ const WARM_SNAPSHOT_GET_TIMEOUT = Symbol('warm-snapshot-get-timeout');
 const warmUsableCache = new Map<string, number>(); // `${name}@${target}` → expiresAt(ms)
 
 function warmUsableKey(name: string): string {
-  return `${name}@${config.DAYTONA_WARM_TARGET}`;
+  return `${name}@${warmBakeConfig.DAYTONA_WARM_TARGET}`;
 }
 
 /** Drop a cached usable-verdict (e.g. the snapshot was just deleted/rebaked). */
@@ -506,20 +514,19 @@ export async function warmSnapshotUsableCached(name: string): Promise<boolean> {
   const exp = warmUsableCache.get(key);
   if (exp !== undefined && Date.now() < exp) return true;
   let snap: unknown;
-  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    snap = await Promise.race([
-      getDaytonaWarm().snapshot.get(name),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(WARM_SNAPSHOT_GET_TIMEOUT), WARM_SNAPSHOT_GET_TIMEOUT_MS);
-      }),
-    ]);
+    snap = await runEffectOrThrow(
+      Effect.race(
+        Effect.tryPromise(() => getDaytonaWarm().snapshot.get(name)),
+        Effect.sleep(`${WARM_SNAPSHOT_GET_TIMEOUT_MS} millis`).pipe(
+          Effect.flatMap(() => Effect.fail(WARM_SNAPSHOT_GET_TIMEOUT)),
+        ),
+      ),
+    );
   } catch (err) {
     warmUsableCache.delete(key);
     if (err === WARM_SNAPSHOT_GET_TIMEOUT) noteWarmPathFailure();
     return false;
-  } finally {
-    clearTimeout(timer);
   }
   const ok = warmBaseUsable(snap);
   if (ok) warmUsableCache.set(key, Date.now() + WARM_USABLE_TTL_MS);

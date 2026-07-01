@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Barrel for the catch-all billed upstream proxy (tavily/serper/firecrawl/replicate/
 // context7/anthropic/openai/xai/gemini/groq). Structurally split from one 1234-line
 // file into ./proxy/* with ZERO behavior change.

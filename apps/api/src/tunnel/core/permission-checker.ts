@@ -1,8 +1,9 @@
+import type { Effect } from 'effect';
 import { resolve, normalize } from 'path';
 import { eq, and } from 'drizzle-orm';
 import { tunnelPermissions } from '@kortix/db';
 import type { TunnelFilesystemScope, TunnelShellScope, TunnelPermissionScope } from '@kortix/db';
-import { db } from '../../shared/db';
+import { sharedDb as db } from '../../shared/effect';
 import type { TunnelCapability } from 'agent-tunnel';
 
 export interface PermissionCheckResult {

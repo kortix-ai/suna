@@ -12,7 +12,7 @@
  *
  * Anything Freestyle-specific lives in this file.
  */
-import { config } from '../../config';
+import { Effect } from 'effect';
 import type {
   AppBuild,
   AppSource,
@@ -20,6 +20,8 @@ import type {
   DeploymentRequest,
   DeploymentResult,
 } from './types';
+import { AppConfig, AppConfigLive, HttpClient } from '../../effect/services';
+import { runEffectOrThrow } from '../../effect/http';
 
 // ─── Dynamic Freestyle config ────────────────────────────────────────────────
 // The Kortix API runs in a separate container from the sandbox. API keys set
@@ -45,13 +47,16 @@ async function readSandboxSecret(key: string): Promise<string> {
 
   for (const base of candidates) {
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 3000);
-      const res = await fetch(`${base}/env/${encodeURIComponent(key)}`, {
-        headers,
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
+      const res = await runEffectOrThrow(Effect.gen(function* () {
+        const client = yield* HttpClient;
+        const perform = client.fetch;
+        return yield* Effect.tryPromise(() =>
+          perform(`${base}/env/${encodeURIComponent(key)}`, {
+            headers,
+            signal: AbortSignal.timeout(3000),
+          }),
+        );
+      }));
       if (!res.ok) continue;
       const data = await res.json();
       const val = data?.[key] ?? data?.secrets?.[key] ?? '';
@@ -68,7 +73,10 @@ const CACHE_TTL_MS = 60_000;
 
 export async function getFreestyleApiKey(): Promise<string> {
   if (process.env.FREESTYLE_API_KEY) return process.env.FREESTYLE_API_KEY;
-  if (config.FREESTYLE_API_KEY) return config.FREESTYLE_API_KEY;
+  const appConfig = await runEffectOrThrow(Effect.gen(function* () {
+    return yield* AppConfig;
+  }));
+  if (appConfig.FREESTYLE_API_KEY) return appConfig.FREESTYLE_API_KEY;
   const now = Date.now();
   if (_cachedFreestyleKey && (now - _cachedFreestyleKeyAt) < CACHE_TTL_MS) {
     return _cachedFreestyleKey;
@@ -82,7 +90,9 @@ export async function getFreestyleApiKey(): Promise<string> {
 }
 
 export function getFreestyleApiUrl(): string {
-  return process.env.FREESTYLE_API_URL || config.FREESTYLE_API_URL || 'https://api.freestyle.sh';
+  if (process.env.FREESTYLE_API_URL) return process.env.FREESTYLE_API_URL;
+  const appConfig = Effect.runSync(Effect.provide(AppConfig, AppConfigLive));
+  return appConfig.FREESTYLE_API_URL || 'https://api.freestyle.sh';
 }
 
 /** Low-level Freestyle REST call. Returns the raw Response. */
@@ -97,22 +107,18 @@ export async function callFreestyle(
     Authorization: `Bearer ${apiKey}`,
   };
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 120000);
-
-  try {
-    const response = await fetch(url, {
-      method: options.method,
-      headers,
-      body: options.body ? JSON.stringify(options.body) : undefined,
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    return response;
-  } catch (error) {
-    clearTimeout(timeout);
-    throw error;
-  }
+  return runEffectOrThrow(Effect.gen(function* () {
+    const client = yield* HttpClient;
+    const perform = client.fetch;
+    return yield* Effect.tryPromise(() =>
+      perform(url, {
+        method: options.method,
+        headers,
+        body: options.body ? JSON.stringify(options.body) : undefined,
+        signal: AbortSignal.timeout(options.timeoutMs ?? 120000),
+      }),
+    );
+  }));
 }
 
 // ─── Payload shape used by the legacy /v1/deployments route ─────────────────

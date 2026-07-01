@@ -10,35 +10,54 @@
  * Same trust model as accepting a team invite: the token proves which Slack user
  * asked to link; the bearer proves which Kortix user is accepting.
  */
-import { createRoute, z } from '@hono/zod-openapi';
-import { inArray } from 'drizzle-orm';
-import { projects } from '@kortix/db';
-import { db } from '../../shared/db';
-import { config } from '../../config';
-import { auth, errors, json, makeOpenApiApp } from '../../openapi';
-import { combinedAuth } from '../../middleware/auth';
-import { listProjectsForWorkspace, loadSlackTeamNameForProject } from '../install-store';
-import { spawnAgentTurn } from './dispatch';
-import { consumePendingSlackAuthMessage, replaceSlackAuthPromptConnected } from './auth-resume';
-import { verifyLoginState } from './login';
-import { isAccountMember, linkSlackIdentity } from './identity';
+import { createRoute, z } from "@hono/zod-openapi";
+import { projects } from "@kortix/db";
+import { inArray } from "drizzle-orm";
+import { Effect } from "effect";
+import type { Context } from "hono";
+import { combinedAuth } from "../../middleware/auth";
+import { auth, errors, json, makeOpenApiApp } from "../../openapi";
+import { sharedConfig as config, sharedDb as db } from "../../shared/effect";
+import {
+  dependency,
+  failJson,
+  fireAndLog,
+  jsonResponse,
+  parseOptionalJsonBody,
+  runChannelWorkflow,
+} from "../effect-workflows";
+import {
+  listProjectsForWorkspace,
+  loadSlackTeamNameForProject,
+} from "../install-store";
+import {
+  consumePendingSlackAuthMessage,
+  replaceSlackAuthPromptConnected,
+} from "./auth-resume";
+import { spawnAgentTurn } from "./dispatch";
+import { isAccountMember, linkSlackIdentity } from "./identity";
+import { verifyLoginState } from "./login";
+import { effectHandler } from "../../effect/hono";
 
 export const slackIdentityApp = makeOpenApiApp();
 
 slackIdentityApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/login/{token}',
-    tags: ['channels'],
-    summary: 'Redirect a Slack login link to the web login page',
+    method: "get",
+    path: "/login/{token}",
+    tags: ["channels"],
+    summary: "Redirect a Slack login link to the web login page",
     request: { params: z.object({ token: z.string().min(1) }) },
     responses: {
-      200: { description: 'HTML redirect to web Slack login page' },
+      200: { description: "HTML redirect to web Slack login page" },
     },
   }),
-  async (c: any) => {
-    const token = c.req.param('token');
-    const base = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
+  effectHandler(async (c: Context) => {
+    const token = c.req.param("token") ?? "";
+    const base = (config.FRONTEND_URL || "https://kortix.com").replace(
+      /\/+$/,
+      "",
+    );
     const target = `${base}/slack/login/${encodeURIComponent(token)}`;
     return c.html(`<!doctype html>
 <html>
@@ -54,10 +73,11 @@ slackIdentityApp.openapi(
     <p><a href="${target}">Continue to Kortix</a></p>
   </body>
 </html>`);
-  },
+  }),
 );
 
 const BindBody = z.object({ token: z.string().min(1) });
+type BindBodyInput = { token?: string };
 const BindResult = z.object({
   ok: z.boolean(),
   workspaceName: z.string().nullable(),
@@ -69,68 +89,117 @@ const BindResult = z.object({
   resumed: z.boolean(),
 });
 
-slackIdentityApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/bind',
-    tags: ['channels'],
-    summary: 'Bind the calling Kortix user to a Slack user from a /login token',
-    ...auth,
-    middleware: [combinedAuth] as const,
-    request: { body: { content: { 'application/json': { schema: BindBody } } } },
-    responses: {
-      200: json(BindResult, 'Identity linked'),
-      ...errors(400, 403, 404, 410),
-    },
-  }),
-  async (c: any) => {
+const bindSlackIdentityWorkflow = (c: Context) =>
+  Effect.gen(function* () {
     // Whole feature is flag-gated — the bind endpoint is inert when off.
-    if (!config.SLACK_REQUIRE_USER_IDENTITY) return c.json({ error: 'Not found' }, 404);
-    const userId = c.get('userId') as string;
-    const { token } = (await c.req.json().catch(() => ({}))) as { token?: string };
-    if (!token) return c.json({ error: 'Missing token' }, 400);
+    if (!config.SLACK_REQUIRE_USER_IDENTITY)
+      return yield* failJson({ error: "Not found" }, 404);
+
+    const userId = c.get("userId") as string;
+    const { token } = yield* parseOptionalJsonBody<BindBodyInput>(c, {});
+    if (!token) return yield* failJson({ error: "Missing token" }, 400);
 
     const payload = verifyLoginState(token);
-    if (!payload) return c.json({ error: 'This link is invalid or has expired. Run `/kortix login` again.' }, 410);
-
-    // The workspace must be connected to at least one Kortix project, and the
-    // accepting user must be a member of that project's account — otherwise a
-    // stranger could bind into a workspace they have no access to.
-    const projectIds = await listProjectsForWorkspace('slack', payload.teamId);
-    if (projectIds.length === 0) {
-      return c.json({ error: 'This Slack workspace is not connected to any Kortix project.' }, 403);
+    if (!payload) {
+      return yield* failJson(
+        {
+          error:
+            "This link is invalid or has expired. Run `/kortix login` again.",
+        },
+        410,
+      );
     }
-    const accountRows = await db
-      .select({ accountId: projects.accountId })
-      .from(projects)
-      .where(inArray(projects.projectId, projectIds));
+
+    // The workspace must be connected to at least one Kortix project. Linking is
+    // intentionally decoupled from membership so non-members can request access.
+    const projectIds = yield* dependency(() =>
+      listProjectsForWorkspace("slack", payload.teamId),
+    );
+    if (projectIds.length === 0) {
+      return yield* failJson(
+        {
+          error: "This Slack workspace is not connected to any Kortix project.",
+        },
+        403,
+      );
+    }
+
+    const accountRows = yield* dependency(() =>
+      db
+        .select({ accountId: projects.accountId })
+        .from(projects)
+        .where(inArray(projects.projectId, projectIds)),
+    );
     const accountIds = Array.from(new Set(accountRows.map((r) => r.accountId)));
-    const memberships = await Promise.all(accountIds.map((a) => isAccountMember(userId, a)));
+    const memberships = yield* dependency(() =>
+      Promise.all(
+        accountIds.map((accountId) => isAccountMember(userId, accountId)),
+      ),
+    );
     const hasAccess = memberships.some(Boolean);
 
-    // Link regardless of membership. Connecting your Kortix account is decoupled
-    // from having access: we establish WHO this Slack user is so a non-member can
-    // request access right in the thread. This is safe — the link grants nothing
-    // on its own; the runtime gate (resolveSlackActor) still requires membership
-    // before any agent runs, so a linked non-member can do nothing until an admin
-    // approves. The workspace-must-be-connected check above still stands.
-    await linkSlackIdentity({ teamId: payload.teamId, slackUserId: payload.slackUserId, userId });
+    yield* dependency(() =>
+      linkSlackIdentity({
+        teamId: payload.teamId,
+        slackUserId: payload.slackUserId,
+        userId,
+      }),
+    );
 
-    const pending = await consumePendingSlackAuthMessage({
-      pendingId: payload.pendingId,
-      teamId: payload.teamId,
-      slackUserId: payload.slackUserId,
-    });
+    const pending = yield* dependency(() =>
+      consumePendingSlackAuthMessage({
+        pendingId: payload.pendingId,
+        teamId: payload.teamId,
+        slackUserId: payload.slackUserId,
+      }),
+    );
     if (pending) {
-      void replaceSlackAuthPromptConnected(pending.slackResponseUrl, { hasAccess });
-      void spawnAgentTurn(pending.projectId, pending.envelope, pending.event).catch((err) => {
-        console.error('[slack-auth] failed to resume pending Slack message after bind', err);
-      });
+      fireAndLog(
+        "[slack-auth] failed to update pending Slack auth prompt after bind",
+        dependency(() =>
+          replaceSlackAuthPromptConnected(pending.slackResponseUrl, {
+            hasAccess,
+          }),
+        ),
+      );
+      fireAndLog(
+        "[slack-auth] failed to resume pending Slack message after bind",
+        dependency(() =>
+          spawnAgentTurn(pending.projectId, pending.envelope, pending.event),
+        ),
+      );
     }
 
     const workspaceName = projectIds.length
-      ? await loadSlackTeamNameForProject(projectIds[0]).catch(() => null)
+      ? yield* dependency(() =>
+          loadSlackTeamNameForProject(projectIds[0]).catch(() => null),
+        )
       : null;
-    return c.json({ ok: true, workspaceName: workspaceName || null, hasAccess, resumed: !!pending });
+    return jsonResponse({
+      ok: true,
+      workspaceName: workspaceName || null,
+      hasAccess,
+      resumed: !!pending,
+    });
+  });
+
+slackIdentityApp.openapi(
+  createRoute({
+    method: "post",
+    path: "/bind",
+    tags: ["channels"],
+    summary: "Bind the calling Kortix user to a Slack user from a /login token",
+    ...auth,
+    middleware: [combinedAuth] as const,
+    request: {
+      body: { content: { "application/json": { schema: BindBody } } },
+    },
+    responses: {
+      200: json(BindResult, "Identity linked"),
+      ...errors(400, 403, 404, 410),
+    },
+  }),
+  async (c: Context) => {
+    return runChannelWorkflow(c, bindSlackIdentityWorkflow(c));
   },
 );

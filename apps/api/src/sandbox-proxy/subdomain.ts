@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Subdomain preview proxy — `p{port}-{sandboxId}.{apiHost}/...`
  *
@@ -25,6 +26,7 @@ import {
   resolvePublicShare,
   touchPublicShare,
 } from '../shared/session-public-shares';
+import { runSandboxProxyInterval } from './effect';
 
 // ── Subdomain parsing ───────────────────────────────────────────────────────
 
@@ -120,7 +122,7 @@ async function authenticatePublicShareSubdomain(
 
 // Periodic cleanup of expired entries — keeps the map from growing
 // unboundedly under churn.
-setInterval(() => {
+runSandboxProxyInterval(() => {
   const now = Date.now();
   for (const [k, v] of authedSubdomains) {
     if (now > v.expiresAt) authedSubdomains.delete(k);

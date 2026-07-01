@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import type { Context, Next } from 'hono';
 import { auditEvents } from '@kortix/db';
 import { db } from './db';

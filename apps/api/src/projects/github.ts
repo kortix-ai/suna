@@ -1,5 +1,7 @@
+import type { Effect } from 'effect';
 import { createHmac, createSign, timingSafeEqual } from 'node:crypto';
 import { getTraceHeaders } from '../lib/request-context';
+import { sharedFetch } from '../shared/effect';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -228,7 +230,7 @@ async function ghFetch<T>(
   init?: RequestInit,
   auth?: Pick<GitHubAuthContext, 'token'>,
 ): Promise<T> {
-  const res = await fetch(`${GITHUB_API}${path}`, {
+  const res = await sharedFetch(`${GITHUB_API}${path}`, {
     ...init,
     headers: { ...headers(auth), ...(init?.headers as Record<string, string> | undefined) },
     signal: AbortSignal.timeout(15_000),
@@ -408,7 +410,7 @@ export async function addCollaborator(opts: {
   permission?: string;
   auth?: Pick<GitHubAuthContext, 'token'>;
 }): Promise<GitHubInvitation | null> {
-  const res = await fetch(
+  const res = await sharedFetch(
     `${GITHUB_API}/repos/${encodeURIComponent(opts.owner)}/${encodeURIComponent(opts.repo)}/collaborators/${encodeURIComponent(opts.username)}`,
     {
       method: 'PUT',

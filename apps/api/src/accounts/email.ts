@@ -1,6 +1,7 @@
+import type { Effect } from 'effect';
 // Account-scoped invite email. Self-contained Mailtrap transport — formerly
 // lived under teams/services/notifications.ts (which was sandbox-scoped).
-import { config } from '../config';
+import { accountConfig as config, accountFetch } from './effect';
 
 const MAILTRAP_SEND_URL = 'https://send.api.mailtrap.io/api/send';
 
@@ -89,7 +90,7 @@ async function send(opts: {
   }
 
   try {
-    const res = await fetch(MAILTRAP_SEND_URL, {
+    const res = await accountFetch(MAILTRAP_SEND_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${config.MAILTRAP_API_TOKEN}`,

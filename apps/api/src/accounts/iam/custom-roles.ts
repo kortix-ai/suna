@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // IAM v1 REST surface: DB-driven CUSTOM roles + their action sets + the
 // policies that bind a principal (member/group/token) to a role at a scope.
 // Backs the pre-built frontend SDK (apps/web/src/lib/iam-client.ts) whose
@@ -10,7 +11,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { iamPolicies, iamRoleActions, iamRoles, projects, serviceAccounts, accountMembers, accountGroups } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
-import { db } from '../../shared/db';
+import { accountDb as db } from '../effect';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import {
   invalidateIamCacheForPolicyPrincipal,
@@ -27,6 +28,7 @@ import {
   validateActions,
   type BuiltinPreset,
 } from './role-presets';
+import { effectHandler } from '../../effect/hono';
 
 // ─── Serializers (match iam-client.ts wire shapes exactly) ──────────────────
 
@@ -98,12 +100,12 @@ iamRouter.openapi(
     request: { params: AccountIdParam },
     responses: { 200: json(z.object({ actions: z.array(Any) }), 'Action catalog'), ...errors(401, 403) },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_READ);
     return c.json({ actions: ACTION_CATALOG_WIRE });
-  },
+  }),
 );
 
 // ─── Roles ────────────────────────────────────────────────────────────────
@@ -118,7 +120,7 @@ iamRouter.openapi(
     request: { params: AccountIdParam },
     responses: { 200: json(z.object({ roles: z.array(Any) }), 'Roles'), ...errors(401, 403) },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_READ);
@@ -126,7 +128,7 @@ iamRouter.openapi(
     return c.json({
       roles: [...BUILTIN_PRESETS.map(serializeBuiltinRole), ...custom.map(serializeCustomRole)],
     });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -139,7 +141,7 @@ iamRouter.openapi(
     request: { params: AccountIdParam, body: { content: { 'application/json': { schema: Any } } } },
     responses: { 201: json(Any, 'Created role'), ...errors(400, 401, 403, 409) },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_CREATE);
@@ -182,7 +184,7 @@ iamRouter.openapi(
       if (isUniqueViolation(err)) return c.json({ error: 'a role with this key already exists' }, 409);
       throw err;
     }
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -195,7 +197,7 @@ iamRouter.openapi(
     request: { params: RoleIdParam, body: { content: { 'application/json': { schema: Any } } } },
     responses: { 200: json(Any, 'Updated role'), ...errors(400, 401, 403, 404) },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const roleId = c.req.param('roleId');
@@ -219,7 +221,7 @@ iamRouter.openapi(
       .where(and(eq(iamRoles.roleId, roleId), eq(iamRoles.accountId, accountId)))
       .returning();
     return c.json(serializeCustomRole(updated!));
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -232,7 +234,7 @@ iamRouter.openapi(
     request: { params: RoleIdParam },
     responses: { 200: json(z.object({ deleted: z.boolean() }), 'Deleted'), ...errors(400, 401, 403, 404) },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const roleId = c.req.param('roleId');
@@ -253,7 +255,7 @@ iamRouter.openapi(
       before: { key: role.key, name: role.name },
     });
     return c.json({ deleted: true });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -266,7 +268,7 @@ iamRouter.openapi(
     request: { params: RoleIdParam },
     responses: { 200: json(z.object({ role_id: z.string(), key: z.string(), actions: z.array(z.string()) }), 'Actions'), ...errors(401, 403, 404) },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const roleId = c.req.param('roleId');
@@ -279,7 +281,7 @@ iamRouter.openapi(
     if (!role) return c.json({ error: 'role not found' }, 404);
     const rows = await db.select({ action: iamRoleActions.action }).from(iamRoleActions).where(eq(iamRoleActions.roleId, roleId));
     return c.json({ role_id: roleId, key: role.key, actions: rows.map((r) => r.action) });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -292,7 +294,7 @@ iamRouter.openapi(
     request: { params: RoleIdParam, body: { content: { 'application/json': { schema: Any } } } },
     responses: { 200: json(z.object({ role_id: z.string(), actions: z.array(z.string()) }), 'Updated'), ...errors(400, 401, 403, 404) },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const roleId = c.req.param('roleId');
@@ -323,7 +325,7 @@ iamRouter.openapi(
       after: { action_count: v.actions.length },
     });
     return c.json({ role_id: roleId, actions: v.actions });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -336,7 +338,7 @@ iamRouter.openapi(
     request: { params: RoleIdParam },
     responses: { 200: json(z.object({ role_id: z.string(), policy_count: z.number() }), 'Usage'), ...errors(401, 403) },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const roleId = c.req.param('roleId');
@@ -348,7 +350,7 @@ iamRouter.openapi(
       .where(and(eq(iamPolicies.roleId, roleId), eq(iamPolicies.accountId, accountId)))
       .limit(1);
     return c.json({ role_id: roleId, policy_count: Number(row?.n ?? 0) });
-  },
+  }),
 );
 
 // ─── Policies (principal → custom role @ scope) ─────────────────────────────
@@ -363,7 +365,7 @@ iamRouter.openapi(
     request: { params: AccountIdParam },
     responses: { 200: json(z.object({ policies: z.array(Any) }), 'Policies'), ...errors(401, 403) },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_READ);
@@ -381,7 +383,7 @@ iamRouter.openapi(
 
     const rows = await db.select().from(iamPolicies).where(and(...conds));
     return c.json({ policies: rows.map(serializePolicy) });
-  },
+  }),
 );
 
 // Auto-provisioned agent identities — the principal picker for binding a role to
@@ -396,7 +398,7 @@ iamRouter.openapi(
     request: { params: AccountIdParam },
     responses: { 200: json(z.object({ agents: z.array(Any) }), 'Agent identities'), ...errors(401, 403) },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_READ);
@@ -455,7 +457,7 @@ iamRouter.openapi(
         (a.project_id ?? '').localeCompare(b.project_id ?? ''),
     );
     return c.json({ agents });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -468,7 +470,7 @@ iamRouter.openapi(
     request: { params: AccountIdParam, body: { content: { 'application/json': { schema: Any } } } },
     responses: { 201: json(Any, 'Created policy'), ...errors(400, 401, 403, 404) },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_CREATE);
@@ -505,7 +507,7 @@ iamRouter.openapi(
       },
     });
     return c.json(serializePolicy(row!), 201);
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -518,7 +520,7 @@ iamRouter.openapi(
     request: { params: PolicyIdParam },
     responses: { 200: json(z.object({ deleted: z.boolean() }), 'Deleted'), ...errors(401, 403, 404) },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const policyId = c.req.param('policyId');
@@ -538,7 +540,7 @@ iamRouter.openapi(
       before: { principal_type: row.principalType, principal_id: row.principalId, role_id: row.roleId },
     });
     return c.json({ deleted: true });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -551,7 +553,7 @@ iamRouter.openapi(
     request: { params: AccountIdParam, body: { content: { 'application/json': { schema: Any } } } },
     responses: { 200: json(z.object({ deleted: z.number() }), 'Deleted count'), ...errors(400, 401, 403) },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_DELETE);
@@ -564,7 +566,7 @@ iamRouter.openapi(
       .returning({ principalType: iamPolicies.principalType, principalId: iamPolicies.principalId });
     for (const r of rows) await invalidateIamCacheForPolicyPrincipal(r.principalType, r.principalId);
     return c.json({ deleted: rows.length });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -577,7 +579,7 @@ iamRouter.openapi(
     request: { params: PolicyIdParam, body: { content: { 'application/json': { schema: Any } } } },
     responses: { 200: json(Any, 'Updated policy'), ...errors(400, 401, 403, 404) },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const policyId = c.req.param('policyId');
@@ -628,7 +630,7 @@ iamRouter.openapi(
       after: { role_id: parsed.value.roleId, scope_type: parsed.value.scopeType, scope_id: parsed.value.scopeId },
     });
     return c.json(serializePolicy(row!));
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -641,7 +643,7 @@ iamRouter.openapi(
     request: { params: AccountIdParam, body: { content: { 'application/json': { schema: Any } } } },
     responses: { 200: json(Any, 'Import result'), ...errors(400, 401, 403) },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_CREATE);
@@ -708,7 +710,7 @@ iamRouter.openapi(
       after: { attempted: result.attempted, created: result.created, skipped: result.skipped },
     });
     return c.json(result);
-  },
+  }),
 );
 
 // Shared policy-input parser/validator (v1: allow-only, conditions ignored).

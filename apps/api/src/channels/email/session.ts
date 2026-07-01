@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { and, eq } from "drizzle-orm";
 import {
   chatEventDedup,
@@ -5,7 +6,7 @@ import {
   chatThreads,
   projects,
 } from "@kortix/db";
-import { db } from "../../shared/db";
+import { sharedConfig as config, sharedDb as db, sharedSleep } from "../../shared/effect";
 import {
   type AgentMailSenderPolicy,
   loadAgentMailSenderPolicyForInbox,
@@ -15,7 +16,6 @@ import {
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from "../../projects/session-lifecycle";
-import { config } from "../../config";
 import { EMAIL_EVENT_DEDUPE_TTL_MS } from "./app";
 import type { AgentMailMessageReceivedEvent } from "./types";
 
@@ -304,7 +304,7 @@ async function waitForThreadSession(
       .limit(1);
     if (row) return row.sessionId;
     if (Date.now() >= deadline) return null;
-    await new Promise((r) => setTimeout(r, 250));
+    await sharedSleep(250);
   }
 }
 

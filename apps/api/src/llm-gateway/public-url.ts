@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * The public origin a customer should call the gateway at, derived from the
  * environment's `LLM_GATEWAY_BASE_URL`

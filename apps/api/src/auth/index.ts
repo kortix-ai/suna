@@ -11,18 +11,21 @@
 // The client still calls supabase.auth.signOut() in parallel to
 // invalidate the refresh token at Supabase's end.
 
-import { createRoute, z } from '@hono/zod-openapi';
-import { and, eq, sql } from 'drizzle-orm';
-import { accountSessionActivity } from '@kortix/db';
-import { db } from '../shared/db';
-import { supabaseAuth } from '../middleware/auth';
-import type { AppEnv } from '../types';
-import { auditLogout } from '../shared/auth-audit';
-import { makeOpenApiApp, json, errors, auth } from '../openapi';
+import { createRoute, z } from "@hono/zod-openapi";
+import { and, eq, sql } from "drizzle-orm";
+import { accountSessionActivity } from "@kortix/db";
+import { Effect } from "effect";
+import { supabaseAuth } from "../middleware/auth";
+import type { AppEnv } from "../types";
+import { auditLogout } from "../shared/auth-audit";
+import { makeOpenApiApp, json, errors, auth } from "../openapi";
+import { effectHandler } from "../effect/hono";
+import { DatabaseService } from "../effect/services";
+import { runEffectOrThrow } from "../effect/http";
 
 export const authRouter = makeOpenApiApp<AppEnv>();
 
-authRouter.use('/*', supabaseAuth);
+authRouter.use("/*", supabaseAuth);
 
 /**
  * POST /v1/auth/logout — explicit server-side logout for the calling
@@ -34,63 +37,69 @@ authRouter.use('/*', supabaseAuth);
  */
 authRouter.openapi(
   createRoute({
-    method: 'post',
-    path: '/logout',
-    tags: ['auth'],
-    summary: 'Server-side logout for the calling session',
+    method: "post",
+    path: "/logout",
+    tags: ["auth"],
+    summary: "Server-side logout for the calling session",
     ...auth,
     responses: {
       200: json(
         z.object({ ok: z.boolean(), revoked_session_rows: z.number() }),
-        'Logout processed (always 200)',
+        "Logout processed (always 200)",
       ),
       ...errors(401),
     },
   }),
-  async (c) => {
-  const userId = c.get('userId') as string;
-  // sessionId / accountId are set by the auth middleware via untyped
-  // c.set() — typed envs make these getters error-out at the strict
-  // type level, so reach through `any` for those two reads only.
-  const sessionId = (c as unknown as { get(k: string): unknown }).get(
-    'sessionId',
-  ) as string | undefined;
-  const accountId =
-    ((c as unknown as { get(k: string): unknown }).get('accountId') as
-      | string
-      | undefined) ?? null;
+  effectHandler(async (c) => {
+    const userId = c.get("userId") as string;
+    // sessionId / accountId are set by the auth middleware via untyped
+    // c.set() — typed envs make these getters error-out at the strict
+    // type level, so reach through `any` for those two reads only.
+    const sessionId = (c as unknown as { get(k: string): unknown }).get(
+      "sessionId",
+    ) as string | undefined;
+    const accountId =
+      ((c as unknown as { get(k: string): unknown }).get("accountId") as
+        | string
+        | undefined) ?? null;
 
-  // Mark every account_session_activity row for this session as
-  // revoked across ALL accounts the user has visited under it. Users
-  // typically have one account context per session, but multi-tenant
-  // dashboards can hit several — the safe move is to revoke them all
-  // on explicit logout.
-  let revokedCount = 0;
-  if (sessionId) {
-    const rows = await db
-      .update(accountSessionActivity)
-      .set({
-        revokedAt: sql`COALESCE(${accountSessionActivity.revokedAt}, now())`,
-        revokedReason: sql`COALESCE(${accountSessionActivity.revokedReason}, 'user_action')`,
-        revokedBy: userId,
-      })
-      .where(
-        and(
-          eq(accountSessionActivity.userId, userId),
-          eq(accountSessionActivity.sessionId, sessionId),
-        ),
-      )
-      .returning({ accountId: accountSessionActivity.accountId });
-    revokedCount = rows.length;
-  }
+    // Mark every account_session_activity row for this session as
+    // revoked across ALL accounts the user has visited under it. Users
+    // typically have one account context per session, but multi-tenant
+    // dashboards can hit several — the safe move is to revoke them all
+    // on explicit logout.
+    let revokedCount = 0;
+    if (sessionId) {
+      const rows = await runEffectOrThrow(Effect.gen(function* () {
+        const { database } = yield* DatabaseService;
+        return yield* Effect.tryPromise(() =>
+          database
+            .update(accountSessionActivity)
+            .set({
+              revokedAt: sql`COALESCE(${accountSessionActivity.revokedAt}, now())`,
+              revokedReason: sql`COALESCE(${accountSessionActivity.revokedReason}, 'user_action')`,
+              revokedBy: userId,
+            })
+            .where(
+              and(
+                eq(accountSessionActivity.userId, userId),
+                eq(accountSessionActivity.sessionId, sessionId),
+              ),
+            )
+            .returning({ accountId: accountSessionActivity.accountId }),
+        );
+      }));
+      revokedCount = rows.length;
+    }
 
-  auditLogout({
-    c,
-    userId,
-    accountId,
-    sessionId: sessionId ?? null,
-    reason: 'user_action',
-  });
+    auditLogout({
+      c,
+      userId,
+      accountId,
+      sessionId: sessionId ?? null,
+      reason: "user_action",
+    });
 
-  return c.json({ ok: true, revoked_session_rows: revokedCount });
-});
+    return c.json({ ok: true, revoked_session_rows: revokedCount });
+  }),
+);

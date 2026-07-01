@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * models.dev pricing — live LLM pricing from the open-source models database.
  *
@@ -11,6 +12,7 @@
  *   const p = getModelPricing('claude-sonnet-4-20250514');
  *   // => { inputPer1M: 3, outputPer1M: 15 } | null
  */
+import { routerFetch, routerSleep, runRouterInterval } from '../effect';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -62,7 +64,7 @@ let pricingMap: Map<string, ModelPricingEntry> = new Map();
 /** Normalised-id index (lowercase, dots→dashes) for resilient lookups. */
 let normIndex: Map<string, ModelPricingEntry> = new Map();
 
-let refreshTimer: ReturnType<typeof setInterval> | null = null;
+let refreshTimer: { active: boolean } | null = null;
 
 let lastFetchedAt: Date | null = null;
 let modelCount = 0;
@@ -101,16 +103,11 @@ export async function initModelPricing(): Promise<void> {
 
   // Schedule background refresh (non-blocking)
   if (!refreshTimer) {
-    refreshTimer = setInterval(() => {
-      refreshPricing().catch((err) =>
-        console.error('[model-pricing] Background refresh failed:', err),
-      );
+    refreshTimer = { active: true };
+    runRouterInterval(async () => {
+      if (!refreshTimer?.active) return;
+      await refreshPricing();
     }, REFRESH_INTERVAL_MS);
-
-    // Don't let the timer keep the process alive
-    if (typeof refreshTimer === 'object' && 'unref' in refreshTimer) {
-      refreshTimer.unref();
-    }
   }
 }
 
@@ -119,7 +116,7 @@ export async function initModelPricing(): Promise<void> {
  */
 export function stopModelPricing(): void {
   if (refreshTimer) {
-    clearInterval(refreshTimer);
+    refreshTimer.active = false;
     refreshTimer = null;
   }
 }
@@ -131,14 +128,12 @@ export function stopModelPricing(): void {
 async function refreshPricing(): Promise<void> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    void routerSleep(FETCH_TIMEOUT_MS).then(() => controller.abort());
 
-    const res = await fetch(API_URL, {
+    const res = await routerFetch(API_URL, {
       signal: controller.signal,
       headers: { Accept: 'application/json' },
     });
-    clearTimeout(timeout);
-
     if (!res.ok) {
       console.warn(`[model-pricing] models.dev returned ${res.status} — skipping refresh`);
       return;

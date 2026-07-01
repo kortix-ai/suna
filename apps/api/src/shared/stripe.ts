@@ -1,5 +1,6 @@
+import type { Effect } from 'effect';
 import Stripe from 'stripe';
-import { config } from '../config';
+import { sharedConfig as config } from './effect';
 
 let client: Stripe | null = null;
 

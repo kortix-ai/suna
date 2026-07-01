@@ -10,12 +10,14 @@
 // point. It is fail-closed (default off) and clearly labelled a demo in the UI;
 // real production use still requires a signed Enterprise agreement.
 
+import type { Effect } from 'effect';
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { isDemoEnterprise, setDemoEnterprise } from '../../billing/repositories/credit-accounts';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam, readBody } from './helpers';
+import { effectHandler } from '../../effect/hono';
 
 const DemoStateSchema = z.object({ enabled: z.boolean() }).openapi('EnterpriseDemoState');
 
@@ -32,12 +34,12 @@ iamRouter.openapi(
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
     return c.json({ enabled: await isDemoEnterprise(accountId) });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -56,7 +58,7 @@ iamRouter.openapi(
       ...errors(400, 401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -78,5 +80,5 @@ iamRouter.openapi(
     });
 
     return c.json({ enabled: body.enabled });
-  },
+  }),
 );

@@ -1,4 +1,5 @@
-import { config } from '../config';
+import type { Effect } from 'effect';
+import { sharedConfig as config } from './effect';
 import { getSubscriptionInfo } from '../billing/repositories/credit-accounts';
 import { getTier, isPaidTier, isPerSeatAccount, tierGrantsAllModels, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
 import type { RateLimitPolicy } from './rate-limit';

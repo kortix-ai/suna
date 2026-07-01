@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // IAM V2 REST surface — groups, super-admin promotion, effective-permission
 // probes, account-wide gates (MFA, sessions, PAT policy), and integrations
 // (SCIM, SAML SSO, service accounts).

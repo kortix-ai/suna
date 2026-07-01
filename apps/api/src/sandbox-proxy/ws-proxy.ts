@@ -1,9 +1,10 @@
+import type { Effect } from 'effect';
 // ════════════════════════════════════════════════════════════════════════════
 // Preview WebSocket reverse-proxy
 //
 // The path-based preview proxy (`/v1/p/{sandboxId}/{port}/*`) is an HTTP-only
 // reverse proxy (see routes/preview.ts). Browser WebSocket clients — today the
-// xterm PTY terminal — need a real upgrade, which Hono/`fetch()` can't do; the
+// xterm PTY terminal — need a real upgrade, which Hono request handlers can't do; the
 // upgrade has to happen at the `Bun.serve()` level.
 //
 // This module:

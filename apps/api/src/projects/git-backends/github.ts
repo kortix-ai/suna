@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import {
   type GitHubAuthContext,
   addCollaborator,
@@ -6,7 +7,7 @@ import {
   deleteRepo as ghDeleteRepo,
   isOrgAccount,
 } from '../github';
-import { config } from '../../config';
+import { sharedConfig as config } from '../../shared/effect';
 import {
   basicAuthHeader,
   type GitConnectionRef,

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Normalizers: turn each provider source into a uniform NormalizedAction[].
  *

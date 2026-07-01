@@ -10,16 +10,26 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
+import { Effect } from 'effect';
 import { eq, and, desc } from 'drizzle-orm';
 import { tunnelConnections } from '@kortix/db';
-import { db } from '../../shared/db';
+import { runSharedTimeout, sharedDb as db } from '../../shared/effect';
 import { tunnelRelay } from '../core/relay';
 import { generateTunnelToken, hashSecretKey } from '../../shared/crypto';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
-import { getTunnelOwnerContext, getTunnelReadContext } from './auth';
+import { getTunnelOwnerContextEffect, getTunnelReadContextEffect } from './auth';
 import { reconcileComputerConnectors } from '../../executor/sync';
 import { isTunnelConnectionLive } from '../core/cluster-forwarder';
+import {
+  attemptTunnel,
+  attemptTunnelSync,
+  parseJsonBody,
+  runTunnelEffect,
+  sendTunnelJson,
+  tunnelFail,
+  tunnelJson,
+} from './effect-workflows';
 
 /** Permissive connection row shape, as persisted + serialized. */
 const ConnectionSchema = z.record(z.string(), z.any());
@@ -32,6 +42,193 @@ function serializeConnection(conn: typeof tunnelConnections.$inferSelect) {
     isLive,
   };
 }
+
+const listConnectionsEffect = (c: any) =>
+  Effect.gen(function* () {
+    const { ownerClause } = yield* getTunnelReadContextEffect(c);
+
+    const connections = yield* attemptTunnel(() =>
+      db
+        .select()
+        .from(tunnelConnections)
+        .where(ownerClause)
+        .orderBy(desc(tunnelConnections.createdAt)),
+    );
+
+    return tunnelJson(connections.map(serializeConnection));
+  });
+
+const registerConnectionEffect = (c: any) =>
+  Effect.gen(function* () {
+    const { accountId } = yield* getTunnelOwnerContextEffect(c);
+    const body = yield* parseJsonBody<{
+      name?: unknown;
+      sandboxId?: unknown;
+      capabilities?: unknown;
+    }>(c);
+
+    const { name, sandboxId, capabilities } = body;
+
+    if (!name || typeof name !== 'string') {
+      return yield* tunnelFail({ error: 'name is required' }, 400);
+    }
+
+    const setupToken = yield* attemptTunnelSync(() => generateTunnelToken());
+    const setupTokenHash = yield* attemptTunnelSync(() => hashSecretKey(setupToken));
+
+    const [connection] = yield* attemptTunnel(() =>
+      db
+        .insert(tunnelConnections)
+        .values({
+          accountId,
+          name,
+          sandboxId: sandboxId || null,
+          capabilities: capabilities || [],
+          status: 'offline',
+          setupTokenHash,
+        } as typeof tunnelConnections.$inferInsert)
+        .returning(),
+    );
+
+    yield* Effect.sync(() => {
+      // Materialize the account's `computer` Executor connector (first machine).
+      void reconcileComputerConnectors(accountId);
+    });
+
+    return tunnelJson({ ...connection, setupToken }, 201);
+  });
+
+const getConnectionEffect = (c: any) =>
+  Effect.gen(function* () {
+    const { ownerClause } = yield* getTunnelReadContextEffect(c);
+    const tunnelId = c.req.param('tunnelId');
+
+    const [connection] = yield* attemptTunnel(() =>
+      db
+        .select()
+        .from(tunnelConnections)
+        .where(
+          and(
+            eq(tunnelConnections.tunnelId, tunnelId),
+            ownerClause,
+          ),
+        ),
+    );
+
+    if (!connection) {
+      return yield* tunnelFail({ error: 'Tunnel connection not found' }, 404);
+    }
+
+    return tunnelJson(serializeConnection(connection));
+  });
+
+const updateConnectionEffect = (c: any) =>
+  Effect.gen(function* () {
+    const { ownerClause } = yield* getTunnelOwnerContextEffect(c);
+    const tunnelId = c.req.param('tunnelId');
+    const body = yield* parseJsonBody<{
+      name?: unknown;
+      capabilities?: unknown;
+      sandboxId?: unknown;
+    }>(c);
+
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (body.name !== undefined) updates.name = body.name;
+    if (body.capabilities !== undefined) updates.capabilities = body.capabilities;
+    if (body.sandboxId !== undefined) updates.sandboxId = body.sandboxId || null;
+
+    const [updated] = yield* attemptTunnel(() =>
+      db
+        .update(tunnelConnections)
+        .set(updates)
+        .where(
+          and(
+            eq(tunnelConnections.tunnelId, tunnelId),
+            ownerClause,
+          ),
+        )
+        .returning(),
+    );
+
+    if (!updated) {
+      return yield* tunnelFail({ error: 'Tunnel connection not found' }, 404);
+    }
+
+    return tunnelJson(updated);
+  });
+
+const rotateConnectionTokenEffect = (c: any) =>
+  Effect.gen(function* () {
+    const { ownerClause } = yield* getTunnelOwnerContextEffect(c);
+    const tunnelId = c.req.param('tunnelId');
+
+    const [tunnel] = yield* attemptTunnel(() =>
+      db
+        .select()
+        .from(tunnelConnections)
+        .where(
+          and(
+            eq(tunnelConnections.tunnelId, tunnelId),
+            ownerClause,
+          ),
+        ),
+    );
+
+    if (!tunnel) {
+      return yield* tunnelFail({ error: 'Tunnel connection not found' }, 404);
+    }
+
+    const newToken = yield* attemptTunnelSync(() => generateTunnelToken());
+    const newTokenHash = yield* attemptTunnelSync(() => hashSecretKey(newToken));
+
+    yield* attemptTunnel(() =>
+      db
+        .update(tunnelConnections)
+        .set({ setupTokenHash: newTokenHash, updatedAt: new Date() })
+        .where(eq(tunnelConnections.tunnelId, tunnelId)),
+    );
+
+    yield* Effect.sync(() => {
+      tunnelRelay.sendNotification(tunnelId, 'tunnel.token.rotated', {
+        reason: 'Token rotated by owner',
+      });
+
+      runSharedTimeout(() => {
+        tunnelRelay.unregisterAgent(tunnelId);
+      }, 500);
+    });
+
+    return tunnelJson({ tunnelId, setupToken: newToken });
+  });
+
+const deleteConnectionEffect = (c: any) =>
+  Effect.gen(function* () {
+    const { accountId, ownerClause } = yield* getTunnelOwnerContextEffect(c);
+    const tunnelId = c.req.param('tunnelId');
+
+    const [deleted] = yield* attemptTunnel(() =>
+      db
+        .delete(tunnelConnections)
+        .where(
+          and(
+            eq(tunnelConnections.tunnelId, tunnelId),
+            ownerClause,
+          ),
+        )
+        .returning(),
+    );
+
+    if (!deleted) {
+      return yield* tunnelFail({ error: 'Tunnel connection not found' }, 404);
+    }
+
+    yield* Effect.sync(() => {
+      // Tear down the account's `computer` connector if that was the last machine.
+      void reconcileComputerConnectors(accountId);
+    });
+
+    return tunnelJson({ success: true });
+  });
 
 export function createConnectionsRouter() {
   const router = makeOpenApiApp<AppEnv>();
@@ -51,17 +248,7 @@ export function createConnectionsRouter() {
       },
     }),
     async (c: any) => {
-      const { ownerClause } = await getTunnelReadContext(c);
-
-      const connections = await db
-        .select()
-        .from(tunnelConnections)
-        .where(ownerClause)
-        .orderBy(desc(tunnelConnections.createdAt));
-
-      const enriched = connections.map(serializeConnection);
-
-      return c.json(enriched);
+      return sendTunnelJson(c, await runTunnelEffect(listConnectionsEffect(c)));
     },
   );
 
@@ -91,34 +278,7 @@ export function createConnectionsRouter() {
       },
     }),
     async (c: any) => {
-      const { accountId } = await getTunnelOwnerContext(c);
-      const body = await c.req.json();
-
-      const { name, sandboxId, capabilities } = body;
-
-      if (!name || typeof name !== 'string') {
-        return c.json({ error: 'name is required' }, 400);
-      }
-
-      const setupToken = generateTunnelToken();
-      const setupTokenHash = hashSecretKey(setupToken);
-
-      const [connection] = await db
-        .insert(tunnelConnections)
-        .values({
-          accountId,
-          name,
-          sandboxId: sandboxId || null,
-          capabilities: capabilities || [],
-          status: 'offline',
-          setupTokenHash,
-        })
-        .returning();
-
-      // Materialize the account's `computer` Executor connector (first machine).
-      void reconcileComputerConnectors(accountId);
-
-      return c.json({ ...connection, setupToken }, 201);
+      return sendTunnelJson(c, await runTunnelEffect(registerConnectionEffect(c)));
     },
   );
 
@@ -136,24 +296,7 @@ export function createConnectionsRouter() {
       },
     }),
     async (c: any) => {
-      const { ownerClause } = await getTunnelReadContext(c);
-      const tunnelId = c.req.param('tunnelId');
-
-      const [connection] = await db
-        .select()
-        .from(tunnelConnections)
-        .where(
-          and(
-            eq(tunnelConnections.tunnelId, tunnelId),
-            ownerClause,
-          ),
-        );
-
-      if (!connection) {
-        return c.json({ error: 'Tunnel connection not found' }, 404);
-      }
-
-      return c.json(serializeConnection(connection));
+      return sendTunnelJson(c, await runTunnelEffect(getConnectionEffect(c)));
     },
   );
 
@@ -184,31 +327,7 @@ export function createConnectionsRouter() {
       },
     }),
     async (c: any) => {
-      const { ownerClause } = await getTunnelOwnerContext(c);
-      const tunnelId = c.req.param('tunnelId');
-      const body = await c.req.json();
-
-      const updates: Record<string, unknown> = { updatedAt: new Date() };
-      if (body.name !== undefined) updates.name = body.name;
-      if (body.capabilities !== undefined) updates.capabilities = body.capabilities;
-      if (body.sandboxId !== undefined) updates.sandboxId = body.sandboxId || null;
-
-      const [updated] = await db
-        .update(tunnelConnections)
-        .set(updates)
-        .where(
-          and(
-            eq(tunnelConnections.tunnelId, tunnelId),
-            ownerClause,
-          ),
-        )
-        .returning();
-
-      if (!updated) {
-        return c.json({ error: 'Tunnel connection not found' }, 404);
-      }
-
-      return c.json(updated);
+      return sendTunnelJson(c, await runTunnelEffect(updateConnectionEffect(c)));
     },
   );
 
@@ -229,40 +348,7 @@ export function createConnectionsRouter() {
       },
     }),
     async (c: any) => {
-      const { ownerClause } = await getTunnelOwnerContext(c);
-      const tunnelId = c.req.param('tunnelId');
-
-      const [tunnel] = await db
-        .select()
-        .from(tunnelConnections)
-        .where(
-          and(
-            eq(tunnelConnections.tunnelId, tunnelId),
-            ownerClause,
-          ),
-        );
-
-      if (!tunnel) {
-        return c.json({ error: 'Tunnel connection not found' }, 404);
-      }
-
-      const newToken = generateTunnelToken();
-      const newTokenHash = hashSecretKey(newToken);
-
-      await db
-        .update(tunnelConnections)
-        .set({ setupTokenHash: newTokenHash, updatedAt: new Date() })
-        .where(eq(tunnelConnections.tunnelId, tunnelId));
-
-      tunnelRelay.sendNotification(tunnelId, 'tunnel.token.rotated', {
-        reason: 'Token rotated by owner',
-      });
-
-      setTimeout(() => {
-        tunnelRelay.unregisterAgent(tunnelId);
-      }, 500);
-
-      return c.json({ tunnelId, setupToken: newToken });
+      return sendTunnelJson(c, await runTunnelEffect(rotateConnectionTokenEffect(c)));
     },
   );
 
@@ -280,27 +366,7 @@ export function createConnectionsRouter() {
       },
     }),
     async (c: any) => {
-      const { accountId, ownerClause } = await getTunnelOwnerContext(c);
-      const tunnelId = c.req.param('tunnelId');
-
-      const [deleted] = await db
-        .delete(tunnelConnections)
-        .where(
-          and(
-            eq(tunnelConnections.tunnelId, tunnelId),
-            ownerClause,
-          ),
-        )
-        .returning();
-
-      if (!deleted) {
-        return c.json({ error: 'Tunnel connection not found' }, 404);
-      }
-
-      // Tear down the account's `computer` connector if that was the last machine.
-      void reconcileComputerConnectors(accountId);
-
-      return c.json({ success: true });
+      return sendTunnelJson(c, await runTunnelEffect(deleteConnectionEffect(c)));
     },
   );
 

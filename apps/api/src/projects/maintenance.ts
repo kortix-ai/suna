@@ -1,6 +1,7 @@
+import type { Effect } from 'effect';
 import { and, eq, inArray, lt, ne } from 'drizzle-orm';
 import { projectSessions, projects } from '@kortix/db';
-import { db } from '../shared/db';
+import { runSharedInterval, sharedDb as db, stopSharedTimer, type SharedTimer } from '../shared/effect';
 import { deleteRemoteSessionBranch, type GitBackedProject } from './git';
 import { tickRunningComputeCharges } from '../billing/services/compute-metering';
 import { reconcileStaleBuilds } from '../snapshots/builder';
@@ -19,7 +20,7 @@ const GC_BATCH_SIZE = 50;
 
 const TERMINAL_SESSION_STATUSES = ['stopped', 'completed', 'failed'] as const;
 
-type MaintenanceTimer = ReturnType<typeof setInterval>;
+type MaintenanceTimer = SharedTimer;
 
 const globalForProjectMaintenance = globalThis as typeof globalThis & {
   __kortixProjectMaintenanceTimer?: MaintenanceTimer | null;
@@ -224,9 +225,9 @@ async function runProjectMaintenance(): Promise<void> {
 export function startProjectMaintenance(): void {
   if (process.env.KORTIX_PROJECT_MAINTENANCE_ENABLED === 'false') return;
   if (globalForProjectMaintenance.__kortixProjectMaintenanceTimer) {
-    clearInterval(globalForProjectMaintenance.__kortixProjectMaintenanceTimer);
+    stopSharedTimer(globalForProjectMaintenance.__kortixProjectMaintenanceTimer);
   }
-  maintenanceTimer = setInterval(() => {
+  maintenanceTimer = runSharedInterval(() => {
     runProjectMaintenance().catch((err) => {
       console.error('[project-maintenance] run failed:', err);
     });
@@ -236,11 +237,11 @@ export function startProjectMaintenance(): void {
 
 export function stopProjectMaintenance(): void {
   if (maintenanceTimer) {
-    clearInterval(maintenanceTimer);
+    stopSharedTimer(maintenanceTimer);
     maintenanceTimer = null;
   }
   if (globalForProjectMaintenance.__kortixProjectMaintenanceTimer) {
-    clearInterval(globalForProjectMaintenance.__kortixProjectMaintenanceTimer);
+    stopSharedTimer(globalForProjectMaintenance.__kortixProjectMaintenanceTimer);
     globalForProjectMaintenance.__kortixProjectMaintenanceTimer = null;
   }
 }

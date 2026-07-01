@@ -67,6 +67,17 @@ mock.module('../shared/supabase', () => ({
   }),
 }));
 
+mock.module('../shared/db', () => ({
+  hasDatabase: false,
+  db: {
+    insert: () => ({
+      values: () => ({
+        returning: async () => [],
+      }),
+    }),
+  },
+}));
+
 mock.module('../shared/preview-ownership', () => ({
   canAccessPreviewSandbox: async ({ userId, accountId }: { userId?: string; accountId?: string }) => {
     if (accountId && allowedAccounts.has(accountId)) return true;

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Project config introspection: parses kortix.toml + the OpenCode config dir
 // (agents/skills/commands) out of the repo into a ProjectConfigSummary.
 

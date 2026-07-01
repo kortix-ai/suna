@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 const VALID_CAPABILITIES = new Set<string>([
   'filesystem',
   'shell',

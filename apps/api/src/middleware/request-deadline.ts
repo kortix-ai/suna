@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import type { Context, Next } from 'hono';
 import { timeout } from 'hono/timeout';
 import { HTTPException } from 'hono/http-exception';

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Setup-link tokens — the opaque, short-lived handle behind every agent-minted
  * "fill this in" link (a project secret, or a Pipedream Quick Connect).

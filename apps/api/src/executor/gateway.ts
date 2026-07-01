@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { logger } from '../lib/logger';
 import { EMAIL_CHANNEL_CONNECTOR_SLUG, SLACK_CHANNEL_CONNECTOR_SLUG, channelCatalog } from './channels';
 import {

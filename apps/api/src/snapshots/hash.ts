@@ -28,8 +28,14 @@
  */
 
 import { createHash } from 'node:crypto';
-import { SANDBOX_VERSION } from '../config';
+import { Effect } from 'effect';
+import { AppConfig } from '../effect/services';
+import { runEffectOrThrow } from '../effect/http';
 import type { SandboxSpec } from './dockerfile-layer';
+
+const snapshotConfig = await runEffectOrThrow(Effect.gen(function* () {
+  return yield* AppConfig;
+}));
 
 export interface SnapshotHashInputs {
   /** UTF-8 contents of the user's Dockerfile at the build commit. */
@@ -65,7 +71,7 @@ export interface SnapshotHashResult {
  * artifact fingerprint; tests use this default for deterministic hashing.
  */
 function currentRuntimeFingerprint(): string {
-  return `kortix-runtime:${SANDBOX_VERSION}`;
+  return `kortix-runtime:${snapshotConfig.SANDBOX_VERSION}`;
 }
 
 export function computeSnapshotHash(inputs: SnapshotHashInputs): SnapshotHashResult {

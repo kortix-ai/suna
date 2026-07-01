@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Thin re-export of the Kortix starter for the API.
  *

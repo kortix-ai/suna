@@ -1,4 +1,6 @@
+import type { Effect } from 'effect';
 import { isWake } from './meet-realtime';
+import { runSharedTimeout, stopSharedTimer, type SharedTimer } from '../shared/effect';
 
 export interface MeetTurn {
   speaker: string;
@@ -25,7 +27,7 @@ interface SessionState {
   speaker: string;
   spoken: boolean;
   deliver: (turn: MeetTurn) => void;
-  timer: ReturnType<typeof setTimeout> | null;
+  timer: SharedTimer | null;
   followUpUntil: number;
 }
 
@@ -59,8 +61,8 @@ export function createMeetConversation(options: MeetConversationOptions = {}) {
     state.speaker = input.speaker;
     state.spoken = input.spoken;
     state.deliver = input.deliver;
-    if (state.timer) clearTimeout(state.timer);
-    state.timer = setTimeout(() => flush(input.sessionId), debounceMs);
+    if (state.timer) stopSharedTimer(state.timer);
+    state.timer = runSharedTimeout(() => flush(input.sessionId), debounceMs);
     sessions.set(input.sessionId, state);
     prune();
   }

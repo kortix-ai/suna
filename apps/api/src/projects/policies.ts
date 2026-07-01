@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Project-level `[[policies]]` + `[policy]` parsing for kortix.toml.
  *

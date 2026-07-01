@@ -1,7 +1,9 @@
-import { createRoute, z } from '@hono/zod-openapi';
-import type { AppEnv } from '../types';
-import { makeOpenApiApp, json } from '../openapi';
-import { versionRouter } from './routes/version';
+import type { Effect } from 'effect';
+import { createRoute, z } from "@hono/zod-openapi";
+import type { AppEnv } from "../types";
+import { makeOpenApiApp, json } from "../openapi";
+import { versionRouter } from "./routes/version";
+import { effectHandler } from "../effect/hono";
 
 // Platform sub-app. The legacy /v1/platform/sandbox/* lifecycle surface
 // (one-per-account sandbox lifecycle, members, invites, pool admin, backup
@@ -14,16 +16,19 @@ const platformApp = makeOpenApiApp<AppEnv>();
 
 platformApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/',
-    tags: ['platform'],
-    summary: 'Platform sub-app info',
+    method: "get",
+    path: "/",
+    tags: ["platform"],
+    summary: "Platform sub-app info",
     responses: {
-      200: json(z.object({ ok: z.boolean(), message: z.string() }), 'Platform mount-point info'),
+      200: json(
+        z.object({ ok: z.boolean(), message: z.string() }),
+        "Platform mount-point info",
+      ),
     },
   }),
-  (c) => c.json({ ok: true, message: 'platform' }),
+  effectHandler((c) => c.json({ ok: true, message: "platform" })),
 );
-platformApp.route('/sandbox/version', versionRouter);
+platformApp.route("/sandbox/version", versionRouter);
 
 export { platformApp };

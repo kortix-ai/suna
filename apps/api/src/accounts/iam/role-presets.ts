@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Pure helpers for the IAM v1 custom-roles surface: the built-in role presets
 // (read-only reference + clone templates, incl. the "User" read+run tier) and
 // the write-time action validator. No db/router imports → unit-testable.

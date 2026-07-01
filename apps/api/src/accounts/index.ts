@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Orchestrator for the accounts router. Wires middleware + sub-router mounts +
 // route modules in the SAME order as the original single-file router. The router
 // instance + shared schemas/helpers live in ./core/app (a leaf module); each

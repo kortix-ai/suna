@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { resolveCatalogUpstream } from "@kortix/llm-gateway";
 import {
   AUTO_MODEL_ID,

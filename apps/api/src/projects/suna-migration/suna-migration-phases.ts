@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Suna migration phases (extract → repo → push → db), driven by
  * suna-migration-runner. Reuses the committed building blocks. Mirrors the

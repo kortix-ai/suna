@@ -1,6 +1,7 @@
+import type { Effect } from 'effect';
 import { eq } from 'drizzle-orm';
 import { creditAccounts } from '@kortix/db';
-import { db } from '../../shared/db';
+import { billingDb as db } from '../effect';
 
 export type LegacyStripeSyncResult = {
   status:

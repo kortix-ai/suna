@@ -1,5 +1,6 @@
+import type { Effect } from 'effect';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { config } from '../config';
+import { sharedConfig as config } from './effect';
 
 export interface SessionLlmTokenContext {
   accountId: string;

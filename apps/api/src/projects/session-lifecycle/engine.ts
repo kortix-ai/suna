@@ -1,8 +1,8 @@
+import type { Effect } from 'effect';
 import { eq } from 'drizzle-orm';
 import { chatThreads, projects, projectSessions } from '@kortix/db';
-import { config } from '../../config';
+import { sharedConfig as config, sharedDb as db, sharedSleep } from '../../shared/effect';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
-import { db } from '../../shared/db';
 import { createProjectSession } from '../lib/sessions';
 import { openSession } from '../routes/shared';
 import { awaitTerminalStage } from './await-stage';
@@ -32,8 +32,6 @@ const WORKSPACE = '/workspace';
 const DAEMON_PORT = 8000;
 const READY_DEADLINE_MS = 300_000;
 const POLL_INTERVAL_MS = 3_000;
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function createSession(command: CreateSessionCommand): Promise<SessionLifecycleResult> {
   const queuePolicy = command.queuePolicy ?? 'never';
@@ -261,7 +259,7 @@ export async function continueSession(
       });
       return 'pending';
     }
-    await sleep(POLL_INTERVAL_MS);
+    await sharedSleep(POLL_INTERVAL_MS);
   }
 
   // Runtime is ready — hand off the prompt, healing + retrying through the

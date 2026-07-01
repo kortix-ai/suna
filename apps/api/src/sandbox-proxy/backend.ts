@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Sandbox backend resolution — the single source of truth for "where does this
  * sandbox live, how do I authenticate to it, and is it healthy".
@@ -22,9 +23,8 @@
 
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { config } from '../config';
 import { getProvider, type ProviderName } from '../platform/providers';
-import { db } from '../shared/db';
+import { sandboxProxyDb as db } from './effect';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
 import {
   encodeKortixUserContext,

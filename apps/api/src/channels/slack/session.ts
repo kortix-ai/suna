@@ -1,6 +1,7 @@
+import type { Effect } from 'effect';
 import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projects } from '@kortix/db';
-import { db } from '../../shared/db';
+import { sharedDb as db, sharedSleep } from '../../shared/effect';
 import { filterAccessibleProjectResources } from '../../iam';
 import {
   continueSession as continueLifecycleSession,
@@ -270,7 +271,7 @@ async function waitForThreadSession(teamId: string, threadId: string): Promise<s
       .limit(1);
     if (row) return row.sessionId;
     if (Date.now() >= deadline) return null;
-    await new Promise((r) => setTimeout(r, 250));
+    await sharedSleep(250);
   }
 }
 

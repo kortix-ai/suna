@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Auto-topup service.
  *
@@ -6,7 +7,7 @@
  */
 
 import { getStripe } from '../../shared/stripe';
-import { config } from '../../config';
+import { billingConfig as config } from '../effect';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { getCustomerByAccountId } from '../repositories/customers';
 import { grantCredits } from './credits';

@@ -1,10 +1,11 @@
+import type { Effect } from 'effect';
 // IAM V2 routes: account groups, group members, and group→project grants.
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { and, asc, eq } from 'drizzle-orm';
 import { projectGroupGrants, projects } from '@kortix/db';
-import { db } from '../../shared/db';
+import { accountDb as db } from '../effect';
 import {
   ACCOUNT_ACTIONS,
   assertAuthorized,
@@ -33,6 +34,7 @@ import {
   ProjectGrantSchema,
 } from './app';
 import { auditIam, isUniqueViolation, readBody } from './helpers';
+import { effectHandler } from '../../effect/hono';
 
 // ─── Groups ────────────────────────────────────────────────────────────────
 
@@ -49,7 +51,7 @@ iamRouter.openapi(
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
@@ -68,7 +70,7 @@ iamRouter.openapi(
       updated_at: g.updatedAt.toISOString(),
     })),
   });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -84,7 +86,7 @@ iamRouter.openapi(
       ...errors(400, 401, 403, 409),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_CREATE);
@@ -124,7 +126,7 @@ iamRouter.openapi(
     }
     throw err;
   }
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -140,7 +142,7 @@ iamRouter.openapi(
       ...errors(401, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
@@ -158,7 +160,7 @@ iamRouter.openapi(
     created_at: group.createdAt.toISOString(),
     updated_at: group.updatedAt.toISOString(),
   });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -174,7 +176,7 @@ iamRouter.openapi(
       ...errors(400, 401, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
@@ -216,7 +218,7 @@ iamRouter.openapi(
     description: updated.description,
     updated_at: updated.updatedAt.toISOString(),
   });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -232,7 +234,7 @@ iamRouter.openapi(
       ...errors(401, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
@@ -263,7 +265,7 @@ iamRouter.openapi(
   });
 
   return c.json({ deleted: true });
-  },
+  }),
 );
 
 // ─── Group members ─────────────────────────────────────────────────────────
@@ -281,7 +283,7 @@ iamRouter.openapi(
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
@@ -295,7 +297,7 @@ iamRouter.openapi(
       added_by: m.addedBy,
     })),
   });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -311,7 +313,7 @@ iamRouter.openapi(
       ...errors(400, 401, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
@@ -348,7 +350,7 @@ iamRouter.openapi(
   }
 
   return c.json({ added: result.added });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -364,7 +366,7 @@ iamRouter.openapi(
       ...errors(401, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const callerId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
@@ -393,7 +395,7 @@ iamRouter.openapi(
   });
 
   return c.json({ removed: true });
-  },
+  }),
 );
 
 // ─── Group → project attachments (IAM V2) ──────────────────────────────────
@@ -418,7 +420,7 @@ iamRouter.openapi(
       ...errors(401, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
@@ -460,5 +462,5 @@ iamRouter.openapi(
       expires_at: r.expiresAt?.toISOString() ?? null,
     })),
   });
-  },
+  }),
 );

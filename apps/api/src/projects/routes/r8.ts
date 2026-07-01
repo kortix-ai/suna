@@ -1,8 +1,8 @@
+import type { Effect } from 'effect';
 import { checkBillingActive } from '../../billing/services/billing-gate';
-import { config, type SandboxProviderName } from '../../config';
+import { sharedConfig as config, sharedDb as db, sharedFetch, type SandboxProviderName } from '../../shared/effect';
 import { auth, errors, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
-import { db } from '../../shared/db';
 import {
   getCrById,
   getNextCrNumber,
@@ -28,12 +28,17 @@ import { restartSession, startSession } from '../session-lifecycle';
 import {
   refreshCrTips,
 } from './shared';
+import { effectHandler } from '../../effect/hono';
 
 // POST /v1/projects/:projectId/sessions/:sessionId/start
 // THE unified session-open endpoint. One idempotent call that provisions a
 // missing sandbox, resumes a hibernated/idle one, and resolves the OpenCode pin
 // once reachable — returning a single readiness payload { stage, sandbox,
 // opencode_session_id, retriable } the client polls until stage='ready'.
+//
+// Effect boundary with direct lifecycle sequencing: keeping billing, visibility,
+// optional long-poll, and startSession ordering linear preserves the public
+// readiness contract and avoids obscuring retry behavior.
 
 projectsApp.openapi(
   createRoute({
@@ -47,7 +52,7 @@ projectsApp.openapi(
     },
     responses: { 200: json(z.any(), 'OK'), ...errors(400, 402, 404) },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!UUID_V4_REGEX.test(sessionId))
@@ -82,7 +87,7 @@ projectsApp.openapi(
     const waitMs = Number.isFinite(waitMsRaw) && waitMsRaw > 0 ? Math.min(waitMsRaw, 8000) : 0;
     const result = await startSession({ source: 'ui', loaded, visible, projectId, sessionId, waitMs });
     return c.json(result.start, 200);
-  },
+  }),
 );
 
 // POST /v1/projects/:projectId/sessions/:sessionId/restart
@@ -90,6 +95,10 @@ projectsApp.openapi(
 // box and its disk (repo clone, deps, opencode) are kept, never removed. Only
 // when the session has no sandbox (deleted / never provisioned) do we provision
 // a fresh one to recover it from the preserved git branch.
+//
+// Effect boundary with direct lifecycle sequencing: restartSession owns
+// replacement vs in-place restart semantics, provider errors, and status
+// shaping; the route remains a direct guard-and-dispatch wrapper.
 
 projectsApp.openapi(
   createRoute({
@@ -106,7 +115,7 @@ projectsApp.openapi(
       ...errors(400, 403, 404, 503),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!UUID_V4_REGEX.test(sessionId))
@@ -137,7 +146,7 @@ projectsApp.openapi(
       sessionId,
     });
     return c.json(result.body, result.status as any);
-  },
+  }),
 );
 
 // ─── Change Requests ────────────────────────────────────────────────────────
@@ -172,7 +181,7 @@ projectsApp.openapi(
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -197,7 +206,7 @@ projectsApp.openapi(
     return c.json({
       change_requests: rows.map(serializeChangeRequest),
     });
-  },
+  }),
 );
 
 // POST /v1/projects/:projectId/change-requests
@@ -219,7 +228,7 @@ projectsApp.openapi(
       ...errors(400, 404, 500),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param('projectId');
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
@@ -315,7 +324,7 @@ projectsApp.openapi(
       return c.json({ error: 'Failed to allocate CR number' }, 500);
 
     return c.json(serializeChangeRequest(inserted), 201);
-  },
+  }),
 );
 
 // POST /v1/projects/:projectId/sessions/:sessionId/commit-push
@@ -346,7 +355,7 @@ projectsApp.openapi(
       ...errors(404, 409, 502),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     const loaded = await loadProjectForUser(c, projectId, 'write');
@@ -406,7 +415,7 @@ projectsApp.openapi(
 
     let daemonRes: Response;
     try {
-      daemonRes = await fetch(
+      daemonRes = await sharedFetch(
         `${endpoint.url.replace(/\/$/, '')}/kortix/git/commit-push`,
         {
           method: 'POST',
@@ -453,7 +462,7 @@ projectsApp.openapi(
       branch: result.branch ?? null,
       head_sha: result.headSha ?? null,
     });
-  },
+  }),
 );
 
 // GET /v1/projects/:projectId/change-requests/:crId
@@ -475,7 +484,7 @@ projectsApp.openapi(
       ...errors(404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param('projectId');
     const crId = c.req.param('crId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -491,7 +500,7 @@ projectsApp.openapi(
     cr = (await getCrById(crId, projectId))!;
 
     return c.json({ change_request: serializeChangeRequest(cr) });
-  },
+  }),
 );
 
 // PATCH /v1/projects/:projectId/change-requests/:crId
@@ -513,7 +522,7 @@ projectsApp.openapi(
       ...errors(404, 409),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param('projectId');
     const crId = c.req.param('crId');
     const body = await readBody(c);
@@ -545,7 +554,7 @@ projectsApp.openapi(
       .where(eq(changeRequests.crId, crId))
       .returning();
     return c.json(serializeChangeRequest(row));
-  },
+  }),
 );
 
 // GET /v1/projects/:projectId/change-requests/:crId/diff
@@ -568,7 +577,7 @@ projectsApp.openapi(
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param('projectId');
     const crId = c.req.param('crId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -611,7 +620,7 @@ projectsApp.openapi(
         400,
       );
     }
-  },
+  }),
 );
 
 // GET /v1/projects/:projectId/change-requests/:crId/merge-preview
@@ -631,7 +640,7 @@ projectsApp.openapi(
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param('projectId');
     const crId = c.req.param('crId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -656,7 +665,7 @@ projectsApp.openapi(
         400,
       );
     }
-  },
+  }),
 );
 
 // POST /v1/projects/:projectId/change-requests/:crId/merge

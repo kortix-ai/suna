@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Billing v2 — per-member KORTIX YOLO tokens.
 //
 // One token per (user_id, account_id). Plaintext is generated at mint and
@@ -16,6 +17,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import {
   revokeYoloToken,
 } from '../repositories/yolo-tokens';
+import { billingDb as db } from '../effect';
 
 // In-process plaintext cache. Wiped on restart — bootstrap reissues on miss.
 // Keyed by `${userId}::${accountId}`.
@@ -55,7 +57,6 @@ export async function mintYoloTokenForMember(
   const tokenPrefix = plaintext.slice(0, PREFIX_LEN);
   const tokenHash = hashToken(plaintext);
 
-  const { db } = await import('../../shared/db');
   const { yoloMemberTokens } = await import('@kortix/db');
   await db
     .insert(yoloMemberTokens)
@@ -103,7 +104,6 @@ export async function attributeYoloToken(
   const hash = hashToken(plaintext);
 
   // Direct equality on prefix + hash. Drizzle inline for clarity.
-  const { db } = await import('../../shared/db');
   const { yoloMemberTokens } = await import('@kortix/db');
   const { and, eq, isNull } = await import('drizzle-orm');
 

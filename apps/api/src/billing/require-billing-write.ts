@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { resolveScopedAccountId } from '../shared/resolve-account';
 import { assertAuthorized } from '../iam/dispatcher';
 import { ACCOUNT_ACTIONS } from '../iam/actions';

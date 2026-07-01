@@ -96,6 +96,10 @@ dump.rdb
 .cwc/
 test/
 
+# Optional local-only external source references for coding agents.
+# Do not commit vendored dependency repositories into app PRs.
+/repos/effect/
+
 # suna is itself a Kortix project: its root .kortix/ (Dockerfile + opencode
 # config dir) is committed and synced via git, so cloud sessions clone the real
 # config. Only the per-clone link state stays out. Other vendored .kortix dirs

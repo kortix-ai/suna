@@ -1,5 +1,6 @@
+import type { Effect } from 'effect';
 import { getStripe } from '../../shared/stripe';
-import { db } from '../../shared/db';
+import { billingSleep } from '../effect';
 import { eq } from 'drizzle-orm';
 import {
   getCreditAccount,
@@ -667,7 +668,7 @@ async function handleExistingSchedule(
       if (phases.length > 0 && phases[0].end_date && phases[0].end_date < now) {
         console.log(`[Billing] Schedule ${existingScheduleId} phase 0 has ended, releasing`);
         try { await stripe.subscriptionSchedules.release(existingScheduleId); } catch {}
-        await new Promise(r => setTimeout(r, 1000));
+        await billingSleep(1000);
         return false;
       }
 
@@ -692,7 +693,7 @@ async function handleExistingSchedule(
     }
 
     try { await stripe.subscriptionSchedules.release(existingScheduleId); } catch {}
-    await new Promise(r => setTimeout(r, 1000));
+    await billingSleep(1000);
     return false;
   } catch (err: any) {
     if (err?.code === 'resource_missing' || err?.message?.includes('No such subscription_schedule')) {
@@ -700,7 +701,7 @@ async function handleExistingSchedule(
     }
     if (err?.message?.includes('phase that has already ended')) {
       try { await stripe.subscriptionSchedules.release(existingScheduleId); } catch {}
-      await new Promise(r => setTimeout(r, 1000));
+      await billingSleep(1000);
       return false;
     }
     throw err;

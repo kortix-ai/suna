@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // IAM V2 routes: SCIM provisioning tokens.
 // Bearer credentials configured in the customer's IdP (Okta, Azure AD, …)
 // to drive /scim/v2/accounts/:accountId/*. Treated as account-admin-level
@@ -14,6 +15,7 @@ import {
 } from '../../repositories/scim';
 import { iamRouter, AccountIdParam, ScimTokenSchema } from './app';
 import { auditIam, readBody, requireEntitlement } from './helpers';
+import { effectHandler } from '../../effect/hono';
 
 iamRouter.openapi(
   createRoute({
@@ -28,7 +30,7 @@ iamRouter.openapi(
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -46,7 +48,7 @@ iamRouter.openapi(
       revoked_at: t.revokedAt?.toISOString() ?? null,
     })),
   });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -62,7 +64,7 @@ iamRouter.openapi(
       ...errors(400, 401, 402, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -125,7 +127,7 @@ iamRouter.openapi(
     },
     201,
   );
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -141,7 +143,7 @@ iamRouter.openapi(
       ...errors(401, 402, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const tokenId = c.req.param('tokenId');
@@ -160,5 +162,5 @@ iamRouter.openapi(
   });
 
   return c.json({ revoked: true });
-  },
+  }),
 );

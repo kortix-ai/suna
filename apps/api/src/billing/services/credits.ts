@@ -1,6 +1,7 @@
+import type { Effect } from 'effect';
 import { InsufficientCreditsError } from '../../errors';
-import { db } from '../../shared/db';
-import { getSupabase } from '../../shared/supabase';
+import { billingDb as db } from '../effect';
+import { billingSupabase } from '../effect';
 import {
   getCreditAccount,
   getCreditBalance,
@@ -87,7 +88,7 @@ export async function deductCredits(
   description: string,
   ledgerType: LedgerDebitType = 'usage',
 ) {
-  const supabase = getSupabase();
+  const supabase = billingSupabase;
 
   const { data, error } = await supabase.rpc('atomic_use_credits', {
     p_account_id: accountId,
@@ -219,7 +220,7 @@ export async function grantCredits(
   isExpiring = true,
   stripeEventId?: string,
 ) {
-  const supabase = getSupabase();
+  const supabase = billingSupabase;
   const idempotencyKey = stripeEventId ? `grant:${accountId}:${stripeEventId}` : null;
 
   const { data, error } = await supabase.rpc('atomic_add_credits', {
@@ -298,7 +299,7 @@ export async function resetExpiringCredits(
   description: string,
   stripeEventId?: string,
 ) {
-  const supabase = getSupabase();
+  const supabase = billingSupabase;
 
   const { error } = await supabase.rpc('atomic_reset_expiring_credits', {
     p_account_id: accountId,

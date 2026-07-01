@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Connector CRUD that round-trips `kortix.toml` — the web UI "Add connector"
  * flow (mirrors triggers/apps). The manifest holds the connector definition +
@@ -7,7 +8,7 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { executorConnectors, projects } from '@kortix/db';
-import { db } from '../shared/db';
+import { executorDb as db } from './effect';
 import { commitManifest, loadManifestForEdit } from '../projects/index';
 import { extractConnectors, RESERVED_CONNECTOR_SLUGS, RESERVED_SLUG_PROVIDERS, type ConnectorPolicySpec, type ConnectorPolicyAction, type ConnectorSpec } from '../projects/connectors';
 import { isValidMatcher } from './policy';

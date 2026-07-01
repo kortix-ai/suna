@@ -1,11 +1,11 @@
+import type { Effect } from 'effect';
 import {
   endComputeSession,
   reopenComputeForSandbox,
 } from '../../billing/services/compute-metering';
-import { config, type SandboxProviderName } from '../../config';
-import { auth, json } from '../../openapi';
+import { sharedConfig as config, type SandboxProviderName } from '../../shared/effect';
 import { getProvider, type SandboxStatus } from '../../platform/providers';
-import { db } from '../../shared/db';
+import { sharedDb as db } from '../../shared/effect';
 import { resolveBranchTip } from '../git';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { rehydrateSessionChat } from '../legacy-migration-rehydrate';
@@ -22,6 +22,10 @@ import {
   sandboxCallbackUnreachableReason,
 } from '../lib/sessions';
 import { ensureOpencodeSessionPin } from '../opencode-mapping';
+
+// Runtime lifecycle support used by route handlers, not direct route-side
+// parsing/response shaping. The DB locks, detached provider starts, metering,
+// and recovery paths stay linear.
 
 /**
  * Resume a hibernated (status='stopped') session sandbox IN PLACE instead of

@@ -1,12 +1,13 @@
+import type { Effect } from 'effect';
 /**
  * /v1/marketplace — browse the registry catalog. Read-only routes are public; installing
  * is project-scoped and lives under /v1/projects/:id/registry/* (see r10.ts).
  */
 
-import { createRoute, z } from '@hono/zod-openapi';
-import { supabaseAuth } from '../middleware/auth';
-import { auth, errors, json, makeOpenApiApp } from '../openapi';
-import type { AppEnv } from '../types';
+import { createRoute, z } from "@hono/zod-openapi";
+import { supabaseAuth } from "../middleware/auth";
+import { auth, errors, json, makeOpenApiApp } from "../openapi";
+import type { AppEnv } from "../types";
 import {
   _resetExternalCache,
   assertAllowedSourceAddress,
@@ -18,8 +19,9 @@ import {
   listMarketplaces,
   registerMarketplaceSourceProvider,
   warmMarketplaceCatalog,
-} from './catalog';
-import { addSource, listSources, removeSource } from './sources-store';
+} from "./catalog";
+import { addSource, listSources, removeSource } from "./sources-store";
+import { effectHandler } from "../effect/hono";
 
 // Wire DB-persisted sources into the catalog. Done here (not in catalog.ts) so
 // catalog.ts stays free of the config/db import graph for pure unit tests.
@@ -34,134 +36,148 @@ export const marketplaceApp = makeOpenApiApp<AppEnv>();
 
 marketplaceApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/items',
-    tags: ['marketplace'],
-    summary: 'GET /marketplace/items',
+    method: "get",
+    path: "/items",
+    tags: ["marketplace"],
+    summary: "GET /marketplace/items",
     request: {
-      query: z.object({ query: z.string().optional(), type: z.string().optional(), source: z.string().optional() }),
+      query: z.object({
+        query: z.string().optional(),
+        type: z.string().optional(),
+        source: z.string().optional(),
+      }),
     },
     responses: {
-      200: json(z.any(), 'Catalog items'),
+      200: json(z.any(), "Catalog items"),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const q = c.req.query();
-    const items = await listCatalogItemsLive({ query: q.query, type: q.type, source: q.source });
+    const items = await listCatalogItemsLive({
+      query: q.query,
+      type: q.type,
+      source: q.source,
+    });
     // `loading`/`pending`/`sources` let the UI stream sources in (Kortix first),
     // poll, and show a spinner per still-resolving source.
     return c.json({ items, ...catalogStatus() });
-  },
+  }),
 );
 
 marketplaceApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/marketplaces',
-    tags: ['marketplace'],
-    summary: 'GET /marketplace/marketplaces',
+    method: "get",
+    path: "/marketplaces",
+    tags: ["marketplace"],
+    summary: "GET /marketplace/marketplaces",
     responses: {
-      200: json(z.any(), 'Distinct marketplaces with item counts'),
+      200: json(z.any(), "Distinct marketplaces with item counts"),
     },
   }),
-  async (c: any) => {
-    return c.json({ marketplaces: await listMarketplaces(), ...catalogStatus() });
-  },
+  effectHandler(async (c: any) => {
+    return c.json({
+      marketplaces: await listMarketplaces(),
+      ...catalogStatus(),
+    });
+  }),
 );
 
 marketplaceApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/marketplaces/featured',
-    tags: ['marketplace'],
-    summary: 'GET /marketplace/marketplaces/featured',
+    method: "get",
+    path: "/marketplaces/featured",
+    tags: ["marketplace"],
+    summary: "GET /marketplace/marketplaces/featured",
     responses: {
-      200: json(z.any(), 'Curated featured marketplaces'),
+      200: json(z.any(), "Curated featured marketplaces"),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     return c.json({ featured: await listFeaturedMarketplaces() });
-  },
+  }),
 );
 
 marketplaceApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/items/{id}',
-    tags: ['marketplace'],
-    summary: 'GET /marketplace/items/:id',
+    method: "get",
+    path: "/items/{id}",
+    tags: ["marketplace"],
+    summary: "GET /marketplace/items/:id",
     request: {
       params: z.object({ id: z.string() }),
     },
     responses: {
-      200: json(z.any(), 'Item detail'),
+      200: json(z.any(), "Item detail"),
       ...errors(404),
     },
   }),
-  async (c: any) => {
-    const detail = await getCatalogItemDetail(c.req.param('id'));
-    if (!detail) return c.json({ error: 'Not found' }, 404);
+  effectHandler(async (c: any) => {
+    const detail = await getCatalogItemDetail(c.req.param("id"));
+    if (!detail) return c.json({ error: "Not found" }, 404);
     return c.json(detail);
-  },
+  }),
 );
 
 marketplaceApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/items/{id}/file',
-    tags: ['marketplace'],
-    summary: 'GET /marketplace/items/:id/file',
+    method: "get",
+    path: "/items/{id}/file",
+    tags: ["marketplace"],
+    summary: "GET /marketplace/items/:id/file",
     request: {
       params: z.object({ id: z.string() }),
       query: z.object({ path: z.string().min(1) }),
     },
     responses: {
-      200: json(z.any(), 'File content'),
+      200: json(z.any(), "File content"),
       ...errors(404),
     },
   }),
-  async (c: any) => {
-    const file = await getCatalogItemFile(c.req.param('id'), c.req.query('path'));
-    if (!file) return c.json({ error: 'Not found' }, 404);
+  effectHandler(async (c: any) => {
+    const file = await getCatalogItemFile(
+      c.req.param("id"),
+      c.req.query("path"),
+    );
+    if (!file) return c.json({ error: "Not found" }, 404);
     return c.json(file);
-  },
+  }),
 );
 
 // ── Sources ("Add a marketplace") ──────────────────────────────────────────
 
-marketplaceApp.use('/sources', supabaseAuth);
-marketplaceApp.use('/sources/*', supabaseAuth);
+marketplaceApp.use("/sources", supabaseAuth);
+marketplaceApp.use("/sources/*", supabaseAuth);
 // Operator-managed registries (a GitHub repo, Git URL, or local folder) whose
 // items merge into the catalog. Platform-global; persisted as a platform setting.
 
 marketplaceApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/sources',
-    tags: ['marketplace'],
-    summary: 'GET /marketplace/sources',
+    method: "get",
+    path: "/sources",
+    tags: ["marketplace"],
+    summary: "GET /marketplace/sources",
     ...auth,
     responses: {
-      200: json(z.any(), 'Configured marketplace sources'),
+      200: json(z.any(), "Configured marketplace sources"),
       ...errors(401),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     return c.json({ sources: await listSources() });
-  },
+  }),
 );
 
 marketplaceApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/sources',
-    tags: ['marketplace'],
-    summary: 'POST /marketplace/sources',
+    method: "post",
+    path: "/sources",
+    tags: ["marketplace"],
+    summary: "POST /marketplace/sources",
     ...auth,
     request: {
       body: {
         content: {
-          'application/json': {
+          "application/json": {
             schema: z.object({
               address: z.string().min(1),
               gitRef: z.string().optional(),
@@ -173,15 +189,15 @@ marketplaceApp.openapi(
       },
     },
     responses: {
-      200: json(z.any(), 'Added source'),
+      200: json(z.any(), "Added source"),
       ...errors(400, 401),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const body = await c.req.json().catch(() => ({}));
     try {
       // LFI/SSRF guard — reject local-folder + private/non-https URL sources.
-      assertAllowedSourceAddress(String(body?.address ?? ''));
+      assertAllowedSourceAddress(String(body?.address ?? ""));
       const source = await addSource(body);
       _resetExternalCache();
       warmMarketplaceCatalog();
@@ -189,29 +205,29 @@ marketplaceApp.openapi(
     } catch (err) {
       return c.json({ error: (err as Error).message }, 400);
     }
-  },
+  }),
 );
 
 marketplaceApp.openapi(
   createRoute({
-    method: 'delete',
-    path: '/sources/{id}',
-    tags: ['marketplace'],
-    summary: 'DELETE /marketplace/sources/:id',
+    method: "delete",
+    path: "/sources/{id}",
+    tags: ["marketplace"],
+    summary: "DELETE /marketplace/sources/:id",
     ...auth,
     request: {
       params: z.object({ id: z.string() }),
     },
     responses: {
-      200: json(z.any(), 'Removed source'),
+      200: json(z.any(), "Removed source"),
       ...errors(401, 404),
     },
   }),
-  async (c: any) => {
-    const removed = await removeSource(c.req.param('id'));
-    if (!removed) return c.json({ error: 'Not found' }, 404);
+  effectHandler(async (c: any) => {
+    const removed = await removeSource(c.req.param("id"));
+    if (!removed) return c.json({ error: "Not found" }, 404);
     _resetExternalCache();
     warmMarketplaceCatalog();
     return c.json({ ok: true });
-  },
+  }),
 );

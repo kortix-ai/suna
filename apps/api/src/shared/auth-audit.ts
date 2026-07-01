@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Auth-event audit helpers. Bundles the four auth-related event types
 // (login success / fail / logout / session first-sight) behind tiny
 // wrappers that pull IP + UA from the Hono context and never throw —

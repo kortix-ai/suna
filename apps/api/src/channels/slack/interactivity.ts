@@ -1,7 +1,7 @@
+import type { Effect } from 'effect';
 import { and, eq } from 'drizzle-orm';
 import { chatChannelBindings, chatInstalls, chatThreads, projects } from '@kortix/db';
-import { db } from '../../shared/db';
-import { config } from '../../config';
+import { sharedConfig as config, sharedDb as db } from '../../shared/effect';
 import { loadSlackTokenForProject } from '../install-store';
 import { updateMessage } from '../slack-api';
 import { dispatchSlackEvent, pendingPickers, spawnAgentTurn } from './dispatch';

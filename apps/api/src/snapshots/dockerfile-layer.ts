@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Compose the layered Dockerfile that becomes a session sandbox image.
  *

@@ -1,11 +1,14 @@
+import type { Effect } from 'effect';
 import { makeOpenApiApp } from '../../openapi';
 import { type AppEnv } from '../../types';
 import { z } from '@hono/zod-openapi';
 import { Hono } from 'hono';
+import { effectMiddleware } from '../../effect/hono';
 
 export const projectsApp = makeOpenApiApp<AppEnv>();
 
 export const projectWebhooksApp = new Hono<AppEnv>();
+projectWebhooksApp.use('*', effectMiddleware);
 
 // ─── Reusable OpenAPI schemas (permissive — these power the docs, not runtime
 // response validation). Many handlers return large/dynamic shapes, so common

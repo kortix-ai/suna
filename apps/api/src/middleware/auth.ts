@@ -5,12 +5,14 @@ import { validateAccountToken } from '../repositories/account-tokens';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { isKortixToken, isAccountToken, isServiceAccountToken } from '../shared/crypto';
 import { canAccessPreviewSandbox } from '../shared/preview-ownership';
-import { getSupabase } from '../shared/supabase';
 import { verifySupabaseJwt } from '../shared/jwt-verify';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
 import { syncSsoMembership } from '../iam/sso-sync';
 import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
+import { Effect } from 'effect';
+import { SupabaseService } from '../effect/services';
+import { runEffectOrThrow } from '../effect/http';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 
@@ -23,9 +25,16 @@ const PREVIEW_SESSION_COOKIE = '__preview_session';
 //
 // Token is read from query parameters ONLY as a last resort for preview proxy
 // routes (/v1/p/*) — browser WebSocket API can't set custom headers, so PTY
-// terminals pass the token as ?token=<jwt>. SSE clients use fetch() with
+// terminals pass the token as ?token=<jwt>. SSE clients use Fetch with
 // Authorization headers; preview iframes use cookies set via POST /v1/p/auth.
 // ═══════════════════════════════════════════════════════════════════════════════
+
+const getSupabaseUser = (token: string) =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const supabaseService = yield* SupabaseService;
+    const supabase = yield* supabaseService.client;
+    return yield* Effect.tryPromise(() => supabase.auth.getUser(token));
+  }));
 
 /**
  * API key auth for search, LLM, and router routes.
@@ -266,11 +275,10 @@ export async function supabaseAuth(c: Context, next: Next) {
   }
 
   try {
-    const supabase = getSupabase();
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser(token);
+    } = await getSupabaseUser(token);
 
     if (error || !user) {
       auditLoginFail({
@@ -312,7 +320,7 @@ export async function supabaseAuth(c: Context, next: Next) {
  * Used for:
  *   - Preview proxy routes (/v1/p/{sandboxId}/{port}/*)
  *   - Cron, secrets, providers, servers, and tunnel routes
- *   - SSE stream endpoints (clients use fetch() with Authorization header)
+ *   - SSE stream endpoints (clients use Fetch with Authorization header)
  *
  * Sets userId and userEmail in context regardless of token type.
  * For preview proxy routes, also sets/refreshes the session cookie.
@@ -492,8 +500,7 @@ export async function combinedAuth(c: Context, next: Next) {
 
   // JWKS not yet loaded — fall back to network getUser() call
   try {
-    const supabase = getSupabase();
-    const { data: { user }, error } = await supabase.auth.getUser(token);
+    const { data: { user }, error } = await getSupabaseUser(token);
 
     if (error || !user) {
       auditLoginFail({

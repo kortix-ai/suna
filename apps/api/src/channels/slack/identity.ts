@@ -1,7 +1,7 @@
+import type { Effect } from 'effect';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { accountMembers, chatUserIdentities, projectAccessRequests, projects } from '@kortix/db';
-import { db } from '../../shared/db';
-import { config } from '../../config';
+import { sharedConfig as config, sharedDb as db } from '../../shared/effect';
 import { authorize } from '../../iam';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { notifyProjectAccessRequestManagers } from '../../projects/lib/access-requests';

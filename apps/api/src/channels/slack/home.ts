@@ -1,9 +1,9 @@
+import type { Effect } from 'effect';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { chatInstalls, chatThreads, projects } from '@kortix/db';
-import { db } from '../../shared/db';
+import { sharedConfig as config, sharedDb as db } from '../../shared/effect';
 import { loadSlackTokenForProject } from '../install-store';
 import { publishHomeView } from '../slack-api';
-import { config } from '../../config';
 import { escapeMrkdwn, formatRelativeTime, repoLabel, repoOgImage } from './util';
 import type { HomeProjectRow, HomeRecentRow } from './types';
 

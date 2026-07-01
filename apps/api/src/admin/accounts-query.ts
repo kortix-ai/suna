@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Pure parsing for the admin accounts-list query string.
  *

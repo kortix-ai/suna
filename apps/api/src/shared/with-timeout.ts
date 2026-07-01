@@ -11,6 +11,8 @@
  * its result/rejection is intentionally ignored; the timer is always cleared so
  * a fast win doesn't keep the event loop alive.
  */
+import { Effect } from 'effect';
+import { runEffectOrThrow } from '../effect/http';
 
 export class TimeoutError extends Error {
   readonly timeoutMs: number;
@@ -43,11 +45,15 @@ export function withTimeout<T>(
     // rather than rejecting immediately, so callers can disable the guard.
     return promise;
   }
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new TimeoutError(timeoutMs, label)), timeoutMs);
-  });
-  return Promise.race([promise, timeout]).finally(() => {
-    if (timer) clearTimeout(timer);
-  }) as Promise<T>;
+  return runEffectOrThrow(
+    Effect.tryPromise({
+      try: () => promise,
+      catch: (cause) => cause,
+    }).pipe(
+      Effect.timeoutFail({
+        duration: `${timeoutMs} millis`,
+        onTimeout: () => new TimeoutError(timeoutMs, label),
+      }),
+    ),
+  );
 }

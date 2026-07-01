@@ -1,4 +1,5 @@
-import { config } from '../../config';
+import type { Effect } from 'effect';
+import { platformConfig as config } from '../effect';
 import { DaytonaProvider } from './daytona';
 import { PlatinumProvider } from './platinum';
 

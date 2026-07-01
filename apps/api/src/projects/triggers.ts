@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Kortix trigger DSL — lives inside `kortix.toml` as `[[triggers]]` array
  * entries. The manifest at the repo root is THE source of truth for

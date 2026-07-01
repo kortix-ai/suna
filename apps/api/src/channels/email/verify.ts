@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 const FIVE_MINUTES_S = 5 * 60;

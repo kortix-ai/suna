@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // IAM V2 routes: SAML SSO provider config + group mappings.
 // The Supabase auth.sso_providers row is created out-of-band (via Studio
 // or the auth admin API — admins paste the IdP metadata there). We just
@@ -22,6 +23,7 @@ import {
   SsoMappingSchema,
 } from './app';
 import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
+import { effectHandler } from '../../effect/hono';
 
 function ssoProviderResponse(p: NonNullable<Awaited<ReturnType<typeof getSsoProvider>>>) {
   return {
@@ -49,14 +51,14 @@ iamRouter.openapi(
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
   const p = await getSsoProvider(accountId);
   if (!p) return c.json({ provider: null });
   return c.json({ provider: ssoProviderResponse(p) });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -72,7 +74,7 @@ iamRouter.openapi(
       ...errors(400, 401, 402, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -138,7 +140,7 @@ iamRouter.openapi(
   });
 
   return c.json({ provider: ssoProviderResponse(provider) });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -154,7 +156,7 @@ iamRouter.openapi(
       ...errors(401, 402, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -180,7 +182,7 @@ iamRouter.openapi(
   });
 
   return c.json({ deleted: true });
-  },
+  }),
 );
 
 // ─── SAML group mappings ──────────────────────────────────────────────────
@@ -198,7 +200,7 @@ iamRouter.openapi(
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
@@ -212,7 +214,7 @@ iamRouter.openapi(
       created_at: m.createdAt.toISOString(),
     })),
   });
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -228,7 +230,7 @@ iamRouter.openapi(
       ...errors(400, 401, 402, 403, 404, 409),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -287,7 +289,7 @@ iamRouter.openapi(
     }
     throw err;
   }
-  },
+  }),
 );
 
 iamRouter.openapi(
@@ -303,7 +305,7 @@ iamRouter.openapi(
       ...errors(401, 402, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const mappingId = c.req.param('mappingId');
@@ -322,5 +324,5 @@ iamRouter.openapi(
   });
 
   return c.json({ deleted: true });
-  },
+  }),
 );

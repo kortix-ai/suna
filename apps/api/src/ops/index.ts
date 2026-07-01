@@ -1,18 +1,20 @@
-import { createRoute, z } from '@hono/zod-openapi';
-import { sql } from 'drizzle-orm';
-import type { AppEnv } from '../types';
-import { db } from '../shared/db';
-import { supabaseAuth } from '../middleware/auth';
-import { requireAdmin } from '../middleware/require-admin';
-import { config } from '../config';
-import { getTunnelServiceStatus } from '../tunnel';
-import { isOtelTraceExporterConfigured } from '../lib/otel';
-import { makeOpenApiApp, json, errors, auth } from '../openapi';
+import { createRoute, z } from "@hono/zod-openapi";
+import { sql } from "drizzle-orm";
+import { Effect } from "effect";
+import type { AppEnv } from "../types";
+import { supabaseAuth } from "../middleware/auth";
+import { requireAdmin } from "../middleware/require-admin";
+import { getTunnelServiceStatus } from "../tunnel";
+import { isOtelTraceExporterConfigured } from "../lib/otel";
+import { makeOpenApiApp, json, errors, auth } from "../openapi";
+import { effectHandler } from "../effect/hono";
+import { AppConfig, DatabaseService } from "../effect/services";
+import { runEffectOrThrow } from "../effect/http";
 
 export const opsApp = makeOpenApiApp<AppEnv>();
 
-opsApp.use('/*', supabaseAuth);
-opsApp.use('/*', requireAdmin);
+opsApp.use("/*", supabaseAuth);
+opsApp.use("/*", requireAdmin);
 
 type CountRow = { count: number | string | null };
 type GroupCountRow = { key: string | null; count: number | string | null };
@@ -20,17 +22,29 @@ type GroupCountRow = { key: string | null; count: number | string | null };
 function resultRows<T>(result: unknown): T[] {
   if (Array.isArray(result)) return result as T[];
   const rows = (result as { rows?: unknown[] } | null)?.rows;
-  return Array.isArray(rows) ? rows as T[] : [];
+  return Array.isArray(rows) ? (rows as T[]) : [];
+}
+
+async function executeQuery<T>(query: ReturnType<typeof sql>): Promise<T[]> {
+  return runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    const result = yield* Effect.tryPromise(() => database.execute(query));
+    return resultRows<T>(result);
+  }));
 }
 
 async function oneCount(query: ReturnType<typeof sql>): Promise<number> {
-  const rows = resultRows<CountRow>(await db.execute(query));
+  const rows = await executeQuery<CountRow>(query);
   return Number(rows[0]?.count ?? 0);
 }
 
-async function groupCounts(query: ReturnType<typeof sql>): Promise<Record<string, number>> {
-  const rows = resultRows<GroupCountRow>(await db.execute(query));
-  return Object.fromEntries(rows.map((row) => [row.key ?? 'unknown', Number(row.count ?? 0)]));
+async function groupCounts(
+  query: ReturnType<typeof sql>,
+): Promise<Record<string, number>> {
+  const rows = await executeQuery<GroupCountRow>(query);
+  return Object.fromEntries(
+    rows.map((row) => [row.key ?? "unknown", Number(row.count ?? 0)]),
+  );
 }
 
 async function recentAuditEvents() {
@@ -42,12 +56,14 @@ async function recentAuditEvents() {
     resource_type: string;
     resource_id: string | null;
     occurred_at: Date | string;
-  }>(await db.execute(sql`
+  }>(
+    await executeQuery(sql`
     SELECT event_id, account_id, actor_user_id, action, resource_type, resource_id, occurred_at
     FROM kortix.audit_events
     ORDER BY occurred_at DESC
     LIMIT 10
-  `));
+  `),
+  );
 
   return rows.map((row) => ({
     event_id: row.event_id,
@@ -68,7 +84,8 @@ async function usageLast24h() {
     output_tokens: number | string | null;
     cached_tokens: number | string | null;
     cost_usd: string | number | null;
-  }>(await db.execute(sql`
+  }>(
+    await executeQuery(sql`
     SELECT
       provider,
       count(*)::int AS calls,
@@ -80,7 +97,8 @@ async function usageLast24h() {
     WHERE created_at >= now() - interval '24 hours'
     GROUP BY provider
     ORDER BY calls DESC
-  `));
+  `),
+  );
 
   return rows.map((row) => ({
     provider: row.provider,
@@ -96,7 +114,7 @@ function observabilityStatus() {
   return {
     managed_logs_configured: Boolean(process.env.BETTERSTACK_API_LOG_TOKEN),
     managed_log_host: process.env.BETTERSTACK_API_LOG_TOKEN
-      ? process.env.BETTERSTACK_API_LOG_HOST || 'default'
+      ? process.env.BETTERSTACK_API_LOG_HOST || "default"
       : null,
     error_tracking_configured: Boolean(process.env.BETTERSTACK_API_SENTRY_DSN),
     structured_request_logs_enabled: true,
@@ -108,117 +126,120 @@ function observabilityStatus() {
 
 opsApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/overview',
-    tags: ['ops'],
-    summary: 'Platform operations overview dashboard',
+    method: "get",
+    path: "/overview",
+    tags: ["ops"],
+    summary: "Platform operations overview dashboard",
     ...auth,
     responses: {
-      200: json(z.record(z.string(), z.any()), 'Operations overview snapshot'),
+      200: json(z.record(z.string(), z.any()), "Operations overview snapshot"),
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
-  const [
-    accountCount,
-    projectCount,
-    activeLegacySandboxes,
-    sessionStatus,
-    sandboxStatus,
-    sandboxProviders,
-    triggerEventStatus,
-    audit24h,
-    migrationStatus,
-    usage,
-    recentAudit,
-  ] = await Promise.all([
-    oneCount(sql`SELECT count(*)::int AS count FROM kortix.accounts`),
-    oneCount(sql`SELECT count(*)::int AS count FROM kortix.projects`),
-    oneCount(sql`
+  effectHandler(async (c: any) => {
+    const config = await runEffectOrThrow(Effect.gen(function* () {
+      return yield* AppConfig;
+    }));
+    const [
+      accountCount,
+      projectCount,
+      activeLegacySandboxes,
+      sessionStatus,
+      sandboxStatus,
+      sandboxProviders,
+      triggerEventStatus,
+      audit24h,
+      migrationStatus,
+      usage,
+      recentAudit,
+    ] = await Promise.all([
+      oneCount(sql`SELECT count(*)::int AS count FROM kortix.accounts`),
+      oneCount(sql`SELECT count(*)::int AS count FROM kortix.projects`),
+      oneCount(sql`
       SELECT count(*)::int AS count
       FROM kortix.sandboxes
       WHERE status IN ('provisioning', 'active', 'stopped', 'error')
     `),
-    groupCounts(sql`
+      groupCounts(sql`
       SELECT status AS key, count(*)::int AS count
       FROM kortix.project_sessions
       GROUP BY status
     `),
-    groupCounts(sql`
+      groupCounts(sql`
       SELECT status AS key, count(*)::int AS count
       FROM kortix.session_sandboxes
       GROUP BY status
     `),
-    groupCounts(sql`
+      groupCounts(sql`
       SELECT provider AS key, count(*)::int AS count
       FROM kortix.session_sandboxes
       GROUP BY provider
     `),
-    // Triggers are file-defined (kortix.toml) now; the project_trigger_events
-    // table is gone and the git path doesn't persist events, so this is always
-    // empty. Field kept for dashboard compatibility.
-    Promise.resolve<Record<string, number>>({}),
-    oneCount(sql`
+      // Triggers are file-defined (kortix.toml) now; the project_trigger_events
+      // table is gone and the git path doesn't persist events, so this is always
+      // empty. Field kept for dashboard compatibility.
+      Promise.resolve<Record<string, number>>({}),
+      oneCount(sql`
       SELECT count(*)::int AS count
       FROM kortix.audit_events
       WHERE occurred_at >= now() - interval '24 hours'
     `),
-    groupCounts(sql`
+      groupCounts(sql`
       SELECT status AS key, count(*)::int AS count
       FROM kortix.legacy_sandbox_migrations
       GROUP BY status
     `),
-    usageLast24h(),
-    recentAuditEvents(),
-  ]);
+      usageLast24h(),
+      recentAuditEvents(),
+    ]);
 
-  const queuedTriggerEvents = triggerEventStatus.queued ?? 0;
-  const erroredSessions = sessionStatus.failed ?? 0;
-  const erroredSandboxes = sandboxStatus.error ?? 0;
+    const queuedTriggerEvents = triggerEventStatus.queued ?? 0;
+    const erroredSessions = sessionStatus.failed ?? 0;
+    const erroredSandboxes = sandboxStatus.error ?? 0;
 
-  return c.json({
-    generated_at: new Date().toISOString(),
-    api: {
-      status: 'ok',
-      env: config.INTERNAL_KORTIX_ENV,
-      billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
-      tunnel: getTunnelServiceStatus(),
-    },
-    totals: {
-      accounts: accountCount,
-      projects: projectCount,
-      active_legacy_sandboxes: activeLegacySandboxes,
-    },
-    sessions: {
-      by_status: sessionStatus,
-      errored: erroredSessions,
-    },
-    sandboxes: {
-      by_status: sandboxStatus,
-      by_provider: sandboxProviders,
-      errored: erroredSandboxes,
-    },
-    queues: {
-      trigger_events_by_status: triggerEventStatus,
-      // Channel events are file-defined now (no queue table); kept for dashboard
-      // shape compatibility so the UI never reads an undefined map.
-      channel_events_by_status: {},
-      queued_total: queuedTriggerEvents,
-    },
-    audit: {
-      events_24h: audit24h,
-      recent: recentAudit,
-    },
-    usage: {
-      last_24h_by_provider: usage,
-      calls_24h: usage.reduce((sum, row) => sum + row.calls, 0),
-      cost_usd_24h: usage.reduce((sum, row) => sum + row.cost_usd, 0),
-    },
-    observability: observabilityStatus(),
-    migrations: {
-      by_status: migrationStatus,
-      active_legacy_sandboxes: activeLegacySandboxes,
-    },
-  });
-  },
+    return c.json({
+      generated_at: new Date().toISOString(),
+      api: {
+        status: "ok",
+        env: config.INTERNAL_KORTIX_ENV,
+        billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
+        tunnel: getTunnelServiceStatus(),
+      },
+      totals: {
+        accounts: accountCount,
+        projects: projectCount,
+        active_legacy_sandboxes: activeLegacySandboxes,
+      },
+      sessions: {
+        by_status: sessionStatus,
+        errored: erroredSessions,
+      },
+      sandboxes: {
+        by_status: sandboxStatus,
+        by_provider: sandboxProviders,
+        errored: erroredSandboxes,
+      },
+      queues: {
+        trigger_events_by_status: triggerEventStatus,
+        // Channel events are file-defined now (no queue table); kept for dashboard
+        // shape compatibility so the UI never reads an undefined map.
+        channel_events_by_status: {},
+        queued_total: queuedTriggerEvents,
+      },
+      audit: {
+        events_24h: audit24h,
+        recent: recentAudit,
+      },
+      usage: {
+        last_24h_by_provider: usage,
+        calls_24h: usage.reduce((sum, row) => sum + row.calls, 0),
+        cost_usd_24h: usage.reduce((sum, row) => sum + row.cost_usd, 0),
+      },
+      observability: observabilityStatus(),
+      migrations: {
+        by_status: migrationStatus,
+        active_legacy_sandboxes: activeLegacySandboxes,
+      },
+    });
+  }),
 );

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Billing v2 — usage breakdown by ledger category.
 //
 // The wallet is fungible (one $balance), but every debit is tagged in
@@ -7,7 +8,7 @@
 
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { creditLedger } from '@kortix/db';
-import { db } from '../../shared/db';
+import { billingDb as db } from '../effect';
 
 const COMPUTE_DEBIT_TYPES = ['compute_debit'] as const;
 const LLM_DEBIT_TYPES = ['llm_debit', 'token_deduction', 'token_overage'] as const;

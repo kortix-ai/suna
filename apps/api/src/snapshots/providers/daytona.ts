@@ -10,8 +10,10 @@
 
 import { rm } from 'node:fs/promises';
 import { Image } from '@daytonaio/sdk';
+import { Effect } from 'effect';
 import { getDaytona, isDaytonaConfigured } from '../../shared/daytona';
 import { withTimeout } from '../../shared/with-timeout';
+import { runEffectOrThrow } from '../../effect/http';
 import {
   stageBuildContext,
   DEFAULT_CPU,
@@ -49,6 +51,9 @@ const SNAPSHOT_STATE_CACHE_TTL_MS = 60_000;
  */
 const SNAPSHOT_STATE_TIMEOUT_MS = 8_000;
 const snapshotStateCache = new Map<string, { state: ProviderState; expiresAt: number }>();
+
+const sleep = (ms: number): Promise<void> =>
+  runEffectOrThrow(Effect.sleep(`${ms} millis`));
 
 class DaytonaAdapter implements SandboxProviderAdapter {
   readonly id = 'daytona' as const;
@@ -117,7 +122,7 @@ class DaytonaAdapter implements SandboxProviderAdapter {
         console.warn(
           `[snapshots] build attempt ${attempt}/${BUILD_ATTEMPTS} for ${input.snapshotName} failed — re-staging + retrying: ${msg.slice(0, 120)}`,
         );
-        await new Promise((r) => setTimeout(r, BUILD_RETRY_BASE_MS * attempt));
+        await sleep(BUILD_RETRY_BASE_MS * attempt);
       } finally {
         await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
       }
@@ -199,7 +204,7 @@ class DaytonaAdapter implements SandboxProviderAdapter {
         if (message.includes('build_failed') || message.includes('error')) throw err;
         lastState = message.slice(0, 120) || 'lookup failed';
       }
-      await new Promise((r) => setTimeout(r, 1_000));
+      await sleep(1_000);
     }
     throw new Error(`Snapshot ${name} did not become active after create (last state: ${lastState})`);
   }
@@ -221,7 +226,7 @@ class DaytonaAdapter implements SandboxProviderAdapter {
       } catch {
         // transient — keep polling
       }
-      await new Promise((r) => setTimeout(r, POST_FAILURE_SETTLE_POLL_MS));
+      await sleep(POST_FAILURE_SETTLE_POLL_MS);
     }
     return 'unknown';
   }

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 export interface AgentpressMessageRow {
   message_id: string;
   type: string;

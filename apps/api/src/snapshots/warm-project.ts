@@ -29,10 +29,11 @@
 
 import { createHash } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
-import { projects } from '@kortix/db';
-import { db } from '../shared/db';
-import { config, type SandboxProviderName } from '../config';
-import { getDaytonaWarm, warmSnapshotsEnabled, warmSnapshotsEnabledFor } from '../shared/daytona';
+import { Effect } from 'effect';
+import { projects, type Database } from '@kortix/db';
+import { AppConfig, DatabaseService, HttpClient } from '../effect/services';
+import { runEffectOrThrow } from '../effect/http';
+import { getDaytonaWarm, warmSnapshotsEnabledFor } from '../shared/daytona';
 import {
   createHealthyBuilder,
   OPENCODE_PORT,
@@ -45,6 +46,8 @@ import {
 } from './warm-bake';
 import type { GitBackedProject } from '../projects/git';
 
+type SandboxProviderName = 'daytona' | 'platinum';
+
 const WPROJ_PREFIX = 'kortix-wproj-';       // daytona warm-project snapshots
 const WPROJ_PREFIX_PT = 'kortix-wprojpt-';  // platinum warm-project templates
 /** Either provider's warm-project name (the two prefixes are disjoint: a
@@ -52,6 +55,26 @@ const WPROJ_PREFIX_PT = 'kortix-wprojpt-';  // platinum warm-project templates
 const isWprojName = (n: string) => n.startsWith(WPROJ_PREFIX) || n.startsWith(WPROJ_PREFIX_PT);
 /** Single-quote a value for safe embedding in a bash script. */
 const sh = (v: string) => `'${String(v).replace(/'/g, `'\\''`)}'`;
+const warmProjectConfig = await runEffectOrThrow(Effect.gen(function* () {
+  return yield* AppConfig;
+}));
+
+const runWarmProjectDatabase = <A>(
+  operation: (database: Database) => Promise<A> | A,
+): Promise<A> =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    return yield* Effect.tryPromise(async () => operation(database));
+  }));
+
+const postWarmProjectRefresh = (url: string, init: RequestInit): Promise<Response> =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const client = yield* HttpClient;
+    return yield* Effect.tryPromise(() => client.fetch(url, init));
+  }));
+
+const sleep = (ms: number): Promise<void> =>
+  runEffectOrThrow(Effect.sleep(`${ms} millis`));
 
 export interface ProjectWarmPointer {
   name: string;
@@ -120,14 +143,16 @@ export function readProjectWarmPointer(metadata: unknown): ProjectWarmPointer | 
 }
 
 export async function writeProjectWarmPointer(projectId: string, ptr: ProjectWarmPointer | null): Promise<void> {
-  await db
-    .update(projects)
-    .set({
-      metadata: ptr
-        ? sql`jsonb_set(coalesce(${projects.metadata}, '{}'::jsonb), '{warm_snapshot}', ${JSON.stringify(ptr)}::jsonb)`
-        : sql`coalesce(${projects.metadata}, '{}'::jsonb) - 'warm_snapshot'`,
-    })
-    .where(eq(projects.projectId, projectId));
+  await runWarmProjectDatabase((database) =>
+    database
+      .update(projects)
+      .set({
+        metadata: ptr
+          ? sql`jsonb_set(coalesce(${projects.metadata}, '{}'::jsonb), '{warm_snapshot}', ${JSON.stringify(ptr)}::jsonb)`
+          : sql`coalesce(${projects.metadata}, '{}'::jsonb) - 'warm_snapshot'`,
+      })
+      .where(eq(projects.projectId, projectId)),
+  );
 }
 
 /** Delete this project's other warm snapshots (older identities). Project
@@ -157,7 +182,7 @@ export async function bakeProjectWarmSnapshot(
   project: WarmableProject,
   opts: { onLog?: (line: string) => void; provider?: SandboxProviderName } = {},
 ): Promise<ProjectWarmPointer> {
-  const provider: SandboxProviderName = opts.provider ?? config.getDefaultProvider();
+  const provider: SandboxProviderName = opts.provider ?? warmProjectConfig.getDefaultProvider();
   if (!warmSnapshotsEnabledFor(provider)) throw new WarmBakeError('warm snapshots are not enabled');
   if (!project.repoUrl) throw new WarmBakeError('project has no repo url');
   if (provider === 'platinum') return bakeProjectWarmSnapshotPlatinum(project, opts);
@@ -290,11 +315,13 @@ async function bakeProjectWarmSnapshotPlatinum(
 
   // accountId — needed to mint the short-TTL seed-clone credential. The bake is
   // called with a project subset that may omit it, so read it from the row.
-  const [acct] = await db
-    .select({ accountId: projects.accountId })
-    .from(projects)
-    .where(eq(projects.projectId, project.projectId))
-    .limit(1);
+  const [acct] = await runWarmProjectDatabase((database) =>
+    database
+      .select({ accountId: projects.accountId })
+      .from(projects)
+      .where(eq(projects.projectId, project.projectId))
+      .limit(1),
+  );
   if (!acct?.accountId) throw new WarmBakeError('project has no account');
   const accountId = acct.accountId;
 
@@ -379,7 +406,7 @@ async function bakeProjectWarmSnapshotPlatinum(
       KORTIX_REPO_URL: proxyGitUrl(project.projectId),
       KORTIX_DEFAULT_BRANCH: project.defaultBranch,
       KORTIX_BASE_SHA: tip,
-      KORTIX_API_URL: config.KORTIX_URL.replace(/\/+$/, ''),
+      KORTIX_API_URL: warmProjectConfig.KORTIX_URL.replace(/\/+$/, ''),
       KORTIX_SANDBOX_TOKEN: cloneCred.secretKey,
       KORTIX_TOKEN: cloneCred.secretKey,
       // No-restart warm-fork (stateful ONLY — never cold/Daytona): bake proxy-mode
@@ -389,7 +416,7 @@ async function bakeProjectWarmSnapshotPlatinum(
       // Bake the FULL org catalog at PARK via the sandbox-token-authed endpoint, so
       // the picker isn't degraded to the daemon's minimal fallback. Best-effort:
       // if unreachable the daemon falls back, no boot impact.
-      KORTIX_LLM_CATALOG_URL: `${config.KORTIX_URL.replace(/\/+$/, '')}/v1/projects/${project.projectId}/llm-catalog`,
+      KORTIX_LLM_CATALOG_URL: `${warmProjectConfig.KORTIX_URL.replace(/\/+$/, '')}/v1/projects/${project.projectId}/llm-catalog`,
     },
   });
 
@@ -429,7 +456,7 @@ const inflightProjectBakes = new Map<string, Promise<void>>();
  * hooks and session boots — gated, deduped, never throws.
  */
 export function kickProjectWarmBake(project: WarmableProject, onLog?: (l: string) => void): void {
-  const provider = config.getDefaultProvider();
+  const provider = warmProjectConfig.getDefaultProvider();
   if (!warmSnapshotsEnabledFor(provider) || !project.repoUrl) return;
   if (usesCustomDefaultTemplate(project)) return;
   if (inflightProjectBakes.has(project.projectId)) return;
@@ -458,7 +485,7 @@ export async function refreshRestoredWorkspace(externalId: string, userId: strin
     try {
       const ep = await sandboxOpencodeEndpoint(externalId, userId);
       if (ep) {
-        const res = await fetch(`${ep.url}/kortix/refresh?base=1&restart=0`, {
+        const res = await postWarmProjectRefresh(`${ep.url}/kortix/refresh?base=1&restart=0`, {
           method: 'POST',
           headers: ep.headers,
           signal: AbortSignal.timeout(25_000),
@@ -470,7 +497,7 @@ export async function refreshRestoredWorkspace(externalId: string, userId: strin
     } catch {
       /* daemon not up yet — retry */
     }
-    await new Promise((r) => setTimeout(r, 3_000 * attempt));
+    await sleep(3_000 * attempt);
   }
   console.warn(`[warm-project] base refresh never succeeded for ${externalId.slice(0, 8)}`);
 }

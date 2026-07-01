@@ -168,6 +168,27 @@ mock.module('../config', () => ({
   },
 }));
 
+mock.module('../billing/effect', () => ({
+  billingConfig: {
+    STRIPE_WEBHOOK_SECRET: 'whsec_test',
+    INTERNAL_KORTIX_ENV: 'staging',
+    DATABASE_URL: '',
+    FRONTEND_URL: 'http://localhost:3000',
+    KORTIX_BILLING_INTERNAL_ENABLED: true,
+    ALLOWED_SANDBOX_PROVIDERS: ['daytona'],
+    isDaytonaEnabled: () => false,
+    getDefaultProvider: () => 'daytona',
+  },
+  billingDb: {},
+  billingHasDatabase: false,
+  billingSupabase: {
+    rpc: () => Promise.resolve({ data: null, error: null }),
+    auth: { getUser: async () => ({ data: { user: null }, error: 'mocked' }) },
+  },
+  billingSleep: async () => undefined,
+  runBillingInterval: () => undefined,
+}));
+
 // Customers repository mock
 mock.module('../billing/repositories/customers', () => ({
   getCustomerByAccountId: async () => ({ id: 'cus_test_123', accountId: TEST_USER_ID, email: 'test@kortix.dev', provider: 'stripe', active: true }),
@@ -257,10 +278,9 @@ describe('Billing: tier-configurations', () => {
     const tierNames = body.tiers.map((t: any) => t.name);
     expect(tierNames).toContain('pro');
 
-    // Should NOT include hidden tiers ('free' is hidden from signup flows,
-    // 'none' is the internal no-access tier).
+    // Should include visible self-serve tiers, including the free tier.
     expect(tierNames).not.toContain('none');
-    expect(tierNames).not.toContain('free');
+    expect(tierNames).toContain('free');
 
     // Verify tier structure
     const proTier = body.tiers.find((t: any) => t.name === 'pro');

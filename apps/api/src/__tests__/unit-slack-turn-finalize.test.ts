@@ -30,6 +30,19 @@ mock.module('../channels/slack-api', () => ({
   updateBlocks: rec('updateBlocks'),
 }));
 
+mock.module('../shared/effect', () => ({
+  sharedConfig: {
+    FRONTEND_URL: 'https://dev.kortix.com',
+  },
+  sharedDb: {},
+  sharedSupabase: {},
+  sharedFetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
+  sharedSleep: async () => {},
+  runSharedTimeout: () => ({}) as never,
+  runSharedInterval: () => ({}) as never,
+  stopSharedTimer: () => {},
+}));
+
 const { finalizeTurn } = await import('../channels/slack/turn');
 import type { LiveTurn } from '../channels/slack/types';
 

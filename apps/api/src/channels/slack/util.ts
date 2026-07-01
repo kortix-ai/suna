@@ -1,4 +1,6 @@
+import type { Effect } from 'effect';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { sharedFetch } from '../../shared/effect';
 import { FIVE_MINUTES } from './app';
 import type { SlackEnvelope } from './types';
 
@@ -66,7 +68,7 @@ export function escapeMrkdwn(s: string): string {
 export async function respondViaUrl(url: string | undefined, body: unknown): Promise<void> {
   if (!url) return;
   try {
-    const res = await fetch(url, {
+    const res = await sharedFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

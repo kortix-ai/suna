@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Server-side Slack file proxy — the binary/multipart ops the Executor gateway
  * (JSON in/out) can't carry, done with the bot token SERVER-SIDE so the sandbox
@@ -5,6 +6,7 @@
  * once the token is pulled from the box (KORTIX-206 Phase C2).
  */
 import { loadSlackTokenForProject } from '../install-store';
+import { sharedFetch } from '../../shared/effect';
 
 const SLACK_API = 'https://slack.com/api';
 // Only ever attach the bot token to Slack's own hosts — `url` is caller-supplied,
@@ -30,7 +32,7 @@ export async function downloadSlackFile(
   const token = await loadSlackTokenForProject(projectId);
   if (!token) return { ok: false, error: 'Slack not connected for this project', status: 404 };
 
-  const res = await fetch(parsed.href, {
+  const res = await sharedFetch(parsed.href, {
     headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(60_000),
   });
@@ -56,7 +58,7 @@ export async function uploadSlackFile(
   const bytes = Buffer.from(args.contentBase64, 'base64');
 
   // 1. Reserve an upload URL (form-encoded — Slack's API for this method).
-  const reserve = (await fetch(`${SLACK_API}/files.getUploadURLExternal`, {
+  const reserve = (await sharedFetch(`${SLACK_API}/files.getUploadURLExternal`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ filename: args.filename, length: String(bytes.length) }),
@@ -67,11 +69,11 @@ export async function uploadSlackFile(
   }
 
   // 2. PUT the bytes to the reserved URL (no token — it's pre-signed).
-  const put = await fetch(reserve.upload_url, { method: 'POST', body: bytes, signal: AbortSignal.timeout(60_000) });
+  const put = await sharedFetch(reserve.upload_url, { method: 'POST', body: bytes, signal: AbortSignal.timeout(60_000) });
   if (!put.ok) return { ok: false, error: `upload failed: HTTP ${put.status}`, status: 502 };
 
   // 3. Finalize → posts the file into the channel/thread.
-  const complete = (await fetch(`${SLACK_API}/files.completeUploadExternal`, {
+  const complete = (await sharedFetch(`${SLACK_API}/files.completeUploadExternal`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({

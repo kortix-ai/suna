@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { OPENCODE_USER_AGENT } from '@kortix/shared';
 
 export const CHATGPT_CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex';

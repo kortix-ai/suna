@@ -1,4 +1,6 @@
+import type { Effect } from 'effect';
 import type { SessionStartResult } from '../routes/shared';
+import { sharedSleep } from '../../shared/effect';
 
 // startSession long-poll: bounded server-side wait so the client learns `ready`
 // the instant it flips instead of on its ~800ms poll tick. The cap stays well
@@ -7,8 +9,6 @@ import type { SessionStartResult } from '../routes/shared';
 // Pure (type-only import) so it's unit-testable without the server env.
 export const START_AWAIT_MAX_MS = 8_000;
 export const START_AWAIT_POLL_MS = 200;
-
-const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export const isTerminalStage = (stage: string): boolean =>
   stage === 'ready' || stage === 'failed' || stage === 'stopped';
@@ -32,7 +32,7 @@ export async function awaitTerminalStage(
 ): Promise<SessionStartResult> {
   if (opts.waitMs <= 0 || isTerminalStage(initial.stage)) return initial;
   const now = opts.now ?? Date.now;
-  const sleepFn = opts.sleepFn ?? defaultSleep;
+  const sleepFn = opts.sleepFn ?? sharedSleep;
   const pollMs = opts.pollMs ?? START_AWAIT_POLL_MS;
   const deadline = now() + Math.min(opts.waitMs, START_AWAIT_MAX_MS);
   let current = initial;

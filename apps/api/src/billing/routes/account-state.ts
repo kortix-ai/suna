@@ -1,12 +1,14 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import { Effect, Either } from 'effect';
 import type { AppEnv } from '../../types';
 import { buildAccountState, buildMinimalAccountState, buildLocalAccountState } from '../services/account-state';
-import { hasDatabase } from '../../shared/db';
-import { config } from '../../config';
+import { billingHasDatabase as hasDatabase } from '../effect';
+import { billingConfig as config } from '../effect';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
 import { authorize } from '../../iam/dispatcher';
 import { ACCOUNT_ACTIONS } from '../../iam/actions';
 import { makeOpenApiApp, json, auth } from '../../openapi';
+import { attemptBilling, runBillingEffect } from './effect-workflows';
 
 export const accountStateRouter = makeOpenApiApp<AppEnv>();
 
@@ -49,26 +51,37 @@ accountStateRouter.openapi(
     if (!hasDatabase) {
       return c.json({ ...buildLocalAccountState(), can_manage_billing: true });
     }
-    const accountId = await resolveScopedAccountId(c, 'query');
 
     // NOTE: legacy → per-seat migration is NOT auto-triggered on sign-in anymore.
     // Silently cancelling a customer's subs + creating a seat sub without consent
     // was surprising. It now runs ONLY when the user explicitly clicks "Claim
     // seat-based pricing" (POST /v1/billing/claim-per-seat → maybeMigrateLegacyAccount).
 
-    try {
-      const state = await buildAccountState(accountId);
+    const response = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveScopedAccountId(c, 'query'));
+      const stateResult = yield* Effect.either(attemptBilling(() => buildAccountState(accountId)));
+
+      if (Either.isLeft(stateResult)) {
+        // DB schema may not have billing tables (e.g. local dev without kortix schema).
+        // Fall back to local account state so the app isn't blocked.
+        console.error(
+          '[billing] account-state failed, falling back to local:',
+          stateResult.left.message,
+        );
+        return { ...buildLocalAccountState(), can_manage_billing: true };
+      }
+
+      const state = stateResult.right;
       // Billing disabled — return real data but never block the user
       if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
         state.credits.can_run = true;
       }
-      return c.json({ ...state, can_manage_billing: await canManageBilling(c, accountId) });
-    } catch (err) {
-      // DB schema may not have billing tables (e.g. local dev without kortix schema).
-      // Fall back to local account state so the app isn't blocked.
-      console.error('[billing] account-state failed, falling back to local:', (err as Error)?.message || err);
-      return c.json({ ...buildLocalAccountState(), can_manage_billing: true });
-    }
+
+      const canManage = yield* attemptBilling(() => canManageBilling(c, accountId));
+      return { ...state, can_manage_billing: canManage };
+    }));
+
+    return c.json(response);
   },
 );
 
@@ -88,16 +101,28 @@ accountStateRouter.openapi(
     if (!hasDatabase) {
       return c.json({ ...buildLocalAccountState(), can_manage_billing: true });
     }
-    const accountId = await resolveScopedAccountId(c, 'query');
-    try {
-      const state = await buildMinimalAccountState(accountId);
+
+    const response = await runBillingEffect(Effect.gen(function* () {
+      const accountId = yield* attemptBilling(() => resolveScopedAccountId(c, 'query'));
+      const stateResult = yield* Effect.either(attemptBilling(() => buildMinimalAccountState(accountId)));
+
+      if (Either.isLeft(stateResult)) {
+        console.error(
+          '[billing] minimal account-state failed, falling back to local:',
+          stateResult.left.message,
+        );
+        return { ...buildLocalAccountState(), can_manage_billing: true };
+      }
+
+      const state = stateResult.right;
       if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
         state.credits.can_run = true;
       }
-      return c.json({ ...state, can_manage_billing: await canManageBilling(c, accountId) });
-    } catch (err) {
-      console.error('[billing] minimal account-state failed, falling back to local:', (err as Error)?.message || err);
-      return c.json({ ...buildLocalAccountState(), can_manage_billing: true });
-    }
+
+      const canManage = yield* attemptBilling(() => canManageBilling(c, accountId));
+      return { ...state, can_manage_billing: canManage };
+    }));
+
+    return c.json(response);
   },
 );

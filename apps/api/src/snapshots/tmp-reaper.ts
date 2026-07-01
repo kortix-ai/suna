@@ -16,52 +16,64 @@
 import { readdir, stat, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { Effect, Fiber, Schedule } from 'effect';
 import { logger } from '../lib/logger';
 
 const PREFIX = 'kortix-';
 const MAX_AGE_MS = 30 * 60 * 1000; // older than this ⇒ abandoned
 const SWEEP_INTERVAL_MS = 10 * 60 * 1000;
 
-let timer: ReturnType<typeof setInterval> | null = null;
+let reaperFiber: Fiber.RuntimeFiber<unknown, unknown> | null = null;
 
-async function sweepOnce(): Promise<void> {
+const reaperSchedule = Schedule.spaced(`${SWEEP_INTERVAL_MS} millis`);
+
+const sweepOnceEffect = Effect.gen(function* () {
   const dir = tmpdir();
-  let entries: string[];
-  try {
-    entries = await readdir(dir);
-  } catch {
-    return;
-  }
+  const entries = yield* Effect.tryPromise({
+    try: () => readdir(dir),
+    catch: () => null,
+  });
+  if (!entries) return;
+
   const now = Date.now();
   let reclaimed = 0;
   for (const name of entries) {
     if (!name.startsWith(PREFIX)) continue;
     const path = join(dir, name);
-    try {
-      const s = await stat(path);
-      if (now - s.mtimeMs < MAX_AGE_MS) continue; // leave in-flight contexts alone
-      await rm(path, { recursive: true, force: true });
-      reclaimed++;
-    } catch {
-      // racing build, already gone, or perms — skip, retry next sweep
-    }
+    yield* Effect.gen(function* () {
+      const s = yield* Effect.tryPromise(() => stat(path));
+      if (now - s.mtimeMs >= MAX_AGE_MS) {
+        yield* Effect.tryPromise(() => rm(path, { recursive: true, force: true }));
+        reclaimed++;
+      }
+    }).pipe(Effect.catchAll(() => Effect.void));
   }
+
   if (reclaimed > 0) {
-    logger.info('[tmp-reaper] reclaimed stale build contexts', { count: reclaimed });
+    yield* Effect.sync(() =>
+      logger.info('[tmp-reaper] reclaimed stale build contexts', { count: reclaimed }),
+    );
   }
-}
+});
+
+const tmpReaperProgram = Effect.repeat(sweepOnceEffect, reaperSchedule);
+
+const tmpReaperScoped = Effect.gen(function* () {
+  yield* Effect.acquireRelease(
+    Effect.sync(() => Effect.runFork(tmpReaperProgram)),
+    (fiber) => Fiber.interrupt(fiber).pipe(Effect.asVoid),
+  );
+  return yield* Effect.never;
+});
 
 export function startTmpReaper(): void {
-  if (timer) return;
-  void sweepOnce();
-  timer = setInterval(() => void sweepOnce(), SWEEP_INTERVAL_MS);
-  // Don't keep the process alive for the reaper.
-  if (typeof timer.unref === 'function') timer.unref();
+  if (reaperFiber) return;
+  reaperFiber = Effect.runFork(Effect.scoped(tmpReaperScoped));
 }
 
 export function stopTmpReaper(): void {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
+  if (reaperFiber) {
+    Effect.runFork(Fiber.interrupt(reaperFiber));
+    reaperFiber = null;
   }
 }

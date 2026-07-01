@@ -63,6 +63,21 @@ these as standing rules whenever you touch the data/runtime layer:
   the SDK, and flag legacy/deprecated surfaces in-doc rather than documenting them
   as current.
 
+## External Source References
+
+External source repositories may be cloned locally under `repos/` as optional,
+untracked reference material for coding agents.
+
+- Treat local repositories under `repos/` as read-only reference material.
+- Prefer source examples and patterns from local reference checkouts when they
+  exist, but do not make app PRs depend on committed third-party source trees.
+- Do not edit files under `repos/` unless explicitly asked.
+- Do not import from `repos/`; application code must import normal package
+  dependencies from `package.json`.
+- When writing Effect code, use the runtime `effect` package dependency. If a
+  local `repos/effect/` checkout exists, it may be inspected for source, tests,
+  module structure, and idiomatic API usage, but it stays untracked.
+
 ## You CAN run and verify everything end-to-end. Do it.
 
 This repo ships a **complete, runnable local stack with live cloud sandboxes**.

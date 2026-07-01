@@ -1,7 +1,8 @@
+import type { Effect } from 'effect';
 import { sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 
-import { db } from '../../shared/db';
+import { sharedDb as db, sharedFetch } from '../../shared/effect';
 import {
   ensureOpencodeSessionPin,
   sandboxOpencodeEndpoint,
@@ -112,7 +113,7 @@ export async function buildSessionTranscriptDigest(input: {
     );
     url.searchParams.set('directory', WORKSPACE_DIRECTORY);
     url.searchParams.set('limit', String(limit));
-    const res = await fetch(url, {
+    const res = await sharedFetch(url, {
       method: 'GET',
       headers: endpoint.headers,
       signal: AbortSignal.timeout(8_000),

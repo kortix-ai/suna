@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { listAgentMailInstalls, loadMeetInstall, loadSlackInstall } from '../channels/install-store';
 /**
  * Auto-materialize channel connectors from platform installs.
@@ -14,7 +15,7 @@ import { listAgentMailInstalls, loadMeetInstall, loadSlackInstall } from '../cha
 import type { ChannelPlatform, ConnectorSpec } from '../projects/connectors';
 import { MANIFEST_FILENAME } from '../projects/triggers';
 import { channelDefaultSlug, channelLabel } from './channels';
-import { db } from '../shared/db';
+import { executorDb as db } from './effect';
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { resolveExperimentalFeature } from '../experimental/features';

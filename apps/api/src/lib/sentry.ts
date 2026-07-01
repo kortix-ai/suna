@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Sentry error tracking for Kortix API.
  *

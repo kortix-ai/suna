@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * IAM V2 per-RESOURCE scoping — engine + repository for iam_resource_grants.
  *
@@ -31,8 +32,8 @@
  */
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { iamResourceGrants } from '@kortix/db';
-import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
+import { runIamDatabase } from './effect';
 import {
   invalidateIamCacheForProjectResources,
   registerProjectScopedMemo,
@@ -91,21 +92,23 @@ const loadProjectResourceGrants = ttlMemo({
   ttlMs: TTL_MS,
   keyFn: (projectId: string, resourceType: string) => `${projectId}|${resourceType}`,
   loader: async (projectId: string, resourceType: string) => {
-    const rows = await db
-      .select({
-        resourceId: iamResourceGrants.resourceId,
-        principalType: iamResourceGrants.principalType,
-        principalId: iamResourceGrants.principalId,
-      })
-      .from(iamResourceGrants)
-      .where(
-        and(
-          eq(iamResourceGrants.projectId, projectId),
-          eq(iamResourceGrants.resourceType, resourceType),
-          eq(iamResourceGrants.effect, 'allow'),
-          or(isNull(iamResourceGrants.expiresAt), gt(iamResourceGrants.expiresAt, sql`now()`)),
+    const rows = await runIamDatabase((database) =>
+      database
+        .select({
+          resourceId: iamResourceGrants.resourceId,
+          principalType: iamResourceGrants.principalType,
+          principalId: iamResourceGrants.principalId,
+        })
+        .from(iamResourceGrants)
+        .where(
+          and(
+            eq(iamResourceGrants.projectId, projectId),
+            eq(iamResourceGrants.resourceType, resourceType),
+            eq(iamResourceGrants.effect, 'allow'),
+            or(isNull(iamResourceGrants.expiresAt), gt(iamResourceGrants.expiresAt, sql`now()`)),
+          ),
         ),
-      );
+    );
     const map = new Map<string, ResourceGrantPrincipal[]>();
     for (const r of rows) {
       const entry: ResourceGrantPrincipal = {
@@ -195,19 +198,21 @@ export interface ResourceGrantRow {
 
 /** Every grant for a project (for the Members UI). */
 export async function listResourceGrants(projectId: string): Promise<ResourceGrantRow[]> {
-  return db
-    .select({
-      grantId: iamResourceGrants.grantId,
-      resourceType: iamResourceGrants.resourceType,
-      resourceId: iamResourceGrants.resourceId,
-      principalType: iamResourceGrants.principalType,
-      principalId: iamResourceGrants.principalId,
-      expiresAt: iamResourceGrants.expiresAt,
-      grantedBy: iamResourceGrants.grantedBy,
-      createdAt: iamResourceGrants.createdAt,
-    })
-    .from(iamResourceGrants)
-    .where(eq(iamResourceGrants.projectId, projectId));
+  return runIamDatabase((database) =>
+    database
+      .select({
+        grantId: iamResourceGrants.grantId,
+        resourceType: iamResourceGrants.resourceType,
+        resourceId: iamResourceGrants.resourceId,
+        principalType: iamResourceGrants.principalType,
+        principalId: iamResourceGrants.principalId,
+        expiresAt: iamResourceGrants.expiresAt,
+        grantedBy: iamResourceGrants.grantedBy,
+        createdAt: iamResourceGrants.createdAt,
+      })
+      .from(iamResourceGrants)
+      .where(eq(iamResourceGrants.projectId, projectId)),
+  );
 }
 
 /** Create or update a grant (idempotent on the unique principal+resource key). */
@@ -223,45 +228,49 @@ export async function upsertResourceGrant(input: {
   expiresAt?: Date | null | undefined;
 }): Promise<{ grantId: string }> {
   const now = new Date();
-  const [row] = await db
-    .insert(iamResourceGrants)
-    .values({
-      accountId: input.accountId,
-      projectId: input.projectId,
-      resourceType: input.resourceType,
-      resourceId: input.resourceId,
-      principalType: input.principalType,
-      principalId: input.principalId,
-      effect: 'allow',
-      expiresAt: input.expiresAt ?? null,
-      grantedBy: input.grantedBy,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [
-        iamResourceGrants.projectId,
-        iamResourceGrants.resourceType,
-        iamResourceGrants.resourceId,
-        iamResourceGrants.principalType,
-        iamResourceGrants.principalId,
-      ],
-      set: {
+  const [row] = await runIamDatabase((database) =>
+    database
+      .insert(iamResourceGrants)
+      .values({
+        accountId: input.accountId,
+        projectId: input.projectId,
+        resourceType: input.resourceType,
+        resourceId: input.resourceId,
+        principalType: input.principalType,
+        principalId: input.principalId,
+        effect: 'allow',
+        expiresAt: input.expiresAt ?? null,
         grantedBy: input.grantedBy,
         updatedAt: now,
-        ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
-      },
-    })
-    .returning({ grantId: iamResourceGrants.grantId });
+      })
+      .onConflictDoUpdate({
+        target: [
+          iamResourceGrants.projectId,
+          iamResourceGrants.resourceType,
+          iamResourceGrants.resourceId,
+          iamResourceGrants.principalType,
+          iamResourceGrants.principalId,
+        ],
+        set: {
+          grantedBy: input.grantedBy,
+          updatedAt: now,
+          ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
+        },
+      })
+      .returning({ grantId: iamResourceGrants.grantId }),
+  );
   invalidateIamCacheForProjectResources(input.projectId);
   return { grantId: row.grantId };
 }
 
 /** Delete a grant by id (scoped to the project so a stray id can't cross over). */
 export async function deleteResourceGrant(grantId: string, projectId: string): Promise<boolean> {
-  const deleted = await db
-    .delete(iamResourceGrants)
-    .where(and(eq(iamResourceGrants.grantId, grantId), eq(iamResourceGrants.projectId, projectId)))
-    .returning({ grantId: iamResourceGrants.grantId });
+  const deleted = await runIamDatabase((database) =>
+    database
+      .delete(iamResourceGrants)
+      .where(and(eq(iamResourceGrants.grantId, grantId), eq(iamResourceGrants.projectId, projectId)))
+      .returning({ grantId: iamResourceGrants.grantId }),
+  );
   invalidateIamCacheForProjectResources(projectId);
   return deleted.length > 0;
 }

@@ -1,7 +1,8 @@
+import type { Effect } from 'effect';
 import Stripe from 'stripe';
 import { getStripe } from '../../shared/stripe';
 import { recordWebhookEvent, withAccountLock } from './webhook-concurrency';
-import { config } from '../../config';
+import { billingConfig as config } from '../effect';
 import { WebhookError } from '../../errors';
 import {
   getCreditAccount,
@@ -16,7 +17,6 @@ import {
   getTierByPriceId,
   getMonthlyCredits,
   grantForSeats,
-  isUpgrade,
   mapRevenueCatProductToTier,
   getRevenueCatPeriodType,
   isRevenueCatAnonymous,

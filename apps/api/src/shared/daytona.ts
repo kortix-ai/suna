@@ -1,7 +1,10 @@
+import type { Effect } from 'effect';
 import { Daytona } from '@daytonaio/sdk';
-import { config, type SandboxProviderName } from '../config';
+import { sharedConfig as config, sharedFetch } from './effect';
 import { isPlatinumConfigured } from './platinum';
 import { warmSnapshotSetting } from '../platform/services/runtime-settings';
+
+type SandboxProviderName = (typeof config.ALLOWED_SANDBOX_PROVIDERS)[number];
 
 let daytonaClient: Daytona | null = null;
 
@@ -121,7 +124,7 @@ export async function listDaytonaSnapshots(): Promise<DaytonaSnapshotSummary[]> 
   let page = 1;
   // Hard cap on pages so a misbehaving API can't spin us forever.
   for (let guard = 0; guard < 100; guard++) {
-    const res = await fetch(`${base}/snapshots?limit=200&page=${page}`, {
+    const res = await sharedFetch(`${base}/snapshots?limit=200&page=${page}`, {
       headers: { Authorization: `Bearer ${config.DAYTONA_API_KEY}` },
     });
     if (!res.ok) {
@@ -156,7 +159,7 @@ export async function listDaytonaSnapshots(): Promise<DaytonaSnapshotSummary[]> 
 export async function deleteDaytonaSnapshotById(id: string): Promise<boolean> {
   if (!config.DAYTONA_API_KEY) return false;
   try {
-    const res = await fetch(`${daytonaApiBase()}/snapshots/${id}`, {
+    const res = await sharedFetch(`${daytonaApiBase()}/snapshots/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${config.DAYTONA_API_KEY}` },
     });

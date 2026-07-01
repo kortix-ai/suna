@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Unified preview-token authentication.
  *
@@ -27,7 +28,7 @@ import { validateSecretKey } from '../repositories/api-keys';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { verifySupabaseJwt } from '../shared/jwt-verify';
-import { getSupabase } from '../shared/supabase';
+import { sandboxProxySupabase } from './effect';
 import { canAccessPreviewSandbox } from '../shared/preview-ownership';
 
 /**
@@ -77,7 +78,7 @@ export async function authenticatePreviewPrincipal(
     }
     if (local.reason !== 'no-keys' && local.reason !== 'no-key-for-kid') return null;
 
-    const supabase = getSupabase();
+    const supabase = sandboxProxySupabase;
     const { data: { user }, error } = await supabase.auth.getUser(token);
     if (error || !user) return null;
     return (await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId: user.id }))

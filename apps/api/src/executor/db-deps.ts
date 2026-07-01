@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Production wiring for the executor router — DB-backed ExecutorRouterDeps +
  * GatewayDeps. Access lives on the connector; credentials are split per (connector,
@@ -17,7 +18,7 @@ import {
   projectSessions,
   projects,
 } from '@kortix/db';
-import { db } from '../shared/db';
+import { executorDb as db, executorFetch } from './effect';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { authorize } from '../iam';
 import { loadProjectForUser } from '../projects/lib/access';
@@ -174,7 +175,7 @@ function toGatewayConnector(row: ConnectorRow, grants: Awaited<ReturnType<typeof
 }
 
 const nodeFetch: FetchImpl = async (url, init) => {
-  const res = await fetch(url, { method: init.method, headers: init.headers, body: init.body });
+  const res = await executorFetch(url, { method: init.method, headers: init.headers, body: init.body });
   return { status: res.status, ok: res.ok, text: () => res.text() };
 };
 

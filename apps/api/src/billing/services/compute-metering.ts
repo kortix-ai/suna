@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Billing v2 — sandbox compute metering.
 //
 // Sandboxes declare their reserved spec (cpu / memory / disk / gpu) in
@@ -20,7 +21,7 @@
 // hook can never silently accrue 24h+ of uncharged compute.
 
 import { sandboxComputeSessions } from '@kortix/db';
-import { config } from '../../config';
+import { billingConfig as config } from '../effect';
 import {
   insertComputeSession,
   getOpenComputeSession,

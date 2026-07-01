@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Provider sandbox-lifecycle webhook ingress — the DETERMINISTIC billing-close
  * path. The reaper sweep (projects/sandbox-reaper.ts) is the backstop; these
@@ -19,7 +20,7 @@
  */
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { config } from '../../config';
+import { platformConfig as config } from '../effect';
 import { recordWebhookEvent } from '../../billing/services/webhook-concurrency';
 import {
   reconcileSandboxStoppedByExternalId,

@@ -65,11 +65,11 @@ mock.module('drizzle-orm', () => ({
 }));
 
 mock.module('@kortix/db', () => ({ accounts, accountMembers, accountInvitations }));
-mock.module('../shared/db', () => ({ db: fakeDb }));
-mock.module('../shared/supabase', () => ({
-  getSupabase: () => ({
+mock.module('../accounts/effect', () => ({
+  accountDb: fakeDb,
+  accountSupabase: {
     auth: { admin: { getUserById: async () => ({ data: { user: null } }) } },
-  }),
+  },
 }));
 mock.module('../shared/resolve-account', () => ({ resolveAccountId: async () => 'acct' }));
 mock.module('../openapi', () => ({ makeOpenApiApp: () => ({}) }));

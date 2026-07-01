@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import type { StarterTemplateId } from '@kortix/starter';
 import { hashContent, parseLockContent, serializeLock } from '@kortix/registry';
 import { buildInstallBatch } from '../marketplace/install-service';

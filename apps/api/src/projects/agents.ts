@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * `[[agents]]` parsing for `kortix.toml`.
  *

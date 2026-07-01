@@ -1,8 +1,8 @@
 // ─── Observability (must be first — instruments before other imports) ────────
-import './lib/sentry';
-import { captureException, flushSentry, addBreadcrumb } from './lib/sentry';
-import { logger as appLogger, isLoggingTransportError } from './lib/logger';
-import { emitOtelSpan } from './lib/otel';
+import "./lib/sentry";
+import { captureException, flushSentry, addBreadcrumb } from "./lib/sentry";
+import { logger as appLogger, isLoggingTransportError } from "./lib/logger";
+import { emitOtelSpan } from "./lib/otel";
 import {
   recordHttpRequest,
   incInFlight,
@@ -10,46 +10,69 @@ import {
   setEventLoopLagSeconds,
   renderMetrics,
   metricsEnabled,
-} from './lib/metrics';
-import { getRequestContext, runWithContext, setContextField } from './lib/request-context';
-import { getRequestUrl } from './lib/request-url';
+} from "./lib/metrics";
+import {
+  getRequestContext,
+  runWithContext,
+  setContextField,
+} from "./lib/request-context";
+import { getRequestUrl } from "./lib/request-url";
 
-import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { mountOpenApiDocs, json, errors, auth } from './openapi';
-import { cors } from 'hono/cors';
-import { logger } from 'hono/logger';
-import { prettyJSON } from 'hono/pretty-json';
-import { HTTPException } from 'hono/http-exception';
-import { config } from './config';
-import { BillingError } from './errors';
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { mountOpenApiDocs, json, errors, auth } from "./openapi";
+import { cors } from "hono/cors";
+import { logger } from "hono/logger";
+import { prettyJSON } from "hono/pretty-json";
+import { HTTPException } from "hono/http-exception";
+import { Effect, Schedule } from "effect";
+import { BillingError } from "./errors";
+import { effectMiddleware, effectHandler } from "./effect/hono";
+import { runEffectOrThrow } from "./effect/http";
+import { AppConfig, DatabaseService } from "./effect/services";
 
-// ─── Sub-Service Imports ──────────────────────────────────────────────────── 
+// ─── Sub-Service Imports ────────────────────────────────────────────────────
 
-import { router } from './router';
-import { billingApp, accountDeletionApp } from './billing';
-import { platformApp } from './platform';
-import { sandboxProxyApp } from './sandbox-proxy';
-import { setupApp } from './setup';
-import { supabaseAuth, combinedAuth } from './middleware/auth';
-import { requestDeadline } from './middleware/request-deadline';
+import { router } from "./router";
+import { billingApp, accountDeletionApp } from "./billing";
+import { platformApp } from "./platform";
+import { sandboxProxyApp } from "./sandbox-proxy";
+import { setupApp } from "./setup";
+import { supabaseAuth, combinedAuth } from "./middleware/auth";
+import { requestDeadline } from "./middleware/request-deadline";
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
 // hot reloads — the promise never settles, the handler hangs, and Bun's
 // idleTimeout kills the socket with an empty reply. Frontend-polled routes
 // (maintenance banner, user-roles) must never sit behind a dynamic import.
-import { db, hasDatabase } from './shared/db';
-import { getPlatformRole } from './shared/platform-roles';
-import { platformSettings } from '@kortix/db';
-import { eq } from 'drizzle-orm';
-import { ensureSchema } from './ensure-schema';
-import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
-import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
-import { accessControlApp } from './access-control';
-import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
-import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
-import { startLeaderElection, stopLeaderElection, isLeader, runsSingletonWorkers } from './shared/leader-election';
-import { marketplaceApp } from './marketplace';
-import { oauthApp } from './oauth';
+import { getPlatformRole } from "./shared/platform-roles";
+import { platformSettings, type Database } from "@kortix/db";
+import { eq } from "drizzle-orm";
+import { ensureSchema } from "./ensure-schema";
+import {
+  initModelPricing,
+  stopModelPricing,
+} from "./router/config/model-pricing";
+import {
+  tunnelApp,
+  wsHandlers as tunnelWsHandlers,
+  startTunnelService,
+  stopTunnelService,
+  getTunnelServiceStatus,
+} from "./tunnel";
+import { accessControlApp } from "./access-control";
+import {
+  startAccessControlCache,
+  stopAccessControlCache,
+} from "./shared/access-control-cache";
+import { startTmpReaper, stopTmpReaper } from "./snapshots/tmp-reaper";
+import {
+  startLeaderElection,
+  stopLeaderElection,
+  isLeader,
+  runsSingletonWorkers,
+} from "./shared/leader-election";
+import { marketplaceApp } from "./marketplace";
+import { oauthApp } from "./oauth";
 import {
   projectWebhooksApp,
   projectsApp,
@@ -57,22 +80,31 @@ import {
   stopProjectTriggerScheduler,
   getTriggerSchedulerHealth,
   schedulerSweepIsStale,
-} from './projects';
-import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
-import { kickStartupPreBuild } from './snapshots/builder';
-import { kickWarmBaseBuild } from './snapshots/warm-bake';
-import { warmSnapshotsEnabled } from './shared/daytona';
-import { startLegacyMigrationWorker, stopLegacyMigrationWorker } from './projects/legacy-migration-worker';
-import { registerLegacyMigrationRoutes } from './projects/legacy-migration-routes';
-import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
-import { startSunaMigrationWorker, stopSunaMigrationWorker } from './projects/suna-migration/suna-migration-worker';
-import { accountsRouter } from './accounts';
-import { authRouter } from './auth';
-import { scimRouter } from './scim';
-import { accountInvitesRouter } from './accounts/invites';
-import { auditStateChangingRequest } from './shared/audit';
-import { opsApp } from './ops';
-import { adminApp } from './admin';
+} from "./projects";
+import {
+  startProjectMaintenance,
+  stopProjectMaintenance,
+} from "./projects/maintenance";
+import { kickStartupPreBuild } from "./snapshots/builder";
+import { kickWarmBaseBuild } from "./snapshots/warm-bake";
+import { warmSnapshotsEnabled } from "./shared/daytona";
+import {
+  startLegacyMigrationWorker,
+  stopLegacyMigrationWorker,
+} from "./projects/legacy-migration-worker";
+import { registerLegacyMigrationRoutes } from "./projects/legacy-migration-routes";
+import { registerSunaMigrationRoutes } from "./projects/suna-migration/suna-migration-routes";
+import {
+  startSunaMigrationWorker,
+  stopSunaMigrationWorker,
+} from "./projects/suna-migration/suna-migration-worker";
+import { accountsRouter } from "./accounts";
+import { authRouter } from "./auth";
+import { scimRouter } from "./scim";
+import { accountInvitesRouter } from "./accounts/invites";
+import { auditStateChangingRequest } from "./shared/audit";
+import { opsApp } from "./ops";
+import { adminApp } from "./admin";
 
 // ─── Process-level crash guards ───────────────────────────────────────────────
 // A stray rejected promise or throw escaping any fire-and-forget path — the
@@ -83,32 +115,42 @@ import { adminApp } from './admin';
 // left to the platform. Registering these handlers also overrides the runtime's
 // default "crash on unhandled rejection" behavior, so this can only prevent
 // crashes, never introduce one.
-process.on('unhandledRejection', (reason: unknown) => {
+process.on("unhandledRejection", (reason: unknown) => {
   try {
     const err = reason instanceof Error ? reason : new Error(String(reason));
     // A logging-transport failure must NEVER be reported through the logging
     // transport (Better Stack) — that re-enqueues, re-overflows, and spirals,
     // which is exactly what took prod down on 2026-06-18. Record it locally and
     // drop it. See logger.ts isLoggingTransportError.
-    if (isLoggingTransportError(`${err.message}\n${err.stack ?? ''}`)) {
-      appLogger.localError('Dropped logging-transport rejection', { error: err.message });
+    if (isLoggingTransportError(`${err.message}\n${err.stack ?? ""}`)) {
+      appLogger.localError("Dropped logging-transport rejection", {
+        error: err.message,
+      });
       return;
     }
-    appLogger.error('Unhandled promise rejection', { error: err.message, stack: err.stack });
-    captureException(err, { handler: 'unhandledRejection' });
+    appLogger.error("Unhandled promise rejection", {
+      error: err.message,
+      stack: err.stack,
+    });
+    captureException(err, { handler: "unhandledRejection" });
   } catch {
     // never let the crash guard itself crash the process
   }
 });
 
-process.on('uncaughtException', (err: Error) => {
+process.on("uncaughtException", (err: Error) => {
   try {
-    if (isLoggingTransportError(`${err?.message ?? ''}\n${err?.stack ?? ''}`)) {
-      appLogger.localError('Dropped logging-transport exception', { error: err?.message ?? String(err) });
+    if (isLoggingTransportError(`${err?.message ?? ""}\n${err?.stack ?? ""}`)) {
+      appLogger.localError("Dropped logging-transport exception", {
+        error: err?.message ?? String(err),
+      });
       return;
     }
-    appLogger.error('Uncaught exception', { error: err?.message ?? String(err), stack: err?.stack });
-    captureException(err, { handler: 'uncaughtException' });
+    appLogger.error("Uncaught exception", {
+      error: err?.message ?? String(err),
+      stack: err?.stack,
+    });
+    captureException(err, { handler: "uncaughtException" });
   } catch {
     // never let the crash guard itself crash the process
   }
@@ -121,9 +163,33 @@ const app = new OpenAPIHono();
 // booting the server. See the import.meta.main guard around startup below.
 export { app };
 
-app.use('*', async (c, next) => {
+const appConfig = await runEffectOrThrow(Effect.gen(function* () {
+  return yield* AppConfig;
+}));
+
+const hasApiDatabase = () =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const { hasDatabase } = yield* DatabaseService;
+    return hasDatabase;
+  }));
+
+const runApiDatabase = <A>(
+  operation: (database: Database) => Promise<A> | A,
+): Promise<A> =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const { database } = yield* DatabaseService;
+    return yield* Effect.tryPromise(async () => operation(database));
+  }));
+
+app.use("*", effectMiddleware);
+
+app.use("*", async (c, next) => {
   const path = c.req.path;
-  if (path === '/metrics' || path.startsWith('/health') || path.startsWith('/v1/health')) {
+  if (
+    path === "/metrics" ||
+    path.startsWith("/health") ||
+    path.startsWith("/v1/health")
+  ) {
     return next();
   }
   const start = performance.now();
@@ -146,34 +212,36 @@ app.use('*', async (c, next) => {
   }
 });
 
-// === Global Middleware === 
+// === Global Middleware ===
 
 // CORS origins: production domains + localhost for local dev + any extras from env.
 const cloudOrigins = [
-  'https://www.kortix.com',
-  'https://kortix.com',
-  'https://dev.kortix.com',
-  'https://new-dev.kortix.com',
-  'https://dev-new.kortix.com',
-  'https://staging.kortix.com',
-  'https://kortix.cloud',
-  'https://www.kortix.cloud',
-  'https://new.kortix.com',
+  "https://www.kortix.com",
+  "https://kortix.com",
+  "https://dev.kortix.com",
+  "https://new-dev.kortix.com",
+  "https://dev-new.kortix.com",
+  "https://staging.kortix.com",
+  "https://kortix.cloud",
+  "https://www.kortix.cloud",
+  "https://new.kortix.com",
 ];
 const localOrigins = [
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
   // Local dev: the white-label reference app (apps/whitelabel-demo) defaults to :3010.
-  'http://localhost:3010',
-  'http://127.0.0.1:3010',
+  "http://localhost:3010",
+  "http://127.0.0.1:3010",
 ];
 const extraOrigins = process.env.CORS_ALLOWED_ORIGINS
-  ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
+  ? process.env.CORS_ALLOWED_ORIGINS.split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
   : [];
 const corsOrigins = [
   ...new Set([
     ...cloudOrigins,
-    ...localOrigins,  // Always include — needed for local dev and self-hosted
+    ...localOrigins, // Always include — needed for local dev and self-hosted
     ...extraOrigins,
   ]),
 ];
@@ -182,11 +250,12 @@ const corsOrigins = [
 // Their origins are dynamic per PR (Vercel deploy URLs + *.preview.kortix.com
 // aliases) so they can't be enumerated above. Scoped to INTERNAL_KORTIX_ENV=preview
 // only — dev/prod keep the strict static allowlist.
-const allowPreviewOrigins = config.INTERNAL_KORTIX_ENV === 'preview';
-const PREVIEW_ORIGIN = /^https:\/\/[a-z0-9-]+\.(vercel\.app|preview\.kortix\.com)$/i;
+const allowPreviewOrigins = appConfig.INTERNAL_KORTIX_ENV === "preview";
+const PREVIEW_ORIGIN =
+  /^https:\/\/[a-z0-9-]+\.(vercel\.app|preview\.kortix\.com)$/i;
 
 app.use(
-  '*',
+  "*",
   cors({
     origin: (origin) => {
       // No Origin header (same-origin, curl, server-to-server) → not a CORS request.
@@ -195,45 +264,63 @@ app.use(
       if (allowPreviewOrigins && PREVIEW_ORIGIN.test(origin)) return origin;
       return null; // not allowed → no Access-Control-Allow-Origin
     },
-    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'X-Kortix-Token', 'X-Api-Key', 'Accept', 'X-Kortix-Signature', 'X-Hub-Signature-256', 'traceparent', 'tracestate', 'X-Request-Id'],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Kortix-Token",
+      "X-Api-Key",
+      "Accept",
+      "X-Kortix-Signature",
+      "X-Hub-Signature-256",
+      "traceparent",
+      "tracestate",
+      "X-Request-Id",
+    ],
     credentials: true,
-  })
+  }),
 );
 
 // ─── Request context (AsyncLocalStorage) ────────────────────────────────────
 // Must be FIRST — wraps the entire request lifecycle so all downstream code
 // (auth, route handlers, console.error calls) automatically gets context fields
 // (requestId, userId, accountId, sandboxId) attached to every log.
-app.use('*', async (c, next) => {
-  await runWithContext(c.req.method, c.req.path, async () => {
-    // Auto-extract common resource IDs from URL patterns for logs/traces.
-    const path = c.req.path;
-    const projectSessionMatch = path.match(/\/projects\/([^/]+)\/sessions\/([^/]+)/);
-    if (projectSessionMatch) {
-      setContextField('projectId', projectSessionMatch[1]);
-      setContextField('sessionId', projectSessionMatch[2]);
-    } else {
-      const projectMatch = path.match(/\/projects\/([^/]+)/);
-      if (projectMatch) setContextField('projectId', projectMatch[1]);
-    }
-    const sbMatch = path.match(/\/sandbox(?:es)?\/([^/]+)/) ||
-                    path.match(/\/p\/([^/]+)/);
-    if (sbMatch) setContextField('sandboxId', sbMatch[1]);
-    await next();
-    const ctx = getRequestContext();
-    if (ctx) {
-      c.header('X-Request-Id', ctx.requestId);
-      c.header('traceparent', ctx.traceparent);
-    }
-  }, c.req.header('traceparent'));
+app.use("*", async (c, next) => {
+  await runWithContext(
+    c.req.method,
+    c.req.path,
+    async () => {
+      // Auto-extract common resource IDs from URL patterns for logs/traces.
+      const path = c.req.path;
+      const projectSessionMatch = path.match(
+        /\/projects\/([^/]+)\/sessions\/([^/]+)/,
+      );
+      if (projectSessionMatch) {
+        setContextField("projectId", projectSessionMatch[1]);
+        setContextField("sessionId", projectSessionMatch[2]);
+      } else {
+        const projectMatch = path.match(/\/projects\/([^/]+)/);
+        if (projectMatch) setContextField("projectId", projectMatch[1]);
+      }
+      const sbMatch =
+        path.match(/\/sandbox(?:es)?\/([^/]+)/) || path.match(/\/p\/([^/]+)/);
+      if (sbMatch) setContextField("sandboxId", sbMatch[1]);
+      await next();
+      const ctx = getRequestContext();
+      if (ctx) {
+        c.header("X-Request-Id", ctx.requestId);
+        c.header("traceparent", ctx.traceparent);
+      }
+    },
+    c.req.header("traceparent"),
+  );
 });
 
 // Request logger — uses Hono's built-in logger for stdout (Docker captures these)
-app.use('*', logger());
+app.use("*", logger());
 
 // Post-request: Sentry breadcrumbs + slow/error request logging
-app.use('*', async (c, next) => {
+app.use("*", async (c, next) => {
   const start = Date.now();
   await next();
   const duration = Date.now() - start;
@@ -242,43 +329,47 @@ app.use('*', async (c, next) => {
   const method = c.req.method;
 
   // Propagate userId/accountId to request context (set by auth middleware)
-  const userId = (c as any).get('userId') as string | undefined;
-  const accountId = (c as any).get('accountId') as string | undefined;
-  if (userId) setContextField('userId', userId);
-  if (accountId) setContextField('accountId', accountId);
+  const userId = (c as any).get("userId") as string | undefined;
+  const accountId = (c as any).get("accountId") as string | undefined;
+  if (userId) setContextField("userId", userId);
+  if (accountId) setContextField("accountId", accountId);
 
   // Add breadcrumb to Sentry for request context on future errors
-  addBreadcrumb(`${c.req.method} ${c.req.path} ${status}`, {
-    method,
-    path,
-    status,
-    duration,
-    userAgent: c.req.header('user-agent')?.slice(0, 100),
-  }, 'http');
+  addBreadcrumb(
+    `${c.req.method} ${c.req.path} ${status}`,
+    {
+      method,
+      path,
+      status,
+      duration,
+      userAgent: c.req.header("user-agent")?.slice(0, 100),
+    },
+    "http",
+  );
 
   // Expected sandbox proxy noise we intentionally suppress:
   // - long-poll/SSE event stream timing out after ~30s (504)
   // - sandbox startup probes returning 502/503 before services are ready
-  const isSandboxProxyPath = path.includes('/v1/p/');
-  const isProxyLongPoll = isSandboxProxyPath && (
-    path.includes('/global/event') ||
-    path.includes('/session/status') ||
-    /\/session\/[^/]+\/message(?:$|\?)/.test(path)
-  );
-  const isProxyStartupProbe = isSandboxProxyPath && (
-    path.includes('/global/health') ||
-    path.includes('/kortix/health') ||
-    /\/sessions(?:\/|$)/.test(path)
-  );
-  const isExpectedProxyNoise = method === 'GET' && (
-    (isProxyLongPoll && (
-      (status === 200 && duration > 5000) ||
-      status === 504 ||
-      status === 502 ||
-      status === 503
-    )) ||
-    (isProxyStartupProbe && (status === 502 || status === 503 || status === 504))
-  );
+  const isSandboxProxyPath = path.includes("/v1/p/");
+  const isProxyLongPoll =
+    isSandboxProxyPath &&
+    (path.includes("/global/event") ||
+      path.includes("/session/status") ||
+      /\/session\/[^/]+\/message(?:$|\?)/.test(path));
+  const isProxyStartupProbe =
+    isSandboxProxyPath &&
+    (path.includes("/global/health") ||
+      path.includes("/kortix/health") ||
+      /\/sessions(?:\/|$)/.test(path));
+  const isExpectedProxyNoise =
+    method === "GET" &&
+    ((isProxyLongPoll &&
+      ((status === 200 && duration > 5000) ||
+        status === 504 ||
+        status === 502 ||
+        status === 503)) ||
+      (isProxyStartupProbe &&
+        (status === 502 || status === 503 || status === 504)));
 
   // Health/liveness probes fire every few seconds from the ALB + kubelet across
   // every pod — by far the highest-volume request. A healthy probe carries no
@@ -286,41 +377,46 @@ app.use('*', async (c, next) => {
   // queue toward overflow. Suppress only SUCCESSFUL probes (a non-2xx still
   // logs, so a failing/degraded probe stays fully visible).
   const isHealthProbe =
-    path === '/health' || path === '/v1/health' || path.endsWith('/health/live');
+    path === "/health" ||
+    path === "/v1/health" ||
+    path.endsWith("/health/live");
   const suppressLog = isExpectedProxyNoise || (isHealthProbe && status < 400);
 
   if (!suppressLog) {
-    const level = status >= 500 || duration > 5000 ? 'warn' : 'info';
-    appLogger[level](`Request completed: ${method} ${path} ${status} ${duration}ms`, {
-      status,
-      duration,
-    });
+    const level = status >= 500 || duration > 5000 ? "warn" : "info";
+    appLogger[level](
+      `Request completed: ${method} ${path} ${status} ${duration}ms`,
+      {
+        status,
+        duration,
+      },
+    );
     void emitOtelSpan({
       name: `${method} ${path}`,
-      kind: 'SERVER',
+      kind: "SERVER",
       startTimeMs: start,
       endTimeMs: Date.now(),
       attributes: {
-        'http.method': method,
-        'http.route': path,
-        'http.status_code': status,
-        'http.response.duration_ms': duration,
+        "http.method": method,
+        "http.route": path,
+        "http.status_code": status,
+        "http.response.duration_ms": duration,
       },
     });
   }
 });
 
 // Pretty JSON in dev mode for easier debugging
-if (config.INTERNAL_KORTIX_ENV === 'dev') {
-  app.use('*', prettyJSON());
+if (appConfig.INTERNAL_KORTIX_ENV === "dev") {
+  app.use("*", prettyJSON());
 }
 
-app.use('/v1/*', auditStateChangingRequest);
+app.use("/v1/*", auditStateChangingRequest);
 
 // Wall-clock deadline for non-streaming requests — returns 503 before the 30s
 // client abort instead of hanging. Streaming/proxy/WS surfaces are exempted
 // inside the middleware; disable entirely with REQUEST_DEADLINE_MS=0.
-app.use('/v1/*', requestDeadline);
+app.use("/v1/*", requestDeadline);
 
 // === Top-Level Health Check (no auth) ===
 
@@ -329,15 +425,15 @@ app.use('/v1/*', requestDeadline);
 // the prod ECS task-def env to the clean X.Y.Z. Deliberately NOT SANDBOX_VERSION —
 // that drives snapshot content-hashing and must stay constant across releases.
 // Falls back to 'dev' for local development.
-const API_VERSION = process.env.KORTIX_VERSION || 'dev';
+const API_VERSION = process.env.KORTIX_VERSION || "dev";
 // Exact source commit the image was built from (baked at build, preserved across
 // the prod retag — unlike KORTIX_VERSION which prod overrides to the clean tag).
 // Lets the team verify precisely which code is live. 'unknown' for local dev.
-const API_COMMIT = process.env.KORTIX_COMMIT || 'unknown';
+const API_COMMIT = process.env.KORTIX_COMMIT || "unknown";
 // When this process booted — confirms a deploy actually rolled fresh pods.
 const STARTED_AT = new Date().toISOString();
 // Which replica answered (pod name in k8s, task/container id in ECS).
-const API_INSTANCE = process.env.HOSTNAME || 'unknown';
+const API_INSTANCE = process.env.HOSTNAME || "unknown";
 
 // OpenAPI spec (/v1/openapi.json) + Scalar API reference (/v1/docs). Typed routes
 // register into the spec as each sub-router is migrated to @hono/zod-openapi.
@@ -361,15 +457,15 @@ const HealthSchema = z
     leader: z.boolean(),
     trigger_scheduler: z.any(),
   })
-  .openapi('Health');
+  .openapi("Health");
 
 const healthHandler = (c: any) =>
   c.json({
-    status: 'ok',
-    service: 'kortix-api',
+    status: "ok",
+    service: "kortix-api",
     version: API_VERSION,
     commit: API_COMMIT,
-    environment: config.INTERNAL_KORTIX_ENV,
+    environment: appConfig.INTERNAL_KORTIX_ENV,
     instance: API_INSTANCE,
     started_at: STARTED_AT,
     uptime_seconds: Math.round(process.uptime()),
@@ -377,7 +473,7 @@ const healthHandler = (c: any) =>
     // the container's memory limit, without needing metrics-server/dashboards.
     memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
     timestamp: new Date().toISOString(),
-    billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
+    billing_enabled: appConfig.KORTIX_BILLING_INTERNAL_ENABLED,
     // Whether the Daytona warm-snapshot path is live in this env (flag + key +
     // warm target all present) — see snapshots/warm-bake.ts. Surfaced here so a
     // misconfigured env var is visible remotely instead of failing silently.
@@ -389,18 +485,21 @@ const healthHandler = (c: any) =>
     // only runs on the leader) — so "all pods null" = no leader = no triggers.
     // `stale` is true when we're the leader but the sweep has frozen (started
     // and not completed within the stale window) — the signal to alert on.
-    trigger_scheduler: { ...getTriggerSchedulerHealth(), stale: schedulerSweepIsStale(isLeader()) },
+    trigger_scheduler: {
+      ...getTriggerSchedulerHealth(),
+      stale: schedulerSweepIsStale(isLeader()),
+    },
   });
 
 app.openapi(
   createRoute({
-    method: 'get',
-    path: '/health',
-    tags: ['system'],
-    summary: 'Service health (unversioned, used by the load balancer)',
-    responses: { 200: json(HealthSchema, 'Service health') },
+    method: "get",
+    path: "/health",
+    tags: ["system"],
+    summary: "Service health (unversioned, used by the load balancer)",
+    responses: { 200: json(HealthSchema, "Service health") },
   }),
-  healthHandler,
+  effectHandler(healthHandler),
 );
 
 // ─── Event-loop lag monitor → a real liveness signal ─────────────────────────
@@ -416,20 +515,22 @@ app.openapi(
 // default — flip health.livenessPath to /health/live only AFTER an image that
 // serves this route is confirmed live (otherwise old pods 404 their liveness
 // probe and crash-loop). See infra/k8s/charts/kortix-api.
-const MAX_EVENT_LOOP_LAG_MS = Number(process.env.HEALTH_MAX_EVENT_LOOP_LAG_MS || 5000);
+const MAX_EVENT_LOOP_LAG_MS = Number(
+  process.env.HEALTH_MAX_EVENT_LOOP_LAG_MS || 5000,
+);
 let eventLoopLagMs = 0;
 {
   const SAMPLE_INTERVAL_MS = 1000;
   let lastSample = performance.now();
-  const lagTimer = setInterval(() => {
-    const now = performance.now();
-    // How much longer than the interval the loop took to come back to this tick.
-    eventLoopLagMs = Math.max(0, now - lastSample - SAMPLE_INTERVAL_MS);
-    lastSample = now;
-    setEventLoopLagSeconds(eventLoopLagMs / 1000);
-  }, SAMPLE_INTERVAL_MS);
-  // Never keep the process alive just for the sampler.
-  (lagTimer as { unref?: () => void }).unref?.();
+  Effect.runFork(
+    Effect.sync(() => {
+      const now = performance.now();
+      // How much longer than the interval the loop took to come back to this tick.
+      eventLoopLagMs = Math.max(0, now - lastSample - SAMPLE_INTERVAL_MS);
+      lastSample = now;
+      setEventLoopLagSeconds(eventLoopLagMs / 1000);
+    }).pipe(Effect.repeat(Schedule.spaced(`${SAMPLE_INTERVAL_MS} millis`))),
+  );
 }
 
 const livenessHandler = (c: any) => {
@@ -437,42 +538,46 @@ const livenessHandler = (c: any) => {
   if (eventLoopLagMs > MAX_EVENT_LOOP_LAG_MS) {
     // 503 → kubelet liveness fails → the pod is restarted (auto-recovery).
     return c.json(
-      { status: 'degraded', event_loop_lag_ms: lag, threshold_ms: MAX_EVENT_LOOP_LAG_MS },
+      {
+        status: "degraded",
+        event_loop_lag_ms: lag,
+        threshold_ms: MAX_EVENT_LOOP_LAG_MS,
+      },
       503,
     );
   }
-  return c.json({ status: 'ok', event_loop_lag_ms: lag });
+  return c.json({ status: "ok", event_loop_lag_ms: lag });
 };
 
 // Unversioned + /v1 forms so either can be wired as the kubelet liveness probe.
-app.get('/health/live', livenessHandler);
-app.get('/v1/health/live', livenessHandler);
+app.get("/health/live", livenessHandler);
+app.get("/v1/health/live", livenessHandler);
 
-app.get('/metrics', (c) => {
-  if (!metricsEnabled()) return c.text('metrics disabled\n', 404);
-  c.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
+app.get("/metrics", (c) => {
+  if (!metricsEnabled()) return c.text("metrics disabled\n", 404);
+  c.header("content-type", "text/plain; version=0.0.4; charset=utf-8");
   return c.body(renderMetrics());
 });
 
 // Health check under /v1 prefix (frontend uses NEXT_PUBLIC_BACKEND_URL which includes /v1)
 app.openapi(
   createRoute({
-    method: 'get',
-    path: '/v1/health',
-    tags: ['system'],
-    summary: 'Service health',
-    responses: { 200: json(HealthSchema, 'Service health') },
+    method: "get",
+    path: "/v1/health",
+    tags: ["system"],
+    summary: "Service health",
+    responses: { 200: json(HealthSchema, "Service health") },
   }),
-  healthHandler,
+  effectHandler(healthHandler),
 );
 
 // Also expose system status at root for backward compat with frontend
 app.openapi(
   createRoute({
-    method: 'get',
-    path: '/v1/system/status',
-    tags: ['system'],
-    summary: 'Maintenance / technical-issue banner status',
+    method: "get",
+    path: "/v1/system/status",
+    tags: ["system"],
+    summary: "Maintenance / technical-issue banner status",
     responses: {
       200: json(
         z
@@ -481,27 +586,28 @@ app.openapi(
             technicalIssue: z.object({ enabled: z.boolean() }).passthrough(),
             updatedAt: z.string(),
           })
-          .openapi('SystemStatus'),
-        'System status',
+          .openapi("SystemStatus"),
+        "System status",
       ),
     },
   }),
-  (c: any) =>
+  effectHandler((c: any) =>
     c.json({
       maintenanceNotice: { enabled: false },
       technicalIssue: { enabled: false },
       updatedAt: new Date().toISOString(),
     }),
+  ),
 );
 
 // ─── Maintenance config (DB-backed; replaces Vercel Edge Config) ─────────────
 // One row in kortix.platform_settings under 'maintenance_config'. GET is public
 // (banner + maintenance page read it); PUT is admin-only. Set via /admin/utils.
-const MAINTENANCE_KEY = 'maintenance_config';
+const MAINTENANCE_KEY = "maintenance_config";
 const DEFAULT_MAINTENANCE = {
-  level: 'none' as const,
-  title: '',
-  message: '',
+  level: "none" as const,
+  title: "",
+  message: "",
   startTime: null,
   endTime: null,
   statusUrl: null,
@@ -521,52 +627,73 @@ const MaintenanceSchema = z
     updatedAt: z.string(),
   })
   .partial()
-  .openapi('MaintenanceConfig');
+  .openapi("MaintenanceConfig");
 
 app.openapi(
   createRoute({
-    method: 'get',
-    path: '/v1/system/maintenance',
-    tags: ['system'],
-    summary: 'Read the maintenance config (public — banner + maintenance page)',
-    responses: { 200: json(MaintenanceSchema, 'Maintenance config') },
+    method: "get",
+    path: "/v1/system/maintenance",
+    tags: ["system"],
+    summary: "Read the maintenance config (public — banner + maintenance page)",
+    responses: { 200: json(MaintenanceSchema, "Maintenance config") },
   }),
-  async (c: any) => {
-  if (!hasDatabase) return c.json(DEFAULT_MAINTENANCE);
-  const [row] = await db
-    .select({ value: platformSettings.value })
-    .from(platformSettings)
-    .where(eq(platformSettings.key, MAINTENANCE_KEY))
-    .limit(1);
-  return c.json(row?.value ?? DEFAULT_MAINTENANCE);
-});
+  effectHandler(async (c: any) => {
+    if (!(await hasApiDatabase())) return c.json(DEFAULT_MAINTENANCE);
+    const [row] = await runApiDatabase((database) =>
+      database
+        .select({ value: platformSettings.value })
+        .from(platformSettings)
+        .where(eq(platformSettings.key, MAINTENANCE_KEY))
+        .limit(1),
+    );
+    return c.json(row?.value ?? DEFAULT_MAINTENANCE);
+  }),
+);
 
 app.openapi(
   createRoute({
-    method: 'put',
-    path: '/v1/system/maintenance',
-    tags: ['system'],
-    summary: 'Update the maintenance config (admin only)',
+    method: "put",
+    path: "/v1/system/maintenance",
+    tags: ["system"],
+    summary: "Update the maintenance config (admin only)",
     ...auth,
     middleware: [supabaseAuth] as const,
-    request: { body: { content: { 'application/json': { schema: MaintenanceSchema } } } },
-    responses: { 200: json(MaintenanceSchema, 'Updated config'), ...errors(403, 503) },
+    request: {
+      body: { content: { "application/json": { schema: MaintenanceSchema } } },
+    },
+    responses: {
+      200: json(MaintenanceSchema, "Updated config"),
+      ...errors(403, 503),
+    },
   }),
-  async (c: any) => {
-    const userId = c.get('userId') as string;
+  effectHandler(async (c: any) => {
+    const userId = c.get("userId") as string;
     const role = await getPlatformRole(userId);
-    if (role !== 'admin' && role !== 'super_admin') {
-      return c.json({ error: 'Admin access required' }, 403);
+    if (role !== "admin" && role !== "super_admin") {
+      return c.json({ error: "Admin access required" }, 403);
     }
-    if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
+    if (!(await hasApiDatabase())) return c.json({ error: "Database not configured" }, 503);
     const body = await c.req.json().catch(() => ({}));
-    const maintenanceConfig = { ...DEFAULT_MAINTENANCE, ...body, updatedAt: new Date().toISOString() };
-    await db
-      .insert(platformSettings)
-      .values({ key: MAINTENANCE_KEY, value: maintenanceConfig, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: platformSettings.key, set: { value: maintenanceConfig, updatedAt: new Date() } });
+    const maintenanceConfig = {
+      ...DEFAULT_MAINTENANCE,
+      ...body,
+      updatedAt: new Date().toISOString(),
+    };
+    await runApiDatabase((database) =>
+      database
+        .insert(platformSettings)
+        .values({
+          key: MAINTENANCE_KEY,
+          value: maintenanceConfig,
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: platformSettings.key,
+          set: { value: maintenanceConfig, updatedAt: new Date() },
+        }),
+    );
     return c.json(maintenanceConfig);
-  },
+  }),
 );
 
 // ─── Stub Endpoints ─────────────────────────────────────────────────────────
@@ -576,166 +703,187 @@ app.openapi(
 // POST /v1/prewarm — no-op pre-warm. Frontend fires this on login.
 app.openapi(
   createRoute({
-    method: 'post',
-    path: '/v1/prewarm',
-    tags: ['system'],
-    summary: 'No-op pre-warm (frontend fires this on login)',
-    responses: { 200: json(z.object({ success: z.boolean() }).openapi('Prewarm'), 'ok') },
+    method: "post",
+    path: "/v1/prewarm",
+    tags: ["system"],
+    summary: "No-op pre-warm (frontend fires this on login)",
+    responses: {
+      200: json(z.object({ success: z.boolean() }).openapi("Prewarm"), "ok"),
+    },
   }),
-  (c: any) => c.json({ success: true }),
+  effectHandler((c: any) => c.json({ success: true })),
 );
 
 // /v1/accounts/* — account & member management lives in ./accounts router.
-app.route('/v1/accounts', accountsRouter);
+app.route("/v1/accounts", accountsRouter);
 // /v1/auth/* — auth-side server endpoints (logout for now). Audit
 // events for login/logout/failed-login live in the auth middleware
 // + this router so SOC2 reviews see the full auth lifecycle.
-app.route('/v1/auth', authRouter);
+app.route("/v1/auth", authRouter);
 // SCIM 2.0 — separate auth (per-account bearer tokens, not Supabase JWT).
 // Mounted outside /v1 so IdPs configure the documented protocol URL.
-app.route('/scim/v2', scimRouter);
+app.route("/scim/v2", scimRouter);
 
 // /v1/account-invites/* — accept/decline/describe pending team invitations.
-app.route('/v1/account-invites', accountInvitesRouter);
+app.route("/v1/account-invites", accountInvitesRouter);
 
-app.route('/v1/ops', opsApp);
-
+app.route("/v1/ops", opsApp);
 
 app.openapi(
   createRoute({
-    method: 'get',
-    path: '/v1/user-roles',
-    tags: ['system'],
-    summary: 'The caller’s platform role (admin gate)',
+    method: "get",
+    path: "/v1/user-roles",
+    tags: ["system"],
+    summary: "The caller’s platform role (admin gate)",
     ...auth,
     middleware: [supabaseAuth] as const,
     responses: {
-      200: json(z.object({ isAdmin: z.boolean(), role: z.string().nullable() }).openapi('UserRoles'), 'Platform role'),
+      200: json(
+        z
+          .object({ isAdmin: z.boolean(), role: z.string().nullable() })
+          .openapi("UserRoles"),
+        "Platform role",
+      ),
       ...errors(401),
     },
   }),
-  async (c: any) => {
-  const accountId = c.get('userId') as string;
-  const role = await getPlatformRole(accountId);
-  const isAdmin = role === 'admin' || role === 'super_admin';
+  effectHandler(async (c: any) => {
+    const accountId = c.get("userId") as string;
+    const role = await getPlatformRole(accountId);
+    const isAdmin = role === "admin" || role === "super_admin";
 
-  return c.json({ isAdmin, role });
-  },
+    return c.json({ isAdmin, role });
+  }),
 );
 
 // ─── Mount Sub-Services ─────────────────────────────────────────────────────
 // All services follow the pattern: /v1/{serviceName}/...
 
-app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/router/models, /v1/router/web-search, /v1/router/tavily/*, etc.
+app.route("/v1/router", router); // /v1/router/chat/completions, /v1/router/models, /v1/router/web-search, /v1/router/tavily/*, etc.
 
 {
   // LLM gateway surfaces: in-API /v1/llm (full pipeline), /internal/gateway
   // control-plane RPC, and the /v1/llm-gateway reverse proxy. See ./llm-gateway/wire.
-  const { mountLlmGateway } = await import('./llm-gateway/wire');
+  const { mountLlmGateway } = await import("./llm-gateway/wire");
   mountLlmGateway(app);
 }
 
-app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
-app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
-app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
+app.route("/v1/billing", billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
+app.route("/v1/account", accountDeletionApp); // account deletion status/request/cancel/immediate
+app.route("/v1/platform", platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (lazy migration)
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
-app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
-app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
+app.route("/v1/projects", projectsApp); // /v1/projects — Git-backed Kortix projects
+app.route("/v1/marketplace", marketplaceApp); // /v1/marketplace — browse the registry catalog
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
 // so it is intentionally NOT wrapped in combinedAuth.
 {
-  const { gitProxyApp } = await import('./git-proxy');
-  app.route('/v1/git', gitProxyApp); // /v1/git/:projectId(.git)/{info/refs,git-upload-pack,git-receive-pack}
+  const { gitProxyApp } = await import("./git-proxy");
+  app.route("/v1/git", gitProxyApp); // /v1/git/:projectId(.git)/{info/refs,git-upload-pack,git-receive-pack}
 }
 
 // Executor — unified connector layer. Gateway routes (/connectors, /call) use
 // KORTIX_EXECUTOR_TOKEN (validated inside the router); admin routes
 // (/projects/:id/connectors*) need user auth, so combinedAuth runs first.
 {
-  const { executorApp } = await import('./executor');
-  app.use('/v1/executor/projects/*', combinedAuth);
-  app.use('/v1/executor/connect-status', combinedAuth); // deployment capability flag (authed)
-  app.route('/v1/executor', executorApp); // /v1/executor/connectors, /call, /projects/:id/connectors[/sync|/:slug/sharing]
+  const { executorApp } = await import("./executor");
+  app.use("/v1/executor/projects/*", combinedAuth);
+  app.use("/v1/executor/connect-status", combinedAuth); // deployment capability flag (authed)
+  app.route("/v1/executor", executorApp); // /v1/executor/connectors, /call, /projects/:id/connectors[/sync|/:slug/sharing]
 }
 
-app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
+app.route("/v1/webhooks", projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
-const { slackWebhookApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp, meetWebhookApp } = await import('./channels');
-app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
-app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
-app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
-app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
-app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
-app.route('/v1/webhooks/meet', meetWebhookApp); // /v1/webhooks/meet/realtime — Recall.ai live transcript/chat relay
+const {
+  slackWebhookApp,
+  telegramWebhookApp,
+  slackOauthApp,
+  slackIdentityApp,
+  emailWebhookApp,
+  meetWebhookApp,
+} = await import("./channels");
+app.route("/v1/webhooks/slack/oauth", slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
+app.route("/v1/webhooks/slack", slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
+app.route("/v1/channels/slack/identity", slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
+app.route("/v1/webhooks/telegram", telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
+app.route("/v1/webhooks/email", emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
+app.route("/v1/webhooks/meet", meetWebhookApp); // /v1/webhooks/meet/realtime — Recall.ai live transcript/chat relay
 
-const { sandboxWebhooksApp } = await import('./platform/webhooks/routes');
-app.route('/v1/webhooks/sandbox', sandboxWebhooksApp); // /v1/webhooks/sandbox/{daytona,platinum} — provider lifecycle → close billing
+const { sandboxWebhooksApp } = await import("./platform/webhooks/routes");
+app.route("/v1/webhooks/sandbox", sandboxWebhooksApp); // /v1/webhooks/sandbox/{daytona,platinum} — provider lifecycle → close billing
 
 // Access control — public endpoints for signup gating
-app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/access/check-email, /v1/access/request-access
+app.route("/v1/access", accessControlApp); // /v1/access/signup-status, /v1/access/check-email, /v1/access/request-access
 
 // Setup links — PUBLIC, token-gated. An agent-minted (encrypted, short-lived,
 // value-only) token is the bearer capability, so a human can fill in a secret
 // or 1-click a Pipedream connect from a Slack link with no login. The mint half
 // is authenticated, on projectsApp (/v1/projects/:id/{secret,connect}-requests).
-import { setupLinksPublicApp } from './setup-links/public-app';
-app.route('/v1/setup-links', setupLinksPublicApp); // /v1/setup-links/{secret,connector}/:token
+import { setupLinksPublicApp } from "./setup-links/public-app";
+app.route("/v1/setup-links", setupLinksPublicApp); // /v1/setup-links/{secret,connector}/:token
 
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
-if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
-  app.route('/v1/setup', setupApp);        // /v1/setup/install-status (public), rest (auth inside router)
+if (!appConfig.KORTIX_BILLING_INTERNAL_ENABLED) {
+  app.route("/v1/setup", setupApp); // /v1/setup/install-status (public), rest (auth inside router)
 }
 // /v1/admin/* — admin console (accounts/users/ledger/credits). supabaseAuth +
 // requireAdmin enforced inside the router. Backs apps/web/src/app/admin/.
-app.route('/v1/admin', adminApp);
+app.route("/v1/admin", adminApp);
 
 // OAuth2 provider — public token endpoint, auth on authorize/consent
-app.route('/v1/oauth', oauthApp);
+app.route("/v1/oauth", oauthApp);
 
 // Public device-auth endpoints (no auth — CLI uses these)
-import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
-app.route('/v1/tunnel/device-auth', createDeviceAuthPublicRouter());
+import { createDeviceAuthPublicRouter } from "./tunnel/routes/device-auth";
+app.route("/v1/tunnel/device-auth", createDeviceAuthPublicRouter());
 
-app.use('/v1/tunnel/*', async (c, next) => {
+app.use("/v1/tunnel/*", async (c, next) => {
   // Skip auth for public device-auth routes: POST /device-auth and GET /device-auth/:code/status
-  const path = c.req.path.replace('/v1/tunnel/device-auth', '');
-  if (c.req.path.startsWith('/v1/tunnel/device-auth')) {
-    if (c.req.method === 'POST' && (path === '' || path === '/')) return next();
-    if (c.req.method === 'GET' && path.endsWith('/status')) return next();
+  const path = c.req.path.replace("/v1/tunnel/device-auth", "");
+  if (c.req.path.startsWith("/v1/tunnel/device-auth")) {
+    if (c.req.method === "POST" && (path === "" || path === "/")) return next();
+    if (c.req.method === "GET" && path.endsWith("/status")) return next();
   }
   return combinedAuth(c, next);
 });
-app.route('/v1/tunnel', tunnelApp);
+app.route("/v1/tunnel", tunnelApp);
 
 // Preview Proxy — unified route for sandbox HTTP access.
 // Pattern: /v1/p/{sandboxId}/{port}/* — sandboxId is the provider external ID,
 // resolved to a reachable upstream URL via the provider's resolvePreviewLink.
 // Auth: unified previewProxyAuth (accepts Supabase JWT and kortix_ tokens).
 // MUST be after all explicit routes (wildcard catch-all).
-app.route('/v1/p', sandboxProxyApp);
+app.route("/v1/p", sandboxProxyApp);
 
 // === Error Handling ===
 
 app.onError((err, c) => {
   const method = c.req.method;
   const path = c.req.path;
-  const errName = err.constructor?.name || 'Error';
+  const errName = err.constructor?.name || "Error";
 
   // Suppress SSE/long-poll abort noise — these are expected timeouts on sandbox proxy,
   // not real errors. The client reconnects automatically.
-  const isAbort = errName === 'DOMException' || err.message?.includes('The operation was aborted');
-  const isSandboxProxy = path.includes('/p/') && path.includes('/global/event');
+  const isAbort =
+    errName === "DOMException" ||
+    err.message?.includes("The operation was aborted");
+  const isSandboxProxy = path.includes("/p/") && path.includes("/global/event");
   if (isAbort && isSandboxProxy) {
-    return c.json({ error: true, message: 'Request timeout', status: 504 }, 504);
+    return c.json(
+      { error: true, message: "Request timeout", status: 504 },
+      504,
+    );
   }
 
   if (err instanceof BillingError) {
     appLogger.error(`${method} ${path} -> ${err.statusCode} [BillingError]`, {
-      statusCode: err.statusCode, message: err.message, path, method,
+      statusCode: err.statusCode,
+      message: err.message,
+      path,
+      method,
     });
     return c.json({ error: err.message }, err.statusCode as any);
   }
@@ -746,7 +894,10 @@ app.onError((err, c) => {
       captureException(err, { method, path, status: err.status });
     }
     appLogger.error(`${method} ${path} -> ${err.status} [HTTPException]`, {
-      status: err.status, message: err.message, path, method,
+      status: err.status,
+      message: err.message,
+      path,
+      method,
     });
 
     const response: Record<string, unknown> = {
@@ -757,41 +908,58 @@ app.onError((err, c) => {
 
     // Add Retry-After header for 503s (sandbox waking up)
     if (err.status === 503) {
-      c.header('Retry-After', '10');
+      c.header("Retry-After", "10");
     }
 
     return c.json(response, err.status);
   }
 
   // Database / postgres.js errors — extract the useful info, not the full SQL dump
-  const isDbError = errName === 'PostgresError' || (err as any).severity || (err as any).code?.match?.(/^[0-9]{5}$/);
+  const isDbError =
+    errName === "PostgresError" ||
+    (err as any).severity ||
+    (err as any).code?.match?.(/^[0-9]{5}$/);
   if (isDbError) {
     const pgErr = err as any;
     captureException(err, {
-      method, path, errorType: 'database',
-      pgCode: pgErr.code, table: pgErr.table, schema: pgErr.schema_name || pgErr.schema,
+      method,
+      path,
+      errorType: "database",
+      pgCode: pgErr.code,
+      table: pgErr.table,
+      schema: pgErr.schema_name || pgErr.schema,
     });
-    appLogger.error(`${method} ${path} -> 500 [DB ${pgErr.severity || 'ERROR'} ${pgErr.code || '?'}]`, {
-      method, path, errorType: 'database',
-      pgCode: pgErr.code, table: pgErr.table, hint: pgErr.hint, detail: pgErr.detail,
-      message: err.message.split('\n')[0],
-    });
+    appLogger.error(
+      `${method} ${path} -> 500 [DB ${pgErr.severity || "ERROR"} ${pgErr.code || "?"}]`,
+      {
+        method,
+        path,
+        errorType: "database",
+        pgCode: pgErr.code,
+        table: pgErr.table,
+        hint: pgErr.hint,
+        detail: pgErr.detail,
+        message: err.message.split("\n")[0],
+      },
+    );
   } else {
     // Generic unhandled error — capture to Sentry + structured log
     captureException(err, { method, path, errorType: errName });
     appLogger.error(`${method} ${path} -> 500 [${errName}] ${err.message}`, {
-      method, path, errorType: errName,
-      stack: err.stack?.split('\n').slice(0, 5).join('\n'),
+      method,
+      path,
+      errorType: errName,
+      stack: err.stack?.split("\n").slice(0, 5).join("\n"),
     });
   }
 
   return c.json(
     {
       error: true,
-      message: 'Internal server error',
+      message: "Internal server error",
       status: 500,
     },
-    500
+    500,
   );
 });
 
@@ -801,10 +969,10 @@ app.notFound((c) => {
   return c.json(
     {
       error: true,
-      message: 'Not found',
+      message: "Not found",
       status: 404,
     },
-    404
+    404,
   );
 });
 
@@ -814,32 +982,35 @@ console.log(`
 ╔═══════════════════════════════════════════════════════════╗
 ║                  Kortix API Starting                      ║
 ╠═══════════════════════════════════════════════════════════╣
-║  Port: ${config.PORT.toString().padEnd(49)}║
-║  Env:  ${config.INTERNAL_KORTIX_ENV.padEnd(49)}║
+║  Port: ${appConfig.PORT.toString().padEnd(49)}║
+║  Env:  ${appConfig.INTERNAL_KORTIX_ENV.padEnd(49)}║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Services:                                                ║
 ║    /v1/router     (search, LLM, proxy)                    ║
 ║    /v1/billing    (subscriptions, credits, webhooks)       ║
 ║    /v1/platform   (api keys, sandbox version)               ║
 ║    /v1/projects   (Git-backed projects)                    ║
-${config.KORTIX_APPS_EXPERIMENTAL ? '║    /v1/projects/:id/apps  (experimental [[apps]])         ║\n' : ''}
+${appConfig.KORTIX_APPS_EXPERIMENTAL ? "║    /v1/projects/:id/apps  (experimental [[apps]])         ║\n" : ""}
 ║    /v1/setup      (setup & env management)                 ║
 ║    /v1/tunnel     (reverse-tunnel to local machines)         ║
 ║    /v1/p         (sandbox proxy — local + cloud)            ║
 ╠═══════════════════════════════════════════════════════════╣
-║  Database:   ${config.DATABASE_URL ? '✓ Configured'.padEnd(42) : '✗ NOT SET'.padEnd(42)}║
-║  Supabase:   ${config.SUPABASE_URL ? '✓ Configured'.padEnd(42) : '✗ NOT SET'.padEnd(42)}║
-║  Stripe:     ${config.STRIPE_SECRET_KEY ? '✓ Configured'.padEnd(42) : '✗ NOT SET'.padEnd(42)}║
-║  Billing:    ${(config.KORTIX_BILLING_INTERNAL_ENABLED ? 'ENABLED' : 'DISABLED').padEnd(42)}║
-║  Tunnel:     ${(config.TUNNEL_ENABLED ? 'ENABLED' : 'DISABLED').padEnd(42)}║
-║  Providers:  ${config.ALLOWED_SANDBOX_PROVIDERS.join(', ').padEnd(42)}║
+║  Database:   ${appConfig.DATABASE_URL ? "✓ Configured".padEnd(42) : "✗ NOT SET".padEnd(42)}║
+║  Supabase:   ${appConfig.SUPABASE_URL ? "✓ Configured".padEnd(42) : "✗ NOT SET".padEnd(42)}║
+║  Stripe:     ${appConfig.STRIPE_SECRET_KEY ? "✓ Configured".padEnd(42) : "✗ NOT SET".padEnd(42)}║
+║  Billing:    ${(appConfig.KORTIX_BILLING_INTERNAL_ENABLED ? "ENABLED" : "DISABLED").padEnd(42)}║
+║  Tunnel:     ${(appConfig.TUNNEL_ENABLED ? "ENABLED" : "DISABLED").padEnd(42)}║
+║  Providers:  ${appConfig.ALLOWED_SANDBOX_PROVIDERS.join(", ").padEnd(42)}║
 ╚═══════════════════════════════════════════════════════════╝
 `);
 
 // Load LLM pricing from models.dev (non-blocking if it fails).
 // Awaited so pricing is available before the first billing request.
 initModelPricing().catch((err) =>
-  console.error('[startup] Model pricing init failed (will retry in 24h):', err),
+  console.error(
+    "[startup] Model pricing init failed (will retry in 24h):",
+    err,
+  ),
 );
 
 // Schema readiness gate — blocks DB-dependent requests until push completes.
@@ -859,7 +1030,7 @@ async function startReplicaServices() {
   // first ~30s — which on a deploy let warm_snapshot resolve to the (old hardcoded)
   // ON despite the admin "off", warm-forking a stale seed: the 2026-06-26 opencode
   // wedge. Best-effort: a DB hiccup leaves the fail-safe OFF defaults.
-  await import('./platform/services/runtime-settings')
+  await import("./platform/services/runtime-settings")
     .then((m) => m.refreshRuntimeSettings())
     .catch(() => {});
   // Every replica stages snapshot/session-boot build contexts in tmpdir and can
@@ -894,7 +1065,7 @@ async function startSingletonWorkers() {
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
-  const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
+  const { startGrantExpirySweeper } = await import("./iam/expiry-sweeper");
   startGrantExpirySweeper();
 }
 async function stopSingletonWorkers() {
@@ -904,7 +1075,7 @@ async function stopSingletonWorkers() {
   stopProjectMaintenance();
   stopLegacyMigrationWorker();
   stopSunaMigrationWorker();
-  const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
+  const { stopGrantExpirySweeper } = await import("./iam/expiry-sweeper");
   stopGrantExpirySweeper();
 }
 
@@ -919,7 +1090,9 @@ async function bootServices() {
   // holding it while running nothing and starving the scheduler fleet-wide.
   const eligible = runsSingletonWorkers();
   if (!eligible) {
-    appLogger.info('[workers] API-only pod — singleton workers disabled; not joining leader election');
+    appLogger.info(
+      "[workers] API-only pod — singleton workers disabled; not joining leader election",
+    );
   }
   startLeaderElection(
     {
@@ -962,23 +1135,33 @@ if (import.meta.main) {
       await bootServices();
     })
     .catch(async (err) => {
-      console.error('[startup] ensureSchema failed, starting services anyway:', err);
+      console.error(
+        "[startup] ensureSchema failed, starting services anyway:",
+        err,
+      );
       schemaReady = true;
       await bootServices();
     });
 
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
 // Subdomain preview routing — `p{port}-{sandboxId}.localhost:{apiPort}/...`
 // Handled at the Bun.serve level so the proxied app sees itself at root `/`
 // (Hono can't match on the Host header). See `sandbox-proxy/subdomain.ts`.
-import { handleSubdomainRequest, parsePreviewSubdomain } from './sandbox-proxy/subdomain';
-import { matchPreviewWsPath, preparePreviewWsUpgrade, previewWsHandlers } from './sandbox-proxy/ws-proxy';
+import {
+  handleSubdomainRequest,
+  parsePreviewSubdomain,
+} from "./sandbox-proxy/subdomain";
+import {
+  matchPreviewWsPath,
+  preparePreviewWsUpgrade,
+  previewWsHandlers,
+} from "./sandbox-proxy/ws-proxy";
 
 export default {
-  port: config.PORT,
+  port: appConfig.PORT,
 
   // Bun's default HTTP idleTimeout is 10s: a handler that hasn't written any
   // bytes by then gets its socket closed with an EMPTY reply — no status, no
@@ -990,27 +1173,28 @@ export default {
   idleTimeout: 30,
 
   async fetch(req: Request, server: any): Promise<Response | undefined> {
-    const url = getRequestUrl(req, config.PORT);
-    const isWsUpgrade = req.headers.get('upgrade')?.toLowerCase() === 'websocket';
+    const url = getRequestUrl(req, appConfig.PORT);
+    const isWsUpgrade =
+      req.headers.get("upgrade")?.toLowerCase() === "websocket";
 
     // Sandbox preview traffic includes OpenCode long-poll and SSE routes. Let
     // the proxy's own upstream timeout decide instead of Bun closing the client
     // socket early with an empty reply.
-    if (url.pathname.includes('/v1/p/')) {
+    if (url.pathname.includes("/v1/p/")) {
       server.timeout(req, 0);
     }
 
     // The standalone-gateway reverse proxy streams chat completions (SSE). Let
     // the gateway's own keep-alive / upstream timeout govern it instead of Bun
     // closing the client socket at idleTimeout with an empty reply.
-    if (url.pathname.startsWith('/v1/llm-gateway')) {
+    if (url.pathname.startsWith("/v1/llm-gateway")) {
       server.timeout(req, 0);
     }
 
     // ── Subdomain preview routing ──────────────────────────────────────
     // Matches `p{port}-{sandboxId}.localhost:{apiPort}` regardless of path.
     // Same per-request long-poll/SSE timeout posture as /v1/p/.
-    const host = req.headers.get('host') || '';
+    const host = req.headers.get("host") || "";
     if (parsePreviewSubdomain(host)) {
       server.timeout(req, 0);
       // WS-on-subdomain isn't wired yet (agent server's port-proxy is
@@ -1018,8 +1202,10 @@ export default {
       // gracefully instead of timing out.
       if (isWsUpgrade) {
         return new Response(
-          JSON.stringify({ error: 'WebSocket upgrade on preview subdomain not implemented' }),
-          { status: 501, headers: { 'Content-Type': 'application/json' } },
+          JSON.stringify({
+            error: "WebSocket upgrade on preview subdomain not implemented",
+          }),
+          { status: 501, headers: { "Content-Type": "application/json" } },
         );
       }
       const res = await handleSubdomainRequest(req, url);
@@ -1029,39 +1215,45 @@ export default {
     // ── Tunnel Agent WebSocket ──────────────────────────────────────────
     // Agent connects, then authenticates via first message (auth handshake).
     // Token is never sent in URL — only tunnelId is in the query string.
-    if (isWsUpgrade && url.pathname === '/v1/tunnel/ws') {
+    if (isWsUpgrade && url.pathname === "/v1/tunnel/ws") {
       if (!schemaReady) {
-        return new Response(JSON.stringify({ error: 'Service starting up, try again shortly' }), {
-          status: 503,
-          headers: { 'Content-Type': 'application/json', 'Retry-After': '5' },
-        });
+        return new Response(
+          JSON.stringify({ error: "Service starting up, try again shortly" }),
+          {
+            status: 503,
+            headers: { "Content-Type": "application/json", "Retry-After": "5" },
+          },
+        );
       }
 
-      const tunnelId = url.searchParams.get('tunnelId');
+      const tunnelId = url.searchParams.get("tunnelId");
 
       if (!tunnelId) {
-        return new Response(JSON.stringify({ error: 'Missing tunnelId' }), {
+        return new Response(JSON.stringify({ error: "Missing tunnelId" }), {
           status: 400,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { "Content-Type": "application/json" },
         });
       }
 
       // Rate limit WS connections (keyed by tunnelId to prevent connection spam)
-      const { tunnelRateLimiter } = await import('./tunnel/core/rate-limiter');
-      const wsRateCheck = tunnelRateLimiter.check('wsConnect', tunnelId);
+      const { tunnelRateLimiter } = await import("./tunnel/core/rate-limiter");
+      const wsRateCheck = tunnelRateLimiter.check("wsConnect", tunnelId);
       if (!wsRateCheck.allowed) {
-        return new Response(JSON.stringify({
-          error: 'Too many connection attempts',
-          retryAfterMs: wsRateCheck.retryAfterMs,
-        }), {
-          status: 429,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({
+            error: "Too many connection attempts",
+            retryAfterMs: wsRateCheck.retryAfterMs,
+          }),
+          {
+            status: 429,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       }
 
       const success = server.upgrade(req, {
         data: {
-          type: 'tunnel-agent',
+          type: "tunnel-agent",
           tunnelId,
         },
       });
@@ -1075,24 +1267,30 @@ export default {
     // pipe bytes. See sandbox-proxy/ws-proxy.ts.
     if (isWsUpgrade && matchPreviewWsPath(url.pathname)) {
       if (!schemaReady) {
-        return new Response(JSON.stringify({ error: 'Service starting up, try again shortly' }), {
-          status: 503,
-          headers: { 'Content-Type': 'application/json', 'Retry-After': '5' },
-        });
+        return new Response(
+          JSON.stringify({ error: "Service starting up, try again shortly" }),
+          {
+            status: 503,
+            headers: { "Content-Type": "application/json", "Retry-After": "5" },
+          },
+        );
       }
       const prep = await preparePreviewWsUpgrade(url);
       if (!prep.ok) {
         return new Response(JSON.stringify({ error: prep.message }), {
           status: prep.status,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { "Content-Type": "application/json" },
         });
       }
       const success = server.upgrade(req, { data: prep.data });
       if (success) return undefined;
-      return new Response(JSON.stringify({ error: 'WebSocket upgrade failed' }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return new Response(
+        JSON.stringify({ error: "WebSocket upgrade failed" }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
 
     return app.fetch(req, server);
@@ -1103,36 +1301,45 @@ export default {
     // heartbeat mechanism (30s ping/pong) for liveness detection.
     idleTimeout: 0,
 
-    open(ws: { data: any; send: (data: any) => void; close: (code?: number, reason?: string) => void }) {
-      if (ws.data?.type === 'tunnel-agent') {
+    open(ws: {
+      data: any;
+      send: (data: any) => void;
+      close: (code?: number, reason?: string) => void;
+    }) {
+      if (ws.data?.type === "tunnel-agent") {
         tunnelWsHandlers.onOpen(ws.data.tunnelId, ws as any);
         return;
       }
-      if (ws.data?.type === 'preview-ws') {
+      if (ws.data?.type === "preview-ws") {
         previewWsHandlers.open(ws as any);
         return;
       }
       // No other WS upgrades are accepted.
-      try { ws.close(1011, 'unsupported websocket upgrade'); } catch {}
+      try {
+        ws.close(1011, "unsupported websocket upgrade");
+      } catch {}
     },
 
-    message(ws: { data: any; close: (code?: number, reason?: string) => void }, message: string | Buffer) {
-      if (ws.data?.type === 'tunnel-agent') {
+    message(
+      ws: { data: any; close: (code?: number, reason?: string) => void },
+      message: string | Buffer,
+    ) {
+      if (ws.data?.type === "tunnel-agent") {
         tunnelWsHandlers.onMessage(ws.data.tunnelId, message);
         return;
       }
-      if (ws.data?.type === 'preview-ws') {
+      if (ws.data?.type === "preview-ws") {
         previewWsHandlers.message(ws as any, message);
         return;
       }
     },
 
     close(ws: { data: any }) {
-      if (ws.data?.type === 'tunnel-agent') {
+      if (ws.data?.type === "tunnel-agent") {
         tunnelWsHandlers.onClose(ws.data.tunnelId);
         return;
       }
-      if (ws.data?.type === 'preview-ws') {
+      if (ws.data?.type === "preview-ws") {
         previewWsHandlers.close(ws as any);
         return;
       }

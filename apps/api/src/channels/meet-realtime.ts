@@ -1,5 +1,6 @@
+import type { Effect } from 'effect';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { config } from '../config';
+import { sharedConfig as config } from '../shared/effect';
 import { SILENT_MP3_B64 } from './meet-voices';
 
 export const MEET_REALTIME_PATH = '/v1/webhooks/meet/realtime';

@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { config } from '../config';
 

@@ -1,7 +1,7 @@
+import type { Effect } from 'effect';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { accountMembers, chatChannelBindings, chatInstalls, chatThreads, projectSessions, projects } from '@kortix/db';
-import { db } from '../../shared/db';
-import { config } from '../../config';
+import { sharedConfig as config, sharedDb as db } from '../../shared/effect';
 import { escapeMrkdwn, formatRelativeTime, repoLabel, repoOgImage, respondViaUrl, sessionWebUrl } from './util';
 import {
   currentChannelSelection,

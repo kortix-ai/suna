@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Pipedream Connect — the 1-click connector path (kept as the primary onboarding
  * for SaaS apps). Adapted from the pre-refactor provider (commit 9078f28e).
@@ -10,7 +11,7 @@
  * goes through the Connect `actions/run` API. See docs/specs/executor.md §5.
  */
 import { createHmac } from 'node:crypto';
-import { config } from '../config';
+import { executorConfig as config, executorFetch } from './effect';
 import { upsertCredential } from './credentials';
 import type { PipedreamActionLike } from './types';
 import type { ExecResult } from './execute';
@@ -67,7 +68,7 @@ class PipedreamProvider {
 
   private async getApiToken(): Promise<string> {
     if (this.accessToken && Date.now() < this.tokenExpiresAt - 60_000) return this.accessToken;
-    const res = await fetch(`${PD_BASE}/v1/oauth/token`, {
+    const res = await executorFetch(`${PD_BASE}/v1/oauth/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ grant_type: 'client_credentials', client_id: this.clientId, client_secret: this.clientSecret }),
@@ -81,7 +82,7 @@ class PipedreamProvider {
 
   private async api<T>(method: string, path: string, body?: unknown): Promise<T> {
     const token = await this.getApiToken();
-    const res = await fetch(`${PD_BASE}${path}`, {
+    const res = await executorFetch(`${PD_BASE}${path}`, {
       method,
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'x-pd-environment': this.environment },
       ...(body ? { body: JSON.stringify(body) } : {}),
@@ -245,7 +246,7 @@ class PipedreamProvider {
       body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
       headers['Content-Type'] = headers['Content-Type'] ?? 'application/json';
     }
-    const res = await fetch(`${PD_BASE}/v1/connect/${this.projectId}/proxy/${url64}?${qs.toString()}`, {
+    const res = await executorFetch(`${PD_BASE}/v1/connect/${this.projectId}/proxy/${url64}?${qs.toString()}`, {
       method: req.method.toUpperCase(),
       headers,
       ...(body !== undefined ? { body } : {}),

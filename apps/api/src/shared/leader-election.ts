@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Background-worker leader election (lease-table based).
  *
@@ -24,8 +25,8 @@
 
 import os from 'node:os';
 import postgres from 'postgres';
-import { config } from '../config';
 import { logger } from '../lib/logger';
+import { runSharedTimeout, sharedConfig as config, stopSharedTimer, type SharedTimer } from './effect';
 
 const LOCK_KEY = 'background-workers';
 
@@ -98,7 +99,7 @@ export function runsSingletonWorkers(env: NodeJS.ProcessEnv = process.env): bool
 const ownerId = `${os.hostname()}-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
 
 let sql: ReturnType<typeof postgres> | null = null;
-let timer: ReturnType<typeof setTimeout> | null = null;
+let timer: SharedTimer | null = null;
 let running = false;
 let leader = false;
 let lastRenewSuccessMs = 0;
@@ -208,7 +209,7 @@ async function tick(): Promise<void> {
     }
     nextDelay = Math.min(nextDelay, ACQUIRE_RETRY_MS);
   } finally {
-    if (running) timer = setTimeout(() => void tick(), nextDelay);
+    if (running) timer = runSharedTimeout(() => void tick(), nextDelay);
   }
 }
 
@@ -263,7 +264,7 @@ export async function stopLeaderElection(): Promise<void> {
   if (!running) return;
   running = false;
   if (timer) {
-    clearTimeout(timer);
+    stopSharedTimer(timer);
     timer = null;
   }
   const wasLeader = leader;

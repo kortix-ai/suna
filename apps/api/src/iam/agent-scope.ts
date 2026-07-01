@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Agent-session scope enforcement — the `kortix_cli` half of per-agent
  * authorization.

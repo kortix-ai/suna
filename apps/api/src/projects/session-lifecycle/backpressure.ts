@@ -1,4 +1,5 @@
-import { config } from '../../config';
+import type { Effect } from 'effect';
+import { sharedConfig as config } from '../../shared/effect';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../../shared/account-limits';
 import { countActiveProjectSessions, countProvisioningProjectSessions } from '../lib/sessions';
 

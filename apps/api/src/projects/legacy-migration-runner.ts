@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Durable runner for the lazy, user-triggered legacy-sandbox migration.
  *

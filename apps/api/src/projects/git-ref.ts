@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Validation for git refs / SHAs that are passed as positional arguments to
  * git subcommands.

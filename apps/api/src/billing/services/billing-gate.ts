@@ -1,5 +1,6 @@
+import type { Effect } from 'effect';
 import { HTTPException } from "hono/http-exception";
-import { config } from "../../config";
+import { billingConfig as config } from '../effect';
 import { getCreditAccount } from "../repositories/credit-accounts";
 import { ensureFreeTierAccountReady } from "./free-tier";
 import { isPerSeatAccount, MINIMUM_CREDIT_FOR_RUN } from "./tiers";

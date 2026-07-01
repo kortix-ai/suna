@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 // Shared request helpers for the IAM V2 route modules: body parsing, the
 // context-bound audit writer, the Postgres unique-violation classifier, and
 // the compact HttpError used by the policy-parser short-circuits.

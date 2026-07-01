@@ -17,7 +17,7 @@ import {
   resolveAgentMailApiKey,
   isAgentMailInboxLimitError,
 } from "../../channels/agentmail-api";
-import { config } from "../../config";
+import { sharedConfig as config, sharedFetch } from "../../shared/effect";
 import { getCachedAccountTier } from "../../billing/services/entitlements";
 import { tierGrantsAllModels } from "../../billing/services/tiers";
 import {
@@ -59,7 +59,7 @@ import {
 } from "../../repositories/model-preferences";
 import { AUTO_DEFAULT_MODEL_ID } from "@kortix/llm-catalog";
 import { resolveExperimentalFeature } from "../../experimental/features";
-import { db } from "../../shared/db";
+import { sharedDb as db } from "../../shared/effect";
 import { extractApps } from "../apps";
 import {
   extractTriggers,
@@ -73,6 +73,7 @@ import {
   projects,
   sessionSandboxes,
 } from "@kortix/db";
+import { Effect } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
 import { loadProjectForUser, assertProjectCapability } from "../lib/access";
 import { AnyObject, AppSchema, TriggerSchema, projectsApp } from "../lib/app";
@@ -101,10 +102,28 @@ import {
   renderPromptTemplate,
   setGitTriggerOwner,
   specToBody,
-  triggersPausedForProject,
   upsertTriggerInManifest,
   withTriggersPaused,
 } from "../lib/triggers";
+import {
+  attemptRoute,
+  failJson,
+  failNotFound,
+  routeJson,
+  runProjectRouteEffect,
+} from "./effect-workflows";
+import { effectHandler } from "../../effect/hono";
+
+const loadProjectRoute = (
+  c: any,
+  projectId: string,
+  access: "read" | "manage",
+) =>
+  attemptRoute(() => loadProjectForUser(c, projectId, access)).pipe(
+    Effect.flatMap((loaded) =>
+      loaded ? Effect.succeed(loaded) : failNotFound(),
+    ),
+  );
 
 // Body keys that change the trigger's *repo manifest* (committed to git). An
 // owner-only edit touches none of these, so we can skip the manifest commit and
@@ -171,13 +190,25 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
+    return runProjectRouteEffect(
+      c,
+      Effect.gen(function* () {
+        const projectId = c.req.param("projectId");
+        const loaded = yield* loadProjectRoute(c, projectId, "read");
 
-    return c.json(await loadTriggersForResponse(projectId, loaded.row));
+        return routeJson(
+          yield* attemptRoute(() =>
+            loadTriggersForResponse(projectId, loaded.row),
+          ),
+        );
+      }),
+    );
   },
 );
+
+// Deliberate exception: trigger create/update/delete keep the manifest commit
+// path linear because they mix parsing, git writes, DB owner state, and precise
+// 400/409/502 commit result mapping.
 
 projectsApp.openapi(
   createRoute({
@@ -195,7 +226,7 @@ projectsApp.openapi(
       ...errors(400, 404, 409),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, "manage");
@@ -203,7 +234,13 @@ projectsApp.openapi(
     // Specific IAM gate so the audit trail records the precise action.
     // assertProjectCapability (not bare assertAuthorized) so the acting token is
     // threaded and the agent-grant fold fires.
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
+    );
 
     const draft = parseTriggerDraft(body, { existingSlug: null });
     if ("error" in draft) return c.json({ error: draft.error }, 400);
@@ -249,7 +286,7 @@ projectsApp.openapi(
     await setGitTriggerOwner(projectId, draft.slug, ownerUserId);
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
-  },
+  }),
 );
 
 // PATCH /:projectId/triggers/activation — server-side, per-project trigger
@@ -283,26 +320,41 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, "manage");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE);
-    const paused = body.paused;
-    if (typeof paused !== "boolean") {
-      return c.json({ error: "paused must be a boolean" }, 400);
-    }
-    const [row] = await db
-      .update(projects)
-      .set({
-        metadata: withTriggersPaused(loaded.row.metadata, paused),
-        updatedAt: new Date(),
-      })
-      .where(eq(projects.projectId, projectId))
-      .returning();
-    if (!row || row.status === "archived")
-      return c.json({ error: "Not found" }, 404);
-    return c.json(await loadTriggersForResponse(projectId, row));
+    return runProjectRouteEffect(
+      c,
+      Effect.gen(function* () {
+        const projectId = c.req.param("projectId");
+        const body = yield* attemptRoute(() => readBody(c));
+        const loaded = yield* loadProjectRoute(c, projectId, "manage");
+        yield* attemptRoute(() =>
+          assertProjectCapability(
+            c,
+            loaded.userId,
+            loaded.row.accountId,
+            projectId,
+            PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
+          ),
+        );
+        const paused = body.paused;
+        if (typeof paused !== "boolean") {
+          return yield* failJson({ error: "paused must be a boolean" }, 400);
+        }
+        const [row] = yield* attemptRoute(() =>
+          db
+            .update(projects)
+            .set({
+              metadata: withTriggersPaused(loaded.row.metadata, paused),
+              updatedAt: new Date(),
+            })
+            .where(eq(projects.projectId, projectId))
+            .returning(),
+        );
+        if (!row || row.status === "archived") return yield* failNotFound();
+        return routeJson(
+          yield* attemptRoute(() => loadTriggersForResponse(projectId, row)),
+        );
+      }),
+    );
   },
 );
 
@@ -324,13 +376,19 @@ projectsApp.openapi(
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const slug = c.req.param("slug");
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
+    );
 
     let manifest: ParsedManifest;
     try {
@@ -379,7 +437,7 @@ projectsApp.openapi(
     }
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row));
-  },
+  }),
 );
 
 // DELETE /v1/projects/:projectId/triggers/:slug
@@ -399,12 +457,18 @@ projectsApp.openapi(
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const slug = c.req.param("slug");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
+    );
 
     if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
       return c.json({ error: "Invalid slug" }, 400);
@@ -445,7 +509,7 @@ projectsApp.openapi(
       );
 
     return c.json({ ok: true });
-  },
+  }),
 );
 
 // ─── Slack install — per project, secrets live in project_secrets ────────
@@ -466,11 +530,15 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    const install = await loadSlackInstall(projectId);
-    return c.json(install ?? null);
+    return runProjectRouteEffect(
+      c,
+      Effect.gen(function* () {
+        const projectId = c.req.param("projectId");
+        yield* loadProjectRoute(c, projectId, "read");
+        const install = yield* attemptRoute(() => loadSlackInstall(projectId));
+        return routeJson(install ?? null);
+      }),
+    );
   },
 );
 
@@ -495,19 +563,25 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    const mode = slackOauthMode();
-    if (!mode.available) {
-      return c.json({ oauth_available: false, install_url: null });
-    }
-    try {
-      const installUrl = buildSlackInstallUrl(projectId, loaded.userId);
-      return c.json({ oauth_available: true, install_url: installUrl });
-    } catch {
-      return c.json({ oauth_available: false, install_url: null });
-    }
+    return runProjectRouteEffect(
+      c,
+      Effect.gen(function* () {
+        const projectId = c.req.param("projectId");
+        const loaded = yield* loadProjectRoute(c, projectId, "read");
+        const mode = slackOauthMode();
+        if (!mode.available) {
+          return routeJson({ oauth_available: false, install_url: null });
+        }
+        const installUrl = yield* Effect.sync(() =>
+          buildSlackInstallUrl(projectId, loaded.userId),
+        ).pipe(Effect.catchAll(() => Effect.succeed(null)));
+        return routeJson(
+          installUrl
+            ? { oauth_available: true, install_url: installUrl }
+            : { oauth_available: false, install_url: null },
+        );
+      }),
+    );
   },
 );
 
@@ -529,13 +603,19 @@ projectsApp.openapi(
       ...errors(400, 404, 502),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
     // Connecting a Slack workspace is a connector-write capability — a custom
     // role can withhold it and a scoped agent must hold it (central fold).
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
 
     let body: { bot_token?: string; signing_secret?: string };
     try {
@@ -560,7 +640,7 @@ projectsApp.openapi(
 
     let authTest: SlackAuthTest;
     try {
-      const res = await fetch("https://slack.com/api/auth.test", {
+      const res = await sharedFetch("https://slack.com/api/auth.test", {
         method: "POST",
         headers: {
           authorization: `Bearer ${botToken}`,
@@ -593,7 +673,7 @@ projectsApp.openapi(
     });
     await reconcileChannelConnectors(projectId);
     return c.json(summary);
-  },
+  }),
 );
 
 // DELETE /v1/projects/:projectId/channels/slack/installation
@@ -613,17 +693,23 @@ projectsApp.openapi(
       ...errors(404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
     // Disconnecting Slack tears down the connector — same connector-write gate.
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
     await deleteSlackInstall(projectId);
     // Tear down the auto-materialized Slack connector now that the install is gone.
     await reconcileChannelConnectors(projectId);
     return c.json({ status: "disconnected" });
-  },
+  }),
 );
 
 // ─── Email install — AgentMail-backed inbox per project ─────────────────────
@@ -647,7 +733,7 @@ projectsApp.openapi(
       ...errors(404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
@@ -658,7 +744,7 @@ projectsApp.openapi(
       "kortix_email";
     const install = await loadAgentMailInstall(projectId, connectorSlug);
     return c.json(install ?? null);
-  },
+  }),
 );
 
 projectsApp.openapi(
@@ -676,7 +762,7 @@ projectsApp.openapi(
       ...errors(404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
@@ -686,7 +772,7 @@ projectsApp.openapi(
       enabled,
       managed_available: enabled && Boolean(config.AGENTMAIL_API_KEY),
     });
-  },
+  }),
 );
 
 projectsApp.openapi(
@@ -705,7 +791,7 @@ projectsApp.openapi(
       ...errors(400, 403, 404, 409, 502, 503, 504),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
@@ -761,7 +847,10 @@ projectsApp.openapi(
         : "";
     const existingEmail =
       typeof body.email === "string" ? body.email.trim() : "";
-    if ((existingInboxId && !existingEmail) || (!existingInboxId && existingEmail)) {
+    if (
+      (existingInboxId && !existingEmail) ||
+      (!existingInboxId && existingEmail)
+    ) {
       return c.json(
         { error: "Existing AgentMail inbox requires both inbox_id and email" },
         400,
@@ -839,7 +928,7 @@ projectsApp.openapi(
     });
     await reconcileChannelConnectors(projectId);
     return c.json(summary);
-  },
+  }),
 );
 
 projectsApp.openapi(
@@ -858,7 +947,7 @@ projectsApp.openapi(
       ...errors(400, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
@@ -898,7 +987,7 @@ projectsApp.openapi(
     if (!summary)
       return c.json({ error: "Email channel profile not found" }, 404);
     return c.json(summary);
-  },
+  }),
 );
 
 projectsApp.openapi(
@@ -916,7 +1005,7 @@ projectsApp.openapi(
       ...errors(404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
@@ -930,7 +1019,7 @@ projectsApp.openapi(
       slug: connectorSlug,
     });
     return c.json({ status: "disconnected" });
-  },
+  }),
 );
 
 function agentMailWebhookBaseUrl(requestUrl: string): string {
@@ -1030,7 +1119,7 @@ projectsApp.openapi(
       ...errors(400, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
 
     // Two valid callers: a project/session-scoped PAT (dashboard, operator, or
@@ -1184,7 +1273,7 @@ projectsApp.openapi(
             sourcesForPrev,
           });
     return c.json({ ok });
-  },
+  }),
 );
 
 // GET /v1/projects/:projectId/channels/slack/file?url=...
@@ -1210,7 +1299,7 @@ projectsApp.openapi(
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
@@ -1219,7 +1308,7 @@ projectsApp.openapi(
       return c.json({ error: result.error }, result.status as 400 | 404);
     c.header("Content-Type", result.contentType);
     return c.body(result.body);
-  },
+  }),
 );
 
 // POST /v1/projects/:projectId/channels/slack/file/upload
@@ -1244,7 +1333,7 @@ projectsApp.openapi(
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
@@ -1264,7 +1353,7 @@ projectsApp.openapi(
     if (!result.ok)
       return c.json({ error: result.error }, result.status as 400 | 404);
     return c.json({ ok: true, files: result.files });
-  },
+  }),
 );
 
 // GET /v1/projects/:projectId/channels/meet/voices
@@ -1283,7 +1372,7 @@ projectsApp.openapi(
       ...errors(404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
@@ -1297,9 +1386,13 @@ projectsApp.openapi(
       bot_name: botName,
       default_bot_name: DEFAULT_MEET_BOT_NAME,
       speak_enabled: Boolean(config.ELEVENLABS_API_KEY),
-      voices: MEET_VOICES.map((v) => ({ id: v.id, name: v.name, desc: v.desc })),
+      voices: MEET_VOICES.map((v) => ({
+        id: v.id,
+        name: v.name,
+        desc: v.desc,
+      })),
     });
-  },
+  }),
 );
 
 // PUT /v1/projects/:projectId/channels/meet/name — set the bot's display name.
@@ -1315,11 +1408,14 @@ projectsApp.openapi(
       body: { content: { "application/json": { schema: AnyObject } } },
     },
     responses: {
-      200: json(z.object({ ok: z.boolean(), bot_name: z.string() }).passthrough(), "Saved"),
+      200: json(
+        z.object({ ok: z.boolean(), bot_name: z.string() }).passthrough(),
+        "Saved",
+      ),
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
@@ -1327,7 +1423,7 @@ projectsApp.openapi(
     const name = String(body.name ?? body.bot_name ?? "");
     const saved = await setProjectBotName(projectId, name);
     return c.json({ ok: true, bot_name: saved });
-  },
+  }),
 );
 
 // PUT /v1/projects/:projectId/channels/meet/voice — choose the meeting voice.
@@ -1343,11 +1439,14 @@ projectsApp.openapi(
       body: { content: { "application/json": { schema: AnyObject } } },
     },
     responses: {
-      200: json(z.object({ ok: z.boolean(), selected: z.string() }).passthrough(), "Saved"),
+      200: json(
+        z.object({ ok: z.boolean(), selected: z.string() }).passthrough(),
+        "Saved",
+      ),
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
@@ -1356,7 +1455,7 @@ projectsApp.openapi(
     if (!isMeetVoice(voiceId)) return c.json({ error: "unknown voice" }, 400);
     const voice = await setProjectVoice(projectId, voiceId);
     return c.json({ ok: true, selected: voice.id });
-  },
+  }),
 );
 
 // POST /v1/projects/:projectId/channels/meet/voices/:voiceId/preview
@@ -1368,22 +1467,30 @@ projectsApp.openapi(
     tags: ["channels"],
     summary: "POST /:projectId/channels/meet/voices/:voiceId/preview",
     ...auth,
-    request: { params: z.object({ projectId: z.string(), voiceId: z.string() }) },
+    request: {
+      params: z.object({ projectId: z.string(), voiceId: z.string() }),
+    },
     responses: {
-      200: json(z.object({ ok: z.boolean(), kind: z.string(), b64: z.string() }).passthrough(), "Preview"),
+      200: json(
+        z
+          .object({ ok: z.boolean(), kind: z.string(), b64: z.string() })
+          .passthrough(),
+        "Preview",
+      ),
       ...errors(400, 404, 502, 503),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
     const voiceId = c.req.param("voiceId");
     if (!isMeetVoice(voiceId)) return c.json({ error: "unknown voice" }, 400);
     const r = await previewVoiceB64(voiceId);
-    if (!r.ok) return c.json({ error: r.error }, r.status as 400 | 404 | 502 | 503);
+    if (!r.ok)
+      return c.json({ error: r.error }, r.status as 400 | 404 | 502 | 503);
     return c.json({ ok: true, kind: "mp3", b64: r.b64 });
-  },
+  }),
 );
 
 // POST /v1/projects/:projectId/channels/meet/speak — the bot speaks in the call.
@@ -1401,11 +1508,14 @@ projectsApp.openapi(
       body: { content: { "application/json": { schema: AnyObject } } },
     },
     responses: {
-      200: json(z.object({ ok: z.boolean(), voice: z.string() }).passthrough(), "Spoken"),
+      200: json(
+        z.object({ ok: z.boolean(), voice: z.string() }).passthrough(),
+        "Spoken",
+      ),
       ...errors(400, 404, 502, 503),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
@@ -1416,9 +1526,10 @@ projectsApp.openapi(
     if (!botId) return c.json({ error: "bot_id required" }, 400);
     if (!text.trim()) return c.json({ error: "text required" }, 400);
     const r = await speakInMeeting(projectId, botId, text, voice);
-    if (!r.ok) return c.json({ error: r.error }, r.status as 400 | 404 | 502 | 503);
+    if (!r.ok)
+      return c.json({ error: r.error }, r.status as 400 | 404 | 502 | 503);
     return c.json({ ok: true, voice: r.voice });
-  },
+  }),
 );
 
 // GET /v1/projects/:projectId/llm-catalog
@@ -1445,7 +1556,7 @@ projectsApp.openapi(
       ...errors(403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const authType = c.get("authType") as string | undefined;
     const apiKeyType = c.get("apiKeyType") as string | undefined;
@@ -1453,7 +1564,12 @@ projectsApp.openapi(
     const sandboxId = c.get("sandboxId") as string | undefined;
     let projectMetadata: unknown;
     let ownerAccountId: string | undefined;
-    if (authType === "apiKey" && apiKeyType === "sandbox" && accountId && sandboxId) {
+    if (
+      authType === "apiKey" &&
+      apiKeyType === "sandbox" &&
+      accountId &&
+      sandboxId
+    ) {
       const [sandbox] = await db
         .select({ sandboxId: sessionSandboxes.sandboxId })
         .from(sessionSandboxes)
@@ -1475,7 +1591,12 @@ projectsApp.openapi(
       const [project] = await db
         .select({ metadata: projects.metadata })
         .from(projects)
-        .where(and(eq(projects.projectId, projectId), eq(projects.accountId, accountId)))
+        .where(
+          and(
+            eq(projects.projectId, projectId),
+            eq(projects.accountId, accountId),
+          ),
+        )
         .limit(1);
       if (!project) return c.json({ error: "Not found" }, 404);
       projectMetadata = project.metadata;
@@ -1488,7 +1609,10 @@ projectsApp.openapi(
     }
     if (!projectLlmGatewayEnabled(projectMetadata)) {
       return c.json(
-        { error: "LLM gateway is disabled for this project", code: "llm_gateway_disabled" },
+        {
+          error: "LLM gateway is disabled for this project",
+          code: "llm_gateway_disabled",
+        },
         404,
       );
     }
@@ -1501,7 +1625,7 @@ projectsApp.openapi(
         : false;
     const models = gatewayModelCatalog(projectId, { freeManagedOnly });
     return c.json({ models });
-  },
+  }),
 );
 
 // ─── Default model preferences (account-scoped) ─────────────────────────────
@@ -1529,17 +1653,16 @@ projectsApp.openapi(
       ...errors(403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
     const ownerAccountId = loaded.row.accountId as string;
     const userId = c.get("userId") as string;
     const defaults = await getAccountModelDefaults(ownerAccountId);
-    const freeTier =
-      config.KORTIX_BILLING_INTERNAL_ENABLED
-        ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))
-        : false;
+    const freeTier = config.KORTIX_BILLING_INTERNAL_ENABLED
+      ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))
+      : false;
     // Honest project-level resolution (project → account → platform) + where it
     // came from, so the UI can show "Sonnet 4.6 · project default". The
     // authoritative per-request resolution still happens in the gateway.
@@ -1559,7 +1682,7 @@ projectsApp.openapi(
       resolvedSource: resolved.source,
       freeTier,
     });
-  },
+  }),
 );
 
 const ModelDefaultBody = z.object({
@@ -1588,21 +1711,26 @@ projectsApp.openapi(
       ...errors(400, 403, 404, 409),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
     const ownerAccountId = loaded.row.accountId as string;
     const userId = c.get("userId") as string;
 
-    const parsed = ModelDefaultBody.safeParse(await c.req.json().catch(() => null));
+    const parsed = ModelDefaultBody.safeParse(
+      await c.req.json().catch(() => null),
+    );
     if (!parsed.success) {
       return c.json({ error: "Invalid body", code: "invalid_body" }, 400);
     }
     const { scope, agentName, model } = parsed.data;
     if (scope === "agent" && !agentName) {
       return c.json(
-        { error: "agentName is required for scope=agent", code: "agent_name_required" },
+        {
+          error: "agentName is required for scope=agent",
+          code: "agent_name_required",
+        },
         400,
       );
     }
@@ -1631,7 +1759,12 @@ projectsApp.openapi(
       accountId: ownerAccountId,
       scope,
       // agent → agent name; project → the project id; account → '' (in the repo).
-      scopeKey: scope === "agent" ? agentName : scope === "project" ? projectId : undefined,
+      scopeKey:
+        scope === "agent"
+          ? agentName
+          : scope === "project"
+            ? projectId
+            : undefined,
       model,
       updatedBy: userId,
     });
@@ -1642,7 +1775,7 @@ projectsApp.openapi(
       agentName: scope === "agent" ? agentName : undefined,
       model,
     });
-  },
+  }),
 );
 
 // DELETE /v1/projects/:projectId/model-defaults?scope=account|agent&agentName=
@@ -1668,7 +1801,7 @@ projectsApp.openapi(
       ...errors(400, 403, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
@@ -1676,19 +1809,41 @@ projectsApp.openapi(
     const scope = c.req.query("scope");
     const agentName = c.req.query("agentName");
     if (scope !== "account" && scope !== "agent" && scope !== "project") {
-      return c.json({ error: "scope must be 'account', 'agent', or 'project'", code: "invalid_scope" }, 400);
-    }
-    if (scope === "agent" && !agentName) {
       return c.json(
-        { error: "agentName is required for scope=agent", code: "agent_name_required" },
+        {
+          error: "scope must be 'account', 'agent', or 'project'",
+          code: "invalid_scope",
+        },
         400,
       );
     }
-    const scopeKey = scope === "agent" ? agentName : scope === "project" ? projectId : undefined;
-    await deleteAccountModelPreference({ accountId: ownerAccountId, scope, scopeKey });
+    if (scope === "agent" && !agentName) {
+      return c.json(
+        {
+          error: "agentName is required for scope=agent",
+          code: "agent_name_required",
+        },
+        400,
+      );
+    }
+    const scopeKey =
+      scope === "agent"
+        ? agentName
+        : scope === "project"
+          ? projectId
+          : undefined;
+    await deleteAccountModelPreference({
+      accountId: ownerAccountId,
+      scope,
+      scopeKey,
+    });
     invalidateAccountModelDefaults(ownerAccountId);
-    return c.json({ ok: true, scope, agentName: scope === "agent" ? agentName : undefined });
-  },
+    return c.json({
+      ok: true,
+      scope,
+      agentName: scope === "agent" ? agentName : undefined,
+    });
+  }),
 );
 
 // POST /v1/projects/:projectId/turn-question
@@ -1715,7 +1870,7 @@ projectsApp.openapi(
       ...errors(400, 403, 404, 409),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
 
     const authType = (c as any).get("authType") as string | undefined;
@@ -1812,7 +1967,7 @@ projectsApp.openapi(
     const result = await postQuestion(sessionId, questions);
     if (!result.ok) return c.json({ ok: false, error: result.error }, 409);
     return c.json({ ok: true, answers: result.answers });
-  },
+  }),
 );
 
 // POST /v1/projects/:projectId/triggers/:slug/fire
@@ -1835,12 +1990,18 @@ projectsApp.openapi(
       ...errors(404, 500),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const slug = c.req.param("slug");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
+    );
 
     const { specs } = await loadProjectTriggers(
       await withProjectGitAuth(loaded.row),
@@ -1893,7 +2054,7 @@ projectsApp.openapi(
       },
       202,
     );
-  },
+  }),
 );
 
 // ── [[apps]] CRUD + deploy ──────────────────────────────────────────────────
@@ -1939,13 +2100,13 @@ projectsApp.openapi(
       ...errors(404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
 
     return c.json(await loadAppsForResponse(projectId, loaded.row));
-  },
+  }),
 );
 
 // POST /v1/projects/:projectId/apps — add a new app to kortix.toml
@@ -1966,12 +2127,18 @@ projectsApp.openapi(
       ...errors(400, 404, 409),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
 
     const draft = parseAppDraft(body, { existingSlug: null });
     if ("error" in draft) return c.json({ error: draft.error }, 400);
@@ -2006,7 +2173,7 @@ projectsApp.openapi(
     }
 
     return c.json(await loadAppsForResponse(projectId, loaded.row), 201);
-  },
+  }),
 );
 
 // PATCH /v1/projects/:projectId/apps/:slug — partial update merged onto current
@@ -2027,13 +2194,19 @@ projectsApp.openapi(
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const slug = c.req.param("slug");
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
 
     let manifest: ParsedManifest;
     try {
@@ -2064,7 +2237,7 @@ projectsApp.openapi(
     }
 
     return c.json(await loadAppsForResponse(projectId, loaded.row));
-  },
+  }),
 );
 
 // DELETE /v1/projects/:projectId/apps/:slug — remove from manifest. Does
@@ -2085,12 +2258,18 @@ projectsApp.openapi(
       ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  effectHandler(async (c: any) => {
     const projectId = c.req.param("projectId");
     const slug = c.req.param("slug");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
 
     if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
       return c.json({ error: "Invalid slug" }, 400);
@@ -2119,7 +2298,7 @@ projectsApp.openapi(
       return c.json({ error: result.error }, result.status as 400 | 502);
     }
     return c.json({ ok: true });
-  },
+  }),
 );
 
 // POST /v1/projects/:projectId/apps/:slug/deploy — manual deploy. Mirrors

@@ -1,7 +1,8 @@
+import type { Effect } from 'effect';
 import { eq } from 'drizzle-orm';
 import { sandboxes } from '@kortix/db';
-import { db } from '../../shared/db';
-import { config } from '../../config';
+import { platformDb as db } from '../effect';
+import { platformConfig as config } from '../effect';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 
 export function getAuthCandidates(primary?: string): string[] {

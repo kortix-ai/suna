@@ -1,3 +1,4 @@
+import type { Effect } from 'effect';
 /**
  * Lazy auto-migration: legacy customer → per-seat on first sign-in.
  *
@@ -26,7 +27,7 @@
 import { eq, desc, and, sql } from 'drizzle-orm';
 import Stripe from 'stripe';
 import { sandboxes } from '@kortix/db';
-import { db } from '../../shared/db';
+import { billingDb as db } from '../effect';
 import { getStripe } from '../../shared/stripe';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { listAccountStripeCustomerIds } from '../repositories/customers';
