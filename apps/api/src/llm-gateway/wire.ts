@@ -2,8 +2,8 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { createGateway } from "@kortix/llm-gateway";
 import { pickAutoModel } from "@kortix/llm-catalog";
 import { Hono } from "hono";
-import { config } from "../config";
 import { effectHandler, effectMiddleware } from "../effect/hono";
+import { llmGatewayConfig, runLlmGatewayFetch } from "./effect";
 import { createInProcessGatewayHooks } from "./hooks";
 import { createInternalGatewayRoutes } from "./internal-routes";
 
@@ -18,7 +18,7 @@ import { createInternalGatewayRoutes } from "./internal-routes";
 //   /internal/gateway  Control-plane RPC the out-of-process gateway pod calls.
 //   /v1/llm-gateway/*  Reverse proxy to the standalone gateway (when configured).
 export function mountLlmGateway(app: OpenAPIHono): void {
-  if (!config.LLM_GATEWAY_ENABLED) {
+  if (!llmGatewayConfig.LLM_GATEWAY_ENABLED) {
     app.all(
       "/v1/llm/*",
       effectHandler((c) => c.json({ error: "LLM gateway is disabled" }, 503)),
@@ -62,10 +62,10 @@ export function mountLlmGateway(app: OpenAPIHono): void {
 
   app.route("/internal/gateway", createInternalGatewayRoutes());
 
-  if (config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET) {
+  if (llmGatewayConfig.LLM_GATEWAY_PROXY_PORT || llmGatewayConfig.LLM_GATEWAY_PROXY_TARGET) {
     const rawTarget =
-      config.LLM_GATEWAY_PROXY_TARGET ||
-      `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}`;
+      llmGatewayConfig.LLM_GATEWAY_PROXY_TARGET ||
+      `http://127.0.0.1:${llmGatewayConfig.LLM_GATEWAY_PROXY_PORT}`;
     let proxyBase: string | null = null;
     try {
       const url = new URL(rawTarget);
@@ -96,7 +96,7 @@ export function mountLlmGateway(app: OpenAPIHono): void {
             init.duplex = "half";
           }
           try {
-            const upstream = await fetch(target, init);
+            const upstream = await runLlmGatewayFetch(target, init);
             return new Response(upstream.body, {
               status: upstream.status,
               headers: upstream.headers,

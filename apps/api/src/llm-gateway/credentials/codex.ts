@@ -1,7 +1,7 @@
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { projectSecrets } from '@kortix/db';
-import { db } from '../../shared/db';
 import { decryptProjectSecret, encryptProjectSecret } from '../../projects/secrets';
+import { runLlmGatewayDatabase, runLlmGatewayFetch } from '../effect';
 import {
   CodexRefreshError,
   OPENAI_AUTH_BASE,
@@ -28,18 +28,20 @@ interface SecretRow {
 }
 
 async function loadCodexRow(projectId: string, userId: string): Promise<SecretRow | null> {
-  const rows = await db
-    .select({
-      secretId: projectSecrets.secretId,
-      ownerUserId: projectSecrets.ownerUserId,
-      valueEnc: projectSecrets.valueEnc,
-    })
-    .from(projectSecrets)
-    .where(and(
-      eq(projectSecrets.projectId, projectId),
-      eq(projectSecrets.name, CODEX_AUTH_JSON_SECRET_NAME),
-      or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId)),
-    ));
+  const rows = await runLlmGatewayDatabase((database) =>
+    database
+      .select({
+        secretId: projectSecrets.secretId,
+        ownerUserId: projectSecrets.ownerUserId,
+        valueEnc: projectSecrets.valueEnc,
+      })
+      .from(projectSecrets)
+      .where(and(
+        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.name, CODEX_AUTH_JSON_SECRET_NAME),
+        or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId)),
+      )),
+  );
   if (!rows.length) return null;
   return rows.find((r) => r.ownerUserId === userId) ?? rows.find((r) => r.ownerUserId === null) ?? null;
 }
@@ -72,10 +74,12 @@ async function refreshAndPersist(
   const next = applyRefresh(tokens, current, Date.now());
   if (!next) throw new CodexRefreshError('refresh response missing access token', response.status);
 
-  await db
-    .update(projectSecrets)
-    .set({ valueEnc: encryptProjectSecret(projectId, JSON.stringify({ openai: next })), updatedAt: new Date() })
-    .where(eq(projectSecrets.secretId, row.secretId));
+  await runLlmGatewayDatabase((database) =>
+    database
+      .update(projectSecrets)
+      .set({ valueEnc: encryptProjectSecret(projectId, JSON.stringify({ openai: next })), updatedAt: new Date() })
+      .where(eq(projectSecrets.secretId, row.secretId)),
+  );
 
   return next;
 }
@@ -96,7 +100,7 @@ function refreshSingleFlight(
 export async function resolveCodexCredential(
   projectId: string,
   userId: string,
-  fetchImpl: FetchImpl = (input, init) => fetch(input, init),
+  fetchImpl: FetchImpl = (input, init) => runLlmGatewayFetch(input, init),
 ): Promise<CodexCredential | null> {
   const row = await loadCodexRow(projectId, userId);
   if (!row) return null;

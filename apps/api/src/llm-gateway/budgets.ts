@@ -1,7 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
 import type { AuthedPrincipal } from '@kortix/llm-gateway';
-import { db } from '../shared/db';
+import { runLlmGatewayDatabase } from './effect';
 
 type Period = 'day' | 'week' | 'month';
 
@@ -15,10 +15,12 @@ async function spendForPeriod(
     sql`${gatewayRequestLogs.createdAt} >= date_trunc(${period}, now())`,
   ];
   if (subjectUserId) conds.push(eq(gatewayRequestLogs.actorUserId, subjectUserId));
-  const [agg] = await db
-    .select({ cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8` })
-    .from(gatewayRequestLogs)
-    .where(and(...conds));
+  const [agg] = await runLlmGatewayDatabase((database) =>
+    database
+      .select({ cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8` })
+      .from(gatewayRequestLogs)
+      .where(and(...conds)),
+  );
   return agg?.cost ?? 0;
 }
 
@@ -26,19 +28,22 @@ export async function checkBudget(
   principal: AuthedPrincipal,
 ): Promise<{ exceeded: boolean; message?: string }> {
   if (!principal.projectId) return { exceeded: false };
+  const projectId = principal.projectId;
 
-  const budgets = await db
-    .select()
-    .from(gatewayBudgets)
-    .where(
-      and(eq(gatewayBudgets.projectId, principal.projectId), eq(gatewayBudgets.action, 'block')),
-    );
+  const budgets = await runLlmGatewayDatabase((database) =>
+    database
+      .select()
+      .from(gatewayBudgets)
+      .where(
+        and(eq(gatewayBudgets.projectId, projectId), eq(gatewayBudgets.action, 'block')),
+      ),
+  );
   if (budgets.length === 0) return { exceeded: false };
 
   for (const b of budgets) {
     if (b.scope === 'member' && b.subjectUserId !== principal.userId) continue;
     const subject = b.scope === 'member' ? b.subjectUserId : null;
-    const spent = await spendForPeriod(principal.projectId, subject, b.period as Period);
+    const spent = await spendForPeriod(projectId, subject, b.period as Period);
     const limit = Number(b.limitUsd);
     if (spent >= limit) {
       const who = b.scope === 'member' ? 'Your' : "This project's";

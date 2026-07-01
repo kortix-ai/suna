@@ -10,12 +10,12 @@ import { deductForLlmUsage } from '../billing/services/credits';
 import { getCachedAccountTier } from '../billing/services/entitlements';
 import { llmPriceMarkup, tierGrantsAllModels } from '../billing/services/tiers';
 import { attributeYoloToken } from '../billing/services/yolo-tokens';
-import { config } from '../config';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
 import { recordUsageEvent } from '../shared/usage-events';
 import { checkBudget } from './budgets';
+import { llmGatewayConfig } from './effect';
 import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { validateGatewayKey } from './gateway-keys';
 import { gatewayModelCatalog } from './models/catalog-models';
@@ -71,7 +71,7 @@ async function resolvePrincipal(token: string): Promise<AuthedPrincipal | null> 
  * is off (self-host) every account sees the full lineup.
  */
 async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrincipal> {
-  const tiered: AuthedPrincipal = config.KORTIX_BILLING_INTERNAL_ENABLED
+  const tiered: AuthedPrincipal = llmGatewayConfig.KORTIX_BILLING_INTERNAL_ENABLED
     ? await (async () => {
         const tier = await getCachedAccountTier(principal.accountId);
         return { ...principal, tier, freeModelsOnly: !tierGrantsAllModels(tier) };
@@ -158,7 +158,7 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
     },
   });
 
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED || event.billingMode === 'none') return;
+  if (!llmGatewayConfig.KORTIX_BILLING_INTERNAL_ENABLED || event.billingMode === 'none') return;
   await deductForLlmUsage({
     accountId: event.accountId,
     costUsd: event.finalCost,

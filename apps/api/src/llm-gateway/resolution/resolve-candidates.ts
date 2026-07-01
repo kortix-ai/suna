@@ -6,9 +6,9 @@ import {
 import { getManagedModel, pickAutoModel } from '@kortix/llm-catalog';
 import { getAccountTier } from '../../billing/services/entitlements';
 import { tierGrantsAllModels } from '../../billing/services/tiers';
-import { config } from '../../config';
 import { getProjectSecretValue } from '../../projects/secrets';
 import { resolveCodexCredential } from '../credentials/codex';
+import { llmGatewayConfig } from '../effect';
 import { codexDescriptor, livePricing, managedCandidates } from './descriptors';
 
 const PLATFORM_FEE_MARKUP = 0.1;
@@ -30,8 +30,8 @@ async function resolveCachedAccountTier(accountId: string): Promise<string> {
 // model. managedCandidates() is itself empty when no managed key is set, so a
 // self-host with no Bedrock/OpenRouter key naturally has no fallback.
 function byokFallbackCandidates(): UpstreamDescriptor[] {
-  if (!config.LLM_GATEWAY_ENABLED) return [];
-  const fallbackId = config.LLM_GATEWAY_BYOK_FALLBACK_MODEL;
+  if (!llmGatewayConfig.LLM_GATEWAY_ENABLED) return [];
+  const fallbackId = llmGatewayConfig.LLM_GATEWAY_BYOK_FALLBACK_MODEL;
   if (!fallbackId) return [];
   const managed = getManagedModel(fallbackId);
   return managed ? managedCandidates(managed) : [];
@@ -62,17 +62,17 @@ export async function resolveCandidates(
   if (byok && principal.projectId) {
     const key = await getProjectSecretValue(principal.projectId, byok.envVar);
     if (key) {
-      const tier = config.KORTIX_BILLING_INTERNAL_ENABLED
+      const tier = llmGatewayConfig.KORTIX_BILLING_INTERNAL_ENABLED
         ? await resolveCachedAccountTier(principal.accountId)
         : 'self-hosted';
-      const isFreeTier = config.KORTIX_BILLING_INTERNAL_ENABLED && tier === 'free';
+      const isFreeTier = llmGatewayConfig.KORTIX_BILLING_INTERNAL_ENABLED && tier === 'free';
       const byokDescriptor: UpstreamDescriptor = {
         provider,
         kind: byok.kind,
         baseUrl: byok.baseUrl,
         apiKey: key,
         billingMode:
-          config.KORTIX_BILLING_INTERNAL_ENABLED && !isFreeTier ? 'platform-fee' : 'none',
+          llmGatewayConfig.KORTIX_BILLING_INTERNAL_ENABLED && !isFreeTier ? 'platform-fee' : 'none',
         markup: isFreeTier ? 0 : PLATFORM_FEE_MARKUP,
         resolvedModel: effectiveModel.slice(provider.length + 1),
         pricing: livePricing(effectiveModel.slice(provider.length + 1)),
@@ -91,9 +91,9 @@ export async function resolveCandidates(
   // falls through here. A non-managed, non-connected model yields no candidate →
   // clear "model not available" error.
   const managed = getManagedModel(effectiveModel);
-  if (managed && config.LLM_GATEWAY_ENABLED) {
+  if (managed && llmGatewayConfig.LLM_GATEWAY_ENABLED) {
     if (principal.freeModelsOnly) return [];
-    if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
+    if (llmGatewayConfig.KORTIX_BILLING_INTERNAL_ENABLED) {
       const tier = await resolveCachedAccountTier(principal.accountId);
       if (!tierGrantsAllModels(tier)) return [];
     }
