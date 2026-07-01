@@ -32,7 +32,7 @@ import {
   SparklesSolid,
 } from '@mynaui/icons-react';
 import { useEffect, useRef, useState } from 'react';
-import { ChangeFilesSection } from './change-files';
+import { ChangeFilesModal } from './change-files';
 import {
   APPROVAL_ACTION_ICON,
   KIND_META,
@@ -162,7 +162,7 @@ function ChangeBody({
         </div>
       )}
 
-      {d.crId ? <ChangeFilesSection crId={d.crId} /> : null}
+      {d.crId ? <ChangeFilesModal crId={d.crId} /> : null}
 
       {(verification.length > 0 || d.previewUrl) && (
         <div className="flex flex-wrap items-center gap-2">
