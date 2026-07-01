@@ -206,6 +206,7 @@ jobs:
       id-token: write
       contents: read
       attestations: write
+      artifact-metadata: write
     env:
       IMAGE: ${{ needs.tag-api.outputs.image }}
     steps:
@@ -246,7 +247,7 @@ jobs:
           cosign sign --yes "$REF"
           cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$REF"
       - name: SLSA build provenance
-        uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-name: docker.io/kortix/kortix-api
           subject-digest: ${{ steps.digest.outputs.digest }}
