@@ -16,8 +16,8 @@ import { featureFlags } from '../platform/feature-flags';
 import { listProjectSecrets } from '../platform/projects-client';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
 import { useQuery } from '@tanstack/react-query';
-import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useKortixRouteProjectId } from './route-project';
 import {
   connectedGatewayProviderIdsFromSecretNames,
   normalizeProviderList,
@@ -158,8 +158,7 @@ export function useOpenCodeLocal({
   // ---- Flatten models from providers (shared with the chat input, so the
   // gateway-only allowlist applies here too — native providers never leak in) ----
   const flatModels = useMemo<FlatModel[]>(() => flattenModels(providers), [providers]);
-  const params = useParams();
-  const projectId = typeof params?.id === 'string' ? params.id : null;
+  const projectId = useKortixRouteProjectId();
   const providerMode = useMemo(() => modelProviderMode(providers), [providers]);
   const secretsQuery = useQuery({
     queryKey: ['project-secrets', projectId],

@@ -19,12 +19,10 @@
   },
   "peerDependencies": {
     "@tanstack/react-query": "^5.75.2",
-    "next": ">=15",
     "react": ">=18"
   },
   "peerDependenciesMeta": {
     "@tanstack/react-query": { "optional": true },
-    "next": { "optional": true },
     "react": { "optional": true }
   },
   "main": "./src/index.ts",

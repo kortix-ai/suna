@@ -8,7 +8,7 @@
  * consume `readBlob`/`list` from here.
  */
 import { getClient } from '../opencode/client';
-import { getActiveOpenCodeUrl } from '../state/server-store';
+import { getActiveOpenCodeUrl } from '../state/server-store/active';
 import { getAuthToken, authenticatedFetch } from '../platform/auth';
 import type {
   FileContent,

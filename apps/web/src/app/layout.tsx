@@ -1,4 +1,5 @@
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
+import { KortixProjectScope } from '@/components/kortix-project-scope';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { DesktopUrlPrompt } from '@/components/desktop/desktop-url-prompt';
 import { ThemeProvider } from '@/components/home/theme-provider';
@@ -376,7 +377,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                 <DesktopUrlPrompt />
                 <ReactQueryProvider>
                   <Toaster />
-                  {children}
+                  <KortixProjectScope>{children}</KortixProjectScope>
                   {/* Global maintenance/incident banner (info/warning/critical).
                       Needs the query client, so it mounts inside ReactQueryProvider. */}
                   <Suspense fallback={null}>

@@ -11,7 +11,7 @@ import { useOpenCodePendingStore } from '../../state/opencode-pending-store';
 import { useSyncStore } from '../../state/sync-store';
 import { useSandboxConnectionStore } from '../../state/sandbox-connection-store';
 import { useServerStore } from '../../state/server-store';
-import { useCurrentRuntime } from '../../state/current-runtime';
+import { useCurrentRuntime } from '../use-current-runtime';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { opencodeKeys } from '../use-opencode-sessions';
