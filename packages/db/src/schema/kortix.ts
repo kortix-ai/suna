@@ -3005,8 +3005,10 @@ export const accountSsoGroupMappings = kortixSchema.table(
     ssoProviderId: uuid('sso_provider_id')
       .notNull()
       .references(() => accountSsoProviders.ssoProviderId, { onDelete: 'cascade' }),
-    /** Exact match against an entry in the group claim. Case-sensitive
-     *  to match how IdPs ship the values. */
+    /** Match against an entry in the IdP group claim. Compared case- and
+     *  whitespace-INSENSITIVELY at sync time (see iam/sso-sync.ts
+     *  resolveClaimedGroupIds) so an admin can't silently lock users out by
+     *  mistyping the casing of an Entra/Okta group name. */
     claimValue: varchar('claim_value', { length: 256 }).notNull(),
     groupId: uuid('group_id')
       .notNull()
