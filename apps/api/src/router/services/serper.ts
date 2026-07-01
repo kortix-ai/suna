@@ -1,7 +1,8 @@
-import { Effect, Schema } from 'effect';
-import { config } from '../../config';
+import { Effect, Schedule, Schema } from 'effect';
 import type { ImageSearchResult } from '../../types';
 import { getTraceHeaders } from '../../lib/request-context';
+import { AppConfig, HttpClient } from '../../effect/services';
+import { runEffectOrThrow } from '../../effect/http';
 
 const SerperImageSchema = Schema.Struct({
   title: Schema.optional(Schema.String),
@@ -26,6 +27,8 @@ class SerperSearchError extends Error {
   }
 }
 
+const serperRetryPolicy = Schedule.addDelay(Schedule.recurs(2), () => '100 millis');
+
 /**
  * Search for images using Serper API (Google Images).
  *
@@ -38,15 +41,18 @@ export function imageSearchSerperEffect(
   query: string,
   maxResults: number = 5,
   safeSearch: boolean = true
-): Effect.Effect<ImageSearchResult[], SerperSearchError> {
-  if (!config.SERPER_API_KEY) {
-    return Effect.fail(new SerperSearchError('SERPER_API_KEY not configured'));
-  }
-
+): Effect.Effect<ImageSearchResult[], SerperSearchError, AppConfig | HttpClient> {
   return Effect.gen(function* () {
+    const config = yield* AppConfig;
+    const http = yield* HttpClient;
+
+    if (!config.SERPER_API_KEY) {
+      return yield* Effect.fail(new SerperSearchError('SERPER_API_KEY not configured'));
+    }
+
     const response = yield* Effect.tryPromise({
       try: () =>
-        fetch(`${config.SERPER_API_URL}/images`, {
+        http.fetch(`${config.SERPER_API_URL}/images`, {
           method: 'POST',
           headers: {
             'X-API-KEY': config.SERPER_API_KEY,
@@ -60,7 +66,7 @@ export function imageSearchSerperEffect(
           }),
         }),
       catch: (cause) => new SerperSearchError(`Serper request failed: ${cause instanceof Error ? cause.message : String(cause)}`, cause),
-    });
+    }).pipe(Effect.retry(serperRetryPolicy));
 
     if (!response.ok) {
       const error = yield* Effect.tryPromise({
@@ -103,5 +109,5 @@ export async function imageSearchSerper(
   maxResults: number = 5,
   safeSearch: boolean = true
 ): Promise<ImageSearchResult[]> {
-  return Effect.runPromise(imageSearchSerperEffect(query, maxResults, safeSearch));
+  return runEffectOrThrow(imageSearchSerperEffect(query, maxResults, safeSearch));
 }

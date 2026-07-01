@@ -1,4 +1,4 @@
-import { Data, Effect } from 'effect';
+import { Data, Effect, Stream } from 'effect';
 import { HTTPException } from 'hono/http-exception';
 import { getProjectSecretValue } from '../../projects/secrets';
 import type { ActorContext } from '../../shared/actor-context';
@@ -16,7 +16,7 @@ import { calculateCost, extractUsage, getModel, proxyToOpenRouter, type UsageInf
 import {
   applyActorSpend,
   dollarsToCents,
-  getSandboxMemberCapStatus,
+  getSandboxMemberCapStatusEffect,
 } from './member-spend';
 
 export type LlmRequestBody = Record<string, unknown> & {
@@ -103,6 +103,29 @@ type SessionOpenRouterInput = {
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
+async function* readableBytes(stream: ReadableStream<Uint8Array>) {
+  const reader = stream.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      if (value) yield value;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+const byteStream = (stream: ReadableStream<Uint8Array>, label: string) =>
+  Stream.fromAsyncIterable(
+    readableBytes(stream),
+    (cause) =>
+      new LlmBillingError({
+        message: `${label} stream read failed: ${errorMessage(cause)}`,
+        cause,
+      }),
+  );
+
 const parseLlmBodyEffect = (readJson: JsonReader) =>
   Effect.tryPromise({
     try: readJson,
@@ -160,14 +183,14 @@ const ensureMemberCapEffect = (
   cycleLabel: 'month' | 'cycle',
 ) =>
   actor
-    ? Effect.tryPromise({
-        try: () => getSandboxMemberCapStatus(actor.sandboxId, actor.userId),
-        catch: (cause) =>
-          new LlmCreditCheckError({
-            message: `Credit check failed: ${errorMessage(cause)}`,
-            cause,
-          }),
-      }).pipe(
+    ? getSandboxMemberCapStatusEffect(actor.sandboxId, actor.userId).pipe(
+        Effect.mapError(
+          (cause) =>
+            new LlmCreditCheckError({
+              message: `Credit check failed: ${errorMessage(cause)}`,
+              cause,
+            }),
+        ),
         Effect.flatMap((status) => {
           if (status && status.capCents !== null && status.currentCents >= status.capCents) {
             return Effect.fail(
@@ -426,17 +449,14 @@ const extractOpenAiStreamUsageEffect = (
     readonly actor?: ActorContext | null;
   },
 ) =>
-  Effect.tryPromise({
-    try: async () => {
-      const reader = stream.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let lastUsage: UsageInfo | null = null;
+  Effect.gen(function* () {
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const lastUsage: { current: UsageInfo | null } = { current: null };
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
+    yield* byteStream(stream, 'OpenAI billing').pipe(
+      Stream.runForEach((value) =>
+        Effect.sync(() => {
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
@@ -447,7 +467,7 @@ const extractOpenAiStreamUsageEffect = (
             const chunk = JSON.parse(line.slice(6));
             if (chunk.usage) {
               const details = chunk.usage.prompt_tokens_details;
-              lastUsage = {
+              lastUsage.current = {
                 promptTokens: chunk.usage.prompt_tokens ?? 0,
                 completionTokens: chunk.usage.completion_tokens ?? 0,
                 cachedTokens: details?.cached_tokens ?? 0,
@@ -457,46 +477,50 @@ const extractOpenAiStreamUsageEffect = (
           } catch {
           }
         }
-      }
+        }),
+      ),
+    );
 
-      if (!lastUsage) {
-        console.warn(`[LLM] Stream ${input.modelId}: no usage data found in stream — billing skipped`);
-        return;
-      }
+    const usage = lastUsage.current;
+    if (!usage) {
+      console.warn(`[LLM] Stream ${input.modelId}: no usage data found in stream — billing skipped`);
+      return;
+    }
 
-      const cost = calculateCost(
-        input.modelConfig,
-        lastUsage.promptTokens,
-        lastUsage.completionTokens,
-        lastUsage.cachedTokens,
-        lastUsage.cacheWriteTokens,
-      );
-      const deductRes = await deductLLMCredits(
+    const cost = calculateCost(
+      input.modelConfig,
+      usage.promptTokens,
+      usage.completionTokens,
+      usage.cachedTokens,
+      usage.cacheWriteTokens,
+    );
+    const deductRes = yield* Effect.tryPromise({
+      try: () => deductLLMCredits(
         input.accountId,
         input.modelId,
-        lastUsage.promptTokens,
-        lastUsage.completionTokens,
+        usage.promptTokens,
+        usage.completionTokens,
         cost,
         input.sessionId,
+      ),
+      catch: (cause) =>
+        new LlmBillingError({
+          message: `OpenAI stream billing failed: ${errorMessage(cause)}`,
+          cause,
+        }),
+    });
+    if (deductRes.success && input.actor && cost > 0) {
+      applyActorSpend(input.actor.sandboxId, input.actor.userId, dollarsToCents(cost)).catch(
+        (err) => console.error('[LLM] Actor spend attribution failed:', err),
       );
-      if (deductRes.success && input.actor && cost > 0) {
-        applyActorSpend(input.actor.sandboxId, input.actor.userId, dollarsToCents(cost)).catch(
-          (err) => console.error('[LLM] Actor spend attribution failed:', err),
-        );
-      }
-      const cacheInfo =
-        lastUsage.cachedTokens || lastUsage.cacheWriteTokens
-          ? ` (cache: ${lastUsage.cachedTokens}read/${lastUsage.cacheWriteTokens}write)`
-          : '';
-      console.log(
-        `[LLM] Stream ${input.modelId}: ${lastUsage.promptTokens}/${lastUsage.completionTokens} tokens${cacheInfo}, cost=$${cost.toFixed(6)}`,
-      );
-    },
-    catch: (cause) =>
-      new LlmBillingError({
-        message: `OpenAI stream billing failed: ${errorMessage(cause)}`,
-        cause,
-      }),
+    }
+    const cacheInfo =
+      usage.cachedTokens || usage.cacheWriteTokens
+        ? ` (cache: ${usage.cachedTokens}read/${usage.cacheWriteTokens}write)`
+        : '';
+    console.log(
+      `[LLM] Stream ${input.modelId}: ${usage.promptTokens}/${usage.completionTokens} tokens${cacheInfo}, cost=$${cost.toFixed(6)}`,
+    );
   });
 
 const extractAnthropicStreamUsageEffect = (

@@ -13,6 +13,7 @@ import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
+import { Effect } from 'effect';
 import { BillingError } from '../errors';
 import { runWithContext } from '../lib/request-context';
 
@@ -140,6 +141,15 @@ mock.module('../middleware/auth', () => ({
 }));
 
 mock.module('../router/services/tavily', () => ({
+  webSearchTavilyEffect: (query: string, maxResults: number, searchDepth: string) =>
+    Effect.tryPromise({
+      try: () => {
+        lastTavilyArgs = { query, maxResults, searchDepth };
+        if (mockTavilyError) throw mockTavilyError;
+        return Promise.resolve(mockTavilyResults);
+      },
+      catch: (cause) => cause,
+    }),
   webSearchTavily: async (query: string, maxResults: number, searchDepth: string) => {
     lastTavilyArgs = { query, maxResults, searchDepth };
     if (mockTavilyError) throw mockTavilyError;
@@ -148,6 +158,15 @@ mock.module('../router/services/tavily', () => ({
 }));
 
 mock.module('../router/services/serper', () => ({
+  imageSearchSerperEffect: (query: string, maxResults: number, safeSearch: boolean) =>
+    Effect.tryPromise({
+      try: () => {
+        lastSerperArgs = { query, maxResults, safeSearch };
+        if (mockSerperError) throw mockSerperError;
+        return Promise.resolve(mockSerperResults);
+      },
+      catch: (cause) => cause,
+    }),
   imageSearchSerper: async (query: string, maxResults: number, safeSearch: boolean) => {
     lastSerperArgs = { query, maxResults, safeSearch };
     if (mockSerperError) throw mockSerperError;

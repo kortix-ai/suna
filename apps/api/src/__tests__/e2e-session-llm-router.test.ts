@@ -21,6 +21,7 @@ let lastDeductCall: unknown[] | null = null;
 let usageEvents: Array<Record<string, unknown>> = [];
 
 mock.module('../config', () => ({
+  KORTIX_MARKUP: 1,
   config: {
     DATABASE_URL: '',
     API_KEY_SECRET: 'session-llm-test-secret',

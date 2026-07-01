@@ -9,8 +9,8 @@ import {
 import type { z } from 'zod';
 import { checkCredits, deductToolCredits } from './billing';
 import { runEffectOrThrow } from '../../effect/http';
-import { imageSearchSerper } from './serper';
-import { webSearchTavily } from './tavily';
+import { imageSearchSerperEffect } from './serper';
+import { webSearchTavilyEffect } from './tavily';
 
 type WebSearchRequest = z.infer<typeof WebSearchRequestSchema>;
 type ImageSearchRequest = z.infer<typeof ImageSearchRequestSchema>;
@@ -82,15 +82,16 @@ const warnReturnedBillingFailure = (accountId: string, billingResult: BillingDed
     }
   });
 
-const searchProvider = <A>(operation: () => Promise<A>) =>
-  Effect.tryPromise({
-    try: operation,
-    catch: (cause) =>
-      new SearchProviderError({
-        message: errorMessage(cause),
-        cause,
-      }),
-  });
+const searchProvider = <A, E, R>(operation: Effect.Effect<A, E, R>) =>
+  operation.pipe(
+    Effect.mapError(
+      (cause) =>
+        new SearchProviderError({
+          message: errorMessage(cause),
+          cause,
+        }),
+    ),
+  );
 
 export const webSearchWorkflowEffect = (accountId: string, request: WebSearchRequest) =>
   Effect.gen(function* () {
@@ -98,8 +99,8 @@ export const webSearchWorkflowEffect = (accountId: string, request: WebSearchReq
 
     yield* ensureCredits(accountId);
 
-    const results = yield* searchProvider(() =>
-      webSearchTavily(request.query, request.max_results, request.search_depth),
+    const results = yield* searchProvider(
+      webSearchTavilyEffect(request.query, request.max_results, request.search_depth),
     );
 
     const billingResult = yield* deductToolCreditsEffect(
@@ -123,8 +124,8 @@ export const imageSearchWorkflowEffect = (accountId: string, request: ImageSearc
   Effect.gen(function* () {
     yield* ensureCredits(accountId);
 
-    const results = yield* searchProvider(() =>
-      imageSearchSerper(request.query, request.max_results, request.safe_search),
+    const results = yield* searchProvider(
+      imageSearchSerperEffect(request.query, request.max_results, request.safe_search),
     );
 
     const billingResult = yield* deductToolCreditsEffect(

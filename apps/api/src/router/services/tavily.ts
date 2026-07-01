@@ -1,7 +1,8 @@
-import { Effect, Schema } from 'effect';
-import { config } from '../../config';
+import { Effect, Schedule, Schema } from 'effect';
 import type { WebSearchResult } from '../../types';
 import { getTraceHeaders } from '../../lib/request-context';
+import { AppConfig, HttpClient } from '../../effect/services';
+import { runEffectOrThrow } from '../../effect/http';
 
 const TavilyResultSchema = Schema.Struct({
   title: Schema.optional(Schema.String),
@@ -24,6 +25,8 @@ class TavilySearchError extends Error {
   }
 }
 
+const tavilyRetryPolicy = Schedule.addDelay(Schedule.recurs(2), () => '100 millis');
+
 /**
  * Search the web using Tavily API.
  *
@@ -36,15 +39,18 @@ export function webSearchTavilyEffect(
   query: string,
   maxResults: number = 5,
   searchDepth: 'basic' | 'advanced' = 'basic'
-): Effect.Effect<WebSearchResult[], TavilySearchError> {
-  if (!config.TAVILY_API_KEY) {
-    return Effect.fail(new TavilySearchError('TAVILY_API_KEY not configured'));
-  }
-
+): Effect.Effect<WebSearchResult[], TavilySearchError, AppConfig | HttpClient> {
   return Effect.gen(function* () {
+    const config = yield* AppConfig;
+    const http = yield* HttpClient;
+
+    if (!config.TAVILY_API_KEY) {
+      return yield* Effect.fail(new TavilySearchError('TAVILY_API_KEY not configured'));
+    }
+
     const response = yield* Effect.tryPromise({
       try: () =>
-        fetch(`${config.TAVILY_API_URL}/search`, {
+        http.fetch(`${config.TAVILY_API_URL}/search`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -60,7 +66,7 @@ export function webSearchTavilyEffect(
           }),
         }),
       catch: (cause) => new TavilySearchError(`Tavily request failed: ${cause instanceof Error ? cause.message : String(cause)}`, cause),
-    });
+    }).pipe(Effect.retry(tavilyRetryPolicy));
 
     if (!response.ok) {
       const error = yield* Effect.tryPromise({
@@ -101,5 +107,5 @@ export async function webSearchTavily(
   maxResults: number = 5,
   searchDepth: 'basic' | 'advanced' = 'basic'
 ): Promise<WebSearchResult[]> {
-  return Effect.runPromise(webSearchTavilyEffect(query, maxResults, searchDepth));
+  return runEffectOrThrow(webSearchTavilyEffect(query, maxResults, searchDepth));
 }

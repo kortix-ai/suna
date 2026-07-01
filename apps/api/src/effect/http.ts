@@ -1,5 +1,6 @@
 import { Data, Effect, Either } from 'effect';
 import { HTTPException } from 'hono/http-exception';
+import { provideApiServices, type ApiServiceContext } from './services';
 
 export class ApiEffectError extends Data.TaggedError('ApiEffectError')<{
   readonly status: number;
@@ -22,8 +23,10 @@ export const httpFail = (
     }),
   );
 
-export async function runEffectOrThrow<A, E>(effect: Effect.Effect<A, E>): Promise<A> {
-  const result = await Effect.runPromise(Effect.either(effect));
+export async function runEffectOrThrow<A, E>(
+  effect: Effect.Effect<A, E, ApiServiceContext>,
+): Promise<A> {
+  const result = await Effect.runPromise(Effect.either(provideApiServices(effect)));
   if (Either.isLeft(result)) {
     throw result.left;
   }

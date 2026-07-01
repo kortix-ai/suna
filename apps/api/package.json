@@ -20,7 +20,9 @@
     "test:integration": "bash scripts/test.sh integration",
     "test:live": "bash scripts/test.sh live",
     "test:all": "bash scripts/test.sh && bash scripts/test.sh integration",
-    "audit:effect": "bun run scripts/audit-effect-coverage.ts"
+    "audit:effect": "bun run scripts/audit-effect-coverage.ts",
+    "audit:effect:architecture": "bun run scripts/audit-effect-architecture.ts",
+    "audit:effect:architecture:strict": "bun run scripts/audit-effect-architecture.ts --enforce"
   },
   "dependencies": {
     "@daytonaio/sdk": "^0.184.0",

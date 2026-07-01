@@ -2,14 +2,27 @@
 
 ## Goal
 
-Use Effect for API-side TypeScript workflows that combine request parsing,
-validation, authorization, database/service calls, external I/O, billing, and
-typed expected failures.
+Make the correct eventual claim true: the backend uses Effect as its primary
+application architecture, not merely as a route wrapper.
 
-The route-layer target is complete: every Hono/OpenAPI route app gets an Effect
-execution boundary, and workflow-heavy handlers additionally move request
+The first route-layer target is complete: every Hono/OpenAPI route app gets an
+Effect execution boundary, and workflow-heavy handlers additionally move request
 parsing, validation, authorization, service calls, and expected failures into
 typed Effect programs.
+
+The full-backend target is stricter and remains in progress. It requires
+backend dependencies, external I/O, resource lifecycles, retries, streaming,
+and background concurrency to be modeled through Effect services, Layers,
+Schema, Schedule, Stream, Scope, and structured concurrency where those
+primitives apply.
+
+Until the strict architecture audit passes, the accurate claim is:
+
+> API routes and selected workflows are Effect-refactored; the backend is being
+> migrated toward a full Effect architecture.
+
+Do not claim "the backend uses the complete/full extent of Effect everywhere"
+until the full-backend requirements below are satisfied and verified.
 
 ## Reference Material
 
@@ -51,10 +64,58 @@ typed Effect programs.
    may stay as direct Hono code, but the containing route app still uses
    `effectMiddleware`.
 
+## Full-Backend Effect Architecture Requirements
+
+These are the requirements for the stronger backend-wide claim:
+
+1. Core dependencies are services.
+   Config, database, Supabase, HTTP clients, Stripe, sandbox providers,
+   LLM providers, logging/telemetry, and other shared infrastructure must be
+   accessed through `Context.Tag` services provided by `Layer`s. Direct imports
+   from global singleton modules are compatibility shims only and should not be
+   used in newly migrated Effect workflows.
+
+2. The application has a live layer.
+   Runtime execution goes through a central live layer that provides backend
+   services. Tests may provide test layers instead of monkey-patching globals.
+
+3. External boundaries are decoded.
+   Untrusted provider responses, webhook payloads after raw signature checks,
+   env/config payloads, and internal service-to-service JSON are decoded with
+   `effect/Schema` before being treated as typed internal data.
+
+4. Retries use schedules.
+   Provider retry/backoff, polling loops, and transient network/database retry
+   paths use `Schedule` instead of hand-rolled `setTimeout` loops when the
+   control flow is not pure transport byte forwarding.
+
+5. Streams use Effect streams where they are application streams.
+   SSE parsing, provider event streams, and internal event pipelines use
+   `Stream` where the application consumes, transforms, retries, or accounts
+   for chunks. Raw byte pass-through may remain direct only at the transport
+   adapter edge.
+
+6. Resource lifecycles are scoped.
+   Connections, leases, timers, subscriptions, and background resources that
+   require cleanup are acquired through `Scope` / `Effect.acquireRelease` or
+   equivalent scoped Effect APIs.
+
+7. Background work is structured.
+   Fire-and-forget promises, intervals, and detached async tasks are migrated
+   to Effect fibers, supervisors, queues, pub/sub, or explicit daemon processes
+   so failures and shutdown behavior are observable.
+
+8. The audit is enforceable.
+   `pnpm --filter kortix-api audit:effect:architecture:strict` must pass before
+   the full-backend claim is made. The report-only audit is allowed to fail the
+   claim during migration, but it must make remaining direct infrastructure and
+   missing primitives visible.
+
 ## Shared Helpers
 
 - `apps/api/src/effect/http.ts`
 - `apps/api/src/effect/hono.ts`
+- `apps/api/src/effect/services.ts`
 - `apps/api/src/accounts/effect-workflows.ts`
 - `apps/api/src/billing/routes/effect-workflows.ts`
 - `apps/api/src/channels/effect-workflows.ts`
@@ -214,6 +275,10 @@ Green checks run in the integrated worktree:
 - `pnpm --filter kortix-api audit:effect`: 423/423 OpenAPI route
   registrations have explicit Effect boundaries, and raw Hono app creation is
   guarded by `effectMiddleware` or `makeOpenApiApp()`.
+- `pnpm --filter kortix-api audit:effect:architecture`: reports full-backend
+  Effect architecture coverage and remaining direct infrastructure usage.
+- `pnpm --filter kortix-api audit:effect:architecture:strict`: must pass before
+  claiming the backend uses the complete/full extent of Effect everywhere.
 - Static import guard: application/packages code imports from the runtime
   `effect` dependency, not from `repos/effect`.
 - Router: `e2e-router.test.ts`, `e2e-session-llm-router.test.ts`
