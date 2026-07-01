@@ -1,5 +1,8 @@
 import { randomBytes } from 'node:crypto';
+import { Effect } from 'effect';
 import { getRequestContext } from './request-context';
+import { HttpClient } from '../effect/services';
+import { runEffectOrThrow } from '../effect/http';
 
 type OTelSpanKind = 'INTERNAL' | 'SERVER' | 'CLIENT';
 
@@ -68,6 +71,12 @@ function toOtelAttributes(attributes: Record<string, unknown>) {
     .filter((item): item is { key: string; value: Record<string, unknown> } => Boolean(item));
 }
 
+const otelFetch = (url: string, init: RequestInit): Promise<Response> =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const client = yield* HttpClient;
+    return yield* Effect.tryPromise(() => client.fetch(url, init));
+  }));
+
 export function isOtelTraceExporterConfigured() {
   return Boolean(otlpTraceEndpoint());
 }
@@ -123,7 +132,7 @@ export async function emitOtelSpan(input: OTelSpanInput): Promise<boolean> {
   };
 
   try {
-    const response = await fetch(endpoint, {
+    const response = await otelFetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

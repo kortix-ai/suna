@@ -17,8 +17,17 @@ import { supabaseAuth } from "../middleware/auth";
 import { requireAdmin } from "../middleware/require-admin";
 import { makeOpenApiApp, json, errors, auth } from "../openapi";
 import { effectHandler } from "../effect/hono";
+import { Effect } from "effect";
+import { HttpClient } from "../effect/services";
+import { runEffectOrThrow } from "../effect/http";
 
 export const adminApp = makeOpenApiApp<AppEnv>();
+
+const adminFetch = (url: string, init: RequestInit): Promise<Response> =>
+  runEffectOrThrow(Effect.gen(function* () {
+    const client = yield* HttpClient;
+    return yield* Effect.tryPromise(() => client.fetch(url, init));
+  }));
 
 // Every admin route requires a logged-in platform admin.
 adminApp.use("*", supabaseAuth, requireAdmin);
@@ -859,7 +868,7 @@ adminApp.openapi(
         const ep = await getProvider(oldProvider as any).resolveEndpoint(
           oldExternalId,
         );
-        const res = await fetch(
+        const res = await adminFetch(
           `${ep.url.replace(/\/$/, "")}/kortix/git/commit-push`,
           {
             method: "POST",
