@@ -1,5 +1,6 @@
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { config, type SandboxProviderName } from '../../config';
+import { resolveSessionProvider } from './provider-precedence';
 import { resolveShareSubject } from '../../executor/share';
 import { auth, json } from '../../openapi';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../../shared/account-limits';
@@ -421,14 +422,23 @@ export async function createProjectSession(input: {
   );
   const sandboxSlug =
     normalizeString(body.sandbox_slug ?? body.sandboxSlug) ?? projectDefaultSandboxSlug ?? undefined;
-  const requestedProvider = normalizeString(body.provider);
-  let providerName: SandboxProviderName = await selectProvider();
-  if (requestedProvider) {
-    if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(requestedProvider)) {
-      return { error: { status: 400, body: { error: `Unknown or disabled sandbox provider: ${requestedProvider}` } } };
-    }
-    providerName = requestedProvider as SandboxProviderName;
+  // Sandbox provider: explicit request › per-project pin (Customize → Settings) ›
+  // weighted balancer. The pin lets you put ONE project on e.g. platinum regardless
+  // of the global distribution weights — see resolveSessionProvider.
+  const picked = resolveSessionProvider({
+    requested: normalizeString(body.provider) ?? null,
+    projectPin:
+      normalizeString(
+        (project.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_provider,
+      ) ?? null,
+    allowed: config.ALLOWED_SANDBOX_PROVIDERS,
+    isEnabled: (p) => config.isProviderEnabled(p as SandboxProviderName),
+  });
+  if ('badRequest' in picked) {
+    return { error: { status: 400, body: { error: `Unknown or disabled sandbox provider: ${picked.badRequest}` } } };
   }
+  const providerName: SandboxProviderName =
+    'provider' in picked ? (picked.provider as SandboxProviderName) : await selectProvider();
 
   const callbackUnreachable = sandboxCallbackUnreachableReason();
   if (callbackUnreachable) {

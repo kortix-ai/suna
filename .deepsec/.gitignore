@@ -7,5 +7,6 @@ data/*/files/
 data/*/runs/
 data/*/reports/
 data/*/project.json
+data/*/tech.json
 findings*.json
 findings*/

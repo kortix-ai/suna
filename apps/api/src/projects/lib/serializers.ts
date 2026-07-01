@@ -1,4 +1,4 @@
-import { config } from '../../config';
+import { config, type SandboxProviderName } from '../../config';
 import { isSecretUsableBy, loadGrants, scopeToIntent, type SecretGrant, type ShareSubject, visibilityToIntent } from '../../executor/share';
 import { db } from '../../shared/db';
 import { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
@@ -143,6 +143,19 @@ export function serializeProject(row: ProjectRow, access?: { projectRole: Projec
     experimental: resolveExperimentalFeatures(row.metadata),
     experimental_features: buildExperimentalCatalog(row.metadata),
     apps_enabled: resolveAppsEnabled(row.metadata),
+    // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
+    // is the current pin (null = follow the platform default/distribution);
+    // `available_sandbox_providers` is the enabled set the picker offers
+    // (ALLOWED ∩ has-API-key) — the web client renders + validates against the SAME
+    // set the backend enforces, without a separate (billing-gated) providers route.
+    // Surface the pin only when it's still USABLE (allowed + key) — mirrors the
+    // create path (which ignores a disabled/removed pin and falls back), so the
+    // picker never shows a value with no matching option.
+    default_sandbox_provider: ((): string | null => {
+      const pin = (row.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_provider;
+      return typeof pin === 'string' && config.isProviderEnabled(pin as SandboxProviderName) ? pin : null;
+    })(),
+    available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter((p) => config.isProviderEnabled(p)),
   };
 }
 

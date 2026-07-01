@@ -556,19 +556,19 @@ app.openapi(
     responses: { 200: json(MaintenanceSchema, 'Updated config'), ...errors(403, 503) },
   }),
   async (c: any) => {
-  const accountId = c.get('userId') as string;
-  const role = await getPlatformRole(accountId);
-  if (role !== 'admin' && role !== 'super_admin') {
-    return c.json({ error: 'Admin access required' }, 403);
-  }
-  if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
-  const body = await c.req.json().catch(() => ({}));
-  const config = { ...DEFAULT_MAINTENANCE, ...body, updatedAt: new Date().toISOString() };
-  await db
-    .insert(platformSettings)
-    .values({ key: MAINTENANCE_KEY, value: config, updatedAt: new Date() })
-    .onConflictDoUpdate({ target: platformSettings.key, set: { value: config, updatedAt: new Date() } });
-  return c.json(config);
+    const userId = c.get('userId') as string;
+    const role = await getPlatformRole(userId);
+    if (role !== 'admin' && role !== 'super_admin') {
+      return c.json({ error: 'Admin access required' }, 403);
+    }
+    if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
+    const body = await c.req.json().catch(() => ({}));
+    const maintenanceConfig = { ...DEFAULT_MAINTENANCE, ...body, updatedAt: new Date().toISOString() };
+    await db
+      .insert(platformSettings)
+      .values({ key: MAINTENANCE_KEY, value: maintenanceConfig, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: platformSettings.key, set: { value: maintenanceConfig, updatedAt: new Date() } });
+    return c.json(maintenanceConfig);
   },
 );
 

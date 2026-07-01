@@ -503,6 +503,37 @@ describe('daemon proxy auth gate', () => {
     expect(body.reason).toBe('malformed')
   })
 
+  it('rejects /kortix/abort without a signed user context', async () => {
+    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const res = await app.request('/kortix/abort', { method: 'POST' })
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as { error: string; reason: string }
+    expect(body.error).toBe('unauthorized')
+    expect(body.reason).toBe('malformed')
+  })
+
+  it('rejects /kortix/abort when the sandbox token is unset', async () => {
+    const app = buildOpencodeApp(baseConfig({ sandboxToken: undefined }), fakeOpencode('ok'), Date.now())
+    const res = await app.request('/kortix/abort', { method: 'POST' })
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as { error: string; detail: string }
+    expect(body.error).toBe('daemon not configured')
+    expect(body.detail).toContain('KORTIX_TOKEN')
+  })
+
+  it('lets signed /kortix/abort reach the abort handler', async () => {
+    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
+    const res = await app.request('/kortix/abort', {
+      method: 'POST',
+      headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
+    })
+    expect(res.status).toBe(409)
+    const body = (await res.json()) as { ok: boolean; error: string }
+    expect(body.ok).toBe(false)
+    expect(body.error).toContain('No opencode session pinned')
+  })
+
   it('refreshes the project repo and restarts opencode', async () => {
     const root = mkdtempSync(join(tmpdir(), 'kortix-refresh-'))
     try {
