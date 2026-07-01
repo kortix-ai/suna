@@ -9,6 +9,7 @@ import {
   takeFlagValue,
 } from '../command-helpers.ts';
 import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
+import { runSessionsConnect } from './sessions-connect.ts';
 import { runSessionsDigest } from './sessions-digest.ts';
 import { C, pad, status } from '../style.ts';
 import { sessionWebUrl } from '../web-url.ts';
@@ -30,6 +31,8 @@ Subcommands:
                                     (capture session_id to orchestrate).
   chat [<session-id>]               Talk to a session's agent (REPL, or
                                     one-shot with --prompt). --new starts one.
+  connect [<session-id>]            Attach local OpenCode to the running
+                                    session sandbox. Pass args after --.
   log [<session-id>]                Print a session's recent messages
                                     (read-only) — peek at what an agent is
                                     doing without sending it anything.
@@ -65,6 +68,11 @@ export async function runSessions(argv: string[]): Promise<number> {
   // id), so route it before we consume flags below.
   if (sub === 'chat' || sub === 'talk') {
     return runSessionsChat(argv.slice(1));
+  }
+  // `connect` owns its own flag parsing and forwards remaining args to
+  // `opencode attach`, so route it before we consume flags below.
+  if (sub === 'connect' || sub === 'attach') {
+    return runSessionsConnect(argv.slice(1));
   }
   // `log` owns its own flag parsing (incl. --limit + a positional session id),
   // so route it before we consume flags below.
