@@ -50,6 +50,11 @@ export interface KortixProject {
   warm_pool?: { enabled: boolean; size: number };
   /** Whether the warm pool feature is enabled platform-wide (gates the UI). */
   warm_pool_available?: boolean;
+  /** Per-project sandbox-provider pin (Customize → Settings). null = follow the
+   *  platform default/distribution. */
+  default_sandbox_provider?: string | null;
+  /** Enabled sandbox providers the picker offers (ALLOWED ∩ has-API-key). */
+  available_sandbox_providers?: string[];
 }
 
 export interface ProjectConfigSummary {
@@ -222,6 +227,20 @@ export async function updateExperimentalFeature(
     await backendApi.patch<KortixProject>(`/projects/${projectId}/experimental`, {
       feature,
       enabled,
+    }),
+  );
+}
+
+/** Set or clear the per-project sandbox-provider pin (Customize → Settings).
+ *  Pass `null` to clear (follow the platform default/distribution). The value must
+ *  be one of the project's `available_sandbox_providers`. */
+export async function updateProjectSandboxProvider(
+  projectId: string,
+  provider: string | null,
+) {
+  return unwrap(
+    await backendApi.patch<KortixProject>(`/projects/${projectId}/sandbox-provider`, {
+      provider,
     }),
   );
 }
