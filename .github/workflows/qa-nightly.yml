@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run static security scans
         run: bash tests/security/run.sh --static
       - uses: actions/upload-artifact@v4
@@ -61,7 +61,7 @@ jobs:
     env:
       API_BASE_URL: ${{ inputs.api_base_url || vars.QA_API_BASE_URL || vars.QA_TARGET_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run k6 load profile when configured
         run: |
           set -euo pipefail
@@ -91,7 +91,7 @@ jobs:
       API_BASE_URL: ${{ inputs.api_base_url || vars.QA_API_BASE_URL || vars.QA_TARGET_URL }}
       DAST_TARGET_URL: ${{ inputs.dast_target_url || vars.QA_DAST_TARGET_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run DAST when configured
         run: |
           set -euo pipefail
@@ -126,7 +126,7 @@ jobs:
       API_BASE_URL: ${{ inputs.api_base_url || vars.QA_API_BASE_URL || vars.QA_TARGET_URL }}
       PENTEST_TARGET_URL_INPUT: ${{ inputs.pentest_target_url || vars.QA_PENTEST_TARGET_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -166,7 +166,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -193,7 +193,7 @@ jobs:
       TOXIPROXY: ${{ vars.QA_TOXIPROXY_URL }}
       PROXY: ${{ vars.QA_TOXIPROXY_PROXY || 'postgres' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run chaos only when a dedicated target is configured
         run: |
           set -euo pipefail
@@ -229,7 +229,7 @@ jobs:
       QA_REPORTS_PREFIX: ${{ vars.QA_REPORTS_PREFIX || 'reports' }}
       QA_REPORTS_PUBLIC_BASE_URL: ${{ vars.QA_REPORTS_PUBLIC_BASE_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
