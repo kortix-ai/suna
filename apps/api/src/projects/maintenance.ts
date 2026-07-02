@@ -27,6 +27,18 @@ const globalForProjectMaintenance = globalThis as typeof globalThis & {
 
 let maintenanceTimer: MaintenanceTimer | null = null;
 let maintenanceRunning = false;
+// Wall-clock time the current run acquired the lock, or null when idle. Used
+// solely by the stall watchdog below — never trust a boolean lock alone (see
+// note on STALL_THRESHOLD_MS).
+let maintenanceStartedAt: number | null = null;
+// Incremented every time a run acquires the lock (including a watchdog
+// force-reset). A run's `finally` only clears the lock if its OWN generation
+// is still current — otherwise an abandoned, force-reset run that eventually
+// settles in the background would clobber the lock/timestamp a newer,
+// legitimately-running cycle owns, letting a THIRD cycle start concurrently
+// with the second. Cheap and sufficient: we only need "am I still the run
+// anyone should trust," not true cancellation of the abandoned work.
+let maintenanceGeneration = 0;
 
 function positiveInt(raw: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(raw || '', 10);
@@ -39,6 +51,27 @@ function branchRetentionDays(): number {
 
 function maintenanceIntervalMs(): number {
   return positiveInt(process.env.KORTIX_PROJECT_MAINTENANCE_INTERVAL_MS, DEFAULT_MAINTENANCE_INTERVAL_MS);
+}
+
+// STALL WATCHDOG — the second, independent line of defense against this exact
+// class of bug recurring. `maintenanceRunning` is a simple in-memory boolean
+// lock guarded by a `finally`; if ANY awaited call inside a cycle hangs
+// forever (an SDK with no per-call timeout, a future un-bounded query, etc.)
+// the `finally` never runs and the lock is stuck `true` permanently — every
+// later tick then silently no-ops via `if (maintenanceRunning) return`, with
+// zero error logs, until the process restarts. That is exactly what happened
+// 2026-07-02 (unbounded Daytona SDK calls in sandbox-reaper.ts, now bounded —
+// see platform/providers/daytona.ts). Per-call timeouts fix the KNOWN cause;
+// this watchdog protects against an UNKNOWN future one: if the lock has been
+// held for longer than any real cycle plausibly takes, a tick force-breaks it
+// (loudly) instead of leaving the loop dead for good.
+function stallThresholdMs(): number {
+  return positiveInt(process.env.KORTIX_PROJECT_MAINTENANCE_STALL_MS, maintenanceIntervalMs() * 3);
+}
+
+/** Pure decision, exported for direct unit testing. */
+export function shouldForceResetStaleLock(heldForMs: number, thresholdMs: number): boolean {
+  return heldForMs >= thresholdMs;
 }
 
 export function hasOpenPullRequestMarker(metadata: Record<string, unknown> | null | undefined): boolean {
@@ -140,9 +173,29 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
   return { candidates: rows.length, deleted, skipped, errors };
 }
 
-async function runProjectMaintenance(): Promise<void> {
-  if (maintenanceRunning) return;
+/** Test-only visibility into the lock — never used by runtime code. */
+export function __isMaintenanceRunningForTest(): boolean {
+  return maintenanceRunning;
+}
+
+export async function runProjectMaintenance(): Promise<void> {
+  if (maintenanceRunning) {
+    const heldForMs = maintenanceStartedAt ? Date.now() - maintenanceStartedAt : 0;
+    if (!shouldForceResetStaleLock(heldForMs, stallThresholdMs())) return;
+    // Stale lock — the prior cycle almost certainly hung on an unbounded call
+    // rather than genuinely still running. Break it loudly and proceed. The
+    // abandoned run keeps executing in the background (nothing cancels it —
+    // its individual provider calls are now timeout-bounded so it WILL
+    // eventually finish or error), but its `finally` is generation-gated
+    // below so it can no longer clobber this (or a later) run's lock.
+    console.error(
+      `[project-maintenance] STALLED — lock held for ${heldForMs}ms (threshold ${stallThresholdMs()}ms), forcing reset. ` +
+      'This means a prior cycle hung on an unbounded call — file a bug, this should not happen with all provider calls timeout-bounded.',
+    );
+  }
+  const myGeneration = ++maintenanceGeneration;
   maintenanceRunning = true;
+  maintenanceStartedAt = Date.now();
   try {
     const [idle, orphanCompute, stuckSessions, orphanBoxes, branches, computeTick, staleBuilds, snapshotGc] = await Promise.all([
       // Provider-authoritative idle reaper + state/billing reconcile (the fix for
@@ -194,16 +247,26 @@ async function runProjectMaintenance(): Promise<void> {
         return { namespaceCount: 0, eligible: 0, deleted: 0, dryRun: false };
       }),
     ]);
-    if (
+    const hadAction = Boolean(
       idle.stopped || idle.reconciled || idle.errors || orphanCompute.closed || orphanCompute.errors ||
       stuckSessions.reconciled || stuckSessions.errors ||
       orphanBoxes.stopped || orphanBoxes.errors ||
       branches.deleted || branches.errors ||
       computeTick.settled || staleBuilds.closedReady || staleBuilds.closedFailed ||
-      snapshotGc.deleted
-    ) {
+      snapshotGc.deleted,
+    );
+    if (hadAction) {
       console.log('[project-maintenance] completed', { idle, orphanCompute, stuckSessions, orphanBoxes, branches, computeTick, staleBuilds, snapshotGc });
     }
+    // Unconditional heartbeat — proof-of-life independent of whether any
+    // action happened. A stuck lock (see the watchdog above) produces total
+    // silence from this function forever; a healthy loop with nothing to do
+    // ALSO produces total silence under the old (action-gated-only) logging,
+    // making the two indistinguishable from logs alone — which is exactly how
+    // the 2026-07-02 incident went undetected for hours. This line is cheap
+    // (one per cycle, ~every 5min) and makes "the loop is alive" observable —
+    // wire an alert on its absence for N cycles instead of trusting silence.
+    console.log(`[project-maintenance] heartbeat idle_candidates=${idle.candidates} action=${hadAction}`);
 
     // Invariant monitor: in steady state, every `active` compute session has a
     // running box. A non-zero count means billing is leaking — make it loud so a
@@ -217,7 +280,13 @@ async function runProjectMaintenance(): Promise<void> {
       console.warn('[project-maintenance] billing invariant check failed:', err instanceof Error ? err.message : err);
     }
   } finally {
-    maintenanceRunning = false;
+    // Only the run that's still current may release the lock — see
+    // maintenanceGeneration's docstring for why an abandoned, force-reset run
+    // settling later must not clobber a newer run's state.
+    if (maintenanceGeneration === myGeneration) {
+      maintenanceRunning = false;
+      maintenanceStartedAt = null;
+    }
   }
 }
 
