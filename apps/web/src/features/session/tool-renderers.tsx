@@ -5535,7 +5535,7 @@ function TaskTool({ part, forceOpen }: ToolProps) {
   // Collect tool parts from child session for inline activity list
   const childToolParts = useMemo(() => {
     if (!childMessages) return [];
-    return getChildSessionToolParts(childMessages as any);
+    return getChildSessionToolParts(childMessages as MessageWithParts[]);
   }, [childMessages]);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -5607,7 +5607,7 @@ function SessionSpawnTool({ part, forceOpen }: ToolProps) {
 
   const childToolParts = useMemo(() => {
     if (!childMessages) return [];
-    return getChildSessionToolParts(childMessages as any);
+    return getChildSessionToolParts(childMessages as MessageWithParts[]);
   }, [childMessages]);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -6382,7 +6382,7 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
   const { data: childMessages } = useOpenCodeMessages(childSessionId ?? '');
   const childToolParts = useMemo(() => {
     if (!childMessages) return [];
-    return getChildSessionToolParts(childMessages as any);
+    return getChildSessionToolParts(childMessages as MessageWithParts[]);
   }, [childMessages]);
 
   const [modalOpen, setModalOpen] = useState(false);

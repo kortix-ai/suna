@@ -42,7 +42,8 @@
     "./opencode-pending-store": "./src/state/opencode-pending-store.ts",
     "./files": "./src/files/client.ts",
     "./session": "./src/session/index.ts",
-    "./session/url": "./src/session/url.ts"
+    "./session/url": "./src/session/url.ts",
+    "./turns": "./src/turns/index.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -63,7 +64,8 @@
       "./opencode-pending-store": { "types": "./dist/state/opencode-pending-store.d.ts", "import": "./dist/state/opencode-pending-store.js" },
       "./files": { "types": "./dist/files/client.d.ts", "import": "./dist/files/client.js" },
       "./session": { "types": "./dist/session/index.d.ts", "import": "./dist/session/index.js" },
-      "./session/url": { "types": "./dist/session/url.d.ts", "import": "./dist/session/url.js" }
+      "./session/url": { "types": "./dist/session/url.d.ts", "import": "./dist/session/url.js" },
+      "./turns": { "types": "./dist/turns/index.d.ts", "import": "./dist/turns/index.js" }
     },
     "files": ["dist", "README.md"]
   },

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
-import { formatDuration } from '@/ui/turns';
+import { formatDuration } from '@kortix/sdk/turns';
 import { cn } from '@/lib/utils';
 
 /**

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getManagedModel } from '@kortix/llm-catalog';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
-import type { ModelCostRates, ModelPricingLookup } from '@/ui/turns';
+import type { ModelCostRates, ModelPricingLookup } from '@kortix/sdk/turns';
 
 const MODELS_DEV_URL = 'https://models.dev/api.json';
 const FETCH_TIMEOUT_MS = 15_000;

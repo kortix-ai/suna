@@ -269,6 +269,9 @@ importers:
       '@gorhom/bottom-sheet':
         specifier: ^5.2.6
         version: 5.2.14(@types/react@19.1.17)(react-native-gesture-handler@2.28.0)(react-native-reanimated@4.1.7)(react-native@0.81.5)(react@19.1.0)
+      '@kortix/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@kortix/shared':
         specifier: workspace:*
         version: link:../../packages/shared

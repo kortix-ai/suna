@@ -2,83 +2,110 @@
  * Turn grouping & part helpers — framework-agnostic.
  *
  * Pure functions that transform SDK message data into view-model shapes.
- * Used by both web and mobile UIs.
+ * Single implementation shared by the web and mobile UIs.
  *
- * IMPORTANT: No React / DOM / framework imports allowed in this file.
+ * IMPORTANT: No React / DOM / framework imports allowed in this module.
  * Matches the SolidJS reference in opencode/packages/ui/src/components/session-turn.tsx
  */
 
 import type {
-  Part,
-  TextPart,
-  ReasoningPart,
-  ToolPart,
-  FilePart,
-  AgentPart,
-  CompactionPart,
-  StepFinishPart,
-  SnapshotPart,
-  PatchPart,
-  AssistantMessage,
-  PermissionRequest,
-  QuestionRequest,
-  SessionStatus,
-  MessageWithParts,
-  Turn,
-  TurnCostInfo,
+  Diagnostic,
+  MessageInfoLike,
+  MessageWithPartsLike,
+  ModelCostRates,
+  ModelPricingLookup,
+  PartLike,
+  PartWithMessage,
+  RequestWithToolLike,
   RetryInfo,
+  SessionStatusLike,
+  TokenUsageLike,
   ToolInfo,
+  ToolPartLike,
+  TurnCostInfo,
+  TurnLike,
 } from './types';
 
-export interface Diagnostic {
-  range: {
-    start: { line: number; character: number };
-    end: { line: number; character: number };
-  };
+export type * from './types';
+
+// ============================================================================
+// Internal wire shapes (structural casts, never exported)
+// ============================================================================
+
+interface TextPartLike extends PartLike {
+  type: 'text';
+  text?: string;
+  synthetic?: boolean;
+}
+
+interface ReasoningPartLike extends PartLike {
+  type: 'reasoning';
+  text?: string;
+}
+
+interface FilePartLike extends PartLike {
+  type: 'file';
+  mime: string;
+}
+
+interface StepFinishPartLike extends PartLike {
+  type: 'step-finish';
+  cost?: number;
+  tokens?: TokenUsageLike;
+}
+
+interface AssistantInfoLike extends MessageInfoLike {
+  providerID?: string;
+  modelID?: string;
+  tokens?: TokenUsageLike;
+}
+
+interface RetryStatusLike extends SessionStatusLike {
+  attempt: number;
   message: string;
-  severity?: number;
+  next: number;
 }
 
 // ============================================================================
 // Type guards
 // ============================================================================
 
-export function isTextPart(part: Part): part is TextPart {
+export function isTextPart<P extends PartLike>(part: P): part is P & { type: 'text' } {
   return part.type === 'text';
 }
 
-export function isReasoningPart(part: Part): part is ReasoningPart {
+export function isReasoningPart<P extends PartLike>(part: P): part is P & { type: 'reasoning' } {
   return part.type === 'reasoning';
 }
 
-export function isToolPart(part: Part): part is ToolPart {
+export function isToolPart<P extends PartLike>(part: P): part is P & { type: 'tool' } {
   return part.type === 'tool';
 }
 
-export function isFilePart(part: Part): part is FilePart {
+export function isFilePart<P extends PartLike>(part: P): part is P & { type: 'file' } {
   return part.type === 'file';
 }
 
-export function isAgentPart(part: Part): part is AgentPart {
+export function isAgentPart<P extends PartLike>(part: P): part is P & { type: 'agent' } {
   return part.type === 'agent';
 }
 
-export function isCompactionPart(part: Part): part is CompactionPart {
+export function isCompactionPart<P extends PartLike>(part: P): part is P & { type: 'compaction' } {
   return part.type === 'compaction';
 }
 
-export function isSnapshotPart(part: Part): part is SnapshotPart {
+export function isSnapshotPart<P extends PartLike>(part: P): part is P & { type: 'snapshot' } {
   return part.type === 'snapshot';
 }
 
-export function isPatchPart(part: Part): part is PatchPart {
+export function isPatchPart<P extends PartLike>(part: P): part is P & { type: 'patch' } {
   return part.type === 'patch';
 }
 
 /** Get the text content from any part that has a `text` field. */
-export function getPartText(part: Part): string | undefined {
-  if (isTextPart(part)) return part.text;
-  if (isReasoningPart(part)) return part.text;
+export function getPartText(part: PartLike): string | undefined {
+  if (isTextPart(part)) return (part as TextPartLike).text;
+  if (isReasoningPart(part)) return (part as ReasoningPartLike).text;
   return undefined;
 }
 
@@ -90,18 +117,21 @@ export function getPartText(part: Part): string | undefined {
  * Check if a file part is an image or PDF attachment.
  * Matches SolidJS `isAttachment()` — session-turn.tsx:128
  */
-export function isAttachment(part: Part): part is FilePart {
+export function isAttachment<P extends PartLike>(part: P): part is P & { type: 'file' } {
   if (!isFilePart(part)) return false;
-  return part.mime.startsWith('image/') || part.mime === 'application/pdf';
+  const mime = (part as PartLike as FilePartLike).mime;
+  return mime.startsWith('image/') || mime === 'application/pdf';
 }
 
 /** Split user message parts into attachment parts and sticky (non-attachment) parts. */
-export function splitUserParts(parts: Part[]): {
-  attachments: FilePart[];
-  stickyParts: Part[];
+export function splitUserParts<P extends PartLike>(
+  parts: readonly P[],
+): {
+  attachments: Array<P & { type: 'file' }>;
+  stickyParts: P[];
 } {
-  const attachments: FilePart[] = [];
-  const stickyParts: Part[] = [];
+  const attachments: Array<P & { type: 'file' }> = [];
+  const stickyParts: P[] = [];
   for (const p of parts) {
     if (isAttachment(p)) {
       attachments.push(p);
@@ -124,26 +154,28 @@ export function splitUserParts(parts: Part[]): {
  * assistant messages are associated with their parent user message via
  * `parentID`. Falls back to sequential ordering when parentID is absent.
  */
-export function groupMessagesIntoTurns(messages: MessageWithParts[]): Turn[] {
-  const turns: Turn[] = [];
-  const turnsByUserMsgId = new Map<string, Turn>();
+export function groupMessagesIntoTurns<M extends MessageWithPartsLike>(
+  messages: readonly M[],
+): TurnLike<M>[] {
+  const turns: TurnLike<M>[] = [];
+  const turnsByUserMsgId = new Map<string, TurnLike<M>>();
 
   // First pass: create turns from user messages.
   // Dedupe by id — a user message can transiently appear twice (e.g. an
   // optimistic copy + the real one before reconcile finishes, or a hydrate
   // that races a part.updated event). Two turns with the same userMessage.id
-  // would crash FlatList's keyExtractor with a duplicate-key warning.
+  // would crash list renderers keyed by it (e.g. FlatList's keyExtractor).
   for (const msg of messages) {
     if (msg.info.role === 'user') {
       if (turnsByUserMsgId.has(msg.info.id)) continue;
-      const turn: Turn = { userMessage: msg, assistantMessages: [] };
+      const turn: TurnLike<M> = { userMessage: msg, assistantMessages: [] };
       turns.push(turn);
       turnsByUserMsgId.set(msg.info.id, turn);
     }
   }
 
   // Second pass: link assistant messages via parentID or sequential
-  let lastTurn: Turn | null = null;
+  let lastTurn: TurnLike<M> | null = null;
   for (const msg of messages) {
     if (msg.info.role === 'user') {
       lastTurn = turnsByUserMsgId.get(msg.info.id) ?? null;
@@ -152,7 +184,7 @@ export function groupMessagesIntoTurns(messages: MessageWithParts[]): Turn[] {
 
     if (msg.info.role !== 'assistant') continue;
 
-    const assistantMsg = msg.info as AssistantMessage;
+    const assistantMsg = msg.info;
 
     // Try parentID-based linking first (matches SolidJS)
     if (assistantMsg.parentID) {
@@ -163,22 +195,26 @@ export function groupMessagesIntoTurns(messages: MessageWithParts[]): Turn[] {
       }
     }
 
-    // Fall back to sequential ordering
+    // Fall back to sequential ordering — attach to the most recently seen
+    // user turn in iteration order. This keeps streaming parts that arrive
+    // before their parent metadata in the right turn.
     if (lastTurn) {
       lastTurn.assistantMessages.push(msg);
       continue;
     }
 
-    // If ordering is temporarily out of sync (e.g. part events arrive before
-    // full assistant metadata), attach to the latest known user turn so
-    // in-progress streaming text appears in the active turn immediately.
+    // Orphan assistant message that precedes every user message in the
+    // session (e.g. a session-init failure with no parentID). Attaching to
+    // the LAST turn would surface its error under an unrelated, much later
+    // user prompt. Attach to the FIRST turn instead so it renders at its
+    // real chronological position — or create a synthetic turn if no user
+    // messages exist at all.
     if (turns.length > 0) {
-      turns[turns.length - 1].assistantMessages.push(msg);
+      turns[0].assistantMessages.unshift(msg);
       continue;
     }
 
-    // No user messages at all — create a synthetic turn.
-    const syntheticTurn: Turn = { userMessage: msg, assistantMessages: [] };
+    const syntheticTurn: TurnLike<M> = { userMessage: msg, assistantMessages: [] };
     turns.push(syntheticTurn);
   }
 
@@ -189,27 +225,26 @@ export function groupMessagesIntoTurns(messages: MessageWithParts[]): Turn[] {
 // Part collection helpers
 // ============================================================================
 
-export interface PartWithMessage {
-  part: Part;
-  message: MessageWithParts;
-}
-
 /** Collect all parts from a turn's assistant messages. */
-export function collectTurnParts(turn: Turn): PartWithMessage[] {
-  const result: PartWithMessage[] = [];
+export function collectTurnParts<M extends MessageWithPartsLike>(
+  turn: TurnLike<M>,
+): PartWithMessage<M>[] {
+  const result: PartWithMessage<M>[] = [];
   for (const msg of turn.assistantMessages) {
     for (const part of msg.parts) {
-      result.push({ part, message: msg });
+      result.push({ part, message: msg } as PartWithMessage<M>);
     }
   }
   return result;
 }
 
 /** Find the last non-empty text part in a turn (the "response"). */
-export function findLastTextPart(parts: PartWithMessage[]): TextPart | undefined {
+export function findLastTextPart<P extends PartLike>(
+  parts: ReadonlyArray<{ part: P }>,
+): (P & { type: 'text' }) | undefined {
   for (let i = parts.length - 1; i >= 0; i--) {
     const p = parts[i].part;
-    if (isTextPart(p) && p.text?.trim()) {
+    if (isTextPart(p) && (p as PartLike as TextPartLike).text?.trim()) {
       return p;
     }
   }
@@ -217,10 +252,13 @@ export function findLastTextPart(parts: PartWithMessage[]): TextPart | undefined
 }
 
 /** Check if a turn has tool steps. */
-export function turnHasSteps(parts: PartWithMessage[]): boolean {
-  return parts.some(({ part }) =>
-    part.type === 'tool' || part.type === 'compaction' ||
-    part.type === 'snapshot' || part.type === 'patch',
+export function turnHasSteps(parts: ReadonlyArray<{ part: PartLike }>): boolean {
+  return parts.some(
+    ({ part }) =>
+      part.type === 'tool' ||
+      part.type === 'compaction' ||
+      part.type === 'snapshot' ||
+      part.type === 'patch',
   );
 }
 
@@ -235,10 +273,12 @@ export function turnHasSteps(parts: PartWithMessage[]): boolean {
  * Stricter than our previous implementation — matches SolidJS session-turn.tsx:364-379
  * which checks `msgParts.length !== 1` (exactly one assistant part total).
  */
-export function isShellMode(turn: Turn): boolean {
+export function isShellMode(turn: TurnLike): boolean {
   const userParts = turn.userMessage.parts;
   if (userParts.length === 0) return false;
-  const allSynthetic = userParts.every((p) => isTextPart(p) && (p as TextPart).synthetic);
+  const allSynthetic = userParts.every(
+    (p) => isTextPart(p) && (p as PartLike as TextPartLike).synthetic,
+  );
   if (!allSynthetic) return false;
 
   if (turn.assistantMessages.length !== 1) return false;
@@ -246,13 +286,15 @@ export function isShellMode(turn: Turn): boolean {
   // Strict: exactly 1 part total (not just 1 tool part)
   if (assistantParts.length !== 1) return false;
   const part = assistantParts[0];
-  return isToolPart(part) && part.tool === 'bash';
+  return isToolPart(part) && (part as PartLike as ToolPartLike).tool === 'bash';
 }
 
 /** Get the bash tool part when in shell mode. */
-export function getShellModePart(turn: Turn): ToolPart | undefined {
+export function getShellModePart<M extends MessageWithPartsLike>(
+  turn: TurnLike<M>,
+): (M['parts'][number] & { type: 'tool' }) | undefined {
   if (!isShellMode(turn)) return undefined;
-  return turn.assistantMessages[0].parts[0] as ToolPart;
+  return turn.assistantMessages[0].parts[0] as M['parts'][number] & { type: 'tool' };
 }
 
 // ============================================================================
@@ -262,7 +304,7 @@ export function getShellModePart(turn: Turn): ToolPart | undefined {
 /** Check if this is the last user message in the session. */
 export function isLastUserMessage(
   messageId: string,
-  allMessages: MessageWithParts[],
+  allMessages: readonly MessageWithPartsLike[],
 ): boolean {
   for (let i = allMessages.length - 1; i >= 0; i--) {
     if (allMessages[i].info.role === 'user') {
@@ -274,7 +316,7 @@ export function isLastUserMessage(
 
 /** Derive the "working" state for a turn. Only the last turn shows as working. */
 export function getWorkingState(
-  sessionStatus: SessionStatus | undefined,
+  sessionStatus: SessionStatusLike | undefined,
   isLast: boolean,
 ): boolean {
   if (!isLast) return false;
@@ -314,8 +356,8 @@ export interface HiddenToolRef {
  * Matches SolidJS session-turn.tsx:332-339
  */
 export function getHiddenToolParts(
-  permission: PermissionRequest | undefined,
-  question: QuestionRequest | undefined,
+  permission: RequestWithToolLike | undefined,
+  question: RequestWithToolLike | undefined,
 ): HiddenToolRef[] {
   const out: HiddenToolRef[] = [];
   if (permission?.tool) out.push(permission.tool);
@@ -325,13 +367,11 @@ export function getHiddenToolParts(
 
 /** Check if a specific tool part should be hidden due to active permission/question. */
 export function isToolPartHidden(
-  part: ToolPart,
+  part: Pick<ToolPartLike, 'callID'>,
   messageId: string,
   hidden: HiddenToolRef[],
 ): boolean {
-  return hidden.some(
-    (h) => h.messageID === messageId && h.callID === part.callID,
-  );
+  return hidden.some((h) => h.messageID === messageId && h.callID === part.callID);
 }
 
 // ============================================================================
@@ -343,23 +383,22 @@ export function isToolPartHidden(
  * steps list. Questions are always rendered standalone (never inside steps),
  * so answered questions are shown regardless of stepsExpanded state.
  */
-export function getAnsweredQuestionParts(
-  turn: Turn,
+export function getAnsweredQuestionParts<M extends MessageWithPartsLike>(
+  turn: TurnLike<M>,
   _stepsExpanded: boolean,
   hasActiveQuestion: boolean,
-): PartWithMessage[] {
+): PartWithMessage<M>[] {
   // Active question takes precedence — don't also show old answered ones
   if (hasActiveQuestion) return [];
 
-  const result: PartWithMessage[] = [];
+  const result: PartWithMessage<M>[] = [];
   for (const msg of turn.assistantMessages) {
     for (const part of msg.parts) {
-      if (
-        isToolPart(part) &&
-        part.tool === 'question' &&
-        (part.state as any)?.metadata?.answers?.length > 0
-      ) {
-        result.push({ part, message: msg });
+      if (!isToolPart(part)) continue;
+      const tp = part as PartLike as ToolPartLike;
+      const answers = (tp.state?.metadata as { answers?: unknown[] } | undefined)?.answers;
+      if (tp.tool === 'question' && (answers?.length ?? 0) > 0) {
+        result.push({ part, message: msg } as PartWithMessage<M>);
       }
     }
   }
@@ -406,20 +445,23 @@ export function unwrapError(raw: unknown): string {
   return String(raw);
 }
 
-function extractErrorFromObject(obj: any): string | undefined {
+function extractErrorFromObject(obj: unknown): string | undefined {
   if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return undefined;
   // Try common error shapes
-  if (typeof obj.message === 'string' && obj.message) return obj.message;
-  if (typeof obj.error === 'string' && obj.error) return obj.error;
-  if (typeof obj.data?.message === 'string') return obj.data.message;
-  if (typeof obj.error?.message === 'string') return obj.error.message;
+  const record = obj as Record<string, unknown>;
+  if (typeof record.message === 'string' && record.message) return record.message;
+  if (typeof record.error === 'string' && record.error) return record.error;
+  const data = record.data as { message?: unknown } | undefined | null;
+  if (typeof data?.message === 'string') return data.message;
+  const error = record.error as { message?: unknown } | undefined | null;
+  if (typeof error?.message === 'string') return error.message;
   return undefined;
 }
 
 /** Extract error message from assistant messages in a turn. */
-export function getTurnError(turn: Turn): string | undefined {
+export function getTurnError(turn: TurnLike): string | undefined {
   for (const msg of turn.assistantMessages) {
-    const info = msg.info as AssistantMessage;
+    const info = msg.info;
     if (info.error) {
       return unwrapError(info.error);
     }
@@ -435,13 +477,45 @@ export function getTurnError(turn: Turn): string | undefined {
  * Derive human-readable status from a part.
  * Matches SolidJS computeStatusFromPart — session-turn.tsx:83-119
  */
-export function computeStatusFromPart(part: Part | undefined): string | undefined {
+export function computeStatusFromPart(part: PartLike | undefined): string | undefined {
   if (!part) return undefined;
 
   if (isToolPart(part)) {
-    switch (part.tool) {
+    switch ((part as PartLike as ToolPartLike).tool) {
       case 'task':
+      case 'session_spawn':
+      case 'session_start_background':
+      case 'session-spawn':
+      case 'session-start-background':
         return 'Delegating to agent...';
+      case 'agent_spawn':
+      case 'agent-spawn':
+      case 'agent_task':
+      case 'agent-task':
+        return 'Delegating to agent...';
+      case 'agent_task_update':
+      case 'agent-task-update':
+      case 'task_update':
+      case 'task-update':
+        return 'Updating task...';
+      case 'agent_message':
+      case 'agent-message':
+      case 'agent_task_message':
+      case 'agent-task-message':
+      case 'task_message':
+      case 'task-message':
+        return 'Messaging agent...';
+      case 'task_create':
+      case 'task-create':
+      case 'task_start':
+      case 'task-start':
+        return 'Creating task...';
+      case 'task_list':
+      case 'task-list':
+        return 'Listing tasks...';
+      case 'task_done':
+      case 'task-done':
+        return 'Updating task...';
       case 'todowrite':
       case 'todoread':
         return 'Planning...';
@@ -486,12 +560,12 @@ export function computeStatusFromPart(part: Part | undefined): string | undefine
       case 'context_info':
         return 'Updating context info...';
       default:
-        return `Running ${part.tool}...`;
+        return `Running ${(part as PartLike as ToolPartLike).tool}...`;
     }
   }
 
   if (isReasoningPart(part)) {
-    const text = part.text?.trimStart();
+    const text = (part as PartLike as ReasoningPartLike).text?.trimStart();
     if (text) {
       const match = text.match(/^\*\*(.+?)\*\*/);
       if (match) return `Thinking about ${match[1].trim()}...`;
@@ -511,18 +585,25 @@ export function computeStatusFromPart(part: Part | undefined): string | undefine
  * to derive the real status.
  */
 export function getTurnStatus(
-  parts: PartWithMessage[],
-  childMessages?: MessageWithParts[],
+  parts: ReadonlyArray<{ part: PartLike }>,
+  childMessages?: readonly MessageWithPartsLike[],
 ): string {
   // Scan parts in reverse for the last meaningful status
   for (let i = parts.length - 1; i >= 0; i--) {
     const p = parts[i].part;
 
-    // If it's a running task, try to get status from child session
+    // If it's a running task orchestration tool, try to get status from child session
+    const tp = isToolPart(p) ? (p as PartLike as ToolPartLike) : undefined;
     if (
-      isToolPart(p) &&
-      p.tool === 'task' &&
-      p.state.status === 'running' &&
+      tp &&
+      (tp.tool === 'task' ||
+        tp.tool === 'agent_task' ||
+        tp.tool === 'agent-task' ||
+        tp.tool === 'task_create' ||
+        tp.tool === 'task-create' ||
+        tp.tool === 'task_start' ||
+        tp.tool === 'task-start') &&
+      tp.state.status === 'running' &&
       childMessages &&
       childMessages.length > 0
     ) {
@@ -568,11 +649,83 @@ export function formatDuration(ms: number): string {
 /**
  * Extract child session ID from a task tool part's metadata.
  */
-export function getChildSessionId(part: ToolPart): string | undefined {
-  if (part.tool !== 'task') return undefined;
-  const status = part.state.status;
-  if (status === 'completed' || status === 'running') {
-    return (part.state.metadata as any)?.sessionId;
+export function getChildSessionId(part: Pick<ToolPartLike, 'tool' | 'state'>): string | undefined {
+  // Native task tool, agent_spawn, or agent_task
+  const t = part.tool || '';
+  if (
+    t === 'task' ||
+    t === 'agent_spawn' ||
+    t === 'agent-spawn' ||
+    t === 'agent_message' ||
+    t === 'agent-message' ||
+    t === 'agent_task' ||
+    t === 'agent-task' ||
+    t === 'agent_task_update' ||
+    t === 'agent-task-update' ||
+    t === 'agent_task_message' ||
+    t === 'agent-task-message' ||
+    t === 'agent_task_start' ||
+    t === 'agent-task-start' ||
+    t === 'task_create' ||
+    t === 'task-create' ||
+    t === 'task_start' ||
+    t === 'task-start' ||
+    t === 'task_update' ||
+    t === 'task-update' ||
+    t === 'task_message' ||
+    t === 'task-message'
+  ) {
+    // 1. Try metadata (ctx.metadata — available immediately for built-in tools)
+    const metaSessionId = (part.state?.metadata as { sessionId?: unknown } | undefined)?.sessionId;
+    if (typeof metaSessionId === 'string' && metaSessionId) return metaSessionId;
+
+    // 2. Try title (plugin tools embed session ID in title via ctx.metadata)
+    const title = part.state?.title;
+    if (title) {
+      const tm = title.match(/\bses_[a-zA-Z0-9]+/);
+      if (tm) return tm[0];
+    }
+
+    // 3. Try output text (available after tool completes)
+    const output = part.state?.output;
+    if (output) {
+      const m = output.match(/\bses_[a-zA-Z0-9]+/);
+      if (m) return m[0];
+    }
+    return undefined;
+  }
+  // session_spawn / session_start_background: extract session ID from output text
+  // Output format: "- **Session:** ses_xxx" or "Session: ses_xxx"
+  const toolName = part.tool?.replace(/-/g, '_') || '';
+  if (toolName === 'session_spawn' || toolName === 'session_start_background') {
+    const output = part.state?.output;
+    if (output) {
+      const match = output.match(/\*?\*?Session:?\*?\*?\s*(ses_[a-zA-Z0-9]+)/);
+      if (match) return match[1];
+    }
+    return undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Extract the error message from a child (sub-agent) session's raw messages.
+ *
+ * Mirrors `getTurnError` but operates over the flat `MessageWithParts` list
+ * returned by `useOpenCodeMessages`, so a parent thread can surface a sub-agent
+ * failure (e.g. "Free usage exceeded, subscribe to Go") that otherwise only
+ * lives on the child session and never reaches the parent's turn renderer.
+ * Scans newest-first so the most recent failure wins.
+ */
+export function getChildSessionError(
+  childMessages: readonly MessageWithPartsLike[] | undefined,
+): string | undefined {
+  if (!childMessages) return undefined;
+  for (let i = childMessages.length - 1; i >= 0; i--) {
+    const info = childMessages[i]?.info;
+    if (info?.role === 'assistant' && info.error) {
+      return unwrapError(info.error);
+    }
   }
   return undefined;
 }
@@ -581,15 +734,15 @@ export function getChildSessionId(part: ToolPart): string | undefined {
  * Collect all tool parts from a child session's assistant messages.
  * Matches SolidJS getSessionToolParts — message-part.tsx:160-174
  */
-export function getChildSessionToolParts(
-  childMessages: MessageWithParts[],
-): ToolPart[] {
-  const result: ToolPart[] = [];
+export function getChildSessionToolParts<M extends MessageWithPartsLike>(
+  childMessages: readonly M[],
+): Array<M['parts'][number] & { type: 'tool' }> {
+  const result: Array<M['parts'][number] & { type: 'tool' }> = [];
   for (const msg of childMessages) {
     if (msg.info.role !== 'assistant') continue;
     for (const part of msg.parts) {
-      if (isToolPart(part) && shouldShowToolPart(part)) {
-        result.push(part);
+      if (isToolPart(part) && shouldShowToolPart(part as PartLike as ToolPartLike)) {
+        result.push(part as M['parts'][number] & { type: 'tool' });
       }
     }
   }
@@ -602,7 +755,7 @@ export function getChildSessionToolParts(
 
 const HIDDEN_TOOLS = new Set(['todoread', 'context_info']);
 
-export function shouldShowToolPart(part: ToolPart): boolean {
+export function shouldShowToolPart(part: Pick<ToolPartLike, 'tool'>): boolean {
   return !HIDDEN_TOOLS.has(part.tool);
 }
 
@@ -610,42 +763,17 @@ export function shouldShowToolPart(part: ToolPart): boolean {
 // Tool info (icon + title + subtitle)
 // ============================================================================
 
-function firstMeaningfulLine(value: unknown, maxLength = 120): string {
-  if (typeof value !== 'string') return '';
-  const line = value
-    .split('\n')
-    .map((segment: string) => segment.trim())
-    .find(Boolean);
-  if (!line) return '';
-  return line.length > maxLength ? `${line.slice(0, maxLength).trim()}…` : line;
-}
-
-export function getAgentCardLabel(input: Record<string, unknown>): string {
-  const description = firstMeaningfulLine(input.description);
-  if (description) return description;
-
-  const title = firstMeaningfulLine(input.title, 80);
-  if (title) return title;
-
-  const message = firstMeaningfulLine(input.message);
-  if (message) return message;
-
-  const promptPreview = firstMeaningfulLine(input.prompt);
-  if (promptPreview) return promptPreview;
-
-  const agentId = firstMeaningfulLine(input.agent_id, 40);
-  if (agentId) return `Agent ${agentId}`;
-
-  return 'Worker task';
-}
-
 /**
  * Get icon, title, subtitle for a tool part.
  * Matches SolidJS getToolInfo — message-part.tsx:184-270
  *
  * Icon names are Lucide icon names used by the React frontend.
  */
-export function getToolInfo(tool: string, input: Record<string, any> = {}): ToolInfo {
+export function getToolInfo(
+  tool: string,
+  // biome-ignore lint/suspicious/noExplicitAny: tool inputs are free-form wire data with heterogeneous shapes
+  input: Record<string, any> = {},
+): ToolInfo {
   switch (tool) {
     case 'read':
       return { icon: 'glasses', title: 'Read', subtitle: getFilename(input.filePath) };
@@ -693,6 +821,19 @@ export function getToolInfo(tool: string, input: Record<string, any> = {}): Tool
         title: `Agent (${input.subagent_type || 'task'})`,
         subtitle: getAgentCardLabel(input),
       };
+    case 'session_spawn':
+    case 'session_start_background':
+    case 'session-spawn':
+    case 'session-start-background':
+    case 'oc-session_spawn':
+    case 'oc-session-spawn':
+    case 'oc-session_start_background':
+    case 'oc-session-start-background':
+      return {
+        icon: 'square-kanban',
+        title: `Worker (${input.agent || 'KortixWorker'})`,
+        subtitle: input.description || input.prompt?.slice(0, 60),
+      };
     case 'bash':
       return { icon: 'terminal', title: 'Shell', subtitle: input.description };
     case 'edit':
@@ -722,77 +863,104 @@ export function getToolInfo(tool: string, input: Record<string, any> = {}): Tool
       return { icon: 'scissors', title: 'DCP Compress', subtitle: input.topic };
     case 'context_info':
       return { icon: 'scissors', title: 'Context Info' };
-    case 'pty_spawn':
-      return { icon: 'terminal', title: 'Spawn', subtitle: input.title || input.command };
-    case 'pty_read':
-      return { icon: 'terminal', title: 'Terminal Output', subtitle: input.id };
-    case 'pty_write':
-    case 'pty_input':
-      return { icon: 'terminal', title: 'Terminal Input', subtitle: input.id };
-    case 'pty_kill':
-      return { icon: 'terminal', title: 'Kill Process', subtitle: input.id };
-    // Session tools — full coverage (ported from web 99c57c5)
-    case 'session_get':
-    case 'session-get':
-    case 'oc-session_get':
-    case 'oc-session-get':
-      return { icon: 'book-open', title: 'Session', subtitle: input.session_id };
-    case 'session_list':
-    case 'session-list':
-    case 'oc-session_list':
-    case 'oc-session-list':
-      return { icon: 'list', title: 'Sessions' };
     case 'session_read':
     case 'session-read':
     case 'oc-session_read':
     case 'oc-session-read':
-      return { icon: 'book-open', title: 'Read Session', subtitle: input.session_id };
-    case 'session_spawn':
-    case 'session-spawn':
-    case 'oc-session_spawn':
-    case 'oc-session-spawn':
-    case 'session_start_background':
-    case 'session-start-background':
-    case 'oc-session_start_background':
-    case 'oc-session-start-background':
-      return { icon: 'terminal', title: 'Spawn Session', subtitle: input.prompt?.slice(0, 40) };
+      return {
+        icon: 'glasses',
+        title: `Session Read (${input.mode || 'summary'})`,
+        subtitle: input.session_id?.slice(-12),
+      };
     case 'session_search':
     case 'session-search':
     case 'oc-session_search':
     case 'oc-session-search':
-      return { icon: 'search', title: 'Search Sessions', subtitle: input.query };
+      return { icon: 'search', title: 'Session Search', subtitle: input.query };
     case 'session_message':
     case 'session-message':
     case 'oc-session_message':
     case 'oc-session-message':
-      return { icon: 'message-circle', title: 'Message Session', subtitle: input.session_id };
+      return {
+        icon: 'message-circle',
+        title: 'Message → Session',
+        subtitle: input.session_id?.slice(-12),
+      };
     case 'session_lineage':
     case 'session-lineage':
     case 'oc-session_lineage':
     case 'oc-session-lineage':
-      return { icon: 'list', title: 'Session Lineage', subtitle: input.session_id };
+      return {
+        icon: 'list-tree',
+        title: 'Session Lineage',
+        subtitle: input.session_id?.slice(-12),
+      };
+    case 'session_list_background':
+    case 'session-list-background':
+    case 'session_list_spawned':
+    case 'session-list-spawned':
+    case 'oc-session_list_background':
+    case 'oc-session-list-background':
+    case 'oc-session_list_spawned':
+    case 'oc-session-list-spawned':
+      return { icon: 'layers', title: 'Background Sessions', subtitle: input.project || 'all' };
     case 'session_stats':
     case 'session-stats':
     case 'oc-session_stats':
     case 'oc-session-stats':
-      return { icon: 'list', title: 'Session Stats', subtitle: input.session_id };
-    case 'session_list_background':
-    case 'session-list-background':
-    case 'oc-session_list_background':
-    case 'oc-session-list-background':
-      return { icon: 'list', title: 'Background Sessions' };
-    case 'session_list_spawned':
-    case 'session-list-spawned':
-    case 'oc-session_list_spawned':
-    case 'oc-session-list-spawned':
-      return { icon: 'list', title: 'Spawned Sessions' };
+      return {
+        icon: 'layers',
+        title: 'Session Stats',
+        subtitle: input.session_id?.slice(-12) || 'current',
+      };
+    case 'session_list':
+    case 'session-list':
+    case 'oc-session_list':
+    case 'oc-session-list':
+      return { icon: 'list', title: 'Session List', subtitle: input.search };
+    case 'session_get':
+    case 'session-get':
+    case 'oc-session_get':
+    case 'oc-session-get':
+      return { icon: 'book-open', title: 'Session Get', subtitle: input.session_id?.slice(-12) };
     case 'session_context':
     case 'session-context':
     case 'oc-session_context':
     case 'oc-session-context':
-      return { icon: 'book-open', title: 'Session Context', subtitle: input.session_id };
-
-    // Trigger tools — full coverage (ported from web 99c57c5)
+      return {
+        icon: 'book-open',
+        title: 'Session Context',
+        subtitle: input.session_id?.slice(-12),
+      };
+    case 'project_delete':
+    case 'project-delete':
+    case 'oc-project_delete':
+    case 'oc-project-delete':
+      return { icon: 'trash-2', title: 'Workspace Delete Disabled', subtitle: input.project };
+    case 'project_list':
+    case 'project-list':
+    case 'oc-project_list':
+    case 'oc-project-list':
+      return { icon: 'folder', title: 'Projects' };
+    case 'project_get':
+    case 'project-get':
+    case 'oc-project_get':
+    case 'oc-project-get':
+    case 'project_update':
+    case 'project-update':
+    case 'oc-project_update':
+    case 'oc-project-update':
+      return { icon: 'folder', title: 'Project', subtitle: input.name || input.project };
+    case 'project_select':
+    case 'project-select':
+    case 'oc-project_select':
+    case 'oc-project-select':
+      return { icon: 'folder', title: 'Project Select', subtitle: input.project };
+    case 'project_create':
+    case 'project-create':
+    case 'oc-project_create':
+    case 'oc-project-create':
+      return { icon: 'folder-plus', title: 'Project Create', subtitle: input.name };
     case 'triggers':
     case 'trigger_create':
     case 'trigger-create':
@@ -834,8 +1002,22 @@ export function getToolInfo(tool: string, input: Record<string, any> = {}): Tool
     case 'oc-trigger_resume':
     case 'oc-trigger-resume':
       return { icon: 'clock', title: 'Resume Trigger', subtitle: input.name || input.id };
-
-    // Agent task tools (ported from web 26cf37f)
+    case 'agent_spawn':
+    case 'agent-spawn':
+      return {
+        icon: 'cpu',
+        title: `Agent (${input.agent_type || 'worker'})`,
+        subtitle: input.description,
+      };
+    case 'agent_message':
+    case 'agent-message':
+      return { icon: 'message-circle', title: 'Agent Message', subtitle: input.agent_id };
+    case 'agent_stop':
+    case 'agent-stop':
+      return { icon: 'ban', title: 'Agent Stop', subtitle: input.agent_id };
+    case 'agent_status':
+    case 'agent-status':
+      return { icon: 'layers', title: 'Agent Status' };
     case 'agent_task':
     case 'agent-task':
     case 'oc-agent_task':
@@ -856,37 +1038,30 @@ export function getToolInfo(tool: string, input: Record<string, any> = {}): Tool
     case 'oc-agent_task_get':
     case 'oc-agent-task-get':
       return { icon: 'check-square', title: 'Task Details', subtitle: input.task_id };
-
-    // Project tools — ported from web ac10428. Clickable on mobile via ToolCard.
-    case 'project_list':
-    case 'project-list':
-    case 'oc-project_list':
-    case 'oc-project-list':
-      return { icon: 'folder', title: 'Projects' };
-    case 'project_get':
-    case 'project-get':
-    case 'oc-project_get':
-    case 'oc-project-get':
-    case 'project_update':
-    case 'project-update':
-    case 'oc-project_update':
-    case 'oc-project-update':
-    case 'project_delete':
-    case 'project-delete':
-    case 'oc-project_delete':
-    case 'oc-project-delete':
-      return { icon: 'folder', title: 'Project', subtitle: input.name || input.project };
-    case 'project_select':
-    case 'project-select':
-    case 'oc-project_select':
-    case 'oc-project-select':
-      return { icon: 'folder', title: 'Project Select', subtitle: input.project };
-    case 'project_create':
-    case 'project-create':
-    case 'oc-project_create':
-    case 'oc-project-create':
-      return { icon: 'folder-plus', title: 'Project Create', subtitle: input.name };
-
+    case 'task_create':
+    case 'task-create':
+      return { icon: 'plus', title: 'Create Task', subtitle: input.title };
+    case 'task_list':
+    case 'task-list':
+      return { icon: 'list', title: 'Tasks', subtitle: input.status || 'all' };
+    case 'task_update':
+    case 'task-update':
+      return { icon: 'refresh-cw', title: 'Update Task', subtitle: input.id };
+    case 'task_done':
+    case 'task-done':
+      return { icon: 'check-circle', title: 'Task Done', subtitle: input.id };
+    case 'task_delete':
+    case 'task-delete':
+      return { icon: 'trash-2', title: 'Delete Task', subtitle: input.id };
+    case 'pty_spawn':
+      return { icon: 'terminal', title: 'Spawn', subtitle: input.title || input.command };
+    case 'pty_read':
+      return { icon: 'terminal', title: 'Terminal Output', subtitle: input.id };
+    case 'pty_write':
+    case 'pty_input':
+      return { icon: 'terminal', title: 'Terminal Input', subtitle: input.id };
+    case 'pty_kill':
+      return { icon: 'terminal', title: 'Kill Process', subtitle: input.id };
     default:
       return { icon: 'cpu', title: tool };
   }
@@ -933,6 +1108,43 @@ export function relativizePath(path: string, projectDir?: string): string {
 }
 
 // ============================================================================
+// Agent card labels
+// ============================================================================
+
+function firstMeaningfulLine(value: unknown, maxLength = 120): string {
+  if (typeof value !== 'string') return '';
+  const line = value
+    .split('\n')
+    .map((segment: string) => segment.trim())
+    .find(Boolean);
+  if (!line) return '';
+  return line.length > maxLength ? `${line.slice(0, maxLength).trim()}…` : line;
+}
+
+/**
+ * One-line label for an agent/task card, with graceful fallbacks when the
+ * tool input has no description.
+ */
+export function getAgentCardLabel(input: Record<string, unknown>): string {
+  const description = firstMeaningfulLine(input.description);
+  if (description) return description;
+
+  const title = firstMeaningfulLine(input.title, 80);
+  if (title) return title;
+
+  const message = firstMeaningfulLine(input.message);
+  if (message) return message;
+
+  const promptPreview = firstMeaningfulLine(input.prompt);
+  if (promptPreview) return promptPreview;
+
+  const agentId = firstMeaningfulLine(input.agent_id, 40);
+  if (agentId) return `Agent ${agentId}`;
+
+  return 'Worker task';
+}
+
+// ============================================================================
 // Diagnostics
 // ============================================================================
 
@@ -954,18 +1166,18 @@ export function getDiagnostics(
 // ============================================================================
 
 /** Get the permission request matching a specific tool part. */
-export function getPermissionForTool(
-  permissions: PermissionRequest[],
+export function getPermissionForTool<T extends RequestWithToolLike>(
+  permissions: readonly T[],
   callID: string,
-): PermissionRequest | undefined {
+): T | undefined {
   return permissions.find((p) => p.tool?.callID === callID);
 }
 
 /** Get the question request matching a specific tool part. */
-export function getQuestionForTool(
-  questions: QuestionRequest[],
+export function getQuestionForTool<T extends RequestWithToolLike>(
+  questions: readonly T[],
   callID: string,
-): QuestionRequest | undefined {
+): T | undefined {
   return questions.find((q) => q.tool?.callID === callID);
 }
 
@@ -984,6 +1196,48 @@ export function getQuestionForTool(
  */
 export const COST_MARKUP = 1.2;
 
+function estimateTokenCost(tokens: TokenUsageLike | undefined, rates: ModelCostRates): number {
+  if (!tokens) return 0;
+  const input = tokens.input ?? 0;
+  const output = (tokens.output ?? 0) + (tokens.reasoning ?? 0);
+  const cacheRead = tokens.cache?.read ?? 0;
+  const cacheWrite = tokens.cache?.write ?? 0;
+  const regularInput = Math.max(0, input - cacheRead - cacheWrite);
+
+  let cost = (regularInput / 1_000_000) * rates.inputPer1M;
+  cost += (output / 1_000_000) * rates.outputPer1M;
+  if (cacheRead > 0) {
+    cost += (cacheRead / 1_000_000) * (rates.cacheReadPer1M ?? rates.inputPer1M);
+  }
+  if (cacheWrite > 0) {
+    cost += (cacheWrite / 1_000_000) * rates.inputPer1M;
+  }
+  return cost;
+}
+
+function stepFinishRawCost(
+  sfp: StepFinishPartLike,
+  providerID: string | undefined,
+  modelID: string | undefined,
+  lookup?: ModelPricingLookup,
+): number {
+  const reported = sfp.cost || 0;
+  if (reported > 0) return reported;
+  if (!lookup || !providerID || !modelID) return 0;
+  const rates = lookup(providerID, modelID);
+  if (!rates) return 0;
+  return estimateTokenCost(sfp.tokens, rates);
+}
+
+function assistantMessageIds(message: MessageInfoLike): {
+  providerID?: string;
+  modelID?: string;
+} {
+  if (message.role !== 'assistant') return {};
+  const assistant = message as AssistantInfoLike;
+  return { providerID: assistant.providerID, modelID: assistant.modelID };
+}
+
 /**
  * Aggregate cost/token info from step-finish parts in a turn.
  * Returns undefined if no step-finish parts found.
@@ -991,7 +1245,10 @@ export const COST_MARKUP = 1.2;
  * The cost is multiplied by COST_MARKUP so the displayed value matches
  * the actual credits deducted (raw provider cost × 1.2).
  */
-export function getTurnCost(parts: PartWithMessage[]): TurnCostInfo | undefined {
+export function getTurnCost(
+  parts: ReadonlyArray<PartWithMessage>,
+  lookup?: ModelPricingLookup,
+): TurnCostInfo | undefined {
   let totalCost = 0;
   let input = 0;
   let output = 0;
@@ -1000,11 +1257,12 @@ export function getTurnCost(parts: PartWithMessage[]): TurnCostInfo | undefined 
   let cacheWrite = 0;
   let found = false;
 
-  for (const { part } of parts) {
+  for (const { part, message } of parts) {
     if (part.type === 'step-finish') {
       found = true;
-      const sfp = part as StepFinishPart;
-      totalCost += sfp.cost || 0;
+      const sfp = part as StepFinishPartLike;
+      const { providerID, modelID } = assistantMessageIds(message.info);
+      totalCost += stepFinishRawCost(sfp, providerID, modelID, lookup);
       input += sfp.tokens?.input || 0;
       output += sfp.tokens?.output || 0;
       reasoning += sfp.tokens?.reasoning || 0;
@@ -1013,8 +1271,76 @@ export function getTurnCost(parts: PartWithMessage[]): TurnCostInfo | undefined 
     }
   }
 
+  if (!found) {
+    for (const { message } of parts) {
+      if (message.info.role !== 'assistant') continue;
+      const assistant = message.info as AssistantInfoLike;
+      const stepCost = assistantTokensCost(assistant, lookup);
+      if (stepCost <= 0) continue;
+      found = true;
+      totalCost += stepCost;
+      const t = assistant.tokens;
+      if (t) {
+        input += t.input ?? 0;
+        output += t.output ?? 0;
+        reasoning += t.reasoning ?? 0;
+        cacheRead += t.cache?.read ?? 0;
+        cacheWrite += t.cache?.write ?? 0;
+      }
+    }
+  }
+
   if (!found) return undefined;
-  return { cost: totalCost * COST_MARKUP, tokens: { input, output, reasoning, cacheRead, cacheWrite } };
+  return {
+    cost: totalCost * COST_MARKUP,
+    tokens: { input, output, reasoning, cacheRead, cacheWrite },
+  };
+}
+
+function assistantTokensCost(assistant: AssistantInfoLike, lookup?: ModelPricingLookup): number {
+  if (!lookup || !assistant.providerID || !assistant.modelID || !assistant.tokens) return 0;
+  const rates = lookup(assistant.providerID, assistant.modelID);
+  if (!rates) return 0;
+  return estimateTokenCost(
+    {
+      input: assistant.tokens.input,
+      output: assistant.tokens.output,
+      reasoning: assistant.tokens.reasoning,
+      cache: assistant.tokens.cache,
+    },
+    rates,
+  );
+}
+
+/**
+ * Aggregate billed cost for an entire session from step-finish parts.
+ * Matches per-turn `getTurnCost` and mobile session stats aggregation.
+ */
+export function getSessionCost(
+  messages: ReadonlyArray<{ info?: MessageInfoLike; parts: PartLike[] }>,
+  lookup?: ModelPricingLookup,
+): number {
+  let totalCost = 0;
+  for (const msg of messages) {
+    if (msg.info?.role !== 'assistant') continue;
+    const assistant = msg.info as AssistantInfoLike;
+    const { providerID, modelID } = assistantMessageIds(assistant);
+
+    let msgCost = 0;
+    let sawStepFinish = false;
+    for (const part of msg.parts) {
+      if (part.type !== 'step-finish') continue;
+      sawStepFinish = true;
+      msgCost += stepFinishRawCost(part as StepFinishPartLike, providerID, modelID, lookup);
+    }
+
+    if (!sawStepFinish) {
+      msgCost += assistantTokensCost(assistant, lookup);
+    }
+
+    totalCost += msgCost;
+  }
+  return totalCost * COST_MARKUP;
 }
 
 /** Format cost in USD (e.g. "$0.0032") */
@@ -1040,24 +1366,22 @@ export function formatTokens(tokens: number): string {
  * Extract retry info from session status.
  * Truncates message to 60 chars matching SolidJS session-turn.tsx:695
  */
-export function getRetryInfo(status: SessionStatus | undefined): RetryInfo | undefined {
+export function getRetryInfo(status: SessionStatusLike | undefined): RetryInfo | undefined {
   if (!status || status.type !== 'retry') return undefined;
+  const retry = status as RetryStatusLike;
   return {
-    attempt: status.attempt,
-    message:
-      status.message.length > 60
-        ? status.message.slice(0, 60) + '...'
-        : status.message,
-    next: status.next,
+    attempt: retry.attempt,
+    message: retry.message.length > 60 ? `${retry.message.slice(0, 60)}...` : retry.message,
+    next: retry.next,
   };
 }
 
 /**
  * Extract the full retry error message from session status (not truncated).
  */
-export function getRetryMessage(status: SessionStatus | undefined): string | undefined {
+export function getRetryMessage(status: SessionStatusLike | undefined): string | undefined {
   if (!status || status.type !== 'retry') return undefined;
-  return unwrapError(status.message);
+  return unwrapError((status as RetryStatusLike).message);
 }
 
 // ============================================================================
@@ -1065,8 +1389,8 @@ export function getRetryMessage(status: SessionStatus | undefined): string | und
 // ============================================================================
 
 /** Check if a user message has associated file diffs. */
-export function hasDiffs(userMessage: MessageWithParts): boolean {
-  const summary = (userMessage.info as any)?.summary;
+export function hasDiffs(userMessage: MessageWithPartsLike): boolean {
+  const summary = (userMessage.info as { summary?: { diffs?: unknown[] } }).summary;
   return (summary?.diffs?.length ?? 0) > 0;
 }
 
@@ -1074,7 +1398,13 @@ export function hasDiffs(userMessage: MessageWithParts): boolean {
 // ANSI strip (used by bash tool renderer)
 // ============================================================================
 
-const ANSI_RE = /\x1B\[[\d;]*[A-Za-z]|\x1B\][\d;]*[^\x07]*\x07|\x1B[()#][A-Z0-9]|\x1B\[?[\d;]*[hl]|\x1B[>=<]|\x1B\[[?]?\d*[A-Z]|\x1B\[\d*[JKHG]|\x1B\[\d*;\d*[Hf]|\x1b\[[0-9;]*m/g;
+// OSC payloads (window titles, OSC-8 hyperlink URLs) are never more than a
+// couple hundred bytes in real terminal output; capping the run length keeps
+// stripAnsi linear-time even when `str.replace` retries the scan from every
+// unterminated OSC start in an adversarial input (see turns.test.ts).
+const ANSI_RE =
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: matching terminal escape sequences requires literal ESC/BEL control characters
+  /\x1B\[[\d;]*[A-Za-z]|\x1B\][^\x07]{0,512}\x07|\x1B[()#][A-Z0-9]|\x1B\[?[\d;]*[hl]|\x1B[>=<]|\x1B\[[?]?\d*[A-Z]|\x1B\[\d*[JKHG]|\x1B\[\d*;\d*[Hf]|\x1b\[[0-9;]*m/g;
 
 /** Strip ANSI escape codes from terminal output. */
 export function stripAnsi(str: string): string {
@@ -1092,7 +1422,7 @@ export function stripAnsi(str: string): string {
  * Matches SolidJS reference `childMapByParent()` in helpers.ts.
  */
 export function childMapByParent(
-  sessions: Array<{ id: string; parentID?: string }>,
+  sessions: ReadonlyArray<{ id: string; parentID?: string }>,
 ): Map<string, string[]> {
   const map = new Map<string, string[]>();
   for (const session of sessions) {
@@ -1135,10 +1465,7 @@ export function sortSessions(now: number) {
  * Recursively collect ALL descendant session IDs for a given parent.
  * Walks the full tree so deeply nested sub-agents are included.
  */
-export function allDescendantIds(
-  childMap: Map<string, string[]>,
-  sessionId: string,
-): string[] {
+export function allDescendantIds(childMap: Map<string, string[]>, sessionId: string): string[] {
   const directChildren = childMap.get(sessionId);
   if (!directChildren || directChildren.length === 0) return [];
   const result: string[] = [];
@@ -1148,4 +1475,3 @@ export function allDescendantIds(
   }
   return result;
 }
-
