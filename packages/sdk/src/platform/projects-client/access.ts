@@ -396,6 +396,26 @@ export async function listPendingApprovals(projectId: string, options?: { showEr
   );
 }
 
+/** Per-session pending-approval summary for the sidebar "needs input" badge:
+ *  `sessions` maps a (Kortix) session id → count of actions awaiting a decision.
+ *  A manager sees every session; others only the ones they launched. */
+export interface SessionsNeedingInputResponse {
+  total: number;
+  sessions: Record<string, number>;
+}
+
+export async function listSessionsNeedingInput(
+  projectId: string,
+  options?: { showErrors?: boolean },
+) {
+  return unwrap(
+    await backendApi.get<SessionsNeedingInputResponse>(
+      `/projects/${projectId}/approvals/needs-input`,
+      { showErrors: options?.showErrors },
+    ),
+  );
+}
+
 /** Resolve a pending approval. Allowed for a project manager or the session
  *  launcher; approve lets the action proceed on retry, deny records a refusal. */
 export async function resolveApproval(

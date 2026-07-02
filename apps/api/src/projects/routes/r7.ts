@@ -751,6 +751,75 @@ projectsApp.openapi(
   },
 );
 
+// GET /v1/projects/:projectId/approvals/needs-input
+// Lightweight per-session summary for the sidebar "needs input" indicator: which
+// sessions have an executor action awaiting a human decision, and how many. A
+// project MANAGER sees every session; everyone else sees only the sessions they
+// LAUNCHED (mirrors who may resolve). Read-gated + cheap enough to poll.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/approvals/needs-input',
+    tags: ['access'],
+    summary: 'GET /:projectId/approvals/needs-input',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(AnyObject, 'Sessions awaiting a human decision'),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    // Managers see every session's pending items; others only their own launched
+    // sessions (same principal set the resolve endpoint accepts).
+    let isManager = false;
+    try {
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+      );
+      isManager = true;
+    } catch {
+      isManager = false;
+    }
+
+    const conds = [
+      eq(executorExecutions.projectId, projectId),
+      eq(executorExecutions.status, 'pending_approval'),
+      isNull(executorExecutions.approvedBy),
+      isNull(executorExecutions.resolvedAt),
+    ];
+    if (!isManager) conds.push(eq(projectSessions.createdBy, loaded.userId));
+
+    const rows = await db
+      .select({ sessionId: executorExecutions.sessionId })
+      .from(executorExecutions)
+      .innerJoin(
+        projectSessions,
+        and(
+          eq(projectSessions.sessionId, executorExecutions.sessionId),
+          eq(projectSessions.projectId, projectId),
+        ),
+      )
+      .where(and(...conds));
+
+    // Count per session (pending items are few — count in memory).
+    const counts: Record<string, number> = {};
+    for (const r of rows) {
+      if (r.sessionId) counts[r.sessionId] = (counts[r.sessionId] ?? 0) + 1;
+    }
+    return c.json({ total: rows.length, sessions: counts });
+  },
+);
+
 // POST /v1/projects/:projectId/approvals/:executionId
 // Resolve a pending approval — { decision: 'approve' | 'deny' }. Allowed for a
 // project MANAGER or the LAUNCHER of the session the action belongs to (the two

@@ -2,6 +2,7 @@
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { SandboxImage } from '@/features/session/sandbox-image';
+import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import {
   AlertTriangle,
@@ -5917,25 +5918,30 @@ export function SessionChat({
             questionPromptRef.current?.performAction();
           }}
           inputSlot={
-            renderedQuestion ? (
-              <div
-                className={cn(
-                  'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
-                  questionPromptVisible
-                    ? 'max-h-[520px] translate-y-0 opacity-100 duration-300'
-                    : 'pointer-events-none max-h-0 -translate-y-1 opacity-0 duration-320',
-                )}
-              >
-                <QuestionPrompt
-                  key={renderedQuestion.id}
-                  ref={questionPromptRef}
-                  request={renderedQuestion}
-                  onReply={handleQuestionReply}
-                  onReject={handleQuestionReject}
-                  onActionChange={handleQuestionActionChange}
-                />
-              </div>
-            ) : undefined
+            <>
+              {/* Connector actions a policy gated for approval — pauses the run
+                  until the human decides. Self-hides when nothing's pending. */}
+              <SessionApprovalPrompt />
+              {renderedQuestion ? (
+                <div
+                  className={cn(
+                    'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
+                    questionPromptVisible
+                      ? 'max-h-[520px] translate-y-0 opacity-100 duration-300'
+                      : 'pointer-events-none max-h-0 -translate-y-1 opacity-0 duration-320',
+                  )}
+                >
+                  <QuestionPrompt
+                    key={renderedQuestion.id}
+                    ref={questionPromptRef}
+                    request={renderedQuestion}
+                    onReply={handleQuestionReply}
+                    onReject={handleQuestionReject}
+                    onActionChange={handleQuestionActionChange}
+                  />
+                </div>
+              ) : null}
+            </>
           }
         />
       )}
