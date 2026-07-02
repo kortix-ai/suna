@@ -233,7 +233,11 @@ export default function ProjectSessionPage() {
                 onSubmit={() => setShellSubmitted(true)}
               />
             ) : (
-              <SessionStartingLoader stage={authLoading || !user ? 'provisioning' : startStage} />
+              <SessionStartingLoader
+                stage={authLoading || !user ? 'provisioning' : startStage}
+                projectId={projectId}
+                sessionId={sessionId}
+              />
             )}
           </div>
         )}
