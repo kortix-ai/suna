@@ -129,6 +129,7 @@ describe("gateway.chatCompletions", () => {
     const { hooks, usage, traces } = makeHooks();
     const fetchImpl = okFetch({
       model: "kortix/x",
+      choices: [{ message: { content: "ok" } }],
       usage: { prompt_tokens: 100, completion_tokens: 50, cost: 0.01 },
     });
     const res = await createGateway(
@@ -171,6 +172,7 @@ describe("gateway.chatCompletions", () => {
     const { hooks, usage } = makeHooks({ resolveUpstream: async () => [byok] });
     const fetchImpl = okFetch({
       model: "anthropic/x",
+      choices: [{ message: { content: "ok" } }],
       usage: { prompt_tokens: 100, completion_tokens: 50, cost: 0.5 },
     });
     await createGateway(
@@ -206,6 +208,7 @@ describe("gateway.chatCompletions", () => {
         : new Response(
             JSON.stringify({
               model: "m",
+              choices: [{ message: { content: "ok" } }],
               usage: { prompt_tokens: 1, completion_tokens: 1 },
             }),
             { status: 200 },
@@ -469,6 +472,7 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     });
     const fetchImpl = okFetch({
       model: "kortix/x",
+      choices: [{ message: { content: "ok" } }],
       usage: { prompt_tokens: 10, completion_tokens: 5 },
     });
     const res = await createGateway(
@@ -513,6 +517,7 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     });
     const fetchImpl = okFetch({
       model: "openrouter/fusion",
+      choices: [{ message: { content: "ok" } }],
       usage: { prompt_tokens: 1, completion_tokens: 1 },
     });
     const res = await createGateway(
@@ -541,6 +546,7 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
       },
     });
     const fetchImpl = okFetch({
+      choices: [{ message: { content: "ok" } }],
       usage: { prompt_tokens: 1, completion_tokens: 1 },
     });
     await createGateway(
@@ -581,5 +587,119 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     expect(traces[0].ok).toBe(false);
     expect(traces[0].errorCode).toBe("budget_exceeded");
     expect(traces[0].accountId).toBe("a1"); // attributed even on denial
+  });
+});
+
+// Regression coverage for the empty-completion bug: an upstream 200 with
+// syntactically valid but empty choices/content (seen from OpenRouter/z-ai) must
+// be treated as a failed candidate — failed over to the next one, and only
+// surfaced to the caller once every candidate has come back empty.
+describe("gateway.chatCompletions — empty-completion failover", () => {
+  const emptyJson = JSON.stringify({
+    model: "m",
+    choices: [],
+    usage: { prompt_tokens: 0, completion_tokens: 0 },
+  });
+  const goodJson = JSON.stringify({
+    model: "m",
+    choices: [{ message: { content: "real answer" } }],
+    usage: { prompt_tokens: 5, completion_tokens: 3 },
+  });
+
+  function sseResponse(body: string): Response {
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(body));
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { "content-type": "text/event-stream" } },
+    );
+  }
+  const emptySse = 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n';
+  const goodSse =
+    'data: {"choices":[{"delta":{"content":"real answer"}}]}\n\n' +
+    'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3}}\n\n' +
+    'data: [DONE]\n\n';
+
+  test("non-streaming: an empty completion from candidate A fails over to candidate B", async () => {
+    const a: UpstreamDescriptor = { ...managed, provider: "a", baseUrl: "https://a.test/v1" };
+    const b: UpstreamDescriptor = { ...managed, provider: "b", baseUrl: "https://b.test/v1" };
+    const { hooks, traces, usage } = makeHooks({ resolveUpstream: async () => [a, b] });
+    const fetchImpl: FetchImpl = async (url) =>
+      new Response(new URL(url).hostname === "a.test" ? emptyJson : goodJson, {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.choices[0].message.content).toBe("real answer");
+    await flush();
+    expect(usage).toHaveLength(1); // the empty candidate never billed
+    expect(traces[0].ok).toBe(true);
+    expect(traces[0].provider).toBe("b");
+    expect(traces[0].candidatesTried).toEqual(["a", "b"]);
+  });
+
+  test("non-streaming: every candidate empty → 502 empty_completion, nothing forwarded to the caller", async () => {
+    const { hooks, usage, traces } = makeHooks({ resolveUpstream: async () => [managed] });
+    const fetchImpl: FetchImpl = async () =>
+      new Response(emptyJson, { status: 200, headers: { "content-type": "application/json" } });
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+
+    expect(res.status).toBe(502);
+    expect((await res.json()).code).toBe("empty_completion");
+    await flush();
+    expect(usage).toHaveLength(0);
+    expect(traces[0].ok).toBe(false);
+    expect(traces[0].errorCode).toBe("empty_completion");
+  });
+
+  test("streaming: an empty stream from candidate A fails over to candidate B — A's bytes never reach the client", async () => {
+    const a: UpstreamDescriptor = { ...managed, provider: "a", baseUrl: "https://a.test/v1" };
+    const b: UpstreamDescriptor = { ...managed, provider: "b", baseUrl: "https://b.test/v1" };
+    const { hooks, traces } = makeHooks({ resolveUpstream: async () => [a, b] });
+    const fetchImpl: FetchImpl = async (url) =>
+      sseResponse(new URL(url).hostname === "a.test" ? emptySse : goodSse);
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+    });
+
+    expect(res.status).toBe(200);
+    const text = await new Response(res.body).text();
+    expect(text).toBe(goodSse);
+    expect(text).not.toContain('"finish_reason":"stop"}]}\n\ndata: [DONE]'); // candidate A's empty frame absent
+    await flush();
+    expect(traces.find((t) => t.ok)?.provider).toBe("b");
+  });
+
+  test("streaming: every candidate's stream is empty → 502 empty_completion, not a fabricated SSE response", async () => {
+    const { hooks, traces } = makeHooks({ resolveUpstream: async () => [managed] });
+    const fetchImpl: FetchImpl = async () => sseResponse(emptySse);
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+    });
+
+    expect(res.status).toBe(502);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    expect((await res.json()).code).toBe("empty_completion");
+    await flush();
+    expect(traces[0].ok).toBe(false);
+    expect(traces[0].errorCode).toBe("empty_completion");
   });
 });
