@@ -1,12 +1,24 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Bot, Check, Loader2, ShieldCheck, User, Users } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { ConfigEntityView } from '@/features/workspace/customize/sections/component/config-entity-view';
 import { formatMode } from '@/features/workspace/customize/shared/utils';
-import { listProjectAccess, listProjectResourceGrants, type ProjectConfigSummary } from '@kortix/sdk/projects-client';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
+import {
+  type AgentGrantSet,
+  listConnectors,
+  listProjectAccess,
+  listProjectResourceGrants,
+  listProjectSecrets,
+  type ProjectConfigSummary,
+  setAgentScope,
+} from '@kortix/sdk/projects-client';
 import { StarSolid } from '@mynaui/icons-react';
-import { Bot, ShieldCheck, User, Users } from 'lucide-react';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
@@ -68,7 +80,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
       renderDetailExtra={(agent) => (
         <div className="space-y-3">
           <AgentAssignments projectId={projectId} agentName={agent.name} />
-          <AgentScope scope={agent.scope} />
+          <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
         </div>
       )}
     />
@@ -134,31 +146,290 @@ function AgentAssignments({ projectId, agentName }: { projectId: string; agentNa
 }
 
 /**
- * Read-only mirror of an agent's `kortix.toml [[agents]]` allowlists — which
- * secrets it receives in $ENV, which connectors it may use, which Kortix CLI
- * powers it has. Editing stays in kortix.toml (a PR-reviewed, editor-tier
- * change), so this is presentation only. Absent for OpenCode-discovered agents,
- * which aren't governed by [[agents]].
+ * An agent's `kortix.toml [[agents]]` allowlists — which secrets it receives in
+ * $ENV, which connectors it may call, which Kortix-CLI powers it has. Managers
+ * EDIT secrets + connectors here (persisted straight to kortix.toml); everyone
+ * else sees the read-only mirror. `kortix_cli` stays read-only (a sharper
+ * escalation, kortix.toml-only). Absent for OpenCode-discovered agents, which
+ * aren't governed by [[agents]].
  */
-function AgentScope({ scope }: { scope?: Agent['scope'] }) {
+function AgentScope({
+  projectId,
+  agentName,
+  scope,
+}: {
+  projectId: string;
+  agentName: string;
+  scope?: Agent['scope'];
+}) {
+  // Pure prop-guard (no hooks) so the editable inner component can call hooks
+  // unconditionally — an OpenCode agent with no scope simply renders nothing.
   if (!scope) return null;
-  return (
-    <div className="border-border/60 bg-muted/20 space-y-2.5 rounded-lg border p-4">
-      <div className="flex items-center gap-2">
-        <ShieldCheck className="text-muted-foreground/70 size-3.5 shrink-0" />
-        <span className="text-foreground/80 text-xs font-medium">Access scope</span>
-        <Badge variant="muted" size="xs" className="font-mono">
-          kortix.toml [[agents]]
-        </Badge>
+  return <AgentScopeCard projectId={projectId} agentName={agentName} scope={scope} />;
+}
+
+function AgentScopeCard({
+  projectId,
+  agentName,
+  scope,
+}: {
+  projectId: string;
+  agentName: string;
+  scope: NonNullable<Agent['scope']>;
+}) {
+  const queryClient = useQueryClient();
+  const accessQuery = useQuery({
+    queryKey: ['project-access', projectId],
+    queryFn: () => listProjectAccess(projectId),
+    staleTime: 20_000,
+  });
+  const canManage = Boolean(accessQuery.data?.can_manage);
+
+  const [env, setEnv] = useState<AgentGrantSet>(scope.env);
+  const [connectors, setConnectors] = useState<AgentGrantSet>(scope.connectors);
+  // Reset local edits whenever the committed scope changes (agent switch, or a
+  // save landed and the config query refetched) so the form tracks the source.
+  const committedKey = JSON.stringify({ agentName, env: scope.env, connectors: scope.connectors });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: committedKey encodes the scope fields we reset on.
+  useEffect(() => {
+    setEnv(scope.env);
+    setConnectors(scope.connectors);
+  }, [committedKey]);
+
+  const secretsQuery = useQuery({
+    queryKey: ['project-secrets', projectId],
+    queryFn: () => listProjectSecrets(projectId),
+    enabled: canManage,
+    staleTime: 30_000,
+  });
+  const connectorsQuery = useQuery({
+    queryKey: ['project-connectors', projectId],
+    queryFn: () => listConnectors(projectId),
+    enabled: canManage,
+    staleTime: 30_000,
+  });
+
+  const secretOptions = useMemo(() => {
+    const names = new Set((secretsQuery.data?.items ?? []).map((s) => s.name));
+    return [...names].sort().map((name) => ({ id: name, label: name }));
+  }, [secretsQuery.data]);
+  const connectorOptions = useMemo(
+    () =>
+      (connectorsQuery.data?.connectors ?? [])
+        .map((c) => ({ id: c.slug, label: c.name || c.slug }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [connectorsQuery.data],
+  );
+
+  const dirty = !grantSetEqual(env, scope.env) || !grantSetEqual(connectors, scope.connectors);
+  const save = useMutation({
+    mutationFn: () => setAgentScope(projectId, agentName, { env, connectors }),
+    onSuccess: () => {
+      toast.success(`Scope updated for ${agentName}`);
+      // Refetch the project config so the committed scope (this card's source) updates.
+      queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
+    },
+    onError: (e: Error) => toast.error(e.message || 'Failed to update scope'),
+  });
+
+  // Non-managers get the read-only mirror (the old presentation).
+  if (!canManage) {
+    return (
+      <div className="border-border/60 bg-muted/20 space-y-2.5 rounded-lg border p-4">
+        <ScopeHeader />
+        <ScopeRow label="Secrets" value={scope.env} />
+        <ScopeRow label="Connectors" value={scope.connectors} />
+        <ScopeRow label="CLI" value={scope.kortix_cli} />
+        <p className="text-muted-foreground/50 text-[11px] leading-relaxed">
+          “All” = every item the launching user can see; “None” = fully scoped out. Members you
+          assign to this agent (Members → Resource access) inherit its declared secrets &amp;
+          connectors.
+        </p>
       </div>
-      <ScopeRow label="Secrets" value={scope.env} />
-      <ScopeRow label="Connectors" value={scope.connectors} />
+    );
+  }
+
+  return (
+    <div className="border-border/60 bg-muted/20 space-y-4 rounded-lg border p-4">
+      <ScopeHeader />
+      <ScopeEditor
+        label="Secrets"
+        allLabel="All the launcher can see"
+        emptyLabel="No secrets in this project yet."
+        value={env}
+        options={secretOptions}
+        onChange={setEnv}
+      />
+      <ScopeEditor
+        label="Connectors"
+        allLabel="Every project connector"
+        emptyLabel="No connectors in this project yet."
+        value={connectors}
+        options={connectorOptions}
+        onChange={setConnectors}
+      />
       <ScopeRow label="CLI" value={scope.kortix_cli} />
-      <p className="text-muted-foreground/50 text-[11px] leading-relaxed">
-        Read-only — edit the allowlists in kortix.toml. “All” means every item the launching user
-        can see; “None” means the agent is fully scoped out. Members you assign to this agent
-        (Members → Resource access) inherit its declared secrets &amp; connectors.
-      </p>
+      <div className="border-border/50 flex items-center justify-between gap-3 border-t pt-3">
+        <p className="text-muted-foreground/60 text-[11px] leading-relaxed">
+          Members assigned to this agent inherit exactly these secrets &amp; connectors. Saved to{' '}
+          <span className="font-mono">kortix.toml</span>.
+        </p>
+        <div className="flex shrink-0 items-center gap-2">
+          {dirty && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              disabled={save.isPending}
+              onClick={() => {
+                setEnv(scope.env);
+                setConnectors(scope.connectors);
+              }}
+            >
+              Reset
+            </Button>
+          )}
+          <Button
+            size="sm"
+            className="h-7 gap-1.5 px-3 text-xs"
+            disabled={!dirty || save.isPending}
+            onClick={() => save.mutate()}
+          >
+            {save.isPending && <Loader2 className="size-3.5 animate-spin" />}
+            Save scope
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScopeHeader() {
+  return (
+    <div className="flex items-center gap-2">
+      <ShieldCheck className="text-muted-foreground/70 size-3.5 shrink-0" />
+      <span className="text-foreground/80 text-xs font-medium">Access scope</span>
+      <Badge variant="muted" size="xs" className="font-mono">
+        kortix.toml [[agents]]
+      </Badge>
+    </div>
+  );
+}
+
+/** True when two grant sets mean the same thing (order-insensitive). */
+function grantSetEqual(a: AgentGrantSet, b: AgentGrantSet): boolean {
+  if (a === 'all' || b === 'all') return a === b;
+  if (a.length !== b.length) return false;
+  const sb = new Set(b);
+  return a.every((x) => sb.has(x));
+}
+
+/**
+ * Three-way scope control: All · Specific · None. In "Specific" mode it shows a
+ * checklist of the project's secrets/connectors; a declared name that no longer
+ * exists as a resource still shows (flagged) so it can be removed.
+ */
+function ScopeEditor({
+  label,
+  allLabel,
+  emptyLabel,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  allLabel: string;
+  emptyLabel: string;
+  value: AgentGrantSet;
+  options: { id: string; label: string }[];
+  onChange: (v: AgentGrantSet) => void;
+}) {
+  const mode: 'all' | 'specific' | 'none' =
+    value === 'all' ? 'all' : value.length === 0 ? 'none' : 'specific';
+  const selected = value === 'all' ? new Set<string>() : new Set(value);
+  const optionIds = new Set(options.map((o) => o.id));
+  // Selected names that aren't in the current option list (deleted resource, or
+  // typed via kortix.toml) — keep them visible so they can be unchecked.
+  const orphanRows = [...selected].filter((id) => !optionIds.has(id)).map((id) => ({ id, label: id }));
+  const rows = [...options, ...orphanRows];
+
+  const pick = (m: 'all' | 'specific' | 'none') => {
+    if (m === 'all') return onChange('all');
+    if (m === 'none') return onChange([]);
+    // → specific: keep the current concrete list ('all' starts empty).
+    onChange(value === 'all' ? [] : value);
+  };
+  const toggle = (id: string) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    onChange([...next]);
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-muted-foreground/70 w-24 shrink-0 text-[11px] font-medium tracking-wide uppercase">
+          {label}
+        </span>
+        <div className="border-border/70 inline-flex overflow-hidden rounded-md border">
+          {(['all', 'specific', 'none'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => pick(m)}
+              className={cn(
+                'px-2.5 py-1 text-xs capitalize transition-colors',
+                mode === m
+                  ? 'bg-secondary text-foreground font-medium'
+                  : 'text-muted-foreground hover:bg-muted/50',
+              )}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+        {mode === 'all' && <span className="text-muted-foreground/60 text-[11px]">{allLabel}</span>}
+      </div>
+
+      {mode === 'specific' &&
+        (rows.length === 0 ? (
+          <p className="text-muted-foreground/60 pl-[6.5rem] text-[11px]">{emptyLabel}</p>
+        ) : (
+          <div className="border-border/60 ml-[6.5rem] max-h-44 overflow-y-auto rounded-md border p-1">
+            {rows.map((o) => {
+              const isSel = selected.has(o.id);
+              const isOrphan = !optionIds.has(o.id);
+              return (
+                <button
+                  key={o.id}
+                  type="button"
+                  aria-pressed={isSel}
+                  onClick={() => toggle(o.id)}
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs transition-colors',
+                    isSel ? 'bg-secondary' : 'hover:bg-muted/50',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'flex size-4 shrink-0 items-center justify-center rounded border',
+                      isSel
+                        ? 'border-foreground bg-foreground text-background'
+                        : 'border-border/70',
+                    )}
+                  >
+                    {isSel && <Check className="size-3" />}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-mono">{o.label}</span>
+                  {isOrphan && (
+                    <span className="text-amber-600 dark:text-amber-400">missing</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ))}
     </div>
   );
 }
