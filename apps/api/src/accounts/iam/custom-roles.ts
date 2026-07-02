@@ -241,8 +241,8 @@ iamRouter.openapi(
     const accountId = c.req.param('accountId');
     const roleId = c.req.param('roleId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_DELETE);
-    const denied = await requireEntitlement(c, accountId, 'rbac');
-    if (denied) return denied;
+    // No entitlement gate: deleting a role is cleanup — a downgraded account
+    // must always be able to remove custom roles it can no longer manage.
     if (BUILTIN_BY_ID.has(roleId)) return c.json({ error: 'built-in roles cannot be deleted' }, 400);
     const role = await loadCustomRole(accountId, roleId);
     if (!role) return c.json({ error: 'role not found' }, 404);
@@ -533,8 +533,7 @@ iamRouter.openapi(
     const accountId = c.req.param('accountId');
     const policyId = c.req.param('policyId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_DELETE);
-    const denied = await requireEntitlement(c, accountId, 'rbac');
-    if (denied) return denied;
+    // No entitlement gate: revoking a policy binding is cleanup, always allowed.
 
     const [row] = await db
       .delete(iamPolicies)
@@ -567,8 +566,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_DELETE);
-    const denied = await requireEntitlement(c, accountId, 'rbac');
-    if (denied) return denied;
+    // No entitlement gate: bulk policy revocation is cleanup, always allowed.
     const body = await readBody(c);
     const ids = Array.isArray(body.policy_ids) ? body.policy_ids.filter((x: unknown): x is string => typeof x === 'string') : [];
     if (ids.length === 0) return c.json({ deleted: 0 });

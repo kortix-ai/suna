@@ -34,9 +34,11 @@ import {
 } from './app';
 import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
 
-// Groups are an Enterprise-only construct (no free-tier group concept) — every
-// route in this file gates on `rbac`, reads included, unlike custom-roles.ts
-// where read routes stay open. See TierEntitlements in ../../types.
+// Groups are an Enterprise-only construct (no free-tier group concept). The
+// `rbac` entitlement gates every route that CREATES or GROWS group state
+// (create group, rename, add members); reads and deletions stay open so a
+// downgraded account can still see and clean up leftover groups — revoking
+// access is never paywalled. See TierEntitlements in ../../types.
 
 // ─── Groups ────────────────────────────────────────────────────────────────
 
@@ -57,8 +59,6 @@ iamRouter.openapi(
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
-  const denied = await requireEntitlement(c, accountId, 'rbac');
-  if (denied) return denied;
 
   const rows = await listGroups(accountId);
   return c.json({
@@ -153,8 +153,6 @@ iamRouter.openapi(
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
-  const denied = await requireEntitlement(c, accountId, 'rbac');
-  if (denied) return denied;
 
   const group = await getGroup(accountId, groupId);
   if (!group) return c.json({ error: 'group not found' }, 404);
@@ -252,8 +250,7 @@ iamRouter.openapi(
     type: 'group',
     id: groupId,
   });
-  const denied = await requireEntitlement(c, accountId, 'rbac');
-  if (denied) return denied;
+  // No entitlement gate: deletion is cleanup, always allowed (see file header).
 
   const beforeGroup = await getGroup(accountId, groupId);
 
@@ -300,8 +297,6 @@ iamRouter.openapi(
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
-  const denied = await requireEntitlement(c, accountId, 'rbac');
-  if (denied) return denied;
 
   const members = await listGroupMembers(accountId, groupId);
   return c.json({
@@ -391,8 +386,7 @@ iamRouter.openapi(
     type: 'group',
     id: groupId,
   });
-  const denied = await requireEntitlement(c, accountId, 'rbac');
-  if (denied) return denied;
+  // No entitlement gate: removing a member is cleanup, always allowed.
 
   const group = await getGroup(accountId, groupId);
   if (!group) return c.json({ error: 'group not found' }, 404);
@@ -443,8 +437,6 @@ iamRouter.openapi(
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
-  const denied = await requireEntitlement(c, accountId, 'rbac');
-  if (denied) return denied;
 
   const group = await getGroup(accountId, groupId);
   if (!group) return c.json({ error: 'group not found' }, 404);

@@ -37,8 +37,21 @@ governance surface:
 |---|---|---|
 | `sso` | SAML SSO config, JIT provisioning, group-claim mapping (`accounts/iam/sso.ts`) | Identity federation is the standard enterprise trigger across this category (Documenso, n8n, GitLab, Onyx, Cal.com all gate SAML the same way) |
 | `scim` | SCIM 2.0 directory provisioning — token mint/revoke + `/scim/v2/*` (`accounts/iam/scim-tokens.ts`, `middleware/scim-auth.ts`) | Pairs with SSO; automated user lifecycle is an IT/security-team need, not an individual one |
-| `rbac` | **Custom** roles, fine-grained policy bindings, and groups — `accounts/iam/custom-roles.ts` (all writes) + `accounts/iam/groups.ts` (every route, reads included) | Preset roles cover the common cases for free; defining your own roles/policies and grouping members is the governance layer regulated orgs actually need |
-| `auditAccess` | **Reading, exporting, and streaming** the audit trail — account audit log + export (`accounts/audit.ts`), audit webhooks (`accounts/audit.ts`), and the per-session agent-action audit (`projects/routes/r7.ts`) | Recording is universal (see above); *who gets to look at it* — and pipe it into a SIEM — is the compliance feature |
+| `rbac` | **Creating/growing** custom RBAC state: custom roles + their permission sets, policy bindings (`accounts/iam/custom-roles.ts`), groups + membership adds (`accounts/iam/groups.ts`), and group→project grant create/re-role (`projects/routes/r7.ts`) | Preset roles cover the common cases for free; defining your own roles/policies and grouping members is the governance layer regulated orgs actually need |
+| `auditAccess` | **Reading, exporting, and streaming** the audit trail — account audit log + export, webhook create/update (`accounts/audit.ts`), webhook **delivery** (`shared/audit-webhooks.ts`, the data plane), and the per-session agent-action audit (`projects/routes/r7.ts`) | Recording is universal (see above); *who gets to look at it* — and pipe it into a SIEM — is the compliance feature |
+
+**Revocation is never paywalled.** Deleting a custom role, revoking a policy,
+deleting a group, removing a group member, detaching a group grant, or deleting
+an audit webhook all work on every tier — a downgraded account must always be
+able to see and clean up state it can no longer manage. Reads stay open for the
+same reason (they return empty for accounts that never had Enterprise).
+
+**Existing grants keep enforcing after a downgrade** (standard open-core
+practice — gate management, not evaluation). The IAM engine honors whatever
+custom policies/groups exist until an admin removes them; what a downgraded
+account can't do is mint new ones. The one deliberate exception is audit
+webhook delivery, which checks the live entitlement per event — leftover
+webhook rows stop streaming immediately.
 
 Nothing else in the product is currently entitlement-gated. Categories common
 elsewhere in this space (HA/clustering, dedicated single-tenant infra,

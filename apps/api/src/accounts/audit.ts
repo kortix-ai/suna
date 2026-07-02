@@ -398,8 +398,8 @@ auditRouter.openapi(
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-  const denied = await requireEntitlement(c, accountId, 'auditAccess');
-  if (denied) return denied;
+  // No entitlement gate on listing: a downgraded admin must be able to see
+  // leftover webhooks to delete them. Creation/update stay gated below.
 
   const rows = await db
     .select()
@@ -593,8 +593,9 @@ auditRouter.openapi(
   const accountId = c.req.param('accountId');
   const webhookId = c.req.param('webhookId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-  const denied = await requireEntitlement(c, accountId, 'auditAccess');
-  if (denied) return denied;
+  // No entitlement gate: deleting a webhook is cleanup, always allowed — and
+  // delivery itself is entitlement-gated in shared/audit-webhooks.ts, so a
+  // leftover row on a downgraded account streams nothing either way.
 
   const rows = await db
     .delete(auditWebhooks)
