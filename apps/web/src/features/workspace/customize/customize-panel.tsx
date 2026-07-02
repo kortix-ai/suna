@@ -12,7 +12,6 @@ import { AgentsView } from '@/features/workspace/customize/sections/view/agents-
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
 import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
-import { MeetView } from '@/features/workspace/customize/sections/view/meet-view';
 import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
