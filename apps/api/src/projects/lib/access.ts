@@ -424,6 +424,37 @@ export function isUuid(value: string): boolean {
   return PROJECT_ID_RE.test(value);
 }
 
+/**
+ * The full platform-admin-bypass decision — pure (the DB/header lookups are
+ * already resolved into `isPlatformAdmin`/`bypassHeaderPresent` by the
+ * caller) so this security gate is exhaustively unit-tested independent of
+ * the DB, mirroring the decideReap pattern in sandbox-reaper.ts. A bypass is
+ * never eligible for anything but a read, and never for a service account
+ * (those already carry their own iam_policies and shouldn't get a second,
+ * broader door) — checked BEFORE `isPlatformAdmin` is even consulted by the
+ * caller, so a non-admin's header never triggers a DB round-trip.
+ */
+export function shouldApplyAdminBypass(input: {
+  action: ProjectAccessAction;
+  isServiceAccount: boolean;
+  bypassHeaderPresent: boolean;
+  isPlatformAdmin: boolean;
+}): boolean {
+  return (
+    isAdminBypassEligible(input) && input.isPlatformAdmin
+  );
+}
+
+/** Whether a bypass request should even be CONSIDERED — i.e. whether it's
+ *  worth spending a DB round-trip on `isPlatformAdmin` at all. */
+export function isAdminBypassEligible(input: {
+  action: ProjectAccessAction;
+  isServiceAccount: boolean;
+  bypassHeaderPresent: boolean;
+}): boolean {
+  return input.action === 'read' && !input.isServiceAccount && input.bypassHeaderPresent;
+}
+
 export async function loadProjectForUser(c: Context, projectId: string, action: ProjectAccessAction) {
   const userId = c.get('userId') as string;
   if (!isUuid(projectId)) return null;
@@ -476,8 +507,14 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   // the PROJECT'S OWN account so the customer's own audit trail (and any
   // configured audit webhook) sees the access, not just ours.
   let adminBypass = false;
-  if (action === 'read' && !isServiceAccount && c.req.header('x-kortix-admin-bypass') === '1') {
-    adminBypass = await isPlatformAdmin(userId);
+  const bypassHeaderPresent = c.req.header('x-kortix-admin-bypass') === '1';
+  if (isAdminBypassEligible({ action, isServiceAccount, bypassHeaderPresent })) {
+    adminBypass = shouldApplyAdminBypass({
+      action,
+      isServiceAccount,
+      bypassHeaderPresent,
+      isPlatformAdmin: await isPlatformAdmin(userId),
+    });
     if (adminBypass) {
       await recordAuditEvent({
         accountId: row.accountId,

@@ -52,6 +52,25 @@ flow("ADM-2", { domain: "admin", routes: ["GET /v1/admin/api/accounts/:id/users"
   }
 });
 
+flow("ADM-2b", { domain: "admin", routes: ["GET /v1/admin/api/accounts/:id/projects"] }, async (ctx) => {
+  await ctx.step("ANON → 401", async () => {
+    const r = await ctx.client.as(ctx.P.ANON).get("/v1/admin/api/accounts/:id/projects", { params: { id: NOPE } });
+    r.status(401);
+  });
+  await ctx.step("non-admin OWNER → 403", async () => {
+    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/admin/api/accounts/:id/projects", { params: { id: NOPE } });
+    r.status(403);
+  });
+  if (ctx.env.capabilities.admin) {
+    await ctx.step("platform admin reads an account's projects → 200 {projects:[]}", async () => {
+      const r = await ctx.client
+        .withBearer(ctx.env.adminToken!, "ADMIN_TOKEN")
+        .get("/v1/admin/api/accounts/:id/projects", { params: { id: ctx.P.OWNER.accountId! } });
+      r.status(200).body().exists("$.projects");
+    });
+  }
+});
+
 flow("ADM-3", { domain: "admin", routes: ["GET /v1/admin/api/accounts/:id/ledger"] }, async (ctx) => {
   await ctx.step("ANON → 401", async () => {
     const r = await ctx.client.as(ctx.P.ANON).get("/v1/admin/api/accounts/:id/ledger", { params: { id: NOPE } });
