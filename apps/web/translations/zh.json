@@ -6291,26 +6291,26 @@
       "line356JsxTextNoChangesDetected": "未检测到更改。"
     },
     "featuresProjectFilesComponentsChangeRequestsPanel": {
-      "line131JsxTextChangeRequests": "更改请求",
-      "line145JsxAttrTitleOpenANewChangeRequest": "打开新的更改请求",
-      "line199JsxTextChangeRequests": "更改请求",
-      "line209JsxTextOpenTheFirstOne": "打开第一个"
+      "line131JsxTextChangeRequests": "提议的更改",
+      "line145JsxAttrTitleOpenANewChangeRequest": "提议新的更改",
+      "line199JsxTextChangeRequests": "还没有提议的更改",
+      "line209JsxTextOpenTheFirstOne": "提出第一个"
     },
     "featuresProjectFilesComponentsCheckpointDetailDialog": {
       "line166JsxTextSelectAFileToViewTheDiff": "选择文件以查看差异",
       "line220JsxTextFailedToLoadDiff": "加载差异失败",
       "line226JsxTextNoTextualDiff": "无文本差异",
-      "line228JsxTextFileMayBeBinaryOrUnchangedInThis": "该文件可能是二进制文件，或在此检查点中未发生更改。",
-      "line407JsxAttrTitlePreviousCheckpoint": "上一个检查点 (←)",
-      "line417JsxAttrTitleNextCheckpoint": "下一个检查点 (→)",
-      "line482JsxAttrTitleCopyCheckpointId": "复制检查点 ID",
+      "line228JsxTextFileMayBeBinaryOrUnchangedInThis": "文件可能是二进制文件，或在此版本中未更改。",
+      "line407JsxAttrTitlePreviousCheckpoint": "上一个版本 (←)",
+      "line417JsxAttrTitleNextCheckpoint": "下一个版本 (→)",
+      "line482JsxAttrTitleCopyCheckpointId": "复制版本 ID",
       "line528JsxAttrPlaceholderFilterFiles": "筛选文件",
-      "line546JsxTextFailedToLoadCheckpoint": "加载检查点失败",
-      "line575JsxTextLoadingCheckpoint": "正在加载检查点…"
+      "line546JsxTextFailedToLoadCheckpoint": "无法加载版本",
+      "line575JsxTextLoadingCheckpoint": "正在加载版本…"
     },
     "featuresProjectFilesComponentsCheckpointsPanel": {
-      "line230JsxTextFailedToLoadCheckpoints": "加载检查点失败",
-      "line241JsxTextNoCheckpointsYet": "尚无检查点",
+      "line230JsxTextFailedToLoadCheckpoints": "无法加载版本历史",
+      "line241JsxTextNoCheckpointsYet": "尚未保存任何版本",
       "line278JsxTextShowingTheMostRecent": "正在显示最新的"
     },
     "featuresProjectFilesComponentsDiffPreviewBanner": {
@@ -6323,17 +6323,17 @@
       "line209JsxTextOpenFolder": "打开文件夹",
       "line231JsxTextCopyPath": "复制路径",
       "line390JsxTextOpenInTab": "在标签页中打开",
-      "line402JsxTextCheckpointHistory": "检查点历史记录",
+      "line402JsxTextCheckpointHistory": "版本历史",
       "line420JsxTextCopyPath": "复制路径",
       "line604JsxTextThisFolderIsEmpty": "此文件夹为空",
       "line606JsxTextNoFilesOrSubfoldersAtThisPathIn": "当前版本中此路径下没有文件或子文件夹。"
     },
     "featuresProjectFilesComponentsDriveListView": {
       "line255JsxTextOpenInTab": "在标签页中打开",
-      "line267JsxTextCheckpointHistory": "检查点历史记录",
+      "line267JsxTextCheckpointHistory": "版本历史",
       "line285JsxTextCopyPath": "复制路径",
       "line396JsxTextThisFolderIsEmpty": "此文件夹为空",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "当前版本中此路径下没有文件或子文件夹。"
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "智能体保存的内容和此项目中的文件都会显示在这里。"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "双击以编辑路径",
@@ -6414,9 +6414,9 @@
     "featuresProjectFilesComponentsFileHistoryPopover": {
       "line72JsxTextFailedToLoadDiff": "加载差异失败",
       "line102JsxTextNoDiff": "无差异",
-      "line160JsxAttrTitleCopyCheckpointId": "复制检查点 ID",
+      "line160JsxAttrTitleCopyCheckpointId": "复制版本 ID",
       "line216JsxTextFailedToLoadHistory": "加载历史记录失败",
-      "line224JsxTextNoCheckpointsYet": "尚无检查点",
+      "line224JsxTextNoCheckpointsYet": "还没有版本",
       "line240JsxTextShowingTheMostRecent": "正在显示最新的"
     },
     "featuresProjectFilesComponentsFilePreviewModal": {

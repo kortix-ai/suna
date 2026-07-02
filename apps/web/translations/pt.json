@@ -6291,26 +6291,26 @@
       "line356JsxTextNoChangesDetected": "Nenhuma alteração detectada."
     },
     "featuresProjectFilesComponentsChangeRequestsPanel": {
-      "line131JsxTextChangeRequests": "Solicitações de alteração",
-      "line145JsxAttrTitleOpenANewChangeRequest": "Abrir uma nova solicitação de alteração",
-      "line199JsxTextChangeRequests": "solicitações de alteração",
-      "line209JsxTextOpenTheFirstOne": "Abrir a primeira"
+      "line131JsxTextChangeRequests": "Alterações propostas",
+      "line145JsxAttrTitleOpenANewChangeRequest": "Propor uma nova alteração",
+      "line199JsxTextChangeRequests": "Nenhuma alteração proposta ainda",
+      "line209JsxTextOpenTheFirstOne": "Proponha a primeira"
     },
     "featuresProjectFilesComponentsCheckpointDetailDialog": {
       "line166JsxTextSelectAFileToViewTheDiff": "Selecione um arquivo para ver o diff",
       "line220JsxTextFailedToLoadDiff": "Falha ao carregar o diff",
       "line226JsxTextNoTextualDiff": "Sem diff textual",
-      "line228JsxTextFileMayBeBinaryOrUnchangedInThis": "O arquivo pode ser binário ou estar inalterado neste checkpoint.",
-      "line407JsxAttrTitlePreviousCheckpoint": "Checkpoint anterior (←)",
-      "line417JsxAttrTitleNextCheckpoint": "Próximo checkpoint (→)",
-      "line482JsxAttrTitleCopyCheckpointId": "Copiar id do checkpoint",
+      "line228JsxTextFileMayBeBinaryOrUnchangedInThis": "O arquivo pode ser binário ou não ter mudado nesta versão.",
+      "line407JsxAttrTitlePreviousCheckpoint": "Versão anterior (←)",
+      "line417JsxAttrTitleNextCheckpoint": "Próxima versão (→)",
+      "line482JsxAttrTitleCopyCheckpointId": "Copiar ID da versão",
       "line528JsxAttrPlaceholderFilterFiles": "Filtrar arquivos",
-      "line546JsxTextFailedToLoadCheckpoint": "Falha ao carregar o checkpoint",
-      "line575JsxTextLoadingCheckpoint": "Carregando checkpoint…"
+      "line546JsxTextFailedToLoadCheckpoint": "Não foi possível carregar a versão",
+      "line575JsxTextLoadingCheckpoint": "Carregando versão…"
     },
     "featuresProjectFilesComponentsCheckpointsPanel": {
-      "line230JsxTextFailedToLoadCheckpoints": "Falha ao carregar os checkpoints",
-      "line241JsxTextNoCheckpointsYet": "Ainda não há checkpoints",
+      "line230JsxTextFailedToLoadCheckpoints": "Não foi possível carregar o histórico de versões",
+      "line241JsxTextNoCheckpointsYet": "Nenhuma versão salva ainda",
       "line278JsxTextShowingTheMostRecent": "Mostrando os mais recentes"
     },
     "featuresProjectFilesComponentsDiffPreviewBanner": {
@@ -6323,17 +6323,17 @@
       "line209JsxTextOpenFolder": "Abrir pasta",
       "line231JsxTextCopyPath": "Copiar caminho",
       "line390JsxTextOpenInTab": "Abrir em aba",
-      "line402JsxTextCheckpointHistory": "Histórico de checkpoints",
+      "line402JsxTextCheckpointHistory": "Histórico de versões",
       "line420JsxTextCopyPath": "Copiar caminho",
       "line604JsxTextThisFolderIsEmpty": "Esta pasta está vazia",
       "line606JsxTextNoFilesOrSubfoldersAtThisPathIn": "Não há arquivos nem subpastas neste caminho na versão atual."
     },
     "featuresProjectFilesComponentsDriveListView": {
       "line255JsxTextOpenInTab": "Abrir em aba",
-      "line267JsxTextCheckpointHistory": "Histórico de checkpoints",
+      "line267JsxTextCheckpointHistory": "Histórico de versões",
       "line285JsxTextCopyPath": "Copiar caminho",
       "line396JsxTextThisFolderIsEmpty": "Esta pasta está vazia",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Não há arquivos nem subpastas neste caminho na versão atual."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Tudo o que seus agentes salvarem e os arquivos deste projeto aparecerão aqui."
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Clique duas vezes para editar o caminho",
@@ -6414,9 +6414,9 @@
     "featuresProjectFilesComponentsFileHistoryPopover": {
       "line72JsxTextFailedToLoadDiff": "Falha ao carregar o diff",
       "line102JsxTextNoDiff": "Sem diff",
-      "line160JsxAttrTitleCopyCheckpointId": "Copiar id do checkpoint",
+      "line160JsxAttrTitleCopyCheckpointId": "Copiar ID da versão",
       "line216JsxTextFailedToLoadHistory": "Falha ao carregar o histórico",
-      "line224JsxTextNoCheckpointsYet": "Ainda não há checkpoints",
+      "line224JsxTextNoCheckpointsYet": "Nenhuma versão ainda",
       "line240JsxTextShowingTheMostRecent": "Mostrando os mais recentes"
     },
     "featuresProjectFilesComponentsFilePreviewModal": {

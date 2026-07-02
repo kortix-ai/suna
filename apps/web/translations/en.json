@@ -6355,26 +6355,26 @@
       "line356JsxTextNoChangesDetected": "No changes detected."
     },
     "featuresProjectFilesComponentsChangeRequestsPanel": {
-      "line131JsxTextChangeRequests": "Change requests",
-      "line145JsxAttrTitleOpenANewChangeRequest": "Open a new change request",
-      "line199JsxTextChangeRequests": "change requests",
-      "line209JsxTextOpenTheFirstOne": "Open the first one"
+      "line131JsxTextChangeRequests": "Proposed changes",
+      "line145JsxAttrTitleOpenANewChangeRequest": "Propose a new change",
+      "line199JsxTextChangeRequests": "No proposed changes here yet",
+      "line209JsxTextOpenTheFirstOne": "Propose the first one"
     },
     "featuresProjectFilesComponentsCheckpointDetailDialog": {
       "line166JsxTextSelectAFileToViewTheDiff": "Select a file to view the diff",
       "line220JsxTextFailedToLoadDiff": "Failed to load diff",
       "line226JsxTextNoTextualDiff": "No textual diff",
-      "line228JsxTextFileMayBeBinaryOrUnchangedInThis": "File may be binary or unchanged in this checkpoint.",
-      "line407JsxAttrTitlePreviousCheckpoint": "Previous checkpoint (←)",
-      "line417JsxAttrTitleNextCheckpoint": "Next checkpoint (→)",
-      "line482JsxAttrTitleCopyCheckpointId": "Copy checkpoint id",
+      "line228JsxTextFileMayBeBinaryOrUnchangedInThis": "File may be binary or unchanged in this version.",
+      "line407JsxAttrTitlePreviousCheckpoint": "Previous version (←)",
+      "line417JsxAttrTitleNextCheckpoint": "Next version (→)",
+      "line482JsxAttrTitleCopyCheckpointId": "Copy version ID",
       "line528JsxAttrPlaceholderFilterFiles": "Filter files",
-      "line546JsxTextFailedToLoadCheckpoint": "Failed to load checkpoint",
-      "line575JsxTextLoadingCheckpoint": "Loading checkpoint…"
+      "line546JsxTextFailedToLoadCheckpoint": "Couldn't load version",
+      "line575JsxTextLoadingCheckpoint": "Loading version…"
     },
     "featuresProjectFilesComponentsCheckpointsPanel": {
-      "line230JsxTextFailedToLoadCheckpoints": "Failed to load checkpoints",
-      "line241JsxTextNoCheckpointsYet": "No checkpoints yet",
+      "line230JsxTextFailedToLoadCheckpoints": "Couldn't load version history",
+      "line241JsxTextNoCheckpointsYet": "No versions saved yet",
       "line278JsxTextShowingTheMostRecent": "Showing the most recent"
     },
     "featuresProjectFilesComponentsDiffPreviewBanner": {
@@ -6387,17 +6387,17 @@
       "line209JsxTextOpenFolder": "Open folder",
       "line231JsxTextCopyPath": "Copy path",
       "line390JsxTextOpenInTab": "Open in tab",
-      "line402JsxTextCheckpointHistory": "Checkpoint history",
+      "line402JsxTextCheckpointHistory": "Version history",
       "line420JsxTextCopyPath": "Copy path",
       "line604JsxTextThisFolderIsEmpty": "This folder is empty",
       "line606JsxTextNoFilesOrSubfoldersAtThisPathIn": "No files or subfolders at this path in the current version."
     },
     "featuresProjectFilesComponentsDriveListView": {
       "line255JsxTextOpenInTab": "Open in tab",
-      "line267JsxTextCheckpointHistory": "Checkpoint history",
+      "line267JsxTextCheckpointHistory": "Version history",
       "line285JsxTextCopyPath": "Copy path",
       "line396JsxTextThisFolderIsEmpty": "This folder is empty",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "No files or subfolders at this path in the current version."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Anything your agents save and any assets added to this project will show up here."
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Double-click to edit path",
@@ -6478,9 +6478,9 @@
     "featuresProjectFilesComponentsFileHistoryPopover": {
       "line72JsxTextFailedToLoadDiff": "Failed to load diff",
       "line102JsxTextNoDiff": "No diff",
-      "line160JsxAttrTitleCopyCheckpointId": "Copy checkpoint id",
+      "line160JsxAttrTitleCopyCheckpointId": "Copy version ID",
       "line216JsxTextFailedToLoadHistory": "Failed to load history",
-      "line224JsxTextNoCheckpointsYet": "No checkpoints yet",
+      "line224JsxTextNoCheckpointsYet": "No versions yet",
       "line240JsxTextShowingTheMostRecent": "Showing the most recent"
     },
     "featuresProjectFilesComponentsFilePreviewModal": {

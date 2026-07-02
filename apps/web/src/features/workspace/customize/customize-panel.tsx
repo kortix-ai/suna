@@ -35,7 +35,7 @@ import {
   Boxes,
   Container,
   FolderOpen,
-  GitCommitHorizontal,
+  History,
   KeyRound,
   Monitor,
   Plug,
@@ -79,8 +79,8 @@ const GROUPS: readonly RailGroup[] = [
   {
     label: 'Workspace',
     items: [
-      { section: 'changes', label: 'Checkpoints', icon: GitCommitHorizontal },
       { section: 'files', label: 'Files', icon: FolderOpen },
+      { section: 'changes', label: 'Changes', icon: History },
       { section: 'sandbox', label: 'Sandbox', icon: Container },
       { section: 'dev', label: 'Dev', icon: Terminal },
     ],
@@ -254,29 +254,33 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
                   ))}
                 </ul>
               </FadedScrollArea>
-              <ModalClose className="flex shrink-0 items-center px-4">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-muted-foreground shrink-0"
-                  aria-label="Close"
-                >
-                  <Icon.Close className="text-foreground size-4 stroke-1" />
-                </Button>
-              </ModalClose>
+              <div className="flex shrink-0 items-center px-4">
+                <ModalClose asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-muted-foreground shrink-0"
+                    aria-label="Close"
+                  >
+                    <Icon.Close className="text-foreground size-4 stroke-1" />
+                  </Button>
+                </ModalClose>
+              </div>
             </nav>
           ) : (
             <section className="bg-sidebar flex min-h-0 flex-col space-y-10 border-r py-4">
-              <ModalClose className="w-full px-2.5">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground flex w-full items-center justify-start gap-2 px-4 py-2 text-left text-sm font-medium"
-                >
-                  <ArrowLeft />
-                  Back to workspace
-                </Button>
-              </ModalClose>
+              <div className="w-full px-2.5">
+                <ModalClose asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground flex w-full items-center justify-start gap-2 px-4 py-2 text-left text-sm font-medium"
+                  >
+                    <ArrowLeft />
+                    Back to workspace
+                  </Button>
+                </ModalClose>
+              </div>
 
               <nav aria-label="Customize">
                 <div className="flex-1 [scrollbar-width:none] overflow-y-auto px-2.5 py-3 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">

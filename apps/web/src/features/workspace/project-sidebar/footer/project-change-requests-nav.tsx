@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, GitBranch, GitPullRequest } from 'lucide-react';
+import { ArrowRight, FileDiff } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useMemo, useState } from 'react';
 
@@ -61,8 +61,8 @@ function OpenCrChooser({
     <div className="w-full overflow-hidden py-1">
       <div className="border-border flex items-center justify-between gap-3 border-b px-3.5 py-1.5">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="grid size-8 shrink-0 place-items-center rounded-md bg-emerald-500/10 text-emerald-600">
-            <GitPullRequest className="size-4" />
+          <span className="bg-kortix-green/10 text-kortix-green grid size-8 shrink-0 place-items-center rounded-md">
+            <FileDiff className="size-4" />
           </span>
           <div className="min-w-0">
             <h3 className="text-foreground truncate text-sm font-medium">
@@ -98,16 +98,10 @@ function OpenCrChooser({
                 </span>
               </div>
               <div className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
-                <GitBranch className="size-3 shrink-0" />
-                <span className="truncate font-mono">{cr.head_ref.slice(0, 7)}</span>
-                <span className="text-muted-foreground/60">→</span>
-                {cr.base_ref === 'main' ? (
-                  <Badge variant="kortix" size="xs">
-                    {cr.base_ref.slice(0, 7)}
-                  </Badge>
-                ) : (
-                  <span className="shrink-0 truncate font-mono">{cr.base_ref}</span>
-                )}
+                <span className="shrink-0">into</span>
+                <Badge variant="kortix" size="xs" className="truncate">
+                  {cr.base_ref}
+                </Badge>
               </div>
             </div>
             <ArrowRight className="text-muted-foreground/50 group-hover:text-foreground size-3.5 shrink-0 transition-colors" />
@@ -133,7 +127,7 @@ function NavItemInner() {
       className="text-sm! font-medium [&_svg]:size-4!"
       onClick={c.count === 1 ? () => c.openCr(c.crs[0].cr_id) : undefined}
     >
-      <GitPullRequest />
+      <FileDiff />
       <span>{label}</span>
       <span className="ml-auto pr-1 text-xs tabular-nums">{c.count}</span>
     </SidebarMenuButton>
