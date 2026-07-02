@@ -9,7 +9,7 @@ import type {
   UsageEvent,
 } from '../domain';
 import type { FetchImpl } from '../http';
-import type { CircuitBreaker } from '../resilience';
+import { type CircuitBreaker, backoffDelay, realSleep } from '../resilience';
 import { type ExtractedUsage, calculateCost, extractUsageFromJson, jsonHasContent } from '../usage';
 import { runFailover } from './failover';
 import { type StreamProbeResult, probeStream, relayStream } from './streaming';
@@ -55,6 +55,15 @@ function newRequestId(): string {
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
+
+// An empty completion is often a transient upstream hiccup on one specific
+// backend (observed: OpenRouter intermittently routing a request to a backend
+// that returns an immediate empty `stop` with zero usage, while the very next
+// request to the SAME candidate succeeds normally). Retrying the same candidate
+// a few times — before falling over to a different candidate, and before ever
+// giving up — resolves the overwhelming majority of these transparently,
+// including the common case where there is only one candidate to begin with.
+const MAX_EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE = 3;
 
 function idOf(principal: AuthedPrincipal) {
   return {
@@ -265,12 +274,41 @@ export async function handleChatCompletions(
   // An upstream can return a syntactically valid 200 with empty `choices`/content
   // (seen from OpenRouter/z-ai) — a real failure mode, not a legitimate zero-output
   // turn. That never throws, so runFailover's transport-level retry/failover never
-  // sees it. This loop adds a second failover tier on top: each candidate that
-  // comes back HTTP-ok but empty is excluded and the remaining candidates are
-  // retried, exactly like a transport error would be — only once every candidate
-  // has produced nothing do we give up and tell the caller, instead of silently
-  // forwarding a blank "stop".
+  // sees it. This loop adds a second failover tier on top: each candidate gets a
+  // few immediate retries in place (below), and only once it's exhausted its own
+  // retries is it excluded so the remaining candidates get a turn — only once
+  // every candidate has produced nothing do we give up and tell the caller,
+  // instead of silently forwarding a blank "stop".
   const emptyProviders = new Set<string>();
+  const emptyAttemptsByProvider = new Map<string, number>();
+  const sleep = config.retry?.sleep ?? realSleep;
+  const rand = config.retry?.rand ?? Math.random;
+  const baseDelayMs = config.retry?.baseDelayMs ?? 250;
+  const maxDelayMs = config.retry?.maxDelayMs ?? 8_000;
+  const jitter = config.retry?.jitter ?? true;
+
+  // Records an empty completion from `provider`. Retries the same candidate (via
+  // a short backoff, then `continue`) while it's under budget; once exhausted,
+  // excludes it from `remaining` so the loop moves on to the next candidate (or
+  // to the all-candidates-empty exit if there isn't one).
+  const registerEmptyCompletion = async (
+    provider: string,
+    fields: Record<string, unknown>,
+  ): Promise<void> => {
+    const attempt = (emptyAttemptsByProvider.get(provider) ?? 0) + 1;
+    emptyAttemptsByProvider.set(provider, attempt);
+    const exhausted = attempt >= MAX_EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE;
+    logger.warn(
+      `[llm-gateway] empty completion from ${provider} (attempt ${attempt}/${MAX_EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE}), ${exhausted ? 'failing over' : 'retrying same candidate'} ${requestId}`,
+    );
+    step('empty_completion_retry', { provider, attempt, exhausted, ...fields });
+    if (exhausted) {
+      emptyProviders.add(provider);
+      return;
+    }
+    await sleep(backoffDelay(attempt, baseDelayMs, maxDelayMs, jitter, rand));
+  };
+
   let upstream: Response | null = null;
   let descriptor: UpstreamDescriptor | null = null;
   let tried: string[] = [];
@@ -336,24 +374,12 @@ export async function handleChatCompletions(
         nonStreamBody = data;
         break;
       }
-      logger.warn(
-        `[llm-gateway] empty completion from ${chosen.provider}, failing over ${requestId}`,
-      );
-      step('empty_completion_retry', { provider: chosen.provider, streaming: false });
-      emptyProviders.add(chosen.provider);
+      await registerEmptyCompletion(chosen.provider, { streaming: false });
       continue;
     }
 
     if (!candidateUpstream.body) {
-      logger.warn(
-        `[llm-gateway] empty stream body from ${chosen.provider}, failing over ${requestId}`,
-      );
-      step('empty_completion_retry', {
-        provider: chosen.provider,
-        streaming: true,
-        reason: 'no_body',
-      });
-      emptyProviders.add(chosen.provider);
+      await registerEmptyCompletion(chosen.provider, { streaming: true, reason: 'no_body' });
       continue;
     }
 
@@ -364,9 +390,7 @@ export async function handleChatCompletions(
       streamProbe = probe;
       break;
     }
-    logger.warn(`[llm-gateway] empty stream from ${chosen.provider}, failing over ${requestId}`);
-    step('empty_completion_retry', { provider: chosen.provider, streaming: true });
-    emptyProviders.add(chosen.provider);
+    await registerEmptyCompletion(chosen.provider, { streaming: true });
   }
 
   // Every loop exit above either `return`s (transport failure / all-empty) or
