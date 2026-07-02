@@ -72,7 +72,13 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // loads the plugin SDK matching its own binary and re-fetches it over the network
 // if the baked tree carries a different version — the stale starter pin left every
 // boot re-installing it, the ~5–8s opencode-session-created gap).
-const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v15';
+// v16: hard-fail the bake if the baked opencode-config-deps tree (or the
+// starter tool files against it) can't actually be bundled by Bun — a
+// bundle-breaking axios override once shipped silently baked into every
+// sandbox image (bun install succeeded; the runtime bundle did not). Ported
+// from main (#4073) directly onto staging as a hotfix — main's v16-v23 are
+// unrelated feature bumps not yet promoted here.
+const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v16';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 6);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
