@@ -236,8 +236,10 @@ export interface SessionAuditAction {
   risk: string | null;
   acted_by: string | null;
   acted_by_email: string | null;
-  approved_by: string | null;
-  approved_by_email: string | null;
+  /** Who resolved the gated action — set for both approve and deny; null while
+   *  still awaiting a decision. */
+  resolved_by: string | null;
+  resolved_by_email: string | null;
   result_summary: Record<string, unknown> | null;
   at: string;
   resolved_at: string | null;
@@ -251,7 +253,7 @@ export interface SessionAudit {
 }
 
 /** Per-session audit trail: every executor-gated action the agent took, with its
- *  risk + allow/ask/block verdict + who approved it. Visible to anyone who can
+ *  risk + allow/ask/block verdict + who resolved it. Visible to anyone who can
  *  see the session (its launcher + project managers). */
 export async function getSessionAudit(projectId: string, sessionId: string, limit?: number) {
   const qs = limit ? `?limit=${limit}` : '';

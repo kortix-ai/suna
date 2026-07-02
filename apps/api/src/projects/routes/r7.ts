@@ -641,7 +641,9 @@ projectsApp.openapi(
       })
       .from(executorExecutions)
       .where(and(eq(executorExecutions.projectId, projectId), eq(executorExecutions.sessionId, sessionId)))
-      .orderBy(asc(executorExecutions.createdAt))
+      // Most-recent-first: when a busy session exceeds `limit`, keep the RECENT
+      // actions (truncating oldest), not the other way round.
+      .orderBy(desc(executorExecutions.createdAt))
       .limit(limit.value);
 
     // Resolve actor + approver emails in one batched lookup (managers see who).
@@ -654,7 +656,7 @@ projectsApp.openapi(
       session_id: sessionId,
       agent: (visible.row.agentName as string | null) ?? null,
       count: rows.length,
-      // Chronological trail of every executor-gated action this session took.
+      // Most-recent-first trail of every executor-gated action this session took.
       actions: rows.map((r) => ({
         execution_id: r.executionId,
         action: r.actionPath,
@@ -663,8 +665,10 @@ projectsApp.openapi(
         risk: r.risk, // read | write | destructive | null
         acted_by: r.actingUserId,
         acted_by_email: r.actingUserId ? emailByUser.get(r.actingUserId) ?? null : null,
-        approved_by: r.approvedBy,
-        approved_by_email: r.approvedBy ? emailByUser.get(r.approvedBy) ?? null : null,
+        // Who resolved a gated action — set for BOTH approve and deny (the
+        // approvedBy column doubles as "resolver"). null while still pending.
+        resolved_by: r.approvedBy,
+        resolved_by_email: r.approvedBy ? emailByUser.get(r.approvedBy) ?? null : null,
         result_summary: r.resultSummary ?? null,
         at: r.createdAt.toISOString(),
         resolved_at: r.resolvedAt?.toISOString() ?? null,
@@ -799,15 +803,33 @@ projectsApp.openapi(
       return c.json({ error: 'Approval already resolved' }, 409);
     }
 
-    // Who may resolve: a project manager, OR the human who launched the session
-    // the gated action belongs to. (Founder decision: managers + launcher.)
-    const isManager = roleAllows(loaded.effectiveRole, 'manage');
+    // Who may resolve: a project MANAGER (the same project.members.manage IAM
+    // gate the inbox uses — capability-consistent, so a custom role holding the
+    // leaf without the "manager" label still qualifies), OR the human who
+    // launched the session the gated action belongs to. (Founder decision:
+    // managers + launcher.) assertProjectCapability throws on denial, so probe
+    // it — a non-manager launcher must still fall through.
+    let isManager = false;
+    try {
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+      );
+      isManager = true;
+    } catch {
+      isManager = false;
+    }
     let isLauncher = false;
     if (!isManager && row.sessionId) {
       const [session] = await db
         .select({ createdBy: projectSessions.createdBy })
         .from(projectSessions)
-        .where(eq(projectSessions.sessionId, row.sessionId))
+        // Scope to THIS project too — sessionId is a PK so it's globally unique,
+        // but making the project bound explicit keeps the gate self-documenting.
+        .where(and(eq(projectSessions.sessionId, row.sessionId), eq(projectSessions.projectId, projectId)))
         .limit(1);
       isLauncher = Boolean(session && session.createdBy === loaded.userId);
     }
@@ -820,17 +842,33 @@ projectsApp.openapi(
       decision,
       decided_by: loaded.userId,
     };
-    await db
+    // Atomic resolve — guard the UPDATE on the still-pending state so two
+    // concurrent resolvers can't both win (TOCTOU): approve clears the gate to
+    // the terminal `ok` (the real retried call re-audits as its own row), deny
+    // flips it to `denied`. Both stamp approvedBy (= who resolved) + resolvedAt,
+    // so the row leaves the pending inbox. A lost race matches 0 rows → 409.
+    const resolved = await db
       .update(executorExecutions)
       .set({
-        // Approve keeps the row (approvedBy stamps who); deny flips it to a
-        // terminal denied. Both set resolvedAt so it leaves the pending inbox.
-        status: decision === 'approve' ? 'pending_approval' : 'denied',
-        approvedBy: decision === 'approve' ? loaded.userId : null,
+        status: decision === 'approve' ? 'ok' : 'denied',
+        approvedBy: loaded.userId,
         resolvedAt: new Date(),
         resultSummary: detail,
       })
-      .where(eq(executorExecutions.executionId, executionId));
+      .where(
+        and(
+          eq(executorExecutions.executionId, executionId),
+          eq(executorExecutions.projectId, projectId),
+          eq(executorExecutions.status, 'pending_approval'),
+          isNull(executorExecutions.approvedBy),
+          isNull(executorExecutions.resolvedAt),
+        ),
+      )
+      .returning({ id: executorExecutions.executionId });
+
+    if (resolved.length === 0) {
+      return c.json({ error: 'Approval already resolved' }, 409);
+    }
 
     return c.json({ ok: true });
   },

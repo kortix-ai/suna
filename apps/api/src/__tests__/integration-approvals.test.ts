@@ -92,6 +92,8 @@ describe('approvals inbox + resolution', () => {
     const ap = await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, { decision: 'approve' });
     expect(ap.status).toBe(200);
     const [after] = await db.select().from(executorExecutions).where(eq(executorExecutions.executionId, execId));
+    // Approve clears the gate to the terminal `ok` + stamps the resolver.
+    expect(after.status).toBe('ok');
     expect(after.approvedBy).toBe(ctx.userId);
     expect(after.resolvedAt).toBeTruthy();
 
@@ -104,10 +106,10 @@ describe('approvals inbox + resolution', () => {
     const audit = await authGet(`/v1/projects/${ctx.projectId}/sessions/${SESSION}/audit`);
     expect(audit.status).toBe(200);
     const entry = (await audit.json()).actions.find((a: any) => a.execution_id === execId);
-    expect(entry?.approved_by).toBe(ctx.userId);
+    expect(entry?.resolved_by).toBe(ctx.userId);
   });
 
-  test('deny flips the action to denied + resolves it', async () => {
+  test('deny flips the action to denied + records the denier', async () => {
     if (!ctx) return;
     const execId = await seedPending();
     const dn = await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, { decision: 'deny' });
@@ -115,6 +117,19 @@ describe('approvals inbox + resolution', () => {
     const [after] = await db.select().from(executorExecutions).where(eq(executorExecutions.executionId, execId));
     expect(after.status).toBe('denied');
     expect(after.resolvedAt).toBeTruthy();
+    // The denier is recorded too, so the audit trail attributes the refusal.
+    expect(after.approvedBy).toBe(ctx.userId);
+  });
+
+  test('concurrent resolves race-safely: exactly one 200, the other 409', async () => {
+    if (!ctx) return;
+    const execId = await seedPending();
+    const [a, b] = await Promise.all([
+      authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, { decision: 'approve' }),
+      authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, { decision: 'deny' }),
+    ]);
+    const statuses = [a.status, b.status].sort();
+    expect(statuses).toEqual([200, 409]);
   });
 
   test('an invalid decision is rejected 400', async () => {
