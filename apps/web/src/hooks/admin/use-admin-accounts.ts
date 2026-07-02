@@ -215,6 +215,34 @@ export function useAdminAccountLedger(accountId: string | null, limit = 50) {
   });
 }
 
+export interface AdminAccountProject {
+  projectId: string;
+  name: string;
+  status: string | null;
+  repoUrl: string | null;
+  defaultBranch: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  lastOpenedAt: string | null;
+  sessionCount: number;
+  activeSessionCount: number;
+  lastSessionAt: string | null;
+}
+
+export function useAdminAccountProjects(accountId: string | null) {
+  return useQuery<{ projects: AdminAccountProject[] }>({
+    queryKey: ['admin', 'accounts', accountId, 'projects'],
+    enabled: !!accountId,
+    queryFn: async () => {
+      const response = await backendApi.get<{ projects: AdminAccountProject[] }>(
+        `/admin/api/accounts/${accountId}/projects`,
+      );
+      if (response.error) throw new Error(response.error.message);
+      return response.data!;
+    },
+  });
+}
+
 export function useAdminAccountSandboxes(accountId: string | null) {
   return useQuery<{ sandboxes: AdminAccountSandbox[] }>({
     queryKey: ['admin', 'accounts', accountId, 'sandboxes'],
