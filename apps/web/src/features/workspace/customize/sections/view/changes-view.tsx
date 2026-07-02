@@ -24,14 +24,13 @@ import { useCommits } from '@/features/project-files/hooks/use-commits';
 import { getProject, type ProjectCommit } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import {
+  Check,
+  CheckCircleSolid,
   ChevronRight,
-  GitMerge,
-  GitMergeSolid,
-  GitPullRequest,
   Refresh,
   XCircleSolid,
 } from '@mynaui/icons-react';
-import { History } from 'lucide-react';
+import { FileDiff, History } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useMemo, useState } from 'react';
@@ -167,11 +166,11 @@ function ChangeRequestRow({ cr, onOpen }: { cr: ChangeRequest; onOpen: (crId: st
         )}
       >
         {cr.status === 'merged' ? (
-          <GitMergeSolid className="text-kortix-green size-5" />
+          <CheckCircleSolid className="text-kortix-green size-5" />
         ) : cr.status === 'closed' ? (
           <XCircleSolid className="text-kortix-red size-5" />
         ) : (
-          <GitPullRequest className="text-kortix-blue size-5" />
+          <FileDiff className="text-kortix-blue size-5" />
         )}
       </span>
 
@@ -196,7 +195,7 @@ function ChangeRequestRow({ cr, onOpen }: { cr: ChangeRequest; onOpen: (crId: st
             Dismiss
           </Button>
           <Button size="sm" onClick={onMerge} disabled={busy}>
-            {busy ? <Loading className="size-3.5 shrink-0" /> : <GitMerge className="size-3.5" />}
+            {busy ? <Loading className="size-3.5 shrink-0" /> : <Check className="size-3.5" />}
             Apply
           </Button>
         </div>
@@ -340,7 +339,7 @@ function ChangesTimeline({
         />
       ) : !hasContent ? (
         <EmptyState
-          icon={GitPullRequest}
+          icon={FileDiff}
           size="sm"
           title="No changes yet"
           description="When your agents save work or propose changes, it shows up here."
