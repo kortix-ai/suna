@@ -354,7 +354,6 @@ const HealthSchema = z
     memory_mb: z.number(),
     timestamp: z.string(),
     billing_enabled: z.boolean(),
-    warm_snapshots: z.boolean(),
     tunnel: z.any(),
     leader: z.boolean(),
     trigger_scheduler: z.any(),
@@ -376,10 +375,6 @@ const healthHandler = (c: any) =>
     memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
     timestamp: new Date().toISOString(),
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
-    // Warm/stateful-snapshot boots were removed — sessions are cold-only on
-    // every provider. Kept in the health contract (always false) for back-compat
-    // with any monitor that reads it.
-    warm_snapshots: false,
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
     // The leader pod's trigger-sweep heartbeat: when it last ran, how long it
