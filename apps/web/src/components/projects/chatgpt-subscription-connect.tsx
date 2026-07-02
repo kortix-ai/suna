@@ -33,7 +33,7 @@ import { useBillingAccountId } from '@/stores/billing-account-context';
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 export const LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';
 
-const DEFAULT_PROJECT_SHARING: SharingSelection = { mode: 'project', memberIds: [] };
+const DEFAULT_PROJECT_SHARING: SharingSelection = { mode: 'project', memberIds: [], groupIds: [] };
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 

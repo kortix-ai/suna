@@ -17,6 +17,7 @@ export {
   deleteResourceGrant,
   hasAnyResourceGrants,
   unscopedResourceIds,
+  isProjectResourceExplicitlyGranted,
   type ResourceType as ResourceGrantType,
   type PrincipalType as ResourceGrantPrincipalType,
 } from './resource-grants';

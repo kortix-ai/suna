@@ -5,9 +5,26 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { ProgressRing } from '@/components/ui/progress-ring';
 import { STATUS_TEXT } from '@/components/ui/status';
-import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { searchWorkspaceFiles } from '@/features/files';
+import { getFileIcon } from '@/features/files/components/file-icon';
+import { normalizeProviderList } from '@/hooks/opencode/provider-selection';
+import type {
+  Agent,
+  Command,
+  MessageWithParts,
+  PromptPart,
+  ProviderListResponse,
+  Session,
+} from '@/hooks/opencode/use-opencode-sessions';
+import {
+  useOpenCodeSessionTodo,
+  useOpenCodeSessions,
+} from '@/hooks/opencode/use-opencode-sessions';
+import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import {
   ArrowUp,
   ArrowUpLeft,
@@ -22,34 +39,17 @@ import {
   Terminal,
   X,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { VoiceRecorder } from './voice-recorder';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { searchWorkspaceFiles } from '@/features/files';
-import { getFileIcon } from '@/features/files/components/file-icon';
-import type {
-  Agent,
-  Command,
-  MessageWithParts,
-  PromptPart,
-  ProviderListResponse,
-  Session,
-} from '@/hooks/opencode/use-opencode-sessions';
-import { normalizeProviderList } from '@/hooks/opencode/provider-selection';
-import {
-  useOpenCodeSessions,
-  useOpenCodeSessionTodo,
-} from '@/hooks/opencode/use-opencode-sessions';
-import { AnimatePresence, motion } from 'motion/react';
 import { extractClipboardFiles } from './clipboard-files';
 import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
-  isModelRequiredButUnavailable,
   NO_MODEL_AVAILABLE_MESSAGE,
+  isModelRequiredButUnavailable,
 } from './model-availability';
-import { ModelSelector, type ModelDefaultControls } from './model-selector';
-import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
+import { type ModelDefaultControls, ModelSelector } from './model-selector';
+import { VoiceRecorder } from './voice-recorder';
 
 import {
   CommandGroup,
@@ -118,7 +118,9 @@ function catalogModelFor(providerID: string, modelID: string) {
       lookupModelID = modelID.slice(slash + 1);
     }
   }
-  return LLM_PROVIDER_BY_ID.get(lookupProviderID)?.models.find((model) => model.id === lookupModelID);
+  return LLM_PROVIDER_BY_ID.get(lookupProviderID)?.models.find(
+    (model) => model.id === lookupModelID,
+  );
 }
 
 export function flattenModels(providers: ProviderListResponse | undefined): FlatModel[] {
@@ -152,7 +154,10 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
             },
         contextWindow: (model as any).limit?.context,
         releaseDate:
-          (model as any).release_date ?? (model as any).released ?? catalogModel?.released ?? undefined,
+          (model as any).release_date ??
+          (model as any).released ??
+          catalogModel?.released ??
+          undefined,
         family: (model as any).family,
         cost: (model as any).cost
           ? {
@@ -243,7 +248,8 @@ export function AgentSelector({
                 'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium capitalize transition-colors duration-200',
                 flash && 'bg-primary/10 text-foreground',
                 open && 'bg-muted text-foreground',
-                disabled && 'cursor-not-allowed opacity-70 hover:bg-transparent hover:text-muted-foreground',
+                disabled &&
+                  'cursor-not-allowed opacity-70 hover:bg-transparent hover:text-muted-foreground',
               )}
             >
               <span className="max-w-[100px] truncate">{displayName}</span>
@@ -259,7 +265,9 @@ export function AgentSelector({
         <TooltipContent side="top" className="max-w-[240px] text-xs">
           {disabled ? (
             <p>
-              {"This agent is set when the session starts and can't be changed here. Start a new session to use a different agent."}
+              {
+                "This agent is set when the session starts and can't be changed here. Start a new session to use a different agent."
+              }
             </p>
           ) : (
             <p>
@@ -1149,6 +1157,9 @@ export interface SessionChatInputProps {
   onClearReply?: () => void;
   /** When true, a structured question is active — send submits a custom answer instead of a chat message */
   lockForQuestion?: boolean;
+  /** When true, a connector action is awaiting your approval — the run is paused,
+   *  so the composer is locked until you approve/deny it above. */
+  lockForApproval?: boolean;
   /** Called instead of onSend when lockForQuestion is true and the user submits text */
   onCustomAnswer?: (text: string) => void;
   /** Label for the send button when a question is active (e.g. "Next", "Submit"). Null = default arrow icon. */
@@ -1223,6 +1234,7 @@ export function SessionChatInput({
   replyTo,
   onClearReply,
   lockForQuestion = false,
+  lockForApproval = false,
   onCustomAnswer,
   questionButtonLabel = null,
   questionCanAct = true,
@@ -1671,13 +1683,19 @@ export function SessionChatInput({
     lockForQuestion,
   });
   const canSubmit = text.trim().length > 0 || attachedFiles.length > 0;
-  const submitDisabled = disabled || modelUnavailable;
+  const submitDisabled = disabled || modelUnavailable || lockForApproval;
 
   const handleSubmit = useCallback(async () => {
     if (modelUnavailable) {
       toast.error(NO_MODEL_AVAILABLE_MESSAGE, {
         description: NO_MODEL_AVAILABLE_ACTION_MESSAGE,
       });
+      return;
+    }
+
+    // The run is paused on a connector approval — resolve it above first.
+    if (lockForApproval) {
+      toast.error('Approve or deny the pending action to continue.');
       return;
     }
 
@@ -1761,6 +1779,7 @@ export function SessionChatInput({
     attachedFiles,
     mentions,
     lockForQuestion,
+    lockForApproval,
     onCustomAnswer,
     onQuestionAction,
   ]);
@@ -2105,7 +2124,11 @@ export function SessionChatInput({
                   aria-hidden
                   className="text-muted-foreground pointer-events-none absolute top-4 left-0.5 h-6 w-[calc(100%-0.5rem)] overflow-hidden text-base sm:text-sm"
                 >
-                  {lockForQuestion ? (
+                  {lockForApproval ? (
+                    <div className="absolute inset-0 text-amber-600 dark:text-amber-400">
+                      Approve or deny the action above to continue…
+                    </div>
+                  ) : lockForQuestion ? (
                     <div className="absolute inset-0">
                       {questionButtonLabel ? 'Or type your own answer...' : 'Type your answer...'}
                     </div>
@@ -2175,7 +2198,7 @@ export function SessionChatInput({
                 }}
                 placeholder=""
                 rows={1}
-                disabled={disabled}
+                disabled={disabled || lockForApproval}
                 className={cn(
                   'placeholder:text-muted-foreground relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto rounded-[24px] border-none bg-transparent px-0.5 pt-4 pb-6 text-base shadow-none outline-none focus-visible:ring-0 disabled:opacity-50 sm:text-sm',
                   highlightSegments && 'caret-foreground text-transparent',
@@ -2255,7 +2278,10 @@ export function SessionChatInput({
 
               {toolbarSlot}
 
-              <VoiceRecorder onTranscription={handleTranscription} disabled={submitDisabled || isBusy} />
+              <VoiceRecorder
+                onTranscription={handleTranscription}
+                disabled={submitDisabled || isBusy}
+              />
 
               {isBusy && (onStop || stopDisabled) && !lockForQuestion && (
                 <div className="relative flex items-center">
@@ -2321,9 +2347,7 @@ export function SessionChatInput({
                             }
                             onClick={handleSubmit}
                             aria-label={
-                              modelUnavailable
-                                ? NO_MODEL_AVAILABLE_ACTION_MESSAGE
-                                : 'Send message'
+                              modelUnavailable ? NO_MODEL_AVAILABLE_ACTION_MESSAGE : 'Send message'
                             }
                             className="h-8 w-8 flex-shrink-0 rounded-full p-0"
                           >

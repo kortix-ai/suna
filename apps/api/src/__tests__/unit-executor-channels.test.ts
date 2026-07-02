@@ -370,7 +370,7 @@ function makeDeps(body: string, status = 200) {
     loadPolicies: async () => [],
     loadProjectPolicies: async () => [],
     loadDefaultMode: async () => 'allow_all',
-    recordExecution: async () => {},
+    recordExecution: async () => null,
     fetchImpl: async (url, init) => {
       fetchCalls.push({ url, ...init });
       return { status, ok: status >= 200 && status < 300, text: async () => body };
@@ -451,7 +451,7 @@ describe('handleCall — channel (slack)', () => {
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
-      recordExecution: async () => {},
+      recordExecution: async () => null,
       fetchImpl: async (url, init) => {
         fetchCalls.push({ url, ...init });
         return { status: 200, ok: true, text: async () => '{"ok":true,"messages":[]}' };
@@ -490,7 +490,7 @@ describe('handleCall — channel (email)', () => {
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
-      recordExecution: async () => {},
+      recordExecution: async () => null,
       fetchImpl: async (url, init) => {
         fetchCalls.push({ url, ...init });
         return { status: 200, ok: true, text: async () => '{"message_id":"msg-reply"}' };
@@ -543,7 +543,7 @@ describe('handleCall — channel (email)', () => {
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
-      recordExecution: async () => {},
+      recordExecution: async () => null,
       fetchImpl: async (url, init) => {
         fetchCalls.push({ url, ...init });
         return { status: 200, ok: true, text: async () => '{"message_id":"msg-reply"}' };
@@ -590,7 +590,7 @@ describe('handleCall — channel (email)', () => {
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
-      recordExecution: async () => {},
+      recordExecution: async () => null,
       fetchImpl: async (url, init) => {
         fetchCalls.push({ url, ...init });
         return { status: 200, ok: true, text: async () => '{"messages":[]}' };
@@ -662,7 +662,7 @@ function meetDeps(action: GatewayAction, body: string, status = 200) {
     loadPolicies: async () => [],
     loadProjectPolicies: async () => [],
     loadDefaultMode: async () => 'allow_all',
-    recordExecution: async () => {},
+    recordExecution: async () => null,
     fetchImpl: async (url, init) => {
       fetchCalls.push({ url, ...init });
       return { status, ok: status >= 200 && status < 300, text: async () => body };

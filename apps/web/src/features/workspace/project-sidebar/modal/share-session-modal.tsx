@@ -77,7 +77,7 @@ export function ShareSessionModal({
   onSaved?: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const [sharing, setSharing] = useState<SharingSelection>({ mode: 'private', memberIds: [] });
+  const [sharing, setSharing] = useState<SharingSelection>({ mode: 'private', memberIds: [], groupIds: [] });
 
   useEffect(() => {
     if (!open || !session) return;

@@ -263,8 +263,6 @@ export const TriggerSchema = z.object({
   secret_env: z.string().nullable(),
   prompt_template: z.string(),
   session_mode: z.enum(['fresh', 'reuse']),
-  /** The member this trigger's automated runs act as (null = account owner). */
-  owner_user_id: z.string().nullable(),
   last_fired_at: z.string().nullable(),
   last_status: z.string().nullable(),
   last_error: z.string().nullable(),
@@ -306,6 +304,11 @@ export const SecretSchema = z.object({
   share_scope: z.enum(['project', 'restricted']),
   sharing: SharingIntentSchema.nullable(),
   usable_by_me: z.boolean(),
+  /** Provenance for `usable_by_me`: the agent(s) the caller is assigned to that
+   *  declare this secret (the "assign human → agent" inheritance pyramid).
+   *  Non-null ONLY when inheritance is the reason it's usable (the share scope
+   *  wouldn't otherwise reach them) — the UI shows an "Inherited from" badge. */
+  inherited_from: z.array(z.string()).nullish(),
   /** The caller's private override (value omitted), or null. */
   mine: z.object({ active: z.boolean(), updated_at: z.string() }).nullable(),
   /** Which value actually gets injected into the caller's sessions. */

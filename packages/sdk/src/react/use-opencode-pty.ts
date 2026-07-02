@@ -4,8 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../opencode/client';
 import { getActiveOpenCodeUrl } from '../state/server-store';
 import { getAuthToken } from '../platform/auth';
-import { useSandboxConnectionStore } from '../state/sandbox-connection-store';
 import type { Pty } from '@opencode-ai/sdk/v2/client';
+import { useOpenCodeRuntimeReady } from './use-opencode-sessions/keys';
 
 export type { Pty };
 
@@ -41,7 +41,7 @@ function unwrap<T>(result: { data?: T; error?: unknown }): T {
 export function useOpenCodePtyList(options?: { enabled?: boolean; serverUrl?: string }) {
   const activeUrl = getActiveOpenCodeUrl();
   const serverUrl = options?.serverUrl ?? activeUrl;
-  const runtimeReady = useSandboxConnectionStore((s) => s.status === 'connected' && s.healthy === true);
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<Pty[]>({
     queryKey: ptyKeys.list(serverUrl),
     queryFn: async () => {

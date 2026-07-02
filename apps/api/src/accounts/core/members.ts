@@ -7,6 +7,7 @@ import { lookupUserIdByEmail } from '../../shared/users';
 import { sendAccountInviteEmail, buildInviteUrl } from '../email';
 import { authorize, ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
+import { revokeAllAccountTokensForUser } from '../../repositories/account-tokens';
 import { onMemberAdded, onMemberRemoved } from '../../billing/services/seat-management';
 import {
   accountsRouter,
@@ -494,6 +495,9 @@ accountsRouter.openapi(
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, targetUserId)));
   invalidateIamCacheForUser(targetUserId);
+  // Offboarding is immediate: kill their PATs + live sandbox session tokens so a
+  // removed member (and their running agents) can't keep acting on their bearer.
+  await revokeAllAccountTokensForUser(targetUserId, accountId).catch(() => 0);
 
   // Billing v2 — revoke per-member YOLO + push -1 seat to Stripe.
   void onMemberRemoved(accountId, targetUserId).catch(() => {});
@@ -630,6 +634,8 @@ accountsRouter.openapi(
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
   invalidateIamCacheForUser(userId);
+  // Leaving revokes your own tokens for this account (PATs + live sessions).
+  await revokeAllAccountTokensForUser(userId, accountId).catch(() => 0);
 
   // Billing v2 — revoke YOLO + push -1 seat to Stripe on self-leave.
   void onMemberRemoved(accountId, userId).catch(() => {});

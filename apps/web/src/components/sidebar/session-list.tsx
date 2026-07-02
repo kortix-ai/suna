@@ -2,7 +2,6 @@
 
 import { useTranslations } from 'next-intl';
 
-import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,6 +13,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 import {
   Dialog,
   DialogContent,
@@ -32,6 +32,7 @@ import { Input } from '@/components/ui/input';
 import { useSidebar } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { CompactModal } from '@/features/session/header/compact-modal';
+import { useSessionsNeedingInputForProjects } from '@/features/session/session-audit-shared';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { useAdminSandboxHealth, useAdminSandboxRepair } from '@/hooks/admin/use-admin-sandboxes';
 import type { Session } from '@/hooks/opencode/use-opencode-sessions';
@@ -43,14 +44,8 @@ import {
 import { useBackgroundSessionPrefetch } from '@/hooks/opencode/use-session-prefetch';
 import { useTriggers } from '@/hooks/scheduled-tasks';
 import { useDebouncedBusySessions } from '@/hooks/use-debounced-busy-sessions';
-import {
-  buildInstancePath,
-  getActiveInstanceIdFromCookie,
-  getCurrentInstanceIdFromPathname,
-  normalizeAppPathname,
-} from '@kortix/sdk/instance-routes';
 import { classifySession, isSidebarHidden } from '@/lib/kortix/session-category';
-import { restartSandbox } from '@kortix/sdk/platform-client';
+import { playSound } from '@/lib/sounds';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
@@ -61,6 +56,13 @@ import {
 } from '@/stores/sandbox-connection-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { allDescendantIds, childMapByParent, sortSessions } from '@/ui';
+import {
+  buildInstancePath,
+  getActiveInstanceIdFromCookie,
+  getCurrentInstanceIdFromPathname,
+  normalizeAppPathname,
+} from '@kortix/sdk/instance-routes';
+import { restartSandbox } from '@kortix/sdk/platform-client';
 import {
   Archive,
   ArchiveRestore,
@@ -86,6 +88,8 @@ interface SessionRowProps {
   isActive: boolean;
   isBusy: boolean;
   pendingCount: number;
+  /** Connector actions in this session awaiting an approve/deny decision. */
+  needsApprovalCount?: number;
   isChild: boolean;
   /** Total number of direct children for this row */
   childCount?: number;
@@ -104,6 +108,7 @@ const SessionRow = memo(function SessionRow({
   isActive,
   isBusy,
   pendingCount,
+  needsApprovalCount = 0,
   isChild,
   childCount = 0,
   isExpanded = false,
@@ -121,6 +126,10 @@ const SessionRow = memo(function SessionRow({
   const displayTitle = session.title?.includes('@worker')
     ? session.title.replace(/\s*\(@worker\)\s*$/, '')
     : session.title || 'Untitled';
+
+  // Questions and connector-approvals both mean "the agent is paused, waiting on
+  // you" — surface them with one identical amber dot + count.
+  const inputCount = pendingCount + needsApprovalCount;
 
   return (
     <Link
@@ -143,12 +152,12 @@ const SessionRow = memo(function SessionRow({
         }}
         onMouseLeave={() => setIsHovering(false)}
       >
-        {/* Status dot — busy or pending */}
-        {isBusy || pendingCount > 0 ? (
+        {/* Status dot — waiting on you (amber) or working (green) */}
+        {isBusy || inputCount > 0 ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="flex-shrink-0">
-                {pendingCount > 0 ? (
+                {inputCount > 0 ? (
                   <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
                 ) : (
                   <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
@@ -156,9 +165,7 @@ const SessionRow = memo(function SessionRow({
               </div>
             </TooltipTrigger>
             <TooltipContent side="right" className="text-xs">
-              {pendingCount > 0
-                ? `${pendingCount} ${pendingCount === 1 ? 'question' : 'questions'} waiting`
-                : 'Working…'}
+              {inputCount > 0 ? `${inputCount} waiting for your input` : 'Working…'}
             </TooltipContent>
           </Tooltip>
         ) : null}
@@ -203,17 +210,18 @@ const SessionRow = memo(function SessionRow({
           </Tooltip>
         )}
 
-        {/* Pending badge */}
-        {pendingCount > 0 && (
+        {/* Waiting-for-input badge — questions + connector approvals, one count */}
+        {inputCount > 0 && (
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="flex h-4 min-w-4 flex-shrink-0 items-center justify-center rounded-full bg-amber-500/15 px-1 text-xs font-medium text-amber-500">
-                {pendingCount}
+                {inputCount}
               </span>
             </TooltipTrigger>
             <TooltipContent side="right" className="text-xs">
-              {pendingCount} {pendingCount === 1 ? 'question' : 'questions'}
-              {tHardcodedUi.raw('componentsSidebarSessionList.line208JsxTextWaitingForYourInput')}
+              {needsApprovalCount > 0
+                ? `${inputCount} action${inputCount === 1 ? '' : 's'} awaiting your approval`
+                : `${inputCount} ${inputCount === 1 ? 'question' : 'questions'} waiting for your input`}
             </TooltipContent>
           </Tooltip>
         )}
@@ -299,7 +307,11 @@ interface SessionGroupProps {
   expandedNodes: Record<string, boolean>;
   onToggleExpand: (sessionId: string) => void;
   isActiveSession: (sessionId: string) => boolean;
-  getStatus: (sessionId: string) => { isBusy: boolean; pendingCount: number };
+  getStatus: (sessionId: string) => {
+    isBusy: boolean;
+    pendingCount: number;
+    needsApprovalCount: number;
+  };
   onClick: (e: React.MouseEvent, sessionId: string) => void;
   onDelete: (sessionId: string, title: string) => void;
   onRename: (sessionId: string, currentTitle: string) => void;
@@ -326,7 +338,7 @@ function SessionGroup({
   const childIds = childMap.get(session.id);
   const hasChildren = !!childIds && childIds.length > 0;
   const isExpanded = expandedNodes[session.id] ?? false;
-  const { isBusy, pendingCount } = getStatus(session.id);
+  const { isBusy, pendingCount, needsApprovalCount } = getStatus(session.id);
 
   const childSessions = useMemo(() => {
     if (!childIds) return [];
@@ -371,6 +383,7 @@ function SessionGroup({
         isActive={isActiveSession(child.id)}
         isBusy={childStatus.isBusy}
         pendingCount={childStatus.pendingCount}
+        needsApprovalCount={childStatus.needsApprovalCount}
         isChild
         onClick={onClick}
         onDelete={onDelete}
@@ -391,6 +404,7 @@ function SessionGroup({
         isActive={isActiveSession(session.id)}
         isBusy={isBusy}
         pendingCount={pendingCount}
+        needsApprovalCount={needsApprovalCount}
         isChild={false}
         childCount={hasChildren ? childSessions.length : 0}
         isExpanded={isExpanded}
@@ -447,8 +461,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   const connectionStatus = useSandboxConnectionStore((s) => s.status);
   const recoveryPhase = useSandboxConnectionStore((s) => s.recoveryPhase);
   const routeInstanceId = getCurrentInstanceIdFromPathname(rawPathname);
-  const activeInstanceId =
-    routeInstanceId || getActiveInstanceIdFromCookie() || '';
+  const activeInstanceId = routeInstanceId || getActiveInstanceIdFromCookie() || '';
   // Layered (per-host) health is a justavps-only feature; the cloud runtime
   // never reports that provider, so it is permanently off here.
   const supportsLayeredHealth = false;
@@ -495,6 +508,29 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   const statuses = useSyncStore((s) => s.sessionStatus);
   const permissions = useOpenCodePendingStore((s) => s.permissions);
   const questions = useOpenCodePendingStore((s) => s.questions);
+  // Connector actions awaiting approve/deny, keyed by session id (both OpenCode
+  // + Kortix ids) so a row matches whichever id it holds.
+  // "Needs input" (connector approvals) per session — queried route-independently
+  // by each visible session's OWN project (the sidebar also renders on routes
+  // where the route param isn't a project, e.g. /sessions/:id).
+  const sessionProjectIds = useMemo(
+    () => [...new Set((sessions ?? []).map((s) => s.projectID).filter((p): p is string => !!p))],
+    [sessions],
+  );
+  const needsInput = useSessionsNeedingInputForProjects(sessionProjectIds);
+  const needsInputBySession = needsInput.sessions;
+
+  // Play the same notification sound a question does when a new approval appears.
+  const prevNeedsInputTotalRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (
+      prevNeedsInputTotalRef.current !== null &&
+      needsInput.total > prevNeedsInputTotalRef.current
+    ) {
+      playSound('notification');
+    }
+    prevNeedsInputTotalRef.current = needsInput.total;
+  }, [needsInput.total]);
 
   // Debounced busy state — prevents green dot from flickering during reasoning
   const debouncedBusy = useDebouncedBusySessions();
@@ -594,9 +630,13 @@ export function SessionList({ projectId }: SessionListProps = {}) {
         (debouncedBusy[sessionId] ||
           statuses[sessionId]?.type === 'busy' ||
           statuses[sessionId]?.type === 'retry');
-      return { isBusy: !!isBusy, pendingCount };
+      return {
+        isBusy: !!isBusy,
+        pendingCount,
+        needsApprovalCount: needsInputBySession[sessionId] ?? 0,
+      };
     },
-    [getPendingCount, debouncedBusy, statuses],
+    [getPendingCount, debouncedBusy, statuses, needsInputBySession],
   );
 
   // Known trigger names for the current project — needed so sessions whose
