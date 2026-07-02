@@ -17,13 +17,19 @@ function isRuntimeNotReadyError(error: Error): boolean {
 
 export default function Error({
   error,
-  reset,
 }: {
   error: Error & { digest?: string; statusCode?: number };
-  reset: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const transient = isRuntimeNotReadyError(error);
+
+  const handleReset = () => {
+    try {
+      if (typeof window !== 'undefined') window.location.reload();
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   useEffect(() => {
     if (transient) return; // boot races aren't real errors — don't log/report
@@ -31,14 +37,16 @@ export default function Error({
     Sentry.captureException(error);
   }, [error, transient]);
 
-  // Auto-recover from the sandbox-still-loading race: retry the segment until the
-  // runtime is ready, so the user sees a brief loader instead of a hard crash +
-  // manual "Try again".
+  // Auto-recover from the sandbox-still-loading race: give the runtime a moment to
+  // pin its URL, then hard-reload (the manual "Try again" path, which reliably
+  // recovers) — so the user sees a brief loader instead of a hard crash.
   useEffect(() => {
     if (!transient) return;
-    const t = setInterval(() => reset(), 1200);
-    return () => clearInterval(t);
-  }, [transient, reset]);
+    const t = setTimeout(() => {
+      if (typeof window !== 'undefined') window.location.reload();
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [transient]);
 
   if (transient) {
     return (
@@ -69,7 +77,7 @@ export default function Error({
           <Button asChild size="sm">
             <Link href="/">Home</Link>
           </Button>
-          <Button onClick={() => reset()} size="sm" variant="secondary">
+          <Button onClick={handleReset} size="sm" variant="secondary">
             {tI18nHardcoded.raw('autoAppErrorJsxTextTryAgain3351b1d3')}
           </Button>
         </div>
