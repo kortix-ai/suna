@@ -4,7 +4,9 @@ import { deriveRequestContext } from '../../iam/cache';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { auth } from '../../openapi';
 import { preResumeRecentStoppedSessions } from '../routes/shared';
+import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
+import { isPlatformAdmin } from '../../shared/platform-roles';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { getSupabase } from '../../shared/supabase';
 import { ttlMemo } from '../../shared/ttl-memo';
@@ -64,7 +66,7 @@ export async function enforceProjectQuota(
 }
 
 export async function loadVisibleSession(
-  loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole },
+  loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole; adminBypass?: boolean },
   sessionId: string,
 ): Promise<{
   row: ProjectSessionRow;
@@ -87,7 +89,19 @@ export async function loadVisibleSession(
   const subject = await resolveShareSubject(loaded.userId);
   const grants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
   if (!isSessionVisibleTo(row.visibility as 'private' | 'project' | 'restricted', row.createdBy, grants, subject)) {
-    return null;
+    // A platform-admin bypass already verified for the parent project (see
+    // loadProjectForUser) also covers a session that would otherwise be
+    // invisible (private / not-my-grant). Audit every use — this is a real
+    // support/investigation escape hatch, not a standing grant.
+    if (!loaded.adminBypass) return null;
+    await recordAuditEvent({
+      accountId: loaded.row.accountId,
+      actorUserId: loaded.userId,
+      action: 'project.admin_bypass_session_read',
+      resourceType: 'project_session',
+      resourceId: sessionId,
+      metadata: { via: 'admin_bypass_header', sessionVisibility: row.visibility },
+    });
   }
   const isOwner = row.createdBy === loaded.userId;
   const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
@@ -452,12 +466,36 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   // the human membership hard-gate to it (that would 403 every SA before its
   // standing role is ever consulted); fall through to the verdict check.
   const isServiceAccount = ((c as unknown as { get(k: string): unknown }).get('authType') as string | undefined) === 'service_account';
-  if (!membership && !isServiceAccount) {
+
+  // Platform-admin READ-ONLY bypass: an explicit `x-kortix-admin-bypass`
+  // header from a real `platform_user_roles` admin/super_admin lets support
+  // staff VIEW a project they have no account/project grant on — e.g. to
+  // confirm a customer's session actually loads. Deliberately scoped to
+  // action === 'read' only (never write/session/manage) so a bypass can
+  // never be used to act as the account. Every use is audit-logged against
+  // the PROJECT'S OWN account so the customer's own audit trail (and any
+  // configured audit webhook) sees the access, not just ours.
+  let adminBypass = false;
+  if (action === 'read' && !isServiceAccount && c.req.header('x-kortix-admin-bypass') === '1') {
+    adminBypass = await isPlatformAdmin(userId);
+    if (adminBypass) {
+      await recordAuditEvent({
+        accountId: row.accountId,
+        actorUserId: userId,
+        action: 'project.admin_bypass_read',
+        resourceType: 'project',
+        resourceId: projectId,
+        metadata: { via: 'admin_bypass_header' },
+      });
+    }
+  }
+
+  if (!membership && !isServiceAccount && !adminBypass) {
     throw new HTTPException(403, { message: 'You do not have access to this account' });
   }
 
   const accountRole = membership?.accountRole as AccountRole | undefined;
-  if (!verdict.allowed) {
+  if (!verdict.allowed && !adminBypass) {
     // Distinguish "no access at all" from "has access but not for this
     // action" so the UI can show a meaningful message. A Viewer can see
     // the project but can't create a session — telling them "no access"
@@ -508,6 +546,7 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
     accountRole: accountRole ?? null,
     projectRole,
     effectiveRole: effectiveRole as ProjectRole,
+    adminBypass,
   };
 }
 
