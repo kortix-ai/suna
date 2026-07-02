@@ -1,7 +1,7 @@
 /**
  * Agent-run + session happy-path backlog.
  *
- * Maps 1:1 to spec IDs: RUN-1..8, SESS-2, SESS-3, SESS-9, FILE-8, FILE-9,
+ * Maps 1:1 to spec IDs: RUN-1..8, SESS-2, SESS-3, SESS-9, SESS-12, FILE-8, FILE-9,
  * GOLD-1, CHN-6.
  *
  * REALITY: every flow here needs a REAL booted Daytona sandbox and/or a funded
@@ -560,6 +560,72 @@ flow(
           timeoutMs: 300_000,
           intervalMs: 4_000,
           description: `sandbox active again after restart for ${sessionId}`,
+        },
+      );
+    });
+  },
+);
+
+// ─── SESS-12: manual stop → 200 status stopped; resumable via /start ──────────
+flow(
+  "SESS-12",
+  {
+    domain: "sessions",
+    requires: ["funded", "daytona"],
+    timeoutMs: 360_000,
+    routes: [
+      "POST /v1/projects/:projectId/sessions",
+      "GET /v1/projects/:projectId/sessions/:sessionId/sandbox",
+      "POST /v1/projects/:projectId/sessions/:sessionId/stop",
+      "POST /v1/projects/:projectId/sessions/:sessionId/start",
+    ],
+  },
+  async (ctx) => {
+    const { projectId, sessionId } = await bootSandbox(ctx);
+    await ctx.step("stop → 200 status stopped", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/sessions/:sessionId/stop", {}, {
+          params: { projectId, sessionId },
+        });
+      r.status(200).body().has("$.status", "stopped");
+    });
+    await ctx.step("sandbox row reflects stopped", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/sessions/:sessionId/sandbox", {
+          params: { projectId, sessionId },
+        });
+      r.status(200).body().has("$.status", "stopped");
+    });
+    await ctx.step("stopping an already-stopped session → 409", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/sessions/:sessionId/stop", {}, {
+          params: { projectId, sessionId },
+        });
+      r.status(409);
+    });
+    await ctx.step("start resumes the stopped sandbox (disk preserved)", async () => {
+      await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/sessions/:sessionId/start", {}, {
+          params: { projectId, sessionId },
+        });
+      await waitFor(
+        async () => {
+          const r = await ctx.client
+            .as(ctx.P.OWNER)
+            .get("/v1/projects/:projectId/sessions/:sessionId/sandbox", {
+              params: { projectId, sessionId },
+            });
+          return r.statusCode === 200 ? r.json<any>() : null;
+        },
+        {
+          until: (s) => s?.status === "active",
+          timeoutMs: 300_000,
+          intervalMs: 4_000,
+          description: `sandbox active again after manual stop+start for ${sessionId}`,
         },
       );
     });

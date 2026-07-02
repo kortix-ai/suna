@@ -186,6 +186,7 @@ DB `project_sessions` (`status queued|branching|provisioning|running|stopped|fai
 `SESS-8` `GET /projects/:id/sessions/:sid/sandbox` → `read` → `session_sandboxes` row; **404 while row not yet inserted** (frontend polls); then status `provisioning`→`active` with `base_url`/`external_id`.
 `SESS-9` `POST /projects/:id/sessions/:sid/restart` → `session` (then **owner or project manager** only) → **202**; tears down container, revokes sandbox keys, re-provisions with rotated git/LLM/CLI tokens (status→`provisioning`); branch preserved.
 `SESS-10` OpenCode title/tree mirror is server-owned: `GET /projects/:id/sessions` and `GET /projects/:id/sessions/:sid` read the sandbox's OpenCode sessions server-side and mirror `metadata.name`/`metadata.opencode_sessions`; there is no browser-write sync endpoint.
+`SESS-12` `POST /projects/:id/sessions/:sid/stop` → `session` (then **owner or project manager** only) → **200** status `stopped`, sandbox paused in place (disk kept, no re-provision — same contract as an idle auto-stop); resumable via `/start`/`SESS-9`. Sandbox not `active` → 409; unsupported provider → 400.
 
 ---
 
@@ -194,7 +195,7 @@ DB `project_sessions` (`status queued|branching|provisioning|running|stopped|fai
 `SNAP-1` `GET /projects/:id/snapshots` → `read` → list `kortix-snap-…` images per baseRef. **Session boot requires a `ready` snapshot of baseRef** (no shared fallback → session `failed` if none).
 `SNAP-2` `POST /projects/:id/snapshots/rebuild` → **`manage` AND account `ACCOUNT_WRITE` (owner/admin)** → rebuild image. A project `manager` who is not owner/admin → 403; M_EDITOR → 403.
 `SBX-1` sandbox create/start = implicit on session create (`provisionSessionSandbox`); no standalone endpoint.
-`SBX-2` sandbox stop = session `DELETE`; restart = `SESS-9`; status read = `SESS-8`.
+`SBX-2` sandbox manual stop = `SESS-12` (pauses in place, resumable); destructive teardown = session `DELETE` (`SESS-7`); restart = `SESS-9`; status read = `SESS-8`.
 
 ---
 

@@ -307,3 +307,16 @@ export async function restartProjectSession(
     ),
   );
 }
+
+/** Manual pause: stops the running sandbox in place, resumable via start(). */
+export async function stopProjectSession(
+  projectId: string,
+  sessionId: string,
+) {
+  return unwrap(
+    await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
+      `/projects/${projectId}/sessions/${sessionId}/stop`,
+      {},
+    ),
+  );
+}
