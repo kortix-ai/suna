@@ -43,6 +43,7 @@ import {
   setProjectTriggersActivation,
   updateExperimentalFeature,
   updateProject,
+  updateProjectSandboxProvider,
   type ExperimentalFeatureView,
   type KortixProject,
   type ProjectDetail,
@@ -351,6 +352,7 @@ function ExperimentalCard({ project, canManage }: { project: KortixProject; canM
                 canManage={canManage}
               />
             ))}
+            <SandboxProviderRow project={project} canManage={canManage} />
           </div>
         </>
       )}
@@ -404,6 +406,76 @@ function ExperimentalFeatureRow({
         disabled={!canManage || mutation.isPending}
         onCheckedChange={(v) => mutation.mutate(v)}
       />
+    </div>
+  );
+}
+
+// Per-project sandbox-provider pin — a row in the Experimental list. Overrides the
+// platform's weighted distribution for THIS project only (e.g. put one project on
+// Platinum even when the fleet is mostly Daytona). Options come from the project
+// payload (available_sandbox_providers = the usable set). Hidden if none usable.
+const AUTO_PROVIDER = '__auto__';
+function SandboxProviderRow({
+  project,
+  canManage,
+}: {
+  project: KortixProject;
+  canManage: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const available = project.available_sandbox_providers ?? [];
+  const pinned = project.default_sandbox_provider ?? null;
+
+  const mutation = useMutation({
+    mutationFn: (next: string | null) => updateProjectSandboxProvider(project.project_id, next),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['project', project.project_id], updated);
+      queryClient.setQueryData<ProjectDetail | undefined>(
+        ['project-detail', project.project_id],
+        (current) => (current ? { ...current, project: updated } : current),
+      );
+      queryClient.invalidateQueries({ queryKey: ['project-detail', project.project_id] });
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+    },
+    onError: (error: Error) => toast.error(error.message || 'Failed to update sandbox provider'),
+  });
+
+  if (available.length === 0) return null;
+
+  const label = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
+
+  return (
+    <div className="flex items-center justify-between gap-4 py-4 last:pb-0">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="text-foreground text-sm font-medium">Sandbox provider</p>
+          <Badge variant="highlight" size="sm">
+            Experimental
+          </Badge>
+        </div>
+        <p className="text-muted-foreground mt-0.5 text-xs">
+          Pin this project to a specific sandbox provider, overriding the platform
+          default. New sessions here run on the chosen provider — “Automatic” follows
+          the platform default.
+        </p>
+      </div>
+      <Select
+        value={pinned ?? AUTO_PROVIDER}
+        onValueChange={(v) => mutation.mutate(v === AUTO_PROVIDER ? null : v)}
+        disabled={!canManage || mutation.isPending}
+      >
+        <SelectTrigger size="lg" className="w-40 shrink-0">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={AUTO_PROVIDER}>Automatic</SelectItem>
+          {available.map((p) => (
+            <SelectItem key={p} value={p}>
+              {label(p)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

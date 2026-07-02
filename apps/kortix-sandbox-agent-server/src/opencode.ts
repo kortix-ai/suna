@@ -649,10 +649,19 @@ export function createOpencodeSupervisor(
 
     const cwd = ensureCwdExists()
     logger.info('[opencode] spawning', { bin, port: currentCfg.opencodeInternalPort, cwd })
+    // detached: true makes opencode the leader of its own process group, so
+    // stop()/restart() can SIGTERM/SIGKILL the whole group (-pid) instead of
+    // just this direct child. Without it, a grandchild opencode forks itself
+    // (e.g. its internal `bun install` for the config dir's tool deps) can
+    // outlive a restart-triggered kill and keep writing into a directory a
+    // freshly-spawned opencode is installing into concurrently — a real path
+    // to a torn/corrupted node_modules that then fails every session's first
+    // prompt until the sandbox is rebuilt.
     const proc = spawn(bin, args, {
       cwd,
       env,
       stdio: ['ignore', 'inherit', 'inherit'],
+      detached: true,
     })
 
     proc.on('exit', (code, signal) => {
@@ -732,19 +741,34 @@ export function createOpencodeSupervisor(
       }
       if (!child) return
       const c = child
+      // Spawned with detached: true, so c.pid also identifies the process
+      // group opencode leads — signal the whole group (-pid), not just this
+      // direct child, so a grandchild opencode forks (e.g. its own `bun
+      // install` for the config dir) can't outlive the kill and race a
+      // freshly-spawned opencode's install into the same directory. Falls
+      // back to a plain child kill if the group signal itself throws.
+      const killGroup = (sig: NodeJS.Signals) => {
+        if (c.pid) {
+          try {
+            process.kill(-c.pid, sig)
+            return
+          } catch {}
+        }
+        c.kill(sig)
+      }
       return new Promise<void>((resolve) => {
         const onExit = () => resolve()
         c.once('exit', onExit)
         try {
-          c.kill(signal)
+          killGroup(signal)
         } catch {
           resolve()
           return
         }
-        // Hard kill if the child ignores SIGTERM.
+        // Hard kill if the child (or its group) ignores SIGTERM.
         setTimeout(() => {
           try {
-            c.kill('SIGKILL')
+            killGroup('SIGKILL')
           } catch {}
           resolve()
         }, 5_000).unref()
