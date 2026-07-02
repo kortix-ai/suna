@@ -262,10 +262,32 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // the matching plugin on EVERY boot — the ~5–8s "opencode-session-created" gap.
     // Baking the binary version makes opencode find it already present → no fetch.
     // Bump RUNTIME_LAYER_VERSION in templates.ts when this step changes.
+    // NOTE: this dependency set (and the "axios"/"form-data" security overrides
+    // below) is duplicated in packages/starter/templates/base/.kortix/opencode/package.json
+    // and .kortix/opencode/package.json (local dev). Keep all three in sync —
+    // a version bump made in only one place is exactly how this file's axios
+    // override once diverged and shipped a bundle-breaking install (see the
+    // verification RUN step right below, added after that incident).
     'RUN mkdir -p /opt/kortix/home/.bun/install/cache /opt/kortix/opencode-config-deps \\',
     '    && cd /opt/kortix/opencode-config-deps \\',
     `    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"${opencodeVersion}","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\`,
     '    && HOME=/opt/kortix/home BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install',
+    '',
+    // Verify the baked tree is actually usable by OpenCode's own runtime
+    // bundler (Bun, invoked live by ToolRegistry the first time a session
+    // resolves its tools) — not just that `bun install` exited 0. A CVE-driven
+    // axios override bump here once produced an installed tree that resolved
+    // fine but failed to BUNDLE at session runtime
+    // (`AggregateError: N errors building ".../axios/lib/utils.js"`), which
+    // silently baked into every sandbox cloned from this image until a user
+    // hit it on their very first prompt. Bundling the override targets here,
+    // at build time, turns that failure mode into a build failure instead —
+    // intentionally NOT `set +e`: an unbundlable dependency tree must fail
+    // the image build, unlike the best-effort warm-up steps below.
+    'RUN cd /opt/kortix/opencode-config-deps \\',
+    '    && HOME=/opt/kortix/home bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \\',
+    '    && rm -rf /tmp/opencode-deps-bundle-check \\',
+    '    && echo "opencode-config-deps: baked tree bundles cleanly"',
     '',
     // Warm a real opencode PROJECT INSTANCE at build time. The first time opencode
     // creates an instance for a project dir it loads that dir's .kortix/opencode
@@ -284,6 +306,24 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     ...(opencodeConfigPath
       ? [
           `COPY ${opencodeConfigPath}/ /opt/kortix/warm-config/.kortix/opencode/`,
+          // Same "does it actually bundle" check as the opencode-config-deps
+          // verification above, but exercised against the REAL starter tool
+          // files (web_search / scrape_webpage / image_search / memory / show)
+          // instead of just their axios/form-data override targets — this is
+          // what actually walks the full transitive dependency tree
+          // (firecrawl-js, tavily-core, replicate) that ToolRegistry resolves
+          // on a session's first prompt. Deliberately its own RUN step (not
+          // folded into the `set +e` warm-up below): a tool that can't bundle
+          // breaks every session's first prompt, not just startup latency, so
+          // it must fail the build — the warm-up readiness probe below stays
+          // best-effort as before.
+          'RUN cd /opt/kortix/warm-config/.kortix/opencode \\',
+          '    && rm -rf node_modules \\',
+          '    && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\',
+          '    && HOME=/opt/kortix/home bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\',
+          '    && rm -rf /tmp/opencode-tools-bundle-check \\',
+          '    && echo "opencode-config-deps: starter tool files bundle cleanly"',
+          '',
           'RUN set +e; \\',
           '    export HOME=/opt/kortix/home \\',
           '        XDG_DATA_HOME=/opt/kortix/home/.local/share \\',
