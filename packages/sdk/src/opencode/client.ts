@@ -24,7 +24,7 @@ export type { OpencodeClient };
 
 import { authenticatedFetch } from "../platform/auth";
 import { platformConfig } from "../platform/config";
-import { getActiveOpenCodeUrl } from "../state/server-store";
+import { getActiveOpenCodeUrl } from "../state/server-store/active";
 
 
 /**

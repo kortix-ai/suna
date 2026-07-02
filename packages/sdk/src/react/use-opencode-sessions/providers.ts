@@ -1,8 +1,8 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useParams } from 'next/navigation';
 import { getClient } from '../../opencode/client';
+import { useKortixRouteProjectId } from '../route-project';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import type { ProviderListResponse } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_PROVIDERS, CACHE_SCOPE_GLOBAL } from './shared';
@@ -30,8 +30,7 @@ export { GATEWAY_PROVIDER_IDS };
 
 export function useOpenCodeProviders() {
   const runtimeReady = useOpenCodeRuntimeReady();
-  const params = useParams();
-  const projectId = typeof params?.id === 'string' ? params.id : null;
+  const projectId = useKortixRouteProjectId();
   const projectDetailQuery = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId!),

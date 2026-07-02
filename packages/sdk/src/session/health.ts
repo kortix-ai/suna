@@ -15,7 +15,7 @@
  */
 
 import { authenticatedFetch } from '../platform/auth';
-import { getActiveOpenCodeUrl } from '../state/server-store';
+import { getActiveOpenCodeUrl } from '../state/server-store/active';
 
 export type SessionHealthResponse = {
   status?: string;
