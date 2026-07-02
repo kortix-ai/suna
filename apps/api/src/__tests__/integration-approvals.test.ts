@@ -132,6 +132,20 @@ describe('approvals inbox + resolution', () => {
     expect(statuses).toEqual([200, 409]);
   });
 
+  test('needs-input summary counts the session, and decrements when resolved', async () => {
+    if (!ctx) return;
+    const execId = await seedPending();
+    const res = await authGet(`/v1/projects/${ctx.projectId}/approvals/needs-input`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const before = body.sessions[SESSION] ?? 0;
+    expect(before).toBeGreaterThanOrEqual(1);
+    // Resolving one drops this session's count by exactly one.
+    await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, { decision: 'approve' });
+    const after = await (await authGet(`/v1/projects/${ctx.projectId}/approvals/needs-input`)).json();
+    expect(after.sessions[SESSION] ?? 0).toBe(before - 1);
+  });
+
   test('an invalid decision is rejected 400', async () => {
     if (!ctx) return;
     const execId = await seedPending();

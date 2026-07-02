@@ -791,32 +791,41 @@ projectsApp.openapi(
       isManager = false;
     }
 
-    const conds = [
-      eq(executorExecutions.projectId, projectId),
-      eq(executorExecutions.status, 'pending_approval'),
-      isNull(executorExecutions.approvedBy),
-      isNull(executorExecutions.resolvedAt),
-    ];
-    if (!isManager) conds.push(eq(projectSessions.createdBy, loaded.userId));
-
-    const rows = await db
+    // Every unresolved pending action in the project, by session. (No DB join:
+    // executor_executions.session_id is `uuid` while project_sessions.session_id
+    // is `text` — cross-type equality errors in Postgres, so we intersect in JS
+    // where both surface as strings.)
+    const pendingRows = await db
       .select({ sessionId: executorExecutions.sessionId })
       .from(executorExecutions)
-      .innerJoin(
-        projectSessions,
+      .where(
         and(
-          eq(projectSessions.sessionId, executorExecutions.sessionId),
-          eq(projectSessions.projectId, projectId),
+          eq(executorExecutions.projectId, projectId),
+          eq(executorExecutions.status, 'pending_approval'),
+          isNull(executorExecutions.approvedBy),
+          isNull(executorExecutions.resolvedAt),
         ),
-      )
-      .where(and(...conds));
+      );
 
-    // Count per session (pending items are few — count in memory).
-    const counts: Record<string, number> = {};
-    for (const r of rows) {
-      if (r.sessionId) counts[r.sessionId] = (counts[r.sessionId] ?? 0) + 1;
+    // Non-managers only see the sessions they launched.
+    let allowed: Set<string> | null = null;
+    if (!isManager) {
+      const mine = await db
+        .select({ sessionId: projectSessions.sessionId })
+        .from(projectSessions)
+        .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.createdBy, loaded.userId)));
+      allowed = new Set(mine.map((m) => m.sessionId));
     }
-    return c.json({ total: rows.length, sessions: counts });
+
+    const counts: Record<string, number> = {};
+    let total = 0;
+    for (const r of pendingRows) {
+      const sid = r.sessionId ? String(r.sessionId) : null;
+      if (!sid || (allowed && !allowed.has(sid))) continue;
+      counts[sid] = (counts[sid] ?? 0) + 1;
+      total += 1;
+    }
+    return c.json({ total, sessions: counts });
   },
 );
 
