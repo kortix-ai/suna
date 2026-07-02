@@ -437,28 +437,33 @@ export default function AccountSettingsPage() {
                 </SettingsGroup>
 
                 {/* ── Identity & directory ─────────────────────── */}
-                {/* SAML SSO + SCIM are Enterprise-plan features. The cards
-                    render only when the account's tier carries the
-                    entitlement (sales-assigned `enterprise` tier); the
-                    SCIM/SSO API routes enforce the same gate server-side
-                    (402 for non-entitled accounts). */}
-                {enterpriseIdentityEnabled && (
-                  <SettingsGroup
-                    title={tI18nHardcoded.raw(
-                      'autoAppAppAccountsIdPageJsxAttrTitleIdentityDirectory6089983a',
-                    )}
-                    description={tI18nHardcoded.raw(
-                      'autoAppAppAccountsIdPageJsxAttrDescriptionBringMembersa0baf40c',
-                    )}
-                  >
-                    <EnterpriseDemoCard
-                      accountId={account.account_id}
-                      canManage={canWriteAccount}
-                    />
-                    <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
-                    <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
-                  </SettingsGroup>
-                )}
+                {/* The enterprise-demo toggle is ALWAYS shown to account admins
+                    so they can unlock the surface self-serve. SAML SSO + SCIM
+                    are Enterprise features and only render once the entitlement
+                    is on (the demo flag OR a real enterprise tier); their API
+                    routes enforce the same gate server-side (402 for non-entitled
+                    accounts). Keeping the toggle OUTSIDE the entitlement gate
+                    avoids a chicken-and-egg where the enabler is hidden behind
+                    the very thing it enables. */}
+                <SettingsGroup
+                  title={tI18nHardcoded.raw(
+                    'autoAppAppAccountsIdPageJsxAttrTitleIdentityDirectory6089983a',
+                  )}
+                  description={tI18nHardcoded.raw(
+                    'autoAppAppAccountsIdPageJsxAttrDescriptionBringMembersa0baf40c',
+                  )}
+                >
+                  <EnterpriseDemoCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                  {enterpriseIdentityEnabled && (
+                    <>
+                      <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
+                      <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
+                    </>
+                  )}
+                </SettingsGroup>
 
                 {/* ── Tokens & automation ──────────────────────── */}
                 <SettingsGroup

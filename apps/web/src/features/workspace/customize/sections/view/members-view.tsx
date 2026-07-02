@@ -1965,7 +1965,13 @@ function ResourceAccessCard({
                     disabled={!pickerType || createMutation.isPending}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder={pickerType ? `Select a ${pickerType}` : 'Pick a type first'} />
+                      <SelectValue
+                        placeholder={
+                          pickerType
+                            ? `Select ${/^[aeiou]/i.test(pickerType) ? 'an' : 'a'} ${pickerType}`
+                            : 'Pick a type first'
+                        }
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {activeItems.map((r) => (
