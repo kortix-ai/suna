@@ -1793,13 +1793,17 @@ function ResourceAccessCard({
 
   // Step 1 of the grant flow: pick the resource TYPE. Only offer types that
   // actually have resources, so the type buttons never lead to an empty list.
+  // SECRET is intentionally NOT offered: a direct secret→member grant is the
+  // same `project_secret_grants` share we removed from the Secret modal — the
+  // pyramid routes secrets to people through an AGENT that declares them. (Any
+  // pre-existing secret grants still show in the list below so they can be
+  // revoked; skills stay grantable as they don't flow through agents yet.)
   const typeOptions = useMemo(
     () =>
       (
         [
           { type: 'agent', label: 'Agent', Icon: Bot, items: resources.agents },
           { type: 'skill', label: 'Skill', Icon: Sparkles, items: resources.skills },
-          { type: 'secret', label: 'Secret', Icon: KeyRound, items: resources.secrets ?? [] },
         ] as const
       ).filter((o) => o.items.length > 0),
     [resources],
