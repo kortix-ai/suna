@@ -98,7 +98,9 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
         />
       </div>
 
-      <TabsContent value="providers">
+      {/* min-h-0 lets each panel actually shrink inside the flex column so
+          overflow-y-auto scrolls instead of clipping tall content. */}
+      <TabsContent value="providers" className="min-h-0 overflow-y-auto">
         <ProjectProviderModal
           asPanel
           projectId={projectId}
@@ -107,16 +109,16 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
           defaultTab={llmProvidersTab}
         />
       </TabsContent>
-      <TabsContent value="overview">
+      <TabsContent value="overview" className="min-h-0 overflow-y-auto">
         <GatewayOverview projectId={projectId} />
       </TabsContent>
-      <TabsContent value="logs">
+      <TabsContent value="logs" className="min-h-0 overflow-y-auto">
         <GatewayLogs projectId={projectId} />
       </TabsContent>
-      <TabsContent value="budgets">
+      <TabsContent value="budgets" className="min-h-0 overflow-y-auto">
         <GatewayBudgets projectId={projectId} />
       </TabsContent>
-      <TabsContent value="keys">
+      <TabsContent value="keys" className="min-h-0 overflow-y-auto">
         <GatewayKeys projectId={projectId} />
       </TabsContent>
     </Tabs>
