@@ -1398,9 +1398,13 @@ export function hasDiffs(userMessage: MessageWithPartsLike): boolean {
 // ANSI strip (used by bash tool renderer)
 // ============================================================================
 
+// OSC payloads (window titles, OSC-8 hyperlink URLs) are never more than a
+// couple hundred bytes in real terminal output; capping the run length keeps
+// stripAnsi linear-time even when `str.replace` retries the scan from every
+// unterminated OSC start in an adversarial input (see turns.test.ts).
 const ANSI_RE =
   // biome-ignore lint/suspicious/noControlCharactersInRegex: matching terminal escape sequences requires literal ESC/BEL control characters
-  /\x1B\[[\d;]*[A-Za-z]|\x1B\][^\x07]*\x07|\x1B[()#][A-Z0-9]|\x1B\[?[\d;]*[hl]|\x1B[>=<]|\x1B\[[?]?\d*[A-Z]|\x1B\[\d*[JKHG]|\x1B\[\d*;\d*[Hf]|\x1b\[[0-9;]*m/g;
+  /\x1B\[[\d;]*[A-Za-z]|\x1B\][^\x07]{0,512}\x07|\x1B[()#][A-Z0-9]|\x1B\[?[\d;]*[hl]|\x1B[>=<]|\x1B\[[?]?\d*[A-Z]|\x1B\[\d*[JKHG]|\x1B\[\d*;\d*[Hf]|\x1b\[[0-9;]*m/g;
 
 /** Strip ANSI escape codes from terminal output. */
 export function stripAnsi(str: string): string {

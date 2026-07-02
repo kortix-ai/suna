@@ -513,12 +513,26 @@ describe('stripAnsi', () => {
     expect(stripAnsi('before\x1b]0;window title\x07after')).toBe('beforeafter');
   });
 
+  test('strips a terminated OSC-8 hyperlink with a realistic-length URL', () => {
+    const url = `https://example.com/${'a'.repeat(200)}`;
+    expect(stripAnsi(`\x1b]8;;${url}\x07link text\x1b]8;;\x07`)).toBe('link text');
+  });
+
   test('leaves plain text untouched', () => {
     expect(stripAnsi('no escapes here')).toBe('no escapes here');
   });
 
-  test('does not hang on a long unterminated OSC sequence (ReDoS guard)', () => {
+  test('does not hang on a single long unterminated OSC sequence (ReDoS guard)', () => {
     const malicious = `\x1b]${'0'.repeat(50_000)}`;
+    const start = performance.now();
+    stripAnsi(malicious);
+    expect(performance.now() - start).toBeLessThan(1000);
+  });
+
+  test('does not hang on many repeated unterminated OSC starts (ReDoS guard, /g multi-anchor)', () => {
+    // str.replace with a /g regex retries the scan from every OSC start it finds;
+    // without a bounded run length this is O(n^2) even though no single match is ambiguous.
+    const malicious = '\x1b]'.repeat(200_000);
     const start = performance.now();
     stripAnsi(malicious);
     expect(performance.now() - start).toBeLessThan(1000);
