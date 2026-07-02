@@ -11,7 +11,7 @@ import { AppHeader } from '@/features/layout/app-header';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useLegacyMachines } from '@/hooks/legacy/use-legacy-machine-migration';
-import { listAccounts } from '@/lib/projects-client';
+import { listAccounts } from '@kortix/sdk/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 
 /**
