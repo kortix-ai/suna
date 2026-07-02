@@ -125,7 +125,7 @@ function isLifecycleTransitionInProgress(err: unknown): boolean {
   return msg.includes('state change in progress') || msg.includes('transition in progress');
 }
 
-function isAlreadyNotRunning(err: unknown): boolean {
+export function isAlreadyNotRunning(err: unknown): boolean {
   const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
   return (
     msg.includes('not started') ||
