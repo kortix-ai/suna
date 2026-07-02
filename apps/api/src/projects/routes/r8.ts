@@ -24,7 +24,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { AnyObject, ChangeRequestSchema, SessionStartResultSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
-import { restartSession, startSession } from '../session-lifecycle';
+import { restartSession, startSession, stopSession } from '../session-lifecycle';
 import {
   refreshCrTips,
 } from './shared';
@@ -138,6 +138,58 @@ projectsApp.openapi(
       session: visible.row,
       projectId,
       sessionId,
+    });
+    return c.json(result.body, result.status as any);
+  },
+);
+
+// POST /v1/projects/:projectId/sessions/:sessionId/stop
+// Manual pause: stops the running sandbox in place (disk kept, same contract as
+// an idle auto-stop) without provisioning anything new. Resumable via /start.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/{sessionId}/stop',
+    tags: ['sessions'],
+    summary: 'POST /:projectId/sessions/:sessionId/stop',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), 'OK'),
+      ...errors(400, 403, 404, 409, 502),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!UUID_V4_REGEX.test(sessionId))
+      return c.json({ error: 'Invalid session id' }, 400);
+
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Per-agent gate: same capability as start/restart — stopping is part of
+    // the agent's session-lifecycle surface.
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+
+    // Stop is reserved for the session owner or a project manager, same policy
+    // as restart.
+    const visible = await loadVisibleSession(loaded, sessionId);
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+    if (!visible.canManageSharing) {
+      return c.json(
+        { error: 'Only the session owner or a project manager can stop this session' },
+        403,
+      );
+    }
+
+    const result = await stopSession({
+      projectId,
+      sessionId,
+      accountId: loaded.row.accountId,
+      userId: loaded.userId,
     });
     return c.json(result.body, result.status as any);
   },

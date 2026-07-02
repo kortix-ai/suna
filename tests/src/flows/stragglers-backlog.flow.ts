@@ -16,9 +16,10 @@ flow("GH-4", { domain: "github", todo: "client-side Supabase OAuth popup — no 
 // transitively by the session-create flows (RUN-*/SESS-*/GOLD-1).
 flow("SBX-1", { domain: "sandboxes", todo: "no standalone endpoint — sandbox create is implicit on session create (see RUN-1/GOLD-1)" }, async () => {});
 
-// SBX-2 — sandbox stop = session DELETE; restart = SESS-9; status read = SESS-8.
-// All cross-referenced flows exist; there is no separate sandbox route here.
-flow("SBX-2", { domain: "sandboxes", todo: "no standalone endpoint — stop=session DELETE, restart=SESS-9, status=SESS-8 (all covered)" }, async () => {});
+// SBX-2 — manual sandbox stop = SESS-12 (pauses in place); destructive teardown =
+// session DELETE (SESS-7); restart = SESS-9; status read = SESS-8. All
+// cross-referenced flows exist; there is no separate sandbox route here.
+flow("SBX-2", { domain: "sandboxes", todo: "no standalone endpoint — manual stop=SESS-12, delete=SESS-7, restart=SESS-9, status=SESS-8 (all covered)" }, async () => {});
 
 // TRG-6 — cron scheduler is a global setInterval sweep (server background
 // behavior, gated by KORTIX_TRIGGER_SCHEDULER_ENABLED). Not an HTTP route;

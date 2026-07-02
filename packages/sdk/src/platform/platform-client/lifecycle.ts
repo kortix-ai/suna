@@ -9,6 +9,7 @@ import {
   startProjectSession,
   listProjects,
   restartProjectSession,
+  stopProjectSession,
 } from '../projects-client';
 import type {
   SandboxInfo,
@@ -166,14 +167,18 @@ export async function restartSandbox(sandboxId?: string): Promise<void> {
 }
 
 /**
- * Stop a sandbox. Pass `sandboxId` to target a specific instance; omit to
- * stop the user's active sandbox.
+ * Stop a sandbox in place — pauses the running sandbox (disk kept, resumable
+ * via restart/start) without deleting the session. Pass `sandboxId` to target
+ * a specific instance; omit to stop the user's active sandbox.
+ *
+ * Previously this called deleteProjectSession, which destroys the session
+ * instead of pausing it — fixed to use the dedicated stop endpoint.
  */
 export async function stopSandbox(sandboxId?: string): Promise<void> {
   if (!sandboxId) throw new Error('No sandbox selected to stop');
   const row = await findProjectSessionSandbox(sandboxId);
   if (!row) throw new Error('Project session sandbox not found');
-  await deleteProjectSession(row.project.project_id, row.session.session_id);
+  await stopProjectSession(row.project.project_id, row.session.session_id);
 }
 
 /**
