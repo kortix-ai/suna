@@ -147,7 +147,7 @@
     "papaparse": "^5.5.2",
     "pdfjs-dist": "4.8.69",
     "playwright": "^1.57.0",
-    "postcss": "8.4.33",
+    "postcss": "8.5.10",
     "posthog-js": "^1.258.6",
     "radix-ui": "^1.6.0",
     "react": "^19.1.0",
