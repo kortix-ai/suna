@@ -18,16 +18,37 @@ function platinumBase(): string {
   return url.replace(/\/+$/, '');
 }
 
+// Bare `fetch()` has NO default timeout — a stalled connection to Platinum
+// hangs the caller forever, same failure class as the Daytona SDK's 24h axios
+// default (see platform/providers/daytona.ts for the full incident writeup).
+// Platinum is dev's default sandbox provider, and getStatus()/stop()/start()
+// here sit on the exact same reaper hot path, so this is bounded by default.
+// A caller that needs a longer/no bound (e.g. a deliberately long-poll) can
+// still pass its own `init.signal` — this only fills in a default.
+const DEFAULT_CALL_TIMEOUT_MS = Math.max(
+  1000,
+  Number.parseInt(process.env.KORTIX_PLATINUM_CALL_TIMEOUT_MS || '20000', 10) || 20000,
+);
+
 async function platinumFetch(path: string, init: RequestInit = {}): Promise<Response> {
   if (!config.PLATINUM_API_KEY) throw new Error('Missing PLATINUM_API_KEY');
-  return fetch(`${platinumBase()}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${config.PLATINUM_API_KEY}`,
-      'Content-Type': 'application/json',
-      ...(init.headers ?? {}),
-    },
-  });
+  const signal = init.signal ?? AbortSignal.timeout(DEFAULT_CALL_TIMEOUT_MS);
+  try {
+    return await fetch(`${platinumBase()}${path}`, {
+      ...init,
+      signal,
+      headers: {
+        Authorization: `Bearer ${config.PLATINUM_API_KEY}`,
+        'Content-Type': 'application/json',
+        ...(init.headers ?? {}),
+      },
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      throw new Error(`platinum ${init.method ?? 'GET'} ${path} timed out after ${DEFAULT_CALL_TIMEOUT_MS}ms`);
+    }
+    throw err;
+  }
 }
 
 /** GET/POST JSON. Throws `platinum <method> <path> -> <status> <body>` on non-2xx. */

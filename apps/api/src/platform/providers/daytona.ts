@@ -11,6 +11,30 @@ import { warmRestoreScript, WARM_RESTORE_MARKERS, noteWarmPathFailure } from '..
 import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { config, SANDBOX_VERSION } from '../../config';
+import { withTimeout } from '../../shared/with-timeout';
+
+// The Daytona SDK's axios client is created with a 24-HOUR timeout (see
+// @daytonaio/sdk's Daytona.createAxiosInstance) — effectively unbounded for
+// every non-create call (get/start/stop/delete/list all share it; only
+// create() takes its own {timeout} option, honored by the SDK's own polling
+// loop). A single degraded upstream request on any of these calls hangs the
+// awaiting caller indefinitely. That is silently catastrophic on the reaper's
+// hot path (sandbox-reaper.ts): one stuck `getStatus`/`stop` call never lets
+// its Promise.all settle, which never lets runProjectMaintenance's outer
+// Promise.all settle, which means its `finally` never runs — the
+// maintenanceRunning lock is stuck `true` forever and every future 5-minute
+// tick silently no-ops with zero error logs. Only a process restart clears the
+// in-memory flag. (Traced live 2026-07-02: prod accumulated $39k+ in idle
+// compute over-billing before this was found — see maintenance.ts's watchdog
+// for the second line of defense.)
+//
+// Every method below that awaits the SDK directly is bounded with
+// `withTimeout` so a hung upstream fails fast and observably instead of
+// hanging for up to a day.
+const PROVIDER_CALL_TIMEOUT_MS = Math.max(
+  1000,
+  Number.parseInt(process.env.KORTIX_DAYTONA_CALL_TIMEOUT_MS || '20000', 10) || 20000,
+);
 // (DAYTONA_SNAPSHOT was removed — every sandbox boots from its project's
 // own per-project snapshot, resolved by the snapshot builder. Callers
 // must pass `opts.snapshot`; there is no shared platform-wide image.)
@@ -315,22 +339,22 @@ export class DaytonaProvider implements SandboxProvider {
   async start(externalId: string): Promise<void> {
     runningStatusCache.delete(externalId);
     const daytona = getDaytona();
-    const sandbox = await daytona.get(externalId);
-    await sandbox.start();
+    const sandbox = await withTimeout(daytona.get(externalId), PROVIDER_CALL_TIMEOUT_MS, `Daytona get(${externalId})`);
+    await withTimeout(sandbox.start(), PROVIDER_CALL_TIMEOUT_MS, `Daytona start(${externalId})`);
   }
 
   async stop(externalId: string): Promise<void> {
     runningStatusCache.delete(externalId);
     const daytona = getDaytona();
-    const sandbox = await daytona.get(externalId);
-    await sandbox.stop();
+    const sandbox = await withTimeout(daytona.get(externalId), PROVIDER_CALL_TIMEOUT_MS, `Daytona get(${externalId})`);
+    await withTimeout(sandbox.stop(), PROVIDER_CALL_TIMEOUT_MS, `Daytona stop(${externalId})`);
   }
 
   async remove(externalId: string): Promise<void> {
     runningStatusCache.delete(externalId);
     const daytona = getDaytona();
-    const sandbox = await daytona.get(externalId);
-    await daytona.delete(sandbox);
+    const sandbox = await withTimeout(daytona.get(externalId), PROVIDER_CALL_TIMEOUT_MS, `Daytona get(${externalId})`);
+    await withTimeout(daytona.delete(sandbox), PROVIDER_CALL_TIMEOUT_MS, `Daytona delete(${externalId})`);
   }
 
   /**
@@ -341,21 +365,29 @@ export class DaytonaProvider implements SandboxProvider {
    * window, which would race a box mid-provision before its DB row lands).
    */
   async listManagedRunningSandboxes(): Promise<Array<{ externalId: string; createdAt: Date | null }>> {
-    const out: Array<{ externalId: string; createdAt: Date | null }> = [];
-    for await (const box of getDaytona().list({
-      states: [SandboxState.STARTED],
-      labels: managedSandboxLabels(),
-      limit: 100,
-    } as any)) {
-      const externalId = (box as { id?: string }).id;
-      if (!externalId) continue;
-      const raw =
-        (box as { createdAt?: string | Date }).createdAt ??
-        (box as { info?: { createdAt?: string | Date } }).info?.createdAt ??
-        null;
-      out.push({ externalId, createdAt: raw ? new Date(raw) : null });
-    }
-    return out;
+    // Bounds the WHOLE paginated iteration, not just one page — the async
+    // generator can page indefinitely if a later page's request hangs.
+    return withTimeout(
+      (async () => {
+        const out: Array<{ externalId: string; createdAt: Date | null }> = [];
+        for await (const box of getDaytona().list({
+          states: [SandboxState.STARTED],
+          labels: managedSandboxLabels(),
+          limit: 100,
+        } as any)) {
+          const externalId = (box as { id?: string }).id;
+          if (!externalId) continue;
+          const raw =
+            (box as { createdAt?: string | Date }).createdAt ??
+            (box as { info?: { createdAt?: string | Date } }).info?.createdAt ??
+            null;
+          out.push({ externalId, createdAt: raw ? new Date(raw) : null });
+        }
+        return out;
+      })(),
+      PROVIDER_CALL_TIMEOUT_MS,
+      'Daytona list(managed running sandboxes)',
+    );
   }
 
   async getStatus(externalId: string): Promise<SandboxStatus> {
@@ -363,7 +395,7 @@ export class DaytonaProvider implements SandboxProvider {
     if (cachedAt !== undefined && Date.now() - cachedAt < STATUS_CACHE_TTL_MS) return 'running';
     try {
       const daytona = getDaytona();
-      const sandbox = await daytona.get(externalId);
+      const sandbox = await withTimeout(daytona.get(externalId), PROVIDER_CALL_TIMEOUT_MS, `Daytona get(${externalId})`);
       const state = String(sandbox.state ?? '').toLowerCase();
       if (state.includes('start') || state.includes('running') || state.includes('active')) {
         runningStatusCache.set(externalId, Date.now());
@@ -379,15 +411,23 @@ export class DaytonaProvider implements SandboxProvider {
 
   async resolvePreviewLink(externalId: string, port: number): Promise<{ url: string; token: string | null }> {
     const daytona = getDaytona();
-    const sandbox = await daytona.get(externalId);
-    const link = await (sandbox as any).getPreviewLink(port);
+    const sandbox = await withTimeout(daytona.get(externalId), PROVIDER_CALL_TIMEOUT_MS, `Daytona get(${externalId})`);
+    const link: any = await withTimeout(
+      (sandbox as any).getPreviewLink(port),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona getPreviewLink(${externalId}:${port})`,
+    );
     return { url: (link.url || String(link)).replace(/\/$/, ''), token: link.token || null };
   }
 
   async resolveEndpoint(externalId: string): Promise<ResolvedEndpoint> {
     const daytona = getDaytona();
-    const sandbox = await daytona.get(externalId);
-    const link = await (sandbox as any).getPreviewLink(8000);
+    const sandbox = await withTimeout(daytona.get(externalId), PROVIDER_CALL_TIMEOUT_MS, `Daytona get(${externalId})`);
+    const link: any = await withTimeout(
+      (sandbox as any).getPreviewLink(8000),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona getPreviewLink(${externalId}:8000)`,
+    );
     const url = (link.url || String(link)).replace(/\/$/, '');
     const token = link.token || null;
 

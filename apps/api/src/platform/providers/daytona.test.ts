@@ -1,0 +1,68 @@
+// Regression coverage for the 2026-07-02 incident: the Daytona SDK's axios
+// client has a 24-HOUR default timeout, so a degraded upstream left
+// getStatus()/stop()/start() etc. pending indefinitely. One hung call inside
+// the reaper's worker pool (sandbox-reaper.ts) never let its Promise.all
+// settle, which never let maintenance.ts's outer Promise.all settle, which
+// meant its `finally { maintenanceRunning = false }` never ran — the
+// maintenance loop's lock was stuck `true` forever, silently, with zero error
+// logs, until the process restarted. This proves getStatus() now gives up on
+// a hung upstream call within the configured bound instead of hanging.
+import { beforeEach, expect, mock, test } from 'bun:test';
+
+mock.module('../../config', () => ({
+  config: {
+    DAYTONA_API_KEY: 'test-key',
+    DAYTONA_SERVER_URL: '',
+    DAYTONA_TARGET: '',
+    INTERNAL_KORTIX_ENV: 'test',
+    KORTIX_URL: 'https://api.example.com',
+  },
+  SANDBOX_VERSION: 'test-version',
+}));
+
+mock.module('../../shared/db', () => ({ db: {} }));
+
+let hangForever: () => Promise<never>;
+
+mock.module('../../shared/daytona', () => ({
+  getDaytona: () => ({
+    get: (_externalId: string) => hangForever(),
+  }),
+  getDaytonaWarm: () => ({}),
+}));
+
+mock.module('../../snapshots/warm-bake', () => ({
+  warmRestoreScript: () => '',
+  WARM_RESTORE_MARKERS: {},
+  noteWarmPathFailure: () => {},
+}));
+
+mock.module('../service-key', () => ({
+  serviceKeyForExternalId: async () => null,
+}));
+
+mock.module('../sandbox-frontend-url', () => ({
+  sandboxFrontendBaseUrl: () => 'https://app.example.com',
+}));
+
+beforeEach(() => {
+  // Below the code's own 1000ms floor (Math.max(1000, …)) would just get
+  // clamped up — use a value comfortably above it.
+  process.env.KORTIX_DAYTONA_CALL_TIMEOUT_MS = '1200';
+  hangForever = () => new Promise<never>(() => {});
+});
+
+test('getStatus() gives up on a hung Daytona call instead of hanging forever', async () => {
+  const { DaytonaProvider } = await import('./daytona');
+  const provider = new DaytonaProvider();
+
+  const start = Date.now();
+  const status = await provider.getStatus('sbx_test');
+  const elapsed = Date.now() - start;
+
+  // getStatus() already catches all errors (including our TimeoutError) and
+  // degrades to 'unknown' — the point under test is that it RETURNS at all,
+  // bounded, instead of hanging on the SDK's 24h-class default.
+  expect(status).toBe('unknown');
+  expect(elapsed).toBeLessThan(5_000);
+});
