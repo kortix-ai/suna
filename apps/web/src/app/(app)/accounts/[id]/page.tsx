@@ -33,6 +33,7 @@ import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
 import { RolesTab } from '@/components/iam/roles-tab';
+import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
 import { ScimCard } from '@/components/iam/scim-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
 import { SessionControlsCard } from '@/components/iam/session-controls-card';
@@ -98,7 +99,7 @@ import {
   resendAccountInvite,
   updateAccountMemberRole,
   updateAccountName,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { usePermissions } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
@@ -450,6 +451,10 @@ export default function AccountSettingsPage() {
                       'autoAppAppAccountsIdPageJsxAttrDescriptionBringMembersa0baf40c',
                     )}
                   >
+                    <EnterpriseDemoCard
+                      accountId={account.account_id}
+                      canManage={canWriteAccount}
+                    />
                     <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
                     <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
                   </SettingsGroup>

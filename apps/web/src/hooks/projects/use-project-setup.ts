@@ -43,7 +43,7 @@ import {
   listProjectAccess,
   listProjectSecrets,
   listProjectSessions,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
 import { IconType } from 'react-icons/lib';
 import { RiRobot2Fill } from 'react-icons/ri';

@@ -2,7 +2,7 @@
 
 import { APP_DOWNLOAD_URL, AppDownloadQR } from '@/components/common/app-download-qr';
 import { desktopDownloadUrl, isDesktop, startDownload } from '@/lib/desktop';
-import { featureFlags } from '@/lib/feature-flags';
+import { featureFlags } from '@kortix/sdk/feature-flags';
 import { Monitor, Smartphone, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';

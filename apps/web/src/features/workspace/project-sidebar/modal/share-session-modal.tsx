@@ -21,7 +21,7 @@ import {
   selectionToIntent,
   type SharingSelection,
 } from '@/features/workspace/shared/sharing-picker';
-import { setProjectSessionSharing, type ProjectSession } from '@/lib/projects-client';
+import { setProjectSessionSharing, type ProjectSession } from '@kortix/sdk/projects-client';
 import { LockSolid, UsersSolid } from '@mynaui/icons-react';
 import { useMutation } from '@tanstack/react-query';
 import { Globe } from 'lucide-react';

@@ -17,11 +17,12 @@ import {
 import { useHeicBlob } from '@/hooks/use-heic-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { getAuthToken } from '@/lib/auth-token';
-import { SANDBOX_PORTS } from '@/lib/platform-client';
+import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { findDiagnosticsForFile, useDiagnosticsStore } from '@/stores/diagnostics-store';
+import { toSandboxAbsolutePath } from '@kortix/sdk/files';
 import {
   AlertTriangle,
   Braces,
@@ -75,12 +76,6 @@ const SqliteRenderer = lazy(() =>
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Ensure a sandbox file path starts with /workspace/ for the static file server. */
-function ensureWorkspacePath(filePath: string): string {
-  if (filePath.startsWith('/workspace/')) return filePath;
-  return '/workspace/' + filePath.replace(/^\/+/, '');
-}
 
 /** Categories that need a blob fetched via readFileAsBlob */
 const BLOB_CATEGORIES = ['docx', 'video', 'audio', 'pptx'] as const;
@@ -377,7 +372,7 @@ export function FileContentRenderer({
 
   const htmlPreviewUrl = useMemo(() => {
     if (!isHtmlFile) return '';
-    const normalizedPath = ensureWorkspacePath(filePath);
+    const normalizedPath = toSandboxAbsolutePath(filePath);
     const encodedPath = normalizedPath.split('/').filter(Boolean).map(encodeURIComponent).join('/');
     return rewritePortPath(staticPort, `/open?path=/${encodedPath}`);
   }, [isHtmlFile, filePath, rewritePortPath, staticPort]);

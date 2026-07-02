@@ -1,7 +1,5 @@
 // Session sandbox — runtime sandbox row + the session-open (/start) flow.
 
-import type { QueryClient } from '@tanstack/react-query';
-
 import { backendApi } from '../api-client';
 
 // ---------------------------------------------------------------------------
@@ -22,7 +20,7 @@ export interface ProjectSessionSandbox {
   session_id: string;
   project_id: string;
   account_id: string;
-  provider: 'daytona' | 'justavps';
+  provider: 'daytona' | 'platinum' | 'local_docker' | 'justavps';
   external_id: string | null;
   base_url: string | null;
   status: ProjectSessionSandboxStatus;
@@ -38,6 +36,8 @@ export type SessionStartStage = 'provisioning' | 'starting' | 'ready' | 'stopped
 export interface SessionStartResult {
   /** Coarse lifecycle stage to render + poll on. */
   stage: SessionStartStage;
+  /** Immutable project-session agent bound at session creation. */
+  agent_name: string;
   /** Whether polling /start again can make progress (false = terminal). */
   retriable: boolean;
   sandbox: ProjectSessionSandbox | null;
@@ -86,23 +86,4 @@ export async function startProjectSession(
  */
 export function sessionStartKey(projectId: string, sessionId: string) {
   return ['session-start', projectId, sessionId] as const;
-}
-
-/**
- * Begin the session runtime boot DURING the route transition (before the session
- * page mounts), so provisioning overlaps navigation instead of starting after the
- * page paints. Idempotent + fire-and-forget: React Query dedupes against the
- * session page's own query (same key), and `/start` is idempotent server-side.
- * Also warms the route bundle. Use at every createProjectSession→navigate site.
- */
-export function prefetchSessionStart(
-  queryClient: QueryClient,
-  projectId: string,
-  sessionId: string,
-): void {
-  void queryClient.prefetchQuery({
-    queryKey: sessionStartKey(projectId, sessionId),
-    queryFn: () => startProjectSession(projectId, sessionId),
-    staleTime: 0,
-  });
 }

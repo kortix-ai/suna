@@ -12,7 +12,7 @@ import { useCallback, useState } from 'react';
 
 import { STATUS_TEXT } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { getProjectSession } from '@/lib/projects-client';
+import { getProjectSession } from '@kortix/sdk/projects-client';
 import { useChatSendStore } from '@/stores/chat-send-store';
 
 /** git-status status → single-letter badge, using the canonical status tones. */

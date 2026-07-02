@@ -6,7 +6,7 @@ import { X, ExternalLink, LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { usePathname } from 'next/navigation';
-import { normalizeAppPathname } from '@/lib/instance-routes';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 
 export type AlertBannerVariant = 'warning' | 'error' | 'info';
 

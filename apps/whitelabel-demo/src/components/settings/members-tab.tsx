@@ -20,8 +20,8 @@ import { Check, Loader2, Mail, Send, Trash2, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-type Role = 'manager' | 'editor' | 'viewer';
-const ROLES: Role[] = ['manager', 'editor', 'viewer'];
+type Role = 'manager' | 'editor' | 'user';
+const ROLES: Role[] = ['manager', 'editor', 'user'];
 
 export function MembersTab({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
@@ -49,7 +49,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
   });
 
   const [email, setEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<Role>('viewer');
+  const [inviteRole, setInviteRole] = useState<Role>('user');
 
   const invite = useMutation({
     mutationFn: () => kortix.project(projectId).access.invite(email.trim(), inviteRole),
@@ -83,7 +83,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
 
   const approve = useMutation({
     mutationFn: (requestId: string) =>
-      kortix.project(projectId).access.approveRequest(requestId, 'viewer'),
+      kortix.project(projectId).access.approveRequest(requestId, 'user'),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: requestsKey });
       qc.invalidateQueries({ queryKey: membersKey });
@@ -183,7 +183,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
           )}
           {members.map((m, i) => {
             const userId = String(m.user_id ?? m.email ?? i);
-            const role: Role = (m.effective_project_role ?? m.project_role ?? 'viewer') as Role;
+            const role: Role = (m.effective_project_role ?? m.project_role ?? 'user') as Role;
             const implicit = Boolean(m.has_implicit_access);
             return (
               <div key={userId} className="flex items-center justify-between gap-3 px-4 py-3">
@@ -255,7 +255,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
                 <div className="min-w-0">
                   <div className="truncate text-sm">{p.email ?? 'Invitee'}</div>
                   <div className="text-xs text-muted-foreground">
-                    {p.project_role ?? 'viewer'}
+                    {p.project_role ?? 'user'}
                     {p.invite_expired ? ' · expired' : ''}
                   </div>
                 </div>
@@ -364,7 +364,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
                 </div>
               </div>
               <Badge variant="outline" className="capitalize">
-                {g.role ?? 'viewer'}
+                {g.role ?? 'user'}
               </Badge>
             </div>
           ))}

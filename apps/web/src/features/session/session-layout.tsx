@@ -33,7 +33,7 @@ import { SessionWallpaperLayerContext } from '@/features/session/session-wallpap
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
 import { X } from 'lucide-react';
-import type { SessionStartStage } from '@/lib/projects-client';
+import type { SessionStartStage } from '@kortix/sdk/projects-client';
 
 // ============================================================================
 // Session Layout

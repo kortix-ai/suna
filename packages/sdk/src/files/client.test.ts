@@ -34,6 +34,50 @@ test('read hits GET /file/content', async () => {
   expect(last().url).toBe('http://sbx.test/file/content?path=a.txt');
 });
 
+test('list of a non-workspace sandbox root keeps the absolute path', async () => {
+  await F.listFiles('/tmp');
+  expect(last().url).toBe(`http://sbx.test/file?path=${encodeURIComponent('/tmp')}`);
+});
+
+test('read of a /tmp file passes the absolute path through to the daemon', async () => {
+  await F.readFile('/tmp/gmail_invite_list.png').catch(() => {});
+  expect(last().url).toBe(
+    `http://sbx.test/file/content?path=${encodeURIComponent('/tmp/gmail_invite_list.png')}`,
+  );
+});
+
+test('readBlob of a /home file hits /file/raw with the absolute path', async () => {
+  await F.readBlob('/home/user/report.pdf').catch(() => {});
+  expect(calls[0].url).toBe(
+    `http://sbx.test/file/raw?path=${encodeURIComponent('/home/user/report.pdf')}`,
+  );
+});
+
+test('toDaemonPath maps workspace to relative and other sandbox roots to absolute', () => {
+  expect(F.toDaemonPath('/workspace')).toBe('');
+  expect(F.toDaemonPath('/workspace/')).toBe('');
+  expect(F.toDaemonPath('/workspace/a.txt')).toBe('a.txt');
+  expect(F.toDaemonPath('/tmp/shot.png')).toBe('/tmp/shot.png');
+  expect(F.toDaemonPath('/tmp')).toBe('/tmp');
+  expect(F.toDaemonPath('/home/user/x')).toBe('/home/user/x');
+  expect(F.toDaemonPath('/opt/tool/bin')).toBe('/opt/tool/bin');
+  expect(F.toDaemonPath('/tmpfile.txt')).toBe('tmpfile.txt');
+  expect(F.toDaemonPath('/etc/passwd')).toBe('etc/passwd');
+  expect(F.toDaemonPath('/README.md')).toBe('README.md');
+  expect(F.toDaemonPath('src/a.ts')).toBe('src/a.ts');
+  expect(F.toDaemonPath('')).toBe('');
+});
+
+test('toSandboxAbsolutePath keeps allowed roots and anchors the rest under /workspace', () => {
+  expect(F.toSandboxAbsolutePath('/tmp/a.png')).toBe('/tmp/a.png');
+  expect(F.toSandboxAbsolutePath('/home/u/a.png')).toBe('/home/u/a.png');
+  expect(F.toSandboxAbsolutePath('/opt/a.png')).toBe('/opt/a.png');
+  expect(F.toSandboxAbsolutePath('/workspace/a.png')).toBe('/workspace/a.png');
+  expect(F.toSandboxAbsolutePath('a/b.png')).toBe('/workspace/a/b.png');
+  expect(F.toSandboxAbsolutePath('/foo/b.png')).toBe('/workspace/foo/b.png');
+  expect(F.toSandboxAbsolutePath('/tmpfoo/b.png')).toBe('/workspace/tmpfoo/b.png');
+});
+
 test('status hits GET /file/status', async () => {
   await F.getFileStatus();
   expect(last().url).toBe('http://sbx.test/file/status');

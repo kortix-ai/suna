@@ -13,9 +13,9 @@
 
 import { flattenModels, type FlatModel } from '@/features/session/session-chat-input';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
-import { featureFlags } from '@/lib/feature-flags';
+import { featureFlags } from '@kortix/sdk/feature-flags';
 import { AUTO_DEFAULT_MODEL_ID, AUTO_MODEL_ID } from '@kortix/llm-catalog';
-import { listProjectSecrets } from '@/lib/projects-client';
+import { listProjectSecrets } from '@kortix/sdk/projects-client';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';

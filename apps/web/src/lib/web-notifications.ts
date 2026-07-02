@@ -17,7 +17,7 @@ import { useWebNotificationStore } from '@/stores/web-notification-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { toast } from '@/lib/toast';
 import { logger } from '@/lib/logger';
-import { normalizeAppPathname } from '@/lib/instance-routes';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { playSound } from '@/lib/sounds';
 import type { SoundEvent } from '@/stores/sound-store';
 

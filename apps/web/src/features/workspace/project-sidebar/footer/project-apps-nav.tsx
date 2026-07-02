@@ -7,7 +7,7 @@ import Hint from '@/components/ui/hint';
 import { IconApp } from '@/components/ui/kortix-icons';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { useIsMobile } from '@/hooks/utils';
-import { getProjectDetail } from '@/lib/projects-client';
+import { getProjectDetail } from '@kortix/sdk/projects-client';
 import { useAppsOverlayStore } from '@/stores/apps-overlay-store';
 
 function useAppsEnabled(projectId: string): boolean {

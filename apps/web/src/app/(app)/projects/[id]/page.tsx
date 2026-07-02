@@ -11,7 +11,7 @@ import { useAccountState } from '@/hooks/billing';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { isBillingEnabled } from '@/lib/config';
-import { getProjectDetail } from '@/lib/projects-client';
+import { getProjectDetail } from '@kortix/sdk/projects-client';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { useQuery } from '@tanstack/react-query';

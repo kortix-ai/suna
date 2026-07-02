@@ -113,7 +113,7 @@ Client fns in SDK (`git-history.ts`, `change-requests.ts`), **hooks web-local** 
 
 ### 14. Sandbox lifecycle  ✅ / 🟡
 - session-sandbox status/metrics/instances → `projects-client/{sandbox,session-sandbox}.ts` ✅
-- `GET /v1/projects/:id/{sandbox-health,sandboxes}`, snapshots, warm-pool, `GET /v1/platform/sandbox/version*` → 🟡 web-local (`hooks/platform`, `lib/platform-client`)
+- `GET /v1/projects/:id/{sandbox-health,sandboxes}`, snapshots, warm-pool, `GET /v1/platform/sandbox/version*` → 🟡 client in `@kortix/sdk/platform-client` ✅; hooks web-local (`hooks/platform`)
 - sandbox proxy `ALL /v1/p/:sandboxId/:port/*` + preview auth/share → used by opencode-client baseURL ✅
 
 ### 15. Account state / billing (for entitlement + UI)  🟡

@@ -3,7 +3,7 @@ import {
   listProjectsForAccount,
   provisionProject,
   type KortixProject,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 
 export type FirstProjectAutoCreateState = {
   bootstrapRequested: boolean;

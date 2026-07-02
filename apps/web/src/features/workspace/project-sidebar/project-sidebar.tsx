@@ -53,7 +53,7 @@ import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-sw
 import { useAdminRole } from '@/hooks/admin';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
-import { listProjectSessions } from '@/lib/projects-client';
+import { listProjectSessions } from '@kortix/sdk/projects-client';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
 import { useBillingAccountId } from '@/stores/billing-account-context';

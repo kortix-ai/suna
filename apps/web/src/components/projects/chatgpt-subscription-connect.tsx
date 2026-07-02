@@ -26,7 +26,7 @@ import {
   listProjectSecrets,
   pollProjectProviderOAuth,
   startProjectProviderOAuth,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { toast } from '@/lib/toast';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 

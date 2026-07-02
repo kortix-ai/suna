@@ -12,7 +12,7 @@ import {
 } from '@/features/workspace/shared/sharing-picker';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
-import { setPersonalProjectSecret, upsertProjectSecret } from '@/lib/projects-client';
+import { setPersonalProjectSecret, upsertProjectSecret } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, ChevronLeft, ExternalLink, Info, Loader2 } from 'lucide-react';

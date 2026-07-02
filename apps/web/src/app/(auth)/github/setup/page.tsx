@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { useAuth } from '@/features/providers/auth-provider';
-import { saveGitHubInstallation } from '@/lib/projects-client';
+import { saveGitHubInstallation } from '@kortix/sdk/projects-client';
 import { CheckCircleSolid, InfoCircleSolid } from '@mynaui/icons-react';
 import { AlertCircle } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
