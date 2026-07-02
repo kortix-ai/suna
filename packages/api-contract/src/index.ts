@@ -263,8 +263,6 @@ export const TriggerSchema = z.object({
   secret_env: z.string().nullable(),
   prompt_template: z.string(),
   session_mode: z.enum(['fresh', 'reuse']),
-  /** The member this trigger's automated runs act as (null = account owner). */
-  owner_user_id: z.string().nullable(),
   last_fired_at: z.string().nullable(),
   last_status: z.string().nullable(),
   last_error: z.string().nullable(),
