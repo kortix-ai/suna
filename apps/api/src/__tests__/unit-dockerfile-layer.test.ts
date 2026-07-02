@@ -70,6 +70,48 @@ describe('buildLayeredDockerfile', () => {
     expect(envIdx).toBeLessThan(installIdx);
   });
 
+  test('hard-fails the bake if opencode-config-deps cannot be bundled by Bun', () => {
+    const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    // Regression coverage for the incident where `bun install` exited 0 but
+    // the installed tree (a CVE-driven axios override) failed to BUNDLE at
+    // session runtime, silently baking a broken image. This must be its own
+    // RUN step, not folded into a `set +e` block — an unbundlable dependency
+    // tree has to fail the image build.
+    const verifyIdx = merged.indexOf(
+      'bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js',
+    );
+    expect(verifyIdx).toBeGreaterThanOrEqual(0);
+    const precedingRun = merged.lastIndexOf('RUN', verifyIdx);
+    const stepText = merged.slice(precedingRun, verifyIdx);
+    expect(stepText).not.toContain('set +e');
+    // Must run after the install it's verifying, not before.
+    const installIdx = merged.indexOf('bun install');
+    expect(installIdx).toBeGreaterThanOrEqual(0);
+    expect(installIdx).toBeLessThan(verifyIdx);
+  });
+
+  test('also verifies the real starter tool files bundle when opencodeConfigPath is provided', () => {
+    const withConfig = buildLayeredDockerfile({
+      userDockerfile: 'FROM ubuntu:24.04',
+      ...COMMON,
+      opencodeConfigPath: 'kortix-opencode-config',
+      catalogPath: 'kortix-llm-catalog.json',
+    });
+    const verifyIdx = withConfig.indexOf('bun build tools/*.ts');
+    expect(verifyIdx).toBeGreaterThanOrEqual(0);
+    const precedingRun = withConfig.lastIndexOf('RUN', verifyIdx);
+    const stepText = withConfig.slice(precedingRun, verifyIdx);
+    expect(stepText).not.toContain('set +e');
+    // Without opencodeConfigPath there's no starter tool tree to verify, so
+    // this stricter check is correctly absent — only the axios/form-data
+    // override check (always present) still runs.
+    const withoutConfig = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    expect(withoutConfig).not.toContain('bun build tools/*.ts');
+    expect(withoutConfig).toContain(
+      'bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js',
+    );
+  });
+
   test('does NOT bake the project workspace into the image', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM scratch', ...COMMON });
     expect(merged).not.toContain('kortix-workspace.tar.gz');
