@@ -72,11 +72,10 @@ import {
   MessageCircle,
   MoreHorizontal,
   Pencil,
-  ShieldAlert,
   Trash2,
 } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { useParams, usePathname, useRouter } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // ============================================================================
@@ -127,6 +126,10 @@ const SessionRow = memo(function SessionRow({
     ? session.title.replace(/\s*\(@worker\)\s*$/, '')
     : session.title || 'Untitled';
 
+  // Questions and connector-approvals both mean "the agent is paused, waiting on
+  // you" — surface them with one identical amber dot + count.
+  const inputCount = pendingCount + needsApprovalCount;
+
   return (
     <Link
       href={`/sessions/${session.id}`}
@@ -148,12 +151,12 @@ const SessionRow = memo(function SessionRow({
         }}
         onMouseLeave={() => setIsHovering(false)}
       >
-        {/* Status dot — busy or pending */}
-        {isBusy || pendingCount > 0 ? (
+        {/* Status dot — waiting on you (amber) or working (green) */}
+        {isBusy || inputCount > 0 ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="flex-shrink-0">
-                {pendingCount > 0 ? (
+                {inputCount > 0 ? (
                   <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
                 ) : (
                   <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
@@ -161,9 +164,7 @@ const SessionRow = memo(function SessionRow({
               </div>
             </TooltipTrigger>
             <TooltipContent side="right" className="text-xs">
-              {pendingCount > 0
-                ? `${pendingCount} ${pendingCount === 1 ? 'question' : 'questions'} waiting`
-                : 'Working…'}
+              {inputCount > 0 ? `${inputCount} waiting for your input` : 'Working…'}
             </TooltipContent>
           </Tooltip>
         ) : null}
@@ -208,33 +209,18 @@ const SessionRow = memo(function SessionRow({
           </Tooltip>
         )}
 
-        {/* Pending badge */}
-        {pendingCount > 0 && (
+        {/* Waiting-for-input badge — questions + connector approvals, one count */}
+        {inputCount > 0 && (
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="flex h-4 min-w-4 flex-shrink-0 items-center justify-center rounded-full bg-amber-500/15 px-1 text-xs font-medium text-amber-500">
-                {pendingCount}
+                {inputCount}
               </span>
             </TooltipTrigger>
             <TooltipContent side="right" className="text-xs">
-              {pendingCount} {pendingCount === 1 ? 'question' : 'questions'}
-              {tHardcodedUi.raw('componentsSidebarSessionList.line208JsxTextWaitingForYourInput')}
-            </TooltipContent>
-          </Tooltip>
-        )}
-
-        {/* Connector approval needed — the agent is paused waiting on a decision */}
-        {needsApprovalCount > 0 && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="flex h-4 min-w-4 flex-shrink-0 items-center gap-0.5 rounded-full bg-amber-500/15 px-1 font-medium text-[11px] text-amber-600 dark:text-amber-400">
-                <ShieldAlert className="size-2.5" />
-                {needsApprovalCount}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="right" className="text-xs">
-              {needsApprovalCount} action{needsApprovalCount === 1 ? '' : 's'} awaiting your
-              approval
+              {needsApprovalCount > 0
+                ? `${inputCount} action${inputCount === 1 ? '' : 's'} awaiting your approval`
+                : `${inputCount} ${inputCount === 1 ? 'question' : 'questions'} waiting for your input`}
             </TooltipContent>
           </Tooltip>
         )}
@@ -523,7 +509,11 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   const questions = useOpenCodePendingStore((s) => s.questions);
   // Connector actions awaiting approve/deny, keyed by session id (both OpenCode
   // + Kortix ids) so a row matches whichever id it holds.
-  const { data: needsInput } = useSessionsNeedingInput(projectId ?? undefined);
+  // The global sidebar renders with projectId=null; fall back to the project in
+  // the current route so its sessions still get a "needs input" badge.
+  const routeParams = useParams();
+  const routeProjectId = typeof routeParams?.id === 'string' ? routeParams.id : undefined;
+  const { data: needsInput } = useSessionsNeedingInput(projectId ?? routeProjectId);
   const needsInputBySession = needsInput?.sessions ?? {};
 
   // Debounced busy state — prevents green dot from flickering during reasoning
