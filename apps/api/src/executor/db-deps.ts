@@ -270,7 +270,11 @@ function makeDbGatewayDeps(): GatewayDeps {
         status: rec.status,
         risk: rec.risk,
         resultSummary: rec.resultSummary,
-        resolvedAt: new Date(),
+        // A pending_approval row is genuinely UNRESOLVED — it's awaiting a human
+        // approve/deny (the approvals inbox). Every terminal status (ok/error/
+        // denied) resolves at insert. Leaving pending rows unresolved is what lets
+        // the inbox query surface exactly the actions still waiting on a decision.
+        resolvedAt: rec.status === 'pending_approval' ? null : new Date(),
       });
     },
     executePipedream: ({ projectId, connectorSlug, app, actionKey, args, accountId, userId }) =>

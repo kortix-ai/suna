@@ -13,7 +13,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { roleAllows, parseProjectRole } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountGroups, accountMembers, projectGroupGrants, projectSecrets, projectSessions, sessionSandboxes } from '@kortix/db';
+import { accountGroupMembers, accountGroups, accountMembers, executorExecutions, projectGroupGrants, projectSecrets, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid } from '../lib/access';
 import { AnyObject, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, SessionSchema, projectsApp } from '../lib/app';
@@ -586,6 +586,254 @@ projectsApp.openapi(
   });
   return c.json(transcript);
 },
+);
+
+
+// GET /v1/projects/:projectId/sessions/:sessionId/audit
+// Per-session audit log — the governed actions an agent took in this session:
+// every connector/tool call the executor gated, with its risk, allow/ask/block
+// verdict, who acted, and (for approvals) who resolved it. This is the enterprise
+// "what did the agent actually do" trail, read straight from executor_executions.
+// Same visibility gate as the session detail/transcript (project read + the
+// session must be visible to the caller).
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sessions/{sessionId}/audit',
+    tags: ['sessions'],
+    summary: 'GET /:projectId/sessions/:sessionId/audit',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      query: z.object({ limit: z.string().optional() }),
+    },
+    responses: {
+      200: json(AnyObject, 'Per-session agent action audit log'),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+    const limit = parseBoundedPositiveInt(c.req.query('limit'), 200, 1, 1000, 'limit');
+    if (!limit.ok) return c.json({ error: limit.error }, 400);
+
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const visible = await loadVisibleSession(loaded, sessionId);
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+
+    const rows = await db
+      .select({
+        executionId: executorExecutions.executionId,
+        connectorId: executorExecutions.connectorId,
+        actionPath: executorExecutions.actionPath,
+        actingUserId: executorExecutions.actingUserId,
+        status: executorExecutions.status,
+        risk: executorExecutions.risk,
+        resultSummary: executorExecutions.resultSummary,
+        approvedBy: executorExecutions.approvedBy,
+        createdAt: executorExecutions.createdAt,
+        resolvedAt: executorExecutions.resolvedAt,
+      })
+      .from(executorExecutions)
+      .where(and(eq(executorExecutions.projectId, projectId), eq(executorExecutions.sessionId, sessionId)))
+      .orderBy(asc(executorExecutions.createdAt))
+      .limit(limit.value);
+
+    // Resolve actor + approver emails in one batched lookup (managers see who).
+    const userIds = [
+      ...new Set(rows.flatMap((r) => [r.actingUserId, r.approvedBy]).filter((v): v is string => !!v)),
+    ];
+    const emailByUser = userIds.length ? await lookupEmailsByUserIds(userIds) : new Map<string, string>();
+
+    return c.json({
+      session_id: sessionId,
+      agent: (visible.row.agentName as string | null) ?? null,
+      count: rows.length,
+      // Chronological trail of every executor-gated action this session took.
+      actions: rows.map((r) => ({
+        execution_id: r.executionId,
+        action: r.actionPath,
+        connector_id: r.connectorId,
+        status: r.status, // ok | error | denied | pending_approval
+        risk: r.risk, // read | write | destructive | null
+        acted_by: r.actingUserId,
+        acted_by_email: r.actingUserId ? emailByUser.get(r.actingUserId) ?? null : null,
+        approved_by: r.approvedBy,
+        approved_by_email: r.approvedBy ? emailByUser.get(r.approvedBy) ?? null : null,
+        result_summary: r.resultSummary ?? null,
+        at: r.createdAt.toISOString(),
+        resolved_at: r.resolvedAt?.toISOString() ?? null,
+      })),
+    });
+  },
+);
+
+
+// GET /v1/projects/:projectId/approvals
+// The approval inbox: executor actions a policy gated as `require_approval` that
+// are still awaiting a human decision (status=pending_approval, unresolved).
+// Manager-scoped — this is the project-wide oversight surface. A session's own
+// launcher also sees + resolves the pending items for their session via the
+// per-session audit view + the POST below.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/approvals',
+    tags: ['access'],
+    summary: 'GET /:projectId/approvals',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      query: z.object({ limit: z.string().optional() }),
+    },
+    responses: {
+      200: json(AnyObject, 'Pending approval inbox'),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+
+    const limit = parseBoundedPositiveInt(c.req.query('limit'), 100, 1, 500, 'limit');
+    if (!limit.ok) return c.json({ error: limit.error }, 400);
+
+    const rows = await db
+      .select({
+        executionId: executorExecutions.executionId,
+        actionPath: executorExecutions.actionPath,
+        risk: executorExecutions.risk,
+        sessionId: executorExecutions.sessionId,
+        actingUserId: executorExecutions.actingUserId,
+        resultSummary: executorExecutions.resultSummary,
+        createdAt: executorExecutions.createdAt,
+      })
+      .from(executorExecutions)
+      .where(
+        and(
+          eq(executorExecutions.projectId, projectId),
+          eq(executorExecutions.status, 'pending_approval'),
+          isNull(executorExecutions.approvedBy),
+          isNull(executorExecutions.resolvedAt),
+        ),
+      )
+      .orderBy(desc(executorExecutions.createdAt))
+      .limit(limit.value);
+
+    const userIds = [...new Set(rows.map((r) => r.actingUserId).filter((v): v is string => !!v))];
+    const emailByUser = userIds.length ? await lookupEmailsByUserIds(userIds) : new Map<string, string>();
+
+    return c.json({
+      count: rows.length,
+      approvals: rows.map((r) => ({
+        execution_id: r.executionId,
+        action: r.actionPath,
+        risk: r.risk,
+        session_id: r.sessionId,
+        requested_by: r.actingUserId,
+        requested_by_email: r.actingUserId ? emailByUser.get(r.actingUserId) ?? null : null,
+        requested_at: r.createdAt.toISOString(),
+        detail: r.resultSummary ?? null,
+      })),
+    });
+  },
+);
+
+// POST /v1/projects/:projectId/approvals/:executionId
+// Resolve a pending approval — { decision: 'approve' | 'deny' }. Allowed for a
+// project MANAGER or the LAUNCHER of the session the action belongs to (the two
+// principals a human-in-the-loop approval should recognise). Records who decided
+// + when; idempotent-safe (a non-pending row 409s).
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/approvals/{executionId}',
+    tags: ['access'],
+    summary: 'POST /:projectId/approvals/:executionId',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), executionId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(OkSchema, 'Resolved'),
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const executionId = c.req.param('executionId');
+    if (!isUuid(executionId)) return c.json({ error: 'Invalid execution id' }, 400);
+    const body = await readBody(c);
+    const decision = normalizeString(body.decision);
+    if (decision !== 'approve' && decision !== 'deny') {
+      return c.json({ error: "decision must be 'approve' or 'deny'" }, 400);
+    }
+
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    const [row] = await db
+      .select({
+        executionId: executorExecutions.executionId,
+        sessionId: executorExecutions.sessionId,
+        status: executorExecutions.status,
+        approvedBy: executorExecutions.approvedBy,
+        resolvedAt: executorExecutions.resolvedAt,
+        resultSummary: executorExecutions.resultSummary,
+      })
+      .from(executorExecutions)
+      .where(and(eq(executorExecutions.executionId, executionId), eq(executorExecutions.projectId, projectId)))
+      .limit(1);
+    if (!row) return c.json({ error: 'Not found' }, 404);
+    if (row.status !== 'pending_approval' || row.approvedBy || row.resolvedAt) {
+      return c.json({ error: 'Approval already resolved' }, 409);
+    }
+
+    // Who may resolve: a project manager, OR the human who launched the session
+    // the gated action belongs to. (Founder decision: managers + launcher.)
+    const isManager = roleAllows(loaded.effectiveRole, 'manage');
+    let isLauncher = false;
+    if (!isManager && row.sessionId) {
+      const [session] = await db
+        .select({ createdBy: projectSessions.createdBy })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, row.sessionId))
+        .limit(1);
+      isLauncher = Boolean(session && session.createdBy === loaded.userId);
+    }
+    if (!isManager && !isLauncher) {
+      return c.json({ error: 'Only a project manager or the session launcher can resolve this' }, 403);
+    }
+
+    const detail = {
+      ...(typeof row.resultSummary === 'object' && row.resultSummary ? row.resultSummary : {}),
+      decision,
+      decided_by: loaded.userId,
+    };
+    await db
+      .update(executorExecutions)
+      .set({
+        // Approve keeps the row (approvedBy stamps who); deny flips it to a
+        // terminal denied. Both set resolvedAt so it leaves the pending inbox.
+        status: decision === 'approve' ? 'pending_approval' : 'denied',
+        approvedBy: decision === 'approve' ? loaded.userId : null,
+        resolvedAt: new Date(),
+        resultSummary: detail,
+      })
+      .where(eq(executorExecutions.executionId, executionId));
+
+    return c.json({ ok: true });
+  },
 );
 
 
