@@ -17,7 +17,6 @@
  */
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
-import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { useEffect } from 'react';
 
 /** Transient errors thrown while the sandbox/opencode runtime is still booting. */
@@ -27,14 +26,19 @@ function isRuntimeNotReadyError(error: Error): boolean {
 }
 
 function RuntimeLoadingFallback({ reset }: { reset: () => void }) {
-  // The runtime URL lands within a few seconds of provisioning. Reset the
-  // boundary on a short interval so the subtree re-mounts and picks it up once
-  // ready — no manual "Try again" needed.
+  // The runtime URL lands within a second or two of provisioning. Soft-reset the
+  // boundary on a short interval so the subtree re-renders and picks it up the
+  // moment it's ready — no hard reload, no manual "Try again". A minimal centered
+  // spinner (not the full boot loader) so it reads as "still loading", not a crash.
   useEffect(() => {
-    const t = setInterval(reset, 1200);
+    const t = setInterval(reset, 800);
     return () => clearInterval(t);
   }, [reset]);
-  return <SessionStartingLoader stage="provisioning" delayMs={0} />;
+  return (
+    <div className="flex h-full min-h-[50vh] w-full flex-1 items-center justify-center">
+      <span className="border-muted-foreground/25 border-t-foreground size-6 animate-spin rounded-full border-2" />
+    </div>
+  );
 }
 
 // Rethrow non-runtime errors so they propagate to the nearest OUTER boundary
