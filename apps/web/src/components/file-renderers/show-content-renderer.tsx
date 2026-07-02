@@ -49,7 +49,7 @@ import { TextWithPaths } from '@/components/common/clickable-path';
 import { ImageRenderer } from './image-renderer';
 import { VideoRenderer } from './video-renderer';
 import { FileContentRenderer } from '@/features/files/components/file-content-renderer';
-import { SANDBOX_PORTS } from '@/lib/platform-client';
+import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { useHeicBlob } from '@/hooks/use-heic-url';
 import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
