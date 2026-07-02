@@ -32,7 +32,11 @@ import {
   GroupMemberSchema,
   ProjectGrantSchema,
 } from './app';
-import { auditIam, isUniqueViolation, readBody } from './helpers';
+import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
+
+// Groups are an Enterprise-only construct (no free-tier group concept) — every
+// route in this file gates on `rbac`, reads included, unlike custom-roles.ts
+// where read routes stay open. See TierEntitlements in ../../types.
 
 // ─── Groups ────────────────────────────────────────────────────────────────
 
@@ -53,6 +57,8 @@ iamRouter.openapi(
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
+  const denied = await requireEntitlement(c, accountId, 'rbac');
+  if (denied) return denied;
 
   const rows = await listGroups(accountId);
   return c.json({
@@ -88,6 +94,8 @@ iamRouter.openapi(
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_CREATE);
+  const denied = await requireEntitlement(c, accountId, 'rbac');
+  if (denied) return denied;
 
   const body = await readBody(c);
   const name = typeof body.name === 'string' ? body.name.trim() : '';
@@ -145,6 +153,8 @@ iamRouter.openapi(
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
+  const denied = await requireEntitlement(c, accountId, 'rbac');
+  if (denied) return denied;
 
   const group = await getGroup(accountId, groupId);
   if (!group) return c.json({ error: 'group not found' }, 404);
@@ -182,6 +192,8 @@ iamRouter.openapi(
     type: 'group',
     id: groupId,
   });
+  const denied = await requireEntitlement(c, accountId, 'rbac');
+  if (denied) return denied;
 
   const body = await readBody(c);
   const patch: { name?: string; description?: string | null } = {};
@@ -240,6 +252,8 @@ iamRouter.openapi(
     type: 'group',
     id: groupId,
   });
+  const denied = await requireEntitlement(c, accountId, 'rbac');
+  if (denied) return denied;
 
   const beforeGroup = await getGroup(accountId, groupId);
 
@@ -286,6 +300,8 @@ iamRouter.openapi(
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
+  const denied = await requireEntitlement(c, accountId, 'rbac');
+  if (denied) return denied;
 
   const members = await listGroupMembers(accountId, groupId);
   return c.json({
@@ -319,6 +335,8 @@ iamRouter.openapi(
     type: 'group',
     id: groupId,
   });
+  const denied = await requireEntitlement(c, accountId, 'rbac');
+  if (denied) return denied;
 
   const group = await getGroup(accountId, groupId);
   if (!group) return c.json({ error: 'group not found' }, 404);
@@ -373,6 +391,8 @@ iamRouter.openapi(
     type: 'group',
     id: groupId,
   });
+  const denied = await requireEntitlement(c, accountId, 'rbac');
+  if (denied) return denied;
 
   const group = await getGroup(accountId, groupId);
   if (!group) return c.json({ error: 'group not found' }, 404);
@@ -423,6 +443,8 @@ iamRouter.openapi(
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
+  const denied = await requireEntitlement(c, accountId, 'rbac');
+  if (denied) return denied;
 
   const group = await getGroup(accountId, groupId);
   if (!group) return c.json({ error: 'group not found' }, 404);

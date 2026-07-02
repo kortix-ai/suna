@@ -17,7 +17,7 @@ import {
   invalidateIamCacheForRole,
 } from '../../iam/cache-invalidation';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam, isUniqueViolation, readBody } from './helpers';
+import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
 import { listAgentServiceAccounts, ensureAgentServiceAccount } from '../../repositories/service-accounts';
 import { loadConfigWithFiles } from '../../projects/lib/project-resources';
 import {
@@ -143,6 +143,8 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_CREATE);
+    const denied = await requireEntitlement(c, accountId, 'rbac');
+    if (denied) return denied;
 
     const body = await readBody(c);
     const key = typeof body.key === 'string' ? body.key.trim() : '';
@@ -200,6 +202,8 @@ iamRouter.openapi(
     const accountId = c.req.param('accountId');
     const roleId = c.req.param('roleId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_UPDATE);
+    const denied = await requireEntitlement(c, accountId, 'rbac');
+    if (denied) return denied;
     if (BUILTIN_BY_ID.has(roleId)) return c.json({ error: 'built-in roles cannot be edited' }, 400);
     const role = await loadCustomRole(accountId, roleId);
     if (!role) return c.json({ error: 'role not found' }, 404);
@@ -237,6 +241,8 @@ iamRouter.openapi(
     const accountId = c.req.param('accountId');
     const roleId = c.req.param('roleId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_DELETE);
+    const denied = await requireEntitlement(c, accountId, 'rbac');
+    if (denied) return denied;
     if (BUILTIN_BY_ID.has(roleId)) return c.json({ error: 'built-in roles cannot be deleted' }, 400);
     const role = await loadCustomRole(accountId, roleId);
     if (!role) return c.json({ error: 'role not found' }, 404);
@@ -297,6 +303,8 @@ iamRouter.openapi(
     const accountId = c.req.param('accountId');
     const roleId = c.req.param('roleId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_UPDATE);
+    const denied = await requireEntitlement(c, accountId, 'rbac');
+    if (denied) return denied;
     if (BUILTIN_BY_ID.has(roleId)) return c.json({ error: 'built-in role permissions are fixed' }, 400);
     const role = await loadCustomRole(accountId, roleId);
     if (!role) return c.json({ error: 'role not found' }, 404);
@@ -472,6 +480,8 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_CREATE);
+    const denied = await requireEntitlement(c, accountId, 'rbac');
+    if (denied) return denied;
 
     const body = await readBody(c);
     const parsed = await parsePolicyInput(accountId, body);
@@ -523,6 +533,8 @@ iamRouter.openapi(
     const accountId = c.req.param('accountId');
     const policyId = c.req.param('policyId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_DELETE);
+    const denied = await requireEntitlement(c, accountId, 'rbac');
+    if (denied) return denied;
 
     const [row] = await db
       .delete(iamPolicies)
@@ -555,6 +567,8 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_DELETE);
+    const denied = await requireEntitlement(c, accountId, 'rbac');
+    if (denied) return denied;
     const body = await readBody(c);
     const ids = Array.isArray(body.policy_ids) ? body.policy_ids.filter((x: unknown): x is string => typeof x === 'string') : [];
     if (ids.length === 0) return c.json({ deleted: 0 });
@@ -583,6 +597,8 @@ iamRouter.openapi(
     const policyId = c.req.param('policyId');
     // Editing an assignment is a create-class action — gate on POLICY_CREATE.
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_CREATE);
+    const denied = await requireEntitlement(c, accountId, 'rbac');
+    if (denied) return denied;
 
     const [existing] = await db
       .select()
@@ -645,6 +661,8 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_CREATE);
+    const denied = await requireEntitlement(c, accountId, 'rbac');
+    if (denied) return denied;
 
     const body = await readBody(c);
     const entries = Array.isArray(body.policies) ? (body.policies as Array<Record<string, unknown>>) : [];

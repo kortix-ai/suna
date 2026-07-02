@@ -23,6 +23,7 @@ import { addSecretResourceGrant, listSecretResourceGrants, removeSecretResourceG
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
 import { createSession, deleteSession } from '../session-lifecycle';
+import { requireEntitlement } from '../../accounts/iam/helpers';
 
 function parseBoundedPositiveInt(
   raw: string | undefined,
@@ -625,6 +626,8 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const visible = await loadVisibleSession(loaded, sessionId);
     if (!visible) return c.json({ error: 'Not found' }, 404);
+    const denied = await requireEntitlement(c, loaded.row.accountId, 'auditAccess');
+    if (denied) return denied;
 
     const rows = await db
       .select({

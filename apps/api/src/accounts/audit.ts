@@ -21,6 +21,7 @@ import { recordAuditEvent } from '../shared/audit';
 import type { AppEnv } from '../types';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
+import { requireEntitlement } from './iam/helpers';
 
 export const auditRouter = makeOpenApiApp<AppEnv>();
 
@@ -141,6 +142,8 @@ auditRouter.openapi(
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.AUDIT_READ);
+  const denied = await requireEntitlement(c, accountId, 'auditAccess');
+  if (denied) return denied;
 
   const actionPrefix = c.req.query('action')?.trim() || null;
   const sinceRaw = c.req.query('since')?.trim() || null;
@@ -261,6 +264,8 @@ auditRouter.openapi(
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.AUDIT_READ);
+  const denied = await requireEntitlement(c, accountId, 'auditAccess');
+  if (denied) return denied;
 
   const format = (c.req.query('format') || 'csv').toLowerCase();
   if (format !== 'csv' && format !== 'jsonl') {
@@ -393,6 +398,8 @@ auditRouter.openapi(
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  const denied = await requireEntitlement(c, accountId, 'auditAccess');
+  if (denied) return denied;
 
   const rows = await db
     .select()
@@ -424,6 +431,8 @@ auditRouter.openapi(
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  const denied = await requireEntitlement(c, accountId, 'auditAccess');
+  if (denied) return denied;
 
   const body = await readBody(c);
 
@@ -508,6 +517,8 @@ auditRouter.openapi(
   const accountId = c.req.param('accountId');
   const webhookId = c.req.param('webhookId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  const denied = await requireEntitlement(c, accountId, 'auditAccess');
+  if (denied) return denied;
 
   const [before] = await db
     .select()
@@ -582,6 +593,8 @@ auditRouter.openapi(
   const accountId = c.req.param('accountId');
   const webhookId = c.req.param('webhookId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  const denied = await requireEntitlement(c, accountId, 'auditAccess');
+  if (denied) return denied;
 
   const rows = await db
     .delete(auditWebhooks)
