@@ -22,7 +22,8 @@ import {
   listSessionsNeedingInput,
   resolveApproval,
 } from '@kortix/sdk/projects-client';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
 
 /**
  * Per-session pending-approval summary for the sidebar "needs input" badge.
@@ -39,6 +40,37 @@ export function useSessionsNeedingInput(projectId: string | undefined) {
     staleTime: 5_000,
     refetchInterval: 15_000,
   });
+}
+
+/**
+ * Route-independent variant for the sidebar: query needs-input for EACH project
+ * the visible sessions belong to (their `projectID`), then merge. Avoids relying
+ * on a route projectId — the sidebar renders on routes (e.g. /sessions/:id) where
+ * the route param isn't a project. Returns `{ sessions, total }` where `sessions`
+ * is keyed by both OpenCode + Kortix session ids.
+ */
+export function useSessionsNeedingInputForProjects(projectIds: string[]) {
+  const results = useQueries({
+    queries: projectIds.map((pid) => ({
+      queryKey: ['sessions-needing-input', pid],
+      queryFn: () => listSessionsNeedingInput(pid, { showErrors: false }),
+      enabled: !!pid,
+      staleTime: 5_000,
+      refetchInterval: 12_000,
+    })),
+  });
+  const dataList = results.map((r) => r.data);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- merge when any result changes
+  return useMemo(() => {
+    const sessions: Record<string, number> = {};
+    let total = 0;
+    for (const d of dataList) {
+      if (!d) continue;
+      for (const [k, v] of Object.entries(d.sessions)) sessions[k] = v;
+      total += d.total ?? 0;
+    }
+    return { sessions, total };
+  }, [JSON.stringify(dataList)]);
 }
 
 /** One poll cadence for the shared session-audit query, so both surfaces (panel

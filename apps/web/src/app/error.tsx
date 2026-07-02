@@ -7,24 +7,50 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useEffect } from 'react';
 
+/** Transient errors thrown while a session's sandbox/opencode runtime is still
+ *  booting — a stray `getClient()` before the runtime URL is pinned. These are
+ *  NOT real failures; they clear within a couple seconds. */
+function isRuntimeNotReadyError(error: Error): boolean {
+  const m = error?.message ?? '';
+  return /server url not ready|sandbox is still loading|opencode not ready/i.test(m);
+}
+
 export default function Error({
   error,
+  reset,
 }: {
   error: Error & { digest?: string; statusCode?: number };
+  reset: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const handleReset = () => {
-    try {
-      window.location.reload();
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const transient = isRuntimeNotReadyError(error);
 
   useEffect(() => {
+    if (transient) return; // boot races aren't real errors — don't log/report
     console.error('[Kortix Home Error]', error);
     Sentry.captureException(error);
-  }, [error]);
+  }, [error, transient]);
+
+  // Auto-recover from the sandbox-still-loading race: retry the segment until the
+  // runtime is ready, so the user sees a brief loader instead of a hard crash +
+  // manual "Try again".
+  useEffect(() => {
+    if (!transient) return;
+    const t = setInterval(() => reset(), 1200);
+    return () => clearInterval(t);
+  }, [transient, reset]);
+
+  if (transient) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-4">
+        <div className="flex flex-col items-center justify-center gap-4 text-center">
+          <KortixHyperLogo size={50} />
+          <span className="border-muted-foreground/30 border-t-foreground size-5 animate-spin rounded-full border-2" />
+          <p className="text-base-500 text-sm">Starting your session…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
@@ -43,7 +69,7 @@ export default function Error({
           <Button asChild size="sm">
             <Link href="/">Home</Link>
           </Button>
-          <Button onClick={handleReset} size="sm" variant="secondary">
+          <Button onClick={() => reset()} size="sm" variant="secondary">
             {tI18nHardcoded.raw('autoAppErrorJsxTextTryAgain3351b1d3')}
           </Button>
         </div>

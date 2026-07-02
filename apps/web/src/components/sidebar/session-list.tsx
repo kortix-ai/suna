@@ -32,7 +32,7 @@ import { Input } from '@/components/ui/input';
 import { useSidebar } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { CompactModal } from '@/features/session/header/compact-modal';
-import { useSessionsNeedingInput } from '@/features/session/session-audit-shared';
+import { useSessionsNeedingInputForProjects } from '@/features/session/session-audit-shared';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { useAdminSandboxHealth, useAdminSandboxRepair } from '@/hooks/admin/use-admin-sandboxes';
 import type { Session } from '@/hooks/opencode/use-opencode-sessions';
@@ -45,6 +45,7 @@ import { useBackgroundSessionPrefetch } from '@/hooks/opencode/use-session-prefe
 import { useTriggers } from '@/hooks/scheduled-tasks';
 import { useDebouncedBusySessions } from '@/hooks/use-debounced-busy-sessions';
 import { classifySession, isSidebarHidden } from '@/lib/kortix/session-category';
+import { playSound } from '@/lib/sounds';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
@@ -75,7 +76,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useParams, usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // ============================================================================
@@ -509,12 +510,27 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   const questions = useOpenCodePendingStore((s) => s.questions);
   // Connector actions awaiting approve/deny, keyed by session id (both OpenCode
   // + Kortix ids) so a row matches whichever id it holds.
-  // The global sidebar renders with projectId=null; fall back to the project in
-  // the current route so its sessions still get a "needs input" badge.
-  const routeParams = useParams();
-  const routeProjectId = typeof routeParams?.id === 'string' ? routeParams.id : undefined;
-  const { data: needsInput } = useSessionsNeedingInput(projectId ?? routeProjectId);
-  const needsInputBySession = needsInput?.sessions ?? {};
+  // "Needs input" (connector approvals) per session — queried route-independently
+  // by each visible session's OWN project (the sidebar also renders on routes
+  // where the route param isn't a project, e.g. /sessions/:id).
+  const sessionProjectIds = useMemo(
+    () => [...new Set((sessions ?? []).map((s) => s.projectID).filter((p): p is string => !!p))],
+    [sessions],
+  );
+  const needsInput = useSessionsNeedingInputForProjects(sessionProjectIds);
+  const needsInputBySession = needsInput.sessions;
+
+  // Play the same notification sound a question does when a new approval appears.
+  const prevNeedsInputTotalRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (
+      prevNeedsInputTotalRef.current !== null &&
+      needsInput.total > prevNeedsInputTotalRef.current
+    ) {
+      playSound('notification');
+    }
+    prevNeedsInputTotalRef.current = needsInput.total;
+  }, [needsInput.total]);
 
   // Debounced busy state — prevents green dot from flickering during reasoning
   const debouncedBusy = useDebouncedBusySessions();
