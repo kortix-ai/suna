@@ -4,7 +4,7 @@
 
 # Immutable dev tag (CI bumps to dev-<sha8>). Bootstrap value until the first run.
 image:
-  tag: "dev-360c175d"
+  tag: "dev-f2f08c53"
 # Dev sizing (≤100 users): 1-replica floor, burst to 2.
 replicas: 1
 autoscaling:
