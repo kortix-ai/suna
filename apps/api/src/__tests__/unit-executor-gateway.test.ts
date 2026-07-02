@@ -65,7 +65,7 @@ function makeDeps(o: FakeOpts = {}) {
     loadProjectPolicies: async () => o.projectPolicies ?? [],
     loadDefaultMode: async () => o.defaultMode ?? 'allow_all',
     enforcePolicies: o.enforcePolicies,
-    recordExecution: async (r) => { records.push(r); },
+    recordExecution: async (r) => { records.push(r); return null; },
     fetchImpl: async (url, init) => {
       fetchCalls.push({ url, ...init });
       const status = o.fetchStatus ?? 200;

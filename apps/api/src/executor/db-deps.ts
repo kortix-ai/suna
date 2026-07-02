@@ -97,6 +97,31 @@ function isUuid(value: string): boolean {
   return UUID_REGEX.test(value);
 }
 
+/**
+ * Poll a `pending_approval` execution until a human resolves it (approve/deny)
+ * or `timeoutMs` elapses. Powers the gateway's in-session pause: a require-
+ * approval call blocks here so the agent's turn waits, then resumes on approve.
+ * The resolve endpoint stamps `resolvedAt` with a terminal status (`denied` for
+ * a refusal, otherwise approved).
+ */
+export async function waitForApprovalDecision(
+  executionId: string,
+  timeoutMs: number,
+): Promise<'approved' | 'denied' | 'timeout'> {
+  const deadline = Date.now() + timeoutMs;
+  const POLL_MS = 1000;
+  while (Date.now() < deadline) {
+    const [row] = await db
+      .select({ status: executorExecutions.status, resolvedAt: executorExecutions.resolvedAt })
+      .from(executorExecutions)
+      .where(eq(executorExecutions.executionId, executionId))
+      .limit(1);
+    if (row?.resolvedAt) return row.status === 'denied' ? 'denied' : 'approved';
+    await new Promise((r) => setTimeout(r, POLL_MS));
+  }
+  return 'timeout';
+}
+
 type ConnectorRow = typeof executorConnectors.$inferSelect;
 
 function authOf(row: ConnectorRow): { auth: ExecutorAuth; hasAuth: boolean } {
@@ -260,23 +285,28 @@ function makeDbGatewayDeps(): GatewayDeps {
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,
     recordExecution: async (rec) => {
-      await db.insert(executorExecutions).values({
-        accountId: rec.accountId,
-        projectId: rec.projectId,
-        connectorId: rec.connectorId,
-        actionPath: rec.actionPath,
-        actingUserId: rec.actingUserId,
-        sessionId: rec.sessionId,
-        status: rec.status,
-        risk: rec.risk,
-        resultSummary: rec.resultSummary,
-        // A pending_approval row is genuinely UNRESOLVED — it's awaiting a human
-        // approve/deny (the approvals inbox). Every terminal status (ok/error/
-        // denied) resolves at insert. Leaving pending rows unresolved is what lets
-        // the inbox query surface exactly the actions still waiting on a decision.
-        resolvedAt: rec.status === 'pending_approval' ? null : new Date(),
-      });
+      const [row] = await db
+        .insert(executorExecutions)
+        .values({
+          accountId: rec.accountId,
+          projectId: rec.projectId,
+          connectorId: rec.connectorId,
+          actionPath: rec.actionPath,
+          actingUserId: rec.actingUserId,
+          sessionId: rec.sessionId,
+          status: rec.status,
+          risk: rec.risk,
+          resultSummary: rec.resultSummary,
+          // A pending_approval row is genuinely UNRESOLVED — it's awaiting a human
+          // approve/deny (the approvals inbox). Every terminal status (ok/error/
+          // denied) resolves at insert. Leaving pending rows unresolved is what lets
+          // the inbox query surface exactly the actions still waiting on a decision.
+          resolvedAt: rec.status === 'pending_approval' ? null : new Date(),
+        })
+        .returning({ id: executorExecutions.executionId });
+      return row?.id ?? null;
     },
+    waitForApprovalDecision: waitForApprovalDecision,
     executePipedream: ({ projectId, connectorSlug, app, actionKey, args, accountId, userId }) =>
       runPipedreamAction(projectId, connectorSlug, app, actionKey, args, accountId, userId),
     executePipedreamProxy: ({ projectId, connectorSlug, args, accountId, userId }) =>

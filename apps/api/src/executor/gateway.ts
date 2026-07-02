@@ -122,7 +122,16 @@ export interface GatewayDeps {
   loadProjectPolicies?(projectId: string): Promise<Policy[]>;
   /** Project's policy.default_mode setting (risk | allow_all). Defaults to allow_all. */
   loadDefaultMode?(projectId: string): Promise<DefaultMode>;
-  recordExecution(rec: ExecutionRecord): Promise<void>;
+  /** Records the audit row; returns the new execution id (or null on failure)
+   *  so the caller can wait on a human decision for a gated call. */
+  recordExecution(rec: ExecutionRecord): Promise<string | null>;
+  /** Block until a `pending_approval` execution is resolved, or `timeoutMs`
+   *  elapses. Lets the gateway HOLD a require_approval call so the agent's turn
+   *  pauses in-session (instead of erroring + retrying) and resumes on approve. */
+  waitForApprovalDecision?(
+    executionId: string,
+    timeoutMs: number,
+  ): Promise<'approved' | 'denied' | 'timeout'>;
   fetchImpl: FetchImpl;
   /** Pipedream execution (Connect actions/run) — required for pipedream connectors. */
   executePipedream?(input: {
@@ -187,6 +196,12 @@ export type CallResult =
 
 const SLACK_CHANNEL_ACTIONS = new Set(channelCatalog('slack').map((a) => a.path));
 const EMAIL_CHANNEL_ACTIONS = new Set(channelCatalog('email').map((a) => a.path));
+
+// How long the gateway holds a require_approval call waiting for a human
+// decision before giving up (leaving it pending for the async inbox). Kept
+// safely under the sandbox executor client's 60s request timeout, with headroom
+// for the actual connector call to run once approved.
+const APPROVAL_WAIT_MS = 45_000;
 
 async function resolveConnectorForCall(
   deps: GatewayDeps,
@@ -379,11 +394,32 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       return { status: 'denied', reason: 'policy_block' };
     }
     if (decision.action === 'require_approval') {
-      await audit(deps, input, connector.connectorId, 'pending_approval', action.risk, {
-        reason: 'policy_require_approval',
-        policy_source: decision.source,
-      });
-      return { status: 'pending_approval', reason: 'policy_require_approval' };
+      const executionId = await audit(
+        deps,
+        input,
+        connector.connectorId,
+        'pending_approval',
+        action.risk,
+        { reason: 'policy_require_approval', policy_source: decision.source },
+      );
+      // HOLD the call so the agent's turn pauses in-session — the sandbox's
+      // synchronous executor.call blocks on this request instead of getting an
+      // error and retrying. Bounded under the sandbox client's 60s timeout: on
+      // approve we fall through and run the action; on deny we return a clean
+      // refusal the agent can read + continue past; on timeout it stays pending
+      // for the async approvals inbox. Unattended (no session) never waits.
+      if (executionId && input.sessionId && deps.waitForApprovalDecision) {
+        const outcome = await deps.waitForApprovalDecision(executionId, APPROVAL_WAIT_MS);
+        if (outcome === 'denied') {
+          return { status: 'denied', reason: 'denied_by_user' };
+        }
+        if (outcome === 'timeout') {
+          return { status: 'pending_approval', reason: 'policy_require_approval' };
+        }
+        // approved → fall through to execute the call below.
+      } else {
+        return { status: 'pending_approval', reason: 'policy_require_approval' };
+      }
     }
   }
 
@@ -547,9 +583,9 @@ async function audit(
   status: ExecutionRecord['status'],
   risk: Risk | null,
   summary: Record<string, unknown> | null,
-): Promise<void> {
+): Promise<string | null> {
   try {
-    await deps.recordExecution({
+    return await deps.recordExecution({
       accountId: input.accountId,
       projectId: input.projectId,
       connectorId,
@@ -562,5 +598,6 @@ async function audit(
     });
   } catch {
     /* auditing must never break the call path */
+    return null;
   }
 }

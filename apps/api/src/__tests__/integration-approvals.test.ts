@@ -13,6 +13,7 @@ import { eq, sql } from 'drizzle-orm';
 import { executorExecutions, projectSessions } from '@kortix/db';
 import { db } from '../shared/db';
 import { app } from '../index';
+import { waitForApprovalDecision } from '../executor/db-deps';
 import { createAccountToken } from '../repositories/account-tokens';
 
 const minted: string[] = [];
@@ -151,5 +152,43 @@ describe('approvals inbox + resolution', () => {
     const execId = await seedPending();
     const bad = await authPost(`/v1/projects/${ctx.projectId}/approvals/${execId}`, { decision: 'maybe' });
     expect(bad.status).toBe(400);
+  });
+});
+
+// The gateway's in-session pause: waitForApprovalDecision blocks until the
+// pending execution is resolved, then reports how it went so the gateway can
+// resume (approve) / refuse (deny) / leave it pending (timeout).
+describe('waitForApprovalDecision (gateway pause/resume)', () => {
+  test('resolves to "approved" once a human approves', async () => {
+    if (!ctx) return;
+    const execId = await seedPending();
+    const [outcome] = await Promise.all([
+      waitForApprovalDecision(execId, 5000),
+      (async () => {
+        await new Promise((r) => setTimeout(r, 400));
+        await authPost(`/v1/projects/${ctx!.projectId}/approvals/${execId}`, { decision: 'approve' });
+      })(),
+    ]);
+    expect(outcome).toBe('approved');
+  });
+
+  test('resolves to "denied" once a human denies', async () => {
+    if (!ctx) return;
+    const execId = await seedPending();
+    const [outcome] = await Promise.all([
+      waitForApprovalDecision(execId, 5000),
+      (async () => {
+        await new Promise((r) => setTimeout(r, 400));
+        await authPost(`/v1/projects/${ctx!.projectId}/approvals/${execId}`, { decision: 'deny' });
+      })(),
+    ]);
+    expect(outcome).toBe('denied');
+  });
+
+  test('resolves to "timeout" when nobody decides in time', async () => {
+    if (!ctx) return;
+    const execId = await seedPending();
+    const outcome = await waitForApprovalDecision(execId, 1200);
+    expect(outcome).toBe('timeout');
   });
 });
