@@ -4620,13 +4620,22 @@ export function SessionChat({
   useEffect(() => {
     if (!isActiveSessionTab || !hasRunningQuestionTool || pendingQuestions.length > 0) return;
 
-    const client = getClient();
     let cancelled = false;
 
     const hydrateQuestions = () => {
       if (questionHydrationInFlightRef.current || cancelled) return;
       const now = Date.now();
       if (now - lastQuestionHydrationAtRef.current < 1500) return;
+
+      // Acquire the client lazily: during the sandbox-loading window getClient()
+      // throws "Server URL not ready". Skip this tick and let the interval retry
+      // once the runtime URL is pinned — never crash to the error boundary.
+      let client: ReturnType<typeof getClient>;
+      try {
+        client = getClient();
+      } catch {
+        return;
+      }
 
       questionHydrationInFlightRef.current = true;
       lastQuestionHydrationAtRef.current = now;
