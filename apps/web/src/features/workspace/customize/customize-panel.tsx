@@ -13,6 +13,7 @@ import { ChannelsView } from '@/features/workspace/customize/sections/view/chann
 import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
 import { ComputersView } from '@/features/workspace/customize/sections/view/computers-view';
 import { MeetView } from '@/features/workspace/customize/sections/view/meet-view';
+import { ApprovalsView } from '@/features/workspace/customize/sections/view/approvals-view';
 import { MembersView } from '@/features/workspace/customize/sections/view/members-view';
 import { SandboxView } from '@/features/workspace/customize/sections/view/sandbox-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
@@ -39,6 +40,7 @@ import {
   KeyRound,
   Monitor,
   Plug,
+  ShieldCheck,
   Store,
   Terminal,
   Webhook,
@@ -89,6 +91,7 @@ const GROUPS: readonly RailGroup[] = [
     label: 'Manage',
     items: [
       { section: 'members', label: 'Members', icon: LuUsersRound },
+      { section: 'approvals', label: 'Approvals', icon: ShieldCheck },
       { section: 'settings', label: 'Settings', icon: LuSettings },
     ],
   },
@@ -408,6 +411,8 @@ function SectionContent({
       return <DevView projectId={projectId} />;
     case 'members':
       return <MembersView projectId={projectId} />;
+    case 'approvals':
+      return <ApprovalsView projectId={projectId} />;
     case 'settings':
       return <SettingsView projectId={projectId} />;
     default:

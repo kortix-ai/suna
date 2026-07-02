@@ -84,6 +84,8 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<CustomizeSection, { read: ProjectA
   changes: { read: PROJECT_ACTIONS.PROJECT_GITOPS_READ, write: PROJECT_ACTIONS.PROJECT_CR_OPEN },
   files: { read: PROJECT_ACTIONS.PROJECT_FILE_READ, write: PROJECT_ACTIONS.PROJECT_FILE_WRITE },
   members: { read: PROJECT_ACTIONS.PROJECT_MEMBERS_READ, write: PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE },
+  // Approvals inbox is a manager oversight surface — gate visibility on manage.
+  approvals: { read: PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, write: PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE },
   marketplace: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_GITOPS_PUSH },
   // LLM gateway sections — visible to any project member; the backend enforces
   // the specific gateway capability (logs/spend.read, routing.edit, budget.set,

@@ -44,6 +44,7 @@ export function CustomProviderForm({
   const [sharing, setSharing] = useState<SharingSelection>({
     mode: 'project',
     memberIds: [],
+    groupIds: [],
   });
   const [error, setError] = useState<string | null>(null);
   const [savedSnippet, setSavedSnippet] = useState<{

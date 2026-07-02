@@ -89,7 +89,7 @@ function makeDeps(): ExecutorRouterDeps {
     loadAction: async (connectorId, relPath) => (connectorId === connector.connectorId && relPath === action.relPath ? action : null),
     resolveCredential: async () => SERVER_SECRET,
     loadPolicies: async () => [],
-    recordExecution: async (rec) => { world.executions.push(rec); },
+    recordExecution: async (rec) => { world.executions.push(rec); return null; },
     fetchImpl: async (url, init) => {
       world.upstream.push({ url, ...init });
       return {

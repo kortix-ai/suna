@@ -22,6 +22,7 @@ import {
   SsoMappingSchema,
 } from './app';
 import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
+import { registerSupabaseSamlProvider } from './sso-provisioning';
 
 function ssoProviderResponse(p: NonNullable<Awaited<ReturnType<typeof getSsoProvider>>>) {
   return {
@@ -138,6 +139,122 @@ iamRouter.openapi(
   });
 
   return c.json({ provider: ssoProviderResponse(provider) });
+  },
+);
+
+// Self-serve: register the customer's Entra/IdP SAML metadata with Supabase Auth
+// server-side (no operator `supabase sso add`), then store the resulting UUID.
+// The admin pastes their metadata XML (or URL) in the dashboard and never sees
+// Supabase. One IdP per account in v1 — remove the existing one to re-import.
+iamRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/iam/sso/provider/from-metadata',
+    tags: ['iam'],
+    summary: 'Register a SAML provider from IdP metadata (self-serve)',
+    ...auth,
+    request: {
+      params: AccountIdParam,
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              metadata_xml: z.string().optional(),
+              metadata_url: z.string().optional(),
+              name: z.string(),
+              primary_domain: z.string(),
+              group_claim_name: z.string().optional(),
+              auto_create_members: z.boolean().optional(),
+              domains: z.array(z.string()).optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.object({ provider: SsoProviderSchema }), 'The registered SSO provider'),
+      ...errors(400, 401, 402, 403, 409),
+    },
+  }),
+  async (c: any) => {
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    const denied = await requireEntitlement(c, accountId, 'sso');
+    if (denied) return denied;
+
+    const body = await readBody(c);
+    const name = body.name as unknown;
+    const primaryDomain = (body.primary_domain ?? body.primaryDomain) as unknown;
+    const metadataXml = (body.metadata_xml ?? body.metadataXml) as unknown;
+    const metadataUrl = (body.metadata_url ?? body.metadataUrl) as unknown;
+    const groupClaimName = (body.group_claim_name ?? body.groupClaimName) as unknown;
+    const autoCreateMembers = (body.auto_create_members ?? body.autoCreateMembers) as unknown;
+
+    if (typeof name !== 'string' || name.trim().length === 0) {
+      return c.json({ error: 'name is required' }, 400);
+    }
+    if (
+      typeof primaryDomain !== 'string' ||
+      !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(primaryDomain.trim())
+    ) {
+      return c.json({ error: 'primary_domain must be a valid domain' }, 400);
+    }
+    if (groupClaimName !== undefined && (typeof groupClaimName !== 'string' || groupClaimName.length > 128)) {
+      return c.json({ error: 'group_claim_name must be a short string' }, 400);
+    }
+
+    // One IdP per account (v1). Registering again would orphan the old Supabase
+    // provider — make the admin delete first (which also frees the domain).
+    const existing = await getSsoProvider(accountId);
+    if (existing) {
+      return c.json(
+        { error: 'An SSO provider already exists — remove it before importing a new one.' },
+        409,
+      );
+    }
+
+    // Additional email domains beyond the primary (e.g. subsidiaries) may be
+    // passed; always include the primary so sign-in routing works.
+    const extra = Array.isArray(body.domains)
+      ? (body.domains as unknown[]).filter((d): d is string => typeof d === 'string')
+      : [];
+    const domains = [...new Set([primaryDomain.trim().toLowerCase(), ...extra.map((d) => d.trim().toLowerCase())])];
+
+    const registered = await registerSupabaseSamlProvider({
+      metadataXml: typeof metadataXml === 'string' ? metadataXml : undefined,
+      metadataUrl: typeof metadataUrl === 'string' ? metadataUrl : undefined,
+      domains,
+    });
+    if (!registered.ok) return c.json({ error: registered.error }, registered.status as 400);
+
+    const provider = await upsertSsoProvider({
+      accountId,
+      supabaseSsoProviderId: registered.providerId,
+      name: name.trim(),
+      primaryDomain: primaryDomain.trim(),
+      groupClaimName: typeof groupClaimName === 'string' ? groupClaimName : undefined,
+      autoCreateMembers: typeof autoCreateMembers === 'boolean' ? autoCreateMembers : undefined,
+      createdBy: userId,
+    });
+
+    await auditIam(c, {
+      accountId,
+      action: 'iam.sso.provider.create',
+      resourceType: 'sso_provider',
+      resourceId: provider.ssoProviderId,
+      before: null,
+      after: {
+        supabase_sso_provider_id: provider.supabaseSsoProviderId,
+        name: provider.name,
+        primary_domain: provider.primaryDomain,
+        group_claim_name: provider.groupClaimName,
+        auto_create_members: provider.autoCreateMembers,
+        source: 'metadata_import',
+      },
+    });
+
+    return c.json({ provider: ssoProviderResponse(provider) });
   },
 );
 

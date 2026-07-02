@@ -1,5 +1,5 @@
 import { parseSharingIntent, resolveShareSubject, setSecretSharing } from '../../executor/share';
-import { PROJECT_ACTIONS, filterAccessibleProjectResources } from '../../iam';
+import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
@@ -11,6 +11,7 @@ import { loadProjectConfig } from '../git';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
 import { decryptProjectSecret, encryptProjectSecret, isValidSecretName } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
+import { resolveInheritedResourceNames } from '../lib/agent-inheritance';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -430,25 +431,29 @@ projectsApp.openapi(
   // granted (mirrors the env-injection narrowing), so it can't enumerate keys
   // outside its allowlist. No-op for non-agent tokens / 'all' / null grants.
   const agentGrant = getAgentGrant(c);
-  const allItems = (await loadSecretViewsForUser(projectId, subject, canManageShared))
+
+  // Inheritance pyramid (read side): secrets declared by an agent the caller is
+  // assigned to become genuinely theirs — surfaced here as usable_by_me, and
+  // tagged with `inherited_from` (the agents that grant them) so the UI can
+  // explain WHY. Provenance is HUMAN-facing governance data: an AGENT token must
+  // not learn which agents declare a secret, so it gets no inherited_from (and we
+  // skip the config read entirely). Fast-paths to empty with no assignments.
+  const inheritedSources = agentGrant
+    ? new Map<string, string[]>()
+    : (await resolveInheritedResourceNames(loaded.row, loaded.userId, subject.groupIds)).secretSources;
+
+  const allItems = (await loadSecretViewsForUser(projectId, subject, canManageShared, inheritedSources))
     .filter((item) => !item.system)
     .filter((item) => agentMayUseEnv(agentGrant, item.name));
 
-  // Per-resource scoping (members / departments): when a secret is scoped to
-  // specific principals, a non-owner/admin member sees it ONLY if granted.
-  // Unscoped secrets stay project-wide. Mirrors agent/skill scoping; the helper
-  // bypasses for owner/admin (implicit Manager) and service accounts.
-  const accessibleSecrets = new Set(
-    await filterAccessibleProjectResources(
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      'secret',
-      allItems.map((i) => i.name),
-      (c.get('iamTokenId') as string | undefined) ?? undefined,
-    ),
-  );
-  const items = allItems.filter((i) => accessibleSecrets.has(i.name));
+  // Per-member / department scoping (share model, isSecretUsableBy). A MANAGER
+  // sees every shared row so they can edit its sharing; a plain member sees only
+  // what they can actually use (or have a personal override for) — restricted
+  // secrets they aren't granted are hidden, name and all. One source of truth,
+  // shared with the Members "Resource access" card.
+  const items = canManageShared
+    ? allItems
+    : allItems.filter((i) => i.usable_by_me || i.mine);
 
   return c.json({
     items,
@@ -578,7 +583,12 @@ projectsApp.openapi(
   }
 
   const subject = await resolveShareSubject(loaded.userId);
-  const views = await loadSecretViewsForUser(projectId, subject, true);
+  // Provenance so the write response carries the same inherited_from as GET
+  // /secrets (no post-write flicker). Agent tokens get none (see GET handler).
+  const inheritedSources = getAgentGrant(c)
+    ? undefined
+    : (await resolveInheritedResourceNames(loaded.row, loaded.userId, subject.groupIds)).secretSources;
+  const views = await loadSecretViewsForUser(projectId, subject, true, inheritedSources);
   const view = views.find((v) => v.name === name);
   return c.json(view ?? { name }, 200);
 },
@@ -1064,7 +1074,11 @@ projectsApp.openapi(
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
 
   const subject = await resolveShareSubject(loaded.userId);
-  const views = await loadSecretViewsForUser(projectId, subject, roleAllows(loaded.effectiveRole, 'manage'));
+  // Provenance so the write response matches GET /secrets; agent tokens get none.
+  const inheritedSources = getAgentGrant(c)
+    ? undefined
+    : (await resolveInheritedResourceNames(loaded.row, loaded.userId, subject.groupIds)).secretSources;
+  const views = await loadSecretViewsForUser(projectId, subject, roleAllows(loaded.effectiveRole, 'manage'), inheritedSources);
   return c.json(views.find((v) => v.name === name) ?? { name }, 200);
 },
 );

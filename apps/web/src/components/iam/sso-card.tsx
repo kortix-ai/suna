@@ -40,6 +40,7 @@ import {
   deleteSsoGroupMapping,
   deleteSsoProvider,
   getSsoProvider,
+  importSsoProviderFromMetadata,
   listGroups,
   listSsoGroupMappings,
   upsertSsoProvider,
@@ -336,6 +337,13 @@ function EditProviderDialog({
   const [domain, setDomain] = useState(existing?.primary_domain ?? '');
   const [claim, setClaim] = useState(existing?.group_claim_name ?? 'groups');
   const [autoCreate, setAutoCreate] = useState(existing?.auto_create_members ?? true);
+  // Import path (new providers only): paste the IdP metadata XML or its URL and
+  // we register it with Supabase server-side. Editing an existing provider keeps
+  // the advanced UUID form (the Supabase provider already exists).
+  const [mode, setMode] = useState<'metadata' | 'uuid'>(existing ? 'uuid' : 'metadata');
+  const [metaKind, setMetaKind] = useState<'xml' | 'url'>('xml');
+  const [metaXml, setMetaXml] = useState('');
+  const [metaUrl, setMetaUrl] = useState('');
 
   // Hydrate when opening for edit; reset when closing.
   useMemo(() => {
@@ -345,18 +353,33 @@ function EditProviderDialog({
       setDomain(existing?.primary_domain ?? '');
       setClaim(existing?.group_claim_name ?? 'groups');
       setAutoCreate(existing?.auto_create_members ?? true);
+      setMode(existing ? 'uuid' : 'metadata');
+      setMetaKind('xml');
+      setMetaXml('');
+      setMetaUrl('');
     }
   }, [open, existing]);
 
+  const importing = mode === 'metadata' && !existing;
   const mutation = useMutation({
     mutationFn: () =>
-      upsertSsoProvider(accountId, {
-        supabase_sso_provider_id: supabaseId.trim(),
-        name: name.trim(),
-        primary_domain: domain.trim().toLowerCase(),
-        group_claim_name: claim.trim() || 'groups',
-        auto_create_members: autoCreate,
-      }),
+      importing
+        ? importSsoProviderFromMetadata(accountId, {
+            name: name.trim(),
+            primary_domain: domain.trim().toLowerCase(),
+            group_claim_name: claim.trim() || 'groups',
+            auto_create_members: autoCreate,
+            ...(metaKind === 'xml'
+              ? { metadata_xml: metaXml.trim() }
+              : { metadata_url: metaUrl.trim() }),
+          })
+        : upsertSsoProvider(accountId, {
+            supabase_sso_provider_id: supabaseId.trim(),
+            name: name.trim(),
+            primary_domain: domain.trim().toLowerCase(),
+            group_claim_name: claim.trim() || 'groups',
+            auto_create_members: autoCreate,
+          }),
     onSuccess: () => {
       toast.success(existing ? 'SSO provider updated' : 'SSO provider configured');
       onSaved();
@@ -365,10 +388,12 @@ function EditProviderDialog({
     onError: (err: Error) => toast.error(err.message || 'Failed to save provider'),
   });
 
+  const metadataReady =
+    metaKind === 'xml' ? metaXml.trim().length > 40 : /^https?:\/\/.+/i.test(metaUrl.trim());
   const ready =
     name.trim().length > 0 &&
-    /^[0-9a-f-]{36}$/i.test(supabaseId.trim()) &&
-    /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain.trim());
+    /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain.trim()) &&
+    (importing ? metadataReady : /^[0-9a-f-]{36}$/i.test(supabaseId.trim()));
 
   return (
     <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
@@ -376,35 +401,115 @@ function EditProviderDialog({
         <DialogHeader>
           <DialogTitle>{existing ? 'Edit SAML provider' : 'Configure SAML SSO'}</DialogTitle>
           <DialogDescription>
-            {tHardcodedUi.raw(
-              'componentsIamSsoCard.line343JsxTextCreateTheProviderInSupabaseStudioAuthenticationSSO',
-            )}
+            {existing
+              ? tHardcodedUi.raw(
+                  'componentsIamSsoCard.line343JsxTextCreateTheProviderInSupabaseStudioAuthenticationSSO',
+                )
+              : 'Paste your IdP’s SAML metadata (Entra → “App Federation Metadata XML”) and we register it for you — no Supabase step.'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* New providers choose how to register: import metadata (self-serve)
+              or the advanced pre-registered Supabase UUID path. */}
+          {!existing && (
+            <div className="border-border/70 inline-flex overflow-hidden rounded-md border">
+              {(
+                [
+                  ['metadata', 'Import IdP metadata'],
+                  ['uuid', 'Advanced: Supabase UUID'],
+                ] as const
+              ).map(([m, label]) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMode(m)}
+                  disabled={mutation.isPending}
+                  className={
+                    mode === m
+                      ? 'bg-secondary text-foreground px-3 py-1.5 text-xs font-medium'
+                      : 'text-muted-foreground hover:bg-muted/50 px-3 py-1.5 text-xs'
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <Label>{tHardcodedUi.raw('componentsIamSsoCard.line350JsxTextDisplayName')}</Label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Okta"
+              placeholder="Azure AD"
               disabled={mutation.isPending}
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label>
-              {tHardcodedUi.raw('componentsIamSsoCard.line360JsxTextSupabaseProviderUUID')}
-            </Label>
-            <Input
-              value={supabaseId}
-              onChange={(e) => setSupabaseId(e.target.value)}
-              placeholder="00000000-0000-0000-0000-000000000000"
-              className="font-mono text-xs"
-              disabled={mutation.isPending}
-            />
-          </div>
+          {importing ? (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label>IdP SAML metadata</Label>
+                <div className="border-border/70 inline-flex overflow-hidden rounded-md border">
+                  {(
+                    [
+                      ['xml', 'Paste XML'],
+                      ['url', 'From URL'],
+                    ] as const
+                  ).map(([k, label]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setMetaKind(k)}
+                      disabled={mutation.isPending}
+                      className={
+                        metaKind === k
+                          ? 'bg-secondary text-foreground px-2.5 py-1 text-[11px] font-medium'
+                          : 'text-muted-foreground hover:bg-muted/50 px-2.5 py-1 text-[11px]'
+                      }
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {metaKind === 'xml' ? (
+                <textarea
+                  value={metaXml}
+                  onChange={(e) => setMetaXml(e.target.value)}
+                  placeholder="<EntityDescriptor …>…</EntityDescriptor>"
+                  disabled={mutation.isPending}
+                  rows={5}
+                  className="border-border bg-background focus-visible:ring-ring w-full resize-y rounded-md border px-3 py-2 font-mono text-[11px] outline-none focus-visible:ring-1"
+                />
+              ) : (
+                <Input
+                  value={metaUrl}
+                  onChange={(e) => setMetaUrl(e.target.value)}
+                  placeholder="https://login.microsoftonline.com/<tenant>/federationmetadata/…"
+                  className="text-xs"
+                  disabled={mutation.isPending}
+                />
+              )}
+              <p className="text-muted-foreground text-[11px]">
+                From Entra: Enterprise App → Single sign-on → SAML → “App Federation Metadata XML”.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label>
+                {tHardcodedUi.raw('componentsIamSsoCard.line360JsxTextSupabaseProviderUUID')}
+              </Label>
+              <Input
+                value={supabaseId}
+                onChange={(e) => setSupabaseId(e.target.value)}
+                placeholder="00000000-0000-0000-0000-000000000000"
+                className="font-mono text-xs"
+                disabled={mutation.isPending}
+              />
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label>
@@ -474,7 +579,7 @@ function EditProviderDialog({
             className="gap-1.5"
           >
             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            {existing ? 'Save changes' : 'Configure SSO'}
+            {existing ? 'Save changes' : importing ? 'Import & configure' : 'Configure SSO'}
           </Button>
         </DialogFooter>
       </DialogContent>
