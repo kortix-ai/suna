@@ -123,7 +123,6 @@ function triggerFixture(overrides: Record<string, unknown> = {}) {
     secret_env: null,
     prompt_template: 'Summarize yesterday.',
     session_mode: 'fresh',
-    owner_user_id: null,
     last_fired_at: NOW,
     last_status: 'queued',
     last_error: null,
