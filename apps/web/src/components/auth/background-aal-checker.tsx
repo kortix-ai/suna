@@ -3,7 +3,7 @@
 import { useAuth } from '@/features/providers/auth-provider';
 import { useGetAAL } from '@/hooks/auth';
 import { isBillingEnabled } from '@/lib/config';
-import { normalizeAppPathname } from '@/lib/instance-routes';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 

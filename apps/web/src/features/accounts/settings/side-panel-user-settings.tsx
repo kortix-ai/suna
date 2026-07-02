@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Icon } from '@/features/icon/icon';
-import { getCurrentInstanceIdFromPathname } from '@/lib/instance-routes';
+import { getCurrentInstanceIdFromPathname } from '@kortix/sdk/instance-routes';
 import {
   getInstanceTabs,
   getPreferenceTabs,

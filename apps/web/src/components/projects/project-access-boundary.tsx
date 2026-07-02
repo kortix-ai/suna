@@ -30,7 +30,7 @@ import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 import { Textarea } from '@/components/ui/textarea';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
-import { getProjectDetail, requestProjectAccess } from '@/lib/projects-client';
+import { getProjectDetail, requestProjectAccess } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 
 interface ProjectAccessBoundaryProps {

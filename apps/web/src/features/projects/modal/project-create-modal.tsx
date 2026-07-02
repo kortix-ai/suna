@@ -55,7 +55,7 @@ import {
   provisionProject,
   type GitHubRepository,
   type KortixProject,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Boxes, ChevronsUpDown, ExternalLink, Github } from 'lucide-react';

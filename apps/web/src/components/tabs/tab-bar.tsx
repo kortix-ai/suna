@@ -40,7 +40,7 @@ import {
 import { childMapByParent } from '@/ui';
 import { getClient } from '@/lib/opencode-sdk';
 import { getFileIcon } from '@/features/files/components/file-icon';
-import { normalizeAppPathname, getCurrentInstanceIdFromPathname, getActiveInstanceIdFromCookie, toInstanceAwarePath } from '@/lib/instance-routes';
+import { normalizeAppPathname, getCurrentInstanceIdFromPathname, getActiveInstanceIdFromCookie, toInstanceAwarePath } from '@kortix/sdk/instance-routes';
 import {
   Tooltip,
   TooltipContent,

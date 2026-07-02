@@ -34,7 +34,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useInstallMarketplaceItem } from '@/hooks/marketplace';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
-import { listProjectsForAccount } from '@/lib/projects-client';
+import { listProjectsForAccount } from '@kortix/sdk/projects-client';
 import { typeMeta } from './marketplace-meta';
 
 export function AddToProjectModal({

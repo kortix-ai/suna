@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { ProgressRing } from '@/components/ui/progress-ring';
 import { STATUS_TEXT } from '@/components/ui/status';
-import { normalizeAppPathname } from '@/lib/instance-routes';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {

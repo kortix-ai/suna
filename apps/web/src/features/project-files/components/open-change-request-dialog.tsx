@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
-import type { ProjectBranch, ProjectSession } from '@/lib/projects-client';
+import type { ProjectBranch, ProjectSession } from '@kortix/sdk/projects-client';
 import { GitBranch, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';

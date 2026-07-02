@@ -66,6 +66,7 @@ import CustomizeSectionWrapper from '@/features/workspace/customize/sections/com
 import { type ModelKey, modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
 import { useOpenCodeProviders, useVisibleAgents } from '@/hooks/opencode/use-opencode-sessions';
 import { getEnv } from '@/lib/env-config';
+import { cn } from '@/lib/utils';
 import {
   type ProjectAccessMember,
   type ProjectTrigger,
@@ -76,8 +77,7 @@ import {
   listProjectTriggers,
   updateProjectTrigger,
   upsertProjectSecret,
-} from '@/lib/projects-client';
-import { cn } from '@/lib/utils';
+} from '@kortix/sdk/projects-client';
 import {
   AlarmClockSolid,
   DangerTriangleSolid,

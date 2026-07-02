@@ -43,7 +43,7 @@ import {
   type EmailInstallation,
   type SlackInstallation,
 } from '@/hooks/channels/use-channels-installations';
-import { getProject } from '@/lib/projects-client';
+import { getProject } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { Check, CheckCircleSolid, ExternalLinkSolid } from '@mynaui/icons-react';
 import { Copy, Mail, MessageSquare, X } from 'lucide-react';

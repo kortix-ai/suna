@@ -3,7 +3,7 @@
 import { Badge } from '@/components/ui/badge';
 import { ConfigEntityView } from '@/features/workspace/customize/sections/component/config-entity-view';
 import { formatMode } from '@/features/workspace/customize/shared/utils';
-import type { ProjectConfigSummary } from '@/lib/projects-client';
+import type { ProjectConfigSummary } from '@kortix/sdk/projects-client';
 import { StarSolid } from '@mynaui/icons-react';
 import { Bot, ShieldCheck } from 'lucide-react';
 

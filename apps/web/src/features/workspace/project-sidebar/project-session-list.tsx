@@ -30,7 +30,7 @@ import {
   restartProjectSession,
   type ProjectSession,
   type ProjectSessionStatus,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';

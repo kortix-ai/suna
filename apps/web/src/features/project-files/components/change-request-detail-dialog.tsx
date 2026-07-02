@@ -23,7 +23,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { DiffStat, STATUS_TEXT } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { createProjectSession } from '@/lib/projects-client';
+import { createProjectSession } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { SparklesSolid } from '@mynaui/icons-react';
 import { formatDistanceToNowStrict } from 'date-fns';

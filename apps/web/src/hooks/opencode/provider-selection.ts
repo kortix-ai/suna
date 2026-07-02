@@ -1,6 +1,6 @@
 import type { ProviderListResponse as SdkProviderListResponse } from '@kortix/sdk/opencode-client';
 
-import type { ProjectLlmCatalogResponse } from '@/lib/projects-client';
+import type { ProjectLlmCatalogResponse } from '@kortix/sdk/projects-client';
 import { LLM_PROVIDERS } from '@/lib/llm-providers';
 
 export type ProviderListResponse = SdkProviderListResponse;

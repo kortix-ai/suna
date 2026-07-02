@@ -36,7 +36,7 @@ import { cn } from '@/lib/utils';
 import { useCommit, useCommitDiff } from '../hooks/use-commits';
 import { useProjectContext } from '../context';
 import { DiffRenderer } from './diff-renderer';
-import type { ProjectCommitFile } from '@/lib/projects-client';
+import type { ProjectCommitFile } from '@kortix/sdk/projects-client';
 
 // ---------------------------------------------------------------------------
 // helpers

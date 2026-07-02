@@ -29,7 +29,7 @@ import {
   type MemberGroupSummary,
   type MemberProjectAccess,
 } from '@/lib/iam-client';
-import { getAccount, listAccountMembers, type AccountRole } from '@/lib/projects-client';
+import { getAccount, listAccountMembers, type AccountRole } from '@kortix/sdk/projects-client';
 import { usePermission, usePermissionsFor } from '@/lib/use-permission';
 
 const ROLE_LABEL: Record<string, string> = {

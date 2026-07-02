@@ -20,7 +20,7 @@ import { useIsMobile } from '@/hooks/utils';
 import { DEFAULT_CUSTOMIZE_SECTION, type CustomizeSection } from '@/lib/customize-sections';
 import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { CUSTOMIZE_SECTION_ACCESS, CUSTOMIZE_SECTION_READ_ACTIONS } from '@/lib/project-actions';
-import { getProjectDetail } from '@/lib/projects-client';
+import { getProjectDetail } from '@kortix/sdk/projects-client';
 import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
