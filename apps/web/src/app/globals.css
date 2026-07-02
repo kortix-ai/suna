@@ -1114,13 +1114,22 @@ html[data-desktop-platform='macos'] {
 }
 
 /* AppHeader (the breadcrumb bar on standalone pages like /projects, /accounts):
-   clear the OS window controls on desktop by reserving space ABOVE the header
-   (a blank strip that holds the macOS traffic lights / Win-Linux control
-   cluster), instead of indenting the header sideways. Keeps the breadcrumb
-   left-aligned and the page content at full width. `py-4` (1rem) is preserved
-   on top of the title-bar inset. */
+   clear the OS window controls on desktop by reserving just enough space ABOVE
+   the header for them, so the breadcrumb row sits in a tight, even band right
+   below the macOS traffic lights / Win-Linux control cluster instead of
+   floating far under them. Keeps the breadcrumb left-aligned and the page
+   content at full width (no sideways indent). */
 html[data-desktop='true'] .kx-app-header {
-  padding-top: calc(var(--kx-titlebar-inset) + 1rem);
+  /* Win/Linux: controls live in a 32px top-right strip — clear it with a small
+     even gap (28px inset + 0.5rem = 36px). */
+  padding-top: calc(var(--kx-titlebar-inset) + 0.5rem);
+  padding-bottom: 0.75rem;
+}
+/* macOS: traffic lights sit at y≈18–30; drop the header just below them
+   (40px inset − 0.25rem = 36px) so the row reads as aligned with the lights
+   rather than pushed down. */
+html[data-desktop-platform='macos'] .kx-app-header {
+  padding-top: calc(var(--kx-titlebar-inset) - 0.25rem);
 }
 
 /* Reusable title-bar spacer: a blank, draggable strip the height of the OS
