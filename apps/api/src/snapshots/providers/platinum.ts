@@ -156,19 +156,6 @@ class PlatinumAdapter implements SandboxProviderAdapter {
           default_ram_mb: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
           default_disk_gb: diskGb,
           entrypoint: (input.entrypoint ?? [KORTIX_ENTRYPOINT]).join(' '),
-          // Stateful warm template (shared default): Platinum boots it, waits for
-          // the readiness probe, snapshots the RUNNING VM, and serves sessions as
-          // CoW forks (~2 s). If the probe never passes, Platinum falls back to a
-          // cold spawn — so this is strictly an optimization, never a break.
-          ...(input.capture === 'stateful'
-            ? {
-                capture: 'stateful',
-                capture_condition: input.captureCondition ?? {
-                  http: { port: 8000, path: '/kortix/health', timeoutSec: 180 },
-                },
-                ...(input.captureEnv ? { capture_env: input.captureEnv } : {}),
-              }
-            : {}),
         }),
       });
       await this.waitForActive(input.snapshotName, tap);
