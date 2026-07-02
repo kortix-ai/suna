@@ -44,3 +44,39 @@ describe('backendApi', () => {
     expect((calls[0].headers as Record<string, string>).Authorization).toBe('Bearer test-access-token');
   });
 });
+
+describe('setAdminBypass / isAdminBypassEnabled', () => {
+  beforeEach(() => {
+    mock.restore();
+  });
+
+  test('toggles on and off', async () => {
+    const { setAdminBypass, isAdminBypassEnabled } = await import('./api-client');
+    expect(isAdminBypassEnabled()).toBe(false);
+    setAdminBypass(true);
+    expect(isAdminBypassEnabled()).toBe(true);
+    setAdminBypass(false);
+    expect(isAdminBypassEnabled()).toBe(false);
+  });
+
+  test('attaches x-kortix-admin-bypass to requests when enabled, omits it when disabled', async () => {
+    const calls: RequestInit[] = [];
+    globalThis.fetch = mock(async (_url: string | URL | Request, init?: RequestInit) => {
+      calls.push(init ?? {});
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    const { backendApi, setAdminBypass } = await import('./api-client');
+
+    setAdminBypass(true);
+    await backendApi.get('/projects/abc/detail');
+    expect((calls[0].headers as Record<string, string>)['x-kortix-admin-bypass']).toBe('1');
+
+    setAdminBypass(false);
+    await backendApi.get('/projects/abc/detail');
+    expect((calls[1].headers as Record<string, string>)['x-kortix-admin-bypass']).toBeUndefined();
+  });
+});

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 421,
+  "count": 427,
   "routes": [
     {
       "method": "GET",
@@ -379,6 +379,10 @@
       "path": "/v1/admin/api/accounts/:id/ledger"
     },
     {
+      "method": "GET",
+      "path": "/v1/admin/api/accounts/:id/projects"
+    },
+    {
       "method": "POST",
       "path": "/v1/admin/api/accounts/:id/tier"
     },
@@ -585,6 +589,10 @@
     {
       "method": "POST",
       "path": "/v1/channels/slack/identity/bind"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/channels/slack/identity/login/:token"
     },
     {
       "method": "GET",
@@ -1203,6 +1211,18 @@
       "path": "/v1/projects/:projectId/marketplace/updates"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/model-defaults"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/model-defaults"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/model-defaults"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/oauth"
     },
@@ -1249,6 +1269,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sandbox-health"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/sandbox-provider"
     },
     {
       "method": "GET",
