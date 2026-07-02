@@ -1,0 +1,22 @@
+{
+  "name": "@kortix/api-contract",
+  "version": "1.0.0",
+  "description": "Shared wire-type contract for the Kortix platform API. Zod schemas + inferred TS types describing exactly what apps/api serializes onto the wire — the single source of truth for clients (SDK, web, mobile) and the OpenAPI docs.",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.0",
+    "typescript": "^5.0.0"
+  }
+}

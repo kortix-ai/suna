@@ -32,7 +32,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { GridFileCard } from '@/components/thread/file-attachment/GridFileCard';
+import { GridFileCard } from './grid-file-card';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { ConnectProviderDialog } from '@/features/session/model-selector';
 import {
@@ -57,7 +57,7 @@ import {
 } from '@/features/session/session-activity-groups';
 import { SessionWelcome } from '@/features/session/session-welcome';
 
-import { SandboxUrlDetector } from '@/components/thread/content/sandbox-url-detector';
+import { SandboxUrlDetector } from './sandbox-url-detector';
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

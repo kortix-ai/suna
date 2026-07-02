@@ -1,6 +1,6 @@
 import { useAuth } from '@/features/providers/auth-provider';
 import { authenticatedFetch } from '@/lib/auth-token';
-import { ensureSandbox, getSandboxUrl } from '@/lib/platform-client';
+import { ensureSandbox, getSandboxUrl } from '@kortix/sdk/platform-client';
 import { getActiveOpenCodeUrl } from '@/stores/server-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 

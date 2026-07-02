@@ -38,7 +38,7 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useTheme } from 'next-themes';
-import { AgentAvatar } from '@/components/thread/content/agent-avatar';
+import { AgentAvatar } from '@/components/ui/agent-avatar';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 interface MarketplaceTemplate {

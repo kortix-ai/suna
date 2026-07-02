@@ -114,6 +114,7 @@ const TRIGGER_MANIFEST_KEYS = [
   "name",
   "type",
   "agent",
+  "model",
   "enabled",
   "prompt_template",
   "promptTemplate",

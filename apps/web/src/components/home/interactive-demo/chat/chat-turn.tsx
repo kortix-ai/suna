@@ -1,7 +1,7 @@
 'use client';
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import { AgentAvatar } from '@/components/thread/content/agent-avatar';
+import { AgentAvatar } from '@/components/ui/agent-avatar';
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { AnimatePresence, motion } from 'motion/react';

@@ -13,7 +13,7 @@ import { logger } from './logger'
  * `/proxy/3211/*` reverse proxy and the `p3211-<sandboxId>` subdomain route.
  * The contract is hard-coded in several places that must keep matching this
  * port:
- *   - apps/web/src/lib/platform-client.ts        (STATIC_FILE_SERVER: '3211')
+ *   - packages/sdk/.../platform-client/types.ts  (STATIC_FILE_SERVER: '3211')
  *   - apps/web/src/lib/utils/url.ts              (constructHtmlPreviewUrl)
  *   - packages/starter/.../opencode/tools/show.ts (agent-facing docs)
  *

@@ -1,4 +1,5 @@
 import { config } from '../../config';
+import type { TriggerList } from '@kortix/api-contract';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import { isLeader } from '../../shared/leader-election';
@@ -664,6 +665,10 @@ export async function fireGitTrigger(input: {
     body: {
       agent_name: spec.agent,
       initial_prompt: renderedPrompt,
+      // A trigger-level model pins this run's session to that model, taking
+      // precedence over the agent/account/platform default chain. Omitted
+      // (null) leaves resolution to that chain — see GitTriggerSpec.model.
+      ...(spec.model ? { opencode_model: spec.model } : {}),
       metadata: {
         trigger_source: source,
         trigger_kind: 'git',
@@ -919,7 +924,7 @@ export function buildPublicWebhookUrl(projectId: string, slug: string): string {
 
 /** Builds the GET-listing response shape (specs + runtime + errors). */
 
-export async function loadTriggersForResponse(projectId: string, project: ProjectRow) {
+export async function loadTriggersForResponse(projectId: string, project: ProjectRow): Promise<TriggerList> {
   const { specs, errors } = await loadProjectTriggers(await withProjectGitAuth(project));
   const runtimeRows = specs.length === 0
     ? []

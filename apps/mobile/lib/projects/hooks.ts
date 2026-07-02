@@ -3,6 +3,7 @@
  * Query keys mirror the web app: ['accounts'] and ['projects', accountId].
  */
 
+import { useMemo } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   archiveProject,
@@ -32,6 +33,7 @@ import {
   getSlackMode,
   getProject,
   getProjectDetail,
+  getProjectLlmCatalog,
   getProjectCommitDiff,
   getProjectFileHistory,
   getVersionDiff,
@@ -90,12 +92,16 @@ import {
   type UpdateSandboxTemplateInput,
 } from './projects-client';
 import { invalidateAfterProjectCreation } from './project-mutation-cache';
+import { filterTriggerAgents, flattenTriggerModelCatalog } from './trigger-picker-options';
+
+export type { TriggerAgentOption, TriggerModelOption } from './trigger-picker-options';
 
 export const projectKeys = {
   accounts: ['accounts'] as const,
   projects: (accountId: string | null | undefined) => ['projects', accountId] as const,
   project: (projectId: string | null | undefined) => ['project', projectId] as const,
   projectDetail: (projectId: string | null | undefined) => ['project-detail', projectId] as const,
+  llmCatalog: (projectId: string | null | undefined) => ['project-llm-catalog', projectId] as const,
   projectFile: (projectId: string | null | undefined, path: string | null | undefined) =>
     ['project-file', projectId, path] as const,
   projectSessions: (projectId: string | null | undefined) =>
@@ -691,6 +697,34 @@ export function useFireProjectTrigger(projectId: string) {
     mutationFn: (slug: string) => fireProjectTrigger(projectId, slug),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.triggers(projectId) }),
   });
+}
+
+/** Server-side, sandbox-free agent list for a trigger's "Agent" picker — a
+ *  project may not have a live sandbox running when you're just configuring
+ *  a trigger, so this reads the repo config directly (web parity:
+ *  useVisibleAgents({ projectId })). */
+export function useProjectAgentsForTrigger(projectId: string | null) {
+  const { data, isLoading } = useProjectDetail(projectId);
+  const agents = useMemo(() => filterTriggerAgents(data?.config.agents), [data]);
+  return { agents, isLoading };
+}
+
+/** Gateway model catalog for a trigger's "Model" override picker (web parity:
+ *  useOpenCodeProviders() + flattenModels() in gateway mode). Sandbox-free —
+ *  reads the project's server-side catalog directly. `gatewayDisabled` is
+ *  true when the project hasn't turned the LLM gateway on; treat that as "no
+ *  override available" rather than an error. */
+export function useProjectModelCatalogForTrigger(projectId: string | null) {
+  const query = useQuery({
+    queryKey: projectKeys.llmCatalog(projectId),
+    queryFn: () => getProjectLlmCatalog(projectId!),
+    enabled: !!projectId,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const gatewayDisabled = (query.error as { code?: string } | null)?.code === 'llm_gateway_disabled';
+  const models = useMemo(() => flattenTriggerModelCatalog(query.data?.models), [query.data]);
+  return { models, isLoading: query.isLoading, gatewayDisabled };
 }
 
 // ── Change requests (web parity) ──────────────────────────────────────────────

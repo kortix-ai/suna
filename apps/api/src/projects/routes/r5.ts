@@ -168,7 +168,7 @@ projectsApp.openapi(
         ...errors(404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const projectId = c.req.param('projectId');
 
   const loaded = await loadProjectForUser(c, projectId, 'read');

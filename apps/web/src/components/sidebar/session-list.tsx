@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { DeleteConfirmationDialog } from '@/components/thread/DeleteConfirmationDialog';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,7 +50,7 @@ import {
   normalizeAppPathname,
 } from '@kortix/sdk/instance-routes';
 import { classifySession, isSidebarHidden } from '@/lib/kortix/session-category';
-import { restartSandbox } from '@/lib/platform-client';
+import { restartSandbox } from '@kortix/sdk/platform-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';

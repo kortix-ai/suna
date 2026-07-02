@@ -4843,7 +4843,7 @@ import {
   ShowContentRenderer,
   showDomain,
 } from '@/components/file-renderers/show-content-renderer';
-import { SANDBOX_PORTS } from '@/lib/platform-client';
+import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 
 const SHOW_BORDER_STYLES: Record<string, string> = {
   default: STATUS_BORDER.neutral,

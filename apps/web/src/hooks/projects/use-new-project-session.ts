@@ -6,10 +6,11 @@ import { useCallback, useRef } from 'react';
 
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { isBillingEnabled } from '@/lib/config';
-import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
-import { createProjectSession, prefetchSessionStart } from '@kortix/sdk/projects-client';
 import { toast } from '@/lib/toast';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
+import { createProjectSession } from '@kortix/sdk/projects-client';
+import { prefetchSessionStart } from '@kortix/sdk/react';
 
 /**
  * The fastest possible "new empty session" path, shared by every entry point

@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Monitor, Code, ExternalLink } from 'lucide-react';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
-import { IframePreview } from '@/components/thread/iframe-preview';
+import { IframePreview } from './iframe-preview';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 
