@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { accountStateKeys } from '@/hooks/billing/use-account-state';
 import { getEnterpriseDemo, setEnterpriseDemo } from '@/lib/iam-client';
 
 const REQUEST_ACCESS_HREF =
@@ -38,7 +39,10 @@ export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardP
     mutationFn: (enabled: boolean) => setEnterpriseDemo(accountId, enabled),
     onSuccess: (enabled) => {
       toast.success(enabled ? 'Enterprise demo enabled' : 'Enterprise demo disabled');
-      // Entitlements changed — refresh the enterprise cards that gate on them.
+      // Entitlements changed — refetch account state so the gate (`sso`/`scim`
+      // entitlements) flips and the SSO/SCIM cards appear/disappear immediately,
+      // plus the enterprise cards that read their own state.
+      queryClient.invalidateQueries({ queryKey: accountStateKeys.state(accountId) });
       queryClient.invalidateQueries({ queryKey: ['iam-enterprise-demo', accountId] });
       queryClient.invalidateQueries({ queryKey: ['iam-sso-provider', accountId] });
       queryClient.invalidateQueries({ queryKey: ['iam-scim', accountId] });

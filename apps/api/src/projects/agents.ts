@@ -248,6 +248,38 @@ export function agentSpecToTomlEntry(spec: AgentSpec): Record<string, unknown> {
 }
 
 /**
+ * Apply a secrets/connectors scope edit to the RAW `[[agents]]` array (the
+ * dashboard "Access scope" editor's write step), returning a new array. Pure —
+ * the route wraps it with load/commit. Preserves every other field on the entry
+ * (name, model, file, kortix_cli, enabled) and omits a key when it equals the
+ * parser default so the emitted TOML matches hand-authored files:
+ *   - env:        'all' is the default → omit; a list/`[]` narrows it.
+ *   - connectors: none is the default → omit `[]`; 'all'/a list is explicit.
+ * Returns an error (not a throw) when the agent isn't declared.
+ */
+export function applyAgentScope(
+  agents: Record<string, unknown>[],
+  agentName: string,
+  scope: { env?: GrantSet; connectors?: GrantSet },
+): { ok: true; agents: Record<string, unknown>[] } | { ok: false; error: string } {
+  const idx = agents.findIndex((a) => a && (a as { name?: unknown }).name === agentName);
+  if (idx < 0) return { ok: false, error: `No agent "${agentName}" declared in ${MANIFEST_FILENAME}` };
+  const entry = { ...agents[idx] };
+  if (scope.env !== undefined) {
+    if (scope.env === 'all') delete entry.env;
+    else entry.env = scope.env;
+  }
+  if (scope.connectors !== undefined) {
+    if (scope.connectors === 'all') entry.connectors = 'all';
+    else if (scope.connectors.length === 0) delete entry.connectors;
+    else entry.connectors = scope.connectors;
+  }
+  const next = [...agents];
+  next[idx] = entry;
+  return { ok: true, agents: next };
+}
+
+/**
  * Stable hash over what should trigger a re-reconcile of the agent's grant.
  * `name` is excluded — renaming is handled by the name being the key.
  */

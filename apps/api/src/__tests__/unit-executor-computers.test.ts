@@ -131,7 +131,7 @@ function makeDeps(outcome: ComputerCallOutcome, action: GatewayAction = FS_READ)
     loadPolicies: async () => [],
     loadProjectPolicies: async () => [],
     loadDefaultMode: async () => 'allow_all',
-    recordExecution: async () => {},
+    recordExecution: async () => null,
     fetchImpl: async () => { throw new Error('fetch must not be used for a computer call'); },
     executeComputerCall: async (i) => { calls.push(i); return outcome; },
   };

@@ -18,11 +18,12 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
+import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
-import { listProjectSessions, restartProjectSession } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
+import { listProjectSessions, restartProjectSession } from '@kortix/sdk/projects-client';
 import { HomeSolid, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileDown, Layers, MoreHorizontal, PanelRight, RotateCcw } from 'lucide-react';
@@ -191,6 +192,8 @@ export function SessionSiteHeader({
             </DropdownMenu>
 
             <SessionChangesIndicator sessionId={sessionId} />
+
+            <SessionPendingApprovalsIndicator sessionId={sessionId} />
 
             <Hint
               side="bottom"

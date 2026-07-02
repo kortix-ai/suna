@@ -673,6 +673,33 @@ export async function upsertSsoProvider(
   ).provider;
 }
 
+/**
+ * Self-serve: register an IdP's SAML metadata (Entra "App Federation Metadata
+ * XML", or its URL) with Supabase server-side and store the resulting provider.
+ * The admin never touches Supabase. One IdP per account — the API 409s if one
+ * already exists.
+ */
+export async function importSsoProviderFromMetadata(
+  accountId: string,
+  input: {
+    name: string;
+    primary_domain: string;
+    metadata_xml?: string;
+    metadata_url?: string;
+    group_claim_name?: string;
+    auto_create_members?: boolean;
+    domains?: string[];
+  },
+) {
+  return unwrap(
+    await backendApi.post<{ provider: SsoProvider }>(
+      `/accounts/${accountId}/iam/sso/provider/from-metadata`,
+      input,
+      { showErrors: false },
+    ),
+  ).provider;
+}
+
 export async function deleteSsoProvider(accountId: string) {
   return unwrap(
     await backendApi.delete<{ deleted: boolean }>(
