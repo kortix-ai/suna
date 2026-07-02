@@ -1,5 +1,9 @@
 import { logger } from '../lib/logger';
-import { EMAIL_CHANNEL_CONNECTOR_SLUG, SLACK_CHANNEL_CONNECTOR_SLUG, channelCatalog } from './channels';
+import {
+  EMAIL_CHANNEL_CONNECTOR_SLUG,
+  SLACK_CHANNEL_CONNECTOR_SLUG,
+  channelCatalog,
+} from './channels';
 import {
   type ExecResult,
   type ExecutorAuth,
@@ -88,9 +92,15 @@ export interface GatewayDeps {
    */
   resolveCredential(connector: GatewayConnector, userId: string | null): Promise<string | null>;
   /** Email-originated sessions pin native Email channel calls to the inbound inbox/thread. */
-  loadEmailSessionContext?(projectId: string, sessionId: string): Promise<EmailSessionContext | null>;
+  loadEmailSessionContext?(
+    projectId: string,
+    sessionId: string,
+  ): Promise<EmailSessionContext | null>;
   /** Email connector profiles represent one installed AgentMail inbox. */
-  loadEmailConnectorContext?(projectId: string, connectorSlug: string): Promise<EmailConnectorContext | null>;
+  loadEmailConnectorContext?(
+    projectId: string,
+    connectorSlug: string,
+  ): Promise<EmailConnectorContext | null>;
   /** Resolve the AgentMail credential for the install that owns this inbox. */
   resolveEmailCredentialForInbox?(projectId: string, inboxId: string): Promise<string | null>;
   /**
@@ -186,12 +196,24 @@ export interface CallInput {
   /** Connector-relative action path (e.g. `charges.create`). */
   actionPath: string;
   args?: Record<string, unknown>;
+  /** Set on a retry of a call already awaiting approval: wait on THIS execution
+   *  rather than recording a new pending row. Powers the sandbox's poll loop
+   *  that pauses the run indefinitely (short holds, re-issued) until a decision. */
+  approvalExecutionId?: string | null;
 }
 
 export type CallResult =
   | { status: 'ok'; data: unknown; risk: Risk }
   | { status: 'denied'; reason: string }
-  | { status: 'pending_approval'; reason: string }
+  | {
+      status: 'pending_approval';
+      reason: string;
+      /** The execution awaiting a decision — the caller re-issues the call with
+       *  this id to keep waiting (poll loop). */
+      executionId?: string | null;
+      /** true = still unresolved after the hold; poll again to keep pausing. */
+      retryable?: boolean;
+    }
   | { status: 'error'; reason: string };
 
 const SLACK_CHANNEL_ACTIONS = new Set(channelCatalog('slack').map((a) => a.path));
@@ -281,17 +303,19 @@ async function resolveEmailExecutionContext(
     return { args, secretOverride: null };
   }
 
-  const sessionContext = input.sessionId && deps.loadEmailSessionContext
-    ? await deps.loadEmailSessionContext(input.projectId, input.sessionId)
-    : null;
-  const connectorContext = !sessionContext?.inboxId && deps.loadEmailConnectorContext
-    ? await deps.loadEmailConnectorContext(input.projectId, connectorSlug)
-    : null;
+  const sessionContext =
+    input.sessionId && deps.loadEmailSessionContext
+      ? await deps.loadEmailSessionContext(input.projectId, input.sessionId)
+      : null;
+  const connectorContext =
+    !sessionContext?.inboxId && deps.loadEmailConnectorContext
+      ? await deps.loadEmailConnectorContext(input.projectId, connectorSlug)
+      : null;
   const context = sessionContext?.inboxId ? sessionContext : connectorContext;
   if (!context?.inboxId) return { args, secretOverride: null };
 
   args.inbox_id = context.inboxId;
-  if ('threadId' in context && (input.actionPath === 'get_thread') && context.threadId) {
+  if ('threadId' in context && input.actionPath === 'get_thread' && context.threadId) {
     args.thread_id = context.threadId;
   }
   if (
@@ -304,9 +328,10 @@ async function resolveEmailExecutionContext(
     args.message_id = context.messageId;
   }
 
-  const secretOverride = sessionContext?.inboxId && deps.resolveEmailCredentialForInbox
-    ? await deps.resolveEmailCredentialForInbox(input.projectId, context.inboxId)
-    : null;
+  const secretOverride =
+    sessionContext?.inboxId && deps.resolveEmailCredentialForInbox
+      ? await deps.resolveEmailCredentialForInbox(input.projectId, context.inboxId)
+      : null;
   return { args, secretOverride };
 }
 
@@ -362,7 +387,10 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       executionArgs = {
         ...executionArgs,
         recording_config: rc,
-        metadata: { ...((executionArgs.metadata as Record<string, unknown>) ?? {}), ...ctx.metadata },
+        metadata: {
+          ...((executionArgs.metadata as Record<string, unknown>) ?? {}),
+          ...ctx.metadata,
+        },
         // Enable the bot to speak (output_audio) unless the caller set its own.
         automatic_audio_output: executionArgs.automatic_audio_output ?? ctx.automaticAudioOutput,
         // The project's configured bot display name, unless the caller passed one.
@@ -394,31 +422,43 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       return { status: 'denied', reason: 'policy_block' };
     }
     if (decision.action === 'require_approval') {
-      const executionId = await audit(
-        deps,
-        input,
-        connector.connectorId,
-        'pending_approval',
-        action.risk,
-        { reason: 'policy_require_approval', policy_source: decision.source },
-      );
+      // A retry from the sandbox's poll loop passes the existing execution id —
+      // wait on THAT row instead of stacking a new pending one each poll. First
+      // call records a fresh pending row.
+      const executionId =
+        input.approvalExecutionId ??
+        (await audit(deps, input, connector.connectorId, 'pending_approval', action.risk, {
+          reason: 'policy_require_approval',
+          policy_source: decision.source,
+        }));
       // HOLD the call so the agent's turn pauses in-session — the sandbox's
-      // synchronous executor.call blocks on this request instead of getting an
-      // error and retrying. Bounded under the sandbox client's 60s timeout: on
-      // approve we fall through and run the action; on deny we return a clean
-      // refusal the agent can read + continue past; on timeout it stays pending
-      // for the async approvals inbox. Unattended (no session) never waits.
+      // synchronous executor.call blocks on this request instead of erroring.
+      // Bounded under the client's 60s timeout: on approve we fall through and
+      // run the action; on deny we return a clean refusal the agent continues
+      // past; on TIMEOUT we return `retryable` + the execution id so the sandbox
+      // re-issues the call and keeps pausing INDEFINITELY (like a question).
+      // Unattended (no session) never waits.
       if (executionId && input.sessionId && deps.waitForApprovalDecision) {
         const outcome = await deps.waitForApprovalDecision(executionId, APPROVAL_WAIT_MS);
         if (outcome === 'denied') {
           return { status: 'denied', reason: 'denied_by_user' };
         }
         if (outcome === 'timeout') {
-          return { status: 'pending_approval', reason: 'policy_require_approval' };
+          return {
+            status: 'pending_approval',
+            reason: 'policy_require_approval',
+            executionId,
+            retryable: true,
+          };
         }
         // approved → fall through to execute the call below.
       } else {
-        return { status: 'pending_approval', reason: 'policy_require_approval' };
+        return {
+          status: 'pending_approval',
+          reason: 'policy_require_approval',
+          executionId,
+          retryable: false,
+        };
       }
     }
   }
@@ -432,7 +472,8 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       }
       if (!deps.executeComputerCall) throw new Error('computer runner not wired');
       const { computer: selectorRaw, ...rest } = executionArgs;
-      const selector = typeof selectorRaw === 'string' && selectorRaw.trim() ? selectorRaw.trim() : null;
+      const selector =
+        typeof selectorRaw === 'string' && selectorRaw.trim() ? selectorRaw.trim() : null;
       const outcome = await deps.executeComputerCall({
         accountId: input.accountId,
         selector,
@@ -440,7 +481,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         args: rest,
       });
       if (outcome.ok) {
-        await audit(deps, input, connector.connectorId, 'ok', action.risk, { method: action.binding.method });
+        await audit(deps, input, connector.connectorId, 'ok', action.risk, {
+          method: action.binding.method,
+        });
         return { status: 'ok', data: outcome.data, risk: action.risk };
       }
       if (outcome.kind === 'permission_required') {
@@ -453,7 +496,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
           reason: `computer_permission_required: approve in Computers (request ${outcome.requestId})`,
         };
       }
-      await audit(deps, input, connector.connectorId, 'error', action.risk, { reason: outcome.message.slice(0, 500) });
+      await audit(deps, input, connector.connectorId, 'error', action.risk, {
+        reason: outcome.message.slice(0, 500),
+      });
       logger.warn(`[executor] ${fullPath} computer call failed: ${outcome.message.slice(0, 500)}`);
       return { status: 'error', reason: outcome.message };
     }
