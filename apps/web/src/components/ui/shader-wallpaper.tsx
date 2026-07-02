@@ -1,31 +1,21 @@
 'use client';
 
-import { memo } from 'react';
-import dynamic from 'next/dynamic';
 import { useTheme } from 'next-themes';
+import dynamic from 'next/dynamic';
+import { memo } from 'react';
 
-const Shader = dynamic(
-  () => import('@/lib/shaders-react').then((m) => m.Shader),
-  {
-    ssr: false,
-  },
-);
-const Dither = dynamic(
-  () => import('@/lib/shaders-react').then((m) => m.Dither),
-  {
-    ssr: false,
-  },
-);
-const Plasma = dynamic(
-  () => import('@/lib/shaders-react').then((m) => m.Plasma),
-  {
-    ssr: false,
-  },
-);
-const WaveDistortion = dynamic(
-  () => import('@/lib/shaders-react').then((m) => m.WaveDistortion),
-  { ssr: false },
-);
+const Shader = dynamic(() => import('@/lib/shaders-react').then((m) => m.Shader), {
+  ssr: false,
+});
+const Dither = dynamic(() => import('@/lib/shaders-react').then((m) => m.Dither), {
+  ssr: false,
+});
+const Plasma = dynamic(() => import('@/lib/shaders-react').then((m) => m.Plasma), {
+  ssr: false,
+});
+const WaveDistortion = dynamic(() => import('@/lib/shaders-react').then((m) => m.WaveDistortion), {
+  ssr: false,
+});
 
 export const ShaderWallpaper = memo(function ShaderWallpaper() {
   const { resolvedTheme } = useTheme();
@@ -41,7 +31,7 @@ export const ShaderWallpaper = memo(function ShaderWallpaper() {
 
   return (
     <div
-      className="absolute inset-0 pointer-events-none overflow-hidden"
+      className="pointer-events-none absolute inset-0 overflow-hidden opacity-60"
       aria-hidden="true"
     >
       <Shader
@@ -52,20 +42,8 @@ export const ShaderWallpaper = memo(function ShaderWallpaper() {
           height: '100%',
         }}
       >
-        <Dither
-          colorA={colorA}
-          colorB={colorB}
-          pattern="bayer8"
-          pixelSize={7}
-          threshold={0.41}
-        >
-          <Plasma
-            colorA="#ffffff"
-            contrast={0.9}
-            density={0.3}
-            intensity={1.3}
-            speed={1}
-          />
+        <Dither colorA={colorA} colorB={colorB} pattern="bayer8" pixelSize={7} threshold={0.41}>
+          <Plasma colorA="#ffffff" contrast={0.9} density={0.3} intensity={1.3} speed={1} />
           <WaveDistortion
             angle={waveAngle}
             edges="mirror"
