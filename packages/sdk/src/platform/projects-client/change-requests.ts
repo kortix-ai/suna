@@ -175,6 +175,7 @@ export async function mergeChangeRequest(
     await backendApi.post<ChangeRequestMergeResponse>(
       `/projects/${projectId}/change-requests/${crId}/merge`,
       input ?? {},
+      { showErrors: false },
     ),
   );
 }

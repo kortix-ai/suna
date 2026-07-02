@@ -89,7 +89,7 @@ import {
 import { useTabStore } from '@/stores/tab-store';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
-import { formatCost, formatTokens } from '@/lib/opencode/turns';
+import { formatCost, formatTokens } from '@kortix/sdk/turns';
 import {
   useProjectSessionStats,
   totalTokens as sumTokens,

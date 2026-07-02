@@ -18,7 +18,7 @@
  */
 
 import { Icon } from '@/features/icon/icon';
-import type { ExperimentalFeatureKey } from '@/lib/projects-client';
+import type { ExperimentalFeatureKey } from '@kortix/sdk/projects-client';
 import {
   CogOne,
   CogOneSolid,
@@ -32,7 +32,6 @@ import {
   Blocks,
   Bot,
   Boxes,
-  Cable,
   Calendar,
   Coins,
   Compass,
@@ -313,15 +312,14 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-customize',
-    label: 'Plugins',
+    label: 'Customize',
     icon: SlidersHorizontal,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/projects/{projectId}/customize',
     requiresProject: true,
-    keywords:
-      'plugins plugin build customize configure project agents agent skills skill commands command',
+    keywords: 'customize configure project agents skills commands',
   },
   {
     id: 'proj-files',
@@ -336,36 +334,36 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-agents',
-    label: 'Plugins · Agents',
+    label: 'Customize · Agents',
     icon: Bot,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/projects/{projectId}/customize/agents',
     requiresProject: true,
-    keywords: 'plugins plugin agents agent subagents subagent project customize build ai',
+    keywords: 'agents subagents project customize ai',
   },
   {
     id: 'proj-skills',
-    label: 'Plugins · Skills',
+    label: 'Customize · Skills',
     icon: Blocks,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/projects/{projectId}/customize/skills',
     requiresProject: true,
-    keywords: 'plugins plugin skills skill project customize build abilities',
+    keywords: 'skills project customize abilities',
   },
   {
     id: 'proj-commands',
-    label: 'Plugins · Commands',
+    label: 'Customize · Commands',
     icon: TerminalSquare,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/projects/{projectId}/customize/commands',
     requiresProject: true,
-    keywords: 'plugins plugin commands command slash project customize build',
+    keywords: 'commands slash project customize',
   },
   {
     id: 'proj-secrets',

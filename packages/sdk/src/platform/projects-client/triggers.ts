@@ -23,6 +23,10 @@ export interface ProjectTrigger {
   name: string;
   type: ProjectTriggerType;
   agent: string;
+  /** Wire-form model (`provider/model`) pinned to this trigger's runs, or
+   *  null to resolve the default chain (agent → project → account →
+   *  platform) at fire time. */
+  model: string | null;
   enabled: boolean;
   cron: string | null;
   /** ISO-8601 instant for a one-off ("run once") schedule; null for recurring/webhook. */
@@ -69,6 +73,9 @@ export interface CreateProjectTriggerInput {
   prompt_template: string;
   /** Defaults to 'default'. */
   agent?: string;
+  /** Wire-form model (`provider/model`). Omit or pass null to resolve the
+   *  default chain (agent → project → account → platform) at fire time. */
+  model?: string | null;
   enabled?: boolean;
   /** For type='cron'. 6-field croner expression. Omit when using `run_at`. */
   cron?: string;
@@ -84,6 +91,8 @@ export interface UpdateProjectTriggerInput {
   name?: string;
   prompt_template?: string;
   agent?: string;
+  /** Wire-form model (`provider/model`). null resets to the default chain. */
+  model?: string | null;
   enabled?: boolean;
   cron?: string;
   timezone?: string;

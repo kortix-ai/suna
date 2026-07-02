@@ -66,7 +66,7 @@ import {
   type ConnectorSharing,
   type ProjectSecret,
   type ProjectSecretsResponse,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';

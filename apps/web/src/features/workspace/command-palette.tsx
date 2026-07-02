@@ -27,8 +27,8 @@ import { useOpenCodeAgents, useOpenCodeProviders } from '@/hooks/opencode/use-op
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { authenticatedFetch } from '@/lib/auth-token';
 import { parseCustomizeSection } from '@/lib/customize-sections';
-import { featureFlags } from '@/lib/feature-flags';
-import { normalizeAppPathname } from '@/lib/instance-routes';
+import { featureFlags } from '@kortix/sdk/feature-flags';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { getItemsForSurface, type MenuItemDef, type SettingsTabId } from '@/lib/menu-registry';
 import {
   getProjectDetail,
@@ -39,7 +39,7 @@ import {
   type KortixAccount,
   type KortixProject,
   type ProjectSession,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useCustomizeStore } from '@/stores/customize-store';
@@ -88,7 +88,7 @@ import {
 } from '@/hooks/opencode/use-opencode-sessions';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
-import { clearSessionIDBCache } from '@/lib/idb-sync-cache';
+import { clearSessionIDBCache } from '@kortix/sdk/idb-sync-cache';
 import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';

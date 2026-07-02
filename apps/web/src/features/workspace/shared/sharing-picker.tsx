@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { Icon } from '@/features/icon/icon';
 import { listGroups } from '@/lib/iam-client';
-import { listProjectAccess } from '@/lib/projects-client';
+import { listProjectAccess, type ConnectorSharing } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { CheckCircleSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';

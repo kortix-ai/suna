@@ -52,7 +52,7 @@ import {
   type KortixProject,
   listAccountMembers,
   listProjectsForAccount,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 
 interface PolicyAssignmentsProps {
   accountId: string;

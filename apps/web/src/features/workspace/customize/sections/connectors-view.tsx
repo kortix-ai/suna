@@ -126,7 +126,7 @@ import {
   type ConnectorPolicyAction,
   type ConnectorPolicyRule,
   type ConnectorSharing,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 
 const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {

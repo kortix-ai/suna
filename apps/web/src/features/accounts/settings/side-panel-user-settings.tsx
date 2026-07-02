@@ -13,14 +13,14 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Icon } from '@/features/icon/icon';
-import { getCurrentInstanceIdFromPathname } from '@/lib/instance-routes';
+import { getCurrentInstanceIdFromPathname } from '@kortix/sdk/instance-routes';
 import {
   getInstanceTabs,
   getPreferenceTabs,
   type SettingsTab,
   type SettingsTabId,
 } from '@/lib/menu-registry';
-import { listSandboxes, type SandboxInfo } from '@/lib/platform-client';
+import { listSandboxes, type SandboxInfo } from '@kortix/sdk/platform-client';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { KeyRound } from 'lucide-react';

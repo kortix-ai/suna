@@ -6,7 +6,7 @@ import { PublicShareLinkButton } from '@/components/projects/public-share-link-b
 import { Button } from '@/components/ui/button';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
-import type { CreateSessionPublicShareInput } from '@/lib/projects-client';
+import type { CreateSessionPublicShareInput } from '@kortix/sdk/projects-client';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import {

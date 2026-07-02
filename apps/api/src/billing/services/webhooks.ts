@@ -15,6 +15,7 @@ import {
   getTier,
   getTierByPriceId,
   getMonthlyCredits,
+  grantForSeats,
   isUpgrade,
   mapRevenueCatProductToTier,
   getRevenueCatPeriodType,
@@ -138,6 +139,9 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
     : session.subscription?.id;
   if (!subscriptionId) return;
 
+  const stripe = getStripe();
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+
   const tier = getTier(tierKey);
   const commitmentType = session.metadata?.commitment_type;
   const isYearly = commitmentType === 'yearly' || commitmentType === 'yearly_commitment';
@@ -151,6 +155,28 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
         : null
     );
 
+  // For per-seat plans, seat count drives the grant size and the
+  // auto-topup defaults. Resolve from the subscription line item if available.
+  const perSeatPriceId = resolvePerSeatPriceId();
+  const perSeatItem = subscription.items.data.find(
+    (item) => (perSeatPriceId && item.price?.id === perSeatPriceId) ||
+      subscription.metadata?.billing_model === 'per_seat',
+  );
+  const seatCount = perSeatItem ? Math.max(1, Math.floor(perSeatItem.quantity ?? 1)) : 1;
+  const isPerSeat = tierKey === 'per_seat' || !!perSeatItem;
+
+  // For monthly plans, set next_credit_grant to the period-end so the
+  // renewal loop knows when the next grant is due. Previously this was only
+  // set for yearly plans, leaving monthly accounts with next_credit_grant=NULL
+  // and no way for the cron to know they needed a grant.
+  const nextCreditGrantTs = isYearly
+    ? calculateNextCreditGrant(new Date()).toISOString()
+    : new Date(subscription.current_period_end * 1000).toISOString();
+
+  const perSeatAutoTopupDefaults = isPerSeat && !existingAccount?.autoTopupCustomized
+    ? defaultAutoTopupForSeats(seatCount)
+    : null;
+
   await upsertCreditAccount(accountId, {
     tier: tierKey,
     provider: 'stripe',
@@ -158,18 +184,34 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
     stripeSubscriptionStatus: 'active',
     planType: isYearly ? 'yearly' : 'monthly',
     commitmentType: commitmentType === 'yearly_commitment' ? commitmentType : null,
-    ...(isYearly ? { nextCreditGrant: calculateNextCreditGrant(new Date()).toISOString() } : {}),
+    nextCreditGrant: nextCreditGrantTs,
+    lastRenewalPeriodStart: subscription.current_period_start,
+    ...(isPerSeat ? {
+      billingModel: 'per_seat',
+      seatCount,
+      ...(perSeatAutoTopupDefaults ? {
+        autoTopupThreshold: String(perSeatAutoTopupDefaults.threshold),
+        autoTopupAmount: String(perSeatAutoTopupDefaults.amount),
+      } : {}),
+    } : {}),
     autoTopupEnabled: true,
-    autoTopupThreshold: String(AUTO_TOPUP_DEFAULT_THRESHOLD),
-    autoTopupAmount: String(AUTO_TOPUP_DEFAULT_AMOUNT),
+    autoTopupThreshold: String(perSeatAutoTopupDefaults?.threshold ?? AUTO_TOPUP_DEFAULT_THRESHOLD),
+    autoTopupAmount: String(perSeatAutoTopupDefaults?.amount ?? AUTO_TOPUP_DEFAULT_AMOUNT),
   });
 
-  if (tier.monthlyCredits > 0) {
+  // For per-seat: grant grantForSeats(seatCount) so 1 seat → $25, 3 seats → $75, etc.
+  // For legacy tiers: grant tier.monthlyCredits (unchanged behaviour).
+  const creditAmount = isPerSeat ? grantForSeats(seatCount) : tier.monthlyCredits;
+  const creditDesc = isPerSeat
+    ? `${tier.displayName} subscription activated: ${creditAmount} credits (${seatCount} ${seatCount === 1 ? 'seat' : 'seats'})`
+    : `${tier.displayName} subscription activated: ${creditAmount} credits`;
+
+  if (creditAmount > 0) {
     await grantCredits(
       accountId,
-      tier.monthlyCredits,
+      creditAmount,
       'tier_grant',
-      `${tier.displayName} subscription activated: ${tier.monthlyCredits} credits`,
+      creditDesc,
       true,
       session.id,
     );
@@ -419,10 +461,18 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   }
 
   const tierName = account.scheduledTierChange ?? account.tier ?? 'free';
-  const credits = getMonthlyCredits(tierName);
+
+  // Per-seat accounts: credit grant scales with seat count.
+  // Legacy tiers: grant the flat tier credit.
+  const isPerSeatTier = tierName === 'per_seat' || account.billingModel === 'per_seat';
+  const seatCount = isPerSeatTier ? Math.max(1, account.seatCount ?? 1) : 1;
+  const credits = isPerSeatTier ? grantForSeats(seatCount) : getMonthlyCredits(tierName);
+  const renewalDesc = isPerSeatTier
+    ? `Monthly renewal: ${credits} credits (${seatCount} ${seatCount === 1 ? 'seat' : 'seats'})`
+    : `Monthly renewal: ${credits} credits`;
 
   if (credits > 0) {
-    await resetExpiringCredits(accountId, credits, `Monthly renewal: ${credits} credits`, invoice.id);
+    await resetExpiringCredits(accountId, credits, renewalDesc, invoice.id);
   }
 
   const planType = account.planType ?? 'monthly';

@@ -16,7 +16,7 @@ import { Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { isBillingEnabled } from '@/lib/config';
-import { ensureSandbox } from '@/lib/platform-client';
+import { ensureSandbox } from '@kortix/sdk/platform-client';
 import { claimComputer } from '@/lib/api/billing';
 import { useAccountState } from '@/hooks/billing/use-account-state';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';

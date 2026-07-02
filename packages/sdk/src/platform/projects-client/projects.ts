@@ -9,7 +9,7 @@ import {
 } from './shared';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
-export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'llm_gateway';
+export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'meet' | 'llm_gateway';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {
@@ -50,6 +50,11 @@ export interface KortixProject {
   warm_pool?: { enabled: boolean; size: number };
   /** Whether the warm pool feature is enabled platform-wide (gates the UI). */
   warm_pool_available?: boolean;
+  /** Per-project sandbox-provider pin (Customize → Settings). null = follow the
+   *  platform default/distribution. */
+  default_sandbox_provider?: string | null;
+  /** Enabled sandbox providers the picker offers (ALLOWED ∩ has-API-key). */
+  available_sandbox_providers?: string[];
 }
 
 export interface ProjectConfigSummary {
@@ -66,6 +71,14 @@ export interface ProjectConfigSummary {
     mode: string | null;
     source?: 'opencode' | 'kortix.toml';
     enabled?: boolean;
+    /** Per-agent governance from `kortix.toml [[agents]]` (read-only mirror).
+     *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
+     *  OpenCode-discovered agents (not governed by [[agents]]). */
+    scope?: {
+      env: string[] | 'all';
+      connectors: string[] | 'all';
+      kortix_cli: string[] | 'all';
+    };
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;
   commands: Array<{ name: string; path: string; description: string | null }>;
@@ -164,7 +177,10 @@ export function isManagedGithubProject(project: { metadata?: Record<string, unkn
 
 export async function getProjectDetail(projectId: string, options?: ApiClientOptions) {
   return unwrap(
-    await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, options),
+    await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, {
+      showErrors: false,
+      ...options,
+    }),
   );
 }
 
@@ -222,6 +238,20 @@ export async function updateExperimentalFeature(
     await backendApi.patch<KortixProject>(`/projects/${projectId}/experimental`, {
       feature,
       enabled,
+    }),
+  );
+}
+
+/** Set or clear the per-project sandbox-provider pin (Customize → Settings).
+ *  Pass `null` to clear (follow the platform default/distribution). The value must
+ *  be one of the project's `available_sandbox_providers`. */
+export async function updateProjectSandboxProvider(
+  projectId: string,
+  provider: string | null,
+) {
+  return unwrap(
+    await backendApi.patch<KortixProject>(`/projects/${projectId}/sandbox-provider`, {
+      provider,
     }),
   );
 }

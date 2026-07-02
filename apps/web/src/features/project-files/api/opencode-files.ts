@@ -11,7 +11,7 @@
  * immutable from this view; users mutate via a session sandbox + commit.
  */
 
-import { fetchProjectArchive, listProjectFiles, readProjectFile } from '@/lib/projects-client';
+import { fetchProjectArchive, listProjectFiles, readProjectFile } from '@kortix/sdk/projects-client';
 import type {
   FileContent,
   FileNode,

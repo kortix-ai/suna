@@ -24,7 +24,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { IconApp, IconClose } from '@/components/ui/kortix-icons';
 import { useProjectApps } from '@/hooks/projects/use-project-apps';
-import { getProjectDetail } from '@/lib/projects-client';
+import { getProjectDetail } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { useAppsOverlayStore } from '@/stores/apps-overlay-store';
 

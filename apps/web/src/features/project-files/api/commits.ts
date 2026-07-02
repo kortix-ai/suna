@@ -10,7 +10,7 @@ import {
   type ProjectCommitDetail,
   type ProjectCommitDiffResponse,
   type ProjectCommitsResponse,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 
 export async function fetchCommits(
   projectId: string,

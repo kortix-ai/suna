@@ -1,5 +1,5 @@
 import { rewriteLocalhostUrl, type SubdomainUrlOptions } from '@/lib/utils/sandbox-url';
-import { SANDBOX_PORTS } from '@/lib/platform-client';
+import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 
 /**
  * Build a proxied URL for a file served by the static web server (port 3211).

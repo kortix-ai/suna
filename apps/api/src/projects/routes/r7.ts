@@ -16,7 +16,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, projectGroupGrants, projectSecrets, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid } from '../lib/access';
-import { AnyObject, GroupGrantSchema, SessionSchema, projectsApp } from '../lib/app';
+import { AnyObject, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
 import { addSecretResourceGrant, listSecretResourceGrants, removeSecretResourceGrant } from '../secrets';
@@ -336,6 +336,7 @@ projectsApp.openapi(
       },
     responses: {
         201: json(SessionSchema, 'The created session'),
+        202: json(SessionCreateAcceptedSchema, 'Create accepted; poll the session'),
         ...errors(404),
     },
   }),
@@ -411,7 +412,7 @@ projectsApp.openapi(
         ...errors(404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const projectId = c.req.param('projectId');
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -505,7 +506,7 @@ projectsApp.openapi(
         ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -651,11 +652,11 @@ projectsApp.openapi(
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
     responses: {
-        200: json(z.any(), 'OK'),
+        200: json(SessionSchema, 'The updated session'),
         ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -747,11 +748,11 @@ projectsApp.openapi(
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
       },
     responses: {
-        200: json(z.any(), 'OK'),
+        200: json(OkSchema, 'Session stopped'),
         ...errors(400, 403, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);

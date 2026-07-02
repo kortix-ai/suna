@@ -206,11 +206,12 @@ jobs:
       id-token: write
       contents: read
       attestations: write
+      artifact-metadata: write
     env:
       IMAGE: ${{ needs.tag-api.outputs.image }}
     steps:
       - name: Trivy image scan (fail on fixable CRITICAL)
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: ${{ env.IMAGE }}
@@ -246,7 +247,7 @@ jobs:
           cosign sign --yes "$REF"
           cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$REF"
       - name: SLSA build provenance
-        uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-name: docker.io/kortix/kortix-api
           subject-digest: ${{ steps.digest.outputs.digest }}

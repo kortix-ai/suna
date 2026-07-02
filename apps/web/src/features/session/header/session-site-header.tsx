@@ -21,7 +21,7 @@ import { SessionChangesIndicator } from '@/features/session/header/session-chang
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
-import { listProjectSessions, restartProjectSession } from '@/lib/projects-client';
+import { listProjectSessions, restartProjectSession } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { HomeSolid, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';

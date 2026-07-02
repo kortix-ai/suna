@@ -4,19 +4,18 @@ import { useQuery } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { ConfigEntityView } from '@/features/workspace/customize/sections/component/config-entity-view';
 import { formatMode } from '@/features/workspace/customize/shared/utils';
-import { listProjectAccess, listProjectResourceGrants, type ProjectConfigSummary } from '@/lib/projects-client';
+import { listProjectAccess, listProjectResourceGrants, type ProjectConfigSummary } from '@kortix/sdk/projects-client';
 import { StarSolid } from '@mynaui/icons-react';
 import { Bot, ShieldCheck, User, Users } from 'lucide-react';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
-export function AgentsView({ projectId, embedded }: { projectId: string; embedded?: boolean }) {
+export function AgentsView({ projectId }: { projectId: string }) {
   return (
     <ConfigEntityView<Agent>
       projectId={projectId}
       kind="agent"
       noun="agent"
-      embedded={embedded}
       title="Agents"
       description="Pick an agent from the list to preview it, or create a new one."
       docs="https://kortix.com/docs/concepts/agents"

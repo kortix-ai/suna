@@ -1931,6 +1931,11 @@ export const creditAccounts = kortixSchema.table(
     autoTopupCustomized: boolean('auto_topup_customized').default(false).notNull(),
     autoTopupConsecutiveFailures: integer('auto_topup_consecutive_failures').default(0).notNull(),
     autoTopupDisabledReason: text('auto_topup_disabled_reason'),
+    // Demo/dogfood flag: when true the account gets ALL enterprise entitlements
+    // (SSO, SCIM, …) regardless of tier — a self-serve, interactive preview of
+    // the enterprise surface. NOT a real Enterprise plan (sales-assigned);
+    // production use requires a signed agreement. Default false → fail-closed.
+    demoEnterprise: boolean('demo_enterprise').default(false).notNull(),
   },
   (table) => [
     index('kortix_credit_accounts_account_id_idx').on(table.accountId),

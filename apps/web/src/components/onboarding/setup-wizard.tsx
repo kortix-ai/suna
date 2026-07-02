@@ -24,7 +24,7 @@ import { flattenModels } from '@/features/session/session-chat-input';
 import { modelKeyToWire, useModelStore } from '@/hooks/opencode/use-model-store';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { backendApi } from '@/lib/api-client';
-import { setModelDefault } from '@/lib/projects-client';
+import { setModelDefault } from '@kortix/sdk/projects-client';
 import { authenticatedFetch } from '@/lib/auth-token';
 import { isBillingEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';

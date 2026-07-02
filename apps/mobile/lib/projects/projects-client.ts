@@ -409,6 +409,26 @@ export function getProjectDetail(projectId: string) {
   return apiFetch<ProjectDetail>(`/projects/${encodeURIComponent(projectId)}/detail`);
 }
 
+/** Server-side gateway model catalog (web parity). 404s with
+ *  `code: 'llm_gateway_disabled'` when the project hasn't turned the gateway
+ *  on — callers should treat that as "no model override available", not an
+ *  error to surface. */
+export interface ProjectLlmCatalogResponse {
+  models: Record<string, {
+    name: string;
+    free?: boolean;
+    reasoning?: boolean;
+    tool_call?: boolean;
+    attachment?: boolean;
+    temperature?: boolean;
+    limit?: { context?: number; output?: number };
+  }>;
+}
+
+export function getProjectLlmCatalog(projectId: string) {
+  return apiFetch<ProjectLlmCatalogResponse>(`/projects/${encodeURIComponent(projectId)}/llm-catalog`);
+}
+
 /** Read a repo file's content at the project's default ref (for config source views). */
 export function readProjectFile(projectId: string, path: string, ref?: string) {
   const params = new URLSearchParams({ path });
@@ -1030,6 +1050,10 @@ export interface ProjectTrigger {
   name: string;
   type: ProjectTriggerType;
   agent: string;
+  /** Wire-form model (`provider/model`) pinned to this trigger's runs, or
+   *  null to resolve the default chain (agent → project → account →
+   *  platform) at fire time. */
+  model: string | null;
   enabled: boolean;
   prompt_template: string;
   last_fired_at: string | null;
@@ -1059,6 +1083,9 @@ export interface CreateProjectTriggerInput {
   type: ProjectTriggerType;
   prompt_template: string;
   agent?: string;
+  /** Wire-form model (`provider/model`). Omit or pass null to resolve the
+   *  default chain (agent → project → account → platform) at fire time. */
+  model?: string | null;
   enabled?: boolean;
   cron?: string;
   run_at?: string;
@@ -1070,6 +1097,8 @@ export interface UpdateProjectTriggerInput {
   name?: string;
   prompt_template?: string;
   agent?: string;
+  /** Wire-form model (`provider/model`). null resets to the default chain. */
+  model?: string | null;
   enabled?: boolean;
   cron?: string;
   run_at?: string;
