@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { LuSettings, LuUsersRound } from 'react-icons/lu';
+import { isRailItemActive } from './rail';
 import { FilesSection } from './sections/files-section';
 import { LlmManagementView } from './sections/gateway-view';
 import { ChangesView } from './sections/view/changes-view';
@@ -92,11 +93,6 @@ const GROUPS: readonly RailGroup[] = [
     ],
   },
 ];
-
-function isRailItemActive(item: RailItem, section: CustomizeSection) {
-  if (item.section === 'llm-management') return section.startsWith('llm-');
-  return item.section === section;
-}
 
 const LLM_ITEM: RailItem = { section: 'llm-management', label: 'LLM', icon: Boxes };
 
