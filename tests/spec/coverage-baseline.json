@@ -86,7 +86,6 @@
     "POST /v1/projects/:*/resource-grants",
     "POST /v1/projects/:*/secret-requests",
     "POST /v1/projects/:*/sessions/:*/public-shares",
-    "POST /v1/projects/:*/sessions/:*/start",
     "POST /v1/projects/suna-migration/start",
     "POST /v1/setup-links/connector/:*/start",
     "POST /v1/setup-links/secret/:*",
