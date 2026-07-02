@@ -51,3 +51,27 @@ export function withTimeout<T>(
     if (timer) clearTimeout(timer);
   }) as Promise<T>;
 }
+
+/**
+ * Resolve an env-configured timeout budget with a floor, logging when the
+ * configured value gets clamped up to it.
+ *
+ * A silent `Math.max(floorMs, configured)` (the pattern this replaces) means
+ * an operator who sets e.g. `KORTIX_DAYTONA_CALL_TIMEOUT_MS=200` during an
+ * incident — trying to fail faster — silently gets 1000ms instead with zero
+ * indication their change had no effect. This logs once per process so that
+ * mismatch is visible instead of a confusing "I set it to 200 but it's still
+ * taking a second" investigation.
+ */
+export function configuredTimeoutMs(envVar: string, defaultMs: number, floorMs: number): number {
+  const raw = process.env[envVar];
+  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+  const requested = Number.isFinite(parsed) && parsed > 0 ? parsed : defaultMs;
+  if (requested < floorMs) {
+    console.warn(
+      `[with-timeout] ${envVar}=${requested}ms is below the ${floorMs}ms floor — clamping to ${floorMs}ms.`,
+    );
+    return floorMs;
+  }
+  return requested;
+}

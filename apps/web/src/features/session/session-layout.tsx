@@ -347,7 +347,12 @@ export const SessionLayout = memo(function SessionLayout({
   // live sandbox, so they only render once booted.
   const effectivePanelHeader = booting ? null : panelHeader;
   const effectivePanelBody = booting ? (
-    <SessionStartingLoader stage={bootStage ?? 'provisioning'} delayMs={0} />
+    <SessionStartingLoader
+      stage={bootStage ?? 'provisioning'}
+      delayMs={0}
+      projectId={projectId}
+      sessionId={projectSessionId}
+    />
   ) : (
     panelBody
   );

@@ -191,7 +191,7 @@ function useToolConnect(projectId: string, onConnected: () => void) {
 
 export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
   const contactTier = usePersonalContactTier();
-  const showFounderStep = contactTier !== 'none';
+  const showFounderStep = contactTier === 'personal';
   const { user } = useAuth();
   const defaultName =
     (user?.user_metadata?.full_name as string | undefined) ||
