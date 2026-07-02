@@ -66,27 +66,32 @@ is registered **with Supabase**, and Kortix stores the resulting provider id.
      SSO). Supabase is the SAML Service Provider.
    - Download the **App Federation Metadata XML** (or copy the metadata URL).
 
-2. **Register the IdP with Supabase** (Supabase CLI or Admin API):
+2. **Register the provider — pick one path:**
+
+   **(A) Self-serve, in the dashboard (recommended).** Account → **Settings** →
+   **SAML SSO** → **Configure** → **Import IdP metadata**. Paste the metadata XML
+   (or its URL), set the display name, primary domain, and group claim, and save.
+   Kortix registers the IdP with Supabase server-side and stores the resulting
+   provider id — you never touch Supabase. (API:
+   `POST /v1/accounts/{accountId}/iam/sso/provider/from-metadata` with
+   `{ metadata_xml | metadata_url, name, primary_domain, group_claim_name, auto_create_members }`.)
+   One IdP per account — remove the existing one to re-import.
+
+   **(B) Advanced / operator path.** Register with Supabase yourself, then paste
+   the UUID into the same dialog under **Advanced: Supabase UUID**:
    ```
    supabase sso add --type saml --metadata-url "<entra federation metadata url>" \
      --domains essentia-inc.com
-   ```
-   Supabase returns an **SSO provider UUID** — copy it. This is the
-   `supabase_sso_provider_id` Kortix needs.
-
-3. **Register the provider with Kortix**:
-   ```
+   # → SSO provider UUID
    PUT https://<api>/v1/accounts/{accountId}/iam/sso/provider
-   {
-     "supabase_sso_provider_id": "<uuid from step 2>",
-     "name": "Azure AD",
-     "primary_domain": "essentia-inc.com",
-     "group_claim_name": "memberOf",      // Entra default; "groups" for some setups
-     "auto_create_members": false          // see "auto_create_members" below
-   }
+   { "supabase_sso_provider_id": "<uuid>", "name": "Azure AD",
+     "primary_domain": "essentia-inc.com", "group_claim_name": "memberOf",
+     "auto_create_members": false }
    ```
-   `primary_domain` lets the sign-in page route `you@essentia-inc.com` straight to
-   this IdP. `group_claim_name` MUST match the claim Entra actually emits (Part B).
+
+   Either way: `primary_domain` lets the sign-in page route `you@essentia-inc.com`
+   straight to this IdP, and `group_claim_name` MUST match the claim Entra actually
+   emits (Part B).
 
 > **auto_create_members** — leave `false` for strict, admin-provisioned access:
 > only users an admin (or SCIM) has already added get synced. Set `true` to let
