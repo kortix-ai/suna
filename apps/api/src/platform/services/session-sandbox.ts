@@ -53,8 +53,8 @@ import { resolveAgentGrant } from '../../projects/agents';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 
 // Fallback spec for sandboxes that don't declare [sandbox] in kortix.toml.
-// Mirrors the platform default sandbox size (2 vCPU / 6 GB / 20 GB).
-const DEFAULT_METERING_SPEC = { cpuCores: 2, memoryGb: 6, diskGb: 20, gpuCount: 0 };
+// Mirrors the platform default sandbox size (2 vCPU / 4 GB / 20 GB).
+const DEFAULT_METERING_SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 
 async function openComputeSessionForSandbox(
   sandboxId: string,
