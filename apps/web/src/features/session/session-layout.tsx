@@ -6,6 +6,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SessionActionsPanel } from '@/features/session/session-actions-panel';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
+import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
@@ -103,6 +104,14 @@ export const SessionLayout = memo(function SessionLayout({
   const showExplorer = panelView === 'explorer';
   const showTerminal = panelView === 'terminal';
   const showAudit = panelView === 'audit';
+
+  // Pending-approval count for the "Audit" tab badge. Shares the header nudge's
+  // query key so this is one deduped request; skipped while booting/transient.
+  const { data: auditData } = useSessionAudit(projectId, projectSessionId, {
+    enabled: !transient && !booting && !!projectId && !!projectSessionId,
+    silent: true,
+  });
+  const auditPendingCount = (auditData?.actions ?? []).filter(isPendingAction).length;
 
   useEffect(() => {
     if (shouldOpenPanel && !isSidePanelOpen) {
@@ -270,6 +279,7 @@ export const SessionLayout = memo(function SessionLayout({
       view={panelView}
       onChangeView={(v) => setPanelView(sessionId, v)}
       onClose={handleSidePanelClose}
+      auditBadge={auditPendingCount}
     />
   );
 
@@ -450,10 +460,13 @@ function PanelHeaderSwitcher({
   view,
   onChangeView,
   onClose,
+  auditBadge = 0,
 }: {
   view: SessionPanelView;
   onChangeView: (next: SessionPanelView) => void;
   onClose: () => void;
+  /** Pending-approval count shown on the "Audit" tab; 0 hides the badge. */
+  auditBadge?: number;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
@@ -490,6 +503,7 @@ function PanelHeaderSwitcher({
           active={view === 'audit'}
           onClick={() => onChangeView('audit')}
           label="Audit"
+          badgeCount={auditBadge}
         />
       </div>
       <Tooltip>
@@ -519,10 +533,13 @@ function PanelTabButton({
   active,
   onClick,
   label,
+  badgeCount = 0,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
+  /** When > 0, an amber count pill trails the label (e.g. pending approvals). */
+  badgeCount?: number;
 }) {
   return (
     <button
@@ -531,13 +548,21 @@ function PanelTabButton({
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        'relative inline-flex items-center h-10 shrink-0 whitespace-nowrap text-xs tracking-tight transition-colors cursor-pointer',
+        'relative inline-flex items-center gap-1.5 h-10 shrink-0 whitespace-nowrap text-xs tracking-tight transition-colors cursor-pointer',
         active
           ? 'text-foreground font-medium'
           : 'text-muted-foreground/70 hover:text-foreground/90',
       )}
     >
       {label}
+      {badgeCount > 0 && (
+        <span
+          aria-label={`${badgeCount} pending`}
+          className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-600 px-1 text-[10px] font-semibold leading-none text-white"
+        >
+          {badgeCount}
+        </span>
+      )}
       {active && (
         <span aria-hidden className="absolute -bottom-px left-0 right-0 h-px bg-foreground" />
       )}
