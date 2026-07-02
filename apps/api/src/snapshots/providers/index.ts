@@ -31,20 +31,8 @@ export interface BuildableTemplate {
   spec: SandboxResourceSpec;
   /** Telemetry: caller-facing slug for logs. */
   slug: string;
-  /** Shared platform default (vs per-project). The default is built ONCE as a
-   *  stateful warm template; per-project templates stay cold (capture=none). */
+  /** Shared platform default (vs per-project). Every template is built cold. */
   isShared?: boolean;
-  /** Stateful warm capture: the provider boots the template, waits for the
-   *  readiness probe, then snapshots the RUNNING VM so sessions CoW-fork warm
-   *  state (~2 s) instead of cold-booting. Falls back to cold spawn if unmet. */
-  capture?: 'none' | 'stateful';
-  captureCondition?: {
-    http?: { port: number; path: string; timeoutSec?: number };
-    cmd?: string;
-    timeoutSec?: number;
-  };
-  /** Boot env for the warm-capture VM (so it reaches the readiness probe). */
-  captureEnv?: Record<string, string>;
 }
 
 export type ProviderState =

@@ -296,31 +296,14 @@ async function runInlineBuild(
         diskGb: template.diskGb,
       },
       slug: template.slug,
-      // ONE stateful template, captured WARM (no per-gen snapshots).
-      // KORTIX_WARM_SEED=1 boots the daemon's warm-capture mode: scaffold-warm opencode
-      // (project-init to completion) + pin a root session; the capture gates on
-      // the PIN FILE (/var/run/kortix/opencode-session-id) so the snapshot freezes
-      // a genuinely-warm opencode — forks resume runtime-ready (~2s) instead of
-      // the ~6s cold opencode-init wall a bare HTTP gate left. Predecessor pruned
-      // below ⇒ exactly one stateful-<id> snapshot, restore_clone-forked on demand.
       isShared: !!template.isShared,
-      capture: template.isShared ? 'stateful' : 'none',
-      captureCondition: template.isShared
-        ? { cmd: 'test -f /var/run/kortix/opencode-session-id', timeoutSec: 300 }
-        : undefined,
-      captureEnv: template.isShared
-        ? {
-            KORTIX_WARM_SEED: '1', KORTIX_ENABLE_INNER_DOCKER: '0', PUID: '911', PGID: '911', TZ: 'UTC',
-            // No-restart warm-fork: bake proxy-mode opencode at capture so a fork
-            // hot-swaps the per-session token into the live proxy instead of
-            // restarting opencode (~8s). Best-effort: a hot-swap failure falls
-            // back to the restart. The full model catalog is baked into the image
-            // at build time (build-context.ts → /opt/kortix/llm-catalog.json), so
-            // the token-less shared seed still serves the FULL picker (no fallback).
-            KORTIX_LLM_HOTSWAP: '1',
-            KORTIX_LLM_CATALOG_FILE: '/opt/kortix/llm-catalog.json',
-          }
-        : undefined,
+      // Cold-only, unified with Daytona: Platinum builds a cold rootfs template
+      // and cold-boots it (entrypoint re-runs → opencode re-inits, ~6s) on spawn
+      // AND on resume — the SAME path Daytona takes, no provider divergence.
+      // Stateful/warm capture used to resume opencode mid-state off a CH memory
+      // snapshot, which intermittently wedged it (virtio-net RX stall after
+      // restore → /global/event + /pty hang while /kortix/health still
+      // answered). A cold boot avoids that entirely.
     });
     if (buildId) await closeBuildLogReady(buildId);
     await recordTemplateBuilt(template.templateId, {

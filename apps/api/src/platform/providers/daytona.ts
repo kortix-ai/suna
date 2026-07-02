@@ -11,11 +11,9 @@ import { triggerEmergencyDiskArchiveSweep } from '../../projects/disk-quota-guar
 import {
   archiveDaytonaSandboxById,
   getDaytona,
-  getDaytonaWarm,
   isDaytonaDiskQuotaError,
   listStoppedDaytonaSandboxesOldestFirst,
 } from '../../shared/daytona';
-import { warmRestoreScript, WARM_RESTORE_MARKERS, noteWarmPathFailure } from '../../snapshots/warm-bake';
 import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
@@ -71,7 +69,6 @@ function reportIfDiskQuotaError(err: unknown, reason: string): never {
 // (DAYTONA_SNAPSHOT was removed — every sandbox boots from its project's
 // own per-project snapshot, resolved by the snapshot builder. Callers
 // must pass `opts.snapshot`; there is no shared platform-wide image.)
-import { WarmRuntimeUnavailableError } from './index';
 
 // Labels stamped on every Kortix-managed Daytona box at create time. The
 // Daytona org is SHARED across environments (prod / dev / laptops), so the
@@ -177,30 +174,6 @@ export class DaytonaProvider implements SandboxProvider {
       throw new Error('[daytona] create() called without KORTIX_TOKEN — sandbox cannot authenticate to the Kortix router.');
     }
 
-    // Experimental warm path: boot from the memory-state warm base on the WARM
-    // target and start the daemon post-restore (see createWarm). ANY warm
-    // failure — flaky restore, "Region not found" (the experimental region can
-    // be revoked org-side at any time), env-write failure — surfaces as
-    // WarmRuntimeUnavailableError so the session falls back to the normal
-    // Dockerfile-snapshot path instead of erroring. Warm is best-effort, never
-    // a hard dependency.
-    if (opts.warmBaseSnapshot) {
-      try {
-        return await this.createWarm(opts, opts.warmBaseSnapshot, envVars, sandboxApiBase, createTimeoutSeconds);
-      } catch (err) {
-        // Pause the warm path fleet-wide for the cooldown on ANY warm-create
-        // failure (flaky experimental restore, region revoked, env-write fail) —
-        // otherwise a degraded warm region makes EVERY session re-pay up to
-        // MAX_WARM_ATTEMPTS slow restore attempts before falling back to cold.
-        // After this, sessions go straight to the cold (instance-warm) path until
-        // the region recovers. Mirrors the probe-timeout pause in warm-bake.ts.
-        noteWarmPathFailure();
-        if (err instanceof WarmRuntimeUnavailableError) throw err;
-        const msg = err instanceof Error ? err.message : String(err);
-        throw new WarmRuntimeUnavailableError(`warm create failed: ${msg}`);
-      }
-    }
-
     // Every Daytona sandbox boots from its project's own per-project
     // snapshot (`kortix-snap-…`), resolved by the snapshot builder before
     // we get here (see platform/services/session-sandbox.ts +
@@ -246,125 +219,6 @@ export class DaytonaProvider implements SandboxProvider {
         provisionedBy: opts.userId,
         daytonaSandboxId: externalId,
         snapshot,
-        version: SANDBOX_VERSION,
-      },
-    };
-  }
-
-  /**
-   * Warm path: create from the experimental memory-state warm base (~1.3s) on
-   * the WARM target, then start the session daemon post-restore. The daemon's
-   * identity (KORTIX_TOKEN, repo, branch, …) is written to an env file the
-   * daemon sources — create-time envVars don't survive a memory restore and the
-   * entrypoint doesn't re-run, so we inject + launch here.
-   */
-  private async createWarm(
-    opts: CreateSandboxOpts,
-    warmBaseSnapshot: string,
-    envVars: Record<string, string>,
-    sandboxApiBase: string,
-    timeout: number,
-  ): Promise<ProvisionResult> {
-    const daytona = getDaytonaWarm();
-
-    // Daytona's experimental region is non-deterministic in TWO ways: creates
-    // fail outright ("Sandbox failed to start: internal error"), and boxes that
-    // do start can come up WITHOUT the baked runtime (filesystem layer dropped).
-    // Retry through both; after the cap, give up so the caller falls back to the
-    // normal Dockerfile path rather than booting a broken box.
-    const MAX_WARM_ATTEMPTS = 4;
-    let sb: Awaited<ReturnType<typeof daytona.create>> | null = null;
-    let sawCreateFailure = false;
-    let envWriteFailed = false;
-    for (let attempt = 1; attempt <= MAX_WARM_ATTEMPTS; attempt++) {
-      let box: Awaited<ReturnType<typeof daytona.create>> | null = null;
-      try {
-        box = await daytona.create(
-          {
-            snapshot: warmBaseSnapshot,
-            ...daytonaLifecycle(opts.autoStopInterval),
-            labels: managedSandboxLabels(),
-            public: false,
-          },
-          { timeout },
-        );
-      } catch (err) {
-        // The throw leaves an error-state box org-side that we have no handle
-        // to — swept below once the loop settles.
-        sawCreateFailure = true;
-        if (isDaytonaDiskQuotaError(err)) triggerEmergencyDiskArchiveSweep('create-warm', diskQuotaGuardDeps);
-        console.warn(
-          `[daytona] warm create attempt ${attempt}/${MAX_WARM_ATTEMPTS} failed:`,
-          err instanceof Error ? err.message : err,
-        );
-        continue;
-      }
-
-      // ONE in-box round-trip does it all: probe the baked runtime, reset the
-      // frozen clock, write the session env, and launch the daemon (was four
-      // serial executeCommands). The decision is driven by PARSED MARKER STRINGS
-      // (never exitCode — the SDK can return it undefined).
-      let result = '';
-      try {
-        const script = warmRestoreScript(envVars, Math.floor(Date.now() / 1000));
-        const r = await box.process.executeCommand(script, undefined, undefined, 60);
-        result = r.result ?? '';
-      } catch (err) {
-        // Box unreachable / command failed mid-flight — treat like a dropped
-        // restore and recreate (don't trust a half-initialized box).
-        console.warn(
-          `[daytona] warm restore attempt ${attempt}/${MAX_WARM_ATTEMPTS} command failed:`,
-          err instanceof Error ? err.message : err,
-        );
-        await box.delete().catch(() => {});
-        continue;
-      }
-
-      if (result.includes(WARM_RESTORE_MARKERS.noRuntime)) {
-        console.warn(
-          `[daytona] snapshot-restored sandbox ${box.id} restored without runtime ` +
-          `(experimental snapshot flakiness) — attempt ${attempt}/${MAX_WARM_ATTEMPTS}, recreating`,
-        );
-        await box.delete().catch(() => {});
-        continue;
-      }
-      if (!result.includes(WARM_RESTORE_MARKERS.wrote) || !result.includes(WARM_RESTORE_MARKERS.started)) {
-        // Runtime WAS present (no recreate marker) but the env write or daemon
-        // launch didn't confirm — not a flaky-restore case, so don't burn
-        // retries; surface a hard error (the caller falls back to the cold path).
-        envWriteFailed = true;
-        await box.delete().catch(() => {});
-        break;
-      }
-      sb = box; // KORTIX_WROTE + KORTIX_STARTED both seen → committed.
-      break;
-    }
-    if (sawCreateFailure) {
-      // Fire-and-forget: clear the error-state corpses failed creates left in
-      // the org (targeted by warm-base snapshot name + error state).
-      void import('../../snapshots/warm-bake')
-        .then(({ reapErroredWarmBoxes }) => reapErroredWarmBoxes(warmBaseSnapshot, (l) => console.log(l)))
-        .catch(() => {});
-    }
-    if (envWriteFailed) {
-      throw new Error('[daytona] warm create: session env write / daemon launch did not confirm');
-    }
-    if (!sb) {
-      throw new WarmRuntimeUnavailableError(
-        `warm base ${warmBaseSnapshot} unavailable after ${MAX_WARM_ATTEMPTS} attempts (create failures and/or dropped-runtime restores)`,
-      );
-    }
-
-    const externalId = sb.id;
-    const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/8000`;
-    return {
-      externalId,
-      baseUrl,
-      metadata: {
-        provisionedBy: opts.userId,
-        daytonaSandboxId: externalId,
-        snapshot: warmBaseSnapshot,
-        warm: true,
         version: SANDBOX_VERSION,
       },
     };
