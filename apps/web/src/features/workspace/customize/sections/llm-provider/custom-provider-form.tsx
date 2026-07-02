@@ -13,7 +13,7 @@ import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import {
   setPersonalProjectSecret,
   upsertProjectSecret,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, ChevronLeft, Copy, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';

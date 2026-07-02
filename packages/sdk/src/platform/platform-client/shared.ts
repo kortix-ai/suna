@@ -99,7 +99,7 @@ export function projectSessionToSandboxInfo(
     sandbox_id: runtime?.sandbox_id || session.sandbox_id || session.session_id,
     external_id: externalId,
     name: session.name || `${project.name} session`,
-    provider: runtime?.provider || (session.sandbox_provider as SandboxProviderName | null) || 'daytona',
+    provider: (runtime?.provider as SandboxProviderName | null) || (session.sandbox_provider as SandboxProviderName | null) || 'daytona',
     base_url: runtime?.base_url || session.sandbox_url || (runtime?.external_id ? `${getPlatformUrl()}/p/${runtime.external_id}/${SANDBOX_PORTS.KORTIX_MASTER}` : ''),
     status: normalizeSessionStatus(runtime?.status || session.status),
     metadata: {

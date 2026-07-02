@@ -21,7 +21,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
-import { AnyObject, ChangeRequestSchema, projectsApp } from '../lib/app';
+import { AnyObject, ChangeRequestSchema, SessionStartResultSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
 import { restartSession, startSession } from '../session-lifecycle';
@@ -45,9 +45,12 @@ projectsApp.openapi(
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
     },
-    responses: { 200: json(z.any(), 'OK'), ...errors(400, 402, 404) },
+    responses: {
+      200: json(SessionStartResultSchema, 'Session readiness payload'),
+      ...errors(400, 402, 404),
+    },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!UUID_V4_REGEX.test(sessionId))

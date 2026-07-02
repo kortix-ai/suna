@@ -8,7 +8,7 @@ import { useState } from 'react';
 
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useGitStatus } from '@/features/files/hooks/use-git-status';
-import { getProjectSession } from '@/lib/projects-client';
+import { getProjectSession } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';

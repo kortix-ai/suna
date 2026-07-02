@@ -6,11 +6,18 @@
  */
 
 import { SandboxState } from '@daytonaio/sdk';
-import { getDaytona, getDaytonaWarm } from '../../shared/daytona';
+import { config, SANDBOX_VERSION } from '../../config';
+import { triggerEmergencyDiskArchiveSweep } from '../../projects/disk-quota-guard';
+import {
+  archiveDaytonaSandboxById,
+  getDaytona,
+  getDaytonaWarm,
+  isDaytonaDiskQuotaError,
+  listStoppedDaytonaSandboxesOldestFirst,
+} from '../../shared/daytona';
 import { warmRestoreScript, WARM_RESTORE_MARKERS, noteWarmPathFailure } from '../../snapshots/warm-bake';
 import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
-import { config, SANDBOX_VERSION } from '../../config';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 
 // The Daytona SDK's axios client is created with a 24-HOUR timeout (see
@@ -42,6 +49,25 @@ const LIST_OPERATION_TIMEOUT_MS = configuredTimeoutMs(
   90_000,
   PROVIDER_CALL_TIMEOUT_MS,
 );
+
+const diskQuotaGuardDeps = {
+  list: listStoppedDaytonaSandboxesOldestFirst,
+  archive: archiveDaytonaSandboxById,
+};
+
+/**
+ * Any Daytona create/resume call can hit the org-wide disk quota. Firing the
+ * emergency archive sweep here (rather than in every call site) means every
+ * create/resume path is covered by one guard; the sweep is cooldown +
+ * single-flight gated so a burst of concurrent failures triggers it once.
+ * Always rethrows — this never rescues the request that hit the error.
+ */
+function reportIfDiskQuotaError(err: unknown, reason: string): never {
+  if (isDaytonaDiskQuotaError(err)) {
+    triggerEmergencyDiskArchiveSweep(reason, diskQuotaGuardDeps);
+  }
+  throw err;
+}
 // (DAYTONA_SNAPSHOT was removed — every sandbox boots from its project's
 // own per-project snapshot, resolved by the snapshot builder. Callers
 // must pass `opts.snapshot`; there is no shared platform-wide image.)
@@ -207,7 +233,7 @@ export class DaytonaProvider implements SandboxProvider {
         public: false,
       },
       { timeout: createTimeoutSeconds },
-    );
+    ).catch((err) => reportIfDiskQuotaError(err, 'create'));
 
     const externalId = daytonaSandbox.id;
     const apiBase = sandboxApiBase;
@@ -266,6 +292,7 @@ export class DaytonaProvider implements SandboxProvider {
         // The throw leaves an error-state box org-side that we have no handle
         // to — swept below once the loop settles.
         sawCreateFailure = true;
+        if (isDaytonaDiskQuotaError(err)) triggerEmergencyDiskArchiveSweep('create-warm', diskQuotaGuardDeps);
         console.warn(
           `[daytona] warm create attempt ${attempt}/${MAX_WARM_ATTEMPTS} failed:`,
           err instanceof Error ? err.message : err,
@@ -347,7 +374,9 @@ export class DaytonaProvider implements SandboxProvider {
     runningStatusCache.delete(externalId);
     const daytona = getDaytona();
     const sandbox = await withTimeout(daytona.get(externalId), PROVIDER_CALL_TIMEOUT_MS, `Daytona get(${externalId})`);
-    await withTimeout(sandbox.start(), PROVIDER_CALL_TIMEOUT_MS, `Daytona start(${externalId})`);
+    await withTimeout(sandbox.start(), PROVIDER_CALL_TIMEOUT_MS, `Daytona start(${externalId})`).catch((err) =>
+      reportIfDiskQuotaError(err, 'resume'),
+    );
   }
 
   async stop(externalId: string): Promise<void> {

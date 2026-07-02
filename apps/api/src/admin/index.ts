@@ -221,6 +221,73 @@ adminApp.openapi(
   },
 );
 
+// ── Account projects ─────────────────────────────────────────────────────────
+// Everything an account owns on the project-first model — the support-desk
+// view: "search a user, see every project they have, click straight in."
+// Pairs with the ADMIN BYPASS button on the project access-request screen
+// (apps/web/.../project-access-boundary.tsx), which lets a platform admin
+// open one of these links even with no account/project membership.
+adminApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/api/accounts/{id}/projects',
+    tags: ['admin'],
+    summary: 'List projects owned by an account',
+    ...auth,
+    request: { params: z.object({ id: z.string() }) },
+    responses: {
+      200: json(z.object({ projects: z.array(z.any()) }), 'Account projects'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+  try {
+    const accountId = c.req.param('id');
+    const { db } = await import('../shared/db');
+    const { projects, projectSessions } = await import('@kortix/db');
+    const { eq, desc, sql } = await import('drizzle-orm');
+
+    const sessionCount = sql<number>`(
+      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+    const activeSessionCount = sql<number>`(
+      SELECT count(*)::int FROM ${projectSessions} ps
+      WHERE ps.project_id = ${projects.projectId}
+        AND ps.status IN ('queued', 'branching', 'provisioning', 'running'))`;
+    const lastSessionAt = sql<string | null>`(
+      SELECT max(ps.updated_at) FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+
+    const rows = await db
+      .select({
+        projectId: projects.projectId,
+        name: projects.name,
+        status: projects.status,
+        repoUrl: projects.repoUrl,
+        defaultBranch: projects.defaultBranch,
+        createdAt: projects.createdAt,
+        updatedAt: projects.updatedAt,
+        lastOpenedAt: projects.lastOpenedAt,
+        sessionCount,
+        activeSessionCount,
+        lastSessionAt,
+      })
+      .from(projects)
+      .where(eq(projects.accountId, accountId))
+      .orderBy(desc(projects.updatedAt));
+
+    return c.json({
+      projects: rows.map((r) => ({
+        ...r,
+        sessionCount: Number(r.sessionCount ?? 0),
+        activeSessionCount: Number(r.activeSessionCount ?? 0),
+      })),
+    });
+  } catch (e: any) {
+    return c.json({ projects: [], error: e?.message || String(e) }, 500);
+  }
+  },
+);
+
 // ── Credit ledger ────────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({

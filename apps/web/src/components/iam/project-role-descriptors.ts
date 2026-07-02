@@ -13,7 +13,7 @@
 // The capability lists below mirror the role → action mapping in
 // apps/api/src/iam/role-perms.ts. If you change one, change the other.
 
-import type { ProjectRole, AccountRole } from '@/lib/projects-client';
+import type { ProjectRole, AccountRole } from '@kortix/sdk/projects-client';
 
 export interface ProjectRoleDescriptor {
   /** "Manager" — what the role is called everywhere. */

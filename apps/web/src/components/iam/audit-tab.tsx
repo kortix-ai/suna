@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/button';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { listAuditEvents, type AuditEvent } from '@/lib/iam-client';
-import { listAccountMembers } from '@/lib/projects-client';
+import { listAccountMembers } from '@kortix/sdk/projects-client';
 import { KIND_DOT_CLASS, formatResourcePill, humanizeAuditAction } from './audit-display-helpers';
 
 // ─── Quick filters ─────────────────────────────────────────────────────────

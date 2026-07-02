@@ -59,7 +59,7 @@ import {
   pipedreamConnect,
   pipedreamFinalize,
   type PipedreamApp,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 

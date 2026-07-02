@@ -29,6 +29,17 @@ mock.module('../../shared/daytona', () => ({
     get: (_externalId: string) => hangForever(),
   }),
   getDaytonaWarm: () => ({}),
+  // Disk-quota-guard deps (fix(sandbox) #4072) — only referenced by
+  // create()/start(), not by getStatus() under test here, but imported at
+  // module load so they must exist as named exports for the mock to satisfy
+  // platform/providers/daytona.ts's import statement.
+  archiveDaytonaSandboxById: async () => ({ ok: true }),
+  isDaytonaDiskQuotaError: () => false,
+  listStoppedDaytonaSandboxesOldestFirst: async function* () {},
+}));
+
+mock.module('../../projects/disk-quota-guard', () => ({
+  triggerEmergencyDiskArchiveSweep: () => {},
 }));
 
 mock.module('../../snapshots/warm-bake', () => ({

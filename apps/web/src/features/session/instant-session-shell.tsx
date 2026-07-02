@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { GridFileCard } from '@/components/thread/file-attachment/GridFileCard';
+import { GridFileCard } from './grid-file-card';
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import {
@@ -19,7 +19,7 @@ import { SessionLayout } from '@/features/session/session-layout';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import type { Command } from '@/hooks/opencode/use-opencode-sessions';
-import type { SessionStartStage } from '@/lib/projects-client';
+import type { SessionStartStage } from '@kortix/sdk/projects-client';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';

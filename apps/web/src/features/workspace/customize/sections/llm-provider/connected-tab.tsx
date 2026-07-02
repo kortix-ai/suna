@@ -10,7 +10,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
-import { deletePersonalProjectSecret, deleteProjectSecret } from '@/lib/projects-client';
+import { deletePersonalProjectSecret, deleteProjectSecret } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plug, Unplug } from 'lucide-react';
 import { useTranslations } from 'next-intl';

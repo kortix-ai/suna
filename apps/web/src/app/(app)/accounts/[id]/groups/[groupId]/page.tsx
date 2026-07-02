@@ -62,7 +62,7 @@ import {
   listAccountMembers,
   listProjectsForAccount,
   type ProjectRole,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { usePermission } from '@/lib/use-permission';
 
 export default function GroupDetailPage() {

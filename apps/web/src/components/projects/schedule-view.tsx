@@ -60,9 +60,16 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
 import { EmptyState as EmptyStateBox } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { ModelSelector } from '@/features/session/model-selector';
+import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
+import { type ModelKey, modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
+import { useOpenCodeProviders, useVisibleAgents } from '@/hooks/opencode/use-opencode-sessions';
 import { getEnv } from '@/lib/env-config';
+import { cn } from '@/lib/utils';
 import {
+  type ProjectAccessMember,
+  type ProjectTrigger,
   createProjectTrigger,
   deleteProjectTrigger,
   fireProjectTrigger,
@@ -70,10 +77,7 @@ import {
   listProjectTriggers,
   updateProjectTrigger,
   upsertProjectSecret,
-  type ProjectAccessMember,
-  type ProjectTrigger,
-} from '@/lib/projects-client';
-import { cn } from '@/lib/utils';
+} from '@kortix/sdk/projects-client';
 import {
   AlarmClockSolid,
   DangerTriangleSolid,
@@ -97,7 +101,7 @@ import {
   Webhook,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 /* ─── Cron presets ──────────────────────────────────────────────────────── */
 
@@ -604,6 +608,7 @@ function TriggerDetailSheet({
           <div className="space-y-8">
             {isCron ? <CronSection trigger={trigger} /> : <WebhookSection trigger={trigger} />}
             <PromptTemplateSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
+            <AgentModelSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
             <OwnerSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
             <MetaSection trigger={trigger} />
           </div>
@@ -665,6 +670,85 @@ function TriggerDetailToolbar({
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
+  );
+}
+
+function AgentModelSection({
+  projectId,
+  trigger,
+  onMutated,
+}: {
+  projectId: string;
+  trigger: ProjectTrigger;
+  onMutated: () => void;
+}) {
+  const agents = useVisibleAgents({ projectId });
+  const { data: providers } = useOpenCodeProviders();
+  const models = useMemo(() => flattenModels(providers), [providers]);
+  const selectedModel = trigger.model ? wireToModelKey(trigger.model) : null;
+
+  const saveAgent = useMutation({
+    mutationFn: (agent: string) => updateProjectTrigger(projectId, trigger.slug, { agent }),
+    onSuccess: () => {
+      successToast('Agent updated');
+      onMutated();
+    },
+    onError: (e: Error) => errorToast(e.message || 'Failed to update agent'),
+  });
+  const saveModel = useMutation({
+    mutationFn: (model: ModelKey | null) =>
+      updateProjectTrigger(projectId, trigger.slug, {
+        model: model ? modelKeyToWire(model) : null,
+      }),
+    onSuccess: () => {
+      successToast('Model updated');
+      onMutated();
+    },
+    onError: (e: Error) => errorToast(e.message || 'Failed to update model'),
+  });
+
+  return (
+    <section className="space-y-4">
+      <div className="space-y-2">
+        <Label>Agent</Label>
+        <div className="bg-card rounded-2xl border px-2 py-1">
+          <AgentSelector
+            agents={agents}
+            selectedAgent={trigger.agent}
+            onSelect={(next) => next && saveAgent.mutate(next)}
+            disabled={saveAgent.isPending}
+          />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <Label>Model</Label>
+          {trigger.model && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs"
+              disabled={saveModel.isPending}
+              onClick={() => saveModel.mutate(null)}
+            >
+              Use default
+            </Button>
+          )}
+        </div>
+        <div className="bg-card rounded-2xl border px-2 py-1">
+          <ModelSelector
+            models={models}
+            providers={providers}
+            selectedModel={selectedModel}
+            onSelect={(next) => saveModel.mutate(next)}
+          />
+        </div>
+        <p className="text-muted-foreground/70 text-xs leading-relaxed text-pretty">
+          Overrides the agent's default model for this trigger's runs. Leave unset to resolve the
+          agent → account → platform default at fire time.
+        </p>
+      </div>
+    </section>
   );
 }
 
@@ -932,7 +1016,6 @@ function MetaSection({ trigger }: { trigger: ProjectTrigger }) {
       <PropertyTable
         rows={[
           { label: 'Slug', value: <span className="font-mono text-xs">{trigger.slug}</span> },
-          { label: 'Agent', value: <span className="font-mono text-xs">{trigger.agent}</span> },
           {
             label: 'Source file',
             value: <span className="font-mono text-xs">{trigger.path}</span>,
@@ -1056,10 +1139,15 @@ function CreateTriggerModal({
 
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
-  const [agentName, setAgentName] = useState('default');
+  const [agentName, setAgentName] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<ModelKey | null>(null);
   const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
+
+  const agents = useVisibleAgents({ projectId });
+  const { data: providers } = useOpenCodeProviders();
+  const models = useMemo(() => flattenModels(providers), [providers]);
 
   const access = useQuery({
     queryKey: ['project-access', projectId],
@@ -1083,7 +1171,8 @@ function CreateTriggerModal({
       setWebhookSecret('');
       setName('');
       setPrompt('');
-      setAgentName('default');
+      setAgentName(null);
+      setSelectedModel(null);
       setOwnerUserId(null);
       setError(null);
     }
@@ -1121,7 +1210,8 @@ function CreateTriggerModal({
         name: trimmedName,
         type: sourceType,
         prompt_template: trimmedPrompt,
-        agent: agentName.trim() || 'default',
+        ...(agentName ? { agent: agentName } : {}),
+        ...(selectedModel ? { model: modelKeyToWire(selectedModel) } : {}),
         ...(ownerUserId ? { owner_user_id: ownerUserId } : {}),
         ...(sourceType === 'cron'
           ? runAt
@@ -1390,14 +1480,27 @@ function CreateTriggerModal({
                 label="Agent"
                 description="Which agent profile handles each run."
               >
-                <Input
-                  id="trigger-agent"
-                  type="text"
-                  value={agentName}
-                  onChange={(e) => setAgentName(e.target.value)}
-                  placeholder="default"
-                  className="font-mono text-sm"
-                />
+                <div className="bg-card rounded-2xl border px-2 py-1">
+                  <AgentSelector
+                    agents={agents}
+                    selectedAgent={agentName}
+                    onSelect={setAgentName}
+                  />
+                </div>
+              </TriggerModalSection>
+
+              <TriggerModalSection
+                label="Model"
+                description="Overrides the agent's default model for this trigger's runs. Leave unset to use the agent's default."
+              >
+                <div className="bg-card rounded-2xl border px-2 py-1">
+                  <ModelSelector
+                    models={models}
+                    providers={providers}
+                    selectedModel={selectedModel}
+                    onSelect={setSelectedModel}
+                  />
+                </div>
               </TriggerModalSection>
 
               <TriggerModalSection

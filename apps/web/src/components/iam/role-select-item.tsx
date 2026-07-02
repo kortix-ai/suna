@@ -5,7 +5,7 @@
 // trigger when selected (via SelectItem's description prop).
 
 import { SelectItem } from '@/components/ui/select';
-import type { ProjectRole } from '@/lib/projects-client';
+import type { ProjectRole } from '@kortix/sdk/projects-client';
 import { PROJECT_ROLE_DESCRIPTORS } from './project-role-descriptors';
 
 interface Props {

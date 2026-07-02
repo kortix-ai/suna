@@ -7,7 +7,7 @@ import type { Event as OpenCodeEvent } from '@kortix/sdk/opencode-client';
 
 import { getClientForUrl } from '@/lib/opencode-sdk';
 import { getSandboxUrlForExternalId } from '@/stores/server-store';
-import { listProjectSessions } from '@/lib/projects-client';
+import { listProjectSessions } from '@kortix/sdk/projects-client';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import {
   useProjectSessionTabsStore,

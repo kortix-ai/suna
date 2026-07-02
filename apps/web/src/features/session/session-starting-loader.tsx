@@ -4,7 +4,7 @@ import { Check, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
-import type { SessionStartStage } from '@/lib/projects-client';
+import type { SessionStartStage } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 
 /**

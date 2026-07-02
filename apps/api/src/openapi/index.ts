@@ -7,18 +7,12 @@
  * served at /v1/openapi.json and rendered by Scalar at /v1/docs.
  */
 import { OpenAPIHono, z, type RouteConfig } from "@hono/zod-openapi";
+import { ErrorEnvelopeSchema } from "@kortix/api-contract";
 import type { Env } from "hono";
 import { Scalar } from "@scalar/hono-api-reference";
 
 /** Permissive error envelope — matches the platform's `{error,message,status}` 404 shape. */
-export const ErrorSchema = z
-  .object({
-    error: z.union([z.boolean(), z.string()]).optional(),
-    message: z.string().optional(),
-    code: z.string().optional(),
-    status: z.number().optional(),
-  })
-  .openapi("Error");
+export const ErrorSchema = ErrorEnvelopeSchema.openapi("Error");
 
 const STATUS_TEXT: Record<number, string> = {
   400: "Bad request",

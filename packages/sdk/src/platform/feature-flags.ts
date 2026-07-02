@@ -1,3 +1,5 @@
+import { AUTO_MODEL_ENABLED } from '@kortix/llm-catalog';
+
 function parseEnvBoolean(value: string | undefined, defaultValue: boolean): boolean {
   if (value == null) return defaultValue;
   const normalized = value.trim().toLowerCase();
@@ -38,6 +40,19 @@ export const featureFlags = {
   enableProjects: parseEnvBoolean(
     process.env.NEXT_PUBLIC_ENABLE_PROJECTS,
     false,
+  ),
+  /**
+   * Expose the AUTO model (the gateway's smart router) in the model picker.
+   *
+   * Default: AUTO_MODEL_ENABLED (false). While off, the picker hides the "Auto"
+   * toggle entirely and every session opts into an explicit model — GLM 5.2 by
+   * default (see AUTO_DEFAULT_MODEL_ID in @kortix/llm-catalog). The gateway
+   * still resolves `auto` server-side, so this only controls the UI: flip it (or
+   * set NEXT_PUBLIC_ENABLE_AUTO_MODEL=true) to bring the toggle back later.
+   */
+  enableAutoModel: parseEnvBoolean(
+    process.env.NEXT_PUBLIC_ENABLE_AUTO_MODEL,
+    AUTO_MODEL_ENABLED,
   ),
 } as const;
 

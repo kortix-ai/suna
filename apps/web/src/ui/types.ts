@@ -81,12 +81,7 @@ export interface Turn {
 // Tool rendering types (shared between web & mobile tool renderers)
 // ---------------------------------------------------------------------------
 
-/** Icon + title + subtitle for a tool part, used in BasicTool trigger & task child summaries. */
-export interface ToolInfo {
-  icon: string;
-  title: string;
-  subtitle?: string;
-}
+export type { Diagnostic, RetryInfo, ToolInfo, TurnCostInfo } from '@kortix/sdk/turns';
 
 /** Structured trigger data for the BasicTool wrapper. */
 export interface TriggerTitle {
@@ -106,44 +101,6 @@ export interface ApplyPatchFile {
   additions: number;
   deletions: number;
   movePath?: string;
-}
-
-/** LSP diagnostic from tool metadata. */
-export interface Diagnostic {
-  range: {
-    start: { line: number; character: number };
-    end: { line: number; character: number };
-  };
-  message: string;
-  severity?: number; // 1 = Error, 2 = Warning
-}
-
-// ---------------------------------------------------------------------------
-// Cost & token types
-// ---------------------------------------------------------------------------
-
-export interface TurnCostInfo {
-  /** Total cost in USD */
-  cost: number;
-  /** Total tokens */
-  tokens: {
-    input: number;
-    output: number;
-    reasoning: number;
-    cacheRead: number;
-    cacheWrite: number;
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Retry info
-// ---------------------------------------------------------------------------
-
-export interface RetryInfo {
-  attempt: number;
-  message: string;
-  /** When the retry will happen (unix ms) */
-  next: number;
 }
 
 // ---------------------------------------------------------------------------
