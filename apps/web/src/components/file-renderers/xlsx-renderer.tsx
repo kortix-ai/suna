@@ -16,7 +16,8 @@ import { useTranslations } from 'next-intl';
  *      • Sheet tabs, scrolling, zoom
  *      • Read-only mode, no toolbar/formula bar
  *
- * XLS (legacy): Falls back to SheetJS for parsing (data only, minimal styles).
+ * XLS (legacy): unsupported. The old SheetJS fallback was removed because the
+ * package has unpatched security advisories.
  */
 
 import { Button } from '@/components/ui/button';
@@ -331,7 +332,7 @@ async function parseToUniverData(
   fileName: string,
 ): Promise<UniverWorkbookData> {
   if (format === 'xls') {
-    return parseXlsToUniverData(arrayBuffer, fileName);
+    throw new Error('Legacy .xls preview is no longer supported. Convert the file to .xlsx or .csv.');
   }
   return parseXlsxToUniverData(arrayBuffer, fileName);
 }
@@ -343,14 +344,11 @@ async function parseXlsxToUniverData(
   const ExcelJS = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
 
-  // ExcelJS's reconcile() crashes with "Cannot read properties of undefined (reading 'anchors')"
-  // on workbooks containing certain drawings/images/charts. When that happens, fall back to
-  // SheetJS which parses data + merges correctly (styles are lost but content is preserved).
   try {
     await workbook.xlsx.load(arrayBuffer);
   } catch (e) {
-    console.warn('[XlsxRenderer] ExcelJS load failed, falling back to SheetJS:', e);
-    return parseXlsToUniverData(arrayBuffer, fileName);
+    console.warn('[XlsxRenderer] ExcelJS load failed:', e);
+    throw new Error('Unable to preview this spreadsheet. Download it or convert it to a simpler .xlsx file.');
   }
 
   const sheetOrder: string[] = [];
@@ -440,95 +438,13 @@ async function parseXlsxToUniverData(
       };
     });
   } catch (e) {
-    console.warn('[XlsxRenderer] ExcelJS extraction failed, falling back to SheetJS:', e);
-    return parseXlsToUniverData(arrayBuffer, fileName);
+    console.warn('[XlsxRenderer] ExcelJS extraction failed:', e);
+    throw new Error('Unable to preview this spreadsheet. Download it or convert it to a simpler .xlsx file.');
   }
 
-  // If ExcelJS loaded but produced zero sheets, fall back to SheetJS.
   if (sheetOrder.length === 0) {
-    console.warn('[XlsxRenderer] ExcelJS produced no sheets, falling back to SheetJS');
-    return parseXlsToUniverData(arrayBuffer, fileName);
+    throw new Error('This spreadsheet does not contain any previewable sheets.');
   }
-
-  return {
-    id: 'xlsx-viewer',
-    name: fileName || 'Spreadsheet',
-    appVersion: '1.0.0',
-    sheetOrder,
-    sheets,
-  };
-}
-
-async function parseXlsToUniverData(
-  arrayBuffer: ArrayBuffer,
-  fileName: string,
-): Promise<UniverWorkbookData> {
-  const XLSX = await import('xlsx');
-  const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
-
-  const sheetOrder: string[] = [];
-  const sheets: Record<string, UniverSheetData> = {};
-
-  (wb.SheetNames || []).forEach((name, idx) => {
-    const sheetId = `sheet-${idx}`;
-    sheetOrder.push(sheetId);
-
-    const ws = wb.Sheets[name];
-    const rows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
-
-    const cellData: Record<number, Record<number, UniverCell>> = {};
-    let maxCol = 0;
-
-    rows.forEach((row, rowIdx) => {
-      if (!row || !Array.isArray(row)) return;
-      row.forEach((val, colIdx) => {
-        if (val == null || val === '') return;
-        if (colIdx > maxCol) maxCol = colIdx;
-
-        const uCell: UniverCell = {};
-        if (val instanceof Date) {
-          uCell.v = val.toLocaleDateString();
-          uCell.t = 1;
-        } else if (typeof val === 'number') {
-          uCell.v = val;
-          uCell.t = 2;
-        } else if (typeof val === 'boolean') {
-          uCell.v = val;
-          uCell.t = 3;
-        } else {
-          uCell.v = String(val);
-          uCell.t = 1;
-        }
-
-        if (!cellData[rowIdx]) cellData[rowIdx] = {};
-        cellData[rowIdx][colIdx] = uCell;
-      });
-    });
-
-    // Extract merges from SheetJS
-    const mergeData: UniverMerge[] = [];
-    if (ws['!merges']) {
-      for (const m of ws['!merges']) {
-        mergeData.push({
-          startRow: m.s.r,
-          startColumn: m.s.c,
-          endRow: m.e.r,
-          endColumn: m.e.c,
-        });
-      }
-    }
-
-    sheets[sheetId] = {
-      id: sheetId,
-      name,
-      rowCount: Math.max(rows.length + 50, 200),
-      columnCount: Math.max(maxCol + 10, 26),
-      defaultRowHeight: 24,
-      defaultColumnWidth: 80,
-      cellData,
-      mergeData,
-    };
-  });
 
   return {
     id: 'xlsx-viewer',
