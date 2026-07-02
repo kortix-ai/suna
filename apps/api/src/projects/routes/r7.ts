@@ -793,7 +793,7 @@ projectsApp.openapi(
 
     // Every unresolved pending action in the project, by session. (No DB join:
     // executor_executions.session_id is `uuid` while project_sessions.session_id
-    // is `text` — cross-type equality errors in Postgres, so we intersect in JS
+    // is `text` — cross-type equality errors in Postgres, so we resolve in JS
     // where both surface as strings.)
     const pendingRows = await db
       .select({ sessionId: executorExecutions.sessionId })
@@ -807,25 +807,38 @@ projectsApp.openapi(
         ),
       );
 
-    // Non-managers only see the sessions they launched.
-    let allowed: Set<string> | null = null;
-    if (!isManager) {
-      const mine = await db
-        .select({ sessionId: projectSessions.sessionId })
-        .from(projectSessions)
-        .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.createdBy, loaded.userId)));
-      allowed = new Set(mine.map((m) => m.sessionId));
-    }
-
-    const counts: Record<string, number> = {};
-    let total = 0;
+    // Count per (Kortix) session id.
+    const byKortix: Record<string, number> = {};
     for (const r of pendingRows) {
       const sid = r.sessionId ? String(r.sessionId) : null;
-      if (!sid || (allowed && !allowed.has(sid))) continue;
-      counts[sid] = (counts[sid] ?? 0) + 1;
-      total += 1;
+      if (sid) byKortix[sid] = (byKortix[sid] ?? 0) + 1;
     }
-    return c.json({ total, sessions: counts });
+    const kortixIds = Object.keys(byKortix);
+    if (kortixIds.length === 0) return c.json({ total: 0, sessions: {} });
+
+    // Look these sessions up to (a) gate non-managers to their own and (b) map to
+    // the OpenCode session id the sidebar list keys on. The response carries BOTH
+    // id forms → the caller matches whichever it holds.
+    const sess = await db
+      .select({
+        sessionId: projectSessions.sessionId,
+        opencodeSessionId: projectSessions.opencodeSessionId,
+        createdBy: projectSessions.createdBy,
+      })
+      .from(projectSessions)
+      .where(and(eq(projectSessions.projectId, projectId), inArray(projectSessions.sessionId, kortixIds)));
+
+    const sessions: Record<string, number> = {};
+    let total = 0;
+    for (const s of sess) {
+      if (!isManager && s.createdBy !== loaded.userId) continue;
+      const n = byKortix[s.sessionId] ?? 0;
+      if (n <= 0) continue;
+      sessions[s.sessionId] = n;
+      if (s.opencodeSessionId) sessions[s.opencodeSessionId] = n;
+      total += n;
+    }
+    return c.json({ total, sessions });
   },
 );
 

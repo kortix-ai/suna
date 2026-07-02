@@ -2,7 +2,6 @@
 
 import { useTranslations } from 'next-intl';
 
-import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,6 +13,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { DeleteConfirmationDialog } from '@/components/ui/delete-confirmation-dialog';
 import {
   Dialog,
   DialogContent,
@@ -32,6 +32,7 @@ import { Input } from '@/components/ui/input';
 import { useSidebar } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { CompactModal } from '@/features/session/header/compact-modal';
+import { useSessionsNeedingInput } from '@/features/session/session-audit-shared';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { useAdminSandboxHealth, useAdminSandboxRepair } from '@/hooks/admin/use-admin-sandboxes';
 import type { Session } from '@/hooks/opencode/use-opencode-sessions';
@@ -43,14 +44,7 @@ import {
 import { useBackgroundSessionPrefetch } from '@/hooks/opencode/use-session-prefetch';
 import { useTriggers } from '@/hooks/scheduled-tasks';
 import { useDebouncedBusySessions } from '@/hooks/use-debounced-busy-sessions';
-import {
-  buildInstancePath,
-  getActiveInstanceIdFromCookie,
-  getCurrentInstanceIdFromPathname,
-  normalizeAppPathname,
-} from '@kortix/sdk/instance-routes';
 import { classifySession, isSidebarHidden } from '@/lib/kortix/session-category';
-import { restartSandbox } from '@kortix/sdk/platform-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
@@ -62,6 +56,13 @@ import {
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { allDescendantIds, childMapByParent, sortSessions } from '@/ui';
 import {
+  buildInstancePath,
+  getActiveInstanceIdFromCookie,
+  getCurrentInstanceIdFromPathname,
+  normalizeAppPathname,
+} from '@kortix/sdk/instance-routes';
+import { restartSandbox } from '@kortix/sdk/platform-client';
+import {
   Archive,
   ArchiveRestore,
   ChevronDown,
@@ -71,6 +72,7 @@ import {
   MessageCircle,
   MoreHorizontal,
   Pencil,
+  ShieldAlert,
   Trash2,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -86,6 +88,8 @@ interface SessionRowProps {
   isActive: boolean;
   isBusy: boolean;
   pendingCount: number;
+  /** Connector actions in this session awaiting an approve/deny decision. */
+  needsApprovalCount?: number;
   isChild: boolean;
   /** Total number of direct children for this row */
   childCount?: number;
@@ -104,6 +108,7 @@ const SessionRow = memo(function SessionRow({
   isActive,
   isBusy,
   pendingCount,
+  needsApprovalCount = 0,
   isChild,
   childCount = 0,
   isExpanded = false,
@@ -218,6 +223,22 @@ const SessionRow = memo(function SessionRow({
           </Tooltip>
         )}
 
+        {/* Connector approval needed — the agent is paused waiting on a decision */}
+        {needsApprovalCount > 0 && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="flex h-4 min-w-4 flex-shrink-0 items-center gap-0.5 rounded-full bg-amber-500/15 px-1 font-medium text-[11px] text-amber-600 dark:text-amber-400">
+                <ShieldAlert className="size-2.5" />
+                {needsApprovalCount}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="text-xs">
+              {needsApprovalCount} action{needsApprovalCount === 1 ? '' : 's'} awaiting your
+              approval
+            </TooltipContent>
+          </Tooltip>
+        )}
+
         {/* Context menu — visible on hover */}
         <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
           <DropdownMenu>
@@ -299,7 +320,11 @@ interface SessionGroupProps {
   expandedNodes: Record<string, boolean>;
   onToggleExpand: (sessionId: string) => void;
   isActiveSession: (sessionId: string) => boolean;
-  getStatus: (sessionId: string) => { isBusy: boolean; pendingCount: number };
+  getStatus: (sessionId: string) => {
+    isBusy: boolean;
+    pendingCount: number;
+    needsApprovalCount: number;
+  };
   onClick: (e: React.MouseEvent, sessionId: string) => void;
   onDelete: (sessionId: string, title: string) => void;
   onRename: (sessionId: string, currentTitle: string) => void;
@@ -326,7 +351,7 @@ function SessionGroup({
   const childIds = childMap.get(session.id);
   const hasChildren = !!childIds && childIds.length > 0;
   const isExpanded = expandedNodes[session.id] ?? false;
-  const { isBusy, pendingCount } = getStatus(session.id);
+  const { isBusy, pendingCount, needsApprovalCount } = getStatus(session.id);
 
   const childSessions = useMemo(() => {
     if (!childIds) return [];
@@ -371,6 +396,7 @@ function SessionGroup({
         isActive={isActiveSession(child.id)}
         isBusy={childStatus.isBusy}
         pendingCount={childStatus.pendingCount}
+        needsApprovalCount={childStatus.needsApprovalCount}
         isChild
         onClick={onClick}
         onDelete={onDelete}
@@ -391,6 +417,7 @@ function SessionGroup({
         isActive={isActiveSession(session.id)}
         isBusy={isBusy}
         pendingCount={pendingCount}
+        needsApprovalCount={needsApprovalCount}
         isChild={false}
         childCount={hasChildren ? childSessions.length : 0}
         isExpanded={isExpanded}
@@ -447,8 +474,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   const connectionStatus = useSandboxConnectionStore((s) => s.status);
   const recoveryPhase = useSandboxConnectionStore((s) => s.recoveryPhase);
   const routeInstanceId = getCurrentInstanceIdFromPathname(rawPathname);
-  const activeInstanceId =
-    routeInstanceId || getActiveInstanceIdFromCookie() || '';
+  const activeInstanceId = routeInstanceId || getActiveInstanceIdFromCookie() || '';
   // Layered (per-host) health is a justavps-only feature; the cloud runtime
   // never reports that provider, so it is permanently off here.
   const supportsLayeredHealth = false;
@@ -495,6 +521,10 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   const statuses = useSyncStore((s) => s.sessionStatus);
   const permissions = useOpenCodePendingStore((s) => s.permissions);
   const questions = useOpenCodePendingStore((s) => s.questions);
+  // Connector actions awaiting approve/deny, keyed by session id (both OpenCode
+  // + Kortix ids) so a row matches whichever id it holds.
+  const { data: needsInput } = useSessionsNeedingInput(projectId ?? undefined);
+  const needsInputBySession = needsInput?.sessions ?? {};
 
   // Debounced busy state — prevents green dot from flickering during reasoning
   const debouncedBusy = useDebouncedBusySessions();
@@ -594,9 +624,13 @@ export function SessionList({ projectId }: SessionListProps = {}) {
         (debouncedBusy[sessionId] ||
           statuses[sessionId]?.type === 'busy' ||
           statuses[sessionId]?.type === 'retry');
-      return { isBusy: !!isBusy, pendingCount };
+      return {
+        isBusy: !!isBusy,
+        pendingCount,
+        needsApprovalCount: needsInputBySession[sessionId] ?? 0,
+      };
     },
-    [getPendingCount, debouncedBusy, statuses],
+    [getPendingCount, debouncedBusy, statuses, needsInputBySession],
   );
 
   // Known trigger names for the current project — needed so sessions whose

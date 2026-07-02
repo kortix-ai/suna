@@ -19,9 +19,27 @@ import {
   type SessionAudit,
   type SessionAuditAction,
   getSessionAudit,
+  listSessionsNeedingInput,
   resolveApproval,
 } from '@kortix/sdk/projects-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+
+/**
+ * Per-session pending-approval summary for the sidebar "needs input" badge.
+ * Returns `{ sessions: { [sessionId]: count } }` keyed by BOTH the OpenCode and
+ * Kortix session ids, so a caller can look up whichever id it holds. Polls
+ * quietly (no error toast) since it's an ambient indicator.
+ */
+export function useSessionsNeedingInput(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['sessions-needing-input', projectId ?? ''],
+    // `enabled` guards presence, so the `?? ''` fallback is never exercised.
+    queryFn: () => listSessionsNeedingInput(projectId ?? '', { showErrors: false }),
+    enabled: !!projectId,
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+  });
+}
 
 /** One poll cadence for the shared session-audit query, so both surfaces (panel
  *  + header nudge) agree regardless of which mounts first. Pauses in background
