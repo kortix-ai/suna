@@ -254,7 +254,15 @@ export function useOpenCodeEventStream() {
 
       for (const item of events) {
         if (!item) continue;
-        handleEvent(item.event);
+        try {
+          handleEvent(item.event);
+        } catch (e) {
+          // A single event handler must never break the stream OR crash the app.
+          // e.g. a handler calls getClient() before the sandbox URL is pinned
+          // (during a session switch) — that throw used to escape to the route
+          // error boundary. Swallow + log; the next events + retries recover.
+          console.warn('[opencode-events] event handler threw, skipping', e);
+        }
       }
     };
 

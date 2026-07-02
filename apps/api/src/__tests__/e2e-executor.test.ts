@@ -93,7 +93,7 @@ function makeGatewayDeps(): GatewayDeps {
     loadProjectPolicies: async () => world.projectPolicies,
     loadDefaultMode: async () => world.defaultMode,
     enforcePolicies: true,
-    recordExecution: async (r) => { world.executions.push(r); },
+    recordExecution: async (r) => { world.executions.push(r); return null; },
     fetchImpl: async (url, init) => {
       world.upstream.push({ url, ...init });
       return {

@@ -68,12 +68,10 @@ import { useOpenCodeProviders, useVisibleAgents } from '@/hooks/opencode/use-ope
 import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
 import {
-  type ProjectAccessMember,
   type ProjectTrigger,
   createProjectTrigger,
   deleteProjectTrigger,
   fireProjectTrigger,
-  listProjectAccess,
   listProjectTriggers,
   updateProjectTrigger,
   upsertProjectSecret,
@@ -609,7 +607,6 @@ function TriggerDetailSheet({
             {isCron ? <CronSection trigger={trigger} /> : <WebhookSection trigger={trigger} />}
             <PromptTemplateSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
             <AgentModelSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
-            <OwnerSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
             <MetaSection trigger={trigger} />
           </div>
         </SheetBody>
@@ -748,42 +745,6 @@ function AgentModelSection({
           agent → account → platform default at fire time.
         </p>
       </div>
-    </section>
-  );
-}
-
-function OwnerSection({
-  projectId,
-  trigger,
-  onMutated,
-}: {
-  projectId: string;
-  trigger: ProjectTrigger;
-  onMutated: () => void;
-}) {
-  const save = useMutation({
-    mutationFn: (userId: string) =>
-      updateProjectTrigger(projectId, trigger.slug, { owner_user_id: userId }),
-    onSuccess: () => {
-      successToast('Updated who this runs as');
-      onMutated();
-    },
-    onError: (e: Error) => errorToast(e.message || 'Failed to update owner'),
-  });
-  return (
-    <section className="space-y-2">
-      <Label>Runs as</Label>
-      <RunsAsSelect
-        projectId={projectId}
-        value={trigger.owner_user_id}
-        onChange={(id) => save.mutate(id)}
-        disabled={save.isPending}
-      />
-      <p className="text-muted-foreground/70 text-xs leading-relaxed text-pretty">
-        Automated runs act as this member. Connectors set to “each member brings their own profile”
-        use this person’s connected accounts; shared connectors are unaffected. Defaults to whoever
-        created the trigger.
-      </p>
     </section>
   );
 }
@@ -1073,47 +1034,6 @@ function TriggerModalSection({
   );
 }
 
-function RunsAsSelect({
-  projectId,
-  value,
-  onChange,
-  disabled,
-}: {
-  projectId: string;
-  value: string | null;
-  onChange: (userId: string) => void;
-  disabled?: boolean;
-}) {
-  const { data } = useQuery({
-    queryKey: ['project-access', projectId],
-    queryFn: () => listProjectAccess(projectId),
-    staleTime: 60_000,
-  });
-  const viewerId = data?.viewer_user_id ?? null;
-  const eligible = (data?.members ?? []).filter(
-    (m: ProjectAccessMember) =>
-      m.effective_project_role != null ||
-      m.has_implicit_access ||
-      m.account_role === 'owner' ||
-      m.account_role === 'admin',
-  );
-  const labelFor = (m: ProjectAccessMember) =>
-    `${m.email || m.user_id.slice(0, 8)}${m.user_id === viewerId ? ' (you)' : ''}`;
-  return (
-    <Select value={value ?? undefined} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger className="cursor-pointer">
-        <SelectValue placeholder="Select a member" />
-      </SelectTrigger>
-      <SelectContent>
-        {eligible.map((m) => (
-          <SelectItem key={m.user_id} value={m.user_id} className="cursor-pointer">
-            {labelFor(m)}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
 
 function CreateTriggerModal({
   projectId,
@@ -1141,25 +1061,12 @@ function CreateTriggerModal({
   const [prompt, setPrompt] = useState('');
   const [agentName, setAgentName] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<ModelKey | null>(null);
-  const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
 
   const agents = useVisibleAgents({ projectId });
   const { data: providers } = useOpenCodeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
-
-  const access = useQuery({
-    queryKey: ['project-access', projectId],
-    queryFn: () => listProjectAccess(projectId),
-    staleTime: 60_000,
-    enabled: open,
-  });
-  useEffect(() => {
-    if (open && ownerUserId == null && access.data?.viewer_user_id) {
-      setOwnerUserId(access.data.viewer_user_id);
-    }
-  }, [open, ownerUserId, access.data?.viewer_user_id]);
 
   useEffect(() => {
     if (!open) {
@@ -1173,7 +1080,6 @@ function CreateTriggerModal({
       setPrompt('');
       setAgentName(null);
       setSelectedModel(null);
-      setOwnerUserId(null);
       setError(null);
     }
   }, [open, forcedType]);
@@ -1212,7 +1118,6 @@ function CreateTriggerModal({
         prompt_template: trimmedPrompt,
         ...(agentName ? { agent: agentName } : {}),
         ...(selectedModel ? { model: modelKeyToWire(selectedModel) } : {}),
-        ...(ownerUserId ? { owner_user_id: ownerUserId } : {}),
         ...(sourceType === 'cron'
           ? runAt
             ? { run_at: runAt, timezone: timezone.trim() || 'UTC' }
@@ -1279,7 +1184,7 @@ function CreateTriggerModal({
         : 'Create trigger';
   const dialogDescription =
     forcedType === 'cron'
-      ? 'Set when this schedule fires, what it does, and who it runs as.'
+      ? 'Set when this schedule fires and what it does.'
       : forcedType === 'webhook'
         ? 'Configure the signing secret, action, and identity for this webhook.'
         : 'Pick a source, set when it fires, and what it does.';
@@ -1501,13 +1406,6 @@ function CreateTriggerModal({
                     onSelect={setSelectedModel}
                   />
                 </div>
-              </TriggerModalSection>
-
-              <TriggerModalSection
-                label="Runs as"
-                description="Every run acts as this member. Personal connectors use their connected accounts."
-              >
-                <RunsAsSelect projectId={projectId} value={ownerUserId} onChange={setOwnerUserId} />
               </TriggerModalSection>
 
               {error && (

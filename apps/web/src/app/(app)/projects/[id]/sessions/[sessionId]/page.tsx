@@ -8,12 +8,13 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
+import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
 import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
+import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
 import { useAccountState } from '@/hooks/billing';
 import {
   clearOpencodeEnsureGuard,
@@ -21,14 +22,18 @@ import {
 } from '@/hooks/opencode/use-canonical-opencode-session';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { isBillingEnabled } from '@/lib/config';
-import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
-import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
-import { formatOpenCodeRuntimeError } from '@kortix/sdk/opencode-errors';
-import { getProjectDetail, restartProjectSession, sessionStartKey } from '@kortix/sdk/projects-client';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
 import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
+import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
+import { formatOpenCodeRuntimeError } from '@kortix/sdk/opencode-errors';
+import {
+  getProjectDetail,
+  restartProjectSession,
+  sessionStartKey,
+} from '@kortix/sdk/projects-client';
 import { useSession } from '@kortix/sdk/react';
 
 /**
@@ -50,7 +55,6 @@ export default function ProjectSessionPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
   const { user, isLoading: authLoading } = useAuth();
-
 
   // Billing gate. An account that cannot run should not start a session — the
   // backend would never provision a sandbox, so polling for one spins forever.
@@ -245,7 +249,11 @@ export default function ProjectSessionPage() {
     );
   })();
 
-  return <ProjectShell projectId={projectId}>{inner}</ProjectShell>;
+  return (
+    <ProjectShell projectId={projectId}>
+      <SandboxLoadingBoundary>{inner}</SandboxLoadingBoundary>
+    </ProjectShell>
+  );
 }
 
 function ProjectSessionRuntimeConnection({ children }: { children: ReactNode }) {

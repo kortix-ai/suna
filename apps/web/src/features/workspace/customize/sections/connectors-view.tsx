@@ -4,6 +4,7 @@ import { useCustomizeStore } from '@/stores/customize-store';
 import { createFrontendClient } from '@pipedream/sdk/browser';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  Bot,
   Boxes,
   Check,
   ChevronDown,
@@ -13,6 +14,7 @@ import {
   Globe,
   KeyRound,
   Loader2,
+  type LucideIcon,
   Mail,
   MessageSquare,
   Monitor,
@@ -25,12 +27,11 @@ import {
   ShieldCheck,
   Trash2,
   Zap,
-  type LucideIcon,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { PoliciesPanel } from '@/components/projects/policies-panel';
 import { Badge } from '@/components/ui/badge';
@@ -85,6 +86,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ShareOption, SharingPicker } from '@/features/workspace/shared/sharing-picker';
 import {
+  type EmailInstallation,
+  type EmailSenderPolicy,
+  type SlackInstallation,
   useConnectEmail,
   useConnectSlack,
   useDisconnectEmail,
@@ -95,19 +99,26 @@ import {
   useSlackManifest,
   useSlackMode,
   useUpdateEmailPolicy,
-  type EmailInstallation,
-  type EmailSenderPolicy,
-  type SlackInstallation,
 } from '@/hooks/channels/use-channels-installations';
+import { cn } from '@/lib/utils';
 import {
+  type AdminConnector,
+  type ConnectorAction,
+  type ConnectorConfig,
+  type ConnectorDraftInput,
+  type ConnectorPolicyAction,
+  type ConnectorPolicyRule,
+  type ConnectorSharing,
   createConnector,
   deleteConnector,
+  getConnectStatus,
   getConnectorConfig,
   getConnectorPolicies,
-  getConnectStatus,
   getProject,
+  getProjectDetail,
   listConnectors,
   listPipedreamApps,
+  listProjectAccess,
   pipedreamConnect,
   pipedreamFinalize,
   setConnectorCredential,
@@ -116,15 +127,7 @@ import {
   setConnectorPolicies,
   setConnectorSharing,
   syncConnectors,
-  type AdminConnector,
-  type ConnectorAction,
-  type ConnectorConfig,
-  type ConnectorDraftInput,
-  type ConnectorPolicyAction,
-  type ConnectorPolicyRule,
-  type ConnectorSharing,
 } from '@kortix/sdk/projects-client';
-import { cn } from '@/lib/utils';
 
 const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
   pipedream: Zap,
@@ -1891,10 +1894,11 @@ export function SlackConnectForm({
 function sharingToAccess(s: ConnectorSharing | null | undefined): {
   mode: 'project' | 'private' | 'members';
   memberIds: string[];
+  groupIds: string[];
 } {
-  if (!s || s.mode === 'project') return { mode: 'project', memberIds: [] };
-  if (s.mode === 'private') return { mode: 'private', memberIds: [] };
-  return { mode: 'members', memberIds: s.memberIds ?? [] };
+  if (!s || s.mode === 'project') return { mode: 'project', memberIds: [], groupIds: [] };
+  if (s.mode === 'private') return { mode: 'private', memberIds: [], groupIds: [] };
+  return { mode: 'members', memberIds: s.memberIds ?? [], groupIds: s.groupIds ?? [] };
 }
 
 function ProfileSection({
@@ -1909,15 +1913,45 @@ function ProfileSection({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const isChannel = connector.provider === 'channel' || connector.provider === 'computer';
   const [credential, setCredential] = useState<'shared' | 'per_user'>(connector.credentialMode);
+  // Which agents DECLARE this connector? Members assigned to them inherit access
+  // regardless of the sharing below (the inheritance pyramid) — surfaced so the
+  // admin sees the true blast radius, not just the direct share list. Manager-only
+  // (an agent→connector map is governance data), gated on a live can_manage.
+  const accessQuery = useQuery({
+    queryKey: ['project-access', projectId],
+    queryFn: () => listProjectAccess(projectId),
+    staleTime: 20_000,
+  });
+  const canManage = Boolean(accessQuery.data?.can_manage);
+  const configQuery = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    enabled: canManage,
+    staleTime: 30_000,
+  });
+  const declaringAgents = useMemo(
+    () =>
+      !canManage
+        ? []
+        : (configQuery.data?.config.agents ?? [])
+            .filter((a) => {
+              const conns = a.scope?.connectors;
+              return Array.isArray(conns) && conns.includes(connector.slug);
+            })
+            .map((a) => a.name),
+    [canManage, configQuery.data, connector.slug],
+  );
   const initialAccess = sharingToAccess(connector.sharing);
   const [access, setAccess] = useState(initialAccess.mode);
   const [memberIds, setMemberIds] = useState<string[]>(initialAccess.memberIds);
+  const [groupIds, setGroupIds] = useState<string[]>(initialAccess.groupIds);
 
   useEffect(() => {
     setCredential(connector.credentialMode);
     const a = sharingToAccess(connector.sharing);
     setAccess(a.mode);
     setMemberIds(a.memberIds);
+    setGroupIds(a.groupIds);
   }, [connector]);
 
   const modeChanged = credential !== connector.credentialMode;
@@ -1926,7 +1960,8 @@ function ProfileSection({
     credential === 'shared' &&
     (access !== saved.mode ||
       (access === 'members' &&
-        memberIds.slice().sort().join() !== saved.memberIds.slice().sort().join()));
+        (memberIds.slice().sort().join() !== saved.memberIds.slice().sort().join() ||
+          groupIds.slice().sort().join() !== saved.groupIds.slice().sort().join())));
   const dirty = modeChanged || accessChanged;
 
   const reset = () => {
@@ -1934,6 +1969,7 @@ function ProfileSection({
     const a = sharingToAccess(connector.sharing);
     setAccess(a.mode);
     setMemberIds(a.memberIds);
+    setGroupIds(a.groupIds);
   };
 
   const save = useMutation({
@@ -1944,7 +1980,7 @@ function ProfileSection({
           ? { mode: 'project' }
           : access === 'private'
             ? { mode: 'private', ownerId: '' }
-            : { mode: 'members', memberIds };
+            : { mode: 'members', memberIds, groupIds };
       if (modeChanged || accessChanged)
         await setConnectorSharing(projectId, connector.slug, intent);
     },
@@ -2013,10 +2049,12 @@ function ProfileSection({
           <SharingPicker
             projectId={projectId}
             showHeading={false}
-            value={{ mode: access, memberIds }}
+            hideMembers
+            value={{ mode: access, memberIds, groupIds }}
             onChange={(s) => {
               setAccess(s.mode);
               setMemberIds(s.memberIds);
+              setGroupIds(s.groupIds);
             }}
             copy={{
               project: {
@@ -2024,16 +2062,46 @@ function ProfileSection({
                 desc: 'Any member can use the shared profile',
               },
               private: { label: 'Only me', desc: 'Just you' },
-              members: { label: 'Specific members', desc: 'A chosen list of members' },
+              members: {
+                label: 'Specific members or departments',
+                desc: 'A chosen list of members and departments',
+              },
             }}
           />
+        </div>
+      )}
+
+      {declaringAgents.length > 0 && (
+        <div className="border-border/60 bg-muted/20 mt-4 space-y-2 rounded-lg border p-3">
+          <div className="flex items-center gap-1.5">
+            <Bot className="text-muted-foreground/70 size-3.5 shrink-0" />
+            <span className="text-foreground/80 text-xs font-medium">
+              Also usable via agent assignment
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {declaringAgents.map((name) => (
+              <Badge key={name} variant="outline" size="xs" className="font-mono">
+                {name}
+              </Badge>
+            ))}
+          </div>
+          <p className="text-muted-foreground/60 text-[11px] leading-relaxed">
+            {declaringAgents.length === 1 ? 'This agent declares' : 'These agents declare'} this
+            connector, so anyone assigned to {declaringAgents.length === 1 ? 'it' : 'them'} (Members
+            → Resource access) can use it — regardless of the sharing above.
+          </p>
         </div>
       )}
 
       <SaveBar
         dirty={dirty}
         saving={save.isPending}
-        disabled={credential === 'shared' && access === 'members' && memberIds.length === 0}
+        disabled={
+          credential === 'shared' &&
+          access === 'members' &&
+          memberIds.length + groupIds.length === 0
+        }
         onSave={() => save.mutate()}
         onReset={reset}
         label={tI18nHardcoded.raw(
@@ -2760,18 +2828,20 @@ interface ConnectorSetup {
   credential: 'shared' | 'per_user';
   access: 'project' | 'private' | 'members';
   memberIds: string[];
+  groupIds: string[];
 }
 
 const DEFAULT_CONNECTOR_SETUP: ConnectorSetup = {
   credential: 'shared',
   access: 'project',
   memberIds: [],
+  groupIds: [],
 };
 
 function setupToSharing(s: ConnectorSetup): ConnectorSharing {
   if (s.access === 'project') return { mode: 'project' };
   if (s.access === 'private') return { mode: 'private', ownerId: '' };
-  return { mode: 'members', memberIds: s.memberIds };
+  return { mode: 'members', memberIds: s.memberIds, groupIds: s.groupIds };
 }
 
 function ConnectorSetupFields({
@@ -2797,7 +2867,7 @@ function ConnectorSetupFields({
             onChange(
               credential === 'shared'
                 ? { ...value, credential }
-                : { ...value, credential, access: 'project', memberIds: [] },
+                : { ...value, credential, access: 'project', memberIds: [], groupIds: [] },
             );
           }}
           className="space-y-2"
@@ -2829,15 +2899,21 @@ function ConnectorSetupFields({
           <SharingPicker
             projectId={projectId}
             showHeading={false}
-            value={{ mode: value.access, memberIds: value.memberIds }}
-            onChange={(s) => onChange({ ...value, access: s.mode, memberIds: s.memberIds })}
+            hideMembers
+            value={{ mode: value.access, memberIds: value.memberIds, groupIds: value.groupIds }}
+            onChange={(s) =>
+              onChange({ ...value, access: s.mode, memberIds: s.memberIds, groupIds: s.groupIds })
+            }
             copy={{
               project: {
                 label: 'Everyone in the project',
                 desc: 'Any member can use the shared profile',
               },
               private: { label: 'Only me', desc: 'Just you' },
-              members: { label: 'Specific members', desc: 'A chosen list of members' },
+              members: {
+                label: 'Specific members or departments',
+                desc: 'A chosen list of members and departments',
+              },
             }}
           />
         </Field>
@@ -3324,7 +3400,8 @@ function ConfigureAppModal({
             size="sm"
             onClick={() => save.mutate()}
             disabled={
-              save.isPending || (setup.access === 'members' && setup.memberIds.length === 0)
+              save.isPending ||
+              (setup.access === 'members' && setup.memberIds.length + setup.groupIds.length === 0)
             }
             className="gap-1.5"
           >
@@ -3661,7 +3738,7 @@ export function CustomConnectorForm({
                 !draft.slug ||
                 save.isPending ||
                 !connectionValid(draft, emailChannelEnabled) ||
-                (setup.access === 'members' && setup.memberIds.length === 0)
+                (setup.access === 'members' && setup.memberIds.length + setup.groupIds.length === 0)
               }
               className="gap-1.5"
             >

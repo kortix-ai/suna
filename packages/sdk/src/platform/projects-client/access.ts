@@ -297,6 +297,14 @@ export interface ProjectResourceItem {
   description: string | null;
 }
 
+/** An agent resource, enriched with its DECLARED scope so the grant UI can
+ *  preview the blast radius of an assignment (the inheritance pyramid): assigning
+ *  the agent also grants these secrets + connectors. `'all'` = every one the
+ *  assignee can already see (nothing extra inherited). */
+export interface ProjectAgentResourceItem extends ProjectResourceItem {
+  declares?: { secrets: string[] | 'all'; connectors: string[] | 'all' };
+}
+
 export interface ProjectResourceGrant {
   grant_id: string;
   resource_type: ResourceGrantType;
@@ -315,7 +323,7 @@ export interface ProjectResourceGrant {
 
 export interface ProjectResourceGrantsResponse {
   resources: {
-    agents: ProjectResourceItem[];
+    agents: ProjectAgentResourceItem[];
     skills: ProjectResourceItem[];
     secrets: ProjectResourceItem[];
   };
@@ -355,6 +363,70 @@ export async function deleteProjectResourceGrant(projectId: string, grantId: str
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
       `/projects/${projectId}/resource-grants/${grantId}`,
+    ),
+  );
+}
+
+// ─── Approvals (APPROVE / ASK / BLOCK inbox) ────────────────────────────────
+
+/** An executor action a policy gated as `require_approval`, still awaiting a
+ *  human decision. */
+export interface PendingApproval {
+  execution_id: string;
+  action: string;
+  risk: string | null;
+  session_id: string | null;
+  requested_by: string | null;
+  requested_by_email: string | null;
+  requested_at: string;
+  detail: Record<string, unknown> | null;
+}
+
+export interface PendingApprovalsResponse {
+  count: number;
+  approvals: PendingApproval[];
+}
+
+/** The manager inbox of gated actions awaiting approve/deny. */
+export async function listPendingApprovals(projectId: string, options?: { showErrors?: boolean }) {
+  return unwrap(
+    await backendApi.get<PendingApprovalsResponse>(`/projects/${projectId}/approvals`, {
+      showErrors: options?.showErrors,
+    }),
+  );
+}
+
+/** Per-session pending-approval summary for the sidebar "needs input" badge:
+ *  `sessions` maps a (Kortix) session id → count of actions awaiting a decision.
+ *  A manager sees every session; others only the ones they launched. */
+export interface SessionsNeedingInputResponse {
+  total: number;
+  sessions: Record<string, number>;
+}
+
+export async function listSessionsNeedingInput(
+  projectId: string,
+  options?: { showErrors?: boolean },
+) {
+  return unwrap(
+    await backendApi.get<SessionsNeedingInputResponse>(
+      `/projects/${projectId}/approvals/needs-input`,
+      { showErrors: options?.showErrors },
+    ),
+  );
+}
+
+/** Resolve a pending approval. Allowed for a project manager or the session
+ *  launcher; approve lets the action proceed on retry, deny records a refusal. */
+export async function resolveApproval(
+  projectId: string,
+  executionId: string,
+  decision: 'approve' | 'deny',
+) {
+  return unwrap(
+    await backendApi.post<{ ok: boolean }>(
+      `/projects/${projectId}/approvals/${executionId}`,
+      { decision },
     ),
   );
 }

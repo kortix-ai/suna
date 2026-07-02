@@ -9,10 +9,10 @@ import { db } from '../../shared/db';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
-import { listProjectSecretsSnapshotForUser } from '../secrets';
-import { resolveAgentGrant } from '../agents';
+import { listProjectSecretsSnapshotForUser, resolveDeclaredSharedSecrets } from '../secrets';
+import { grantFromLoadedAgents, loadProjectAgents } from '../agents';
+import { resolveAssignedAgentNames, unionDeclaredResources } from './agent-inheritance';
 import { agentMayUseEnv } from '../../iam/agent-scope';
-import { filterAccessibleProjectResources } from '../../iam';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { projectSessions } from '@kortix/db';
@@ -233,13 +233,50 @@ export async function buildSessionSandboxEnvVars(input: {
   // another scope's API keys/payment creds straight out of $ENV. No-op for the
   // 'all'/null grant (back-compat) and projects without [[agents]] or git context.
   if (input.defaultBranch) {
-    const grant = await resolveAgentGrant(input.agentName, {
+    const loadedAgents = await loadProjectAgents({
       projectId: input.projectId,
       repoUrl: input.repoUrl,
       defaultBranch: input.defaultBranch,
       manifestPath: input.manifestPath ?? 'kortix.toml',
       gitAuthToken: null,
     }).catch(() => null);
+    const grant = loadedAgents ? grantFromLoadedAgents(input.agentName, loadedAgents) : null;
+
+    // Inheritance (the "assign human → agent" pyramid), GLOBAL. When the launcher
+    // is EXPLICITLY assigned to ANY agent (a resource grant names them or their
+    // department), the secrets that agent declares in [[agents]].env become
+    // genuinely theirs — folded into the launcher's visible set here, even ones
+    // they can't personally see and even when THIS session runs a DIFFERENT
+    // agent. This removes the double-grant (declare on the agent OR grant the
+    // human, not both). Automatic on assignment (no opt-in flag). The per-agent
+    // narrowing below still applies, so a scoped agent only ever receives its own
+    // declared allowlist — inheritance widens the human, not the agent process.
+    if (loadedAgents && loadedAgents.specs.length > 0) {
+      const assigned = await resolveAssignedAgentNames(input.projectId, input.userId, subject.groupIds);
+      if (assigned.size > 0) {
+        const { secrets } = unionDeclaredResources(loadedAgents.specs, assigned);
+        if (secrets.length > 0) {
+          const inherited = await resolveDeclaredSharedSecrets(input.projectId, secrets);
+          let added = 0;
+          for (const [name, value] of Object.entries(inherited)) {
+            if (!(name in runtimeSecrets.env)) {
+              runtimeSecrets.env[name] = value;
+              runtimeSecrets.names.push(name);
+              added += 1;
+            }
+          }
+          if (added > 0) {
+            console.log(
+              `[session ${input.sessionId}] launcher inherited ${added} secret(s) from assigned agent(s)`,
+            );
+          }
+        }
+      }
+    }
+
+    // Per-agent secret scoping: the agent process only ever sees its own declared
+    // allowlist (a scoped agent can't read another scope's keys out of $ENV, no
+    // matter who launched it or what they inherited). No-op for 'all'/null grants.
     if (grant && (grant.env ?? 'all') !== 'all') {
       const droppedByAgent = Object.keys(runtimeSecrets.env).filter((n) => !agentMayUseEnv(grant, n));
       for (const name of droppedByAgent) delete runtimeSecrets.env[name];
@@ -251,34 +288,13 @@ export async function buildSessionSandboxEnvVars(input: {
       }
     }
   }
-  // Per-MEMBER / department secret scoping: drop secrets the LAUNCHING USER
-  // isn't granted, so a scoped-out secret never reaches the sandbox env — not
-  // just the GET /secrets list. This is the runtime teeth of per-secret grants:
-  // a member who can't see TEST_KEY in the UI also can't read it from $ENV in
-  // their session. Owner/admin (implicit Manager) + service accounts bypass.
-  // Re-applied on every (re)provision, so adding/removing a grant takes effect
-  // on the member's NEXT session (or a restart) — a running sandbox keeps the
-  // env it booted with.
-  const grantableNames = Object.keys(runtimeSecrets.env);
-  if (grantableNames.length > 0) {
-    const accessible = new Set(
-      await filterAccessibleProjectResources(
-        input.userId,
-        input.accountId,
-        input.projectId,
-        'secret',
-        grantableNames,
-      ),
-    );
-    const droppedByGrant = grantableNames.filter((n) => !accessible.has(n));
-    for (const name of droppedByGrant) delete runtimeSecrets.env[name];
-    runtimeSecrets.names = runtimeSecrets.names.filter((n) => accessible.has(n));
-    if (droppedByGrant.length > 0) {
-      console.log(
-        `[session ${input.sessionId}] per-secret grant scoped out ${droppedByGrant.length} secret(s) for the launching user`,
-      );
-    }
-  }
+  // Per-MEMBER / department secret scoping is already applied UPSTREAM by the
+  // share model: listProjectSecretsSnapshotForUser (above) resolves secrets AS
+  // the launching user, so a secret shared only with specific members/depts —
+  // set via the Secret "Who can access this" dialog OR the Members "Resource
+  // access" card, one source of truth — never enters `runtimeSecrets` for a
+  // member outside its allow-list. No second gate needed here.
+
   // Restore the session's channel binding on EVERY (re)provision. A session
   // created from a chat channel (e.g. Slack) persists its binding in
   // metadata.slack; the in-box relay gates turn-end/answer on SLACK_THREAD_TS /

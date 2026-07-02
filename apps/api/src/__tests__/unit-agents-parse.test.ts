@@ -8,6 +8,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   agentSpecToTomlEntry,
+  applyAgentScope,
   extractAgents,
   GRANTABLE_KORTIX_CLI,
   type AgentSpec,
@@ -268,5 +269,66 @@ name = "a"
 connectors = "github"
 `);
     expect(errors[0].error).toContain('"all" or "none"');
+  });
+});
+
+describe('applyAgentScope — the dashboard scope editor write step', () => {
+  const base = () => [
+    { name: 'release-bot', model: 'anthropic/claude', kortix_cli: ['project.cr.open'] },
+    { name: 'kortix', connectors: 'all' },
+  ];
+
+  test('sets a concrete secrets + connectors allowlist on the right agent', () => {
+    const r = applyAgentScope(base(), 'release-bot', {
+      env: ['DB_URL', 'STRIPE_KEY'],
+      connectors: ['github'],
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const entry = r.agents.find((a) => a.name === 'release-bot')!;
+    expect(entry.env).toEqual(['DB_URL', 'STRIPE_KEY']);
+    expect(entry.connectors).toEqual(['github']);
+    // Untouched fields survive.
+    expect(entry.model).toBe('anthropic/claude');
+    expect(entry.kortix_cli).toEqual(['project.cr.open']);
+    // The other agent is untouched.
+    expect(r.agents.find((a) => a.name === 'kortix')!.connectors).toBe('all');
+  });
+
+  test("env='all' omits the key (parser default), a list writes it", () => {
+    const withEnv = applyAgentScope(base(), 'release-bot', { env: ['X'] });
+    expect((withEnv as any).agents.find((a: any) => a.name === 'release-bot').env).toEqual(['X']);
+    // Now reset to 'all' → the key disappears.
+    const back = applyAgentScope((withEnv as any).agents, 'release-bot', { env: 'all' });
+    expect('env' in (back as any).agents.find((a: any) => a.name === 'release-bot')).toBe(false);
+  });
+
+  test("connectors=[] omits the key (none is the default), 'all' writes it", () => {
+    const none = applyAgentScope(base(), 'release-bot', { connectors: [] });
+    expect('connectors' in (none as any).agents.find((a: any) => a.name === 'release-bot')).toBe(
+      false,
+    );
+    const all = applyAgentScope(base(), 'release-bot', { connectors: 'all' });
+    expect((all as any).agents.find((a: any) => a.name === 'release-bot').connectors).toBe('all');
+  });
+
+  test('an undeclared agent is an error, not a throw', () => {
+    const r = applyAgentScope(base(), 'ghost', { env: ['X'] });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toContain('ghost');
+  });
+
+  test('the result round-trips back through the parser cleanly', () => {
+    const r = applyAgentScope(base(), 'release-bot', { env: ['DB_URL'], connectors: ['github'] });
+    if (!r.ok) throw new Error('expected ok');
+    const parsed = extractAgents({
+      schemaVersion: KNOWN_SCHEMA_VERSION,
+      raw: { agents: r.agents },
+    } as any);
+    const spec = parsed.specs.find((s) => s.name === 'release-bot')!;
+    expect(spec.env).toEqual(['DB_URL']);
+    expect(spec.connectors).toEqual(['github']);
+    expect(parsed.errors).toHaveLength(0);
   });
 });
