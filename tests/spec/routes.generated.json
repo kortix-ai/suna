@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 443,
+  "count": 449,
   "routes": [
     {
       "method": "GET",
@@ -381,6 +381,10 @@
     {
       "method": "PUT",
       "path": "/v1/accounts/:accountId/iam/sso/provider"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/sso/provider/from-metadata"
     },
     {
       "method": "GET",
@@ -967,6 +971,22 @@
       "path": "/v1/projects/:projectId/access/pending-invites/:inviteId/resend"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/agents/:agentName/scope"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/approvals"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/approvals/:executionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/approvals/needs-input"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/apps"
     },
@@ -1421,6 +1441,10 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/sessions/:sessionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/audit"
     },
     {
       "method": "POST",
