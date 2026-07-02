@@ -623,7 +623,32 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3}}\n\n' +
     'data: [DONE]\n\n';
 
-  test("non-streaming: an empty completion from candidate A fails over to candidate B", async () => {
+  test("non-streaming: a candidate that recovers after retries never fails over — the common case (matches the observed ~19% transient rate)", async () => {
+    const { hooks, usage, traces } = makeHooks({ resolveUpstream: async () => [managed] });
+    let calls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      calls += 1;
+      return new Response(calls < 2 ? emptyJson : goodJson, {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.choices[0].message.content).toBe("real answer");
+    await flush();
+    expect(usage).toHaveLength(1);
+    expect(traces[0].ok).toBe(true);
+    expect(traces[0].candidatesTried).toEqual(["openrouter", "openrouter"]); // retried in place, no failover needed
+  });
+
+  test("non-streaming: a candidate empty on every attempt exhausts its retry budget, then fails over to candidate B", async () => {
     const a: UpstreamDescriptor = { ...managed, provider: "a", baseUrl: "https://a.test/v1" };
     const b: UpstreamDescriptor = { ...managed, provider: "b", baseUrl: "https://b.test/v1" };
     const { hooks, traces, usage } = makeHooks({ resolveUpstream: async () => [a, b] });
@@ -645,10 +670,11 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(usage).toHaveLength(1); // the empty candidate never billed
     expect(traces[0].ok).toBe(true);
     expect(traces[0].provider).toBe("b");
-    expect(traces[0].candidatesTried).toEqual(["a", "b"]);
+    // "a" gets its full retry budget in place before failing over to "b"
+    expect(traces[0].candidatesTried).toEqual(["a", "a", "a", "b"]);
   });
 
-  test("non-streaming: every candidate empty → 502 empty_completion, nothing forwarded to the caller", async () => {
+  test("non-streaming: every candidate empty on every attempt → 502 empty_completion, nothing forwarded to the caller", async () => {
     const { hooks, usage, traces } = makeHooks({ resolveUpstream: async () => [managed] });
     const fetchImpl: FetchImpl = async () =>
       new Response(emptyJson, { status: 200, headers: { "content-type": "application/json" } });
@@ -664,6 +690,29 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(usage).toHaveLength(0);
     expect(traces[0].ok).toBe(false);
     expect(traces[0].errorCode).toBe("empty_completion");
+    // the sole candidate was retried in place up to its full budget before giving up
+    expect(traces[0].candidatesTried).toEqual(["openrouter", "openrouter", "openrouter"]);
+  });
+
+  test("streaming: a candidate that recovers after retries never fails over", async () => {
+    const { hooks, traces } = makeHooks({ resolveUpstream: async () => [managed] });
+    let calls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      calls += 1;
+      return sseResponse(calls < 2 ? emptySse : goodSse);
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+    });
+
+    expect(res.status).toBe(200);
+    const text = await new Response(res.body).text();
+    expect(text).toBe(goodSse);
+    await flush();
+    expect(traces[0].ok).toBe(true);
+    expect(traces[0].candidatesTried).toEqual(["openrouter", "openrouter"]);
   });
 
   test("streaming: an empty stream from candidate A fails over to candidate B — A's bytes never reach the client", async () => {
