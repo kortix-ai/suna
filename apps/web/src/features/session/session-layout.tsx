@@ -464,7 +464,7 @@ function PanelHeaderSwitcher({
         aria-label={tHardcodedUi.raw(
           'componentsSessionSessionLayout.line348JsxAttrAriaLabelSidePanelView',
         )}
-        className="flex items-center gap-5"
+        className="flex min-w-0 items-center gap-5 overflow-x-auto"
       >
         <PanelTabButton
           active={view === 'actions'}
@@ -531,7 +531,7 @@ function PanelTabButton({
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        'relative inline-flex items-center h-10 text-xs tracking-tight transition-colors cursor-pointer',
+        'relative inline-flex items-center h-10 shrink-0 whitespace-nowrap text-xs tracking-tight transition-colors cursor-pointer',
         active
           ? 'text-foreground font-medium'
           : 'text-muted-foreground/70 hover:text-foreground/90',

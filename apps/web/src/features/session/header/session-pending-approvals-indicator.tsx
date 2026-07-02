@@ -80,7 +80,7 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
           className="relative"
         >
           <ShieldAlert className="size-4 text-amber-500" />
-          <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-none text-white">
+          <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-600 px-1 text-[10px] font-semibold leading-none text-white">
             {pending.length}
           </span>
         </Button>
@@ -103,7 +103,10 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
             return (
               <div key={a.execution_id} className="px-4 py-2.5">
                 <div className="flex items-center gap-2">
-                  <code className="text-foreground truncate font-mono text-xs font-medium">
+                  <code
+                    title={a.action}
+                    className="text-foreground truncate font-mono text-xs font-medium"
+                  >
                     {a.action}
                   </code>
                   {a.risk ? (

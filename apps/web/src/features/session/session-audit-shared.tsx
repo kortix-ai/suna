@@ -23,6 +23,11 @@ import {
 } from '@kortix/sdk/projects-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+/** One poll cadence for the shared session-audit query, so both surfaces (panel
+ *  + header nudge) agree regardless of which mounts first. Pauses in background
+ *  tabs (react-query's refetchIntervalInBackground defaults to false). */
+export const SESSION_AUDIT_REFETCH_MS = 15_000;
+
 export function sessionAuditKey(projectId: string | undefined, sessionId: string | undefined) {
   return ['session-audit', projectId ?? '', sessionId ?? ''] as const;
 }
@@ -56,7 +61,7 @@ export function useSessionAudit(
       }),
     enabled,
     staleTime: 10_000,
-    refetchInterval: options?.refetchInterval ?? 20_000,
+    refetchInterval: options?.refetchInterval ?? SESSION_AUDIT_REFETCH_MS,
   });
 }
 

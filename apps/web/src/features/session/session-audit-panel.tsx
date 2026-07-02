@@ -34,9 +34,7 @@ export function SessionAuditPanel({
   projectId?: string;
   projectSessionId?: string;
 }) {
-  const { data, isLoading, isError, refetch } = useSessionAudit(projectId, projectSessionId, {
-    refetchInterval: 15_000,
-  });
+  const { data, isLoading, isError, refetch } = useSessionAudit(projectId, projectSessionId);
   const resolve = useResolveApproval(projectId, projectSessionId);
   const [busy, setBusy] = useState<Record<string, 'approve' | 'deny'>>({});
 
@@ -111,7 +109,11 @@ export function SessionAuditPanel({
                     return (
                       <ListRow
                         key={a.execution_id}
-                        title={<code className="font-mono text-sm">{a.action}</code>}
+                        title={
+                          <code title={a.action} className="font-mono text-sm">
+                            {a.action}
+                          </code>
+                        }
                         badges={
                           a.risk ? (
                             <Badge variant={riskTone(a.risk)} size="xs" className="capitalize">
