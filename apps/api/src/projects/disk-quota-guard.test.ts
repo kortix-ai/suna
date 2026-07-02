@@ -18,9 +18,7 @@ function sandboxes(spec: Array<[string, number]>) {
 }
 
 describe('runDiskArchiveSweep', () => {
-  test('archives oldest-first candidates until the estimated free target is met', async () => {
-    // 15000GiB target; 20GiB each, so the 750th candidate (750*20=15000)
-    // pushes the running estimate to the target and collection stops there.
+  test('archives every stopped sandbox the list returns, not just enough to hit a buffer', async () => {
     const all = sandboxes(Array.from({ length: 1000 }, (_, i) => [`sb-${i}`, 20]));
     const archived: string[] = [];
     const result = await runDiskArchiveSweep({
@@ -30,13 +28,13 @@ describe('runDiskArchiveSweep', () => {
         return true;
       },
     });
-    expect(result.candidates).toBe(750);
-    expect(result.archived).toBe(750);
-    expect(result.freedGib).toBe(15000);
-    expect(archived.length).toBe(750);
+    expect(result.candidates).toBe(1000);
+    expect(result.archived).toBe(1000);
+    expect(result.freedGib).toBe(20000);
+    expect(archived.length).toBe(1000);
   });
 
-  test('uses every candidate when the pool never reaches the target', async () => {
+  test('archives a small pool in full too', async () => {
     const all = sandboxes([
       ['a', 10],
       ['b', 10],

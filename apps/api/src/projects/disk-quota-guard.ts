@@ -14,11 +14,13 @@
  * This module makes that recovery automatic: any Daytona provider call that
  * hits the disk-quota error triggers ONE org-wide archive sweep (cooldown +
  * single-flight gated so a burst of concurrent failures — the exact shape of
- * the incident — fires one sweep, not a thundering herd). The sweep archives
- * the oldest stopped sandboxes (safe, reversible — cold storage, still
- * resumable) until an estimated buffer is freed. It does NOT rescue the
- * request that triggered it; it exists so the NEXT request succeeds instead
- * of every subsequent one failing until a human intervenes.
+ * the incident — fires one sweep, not a thundering herd). Once triggered, the
+ * sweep archives EVERY stopped sandbox it can find (safe, reversible — cold
+ * storage, still resumable), not just enough to clear a target buffer: hitting
+ * the org-wide quota is rare and severe enough that maximum headroom beats a
+ * partial one. It does NOT rescue the request that triggered it; it exists so
+ * the NEXT request succeeds instead of every subsequent one failing until a
+ * human intervenes.
  *
  * Lowering KORTIX_SANDBOX_AUTOARCHIVE_MINUTES (see config.ts) is the actual
  * fix for steady-state pressure; this is the backstop for whatever gets past
@@ -32,10 +34,11 @@
 // for testability (a bare `deps` contract needs no module mocking at all).
 import type { DaytonaStoppedSandboxSummary } from '../shared/daytona';
 
-/** Stop collecting sweep candidates once their disk sums past this estimate. */
-const SWEEP_TARGET_GIB = 15_000;
-/** Hard cap on how many sandboxes one sweep pass will even consider. */
-const SWEEP_MAX_CANDIDATES = 1200;
+/** Hard safety cap on how many sandboxes one sweep pass will even consider —
+ *  not a target: every candidate under this cap gets archived. Sized far
+ *  above any realistic stopped-sandbox count so it only guards against a
+ *  runaway pathological case, never against a real incident. */
+const SWEEP_MAX_CANDIDATES = 20_000;
 const SWEEP_CONCURRENCY = 8;
 /** Minimum time between sweeps — one incident should not trigger a storm of
  *  org-wide list calls from every concurrently-failing request. */
@@ -54,24 +57,17 @@ export interface DiskQuotaGuardDeps {
 }
 
 /**
- * One archive-sweep pass: page the oldest-activity stopped sandboxes
- * org-wide and archive them until SWEEP_TARGET_GIB is estimated freed (or
- * the candidate cap is hit). Side-effecting but dependency-injectable so it
- * is unit-testable without a live Daytona org.
+ * One archive-sweep pass: page every stopped sandbox org-wide (oldest
+ * activity first, up to the SWEEP_MAX_CANDIDATES safety cap) and archive all
+ * of them. Side-effecting but dependency-injectable so it is unit-testable
+ * without a live Daytona org.
  */
 export async function runDiskArchiveSweep(
   deps: DiskQuotaGuardDeps,
 ): Promise<DiskArchiveSweepResult> {
   const result: DiskArchiveSweepResult = { candidates: 0, archived: 0, errors: 0, freedGib: 0 };
 
-  const stopped = await deps.list(SWEEP_MAX_CANDIDATES);
-  const candidates: DaytonaStoppedSandboxSummary[] = [];
-  let estimated = 0;
-  for (const sb of stopped) {
-    candidates.push(sb);
-    estimated += sb.disk;
-    if (estimated >= SWEEP_TARGET_GIB) break;
-  }
+  const candidates = await deps.list(SWEEP_MAX_CANDIDATES);
   result.candidates = candidates.length;
   if (candidates.length === 0) return result;
 
