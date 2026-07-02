@@ -5,13 +5,14 @@ import type {
   GatewayHooks,
   GatewayLogger,
   TokenCounts,
+  UpstreamDescriptor,
   UsageEvent,
 } from '../domain';
 import type { FetchImpl } from '../http';
 import type { CircuitBreaker } from '../resilience';
-import { type ExtractedUsage, calculateCost, extractUsageFromJson } from '../usage';
+import { type ExtractedUsage, calculateCost, extractUsageFromJson, jsonHasContent } from '../usage';
 import { runFailover } from './failover';
-import { relayStream } from './streaming';
+import { type StreamProbeResult, probeStream, relayStream } from './streaming';
 import { createTraceEmitter } from './trace';
 
 export interface ChatCompletionRequest {
@@ -260,30 +261,127 @@ export async function handleChatCompletions(
     : body;
 
   step('dispatch_upstream', { streaming, candidateCount: candidates.length });
-  const result = await runFailover({
-    candidates,
-    payload,
-    config,
-    fetchImpl,
-    breakerFor,
-    emit,
-    logger,
-    requestId,
-    trace: { ...id, requestedModel, streaming, metadata },
-    capturedRequest: capture(payload),
-  });
 
-  if (result.kind === 'response') {
-    step('upstream_failed', { ms: lap(), status: result.response.status });
-    return result.response;
+  // An upstream can return a syntactically valid 200 with empty `choices`/content
+  // (seen from OpenRouter/z-ai) — a real failure mode, not a legitimate zero-output
+  // turn. That never throws, so runFailover's transport-level retry/failover never
+  // sees it. This loop adds a second failover tier on top: each candidate that
+  // comes back HTTP-ok but empty is excluded and the remaining candidates are
+  // retried, exactly like a transport error would be — only once every candidate
+  // has produced nothing do we give up and tell the caller, instead of silently
+  // forwarding a blank "stop".
+  const emptyProviders = new Set<string>();
+  let upstream: Response | null = null;
+  let descriptor: UpstreamDescriptor | null = null;
+  let tried: string[] = [];
+  let attempts = 0;
+  let nonStreamBody: unknown;
+  let streamProbe: StreamProbeResult | null = null;
+
+  for (;;) {
+    const remaining = candidates.filter((c) => !emptyProviders.has(c.provider));
+    if (remaining.length === 0) {
+      step('all_candidates_empty', { ms: lap(), tried });
+      emit({
+        ...id,
+        requestedModel,
+        resolvedModel: routedModel,
+        streaming,
+        status: 502,
+        ok: false,
+        errorCode: 'empty_completion',
+        candidatesTried: tried,
+        request: capture(payload),
+        metadata,
+      });
+      return json(
+        { error: 'All upstream candidates returned an empty completion', code: 'empty_completion' },
+        502,
+      );
+    }
+
+    const result = await runFailover({
+      candidates: remaining,
+      payload,
+      config,
+      fetchImpl,
+      breakerFor,
+      emit,
+      logger,
+      requestId,
+      trace: { ...id, requestedModel, streaming, metadata },
+      capturedRequest: capture(payload),
+    });
+
+    if (result.kind === 'response') {
+      step('upstream_failed', { ms: lap(), status: result.response.status });
+      return result.response;
+    }
+
+    const {
+      upstream: candidateUpstream,
+      chosen,
+      tried: triedThisRound,
+      attempts: attemptsThisRound,
+    } = result.value;
+    tried = [...tried, ...triedThisRound];
+    attempts += attemptsThisRound;
+
+    if (!streaming) {
+      const data = await candidateUpstream.json();
+      step('non_stream_body', { ms: lap(), provider: chosen.provider });
+      if (jsonHasContent(data)) {
+        upstream = candidateUpstream;
+        descriptor = chosen;
+        nonStreamBody = data;
+        break;
+      }
+      logger.warn(
+        `[llm-gateway] empty completion from ${chosen.provider}, failing over ${requestId}`,
+      );
+      step('empty_completion_retry', { provider: chosen.provider, streaming: false });
+      emptyProviders.add(chosen.provider);
+      continue;
+    }
+
+    if (!candidateUpstream.body) {
+      logger.warn(
+        `[llm-gateway] empty stream body from ${chosen.provider}, failing over ${requestId}`,
+      );
+      step('empty_completion_retry', {
+        provider: chosen.provider,
+        streaming: true,
+        reason: 'no_body',
+      });
+      emptyProviders.add(chosen.provider);
+      continue;
+    }
+
+    const probe = await probeStream(candidateUpstream.body);
+    if (probe.hasContent) {
+      upstream = candidateUpstream;
+      descriptor = chosen;
+      streamProbe = probe;
+      break;
+    }
+    logger.warn(`[llm-gateway] empty stream from ${chosen.provider}, failing over ${requestId}`);
+    step('empty_completion_retry', { provider: chosen.provider, streaming: true });
+    emptyProviders.add(chosen.provider);
   }
 
-  const { upstream, chosen: descriptor, tried, attempts } = result.value;
+  // Every loop exit above either `return`s (transport failure / all-empty) or
+  // `break`s right after assigning both.
+  if (!descriptor || !upstream) {
+    throw new Error(`unreachable: dispatch loop exited without a chosen upstream (${requestId})`);
+  }
+  const finalDescriptor: UpstreamDescriptor = descriptor;
+  const finalUpstream: Response = upstream;
+
   step('upstream_ok', {
     ms: lap(),
-    provider: descriptor.provider,
-    resolvedModel: descriptor.resolvedModel,
-    upstreamStatus: upstream.status,
+    provider: finalDescriptor.provider,
+    resolvedModel: finalDescriptor.resolvedModel,
+    upstreamStatus: finalUpstream.status,
     attempts,
     tried,
   });
@@ -291,7 +389,7 @@ export async function handleChatCompletions(
   const settle = async (usage: ExtractedUsage | null, response: unknown): Promise<void> => {
     const usedModel = (
       usage?.model ??
-      descriptor.resolvedModel ??
+      finalDescriptor.resolvedModel ??
       requestedModel ??
       'unknown'
     ).toString();
@@ -300,20 +398,20 @@ export async function handleChatCompletions(
       completionTokens: usage?.completionTokens ?? 0,
       cachedTokens: usage?.cachedTokens ?? 0,
     };
-    const markup = descriptor.billingMode === 'none' ? 0 : descriptor.markup;
+    const markup = finalDescriptor.billingMode === 'none' ? 0 : finalDescriptor.markup;
     const { upstreamCost, finalCost } = calculateCost(
       usedModel,
       counts,
       markup,
       usage?.upstreamCostHint,
-      descriptor.pricing,
+      finalDescriptor.pricing,
     );
 
     // A billable request that priced to $0 means we have no pricing for the
     // resolved model (stale catalog) — surface it so it can't silently leak.
     if (markup > 0 && upstreamCost === 0 && counts.promptTokens + counts.completionTokens > 0) {
       logger.warn(
-        `[llm-gateway] billable request priced at $0 — missing pricing? ${requestId} model=${usedModel} provider=${descriptor.provider}`,
+        `[llm-gateway] billable request priced at $0 — missing pricing? ${requestId} model=${usedModel} provider=${finalDescriptor.provider}`,
       );
     }
 
@@ -324,11 +422,11 @@ export async function handleChatCompletions(
         actorUserId: principal.userId,
         projectId: principal.projectId,
         sessionId: principal.sessionId,
-        provider: descriptor.provider,
+        provider: finalDescriptor.provider,
         model: usedModel,
         upstreamCost,
         finalCost,
-        billingMode: descriptor.billingMode,
+        billingMode: finalDescriptor.billingMode,
         streaming,
         requestId,
       };
@@ -341,7 +439,7 @@ export async function handleChatCompletions(
 
     step('settled', {
       resolvedModel: usedModel,
-      provider: descriptor.provider,
+      provider: finalDescriptor.provider,
       promptTokens: counts.promptTokens,
       completionTokens: counts.completionTokens,
       cachedTokens: counts.cachedTokens,
@@ -354,8 +452,8 @@ export async function handleChatCompletions(
       ...id,
       requestedModel,
       resolvedModel: usedModel,
-      provider: descriptor.provider,
-      billingMode: descriptor.billingMode,
+      provider: finalDescriptor.provider,
+      billingMode: finalDescriptor.billingMode,
       streaming,
       status: 200,
       ok: true,
@@ -371,22 +469,19 @@ export async function handleChatCompletions(
   };
 
   if (!streaming) {
-    const data = await upstream.json();
-    step('non_stream_body', { ms: lap() });
-    void settle(extractUsageFromJson(data), data);
-    return json(data);
-  }
-
-  if (!upstream.body) {
-    step('empty_stream');
-    void settle(null, null);
-    return json({ error: 'Upstream returned an empty stream' }, 502);
+    void settle(extractUsageFromJson(nonStreamBody), nonStreamBody);
+    return json(nonStreamBody);
   }
 
   step('stream_begin');
 
+  // streamProbe is always set on this path — the streaming branch of the
+  // dispatch loop only `break`s after assigning it.
+  if (!streamProbe) {
+    throw new Error(`unreachable: streaming dispatch exited without a probe result (${requestId})`);
+  }
   const readable = relayStream({
-    upstreamBody: upstream.body,
+    primed: { reader: streamProbe.reader, chunks: streamProbe.chunks },
     captureBodies,
     requestId,
     logger,
