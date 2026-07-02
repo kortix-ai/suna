@@ -25,12 +25,12 @@ import {
   newConfigPrompt,
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
+import { cn } from '@/lib/utils';
 import {
   type ProjectConfigSummary,
   getProjectDetail,
   readProjectFile,
 } from '@kortix/sdk/projects-client';
-import { cn } from '@/lib/utils';
 import { DangerTriangleSolid, Pencil, Search } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Copy, type LucideIcon, Plus } from 'lucide-react';
@@ -80,9 +80,6 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
 
   /** Section-level context rendered above the search (e.g. kortix.toml manifest). */
   renderContext?: (config: ProjectConfigSummary) => ReactNode;
-
-  /** When true, omit the section shell — used inside BuildView tabs. */
-  embedded?: boolean;
 }
 
 export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityViewProps<T>) {
@@ -108,7 +105,6 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
     renderDetailExtra,
     emptyBodyLabel,
     renderContext,
-    embedded = false,
   } = props;
 
   const detailQuery = useQuery({
@@ -134,106 +130,102 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
   const configure = useConfigureThread(projectId);
 
   const body = (
-      <div className="space-y-4">
-        {config && entities.length > 0 && renderContext ? renderContext(config) : null}
+    <div className="space-y-4">
+      {config && entities.length > 0 && renderContext ? renderContext(config) : null}
 
-        <InputGroupSearch>
-          <InputGroupSearchIcon>
-            <Search />
-          </InputGroupSearchIcon>
-          <InputGroupSearchInput
-            placeholder={searchPlaceholder}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            variant="popover"
-          />
-          <InputGroupSearchClear onClick={() => setQuery('')} />
-        </InputGroupSearch>
+      <InputGroupSearch>
+        <InputGroupSearchIcon>
+          <Search />
+        </InputGroupSearchIcon>
+        <InputGroupSearchInput
+          placeholder={searchPlaceholder}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          variant="popover"
+        />
+        <InputGroupSearchClear onClick={() => setQuery('')} />
+      </InputGroupSearch>
 
-        {detailQuery.isLoading ? (
-          <div className="space-y-2">
-            {SKELETON_ROWS.map((row) => (
-              <Skeleton key={row} className="h-9 rounded-md" />
-            ))}
-          </div>
-        ) : isForbidden ? (
-          <InfoBanner tone="warning" icon={DangerTriangleSolid} title="Access required">
-            You don&apos;t have permission to read this repository.
-          </InfoBanner>
-        ) : detailQuery.isError ? (
-          <ErrorState
-            size="sm"
-            title="Failed to load"
-            description={(detailQuery.error as Error)?.message ?? `Failed to load ${noun}s`}
-            action={
-              <Button variant="outline" size="sm" onClick={() => detailQuery.refetch()}>
-                Retry
+      {detailQuery.isLoading ? (
+        <div className="space-y-2">
+          {SKELETON_ROWS.map((row) => (
+            <Skeleton key={row} className="h-9 rounded-md" />
+          ))}
+        </div>
+      ) : isForbidden ? (
+        <InfoBanner tone="warning" icon={DangerTriangleSolid} title="Access required">
+          You don&apos;t have permission to read this repository.
+        </InfoBanner>
+      ) : detailQuery.isError ? (
+        <ErrorState
+          size="sm"
+          title="Failed to load"
+          description={(detailQuery.error as Error)?.message ?? `Failed to load ${noun}s`}
+          action={
+            <Button variant="outline" size="sm" onClick={() => detailQuery.refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : entities.length === 0 ? (
+        <EmptyState
+          icon={EmptyIcon}
+          size="sm"
+          title={emptyTitle}
+          // description={emptyDescription}
+          action={
+            <div className="flex flex-col items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => configure.start(newConfigPrompt(kind))}
+                disabled={configure.pending}
+              >
+                {configure.pending ? (
+                  <Loading className="size-3.5 shrink-0" />
+                ) : (
+                  <Plus className="size-3.5 shrink-0" />
+                )}
+                Create {noun}
               </Button>
-            }
-          />
-        ) : entities.length === 0 ? (
-          <EmptyState
-            icon={EmptyIcon}
-            size="sm"
-            title={emptyTitle}
-            // description={emptyDescription}
-            action={
-              <div className="flex flex-col items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => configure.start(newConfigPrompt(kind))}
-                  disabled={configure.pending}
-                >
-                  {configure.pending ? (
-                    <Loading className="size-3.5 shrink-0" />
-                  ) : (
-                    <Plus className="size-3.5 shrink-0" />
-                  )}
-                  Create {noun}
+              {emptyDocsHref ? (
+                <Button asChild variant="ghost" size="sm" className="gap-1.5">
+                  <a href={emptyDocsHref} target="_blank" rel="noopener noreferrer">
+                    Docs
+                  </a>
                 </Button>
-                {emptyDocsHref ? (
-                  <Button asChild variant="ghost" size="sm" className="gap-1.5">
-                    <a href={emptyDocsHref} target="_blank" rel="noopener noreferrer">
-                      Docs
-                    </a>
-                  </Button>
-                ) : null}
-              </div>
-            }
-          />
-        ) : filtered.length === 0 ? (
-          <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-            No matches for <span className="text-foreground font-mono">{query}</span>.
-          </p>
-        ) : config ? (
-          <ul className="space-y-2">
-            {filtered.map((entity) => (
-              <li key={entity.path}>
-                <EntityDisclosure
-                  projectId={projectId}
-                  kind={kind}
-                  entity={entity}
-                  config={config}
-                  triggerVariant={triggerVariant}
-                  renderTriggerLabel={renderTriggerLabel}
-                  renderRowTrailing={renderRowTrailing}
-                  renderDetailTitle={renderDetailTitle}
-                  renderDetailMeta={renderDetailMeta}
-                  renderDetailExtra={renderDetailExtra}
-                  emptyBodyLabel={emptyBodyLabel}
-                />
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
+              ) : null}
+            </div>
+          }
+        />
+      ) : filtered.length === 0 ? (
+        <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+          No matches for <span className="text-foreground font-mono">{query}</span>.
+        </p>
+      ) : config ? (
+        <ul className="space-y-2">
+          {filtered.map((entity) => (
+            <li key={entity.path}>
+              <EntityDisclosure
+                projectId={projectId}
+                kind={kind}
+                entity={entity}
+                config={config}
+                triggerVariant={triggerVariant}
+                renderTriggerLabel={renderTriggerLabel}
+                renderRowTrailing={renderRowTrailing}
+                renderDetailTitle={renderDetailTitle}
+                renderDetailMeta={renderDetailMeta}
+                renderDetailExtra={renderDetailExtra}
+                emptyBodyLabel={emptyBodyLabel}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
-
-  if (embedded) {
-    return body;
-  }
 
   return (
     <CustomizeSectionWrapper
