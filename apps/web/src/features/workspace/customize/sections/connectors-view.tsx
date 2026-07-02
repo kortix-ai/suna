@@ -14,6 +14,7 @@ import {
   Globe,
   KeyRound,
   Loader2,
+  type LucideIcon,
   Mail,
   MessageSquare,
   Monitor,
@@ -26,12 +27,11 @@ import {
   ShieldCheck,
   Trash2,
   Zap,
-  type LucideIcon,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { PoliciesPanel } from '@/components/projects/policies-panel';
 import { Badge } from '@/components/ui/badge';
@@ -86,6 +86,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ShareOption, SharingPicker } from '@/features/workspace/shared/sharing-picker';
 import {
+  type EmailInstallation,
+  type EmailSenderPolicy,
+  type SlackInstallation,
   useConnectEmail,
   useConnectSlack,
   useDisconnectEmail,
@@ -96,21 +99,26 @@ import {
   useSlackManifest,
   useSlackMode,
   useUpdateEmailPolicy,
-  type EmailInstallation,
-  type EmailSenderPolicy,
-  type SlackInstallation,
 } from '@/hooks/channels/use-channels-installations';
+import { cn } from '@/lib/utils';
 import {
+  type AdminConnector,
+  type ConnectorAction,
+  type ConnectorConfig,
+  type ConnectorDraftInput,
+  type ConnectorPolicyAction,
+  type ConnectorPolicyRule,
+  type ConnectorSharing,
   createConnector,
   deleteConnector,
+  getConnectStatus,
   getConnectorConfig,
   getConnectorPolicies,
-  getConnectStatus,
   getProject,
   getProjectDetail,
   listConnectors,
-  listProjectAccess,
   listPipedreamApps,
+  listProjectAccess,
   pipedreamConnect,
   pipedreamFinalize,
   setConnectorCredential,
@@ -119,15 +127,7 @@ import {
   setConnectorPolicies,
   setConnectorSharing,
   syncConnectors,
-  type AdminConnector,
-  type ConnectorAction,
-  type ConnectorConfig,
-  type ConnectorDraftInput,
-  type ConnectorPolicyAction,
-  type ConnectorPolicyRule,
-  type ConnectorSharing,
 } from '@kortix/sdk/projects-client';
-import { cn } from '@/lib/utils';
 
 const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
   pipedream: Zap,
@@ -2049,6 +2049,7 @@ function ProfileSection({
           <SharingPicker
             projectId={projectId}
             showHeading={false}
+            hideMembers
             value={{ mode: access, memberIds, groupIds }}
             onChange={(s) => {
               setAccess(s.mode);
@@ -2074,7 +2075,9 @@ function ProfileSection({
         <div className="border-border/60 bg-muted/20 mt-4 space-y-2 rounded-lg border p-3">
           <div className="flex items-center gap-1.5">
             <Bot className="text-muted-foreground/70 size-3.5 shrink-0" />
-            <span className="text-foreground/80 text-xs font-medium">Also usable via agent assignment</span>
+            <span className="text-foreground/80 text-xs font-medium">
+              Also usable via agent assignment
+            </span>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             {declaringAgents.map((name) => (
@@ -2084,9 +2087,9 @@ function ProfileSection({
             ))}
           </div>
           <p className="text-muted-foreground/60 text-[11px] leading-relaxed">
-            {declaringAgents.length === 1 ? 'This agent declares' : 'These agents declare'} this connector,
-            so anyone assigned to {declaringAgents.length === 1 ? 'it' : 'them'} (Members → Resource access)
-            can use it — regardless of the sharing above.
+            {declaringAgents.length === 1 ? 'This agent declares' : 'These agents declare'} this
+            connector, so anyone assigned to {declaringAgents.length === 1 ? 'it' : 'them'} (Members
+            → Resource access) can use it — regardless of the sharing above.
           </p>
         </div>
       )}
@@ -2095,7 +2098,9 @@ function ProfileSection({
         dirty={dirty}
         saving={save.isPending}
         disabled={
-          credential === 'shared' && access === 'members' && memberIds.length + groupIds.length === 0
+          credential === 'shared' &&
+          access === 'members' &&
+          memberIds.length + groupIds.length === 0
         }
         onSave={() => save.mutate()}
         onReset={reset}
@@ -2894,6 +2899,7 @@ function ConnectorSetupFields({
           <SharingPicker
             projectId={projectId}
             showHeading={false}
+            hideMembers
             value={{ mode: value.access, memberIds: value.memberIds, groupIds: value.groupIds }}
             onChange={(s) =>
               onChange({ ...value, access: s.mode, memberIds: s.memberIds, groupIds: s.groupIds })
@@ -3394,7 +3400,8 @@ function ConfigureAppModal({
             size="sm"
             onClick={() => save.mutate()}
             disabled={
-              save.isPending || (setup.access === 'members' && setup.memberIds.length + setup.groupIds.length === 0)
+              save.isPending ||
+              (setup.access === 'members' && setup.memberIds.length + setup.groupIds.length === 0)
             }
             className="gap-1.5"
           >

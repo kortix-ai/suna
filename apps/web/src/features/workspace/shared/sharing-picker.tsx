@@ -8,8 +8,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { Icon } from '@/features/icon/icon';
 import { listGroups } from '@/lib/iam-client';
-import { listProjectAccess, type ConnectorSharing } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
+import { type ConnectorSharing, listProjectAccess } from '@kortix/sdk/projects-client';
 import { CheckCircleSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Users } from 'lucide-react';
@@ -62,12 +62,20 @@ export function SharingPicker({
   onChange,
   copy,
   showHeading = true,
+  hideMembers = false,
 }: {
   projectId: string;
   value: SharingSelection;
   onChange: (next: SharingSelection) => void;
   copy?: Partial<SharingCopy>;
   showHeading?: boolean;
+  /**
+   * Pure-pyramid mode (secrets + connectors): drop the direct "specific
+   * members/departments" option — targeted access comes ONLY through agent
+   * assignment (declare the resource on an agent, assign people to that agent,
+   * they inherit it). Keeps one mental model: resources live on agents.
+   */
+  hideMembers?: boolean;
 }) {
   const c: SharingCopy = {
     heading: copy?.heading ?? DEFAULT_COPY.heading,
@@ -75,6 +83,10 @@ export function SharingPicker({
     private: copy?.private ?? DEFAULT_COPY.private,
     members: copy?.members ?? DEFAULT_COPY.members,
   };
+  // An older secret/connector still stored as a direct member share — surface it
+  // (read-only-ish) so it isn't silently broken; the user migrates it to
+  // Project-wide/Private or moves the people onto an agent.
+  const legacyMembers = hideMembers && value.mode === 'members';
 
   return (
     <div className="space-y-3">
@@ -86,15 +98,30 @@ export function SharingPicker({
       >
         <ShareOption value="project" label={c.project.label} desc={c.project.desc} />
         <ShareOption value="private" label={c.private.label} desc={c.private.desc} />
-        <ShareOption value="members" label={c.members.label} desc={c.members.desc} />
+        {!hideMembers && (
+          <ShareOption value="members" label={c.members.label} desc={c.members.desc} />
+        )}
       </RadioGroup>
-      {value.mode === 'members' && (
+      {!hideMembers && value.mode === 'members' && (
         <SubjectPicker
           projectId={projectId}
           memberIds={value.memberIds}
           groupIds={value.groupIds}
           onChange={(memberIds, groupIds) => onChange({ ...value, memberIds, groupIds })}
         />
+      )}
+      {hideMembers && !legacyMembers && (
+        <p className="text-muted-foreground text-xs leading-relaxed">
+          To give specific people access, assign them (or a department) to an{' '}
+          <span className="text-foreground/80 font-medium">agent</span> that uses this — they
+          inherit it automatically. Manage that in the project's Members tab.
+        </p>
+      )}
+      {legacyMembers && (
+        <p className="text-xs leading-relaxed text-amber-600 dark:text-amber-400">
+          This is still shared with specific members directly (legacy). Switch it to Project-wide or
+          Private — targeted access now flows through agent assignment.
+        </p>
       )}
     </div>
   );
