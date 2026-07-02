@@ -165,3 +165,88 @@ export async function deleteDaytonaSnapshotById(id: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * The exact substring Daytona's REST API returns when the ORG (shared across
+ * every environment — prod/dev/staging/laptops) has exceeded its total
+ * sandbox disk allocation. Matched case-insensitively against any thrown
+ * error's message so both the SDK's typed DaytonaValidationError and a raw
+ * fetch failure are recognized the same way — see disk-quota-guard.ts, the
+ * live incident (2026-07-02) this backstops: every create/resume org-wide
+ * failed once non-archived disk hit the 40000GiB cap.
+ */
+const DISK_QUOTA_ERROR_SUBSTRING = 'total disk limit exceeded';
+
+export function isDaytonaDiskQuotaError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.toLowerCase().includes(DISK_QUOTA_ERROR_SUBSTRING);
+}
+
+export interface DaytonaStoppedSandboxSummary {
+  id: string;
+  disk: number;
+  lastActivityAt: string | null;
+}
+
+/**
+ * Page through org-wide STOPPED (not yet archived) sandboxes, oldest activity
+ * first — the safest and highest-yield candidates for an emergency archive
+ * sweep (see disk-quota-guard.ts). Unscoped by environment labels
+ * deliberately: the disk quota is ORG-wide, so relief has to be too. Bounded
+ * by `maxItems` so a pass can never balloon into a full-org scan.
+ */
+export async function listStoppedDaytonaSandboxesOldestFirst(
+  maxItems: number,
+): Promise<DaytonaStoppedSandboxSummary[]> {
+  if (!config.DAYTONA_API_KEY) throw new Error('Missing DAYTONA_API_KEY');
+  const base = daytonaApiBase();
+  const out: DaytonaStoppedSandboxSummary[] = [];
+  let cursor: string | null = null;
+  for (let guard = 0; guard < 100 && out.length < maxItems; guard++) {
+    const url = new URL(`${base}/sandbox`);
+    url.searchParams.set('limit', '200');
+    url.searchParams.set('states', 'stopped');
+    url.searchParams.set('sort', 'lastActivityAt');
+    url.searchParams.set('order', 'asc');
+    if (cursor) url.searchParams.set('cursor', cursor);
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${config.DAYTONA_API_KEY}` },
+    });
+    if (!res.ok) {
+      throw new Error(`Daytona list sandboxes failed: HTTP ${res.status}`);
+    }
+    const body = (await res.json()) as {
+      items?: Array<{ id: string; disk?: number; lastActivityAt?: string }>;
+      nextCursor?: string | null;
+    };
+    const items = body.items ?? [];
+    for (const it of items) {
+      out.push({ id: it.id, disk: it.disk ?? 0, lastActivityAt: it.lastActivityAt ?? null });
+      if (out.length >= maxItems) break;
+    }
+    cursor = body.nextCursor ?? null;
+    if (!cursor || items.length === 0) break;
+  }
+  return out;
+}
+
+/**
+ * Archive a sandbox by id (stopped → cold storage, still resumable — never
+ * destructive). Returns true on success or when the sandbox is already
+ * gone/archiving/archived (404/409); false on any other failure — including
+ * "cannot be archived for this region/class" (some legacy sandboxClasses),
+ * which the caller should just skip rather than treat as fatal. Best-effort —
+ * never throws so a batch sweep continues past a single bad row.
+ */
+export async function archiveDaytonaSandboxById(id: string): Promise<boolean> {
+  if (!config.DAYTONA_API_KEY) return false;
+  try {
+    const res = await fetch(`${daytonaApiBase()}/sandbox/${id}/archive`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${config.DAYTONA_API_KEY}` },
+    });
+    return res.ok || res.status === 404 || res.status === 409;
+  } catch {
+    return false;
+  }
+}
