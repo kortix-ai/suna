@@ -7,6 +7,7 @@
  */
 
 import { config } from '../config';
+import { configuredTimeoutMs } from './with-timeout';
 
 export function isPlatinumConfigured(): boolean {
   return !!config.PLATINUM_API_KEY;
@@ -25,13 +26,17 @@ function platinumBase(): string {
 // here sit on the exact same reaper hot path, so this is bounded by default.
 // A caller that needs a longer/no bound (e.g. a deliberately long-poll) can
 // still pass its own `init.signal` — this only fills in a default.
-const DEFAULT_CALL_TIMEOUT_MS = Math.max(
-  1000,
-  Number.parseInt(process.env.KORTIX_PLATINUM_CALL_TIMEOUT_MS || '20000', 10) || 20000,
-);
+const DEFAULT_CALL_TIMEOUT_MS = configuredTimeoutMs('KORTIX_PLATINUM_CALL_TIMEOUT_MS', 20_000, 1_000);
 
 async function platinumFetch(path: string, init: RequestInit = {}): Promise<Response> {
   if (!config.PLATINUM_API_KEY) throw new Error('Missing PLATINUM_API_KEY');
+  // Track whether WE picked the timeout budget so the error message below
+  // reports the real one instead of always claiming the default — a caller
+  // like create() passes its own longer signal (70s, for Platinum's 60s
+  // server-side wait_timeout_ms long-poll) and a message claiming "20000ms"
+  // there would under-report the real elapsed time and mislead debugging of
+  // exactly the incident class this bound exists to make observable.
+  const usingDefault = init.signal === undefined;
   const signal = init.signal ?? AbortSignal.timeout(DEFAULT_CALL_TIMEOUT_MS);
   try {
     return await fetch(`${platinumBase()}${path}`, {
@@ -45,7 +50,8 @@ async function platinumFetch(path: string, init: RequestInit = {}): Promise<Resp
     });
   } catch (err) {
     if (err instanceof Error && err.name === 'TimeoutError') {
-      throw new Error(`platinum ${init.method ?? 'GET'} ${path} timed out after ${DEFAULT_CALL_TIMEOUT_MS}ms`);
+      const budget = usingDefault ? `${DEFAULT_CALL_TIMEOUT_MS}ms (default)` : 'caller-provided budget';
+      throw new Error(`platinum ${init.method ?? 'GET'} ${path} timed out after ${budget}`);
     }
     throw err;
   }

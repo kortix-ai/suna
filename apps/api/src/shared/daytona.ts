@@ -2,6 +2,7 @@ import { Daytona } from '@daytonaio/sdk';
 import { config, type SandboxProviderName } from '../config';
 import { isPlatinumConfigured } from './platinum';
 import { warmSnapshotSetting } from '../platform/services/runtime-settings';
+import { configuredTimeoutMs } from './with-timeout';
 
 let daytonaClient: Daytona | null = null;
 
@@ -107,6 +108,14 @@ function daytonaApiBase(): string {
   return (config.DAYTONA_SERVER_URL || 'https://app.daytona.io/api').replace(/\/+$/, '');
 }
 
+// Same class of bug as the Daytona SDK's own 24h axios default (see
+// platform/providers/daytona.ts for the full incident writeup): bare
+// `fetch()` has NO default timeout. These two calls are invoked from
+// snapshots/quota-gc.ts's reconcileSnapshotQuota(), which runs inside
+// maintenance.ts's Promise.all every cycle — an unbounded hang here wedges
+// the maintenance loop's `maintenanceRunning` lock exactly the same way.
+const DAYTONA_REST_CALL_TIMEOUT_MS = configuredTimeoutMs('KORTIX_DAYTONA_CALL_TIMEOUT_MS', 20_000, 1_000);
+
 /**
  * List every snapshot in the org via the REST API (the SDK exposes no stable
  * paginated list). Walks all pages. Used by snapshot reconciliation to detect
@@ -123,6 +132,7 @@ export async function listDaytonaSnapshots(): Promise<DaytonaSnapshotSummary[]> 
   for (let guard = 0; guard < 100; guard++) {
     const res = await fetch(`${base}/snapshots?limit=200&page=${page}`, {
       headers: { Authorization: `Bearer ${config.DAYTONA_API_KEY}` },
+      signal: AbortSignal.timeout(DAYTONA_REST_CALL_TIMEOUT_MS),
     });
     if (!res.ok) {
       throw new Error(`Daytona list snapshots failed: HTTP ${res.status}`);
@@ -159,6 +169,7 @@ export async function deleteDaytonaSnapshotById(id: string): Promise<boolean> {
     const res = await fetch(`${daytonaApiBase()}/snapshots/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${config.DAYTONA_API_KEY}` },
+      signal: AbortSignal.timeout(DAYTONA_REST_CALL_TIMEOUT_MS),
     });
     return res.ok || res.status === 404;
   } catch {

@@ -31,6 +31,14 @@ let maintenanceRunning = false;
 // solely by the stall watchdog below — never trust a boolean lock alone (see
 // note on STALL_THRESHOLD_MS).
 let maintenanceStartedAt: number | null = null;
+// Incremented every time a run acquires the lock (including a watchdog
+// force-reset). A run's `finally` only clears the lock if its OWN generation
+// is still current — otherwise an abandoned, force-reset run that eventually
+// settles in the background would clobber the lock/timestamp a newer,
+// legitimately-running cycle owns, letting a THIRD cycle start concurrently
+// with the second. Cheap and sufficient: we only need "am I still the run
+// anyone should trust," not true cancellation of the abandoned work.
+let maintenanceGeneration = 0;
 
 function positiveInt(raw: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(raw || '', 10);
@@ -165,19 +173,27 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
   return { candidates: rows.length, deleted, skipped, errors };
 }
 
-async function runProjectMaintenance(): Promise<void> {
+/** Test-only visibility into the lock — never used by runtime code. */
+export function __isMaintenanceRunningForTest(): boolean {
+  return maintenanceRunning;
+}
+
+export async function runProjectMaintenance(): Promise<void> {
   if (maintenanceRunning) {
     const heldForMs = maintenanceStartedAt ? Date.now() - maintenanceStartedAt : 0;
     if (!shouldForceResetStaleLock(heldForMs, stallThresholdMs())) return;
     // Stale lock — the prior cycle almost certainly hung on an unbounded call
-    // rather than genuinely still running. Break it loudly and proceed; the
-    // abandoned run's own `finally` will still fire eventually (harmlessly
-    // resetting an already-false flag) if it ever does settle.
+    // rather than genuinely still running. Break it loudly and proceed. The
+    // abandoned run keeps executing in the background (nothing cancels it —
+    // its individual provider calls are now timeout-bounded so it WILL
+    // eventually finish or error), but its `finally` is generation-gated
+    // below so it can no longer clobber this (or a later) run's lock.
     console.error(
       `[project-maintenance] STALLED — lock held for ${heldForMs}ms (threshold ${stallThresholdMs()}ms), forcing reset. ` +
       'This means a prior cycle hung on an unbounded call — file a bug, this should not happen with all provider calls timeout-bounded.',
     );
   }
+  const myGeneration = ++maintenanceGeneration;
   maintenanceRunning = true;
   maintenanceStartedAt = Date.now();
   try {
@@ -264,8 +280,13 @@ async function runProjectMaintenance(): Promise<void> {
       console.warn('[project-maintenance] billing invariant check failed:', err instanceof Error ? err.message : err);
     }
   } finally {
-    maintenanceRunning = false;
-    maintenanceStartedAt = null;
+    // Only the run that's still current may release the lock — see
+    // maintenanceGeneration's docstring for why an abandoned, force-reset run
+    // settling later must not clobber a newer run's state.
+    if (maintenanceGeneration === myGeneration) {
+      maintenanceRunning = false;
+      maintenanceStartedAt = null;
+    }
   }
 }
 

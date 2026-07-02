@@ -11,7 +11,7 @@ import { warmRestoreScript, WARM_RESTORE_MARKERS, noteWarmPathFailure } from '..
 import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { config, SANDBOX_VERSION } from '../../config';
-import { withTimeout } from '../../shared/with-timeout';
+import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 
 // The Daytona SDK's axios client is created with a 24-HOUR timeout (see
 // @daytonaio/sdk's Daytona.createAxiosInstance) — effectively unbounded for
@@ -31,9 +31,16 @@ import { withTimeout } from '../../shared/with-timeout';
 // Every method below that awaits the SDK directly is bounded with
 // `withTimeout` so a hung upstream fails fast and observably instead of
 // hanging for up to a day.
-const PROVIDER_CALL_TIMEOUT_MS = Math.max(
-  1000,
-  Number.parseInt(process.env.KORTIX_DAYTONA_CALL_TIMEOUT_MS || '20000', 10) || 20000,
+const PROVIDER_CALL_TIMEOUT_MS = configuredTimeoutMs('KORTIX_DAYTONA_CALL_TIMEOUT_MS', 20_000, 1_000);
+// listManagedRunningSandboxes() pages through the org's whole managed fleet —
+// a large fleet can legitimately take longer than one single-call budget to
+// fully list, and PROVIDER_CALL_TIMEOUT_MS would then look identical to a
+// genuine hang (silently starving the orphan-box reaper). Give it its own,
+// longer budget instead of reusing the single-call one.
+const LIST_OPERATION_TIMEOUT_MS = configuredTimeoutMs(
+  'KORTIX_DAYTONA_LIST_TIMEOUT_MS',
+  90_000,
+  PROVIDER_CALL_TIMEOUT_MS,
 );
 // (DAYTONA_SNAPSHOT was removed — every sandbox boots from its project's
 // own per-project snapshot, resolved by the snapshot builder. Callers
@@ -385,7 +392,7 @@ export class DaytonaProvider implements SandboxProvider {
         }
         return out;
       })(),
-      PROVIDER_CALL_TIMEOUT_MS,
+      LIST_OPERATION_TIMEOUT_MS,
       'Daytona list(managed running sandboxes)',
     );
   }
