@@ -399,7 +399,7 @@ async function resolveChatSessionId(
  *                  deterministic and never block on a prompt
  * Returns the sentinel `'error'` (after printing the API error) on failure.
  */
-async function chooseRunningSession(
+export async function chooseRunningSession(
   ctx: NonNullable<ReturnType<typeof resolveProjectContext>>,
   pickTitle: string,
 ): Promise<ProjectSession | null | 'error'> {

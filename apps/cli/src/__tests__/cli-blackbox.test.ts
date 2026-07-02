@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -186,6 +186,30 @@ function startCliE2eServer() {
         archived = true;
         return Response.json({ ok: true, archived: true, repo_deleted: url.searchParams.get('purge') === 'true' });
       }
+      if (url.pathname === '/v1/projects/proj_e2e/sessions/sess_connect' && req.method === 'GET') {
+        return Response.json({
+          session_id: 'sess_connect',
+          account_id: 'account_1',
+          project_id: 'proj_e2e',
+          branch_name: 'session-sess_connect',
+          base_ref: 'main',
+          sandbox_provider: 'daytona',
+          sandbox_id: 'row-sandbox-id',
+          sandbox_url: `${url.origin}/v1/p/ext-sess-connect/8000`,
+          opencode_session_id: 'ses_oc',
+          name: 'Connect target',
+          custom_name: null,
+          agent_name: 'default',
+          status: 'running',
+          error: null,
+          metadata: {},
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-02T00:00:00.000Z',
+        });
+      }
+      if (url.pathname === '/v1/p/ext-sess-connect/4096/session/ses_oc' && req.method === 'GET') {
+        return Response.json({ id: 'ses_oc', title: 'Connected through proxy' });
+      }
 
       if (url.pathname === '/v1/marketplace/items' && req.method === 'GET') {
         const query = url.searchParams.get('query') ?? '';
@@ -343,6 +367,59 @@ describe('kortix CLI black-box behavior', () => {
     expect(result.stdout).not.toContain('add <item>');
     expect(result.stdout).not.toContain('registry <subcommand>');
   });
+
+  test('sessions connect runs opencode attach through an authenticated sandbox proxy', async () => {
+    const apiBase = startCliE2eServer();
+    const configFile = writeConfig(apiBase);
+    const fakeOpenCode = join(tmp, 'fake-opencode');
+    writeFileSync(
+      fakeOpenCode,
+      `#!/usr/bin/env bun
+const [,, cmd, url, ...args] = process.argv;
+if (cmd !== 'attach') {
+  console.error('expected attach command');
+  process.exit(11);
+}
+if (!url?.startsWith('http://127.0.0.1:')) {
+  console.error('expected local proxy url');
+  process.exit(12);
+}
+const res = await fetch(new URL('/session/ses_oc', url));
+if (!res.ok) {
+  console.error(await res.text());
+  process.exit(13);
+}
+const body = await res.json();
+console.log(JSON.stringify({ cmd, args, body }));
+`,
+      'utf8',
+    );
+    chmodSync(fakeOpenCode, 0o755);
+
+    const result = await runCli(
+      ['sessions', 'connect', 'sess_connect', '--project', 'proj_e2e', '--', '--mini'],
+      tmp,
+      { KORTIX_CONFIG_FILE: configFile, KORTIX_OPENCODE_BIN: fakeOpenCode },
+    );
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      cmd: 'attach',
+      args: ['--session', 'ses_oc', '--mini'],
+      body: { id: 'ses_oc', title: 'Connected through proxy' },
+    });
+    expect(result.stderr).toContain('Connecting to');
+    expect(requests.map((r) => [r.method, r.path, r.authorization])).toContainEqual([
+      'GET',
+      '/v1/projects/proj_e2e/sessions/sess_connect',
+      'Bearer tok_blackbox',
+    ]);
+    expect(requests.map((r) => [r.method, r.path, r.authorization])).toContainEqual([
+      'GET',
+      '/v1/p/ext-sess-connect/4096/session/ses_oc',
+      'Bearer tok_blackbox',
+    ]);
+  }, 15_000);
 
   test('add is not a top-level command', async () => {
     const apiBase = startMarketplaceServer();

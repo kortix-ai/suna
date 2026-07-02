@@ -11,6 +11,7 @@ beforeEach(() => {
   delete process.env.KORTIX_FRONTEND_URL;
   delete process.env.KORTIX_DASHBOARD_URL;
   delete process.env.BASH_ENV;
+  process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
 });
 
 afterEach(() => {
@@ -61,6 +62,7 @@ describe('webDashboardUrl — authoritative env wins over derivation', () => {
       const envFile = join(dir, 'agent-env.sh');
       writeFileSync(envFile, "export KORTIX_FRONTEND_URL='https://dev.kortix.com/'\n");
       process.env.BASH_ENV = envFile;
+      delete process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE;
 
       expect(webDashboardUrl('https://dev-api.kortix.com/v1')).toBe('https://dev.kortix.com');
     } finally {

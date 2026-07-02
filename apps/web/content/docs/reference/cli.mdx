@@ -133,6 +133,7 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 | `kortix sessions rm <id>` | Stop + delete. |
 | `kortix sessions open <id>` | Open the dashboard URL for a session. |
 | `kortix sessions chat [<id>] [--prompt "<text>"] [--new]` | Talk to a session's agent — interactive REPL, or one-shot with `--prompt`. Alias: `talk`. |
+| `kortix sessions connect [<id>] [-- <opencode attach args>]` | Attach your local OpenCode TUI to the OpenCode server already running inside the session sandbox. |
 | `kortix sessions preview <id> [port]` | Print a clickable preview URL for a port in the session's sandbox (default `3000`). |
 
 Inside a sandbox, `KORTIX_SESSION_ID` is your session; `kortix sessions info $KORTIX_SESSION_ID` is the live view of yourself.
