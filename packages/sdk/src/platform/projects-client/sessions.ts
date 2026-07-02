@@ -255,10 +255,17 @@ export interface SessionAudit {
 /** Per-session audit trail: every executor-gated action the agent took, with its
  *  risk + allow/ask/block verdict + who resolved it. Visible to anyone who can
  *  see the session (its launcher + project managers). */
-export async function getSessionAudit(projectId: string, sessionId: string, limit?: number) {
+export async function getSessionAudit(
+  projectId: string,
+  sessionId: string,
+  limit?: number,
+  options?: { showErrors?: boolean },
+) {
   const qs = limit ? `?limit=${limit}` : '';
   return unwrap(
-    await backendApi.get<SessionAudit>(`/projects/${projectId}/sessions/${sessionId}/audit${qs}`),
+    await backendApi.get<SessionAudit>(`/projects/${projectId}/sessions/${sessionId}/audit${qs}`, {
+      showErrors: options?.showErrors,
+    }),
   );
 }
 

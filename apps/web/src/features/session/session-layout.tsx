@@ -1,39 +1,31 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
-import * as ResizablePrimitive from 'react-resizable-panels';
 import { PreviewTabContent } from '@/components/tabs/preview-tab-content';
+import { Drawer, DrawerContent } from '@/components/ui/drawer';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { SessionActionsPanel } from '@/features/session/session-actions-panel';
+import { SessionAuditPanel } from '@/features/session/session-audit-panel';
+import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
+import { SessionStartingLoader } from '@/features/session/session-starting-loader';
+import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
+import { SessionWallpaperLayerContext } from '@/features/session/session-wallpaper-layer';
+import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from '@/components/ui/resizable';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {
-  useKortixComputerStore,
-} from '@/stores/kortix-computer-store';
-import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
-import { useTabStore } from '@/stores/tab-store';
-import {
+  type SessionPanelView,
   sessionPreviewTabId,
   useSessionBrowserStore,
-  type SessionPanelView,
 } from '@/stores/session-browser-store';
-import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
-import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
-import { SessionActionsPanel } from '@/features/session/session-actions-panel';
-import { SessionWallpaperLayerContext } from '@/features/session/session-wallpaper-layer';
-import { SessionStartingLoader } from '@/features/session/session-starting-loader';
-import { Drawer, DrawerContent } from '@/components/ui/drawer';
-import { X } from 'lucide-react';
+import { useTabStore } from '@/stores/tab-store';
 import type { SessionStartStage } from '@kortix/sdk/projects-client';
+import { X } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import type React from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import type * as ResizablePrimitive from 'react-resizable-panels';
 
 // ============================================================================
 // Session Layout
@@ -110,6 +102,7 @@ export const SessionLayout = memo(function SessionLayout({
   const showBrowser = panelView === 'browser';
   const showExplorer = panelView === 'explorer';
   const showTerminal = panelView === 'terminal';
+  const showAudit = panelView === 'audit';
 
   useEffect(() => {
     if (shouldOpenPanel && !isSidePanelOpen) {
@@ -304,7 +297,9 @@ export const SessionLayout = memo(function SessionLayout({
   // same handlers the chat uses) and the Files explorer — swap normally. The
   // terminal and browser are layered on top and shown/hidden via `hidden`
   // rather than unmounted, so their live state survives view switches.
-  const swappableBody = showExplorer ? (
+  const swappableBody = showAudit ? (
+    <SessionAuditPanel projectId={projectId} projectSessionId={projectSessionId} />
+  ) : showExplorer ? (
     <SessionFilesExplorer
       chatSessionId={sessionId}
       projectId={projectId}
@@ -329,12 +324,7 @@ export const SessionLayout = memo(function SessionLayout({
           />
         </div>
       )}
-      <div
-        className={cn(
-          'absolute inset-0',
-          (showTerminal || showBrowser) && 'hidden',
-        )}
-      >
+      <div className={cn('absolute inset-0', (showTerminal || showBrowser) && 'hidden')}>
         {swappableBody}
       </div>
     </div>
@@ -356,9 +346,7 @@ export const SessionLayout = memo(function SessionLayout({
   if (isMobile) {
     return (
       <div className="flex flex-col h-full w-full overflow-hidden">
-        <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
-          {children}
-        </div>
+        <div className="flex-1 overflow-hidden min-h-0 flex flex-col">{children}</div>
         <Drawer
           open={shouldShowPanel}
           onOpenChange={(open) => {
@@ -377,74 +365,76 @@ export const SessionLayout = memo(function SessionLayout({
   // Desktop: resizable split panel
   return (
     <SessionWallpaperLayerContext.Provider value={wallpaperLayer}>
-    <div className="relative flex flex-col h-full overflow-hidden bg-background" data-testid="session-layout">
-      {/* Full-bleed wallpaper layer — spans the ENTIRE session width, behind the
+      <div
+        className="relative flex flex-col h-full overflow-hidden bg-background"
+        data-testid="session-layout"
+      >
+        {/* Full-bleed wallpaper layer — spans the ENTIRE session width, behind the
           resizable split. SessionChat portals its welcome wallpaper in here so
           the wallpaper always renders full-width and never shrinks/recrops when
           the side panel opens. The transparent main panel reveals it; the opaque
           side panel covers its own half. */}
-      {/* <div
+        {/* <div
         ref={setWallpaperLayer}
         className="absolute inset-0 z-0 pointer-events-none overflow-hidden"
         aria-hidden="true"
       /> */}
-      <div ref={panelGroupRef} className="relative z-10 flex-1 min-h-0 flex overflow-hidden">
-        <ResizablePanelGroup
-          direction="horizontal"
-          className="h-full bg-transparent"
-          style={{ transition: 'none' }}
-        >
-          {/* Main content panel (SessionChat) */}
-          <ResizablePanel
-            ref={mainPanelRef}
-            defaultSize={shouldShowPanel ? 50 : 100}
-            minSize={shouldShowPanel ? (isAnimating ? 0 : isExpanded ? 0 : 30) : 100}
-            maxSize={shouldShowPanel ? (isAnimating ? 100 : isExpanded ? 0 : 65) : 100}
-            collapsible={isExpanded || isAnimating}
-            className={cn(
-              "flex flex-col overflow-hidden relative bg-transparent transition-[padding] duration-300 ease-out",
-              shouldShowPanel && "pl-3 pr-1.5",
-              isExpanded && !isAnimating && "opacity-0 pointer-events-none"
-            )}
+        <div ref={panelGroupRef} className="relative z-10 flex-1 min-h-0 flex overflow-hidden">
+          <ResizablePanelGroup
+            direction="horizontal"
+            className="h-full bg-transparent"
+            style={{ transition: 'none' }}
           >
-            <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
-              {children}
-            </div>
-          </ResizablePanel>
+            {/* Main content panel (SessionChat) */}
+            <ResizablePanel
+              ref={mainPanelRef}
+              defaultSize={shouldShowPanel ? 50 : 100}
+              minSize={shouldShowPanel ? (isAnimating ? 0 : isExpanded ? 0 : 30) : 100}
+              maxSize={shouldShowPanel ? (isAnimating ? 100 : isExpanded ? 0 : 65) : 100}
+              collapsible={isExpanded || isAnimating}
+              className={cn(
+                'flex flex-col overflow-hidden relative bg-transparent transition-[padding] duration-300 ease-out',
+                shouldShowPanel && 'pl-3 pr-1.5',
+                isExpanded && !isAnimating && 'opacity-0 pointer-events-none',
+              )}
+            >
+              <div className="flex-1 overflow-hidden min-h-0 flex flex-col">{children}</div>
+            </ResizablePanel>
 
-          {/* Resizable handle */}
-          <ResizableHandle
-            withHandle={shouldShowPanel && !isExpanded}
-            disabled={!shouldShowPanel || isExpanded}
-            className={cn(
-              'z-20 transition-opacity duration-300',
-              shouldShowPanel && !isExpanded ? 'w-0 opacity-100' : 'w-0 opacity-0 pointer-events-none'
-            )}
-          />
+            {/* Resizable handle */}
+            <ResizableHandle
+              withHandle={shouldShowPanel && !isExpanded}
+              disabled={!shouldShowPanel || isExpanded}
+              className={cn(
+                'z-20 transition-opacity duration-300',
+                shouldShowPanel && !isExpanded
+                  ? 'w-0 opacity-100'
+                  : 'w-0 opacity-0 pointer-events-none',
+              )}
+            />
 
-          {/* Side panel — Actions (tool calls) / Browser / Files.
+            {/* Side panel — Actions (tool calls) / Browser / Files.
               The user toggles between them via the header switcher. */}
-          <ResizablePanel
-            ref={sidePanelRef}
-            defaultSize={shouldShowPanel ? 50 : 0}
-            minSize={shouldShowPanel ? (isAnimating ? 0 : isExpanded ? 100 : 35) : 0}
-            maxSize={shouldShowPanel ? (isAnimating ? 100 : isExpanded ? 100 : 70) : 0}
-            collapsible={!isExpanded || isAnimating}
-            className={cn(
-              'relative overflow-hidden bg-background',
-              !shouldShowPanel && 'hidden',
-            )}
-          >
-            <div className={cn(
-              "h-full transition-[padding] duration-300 ease-out bg-background",
-              isExpanded ? "p-0" : "pt-3 pb-6 pr-3 sm:pr-4 pl-1.5"
-            )}>
-              <SidePanelFrame header={effectivePanelHeader}>{effectivePanelBody}</SidePanelFrame>
-            </div>
-          </ResizablePanel>
-        </ResizablePanelGroup>
+            <ResizablePanel
+              ref={sidePanelRef}
+              defaultSize={shouldShowPanel ? 50 : 0}
+              minSize={shouldShowPanel ? (isAnimating ? 0 : isExpanded ? 100 : 35) : 0}
+              maxSize={shouldShowPanel ? (isAnimating ? 100 : isExpanded ? 100 : 70) : 0}
+              collapsible={!isExpanded || isAnimating}
+              className={cn('relative overflow-hidden bg-background', !shouldShowPanel && 'hidden')}
+            >
+              <div
+                className={cn(
+                  'h-full transition-[padding] duration-300 ease-out bg-background',
+                  isExpanded ? 'p-0' : 'pt-3 pb-6 pr-3 sm:pr-4 pl-1.5',
+                )}
+              >
+                <SidePanelFrame header={effectivePanelHeader}>{effectivePanelBody}</SidePanelFrame>
+              </div>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </div>
       </div>
-    </div>
     </SessionWallpaperLayerContext.Provider>
   );
 });
@@ -469,7 +459,13 @@ function PanelHeaderSwitcher({
   return (
     <div className="flex-shrink-0 flex items-center justify-between h-10 pl-4 pr-2 border-b border-border/60">
       {/* Plain text tabs with an underline on active — no chip, no fill. */}
-      <div role="tablist" aria-label={tHardcodedUi.raw('componentsSessionSessionLayout.line348JsxAttrAriaLabelSidePanelView')} className="flex items-center gap-5">
+      <div
+        role="tablist"
+        aria-label={tHardcodedUi.raw(
+          'componentsSessionSessionLayout.line348JsxAttrAriaLabelSidePanelView',
+        )}
+        className="flex items-center gap-5"
+      >
         <PanelTabButton
           active={view === 'actions'}
           onClick={() => onChangeView('actions')}
@@ -490,20 +486,29 @@ function PanelHeaderSwitcher({
           onClick={() => onChangeView('terminal')}
           label="Terminal"
         />
+        <PanelTabButton
+          active={view === 'audit'}
+          onClick={() => onChangeView('audit')}
+          label="Audit"
+        />
       </div>
       <Tooltip>
         <TooltipTrigger asChild>
           <button
             onClick={onClose}
             className="inline-flex items-center justify-center h-7 w-7 rounded-full text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer"
-            aria-label={tHardcodedUi.raw('componentsSessionSessionLayout.line370JsxAttrAriaLabelClosePanel')}
+            aria-label={tHardcodedUi.raw(
+              'componentsSessionSessionLayout.line370JsxAttrAriaLabelClosePanel',
+            )}
           >
             <X className="w-3.5 h-3.5" />
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="text-xs">
-          {tHardcodedUi.raw('componentsSessionSessionLayout.line376JsxTextClosePanel')}<kbd className="ml-1.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
-            {tHardcodedUi.raw('componentsSessionSessionLayout.line378JsxTextI')}</kbd>
+          {tHardcodedUi.raw('componentsSessionSessionLayout.line376JsxTextClosePanel')}
+          <kbd className="ml-1.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+            {tHardcodedUi.raw('componentsSessionSessionLayout.line378JsxTextI')}
+          </kbd>
         </TooltipContent>
       </Tooltip>
     </div>
