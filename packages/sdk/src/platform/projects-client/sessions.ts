@@ -225,6 +225,41 @@ export async function getProjectSession(
   );
 }
 
+/** One governed action an agent took in a session (from the executor audit). */
+export interface SessionAuditAction {
+  execution_id: string;
+  action: string;
+  connector_id: string | null;
+  /** ok | error | denied | pending_approval */
+  status: string;
+  /** read | write | destructive | null */
+  risk: string | null;
+  acted_by: string | null;
+  acted_by_email: string | null;
+  approved_by: string | null;
+  approved_by_email: string | null;
+  result_summary: Record<string, unknown> | null;
+  at: string;
+  resolved_at: string | null;
+}
+
+export interface SessionAudit {
+  session_id: string;
+  agent: string | null;
+  count: number;
+  actions: SessionAuditAction[];
+}
+
+/** Per-session audit trail: every executor-gated action the agent took, with its
+ *  risk + allow/ask/block verdict + who approved it. Visible to anyone who can
+ *  see the session (its launcher + project managers). */
+export async function getSessionAudit(projectId: string, sessionId: string, limit?: number) {
+  const qs = limit ? `?limit=${limit}` : '';
+  return unwrap(
+    await backendApi.get<SessionAudit>(`/projects/${projectId}/sessions/${sessionId}/audit${qs}`),
+  );
+}
+
 export async function updateProjectSession(
   projectId: string,
   sessionId: string,

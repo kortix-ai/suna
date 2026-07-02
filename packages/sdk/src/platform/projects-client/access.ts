@@ -366,3 +366,47 @@ export async function deleteProjectResourceGrant(projectId: string, grantId: str
     ),
   );
 }
+
+// ─── Approvals (APPROVE / ASK / BLOCK inbox) ────────────────────────────────
+
+/** An executor action a policy gated as `require_approval`, still awaiting a
+ *  human decision. */
+export interface PendingApproval {
+  execution_id: string;
+  action: string;
+  risk: string | null;
+  session_id: string | null;
+  requested_by: string | null;
+  requested_by_email: string | null;
+  requested_at: string;
+  detail: Record<string, unknown> | null;
+}
+
+export interface PendingApprovalsResponse {
+  count: number;
+  approvals: PendingApproval[];
+}
+
+/** The manager inbox of gated actions awaiting approve/deny. */
+export async function listPendingApprovals(projectId: string, options?: { showErrors?: boolean }) {
+  return unwrap(
+    await backendApi.get<PendingApprovalsResponse>(`/projects/${projectId}/approvals`, {
+      showErrors: options?.showErrors,
+    }),
+  );
+}
+
+/** Resolve a pending approval. Allowed for a project manager or the session
+ *  launcher; approve lets the action proceed on retry, deny records a refusal. */
+export async function resolveApproval(
+  projectId: string,
+  executionId: string,
+  decision: 'approve' | 'deny',
+) {
+  return unwrap(
+    await backendApi.post<{ ok: boolean }>(
+      `/projects/${projectId}/approvals/${executionId}`,
+      { decision },
+    ),
+  );
+}
