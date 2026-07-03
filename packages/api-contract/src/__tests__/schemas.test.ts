@@ -348,6 +348,7 @@ describe('envelopes', () => {
       'agentmail_email',
       'meet',
       'llm_gateway',
+      'review_center',
     ]);
   });
 
