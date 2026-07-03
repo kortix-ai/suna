@@ -222,9 +222,18 @@ describe('filterItems', () => {
       approval('a1', [act('x', 'low')], 'needs_you'),
       change('c2', 'done'),
     ];
-    expect(filterItems(items, 'needs_you', 'all').map((i) => i.id)).toEqual(['c1', 'a1']);
+    // Equal createdAt → deterministic tie-break by id (a1 < c1).
+    expect(filterItems(items, 'needs_you', 'all').map((i) => i.id)).toEqual(['a1', 'c1']);
     expect(filterItems(items, 'needs_you', 'change').map((i) => i.id)).toEqual(['c1']);
     expect(filterItems(items, 'done', 'all').map((i) => i.id)).toEqual(['c2']);
+  });
+  test('returns newest-first regardless of input order', () => {
+    const items = [
+      { ...change('old', 'needs_you'), createdAt: '2020-01-01T00:00:00Z' },
+      { ...change('new', 'needs_you'), createdAt: '2020-01-03T00:00:00Z' },
+      { ...change('mid', 'needs_you'), createdAt: '2020-01-02T00:00:00Z' },
+    ];
+    expect(filterItems(items, 'needs_you', 'all').map((i) => i.id)).toEqual(['new', 'mid', 'old']);
   });
   test('also narrows by the search query', () => {
     const items = [change('pricing-page', 'needs_you'), change('signup-form', 'needs_you')];

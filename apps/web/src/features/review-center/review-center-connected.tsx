@@ -36,7 +36,7 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
   const qc = useQueryClient();
   const router = useRouter();
   const closeCustomize = useCustomizeStore((s) => s.close);
-  const { data, isLoading } = useReviewItems();
+  const { data, isLoading, isFetching } = useReviewItems();
   const act = useActReviewItem();
   const bulk = useBulkActReviewItems();
   const merge = useMergeChangeRequest();
@@ -125,6 +125,7 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
     <ReviewCenter
       initialItems={items}
       isLoading={isLoading}
+      isFetching={isFetching}
       sessionLabels={sessionLabels}
       onAct={handleAct}
       onBulkAct={(ids, verdict) =>

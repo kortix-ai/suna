@@ -84,7 +84,10 @@ export function matchesQuery(item: ReviewItem, query: string): boolean {
   return `${item.title} ${item.summary} ${item.project} ${item.agent}`.toLowerCase().includes(q);
 }
 
-/** Items visible for the current segment + kind + query + optional session. */
+/** Items visible for the current segment + kind + query + optional session,
+ *  newest-first. The explicit sort keeps the top of Needs-you the most recent
+ *  blocking item and stops a poll refetch from reordering rows (which would
+ *  jump the j/k focus cursor). Ties break on id for a stable order. */
 export function filterItems(
   items: ReviewItem[],
   segment: ReviewSegment,
@@ -92,13 +95,15 @@ export function filterItems(
   query = '',
   sessionFilter: string | 'all' = 'all',
 ): ReviewItem[] {
-  return items.filter(
-    (i) =>
-      segmentForStatus(i.status) === segment &&
-      (kind === 'all' || i.kind === kind) &&
-      (sessionFilter === 'all' || (i.sessionId ?? '') === sessionFilter) &&
-      matchesQuery(i, query),
-  );
+  return items
+    .filter(
+      (i) =>
+        segmentForStatus(i.status) === segment &&
+        (kind === 'all' || i.kind === kind) &&
+        (sessionFilter === 'all' || (i.sessionId ?? '') === sessionFilter) &&
+        matchesQuery(i, query),
+    )
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
 }
 
 /** One "group by session" bucket. `sessionId === null` is the catch-all for
