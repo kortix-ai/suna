@@ -28,7 +28,13 @@ import {
  * with the original allow-all engine; production sets it true.
  */
 import { type DefaultMode, type Policy, resolveEffectiveAction } from './policy';
-import { type SecretGrant, type ShareScope, type ShareSubject, isSecretUsableBy } from './share';
+import {
+  type SecretGrant,
+  type ShareScope,
+  type ShareSubject,
+  connectorDeniedForAgent,
+  isSecretUsableBy,
+} from './share';
 import type { ActionBinding, Risk } from './types';
 
 export interface GatewayConnector {
@@ -51,6 +57,11 @@ export interface GatewayConnector {
    *  action defaults to require_approval unless an explicit policy opens it.
    *  Optional (absent = not sensitive) so fixtures/callers needn't set it. */
   sensitive?: boolean;
+  /** Which agents may call this connector (the connector-side agent gate,
+   *  mirror of secret agent_scope). Absent/empty = ALL agents; a list of agent
+   *  NAMES restricts it to those agents' sessions. Enforced in connectorUsable
+   *  against the session's running agent. Optional so fixtures needn't set it. */
+  agentScope?: string[];
 }
 
 export interface GatewayAction {
@@ -130,6 +141,11 @@ export interface GatewayDeps {
    * inheritance. Implementations should memoize per (project, subject).
    */
   inheritedConnectorSlugs?(projectId: string, subject: ShareSubject): Promise<ReadonlySet<string>>;
+  /** The running agent's NAME for a session (projectSessions.agent_name) — the
+   *  SAME source the secret gate uses, so the connector agent-scope check agrees
+   *  on identity. Consulted ONLY for a connector that is actually agent-scoped
+   *  (no lookup on the common all-agents path). Absent = never scope-gate. */
+  sessionAgentName?(sessionId: string): Promise<string | null>;
   /** Connector-scoped policies (relative patterns over the connector's tool paths). */
   loadPolicies(connectorId: string): Promise<Policy[]>;
   /** Project-scoped policies (fully-qualified patterns over <slug>.<path>). */
@@ -273,15 +289,16 @@ async function resolveConnectorForCall(
   };
 }
 
-/** Is this connector usable by the subject? Access (connector sharing) + credential (by mode). */
+/** Is this connector usable for this call? Human access (sharing) + AGENT access
+ *  (connector agent_scope) + credential (by mode). */
 async function connectorUsable(
   deps: GatewayDeps,
-  projectId: string,
   connector: GatewayConnector,
-  subject: ShareSubject,
+  input: CallInput,
   credentialOverride?: string | null,
 ): Promise<{ ok: true; secret: string | null } | { ok: false; reason: string }> {
-  // 1. Access — who can use this connector. Direct share (project-wide or a
+  const { projectId, subject } = input;
+  // 1. HUMAN access — who can use this connector. Direct share (project-wide or a
   // member/department grant), OR inherited via the "assign human → agent"
   // pyramid: being assigned to an agent that declares this connector grants it.
   // Inheritance is only consulted on the cold path (a restricted connector the
@@ -290,6 +307,21 @@ async function connectorUsable(
     const inherited = await deps.inheritedConnectorSlugs?.(projectId, subject);
     if (!inherited?.has(connector.slug)) {
       return { ok: false, reason: 'not_shared' };
+    }
+  }
+  // 1b. AGENT access — which AGENTS may call this connector (the connector-side
+  // agent_scope, mirror of the secret agent_scope; a DIFFERENT axis from the
+  // agent-side [[agents]].connectors self-narrowing enforced at the router).
+  // Resolved from the SESSION's agent name (the same source the secret gate
+  // uses) so a connector scoped to [pr-bot] denies the fully-privileged
+  // `default` agent exactly as secrets do. Pays the session lookup ONLY when the
+  // connector is actually scoped; fail-closed if the agent can't be identified.
+  if (connector.agentScope && connector.agentScope.length > 0) {
+    const agentName = input.sessionId
+      ? (await deps.sessionAgentName?.(input.sessionId)) ?? null
+      : null;
+    if (connectorDeniedForAgent(connector.agentScope, agentName)) {
+      return { ok: false, reason: 'agent_not_scoped' };
     }
   }
   // 2. Credential — none needed (public), shared, or this member's own (per_user).
@@ -366,13 +398,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   }
 
   const emailExecution = await resolveEmailExecutionContext(deps, input, connector, resolved.slug);
-  const usable = await connectorUsable(
-    deps,
-    input.projectId,
-    connector,
-    input.subject,
-    emailExecution.secretOverride,
-  );
+  const usable = await connectorUsable(deps, connector, input, emailExecution.secretOverride);
   if (!usable.ok) {
     await audit(deps, input, connector.connectorId, 'denied', action.risk, {
       reason: usable.reason,

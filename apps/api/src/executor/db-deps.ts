@@ -23,6 +23,7 @@ import { validateAccountToken } from '../repositories/account-tokens';
 import { authorize } from '../iam';
 import { loadProjectForUser } from '../projects/lib/access';
 import {
+  connectorDeniedForAgent,
   isSecretUsableBy,
   resolveShareSubject,
   scopeToIntent,
@@ -226,6 +227,16 @@ async function connectorConnected(row: ConnectorRow, userId: string | null): Pro
     : credentialExists(row.connectorId, userId);
 }
 
+/** The connector's agent_scope (which agents may call it) out of its config jsonb.
+ *  Mirrors how `sensitive` is stored. undefined/empty = usable by all agents. */
+function connectorAgentScopeOf(config: unknown): string[] | undefined {
+  const raw = (config as { agent_scope?: unknown } | null)?.agent_scope;
+  if (Array.isArray(raw) && raw.length > 0 && raw.every((x) => typeof x === 'string')) {
+    return raw as string[];
+  }
+  return undefined;
+}
+
 function toGatewayConnector(row: ConnectorRow, grants: Awaited<ReturnType<typeof loadConnectorGrants>>): GatewayConnector {
   const { auth, hasAuth } = authOf(row);
   return {
@@ -241,6 +252,7 @@ function toGatewayConnector(row: ConnectorRow, grants: Awaited<ReturnType<typeof
     credentialMode: row.credentialMode as 'shared' | 'per_user',
     enabled: row.enabled,
     sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
+    agentScope: connectorAgentScopeOf(row.config),
   };
 }
 
@@ -326,6 +338,14 @@ function makeDbGatewayDeps(): GatewayDeps {
     },
     inheritedConnectorSlugs: (projectId, subject) =>
       resolveInheritedConnectorSlugs(projectId, subject.userId, subject.groupIds),
+    sessionAgentName: async (sessionId) => {
+      const [row] = await db
+        .select({ agentName: projectSessions.agentName })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, sessionId))
+        .limit(1);
+      return row?.agentName ?? null;
+    },
     loadPolicies: loadConnectorPoliciesFor,
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,
@@ -492,11 +512,28 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
     return inheritedConns;
   };
 
+  // The running agent's name (projectSessions.agent_name) for the connector
+  // agent_scope filter below — resolved once, from the SAME source the call gate
+  // (gateway.sessionAgentName) and the secret gate use, so the list never shows a
+  // connector the call gate would deny with `agent_not_scoped`.
+  let catalogAgentName: string | null = null;
+  if (p.sessionId) {
+    const [srow] = await db
+      .select({ agentName: projectSessions.agentName })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, p.sessionId))
+      .limit(1);
+    catalogAgentName = srow?.agentName ?? null;
+  }
+
   const out: CatalogConnector[] = [];
   for (const row of conns) {
     // Per-agent assignment: an agent only sees connectors its grant lists —
     // consistent with the call gate, so it never lists a tool it can't invoke.
     if (!agentMayUseConnector(p.agentGrant ?? null, row.slug)) continue;
+    // Connector-side agent_scope: an agent doesn't see a connector restricted to
+    // OTHER agents (mirrors the call gate's connectorUsable agent check).
+    if (connectorDeniedForAgent(connectorAgentScopeOf(row.config), catalogAgentName)) continue;
     const grants = grantsByConnector.get(row.connectorId) ?? [];
     if (!isSecretUsableBy(row.shareScope as 'project' | 'restricted', grants, p.subject)) {
       if (!(await inheritedConnsFor()).has(row.slug)) continue;
