@@ -1779,8 +1779,8 @@ function ResourceAccessCard({
     resources.agents.length > 0 || resources.skills.length > 0 || (resources.secrets?.length ?? 0) > 0;
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [pickerType, setPickerType] = useState<ResourceGrantType | ''>(''); // step 1
-  const [pickerResourceId, setPickerResourceId] = useState<string>(''); // step 2
+  const [pickerType] = useState<ResourceGrantType>('agent'); // agent-only grant flow
+  const [pickerResourceId, setPickerResourceId] = useState<string>(''); // the agent
   const [principalValue, setPrincipalValue] = useState<string>(''); // "member:id" | "group:id"
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const markPending = (id: string) => setPendingIds((prev) => new Set(prev).add(id));
@@ -1791,25 +1791,12 @@ function ResourceAccessCard({
       return next;
     });
 
-  // Step 1 of the grant flow: pick the resource TYPE. Only offer types that
-  // actually have resources, so the type buttons never lead to an empty list.
-  // SECRET is intentionally NOT offered: a direct secret→member grant is the
-  // same `project_secret_grants` share we removed from the Secret modal — the
-  // pyramid routes secrets to people through an AGENT that declares them. (Any
-  // pre-existing secret grants still show in the list below so they can be
-  // revoked; skills stay grantable as they don't flow through agents yet.)
-  const typeOptions = useMemo(
-    () =>
-      (
-        [
-          { type: 'agent', label: 'Agent', Icon: Bot, items: resources.agents },
-          { type: 'skill', label: 'Skill', Icon: Sparkles, items: resources.skills },
-        ] as const
-      ).filter((o) => o.items.length > 0),
-    [resources],
-  );
-  // Step 2 options: only the resources of the chosen type.
-  const activeItems = typeOptions.find((o) => o.type === pickerType)?.items ?? [];
+  // The grant flow is AGENT-ONLY: the pyramid routes ALL resources — secrets,
+  // connectors, AND skills — to people through the AGENTS they're assigned to,
+  // never by a direct resource→member grant. Declare the resource on an agent
+  // (its scope / skills), then assign the agent here. (Pre-existing skill/secret
+  // grants still render in the list below so they can be revoked.)
+  const activeItems = resources.agents;
 
   // Blast-radius preview: when an AGENT is picked, what the assignee inherits
   // (the agent's declared secrets + connectors). Null for skills/secrets or until
@@ -1820,14 +1807,8 @@ function ResourceAccessCard({
   }, [pickerType, pickerResourceId, resources.agents]);
 
   function resetGrantForm() {
-    setPickerType('');
     setPickerResourceId('');
     setPrincipalValue('');
-  }
-
-  function onTypeChange(t: ResourceGrantType) {
-    setPickerType(t);
-    setPickerResourceId(''); // the previous pick belongs to a different type
   }
 
   function invalidate() {
@@ -1864,12 +1845,7 @@ function ResourceAccessCard({
 
   function onDialogOpenChange(next: boolean) {
     if (createMutation.isPending) return;
-    if (next) {
-      // Default the type to the first available so the resource list is live
-      // immediately; the user can still switch types from there.
-      resetGrantForm();
-      setPickerType(typeOptions[0]?.type ?? '');
-    }
+    if (next) resetGrantForm(); // agent-only flow; the agent list is live immediately
     setDialogOpen(next);
   }
 
@@ -1924,10 +1900,12 @@ function ResourceAccessCard({
             </DialogTrigger>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>Grant resource access</DialogTitle>
+                <DialogTitle>Assign an agent</DialogTitle>
                 <DialogDescription>
-                  Scope an agent, skill, or secret to a member or department. Ungranted resources stay
-                  open to everyone with project access.
+                  Assign an agent to a member or department — they inherit everything that agent
+                  uses: its secrets, connectors, and skills. Resources reach people through agents,
+                  not by direct grant; agents you don't assign stay open to everyone with project
+                  access.
                 </DialogDescription>
               </DialogHeader>
 
@@ -1941,41 +1919,14 @@ function ResourceAccessCard({
                 }}
               >
                 <div className="space-y-1.5">
-                  <span className="text-muted-foreground text-xs font-medium">1. Resource type</span>
-                  <div className="flex gap-1.5">
-                    {typeOptions.map(({ type, label, Icon }) => (
-                      <Button
-                        key={type}
-                        type="button"
-                        size="sm"
-                        variant={pickerType === type ? 'default' : 'outline'}
-                        className="flex-1 gap-1.5"
-                        onClick={() => onTypeChange(type)}
-                      >
-                        <Icon className="h-3.5 w-3.5" />
-                        {label}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <span className="text-muted-foreground text-xs font-medium">
-                    2. {pickerType ? `${pickerType[0].toUpperCase()}${pickerType.slice(1)}` : 'Resource'}
-                  </span>
+                  <span className="text-muted-foreground text-xs font-medium">1. Agent</span>
                   <Select
                     value={pickerResourceId}
                     onValueChange={setPickerResourceId}
-                    disabled={!pickerType || createMutation.isPending}
+                    disabled={createMutation.isPending}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue
-                        placeholder={
-                          pickerType
-                            ? `Select ${/^[aeiou]/i.test(pickerType) ? 'an' : 'a'} ${pickerType}`
-                            : 'Pick a type first'
-                        }
-                      />
+                      <SelectValue placeholder="Select an agent" />
                     </SelectTrigger>
                     <SelectContent>
                       {activeItems.map((r) => (
@@ -1990,7 +1941,7 @@ function ResourceAccessCard({
                 {selectedAgentDeclares && <BlastRadiusPreview declares={selectedAgentDeclares} />}
 
                 <div className="space-y-1.5">
-                  <span className="text-muted-foreground text-xs font-medium">3. Grant to</span>
+                  <span className="text-muted-foreground text-xs font-medium">2. Grant to</span>
                   <Select
                     value={principalValue}
                     onValueChange={setPrincipalValue}
