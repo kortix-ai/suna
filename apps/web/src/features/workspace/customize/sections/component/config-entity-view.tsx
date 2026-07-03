@@ -258,8 +258,8 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
       {stateContent ??
         (config ? (
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
-            {/* Left — a selectable list. */}
-            <div className="lg:border-border/60 space-y-3 lg:border-r lg:pr-4">
+            {/* Left — a selectable list, stuck to the edge and sticky on scroll. */}
+            <div className="lg:border-border/60 space-y-3 lg:sticky lg:top-0 lg:self-start lg:border-r lg:pr-4">
               {searchInput}
               {filtered.length === 0 ? (
                 noMatches
@@ -327,7 +327,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
       title={title}
       description={description}
       docs={docs}
-      className={layout === 'split' ? 'max-w-6xl' : undefined}
+      className={layout === 'split' ? 'max-w-none px-6' : undefined}
       action={
         <div className="flex items-center gap-1.5">
           <MarketplaceSectionButton projectId={projectId} />
@@ -491,47 +491,58 @@ function EntityDetail<T extends ConfigEntity>({
     <p className="text-muted-foreground/60 text-sm italic">{emptyBodyLabel}</p>
   );
 
-  return (
-    <div className={split ? 'pb-10' : 'px-4 py-5'}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 space-y-2">
-          {meta ? <div className="flex flex-wrap items-center gap-1.5">{meta}</div> : null}
-          <h1 className="text-foreground text-2xl font-semibold tracking-tight text-balance">
-            {renderDetailTitle(entity)}
-          </h1>
-          {entity.description ? (
-            <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed text-pretty">
-              {entity.description}
-            </p>
-          ) : null}
-          <p className="text-muted-foreground/50 truncate font-mono text-xs">{entity.path}</p>
-        </div>
-        <DetailToolbarActions
-          onCopy={onCopy}
-          onEdit={() => configure.start(editConfigPrompt(kind, entity.name, entity.path))}
-          editing={configure.pending}
-          copyDisabled={!fileQuery.data?.content}
-        />
+  const header = (
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0 space-y-2">
+        {meta ? <div className="flex flex-wrap items-center gap-1.5">{meta}</div> : null}
+        <h1 className="text-foreground text-2xl font-semibold tracking-tight text-balance">
+          {renderDetailTitle(entity)}
+        </h1>
+        {entity.description ? (
+          <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed text-pretty">
+            {entity.description}
+          </p>
+        ) : null}
+        <p className="text-muted-foreground/50 truncate font-mono text-xs">{entity.path}</p>
       </div>
+      <DetailToolbarActions
+        onCopy={onCopy}
+        onEdit={() => configure.start(editConfigPrompt(kind, entity.name, entity.path))}
+        editing={configure.pending}
+        copyDisabled={!fileQuery.data?.content}
+      />
+    </div>
+  );
 
-      {split ? (
-        // Source in the middle, the extra cards (assignments / model / scope) as
-        // a right-hand aside on wide screens; stacked below on narrow.
-        <div
-          className={cn(
-            'mt-6 grid grid-cols-1 gap-6',
-            extra && 'xl:grid-cols-[minmax(0,1fr)_300px]',
-          )}
-        >
-          <div className="min-w-0">{source}</div>
-          {extra ? <aside className="space-y-3">{extra}</aside> : null}
+  if (split) {
+    // Full-width master detail: the source (header + body) fills the MIDDLE with a
+    // readable max-width, and the extra cards sit as a right-hand aside stuck to
+    // the edge. Below xl the aside stacks under the source.
+    return (
+      <div
+        className={cn(
+          'grid grid-cols-1 gap-8 pb-10',
+          extra && 'xl:grid-cols-[minmax(0,1fr)_340px]',
+        )}
+      >
+        <div className="min-w-0">
+          <div className="mx-auto max-w-3xl">
+            {header}
+            <div className="mt-8">{source}</div>
+          </div>
         </div>
-      ) : (
-        <>
-          {extra ? <div className="mt-6">{extra}</div> : null}
-          <div className="mt-8">{source}</div>
-        </>
-      )}
+        {extra ? (
+          <aside className="space-y-3 xl:sticky xl:top-0 xl:self-start xl:pt-1">{extra}</aside>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 py-5">
+      {header}
+      {extra ? <div className="mt-6">{extra}</div> : null}
+      <div className="mt-8">{source}</div>
     </div>
   );
 }
