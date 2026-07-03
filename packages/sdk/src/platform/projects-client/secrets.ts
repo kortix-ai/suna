@@ -26,6 +26,10 @@ export interface ProjectSecret {
   share_scope?: 'project' | 'restricted';
   /** Who can use the shared value. Same shape as connector sharing. */
   sharing?: ConnectorSharing | null;
+  /** Which agents may use this secret. null / [] = ALL agents (default); a list
+   *  of agent names restricts it to those agents' sessions. The single access
+   *  control the Secrets page exposes now that per-member "only me" is retired. */
+  agent_scope?: string[] | null;
   /** The shared value reaches me (project-wide, or I'm in the allow-list). */
   usable_by_me: boolean;
   /** Provenance for `usable_by_me`: the agent(s) I'm assigned to that declare this
@@ -72,15 +76,19 @@ export async function upsertProjectSecret(
   projectId: string,
   input: {
     name: string;
-    /** Omit to change sharing only on an existing secret (value left untouched). */
+    /** Omit to change scope only on an existing secret (value left untouched). */
     value?: string;
     sharing?: ConnectorSharing;
+    /** Which agents may use this secret. null / [] = all agents; a list of agent
+     *  names restricts it. Omit (undefined) to leave the current scope unchanged. */
+    agentScope?: string[] | null;
   },
 ) {
+  const { agentScope, ...rest } = input;
   return unwrap(
     await backendApi.post<ProjectSecret>(
       `/projects/${projectId}/secrets`,
-      input,
+      agentScope !== undefined ? { ...rest, agent_scope: agentScope } : rest,
     ),
   );
 }

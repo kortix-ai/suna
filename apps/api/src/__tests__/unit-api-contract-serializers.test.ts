@@ -93,6 +93,7 @@ function secretRow(
     shareScope: 'project',
     ownerUserId: null,
     active: true,
+    agentScope: null,
     createdBy: USER_ID,
     createdAt: NOW,
     updatedAt: NOW,

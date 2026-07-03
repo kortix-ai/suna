@@ -277,6 +277,10 @@ export function buildSecretView(input: {
     configured: Boolean(shared),
     share_scope: shared?.shareScope ?? 'project',
     sharing: shared ? scopeToIntent(shared.shareScope as 'project' | 'restricted', sharedGrants) : null,
+    // Which agents may use this secret. null / [] = ALL agents (default); a list
+    // of agent names restricts it to those agents' sessions. The single control
+    // the Secrets page exposes now that per-member "only me" is retired.
+    agent_scope: shared?.agentScope ?? null,
     usable_by_me: usableByMe,
     // Provenance for usable_by_me: the agent(s) I'm assigned to that declare this
     // secret. Non-null means I can use it BECAUSE of that assignment (the

@@ -303,6 +303,10 @@ export const SecretSchema = z.object({
   configured: z.boolean(),
   share_scope: z.enum(['project', 'restricted']),
   sharing: SharingIntentSchema.nullable(),
+  /** Which agents may use this secret. null / [] = ALL agents (default); a list
+   *  of agent names restricts it to those agents' sessions. The single access
+   *  control the Secrets page exposes now that per-member "only me" is retired. */
+  agent_scope: z.array(z.string()).nullable(),
   usable_by_me: z.boolean(),
   /** Provenance for `usable_by_me`: the agent(s) the caller is assigned to that
    *  declare this secret (the "assign human → agent" inheritance pyramid).

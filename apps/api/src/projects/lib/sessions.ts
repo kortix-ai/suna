@@ -9,7 +9,12 @@ import { db } from '../../shared/db';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
-import { listProjectSecretsSnapshotForUser, resolveDeclaredSharedSecrets } from '../secrets';
+import {
+  listProjectSecretsSnapshotForUser,
+  loadSecretAgentScopes,
+  resolveDeclaredSharedSecrets,
+  secretNamesDeniedForAgent,
+} from '../secrets';
 import { grantFromLoadedAgents, loadProjectAgents } from '../agents';
 import { resolveAssignedAgentNames, unionDeclaredResources } from './agent-inheritance';
 import { agentMayUseEnv } from '../../iam/agent-scope';
@@ -288,6 +293,33 @@ export async function buildSessionSandboxEnvVars(input: {
       }
     }
   }
+
+  // Secret → AGENT access control (the secret-side allowlist, the authoritative
+  // "which agents may use this secret" gate). A shared secret scoped to specific
+  // agents (`agent_scope` non-empty) is dropped from any session whose running
+  // agent isn't listed — even one the launcher could otherwise see or inherited
+  // from an assignment. All-agents secrets (NULL/empty scope) always pass. This
+  // is DB-side (no git/manifest needed), so it applies to every session; the
+  // per-agent `env` allowlist above is a SEPARATE, agent-side least-privilege
+  // narrowing (a scoped agent limiting itself), not this cross-agent gate.
+  const agentSecretScopes = await loadSecretAgentScopes(input.projectId);
+  if (agentSecretScopes.size > 0) {
+    const denied = secretNamesDeniedForAgent(agentSecretScopes, input.agentName);
+    let droppedByScope = 0;
+    for (const name of denied) {
+      if (name in runtimeSecrets.env) {
+        delete runtimeSecrets.env[name];
+        runtimeSecrets.names = runtimeSecrets.names.filter((n) => n !== name);
+        droppedByScope += 1;
+      }
+    }
+    if (droppedByScope > 0) {
+      console.log(
+        `[session ${input.sessionId}] agent '${input.agentName}' scope-gated out ${droppedByScope} secret(s)`,
+      );
+    }
+  }
+
   // Per-MEMBER / department secret scoping is already applied UPSTREAM by the
   // share model: listProjectSecretsSnapshotForUser (above) resolves secrets AS
   // the launching user, so a secret shared only with specific members/depts —
