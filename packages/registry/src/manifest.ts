@@ -10,45 +10,55 @@
 
 export const DEFAULT_OPENCODE_CONFIG_DIR = '.kortix/opencode';
 
-export function resolveOpencodeDir(manifestRaw: string | null | undefined): string {
-  if (!manifestRaw) return DEFAULT_OPENCODE_CONFIG_DIR;
-  let inOpencode = false;
+/**
+ * Read a scalar `key` out of a top-level `[section]` (TOML) or `section:` (YAML)
+ * block of a manifest. Dependency-free heuristic line reader (this package ships
+ * into the sandbox/CLI bundle, so it deliberately avoids a full parser) that
+ * handles BOTH formats: a TOML `[section]` header + `key = value`, or a YAML
+ * top-level `section:` key + an indented `key: value`. `#` opens a comment in
+ * both. Returns null if not found.
+ */
+function readSectionScalar(manifestRaw: string, section: string, key: string): string | null {
+  let inSection = false;
+  const keyRe = new RegExp(`^${key}\\s*[:=]\\s*(.+)$`);
   for (const rawLine of manifestRaw.split(/\r?\n/)) {
-    const line = stripTomlComment(rawLine).trim();
+    const stripped = stripComment(rawLine);
+    const line = stripped.trim();
     if (!line) continue;
-    const section = line.match(/^\[([a-zA-Z0-9_.-]+)]$/);
-    if (section) {
-      inOpencode = section[1] === 'opencode';
+    // TOML table header — `[section]`.
+    const tomlSection = line.match(/^\[([a-zA-Z0-9_.-]+)]$/);
+    if (tomlSection) {
+      inSection = tomlSection[1] === section;
       continue;
     }
-    if (!inOpencode) continue;
-    const kv = line.match(/^config_dir\s*=\s*(.+)$/);
-    if (kv) {
-      const value = unquote(kv[1].trim());
-      if (value && !value.startsWith('/') && !value.split('/').includes('..')) {
-        return value.replace(/\/+$/, '');
+    // A YAML top-level key (no leading indentation, `key:`) opens/closes a block.
+    if (/^\S/.test(stripped)) {
+      const topKey = line.match(/^([a-zA-Z0-9_.-]+)\s*:(?:\s|$)/);
+      if (topKey) {
+        inSection = topKey[1] === section;
+        continue;
       }
     }
+    if (!inSection) continue;
+    // `key = value` (TOML) or `key: value` (YAML, indented under the section).
+    const kv = line.match(keyRe);
+    if (kv) return unquote(kv[1].trim());
+  }
+  return null;
+}
+
+export function resolveOpencodeDir(manifestRaw: string | null | undefined): string {
+  if (!manifestRaw) return DEFAULT_OPENCODE_CONFIG_DIR;
+  const value = readSectionScalar(manifestRaw, 'opencode', 'config_dir');
+  if (value && !value.startsWith('/') && !value.split('/').includes('..')) {
+    return value.replace(/\/+$/, '');
   }
   return DEFAULT_OPENCODE_CONFIG_DIR;
 }
 
 export function projectNameFromManifest(manifestRaw: string | null | undefined): string | null {
   if (!manifestRaw) return null;
-  let inProject = false;
-  for (const rawLine of manifestRaw.split(/\r?\n/)) {
-    const line = stripTomlComment(rawLine).trim();
-    if (!line) continue;
-    const section = line.match(/^\[([a-zA-Z0-9_.-]+)]$/);
-    if (section) {
-      inProject = section[1] === 'project';
-      continue;
-    }
-    if (!inProject) continue;
-    const kv = line.match(/^name\s*=\s*(.+)$/);
-    if (kv) return unquote(kv[1].trim());
-  }
-  return null;
+  return readSectionScalar(manifestRaw, 'project', 'name');
 }
 
 export function parseFrontmatter(raw: string | null | undefined): Record<string, string> {
@@ -65,13 +75,17 @@ export function parseFrontmatter(raw: string | null | undefined): Record<string,
 }
 
 function unquote(value: string): string {
-  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
     return value.slice(1, -1);
   }
   return value;
 }
 
-function stripTomlComment(line: string): string {
+// `#` opens a comment in both TOML and YAML (outside quotes) — shared reader.
+function stripComment(line: string): string {
   let quote: string | null = null;
   for (let i = 0; i < line.length; i += 1) {
     const ch = line[i];
