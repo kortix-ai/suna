@@ -16,6 +16,10 @@
 --     no shared row exists yet) or dropped (it merely shadowed an existing
 --     shared row, or lost the promotion tie). Secrets are now project-scoped and
 --     agent-gated; a member no longer keeps a private per-key value.
+--
+--     EXCEPTION: CODEX_AUTH_JSON is a genuinely per-user PROVIDER login (each
+--     member's own ChatGPT/Codex OAuth credential), not a manual "only me"
+--     secret — those personal rows are preserved so connected accounts survive.
 
 ALTER TABLE "kortix"."project_secrets"
   ADD COLUMN IF NOT EXISTS "agent_scope" text[];
@@ -31,6 +35,7 @@ WITH ranked AS (
     ) AS rn
   FROM "kortix"."project_secrets" p
   WHERE p."owner_user_id" IS NOT NULL
+    AND p."name" <> 'CODEX_AUTH_JSON'
     AND NOT EXISTS (
       SELECT 1 FROM "kortix"."project_secrets" s
       WHERE s."project_id" = p."project_id"
@@ -44,8 +49,10 @@ FROM ranked r
 WHERE t."secret_id" = r."secret_id" AND r."rn" = 1;
 
 -- Drop every remaining personal override (promotion losers + overrides that only
--- shadowed an existing shared row). "Only me" no longer exists.
-DELETE FROM "kortix"."project_secrets" WHERE "owner_user_id" IS NOT NULL;
+-- shadowed an existing shared row). "Only me" no longer exists — EXCEPT the
+-- per-user CODEX_AUTH_JSON provider login, which is preserved.
+DELETE FROM "kortix"."project_secrets"
+WHERE "owner_user_id" IS NOT NULL AND "name" <> 'CODEX_AUTH_JSON';
 
 -- Down Migration
 --
