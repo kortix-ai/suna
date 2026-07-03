@@ -12,12 +12,12 @@
 // PATs are exempt (no session_id, no iat for our purposes). Skip when
 // the auth method isn't 'supabase'.
 
+import { accountSessionActivity, accounts } from '@kortix/db';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Context, MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { and, eq, sql } from 'drizzle-orm';
-import { accountSessionActivity, accounts } from '@kortix/db';
-import { db } from '../shared/db';
 import { auditSessionFirstSight } from '../shared/auth-audit';
+import { db } from '../shared/db';
 
 /** Skip the update query if last_seen_at was touched more recently than
  *  this. Bounds DB write pressure under chatty clients. */
@@ -108,10 +108,7 @@ async function touchActivity(
 ): Promise<{ firstSight: boolean }> {
   // Skip when we wrote recently — keeps DB write pressure bounded
   // under a chatty client (e.g. polling, SSE).
-  if (
-    lastSeenAt &&
-    Date.now() - lastSeenAt.getTime() < ACTIVITY_WRITE_INTERVAL_MS
-  ) {
+  if (lastSeenAt && Date.now() - lastSeenAt.getTime() < ACTIVITY_WRITE_INTERVAL_MS) {
     return { firstSight: false };
   }
   // Distinguish first-sight (insert) from refresh (update) using
@@ -125,8 +122,7 @@ async function touchActivity(
       DO UPDATE SET last_seen_at = now()
     RETURNING (xmax = 0) AS first_sight
   `);
-  const data =
-    ((rows as unknown) as { rows: Array<{ first_sight: boolean }> }).rows ?? rows;
+  const data = (rows as unknown as { rows: Array<{ first_sight: boolean }> }).rows ?? rows;
   return { firstSight: (data as Array<{ first_sight: boolean }>)[0]?.first_sight === true };
 }
 
@@ -224,9 +220,8 @@ export function accountSessionGate(): MiddlewareHandler {
     });
 
     if (verdict !== 'allow') {
-      const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
-        ?? c.req.header('x-real-ip')
-        ?? null;
+      const ip =
+        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? c.req.header('x-real-ip') ?? null;
       const userAgent = c.req.header('user-agent') ?? null;
       // Persist the revocation reason so the next request through
       // this session short-circuits without re-evaluating gates.
@@ -252,18 +247,22 @@ export function accountSessionGate(): MiddlewareHandler {
     // account), emit an `auth.session.first_sight` audit event so the
     // log captures "new device / new browser tab signed in" without
     // needing a separate signal from the OAuth callback.
-    const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
-      ?? c.req.header('x-real-ip')
-      ?? null;
+    const ip =
+      c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? c.req.header('x-real-ip') ?? null;
     const userAgent = c.req.header('user-agent') ?? null;
-    touchActivity(accountId, userId, sessionId, ip, userAgent, policy.lastSeenAt)
+    // Fire-and-forget, but keep the whole chain covered by ONE .catch. Returning
+    // the audit promise routes its rejection here too — otherwise a failing
+    // auditSessionFirstSight() (nested inside .then) is an UNHANDLED rejection on
+    // the auth path of every gated request, which floods logs and can crash Node
+    // under load if no process-wide handler is set.
+    void touchActivity(accountId, userId, sessionId, ip, userAgent, policy.lastSeenAt)
       .then((result) => {
         if (result.firstSight) {
-          auditSessionFirstSight({ c, userId, accountId, sessionId });
+          return auditSessionFirstSight({ c, userId, accountId, sessionId });
         }
       })
       .catch((err) => {
-        console.warn('[session-gate] touchActivity failed', err);
+        console.warn('[session-gate] session activity/first-sight audit failed', err);
       });
 
     await next();
