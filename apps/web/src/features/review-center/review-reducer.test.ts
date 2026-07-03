@@ -6,9 +6,11 @@ import {
   countsBySegment,
   decideApprovalAction,
   filterItems,
+  groupBySession,
   matchesQuery,
   rollupApprovalStatus,
   safePendingCount,
+  sessionOptions,
   setStatus,
 } from './review-reducer';
 import {
@@ -257,5 +259,54 @@ describe('bulkSetStatus', () => {
     const items = [change('a', 'needs_you'), change('b', 'needs_you')];
     const next = bulkSetStatus(items, new Set(['b']), 'approved');
     expect(next.find((i) => i.id === 'b')?.status).toBe('approved');
+  });
+});
+
+// ── per-session grouping + filtering ────────────────────────────────────────
+const sItem = (
+  id: string,
+  sessionId: string | undefined,
+  createdAt: string,
+  status: ReviewStatus = 'needs_you',
+): ReviewItem => ({ ...change(id, status), sessionId, createdAt });
+
+describe('per-session view', () => {
+  const items = [
+    sItem('a', 's1', '2020-01-03T00:00:00Z'),
+    sItem('b', 's2', '2020-01-01T00:00:00Z'),
+    sItem('c', 's1', '2020-01-02T00:00:00Z'),
+    sItem('d', undefined, '2020-01-04T00:00:00Z'),
+  ];
+  const labelFor = (id: string): string | undefined => ({ s1: 'Fix login', s2: 'Refactor' })[id];
+
+  test('filterItems narrows to a single session', () => {
+    const v = filterItems(items, 'needs_you', 'all', '', 's1');
+    expect(v.map((i) => i.id).sort()).toEqual(['a', 'c']);
+  });
+
+  test("filterItems 'all' keeps every session (incl. no-session items)", () => {
+    expect(filterItems(items, 'needs_you', 'all', '', 'all')).toHaveLength(4);
+  });
+
+  test('groupBySession buckets by session, newest-activity first, No session last', () => {
+    const g = groupBySession(items, labelFor);
+    expect(g.map((x) => x.sessionId)).toEqual(['s1', 's2', null]);
+    expect(g[0]!.label).toBe('Fix login');
+    expect(g[0]!.items.map((i) => i.id).sort()).toEqual(['a', 'c']);
+    expect(g[2]!.label).toBe('No session');
+  });
+
+  test('groupBySession falls back to a short id when unlabeled', () => {
+    const g = groupBySession(
+      [sItem('x', 'abcdef1234567', '2020-01-01T00:00:00Z')],
+      () => undefined,
+    );
+    expect(g[0]!.label).toBe('Session abcdef12');
+  });
+
+  test('sessionOptions lists distinct labeled sessions, excludes No session', () => {
+    const opts = sessionOptions(items, labelFor);
+    expect(opts.map((o) => o.sessionId)).toEqual(['s1', 's2']);
+    expect(opts.map((o) => o.label)).toEqual(['Fix login', 'Refactor']);
   });
 });

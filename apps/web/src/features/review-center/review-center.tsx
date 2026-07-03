@@ -13,6 +13,12 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Kbd } from '@/components/ui/kbd';
 import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@/components/ui/modal';
@@ -27,10 +33,10 @@ import {
 } from '@/components/ui/tabs';
 import { infoToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import type { ReviewVerdict } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
+import type { ReviewVerdict } from '@kortix/sdk/projects-client';
 import { CheckCircleSolid, InboxSolid, ShieldCheckSolid, X } from '@mynaui/icons-react';
-import { Search } from 'lucide-react';
+import { ChevronDown, Layers, Search } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { statusToVerdict } from './map';
@@ -43,16 +49,12 @@ import {
   countsBySegment,
   decideApprovalAction,
   filterItems,
+  groupBySession,
   safePendingCount,
+  sessionOptions,
   setStatus,
 } from './review-reducer';
-import {
-  type ReviewItem,
-  type ReviewKind,
-  type ReviewSegment,
-  type ReviewStatus,
-  segmentForStatus,
-} from './types';
+import { type ReviewItem, type ReviewKind, type ReviewSegment, segmentForStatus } from './types';
 
 /** Calm, premium easing for the inbox's enter/exit/layout motion. */
 const EASE = [0.2, 0, 0, 1] as const;
@@ -236,6 +238,7 @@ export function ReviewCenter({
   onBulkAct,
   onOpenSession,
   isLoading,
+  sessionLabels,
 }: {
   /** When provided, the inbox renders real data instead of the mock fixtures. */
   initialItems?: ReviewItem[];
@@ -246,12 +249,18 @@ export function ReviewCenter({
   /** Connected mode: open a session (e.g. to watch the agent revise a change). */
   onOpenSession?: (sessionId: string) => void;
   isLoading?: boolean;
+  /** sessionId → human name, for the per-session filter + group headers. */
+  sessionLabels?: Record<string, string>;
 } = {}) {
   const connected = !!onAct;
   const [items, setItems] = useState<ReviewItem[]>(initialItems ?? (connected ? [] : MOCK_ITEMS));
   const [segment, setSegment] = useState<ReviewSegment>('needs_you');
   const [kindFilter, setKindFilter] = useState<ReviewKind | 'all'>('all');
   const [query, setQuery] = useState('');
+  // Per-session view: filter to one session, and/or group the list by session so
+  // a session's reviews + approvals sit together. Both operate on `sessionId`.
+  const [sessionFilter, setSessionFilter] = useState<string | 'all'>('all');
+  const [grouped, setGrouped] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [focusedIdx, setFocusedIdx] = useState(0);
@@ -261,12 +270,15 @@ export function ReviewCenter({
   const [helpOpen, setHelpOpen] = useState(false);
 
   const undoRef = useRef<ReviewItem[] | null>(null);
-  const listRef = useRef<HTMLUListElement>(null);
+  // Query root for scroll-into-view — a container of the [data-idx] rows. It wraps
+  // either the flat <ul> or the grouped <div>, so it's typed to the common base.
+  const listRef = useRef<HTMLElement | null>(null);
 
+  const labelFor = useMemo(() => (id: string) => sessionLabels?.[id], [sessionLabels]);
   const counts = useMemo(() => countsBySegment(items), [items]);
   const visible = useMemo(
-    () => filterItems(items, segment, kindFilter, query),
-    [items, segment, kindFilter, query],
+    () => filterItems(items, segment, kindFilter, query, sessionFilter),
+    [items, segment, kindFilter, query, sessionFilter],
   );
   const visibleSafePending = useMemo(() => safePendingCount(visible), [visible]);
   const kindCounts = useMemo(() => {
@@ -275,6 +287,28 @@ export function ReviewCenter({
     for (const i of seg) c[i.kind] = (c[i.kind] ?? 0) + 1;
     return c;
   }, [items, segment]);
+  // Sessions available to filter by = those present in the CURRENT segment (so
+  // the dropdown only offers sessions you can actually see here).
+  const sessionOpts = useMemo(() => {
+    const seg = items.filter((i) => segmentForStatus(i.status) === segment);
+    return sessionOptions(seg, labelFor);
+  }, [items, segment, labelFor]);
+  // The grouped view: buckets of the currently-visible items, keyed by session.
+  const groups = useMemo(() => groupBySession(visible, labelFor), [visible, labelFor]);
+  // Keyboard nav + focus highlight stay keyed to the flat `visible` order even in
+  // the grouped view, so j/k and the focus ring keep working — this maps an
+  // item id → its flat index.
+  const visibleIndexById = useMemo(() => {
+    const m = new Map<string, number>();
+    visible.forEach((i, idx) => m.set(i.id, idx));
+    return m;
+  }, [visible]);
+  // If the active session filter no longer has items in this segment, reset it.
+  useEffect(() => {
+    if (sessionFilter !== 'all' && !sessionOpts.some((s) => s.sessionId === sessionFilter)) {
+      setSessionFilter('all');
+    }
+  }, [sessionOpts, sessionFilter]);
 
   // Keep the focus cursor in range as the visible list changes.
   useEffect(() => {
@@ -586,6 +620,59 @@ export function ReviewCenter({
               </div>
             </div>
 
+            {/* Per-session view: filter to one session, and/or group by session so
+                a session's reviews + approvals sit together. Only shown once the
+                current segment actually has session-linked items. */}
+            {sessionOpts.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={grouped ? 'secondary' : 'outline'}
+                  className="h-8 gap-1.5"
+                  onClick={() => setGrouped((g) => !g)}
+                  aria-pressed={grouped}
+                >
+                  <Layers className="size-3.5" />
+                  Group by session
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={sessionFilter === 'all' ? 'outline' : 'secondary'}
+                      className="h-8 max-w-[16rem] gap-1.5"
+                    >
+                      <span className="truncate">
+                        {sessionFilter === 'all'
+                          ? 'All sessions'
+                          : (sessionOpts.find((s) => s.sessionId === sessionFilter)?.label ??
+                            'Session')}
+                      </span>
+                      <ChevronDown className="size-3.5 shrink-0 opacity-60" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="max-h-72 w-64 overflow-y-auto">
+                    <DropdownMenuItem onClick={() => setSessionFilter('all')}>
+                      All sessions
+                      <Badge variant="secondary" size="xs" className="ml-auto">
+                        {counts[segment]}
+                      </Badge>
+                    </DropdownMenuItem>
+                    {sessionOpts.map((s) => (
+                      <DropdownMenuItem
+                        key={s.sessionId}
+                        onClick={() => setSessionFilter(s.sessionId)}
+                      >
+                        <span className="truncate">{s.label}</span>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
+
             {/* Bulk bar (safe approvals across the current view) */}
             <AnimatePresence initial={false}>
               {segment === 'needs_you' && visibleSafePending > 0 && selectionCount === 0 && (
@@ -649,9 +736,58 @@ export function ReviewCenter({
                 }
               />
             </motion.div>
+          ) : grouped ? (
+            <div
+              ref={(el) => {
+                listRef.current = el;
+              }}
+              onPointerMove={() => setKbNav((k) => (k ? false : k))}
+              className="space-y-4"
+            >
+              {groups.map((g) => (
+                <div key={g.sessionId ?? '__none__'}>
+                  <div className="mb-1.5 flex items-center gap-2 px-1">
+                    <span className="text-foreground truncate text-xs font-semibold">
+                      {g.label}
+                    </span>
+                    <Badge variant="secondary" size="xs">
+                      {g.items.length}
+                    </Badge>
+                    {g.sessionId && onOpenSession && (
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground ml-auto shrink-0 text-[11px] underline-offset-2 hover:underline"
+                        onClick={() => onOpenSession(g.sessionId!)}
+                      >
+                        Open session
+                      </button>
+                    )}
+                  </div>
+                  <ul className="bg-popover divide-border/60 divide-y overflow-hidden rounded-lg border">
+                    {g.items.map((item) => {
+                      const idx = visibleIndexById.get(item.id) ?? 0;
+                      return (
+                        <ItemRow
+                          key={item.id}
+                          item={item}
+                          idx={idx}
+                          focused={kbNav && idx === focusedIdx}
+                          selected={selectedIds.has(item.id)}
+                          showCheck={selectionCount > 0}
+                          onOpen={() => setSelectedId(item.id)}
+                          onToggleSelect={() => toggleSelect(item.id)}
+                        />
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))}
+            </div>
           ) : (
             <ul
-              ref={listRef}
+              ref={(el) => {
+                listRef.current = el;
+              }}
               onPointerMove={() => setKbNav((k) => (k ? false : k))}
               className="bg-popover divide-border/60 divide-y overflow-hidden rounded-lg border"
             >
