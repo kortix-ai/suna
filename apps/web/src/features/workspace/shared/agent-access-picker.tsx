@@ -31,10 +31,16 @@ export function AgentAccessPicker({
   projectId,
   value,
   onChange,
+  label = 'Which agents can use this',
+  allDescription = 'Every agent in this project can use it (default).',
 }: {
   projectId: string;
   value: string[] | null;
   onChange: (next: string[] | null) => void;
+  /** Heading above the All/Specific radio (resource-specific wording). */
+  label?: string;
+  /** Description for the "All agents" option (resource-specific wording). */
+  allDescription?: string;
 }) {
   const [query, setQuery] = useState('');
   const mode: 'all' | 'specific' = value === null ? 'all' : 'specific';
@@ -65,7 +71,7 @@ export function AgentAccessPicker({
 
   return (
     <div className="space-y-3">
-      <Label>Which agents can use this secret</Label>
+      <Label>{label}</Label>
       <RadioGroup
         value={mode}
         onValueChange={(v) => onChange(v === 'all' ? null : selected)}
@@ -75,7 +81,7 @@ export function AgentAccessPicker({
           value="all"
           id="agent-access-all"
           label="All agents"
-          description="Every agent in this project can use it (default)."
+          description={allDescription}
           size="lg"
           variant="outline"
         />

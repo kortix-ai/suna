@@ -80,10 +80,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { AgentAccessPicker } from '@/features/workspace/shared/agent-access-picker';
 import { ShareOption, SharingPicker } from '@/features/workspace/shared/sharing-picker';
 import {
   type EmailInstallation,
@@ -121,6 +123,7 @@ import {
   listProjectAccess,
   pipedreamConnect,
   pipedreamFinalize,
+  setConnectorAgentScope,
   setConnectorCredential,
   setConnectorCredentialMode,
   setConnectorName,
@@ -129,7 +132,6 @@ import {
   setConnectorSharing,
   syncConnectors,
 } from '@kortix/sdk/projects-client';
-import { Switch } from '@/components/ui/switch';
 
 const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
   pipedream: Zap,
@@ -1947,6 +1949,9 @@ function ProfileSection({
   const [access, setAccess] = useState(initialAccess.mode);
   const [memberIds, setMemberIds] = useState<string[]>(initialAccess.memberIds);
   const [groupIds, setGroupIds] = useState<string[]>(initialAccess.groupIds);
+  // Which AGENTS may call this connector (null = all agents; [] = "specific"
+  // chosen but none picked, which blocks save). The connector-side agent gate.
+  const [agentScope, setAgentScope] = useState<string[] | null>(connector.agentScope ?? null);
 
   useEffect(() => {
     setCredential(connector.credentialMode);
@@ -1954,6 +1959,7 @@ function ProfileSection({
     setAccess(a.mode);
     setMemberIds(a.memberIds);
     setGroupIds(a.groupIds);
+    setAgentScope(connector.agentScope ?? null);
   }, [connector]);
 
   // Sensitive toggle — its own commit (writes kortix.toml + re-syncs), so it
@@ -1975,7 +1981,12 @@ function ProfileSection({
       (access === 'members' &&
         (memberIds.slice().sort().join() !== saved.memberIds.slice().sort().join() ||
           groupIds.slice().sort().join() !== saved.groupIds.slice().sort().join())));
-  const dirty = modeChanged || accessChanged;
+  // null (all) and [] (specific-but-empty) both canonicalize to "all agents".
+  const normScope = (s: string[] | null) => (s && s.length ? s.slice().sort().join(',') : '');
+  const agentScopeChanged = normScope(agentScope) !== normScope(connector.agentScope ?? null);
+  // "Specific agents" chosen but nothing picked — block save (never persist []).
+  const specificButEmpty = Array.isArray(agentScope) && agentScope.length === 0;
+  const dirty = modeChanged || accessChanged || agentScopeChanged;
 
   const reset = () => {
     setCredential(connector.credentialMode);
@@ -1983,6 +1994,7 @@ function ProfileSection({
     setAccess(a.mode);
     setMemberIds(a.memberIds);
     setGroupIds(a.groupIds);
+    setAgentScope(connector.agentScope ?? null);
   };
 
   const save = useMutation({
@@ -1996,6 +2008,7 @@ function ProfileSection({
             : { mode: 'members', memberIds, groupIds };
       if (modeChanged || accessChanged)
         await setConnectorSharing(projectId, connector.slug, intent);
+      if (agentScopeChanged) await setConnectorAgentScope(projectId, connector.slug, agentScope);
     },
     onSuccess: () => {
       successToast('Profile saved');
@@ -2128,13 +2141,30 @@ function ProfileSection({
         />
       </div>
 
+      {canManage && (
+        <div className="border-border/60 mt-4 rounded-lg border p-3">
+          <AgentAccessPicker
+            projectId={projectId}
+            value={agentScope}
+            onChange={setAgentScope}
+            label="Which agents can call this connector"
+            allDescription="Every agent in this project can call it (default)."
+          />
+          <p className="text-muted-foreground/60 mt-2 text-[11px] leading-relaxed">
+            Restrict which agents may call this connector. People still reach it through the agents
+            they're assigned to (Members → Resource access).
+          </p>
+        </div>
+      )}
+
       <SaveBar
         dirty={dirty}
         saving={save.isPending}
         disabled={
-          credential === 'shared' &&
-          access === 'members' &&
-          memberIds.length + groupIds.length === 0
+          (credential === 'shared' &&
+            access === 'members' &&
+            memberIds.length + groupIds.length === 0) ||
+          specificButEmpty
         }
         onSave={() => save.mutate()}
         onReset={reset}

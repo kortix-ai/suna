@@ -591,7 +591,13 @@ function SecretDialog({
               </p>
             )}
 
-            <AgentAccessPicker projectId={projectId} value={agentScope} onChange={setAgentScope} />
+            <AgentAccessPicker
+              projectId={projectId}
+              value={agentScope}
+              onChange={setAgentScope}
+              label="Which agents can use this secret"
+              allDescription="Every agent in this project can use it (default)."
+            />
           </ModalBody>
 
           <ModalFooter className="sm:justify-between">
