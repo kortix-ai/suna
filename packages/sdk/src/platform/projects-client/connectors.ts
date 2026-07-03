@@ -21,6 +21,8 @@ export interface AdminConnector {
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
   /** Credential storage model — one shared project credential vs each member's own. */
   credentialMode: 'shared' | 'per_user';
+  /** Marked sensitive — its reads gate too (require_approval by default). */
+  sensitive: boolean;
   actions: ConnectorAction[];
   authSecret: string | null;
   sharing: ConnectorSharing | null;
@@ -70,6 +72,17 @@ export async function setConnectorCredentialMode(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
       `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential-mode`,
       { mode },
+    ),
+  );
+}
+
+/** Toggle a connector's `sensitive` flag — sensitive connectors gate reads too
+ *  (every action defaults to require_approval unless a policy opens it). */
+export async function setConnectorSensitive(projectId: string, slug: string, sensitive: boolean) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/sensitive`,
+      { sensitive },
     ),
   );
 }

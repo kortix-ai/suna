@@ -72,6 +72,7 @@ import {
   getProjectPoliciesFromManifest,
   setConnectorCredentialShared,
   setConnectorCredentialModeInManifest,
+  setConnectorSensitiveInManifest,
   setConnectorNameInManifest,
   getConnectorPoliciesFromManifest,
   getConnectorConfigFromManifest,
@@ -584,6 +585,7 @@ async function listConnectors(projectId: string, viewerUserId: string): Promise<
       platform: channelPlatform(row.config),
       status: row.status,
       credentialMode: mode,
+      sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
       actions: actions.map((a) => ({ path: a.path, name: a.name, description: a.description ?? '', risk: a.risk, inputSchema: a.inputSchema ?? null })),
       authSecret: hasAuth ? 'credential' : null,
       sharing: scopeToIntent(row.shareScope as 'project' | 'restricted', grants),
@@ -693,6 +695,7 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
     return { ok: true as const };
   },
   setCredentialMode: (projectId, accountId, slug, mode) => setConnectorCredentialModeInManifest(projectId, accountId, slug, mode),
+  setSensitive: (projectId, accountId, slug, sensitive) => setConnectorSensitiveInManifest(projectId, accountId, slug, sensitive),
   setConnectorName: (projectId, accountId, slug, name) => setConnectorNameInManifest(projectId, accountId, slug, name),
   getConnectorPolicies,
   getConnectorConfig,

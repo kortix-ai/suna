@@ -158,6 +158,7 @@ const deps: ExecutorRouterDeps = {
       provider: conn.provider,
       status: 'active',
       credentialMode: conn.credentialMode,
+      sensitive: false,
       actions: [],
       authSecret: conn.hasAuth ? 'credential' : null,
       sharing: scopeToIntent(conn.shareScope, conn.grants),

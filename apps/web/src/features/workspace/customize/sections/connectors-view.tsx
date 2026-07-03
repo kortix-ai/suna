@@ -125,9 +125,11 @@ import {
   setConnectorCredentialMode,
   setConnectorName,
   setConnectorPolicies,
+  setConnectorSensitive,
   setConnectorSharing,
   syncConnectors,
 } from '@kortix/sdk/projects-client';
+import { Switch } from '@/components/ui/switch';
 
 const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
   pipedream: Zap,
@@ -1954,6 +1956,17 @@ function ProfileSection({
     setGroupIds(a.groupIds);
   }, [connector]);
 
+  // Sensitive toggle — its own commit (writes kortix.toml + re-syncs), so it
+  // applies immediately without the "save connection" flow.
+  const sensitiveMut = useMutation({
+    mutationFn: (next: boolean) => setConnectorSensitive(projectId, connector.slug, next),
+    onSuccess: (_r, next) => {
+      successToast(next ? 'Marked sensitive — reads now ask' : 'No longer sensitive');
+      onChanged();
+    },
+    onError: (e: Error) => errorToast(e.message || 'Failed to update sensitivity'),
+  });
+
   const modeChanged = credential !== connector.credentialMode;
   const saved = sharingToAccess(connector.sharing);
   const accessChanged =
@@ -2093,6 +2106,27 @@ function ProfileSection({
           </p>
         </div>
       )}
+
+      <div className="border-border/60 mt-4 flex items-start justify-between gap-3 rounded-lg border p-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <ShieldCheck className="text-muted-foreground/70 size-3.5 shrink-0" />
+            <span className="text-foreground/80 text-xs font-medium">Sensitive connector</span>
+          </div>
+          <p className="text-muted-foreground/60 mt-1 text-[11px] leading-relaxed">
+            Gate <span className="text-foreground/70 font-medium">reads</span> too — every action
+            asks before it runs (approve once, or “allow for session”). For email/files/secrets
+            where reading is itself risky. An explicit policy rule can still open a specific action.
+          </p>
+        </div>
+        <Switch
+          checked={connector.sensitive}
+          disabled={sensitiveMut.isPending}
+          onCheckedChange={(next) => sensitiveMut.mutate(next)}
+          className="mt-0.5 shrink-0"
+          aria-label="Toggle sensitive connector"
+        />
+      </div>
 
       <SaveBar
         dirty={dirty}

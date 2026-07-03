@@ -242,6 +242,47 @@ export async function setConnectorCredentialModeInManifest(
   return { ok: true, sync };
 }
 
+/**
+ * Toggle a connector's `sensitive` flag in kortix.toml, commit, re-sync. A
+ * sensitive connector gates its reads too (every action defaults to
+ * require_approval unless an explicit policy opens it) — for email/files/
+ * secrets-bearing integrations where reading is itself an exfiltration surface.
+ */
+export async function setConnectorSensitiveInManifest(
+  projectId: string,
+  accountId: string,
+  slug: string,
+  sensitive: boolean,
+): Promise<CrudResult> {
+  const row = await loadRow(projectId);
+  if (!row) return { ok: false, error: 'project not found', status: 404 };
+
+  let manifest;
+  try {
+    manifest = await loadManifestForEdit(row);
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
+  }
+
+  const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
+  const entry = current.find((c) => c?.slug === slug);
+  if (!entry) return { ok: false, error: 'connector not found', status: 404 };
+  // Omit the key when false so the emitted TOML stays minimal (false is the default).
+  if (sensitive) entry.sensitive = true;
+  else delete entry.sensitive;
+  manifest.raw.connectors = current;
+
+  const parsed = extractConnectors(manifest);
+  const err = parsed.errors.find((e) => e.slug === slug);
+  if (err) return { ok: false, error: err.error, status: 400 };
+
+  const committed = await commitManifest(row, manifest, `chore: mark ${slug} ${sensitive ? 'sensitive' : 'not sensitive'}`);
+  if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
+
+  const sync = await syncProjectConnectors(projectId, accountId);
+  return { ok: true, sync };
+}
+
 /** Rename a connector — patches the kortix.toml entry's `name` (display label) + re-syncs. */
 export async function setConnectorNameInManifest(
   projectId: string,
