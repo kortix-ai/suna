@@ -50,6 +50,8 @@ export interface ProjectSecret {
   created_by: string;
   created_at: string;
   updated_at: string;
+  /** Which agents may use this secret. null / [] = all agents; a list restricts it. */
+  agent_scope?: string[] | null;
 }
 
 export interface ProjectSecretsResponse {
