@@ -27,6 +27,10 @@ function channelSpec(platform: ChannelPlatform, slug: string, name = channelLabe
     enabled: true,
     provider: 'channel',
     credentialMode: 'shared',
+    // Email is sensitive by default — reading a private inbox is an exfiltration
+    // surface, so its actions ask before running (silence per-session with "allow
+    // for session"). Slack/meet aren't gated by default.
+    sensitive: platform === 'email',
     app: null,
     account: null,
     url: null,

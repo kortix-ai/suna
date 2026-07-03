@@ -116,6 +116,9 @@ export interface ConnectorSpec {
   provider: ConnectorProvider;
   /** Credential storage mode. Default: pipedream→per_user, others→shared. */
   credentialMode: 'shared' | 'per_user';
+  /** Sensitive connector (email/files/secrets-bearing): reads gate too — every
+   *  action defaults to require_approval unless an explicit policy opens it. */
+  sensitive: boolean;
   // ── provider-specific ──
   /** pipedream: app slug (`gmail`, `slack`). */
   app: string | null;
@@ -310,6 +313,7 @@ function parseConnectorEntry(entry: unknown, index: number): ParseOk | ParseErr 
 
   const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;
   const enabled = coerceBool(row.enabled, true);
+  const sensitive = coerceBool(row.sensitive, false);
 
   // Credential mode — per-app default, overridable via `credential = "..."`.
   const credRaw = typeof row.credential === 'string' ? row.credential.trim().toLowerCase() : '';
@@ -329,6 +333,7 @@ function parseConnectorEntry(entry: unknown, index: number): ParseOk | ParseErr 
     enabled,
     provider: provider as ConnectorProvider,
     credentialMode,
+    sensitive,
     app: null,
     account: null,
     url: null,

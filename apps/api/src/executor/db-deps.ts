@@ -239,6 +239,7 @@ function toGatewayConnector(row: ConnectorRow, grants: Awaited<ReturnType<typeof
     grants,
     credentialMode: row.credentialMode as 'shared' | 'per_user',
     enabled: row.enabled,
+    sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
   };
 }
 

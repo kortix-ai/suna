@@ -47,6 +47,10 @@ export interface GatewayConnector {
   /** shared = one project credential; per_user = each member's own. */
   credentialMode: 'shared' | 'per_user';
   enabled: boolean;
+  /** Marked sensitive (email/files/secrets-bearing): reads gate too — every
+   *  action defaults to require_approval unless an explicit policy opens it.
+   *  Optional (absent = not sensitive) so fixtures/callers needn't set it. */
+  sensitive?: boolean;
 }
 
 export interface GatewayAction {
@@ -422,6 +426,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       connectorPolicies,
       risk: action.risk,
       defaultMode,
+      sensitive: connector.sensitive,
     });
     if (decision.action === 'block') {
       await audit(deps, input, connector.connectorId, 'denied', action.risk, {
