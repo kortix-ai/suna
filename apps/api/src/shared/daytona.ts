@@ -1,7 +1,5 @@
 import { Daytona } from '@daytonaio/sdk';
-import { config, type SandboxProviderName } from '../config';
-import { isPlatinumConfigured } from './platinum';
-import { warmSnapshotSetting } from '../platform/services/runtime-settings';
+import { config } from '../config';
 import { configuredTimeoutMs } from './with-timeout';
 
 let daytonaClient: Daytona | null = null;
@@ -24,66 +22,6 @@ export function getDaytona(): Daytona {
   }
 
   return daytonaClient;
-}
-
-let daytonaWarmClient: Daytona | null = null;
-
-/**
- * Get the Daytona client pinned to the WARM target (Daytona's VM-class region,
- * e.g. "experimental"), where snapshots preserve full memory/process state.
- *
- * The TS SDK takes `target` on the client, not per-create, so warm sandboxes
- * need their own client. Same API key + server URL as the main client; only the
- * target differs. Returns the main client when no warm target is set.
- */
-export function getDaytonaWarm(): Daytona {
-  const warmTarget = config.DAYTONA_WARM_TARGET;
-  if (!warmTarget) return getDaytona();
-  if (!daytonaWarmClient) {
-    if (!config.DAYTONA_API_KEY) {
-      throw new Error('Missing DAYTONA_API_KEY');
-    }
-    daytonaWarmClient = new Daytona({
-      apiKey: config.DAYTONA_API_KEY,
-      apiUrl: config.DAYTONA_SERVER_URL || undefined,
-      target: warmTarget,
-    });
-  }
-  return daytonaWarmClient;
-}
-
-/**
- * True when warm (memory-state) snapshots are turned on AND a Daytona warm
- * target is configured. The master switch is the DB-backed admin toggle
- * (warmSnapshotSetting, default ON) — NOT an env var — so operators flip it from
- * the admin Providers panel without a redeploy.
- */
-export function warmSnapshotsEnabled(): boolean {
-  return (
-    warmSnapshotSetting().enabled &&
-    !!config.DAYTONA_API_KEY &&
-    !!config.DAYTONA_WARM_TARGET
-  );
-}
-
-/**
- * Provider-aware warm-snapshot gate. Every warm code path that can run on EITHER
- * provider checks this. The MASTER switch (warmSnapshotSetting, DB-backed admin
- * toggle, default ON) gates both; each provider then adds its own sub-gate:
- *
- *   - daytona  → warmSnapshotsEnabled() (also needs DAYTONA_WARM_TARGET).
- *   - platinum → just a configured Platinum host. Platinum's warm snapshot is a
- *     per-project STATEFUL template the host CoW-forks, so it needs no warm
- *     "target", only the master toggle + a host.
- *
- * Default ON (warm-fork is pure upside — a failed bake degrades to a cold clone);
- * operators turn it OFF from the admin Providers panel.
- */
-export function warmSnapshotsEnabledFor(provider: SandboxProviderName): boolean {
-  if (!warmSnapshotSetting().enabled) return false;
-  if (provider === 'daytona') return warmSnapshotsEnabled();
-  if (provider === 'platinum') return isPlatinumConfigured();
-  return false;
 }
 
 /**

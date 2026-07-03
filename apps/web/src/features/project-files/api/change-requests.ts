@@ -15,6 +15,7 @@ import {
   mergeChangeRequest,
   openChangeRequest,
   reopenChangeRequest,
+  requestChangesOnChangeRequest,
   type ChangeRequest,
   type ChangeRequestDetailResponse,
   type ChangeRequestDiffResponse,
@@ -81,6 +82,10 @@ export async function performClose(projectId: string, crId: string) {
 
 export async function performReopen(projectId: string, crId: string) {
   return reopenChangeRequest(projectId, crId);
+}
+
+export async function performRequestChanges(projectId: string, crId: string, feedback: string) {
+  return requestChangesOnChangeRequest(projectId, crId, feedback);
 }
 
 export async function fetchVersionDiff(

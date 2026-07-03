@@ -12,6 +12,7 @@ import {
   performClose,
   performMerge,
   performReopen,
+  performRequestChanges,
   type ChangeRequest,
   type ChangeRequestDetailResponse,
   type ChangeRequestDiffResponse,
@@ -200,6 +201,20 @@ export function useReopenChangeRequest() {
   const invalidate = useInvalidateAll();
   return useMutation<ChangeRequest, Error, string>({
     mutationFn: (crId) => performReopen(projectId, crId),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRequestChangesOnChangeRequest() {
+  const ctx = useProjectContext();
+  const projectId = ctx?.projectId ?? '';
+  const invalidate = useInvalidateAll();
+  return useMutation<
+    { change_request: ChangeRequest; delivering: boolean },
+    Error,
+    { crId: string; feedback: string }
+  >({
+    mutationFn: ({ crId, feedback }) => performRequestChanges(projectId, crId, feedback),
     onSuccess: invalidate,
   });
 }

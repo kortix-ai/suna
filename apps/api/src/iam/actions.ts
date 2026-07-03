@@ -55,7 +55,6 @@ export const ACCOUNT_ACTIONS = {
   TOKEN_CREATE: 'token.create',
   TOKEN_REVOKE: 'token.revoke',
 
-
   // "Create a brand-new project" must live at account scope (the project
   // doesn't exist yet to scope to).
   PROJECT_CREATE: 'project.create',
@@ -126,6 +125,14 @@ export const PROJECT_ACTIONS = {
   PROJECT_SECRET_WRITE: 'project.secret.write',
   PROJECT_CONNECTOR_READ: 'project.connector.read',
   PROJECT_CONNECTOR_WRITE: 'project.connector.write',
+
+  // Review Center. `read` = see the inbox (floor user). `submit` = an agent puts
+  // an output / decision / batch up for human review (floor user + their agent).
+  // `act` = approve / reject / request-changes / answer — a consequential
+  // decision on agent work, so it sits with the editor tier (like gitops).
+  PROJECT_REVIEW_READ: 'project.review.read',
+  PROJECT_REVIEW_SUBMIT: 'project.review.submit',
+  PROJECT_REVIEW_ACT: 'project.review.act',
 } as const;
 
 // ─── Trigger-scoped actions (when scoped to an individual trigger) ─────────

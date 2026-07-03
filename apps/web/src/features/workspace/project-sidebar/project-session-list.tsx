@@ -28,6 +28,7 @@ import { Icon } from '@/features/icon/icon';
 import {
   listProjectSessions,
   restartProjectSession,
+  stopProjectSession,
   type ProjectSession,
   type ProjectSessionStatus,
 } from '@kortix/sdk/projects-client';
@@ -40,6 +41,7 @@ import {
   Mail,
   MoreHorizontal,
   RotateCcw,
+  Square,
   Webhook,
   type LucideIcon,
 } from 'lucide-react';
@@ -125,6 +127,17 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
     },
   });
 
+  const stopMutation = useMutation({
+    mutationFn: (sessionId: string) => stopProjectSession(projectId, sessionId),
+    onSuccess: () => {
+      successToast('Session stopped');
+      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+    },
+    onError: (err) => {
+      errorToast(err instanceof Error ? err.message : 'Failed to stop session');
+    },
+  });
+
   if (isLoading) {
     return <ProjectSessionListSkeleton />;
   }
@@ -184,6 +197,10 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
                 onRestart={(id) => restartMutation.mutate(id)}
                 isRestarting={
                   restartMutation.isPending && restartMutation.variables === session.session_id
+                }
+                onStop={(id) => stopMutation.mutate(id)}
+                isStopping={
+                  stopMutation.isPending && stopMutation.variables === session.session_id
                 }
               />
               {children.length > 0 && isActive && (
@@ -245,6 +262,8 @@ interface ProjectSessionRowProps {
   onRename: (sessionId: string, currentName: string) => void;
   onRestart: (sessionId: string) => void;
   isRestarting: boolean;
+  onStop: (sessionId: string) => void;
+  isStopping: boolean;
   childCount?: number;
 }
 
@@ -258,6 +277,8 @@ function ProjectSessionRow({
   onRename,
   onRestart,
   isRestarting,
+  onStop,
+  isStopping,
   childCount = 0,
 }: ProjectSessionRowProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -384,6 +405,16 @@ function ProjectSessionRow({
                   {isRestarting ? <Loading /> : <RotateCcw />}
                   Restart
                 </DropdownMenuItem>
+                {session.status === 'running' && session.can_manage_sharing !== false && (
+                  <DropdownMenuItem
+                    className="cursor-pointer"
+                    disabled={isStopping}
+                    onSelect={() => deferAfterClose(() => onStop(session.session_id))}
+                  >
+                    {isStopping ? <Loading /> : <Square />}
+                    Stop
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   className="cursor-pointer"
                   onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}

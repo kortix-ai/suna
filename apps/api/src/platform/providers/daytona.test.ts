@@ -28,7 +28,6 @@ mock.module('../../shared/daytona', () => ({
   getDaytona: () => ({
     get: (_externalId: string) => hangForever(),
   }),
-  getDaytonaWarm: () => ({}),
   // Disk-quota-guard deps (fix(sandbox) #4072) — only referenced by
   // create()/start(), not by getStatus() under test here, but imported at
   // module load so they must exist as named exports for the mock to satisfy
@@ -40,12 +39,6 @@ mock.module('../../shared/daytona', () => ({
 
 mock.module('../../projects/disk-quota-guard', () => ({
   triggerEmergencyDiskArchiveSweep: () => {},
-}));
-
-mock.module('../../snapshots/warm-bake', () => ({
-  warmRestoreScript: () => '',
-  WARM_RESTORE_MARKERS: {},
-  noteWarmPathFailure: () => {},
 }));
 
 mock.module('../service-key', () => ({

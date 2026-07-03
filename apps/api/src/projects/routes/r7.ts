@@ -24,6 +24,7 @@ import { addSecretResourceGrant, listSecretResourceGrants, removeSecretResourceG
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
 import { createSession, deleteSession } from '../session-lifecycle';
+import { requireEntitlement } from '../../accounts/iam/helpers';
 
 function parseBoundedPositiveInt(
   raw: string | undefined,
@@ -167,6 +168,13 @@ projectsApp.openapi(
   // threaded and the agent-grant fold fires: an agent-session token must also
   // hold project.members.manage to mutate group grants, not just its user.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+  // Group→project grants are part of the Enterprise RBAC surface (groups are
+  // gated in accounts/iam/groups.ts); gate the mutation here too so grants
+  // can't be minted through the project-scoped path.
+  {
+    const denied = await requireEntitlement(c, loaded.row.accountId, 'rbac');
+    if (denied) return denied;
+  }
 
   const body = await readBody(c);
   const groupId = normalizeString(body.group_id ?? body.groupId);
@@ -247,6 +255,13 @@ projectsApp.openapi(
   // threaded and the agent-grant fold fires: an agent-session token must also
   // hold project.members.manage to mutate group grants, not just its user.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+  // Enterprise RBAC gate — same reasoning as the POST above. DELETE below is
+  // deliberately ungated: revoking access is never paywalled, so a downgraded
+  // account can always detach grants it can no longer manage.
+  {
+    const denied = await requireEntitlement(c, loaded.row.accountId, 'rbac');
+    if (denied) return denied;
+  }
 
   const body = await readBody(c);
   const role = parseProjectRole(body.role);
@@ -626,6 +641,8 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const visible = await loadVisibleSession(loaded, sessionId);
     if (!visible) return c.json({ error: 'Not found' }, 404);
+    const denied = await requireEntitlement(c, loaded.row.accountId, 'auditAccess');
+    if (denied) return denied;
 
     const rows = await db
       .select({

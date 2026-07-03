@@ -268,16 +268,6 @@ const envSchema = z.object({
   // box stops; the reaper sweep is the backstop, so this is optional.
   DAYTONA_WEBHOOK_SECRET:      optStr,
 
-  // ── Daytona warm snapshots (experimental memory/process snapshots) ─────────
-  // The MASTER on/off switch is the DB-backed admin toggle (warm_snapshot,
-  // runtime-settings.ts, default ON) — NOT an env var. When it's on AND
-  // DAYTONA_WARM_TARGET names Daytona's VM-class region (e.g. "experimental"),
-  // sessions can boot from a snapshot baked with services already running in
-  // RAM (opencode pre-migrated + serving), cutting cold-boot latency to ~2s.
-  // The warm snapshot is baked imperatively off a stock base snapshot — the
-  // experimental region can't build Dockerfile images. See snapshots/warm-bake.ts.
-  DAYTONA_WARM_TARGET:         optStr,
-  DAYTONA_WARM_BASE_SNAPSHOT:  optStrDefault('daytonaio/sandbox:0.8.0'),
   // When a template's content hash changes and a fresh snapshot is built, drop
   // the now-superseded predecessor immediately (reap-on-repoint) instead of
   // leaving it for the lazy, pressure-gated quota GC. Keeps steady state at ~1
@@ -650,8 +640,6 @@ export const config = {
   DAYTONA_SERVER_URL: env.DAYTONA_SERVER_URL,
   DAYTONA_TARGET: env.DAYTONA_TARGET,
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
-  DAYTONA_WARM_TARGET: env.DAYTONA_WARM_TARGET,
-  DAYTONA_WARM_BASE_SNAPSHOT: env.DAYTONA_WARM_BASE_SNAPSHOT,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
