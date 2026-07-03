@@ -250,11 +250,11 @@ export function accountSessionGate(): MiddlewareHandler {
     const ip =
       c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? c.req.header('x-real-ip') ?? null;
     const userAgent = c.req.header('user-agent') ?? null;
-    // Fire-and-forget, but keep the whole chain covered by ONE .catch. Returning
-    // the audit promise routes its rejection here too — otherwise a failing
-    // auditSessionFirstSight() (nested inside .then) is an UNHANDLED rejection on
-    // the auth path of every gated request, which floods logs and can crash Node
-    // under load if no process-wide handler is set.
+    // Fire-and-forget: the request must never wait on activity/audit writes. The
+    // trailing .catch covers touchActivity's rejection. auditSessionFirstSight
+    // already self-catches (returns void via fireAndForget), so it can't reject
+    // today — we still `return` it and `void` the chain so the floating promise
+    // is explicit and the single .catch stays the guard if that ever changes.
     void touchActivity(accountId, userId, sessionId, ip, userAgent, policy.lastSeenAt)
       .then((result) => {
         if (result.firstSight) {
