@@ -217,7 +217,7 @@ projectsApp.openapi(
   // Heuristic for effective_role label (UI only, NOT auth):
   //   - account-manager → 'manager' (legacy owner/admin gets full label)
   //   - explicit project_members row → that role
-  //   - otherwise → 'user' (engine allowed read but we don't know the
+  //   - otherwise → 'member' (engine allowed read but we don't know the
   //     exact role; safe minimum for UI affordances)
   const accountManager = isAccountManager(scope.accountRole);
   return c.json(
@@ -225,7 +225,7 @@ projectsApp.openapi(
       const projectRole = roleByProject.get(row.projectId) ?? null;
       const effectiveRole = accountManager
         ? 'manager'
-        : projectRole ?? 'user';
+        : projectRole ?? 'member';
       return serializeProject(row, { projectRole, effectiveRole });
     }),
   );

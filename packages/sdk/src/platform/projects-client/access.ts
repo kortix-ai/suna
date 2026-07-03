@@ -81,7 +81,7 @@ export async function listProjectAccessRequests(projectId: string, options?: Api
 export async function approveProjectAccessRequest(
   projectId: string,
   requestId: string,
-  role: ProjectRole = 'user',
+  role: ProjectRole = 'member',
 ) {
   return unwrap(
     await backendApi.post<{

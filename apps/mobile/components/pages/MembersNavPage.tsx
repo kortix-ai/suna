@@ -65,11 +65,11 @@ import type {
 import { haptics } from '@/lib/haptics';
 
 const MONO = 'Menlo';
-const ROLES: ProjectRole[] = ['user', 'editor', 'manager'];
+const ROLES: ProjectRole[] = ['member', 'editor', 'manager'];
 
 const ROLE_DESC: Record<ProjectRole, { label: string; blurb: string }> = {
-  user: { label: 'User', blurb: 'Read, run sessions and chat, and fire the project’s triggers.' },
-  editor: { label: 'Editor', blurb: 'Everything a user does, plus edit the project and run sessions.' },
+  member: { label: 'Member', blurb: 'Read, run sessions and chat, and fire the project’s triggers.' },
+  editor: { label: 'Editor', blurb: 'Everything a member does, plus edit the project and run sessions.' },
   manager: { label: 'Manager', blurb: 'Full control — edit the project, invite members, change settings.' },
 };
 

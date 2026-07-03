@@ -503,7 +503,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <ProjectRoleSelectItem role="user" />
+                  <ProjectRoleSelectItem role="member" />
                   <ProjectRoleSelectItem role="editor" />
                   <ProjectRoleSelectItem role="manager" />
                 </SelectContent>
@@ -840,7 +840,7 @@ function ProjectAccessCard({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <ProjectRoleSelectItem role="user" />
+                          <ProjectRoleSelectItem role="member" />
                           <ProjectRoleSelectItem role="editor" />
                           <ProjectRoleSelectItem role="manager" />
                         </SelectContent>
@@ -982,7 +982,7 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
   });
 
   const approveMutation = useMutation({
-    mutationFn: (requestId: string) => approveProjectAccessRequest(projectId, requestId, 'user'),
+    mutationFn: (requestId: string) => approveProjectAccessRequest(projectId, requestId, 'member'),
     onMutate: (requestId) => markBusy(requestId),
     onSettled: (_data, _error, requestId) => clearBusy(requestId),
     onSuccess: (result) => {
@@ -1455,7 +1455,7 @@ function ProjectGroupGrantsCard({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <ProjectRoleSelectItem role="user" />
+                  <ProjectRoleSelectItem role="member" />
                   <ProjectRoleSelectItem role="editor" />
                   <ProjectRoleSelectItem role="manager" />
                 </SelectContent>
@@ -1559,7 +1559,7 @@ function ProjectGroupGrantsCard({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <ProjectRoleSelectItem role="user" />
+                          <ProjectRoleSelectItem role="member" />
                           <ProjectRoleSelectItem role="editor" />
                           <ProjectRoleSelectItem role="manager" />
                         </SelectContent>

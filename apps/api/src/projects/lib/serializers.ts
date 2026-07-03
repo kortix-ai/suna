@@ -530,7 +530,7 @@ export function serializeDeploymentRow(row: typeof deployments.$inferSelect) {
 }
 
 
-const PROJECT_ROLES = ['manager', 'editor', 'user'] as const;
+const PROJECT_ROLES = ['manager', 'editor', 'member'] as const;
 
 export type ProjectGroupGrantRole = typeof PROJECT_ROLES[number];
 

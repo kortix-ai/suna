@@ -169,12 +169,12 @@ projectsApp.openapi(
 
   const body = await readBody(c);
   const groupId = normalizeString(body.group_id ?? body.groupId);
-  // parseProjectRole folds the legacy `viewer` alias into `user`, so a grant
-  // is never persisted with the retired role.
+  // parseProjectRole folds the legacy `viewer`/`user` aliases into `member`, so
+  // a grant is never persisted with a retired role.
   const role = parseProjectRole(body.role);
   if (!groupId) return c.json({ error: 'group_id is required' }, 400);
   if (!role) {
-    return c.json({ error: 'role must be manager, editor, or user' }, 400);
+    return c.json({ error: 'role must be manager, editor, or member' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
@@ -250,7 +250,7 @@ projectsApp.openapi(
   const body = await readBody(c);
   const role = parseProjectRole(body.role);
   if (!role) {
-    return c.json({ error: 'role must be manager, editor, or user' }, 400);
+    return c.json({ error: 'role must be manager, editor, or member' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);

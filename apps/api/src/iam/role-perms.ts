@@ -2,22 +2,23 @@
 //
 // Fixed roles, no DB-driven role table:
 //   account: owner > admin > member
-//   project: manager > editor > user
+//   project: manager > editor > member
 //
 // `>` means "strict superset" within the same axis. Owner has everything
 // admin has, admin has everything member has, etc. Per-role sets below
 // are the *full* permission set (not the delta), so the engine just does
 // a Set.has() — no inheritance walk at request time.
 //
-// `user` is the floor project role (read + run sessions + fire triggers).
-// The old `viewer` tier was folded into `user`; it survives only as a
-// deprecated input alias (see `normalizeProjectRole`) and a dormant value
-// in the Postgres enum (which can't drop a value) — nothing emits it.
+// `member` is the floor project role (read + run sessions + fire triggers).
+// The old `user` and `viewer` tiers were folded into `member`; they survive
+// only as deprecated input aliases (see `normalizeProjectRole`) — `user` was
+// renamed in the enum, `viewer` is a dormant value Postgres can't drop.
+// Nothing emits either.
 
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from './actions';
 
 export type AccountRole = 'owner' | 'admin' | 'member';
-export type ProjectRole = 'manager' | 'editor' | 'user';
+export type ProjectRole = 'manager' | 'editor' | 'member';
 
 // ─── Account roles ─────────────────────────────────────────────────────────
 
@@ -84,10 +85,10 @@ const MANAGER_ONLY: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE,
 ];
 
-/** Actions an editor gets on top of user. Editing the project,
+/** Actions an editor gets on top of member. Editing the project,
  *  deploying, triggers, and gateway routing are "customization" — that's
- *  what separates an editor from a user. Running sessions is NOT here:
- *  it's part of the user baseline (see below). */
+ *  what separates an editor from a member. Running sessions is NOT here:
+ *  it's part of the member baseline (see below). */
 const EDITOR_EXTRAS: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_WRITE,
   PROJECT_ACTIONS.PROJECT_DEPLOY,
@@ -116,14 +117,15 @@ const EDITOR_EXTRAS: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
 ];
 
-/** Baseline for the floor project role. `user` is the base *usable* role:
+/** Baseline for the floor project role. `member` is the base *usable* role:
  *  it can read everything AND start / run / stop sessions — i.e. actually use
  *  the agent and the chat. A role that can't open a session is useless, and
  *  this is the role new members get by default, so it has to be able to drive
  *  Kortix. What it CANNOT do is customize the project: edit settings, deploy,
  *  manage members, create/delete triggers, or change gateway routing — those
- *  live in EDITOR_EXTRAS / MANAGER_ONLY above. */
-const USER_BASELINE: readonly string[] = [
+ *  live in EDITOR_EXTRAS / MANAGER_ONLY above. Named PROJECT_MEMBER_* to avoid
+ *  colliding with the account-role MEMBER_BASELINE above. */
+const PROJECT_MEMBER_BASELINE: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_READ,
   PROJECT_ACTIONS.PROJECT_SESSION_READ,
   PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
@@ -150,38 +152,38 @@ const USER_BASELINE: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
 ];
 
-/** What the floor `user` role gets on top of the read+run baseline: manually
+/** What the floor `member` role gets on top of the read+run baseline: manually
  *  FIRE the project's triggers (operate the automations) — still no editing,
  *  config, deploy, gitops, members or secret write. This keeps the chain a
- *  clean superset: user ⊂ editor ⊂ manager (editor's EDITOR_EXTRAS also
+ *  clean superset: member ⊂ editor ⊂ manager (editor's EDITOR_EXTRAS also
  *  includes fire). */
-const USER_EXTRAS: readonly string[] = [PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE];
+const PROJECT_MEMBER_EXTRAS: readonly string[] = [PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE];
 
 export const PROJECT_ROLE_PERMS: Record<ProjectRole, ReadonlySet<string>> = {
-  user: new Set<string>([...USER_BASELINE, ...USER_EXTRAS]),
-  editor: new Set<string>([...USER_BASELINE, ...EDITOR_EXTRAS]),
-  manager: new Set<string>([...USER_BASELINE, ...EDITOR_EXTRAS, ...MANAGER_ONLY]),
+  member: new Set<string>([...PROJECT_MEMBER_BASELINE, ...PROJECT_MEMBER_EXTRAS]),
+  editor: new Set<string>([...PROJECT_MEMBER_BASELINE, ...EDITOR_EXTRAS]),
+  manager: new Set<string>([...PROJECT_MEMBER_BASELINE, ...EDITOR_EXTRAS, ...MANAGER_ONLY]),
 };
 
 // ─── Role ranking helpers ──────────────────────────────────────────────────
 
 const PROJECT_ROLE_RANK: Record<ProjectRole, number> = {
-  user: 1,
+  member: 1,
   editor: 2,
   manager: 3,
 };
 
 /**
  * Coerce any raw role string (DB column, request body, legacy token) into a
- * canonical ProjectRole. The retired `viewer` tier folds into `user` — it can
- * still arrive from old rows or clients, so we normalize rather than reject.
- * Returns null for anything unrecognized.
+ * canonical ProjectRole. The retired `user` and `viewer` tiers fold into
+ * `member` — they can still arrive from old rows, tokens, or clients, so we
+ * normalize rather than reject. Returns null for anything unrecognized.
  */
 export function normalizeProjectRole(raw: string | null | undefined): ProjectRole | null {
   if (typeof raw !== 'string') return null;
   const v = raw.trim().toLowerCase();
-  if (v === 'viewer') return 'user';
-  return v === 'manager' || v === 'editor' || v === 'user' ? v : null;
+  if (v === 'viewer' || v === 'user') return 'member';
+  return v === 'manager' || v === 'editor' || v === 'member' ? v : null;
 }
 
 /** Return the higher-ranked of two project roles. Used when a user's

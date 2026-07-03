@@ -75,14 +75,15 @@ export const sessionLifecycleCommandStatusEnum = kortixSchema.enum(
   ],
 );
 
-// `user` is the floor project role. `viewer` is DEPRECATED — it was folded
-// into `user` (existing rows migrated, see the project_role_user_floor
-// migration) and is no longer assignable. The value lingers only because
-// Postgres can't drop an enum member; nothing reads or writes it.
+// `member` is the floor project role (renamed from `user`, see the
+// project_role_member_rename migration). `user` and the older `viewer` are
+// DEPRECATED — both fold into `member` via parseProjectRole/normalizeProjectRole
+// and are no longer assignable. `viewer` lingers because Postgres can't drop an
+// enum member; `user` was renamed in place. Nothing reads or writes either.
 export const projectRoleEnum = kortixSchema.enum('project_role', [
   'manager',
   'editor',
-  'user',
+  'member',
   'viewer',
 ]);
 
@@ -198,15 +199,15 @@ export const accountInvitations = kortixSchema.table(
      *  account invite + records the project grant here; on accept,
      *  the user joins the org as a member AND gets the project role
      *  in the same transaction. Shape:
-     *    [{ project_id: uuid, role: 'manager'|'editor'|'user',
+     *    [{ project_id: uuid, role: 'manager'|'editor'|'member',
      *       expires_at?: iso }]
      *  Multiple grants are allowed — the same email could be invited
      *  to several projects at once via repeated calls (they upsert).
-     *  Legacy rows may carry the retired 'viewer' role; readers fold it
-     *  into 'user' via parseProjectRole. */
+     *  Legacy rows may carry the retired 'user'/'viewer' role; readers
+     *  fold both into 'member' via parseProjectRole. */
     bootstrapGrants: jsonb('bootstrap_grants').$type<Array<{
       project_id: string;
-      role: 'manager' | 'editor' | 'user';
+      role: 'manager' | 'editor' | 'member';
       expires_at?: string | null;
     }>>(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
@@ -374,7 +375,7 @@ export const projectMembers = kortixSchema.table(
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull(),
-    projectRole: projectRoleEnum('project_role').default('user').notNull(),
+    projectRole: projectRoleEnum('project_role').default('member').notNull(),
     grantedBy: uuid('granted_by'),
     /** Optional auto-revoke timestamp. NULL = permanent grant.
      *  When set and in the past, the V2 engine treats the row as if it
@@ -2547,7 +2548,7 @@ export const projectGroupGrants = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    role: projectRoleEnum('role').default('user').notNull(),
+    role: projectRoleEnum('role').default('member').notNull(),
     grantedBy: uuid('granted_by'),
     /** Optional auto-revoke timestamp. NULL = permanent attachment.
      *  Same semantics as project_members.expires_at. */
