@@ -22,7 +22,10 @@ import { SkillsView } from '@/features/workspace/customize/sections/view/skills-
 import { useIsMobile } from '@/hooks/utils';
 import { DEFAULT_CUSTOMIZE_SECTION, type CustomizeSection } from '@/lib/customize-sections';
 import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
-import { CUSTOMIZE_SECTION_ACCESS, CUSTOMIZE_SECTION_READ_ACTIONS } from '@/lib/project-actions';
+import {
+  CUSTOMIZE_SECTION_GATE_ACTIONS,
+  isCustomizeSectionVisible,
+} from '@/lib/project-actions';
 import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
@@ -148,7 +151,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   // API re-checks every mutation); this only decides what to show. Feed the
   // accountId we ALREADY hold from the project-detail query so the probe runs on
   // first render rather than being disabled while a separate getProject resolves.
-  const caps = useProjectCans(projectId, CUSTOMIZE_SECTION_READ_ACTIONS, {
+  const caps = useProjectCans(projectId, CUSTOMIZE_SECTION_GATE_ACTIONS, {
     accountId: detail.data?.project?.account_id,
   });
   // Treat BOTH "loading" and "errored" as not-yet-resolved — this is a VISIBILITY
@@ -156,18 +159,19 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   // than blank the UI on a transient probe failure or while it's in flight.
   const capsResolved = useMemo(
     () =>
-      CUSTOMIZE_SECTION_READ_ACTIONS.every(
+      CUSTOMIZE_SECTION_GATE_ACTIONS.every(
         (action) => caps[action] && !caps[action].isLoading && !caps[action].isError,
       ),
     [caps],
   );
-  // A section is permitted when its read leaf resolved to allowed:true. Until the
-  // probe resolves (or if it errored) we permit everything (optimistic).
+  // A section is permitted when its GATE leaf resolved to allowed:true. Every
+  // customize section gates on WRITE (editor+) — a plain `member` sees none of
+  // them; `files` is the exception (gates on read), so it stays reachable. Until
+  // the probe resolves (or if it errored) we permit everything (optimistic).
   const isSectionAllowed = useCallback(
     (s: CustomizeSection) => {
       if (!capsResolved) return true;
-      const readAction = CUSTOMIZE_SECTION_ACCESS[s].read;
-      return caps[readAction]?.allowed === true;
+      return isCustomizeSectionVisible(s, (action) => caps[action]?.allowed === true);
     },
     [caps, capsResolved],
   );
