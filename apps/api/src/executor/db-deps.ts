@@ -16,6 +16,7 @@ import {
   executorProjectSettings,
   projectSessions,
   projects,
+  sessionToolApprovals,
 } from '@kortix/db';
 import { db } from '../shared/db';
 import { validateAccountToken } from '../repositories/account-tokens';
@@ -120,6 +121,48 @@ export async function waitForApprovalDecision(
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
   return 'timeout';
+}
+
+/** "Allow for this session" check (gateway hot path): is this exact
+ *  (session, connector, action) already session-approved? */
+export async function isSessionToolApproved(
+  sessionId: string,
+  connectorId: string,
+  actionPath: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: sessionToolApprovals.id })
+    .from(sessionToolApprovals)
+    .where(
+      and(
+        eq(sessionToolApprovals.sessionId, sessionId),
+        eq(sessionToolApprovals.connectorId, connectorId),
+        eq(sessionToolApprovals.actionPath, actionPath),
+      ),
+    )
+    .limit(1);
+  return !!row;
+}
+
+/** Record an "allow for the rest of this session" grant (resolve endpoint).
+ *  Idempotent: a repeat of the same (session, connector, action) is a no-op. */
+export async function recordSessionToolApproval(input: {
+  sessionId: string;
+  projectId: string;
+  connectorId: string;
+  actionPath: string;
+  grantedBy: string | null;
+}): Promise<void> {
+  await db
+    .insert(sessionToolApprovals)
+    .values({
+      sessionId: input.sessionId,
+      projectId: input.projectId,
+      connectorId: input.connectorId,
+      actionPath: input.actionPath,
+      grantedBy: input.grantedBy,
+    })
+    .onConflictDoNothing();
 }
 
 type ConnectorRow = typeof executorConnectors.$inferSelect;
@@ -307,6 +350,7 @@ function makeDbGatewayDeps(): GatewayDeps {
       return row?.id ?? null;
     },
     waitForApprovalDecision: waitForApprovalDecision,
+    isSessionToolApproved: isSessionToolApproved,
     executePipedream: ({ projectId, connectorSlug, app, actionKey, args, accountId, userId }) =>
       runPipedreamAction(projectId, connectorSlug, app, actionKey, args, accountId, userId),
     executePipedreamProxy: ({ projectId, connectorSlug, args, accountId, userId }) =>

@@ -142,6 +142,15 @@ export interface GatewayDeps {
     executionId: string,
     timeoutMs: number,
   ): Promise<'approved' | 'denied' | 'timeout'>;
+  /** "Allow for this session" check: has this session already approved THIS
+   *  connector + action for the rest of the session? A hit turns a
+   *  `require_approval` into a silent run (no hold, no re-prompt). Only ever
+   *  widens ask→run; never consulted for a policy `block`. */
+  isSessionToolApproved?(
+    sessionId: string,
+    connectorId: string,
+    actionPath: string,
+  ): Promise<boolean>;
   fetchImpl: FetchImpl;
   /** Pipedream execution (Connect actions/run) — required for pipedream connectors. */
   executePipedream?(input: {
@@ -422,43 +431,62 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       return { status: 'denied', reason: 'policy_block' };
     }
     if (decision.action === 'require_approval') {
-      // A retry from the sandbox's poll loop passes the existing execution id —
-      // wait on THAT row instead of stacking a new pending one each poll. First
-      // call records a fresh pending row.
-      const executionId =
-        input.approvalExecutionId ??
-        (await audit(deps, input, connector.connectorId, 'pending_approval', action.risk, {
-          reason: 'policy_require_approval',
+      // "Allow for this session": if a human already said allow-for-the-session
+      // for THIS connector + action, skip the gate — run it silently, no hold,
+      // no re-prompt. Audited as `ok` (reason session_allow) so the timeline
+      // still shows the call happened + why it wasn't asked.
+      const sessionAllowed =
+        input.sessionId && deps.isSessionToolApproved
+          ? await deps.isSessionToolApproved(
+              input.sessionId,
+              connector.connectorId,
+              input.actionPath,
+            )
+          : false;
+      if (sessionAllowed) {
+        await audit(deps, input, connector.connectorId, 'ok', action.risk, {
+          reason: 'session_allow',
           policy_source: decision.source,
-        }));
-      // HOLD the call so the agent's turn pauses in-session — the sandbox's
-      // synchronous executor.call blocks on this request instead of erroring.
-      // Bounded under the client's 60s timeout: on approve we fall through and
-      // run the action; on deny we return a clean refusal the agent continues
-      // past; on TIMEOUT we return `retryable` + the execution id so the sandbox
-      // re-issues the call and keeps pausing INDEFINITELY (like a question).
-      // Unattended (no session) never waits.
-      if (executionId && input.sessionId && deps.waitForApprovalDecision) {
-        const outcome = await deps.waitForApprovalDecision(executionId, APPROVAL_WAIT_MS);
-        if (outcome === 'denied') {
-          return { status: 'denied', reason: 'denied_by_user' };
-        }
-        if (outcome === 'timeout') {
+        });
+      } else {
+        // A retry from the sandbox's poll loop passes the existing execution id —
+        // wait on THAT row instead of stacking a new pending one each poll. First
+        // call records a fresh pending row.
+        const executionId =
+          input.approvalExecutionId ??
+          (await audit(deps, input, connector.connectorId, 'pending_approval', action.risk, {
+            reason: 'policy_require_approval',
+            policy_source: decision.source,
+          }));
+        // HOLD the call so the agent's turn pauses in-session — the sandbox's
+        // synchronous executor.call blocks on this request instead of erroring.
+        // Bounded under the client's 60s timeout: on approve we fall through and
+        // run the action; on deny we return a clean refusal the agent continues
+        // past; on TIMEOUT we return `retryable` + the execution id so the sandbox
+        // re-issues the call and keeps pausing INDEFINITELY (like a question).
+        // Unattended (no session) never waits.
+        if (executionId && input.sessionId && deps.waitForApprovalDecision) {
+          const outcome = await deps.waitForApprovalDecision(executionId, APPROVAL_WAIT_MS);
+          if (outcome === 'denied') {
+            return { status: 'denied', reason: 'denied_by_user' };
+          }
+          if (outcome === 'timeout') {
+            return {
+              status: 'pending_approval',
+              reason: 'policy_require_approval',
+              executionId,
+              retryable: true,
+            };
+          }
+          // approved → fall through to execute the call below.
+        } else {
           return {
             status: 'pending_approval',
             reason: 'policy_require_approval',
             executionId,
-            retryable: true,
+            retryable: false,
           };
         }
-        // approved → fall through to execute the call below.
-      } else {
-        return {
-          status: 'pending_approval',
-          reason: 'policy_require_approval',
-          executionId,
-          retryable: false,
-        };
       }
     }
   }

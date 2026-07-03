@@ -37,18 +37,30 @@ export function SessionApprovalPrompt() {
   // user is actively waiting on.
   const { data } = useSessionAudit(projectId, projectSessionId, { refetchInterval: 5_000 });
   const resolve = useResolveApproval(projectId, projectSessionId);
-  const [busy, setBusy] = useState<Record<string, 'approve' | 'deny'>>({});
+  // Which button on which row is loading: 'deny' | 'once' | 'session'.
+  const [busy, setBusy] = useState<Record<string, 'deny' | 'once' | 'session'>>({});
 
   const pending = (data?.actions ?? []).filter(isPendingAction);
   if (pending.length === 0) return null;
 
-  const decide = (executionId: string, decision: 'approve' | 'deny') => {
-    setBusy((b) => ({ ...b, [executionId]: decision }));
+  const decide = (
+    executionId: string,
+    decision: 'approve' | 'deny',
+    scope: 'once' | 'session' = 'once',
+  ) => {
+    const key = decision === 'deny' ? 'deny' : scope;
+    setBusy((b) => ({ ...b, [executionId]: key }));
     resolve.mutate(
-      { executionId, decision },
+      { executionId, decision, scope },
       {
         onSuccess: () =>
-          successToast(decision === 'approve' ? 'Approved — the agent will continue' : 'Denied'),
+          successToast(
+            decision === 'deny'
+              ? 'Denied'
+              : scope === 'session'
+                ? "Allowed — won't ask again for this action this session"
+                : 'Approved — the agent will continue',
+          ),
         onError: (e: unknown) =>
           errorToast(e instanceof Error ? e.message : 'Failed to resolve approval'),
         onSettled: () =>
@@ -109,12 +121,22 @@ export function SessionApprovalPrompt() {
                 </Button>
                 <Button
                   size="xs"
+                  variant="outline"
+                  title="Allow this action for the rest of this session — the agent won't ask again for it"
+                  disabled={!!b}
+                  onClick={() => decide(a.execution_id, 'approve', 'session')}
+                >
+                  {b === 'session' ? <Loading className="size-3 animate-spin" /> : null}
+                  Allow for session
+                </Button>
+                <Button
+                  size="xs"
                   variant="default"
                   disabled={!!b}
-                  onClick={() => decide(a.execution_id, 'approve')}
+                  onClick={() => decide(a.execution_id, 'approve', 'once')}
                 >
-                  {b === 'approve' ? <Loading className="size-3 animate-spin" /> : null}
-                  Approve
+                  {b === 'once' ? <Loading className="size-3 animate-spin" /> : null}
+                  Allow once
                 </Button>
               </div>
             </li>

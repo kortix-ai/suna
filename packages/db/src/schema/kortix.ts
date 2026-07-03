@@ -3301,6 +3301,40 @@ export const executorExecutions = kortixSchema.table(
   ],
 );
 
+/**
+ * "Allow for this session" decisions on `require_approval` connector calls. When
+ * a human approves a gated action and picks "allow for the rest of this
+ * session", (session, connector, action) is recorded here; the executor gateway
+ * consults it BEFORE holding a require_approval call, so the same tool never
+ * re-prompts within the session. Only widens `require_approval` → run — a policy
+ * `block` is never recorded (the resolve endpoint refuses it). Ephemeral: FKs
+ * cascade on project/connector delete.
+ */
+export const sessionToolApprovals = kortixSchema.table(
+  'session_tool_approvals',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    sessionId: uuid('session_id').notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    connectorId: uuid('connector_id')
+      .notNull()
+      .references(() => executorConnectors.connectorId, { onDelete: 'cascade' }),
+    actionPath: varchar('action_path', { length: 512 }).notNull(),
+    grantedBy: uuid('granted_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('session_tool_approvals_unique').on(
+      table.sessionId,
+      table.connectorId,
+      table.actionPath,
+    ),
+    index('session_tool_approvals_session_idx').on(table.sessionId),
+  ],
+);
+
 export const executorConnectorsRelations = relations(executorConnectors, ({ one, many }) => ({
   project: one(projects, {
     fields: [executorConnectors.projectId],
