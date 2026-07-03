@@ -6,6 +6,7 @@ import { db } from '../../shared/db';
 import {
   getCrById,
   getNextCrNumber,
+  recordRequestedChange,
   serializeChangeRequest,
 } from '../change-requests';
 import {
@@ -24,7 +25,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { AnyObject, ChangeRequestSchema, SessionStartResultSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
-import { restartSession, startSession, stopSession } from '../session-lifecycle';
+import { continueSession, restartSession, startSession, stopSession } from '../session-lifecycle';
 import {
   refreshCrTips,
 } from './shared';
@@ -600,6 +601,80 @@ projectsApp.openapi(
       .where(eq(changeRequests.crId, crId))
       .returning();
     return c.json(serializeChangeRequest(row));
+  },
+);
+
+// POST /v1/projects/:projectId/change-requests/:crId/request-changes
+// Human "request changes" from the Review Center: persist the feedback on the CR
+// (CRs have no comment table — this is how the ask is remembered + shown back)
+// and deliver it to the agent that opened the change so it revises. Delivery is
+// fire-and-forget: continueSession boots the sandbox if it's asleep, resolves the
+// live session, and retries — so the HTTP response stays snappy.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/change-requests/{crId}/request-changes',
+    tags: ['change-requests'],
+    summary: 'POST /:projectId/change-requests/:crId/request-changes',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), crId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), 'OK'),
+      ...errors(400, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const crId = c.req.param('crId');
+    const body = await readBody(c);
+    const loaded = await loadProjectForUser(c, projectId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
+    );
+
+    const feedback = normalizeString(body.feedback ?? body.text);
+    if (!feedback) return c.json({ error: 'feedback is required' }, 400);
+
+    const cr = await getCrById(crId, projectId);
+    if (!cr) return c.json({ error: 'Change request not found' }, 404);
+    if (cr.status !== 'open') {
+      return c.json({ error: `Cannot request changes on a ${cr.status} change request` }, 409);
+    }
+
+    // Persist first — the ask must survive even if delivery can't reach the agent.
+    const row = await recordRequestedChange(crId, projectId, {
+      text: feedback,
+      by: loaded.userId,
+      at: new Date().toISOString(),
+    });
+    if (!row) return c.json({ error: 'Change request not found' }, 404);
+
+    // Deliver to the originating session's agent (best-effort, background — a
+    // sandbox boot can take seconds, so we never block the response on it).
+    const willDeliver = Boolean(cr.originSessionId);
+    if (cr.originSessionId) {
+      void continueSession({
+        source: 'ui',
+        sessionId: cr.originSessionId,
+        text: `Please revise change request #${cr.number} ("${cr.title}") based on this feedback:\n\n${feedback}`,
+        userId: loaded.userId,
+      }).catch((err) => {
+        console.warn('[change-requests] request-changes delivery failed', {
+          crId,
+          error: String(err),
+        });
+      });
+    }
+
+    return c.json({ change_request: serializeChangeRequest(row), delivering: willDeliver });
   },
 );
 
