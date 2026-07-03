@@ -15,17 +15,22 @@ import { db } from '../shared/db';
 import { app } from '../index';
 import { waitForApprovalDecision } from '../executor/db-deps';
 import { createAccountToken } from '../repositories/account-tokens';
+import { getCreditAccount, setDemoEnterprise } from '../billing/repositories/credit-accounts';
 
 const minted: string[] = [];
 const execIds: string[] = [];
 const SESSION = crypto.randomUUID();
 let ctx: { projectId: string; accountId: string; userId: string } | null = null;
 let secret = '';
+let priorDemoEnterprise = false;
 
 beforeAll(async () => {
   await db.execute(sql`alter table kortix.account_tokens add column if not exists agent_grant jsonb`);
   await db.execute(sql`alter table kortix.account_tokens add column if not exists session_id text`);
   await db.execute(sql`alter table kortix.account_tokens add column if not exists service_account_id uuid`);
+  await db.execute(
+    sql`alter table kortix.credit_accounts add column if not exists demo_enterprise boolean not null default false`,
+  );
   const rows = (await db.execute(sql`
     select p.project_id, p.account_id, m.user_id
     from kortix.projects p
@@ -45,12 +50,18 @@ beforeAll(async () => {
     createdBy: ctx.userId,
     visibility: 'private',
   });
+  // The full-trail assertions below need the auditAccess entitlement; flip the
+  // enterprise demo on for the suite (restored in afterAll). The unentitled
+  // contract has its own dedicated test that toggles it off.
+  priorDemoEnterprise = (await getCreditAccount(ctx.accountId))?.demoEnterprise ?? false;
+  await setDemoEnterprise(ctx.accountId, true);
 });
 
 afterAll(async () => {
   for (const id of execIds) await db.delete(executorExecutions).where(eq(executorExecutions.executionId, id));
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, SESSION));
   for (const id of minted) await db.execute(sql`delete from kortix.account_tokens where token_id = ${id}`);
+  if (ctx) await setDemoEnterprise(ctx.accountId, priorDemoEnterprise);
 });
 
 async function seedPending(): Promise<string> {
@@ -106,8 +117,32 @@ describe('approvals inbox + resolution', () => {
 
     const audit = await authGet(`/v1/projects/${ctx.projectId}/sessions/${SESSION}/audit`);
     expect(audit.status).toBe(200);
-    const entry = (await audit.json()).actions.find((a: any) => a.execution_id === execId);
+    const auditBody = await audit.json();
+    expect(auditBody.audit_access).toBe(true);
+    const entry = auditBody.actions.find((a: any) => a.execution_id === execId);
     expect(entry?.resolved_by).toBe(ctx.userId);
+  });
+
+  test('unentitled account: audit degrades to pending-only (never a 402 — the approval control plane)', async () => {
+    if (!ctx) return;
+    // A resolved action (history) + a still-pending one.
+    const resolvedId = await seedPending();
+    await authPost(`/v1/projects/${ctx.projectId}/approvals/${resolvedId}`, { decision: 'approve' });
+    const pendingId = await seedPending();
+
+    await setDemoEnterprise(ctx.accountId, false);
+    try {
+      const res = await authGet(`/v1/projects/${ctx.projectId}/sessions/${SESSION}/audit`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.audit_access).toBe(false);
+      const ids = body.actions.map((a: any) => a.execution_id);
+      expect(ids).toContain(pendingId);
+      expect(ids).not.toContain(resolvedId);
+      expect(body.actions.every((a: any) => a.status === 'pending_approval')).toBe(true);
+    } finally {
+      await setDemoEnterprise(ctx.accountId, true);
+    }
   });
 
   test('deny flips the action to denied + records the denier', async () => {
