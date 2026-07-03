@@ -517,7 +517,7 @@ export async function recordTemplateBuilt(
 
 /** Managed snapshot namespaces we own and may reap. Anything else (Daytona's
  *  own base/sample images, etc.) is left strictly alone. */
-const REAPABLE_SNAPSHOT_PREFIXES = ['kortix-default-', 'kortix-tpl-', 'kortix-wproj-'];
+const REAPABLE_SNAPSHOT_PREFIXES = ['kortix-default-', 'kortix-tpl-', 'kortix-wproj-', 'kortix-ppwarm-'];
 
 /**
  * Delete a snapshot a template row just stopped pointing at. Best-effort and

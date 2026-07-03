@@ -30,6 +30,8 @@ import {
 } from './templates';
 import { DEFAULT_SANDBOX_SLUG } from './dockerfile-layer';
 import { classifySnapshotError } from './error-classify';
+import type { WarmRepoContext } from './build-context';
+import { createHash } from 'node:crypto';
 
 export { resolveCommitSha };
 export { DEFAULT_SANDBOX_SLUG };
@@ -86,6 +88,44 @@ export async function ensureSandboxImage(
   }
 
   const identity = await computeTemplateIdentity(project, template);
+
+  // Per-project warm preference. On a session boot of the shared default slug, if
+  // a per-project warm image — same runtime identity, current default-branch tip,
+  // repo baked into /workspace — is already active on this provider, boot off it
+  // (no clone at boot). On a MISS, kick a fire-and-forget background bake so the
+  // next session on this commit boots warm; this boot never blocks on the bake and
+  // falls through to the normal cold path when no warm image exists yet.
+  if ((opts.source ?? 'session-start') === 'session-start' && template.isShared) {
+    try {
+      const warmTip = await resolveCommitSha(project, project.defaultBranch);
+      if (warmTip) {
+        const warmName = perProjectWarmImageName(project.projectId, warmTip, identity.snapshotName);
+        if ((await provider.getSnapshotState(warmName)) === 'active') {
+          console.log(
+            `[snapshots] per-project warm HIT: booting ${template.slug} from ${warmName} ` +
+            `(project ${project.projectId.slice(0, 8)}, tip ${warmTip.slice(0, 8)}, provider ${buildProvider})`,
+          );
+          return {
+            snapshotName: warmName,
+            slug: template.slug,
+            contentHash: identity.contentHash,
+            built: false,
+            isDefault: !!template.isShared,
+          };
+        }
+        // MISS — no warm image for this (project, tip) yet. Kick a fire-and-forget
+        // background bake so the NEXT session on this commit boots warm, and fall
+        // through to the cold path for THIS session (never block a boot on a bake).
+        kickBackgroundWarmBuild(project, {
+          accountId: opts.accountId,
+          provider: buildProvider,
+          snapshotName: warmName,
+        });
+      }
+    } catch (err) {
+      console.warn(`[snapshots] per-project warm lookup failed (falling back to cold):`, err);
+    }
+  }
 
   // Trust-the-row fast path. If the template row already recorded THIS exact
   // snapshot (same content hash + name) as active, boot straight off it without
@@ -647,6 +687,32 @@ function kickBackgroundRebuild(
 }
 
 /**
+ * Fire-and-forget per-project warm bake, off the session hot path. Deduped by the
+ * target warm snapshot name (via the same inflight set) so a burst of sessions on
+ * the same (project, tip) kicks exactly one bake. Best-effort: a failure just means
+ * the next session retries; sessions keep booting cold until the bake lands.
+ */
+function kickBackgroundWarmBuild(
+  project: GitBackedProject,
+  opts: { accountId?: string; provider?: string; snapshotName: string },
+): void {
+  if (inflightBackgroundBuilds.has(opts.snapshotName)) return;
+  inflightBackgroundBuilds.add(opts.snapshotName);
+  void ensurePerProjectWarmImage(project, {
+    accountId: opts.accountId,
+    provider: opts.provider,
+    source: 'background',
+  })
+    .catch((err) =>
+      console.warn(
+        `[snapshots] background warm bake of ${opts.snapshotName} failed for ${project.projectId}:`,
+        err instanceof Error ? err.message : err,
+      ),
+    )
+    .finally(() => inflightBackgroundBuilds.delete(opts.snapshotName));
+}
+
+/**
  * Fire-and-forget pre-build. Used at project-create and CR-merge time so the
  * first session for a new commit can boot off a cache hit.
  */
@@ -779,4 +845,138 @@ export function kickProjectTemplatePrebuilds(
       err instanceof Error ? err.message : err,
     ),
   );
+}
+
+// ─── Per-project COLD rootfs warm ────────────────────────────────────────────
+
+/** Managed name prefix for per-project COLD warm images. Reapable, disjoint
+ *  from the shared-default (`kortix-default-`) and custom (`kortix-tpl-`) names.
+ *  Provider-agnostic: the SAME cold image builds on Daytona and Platinum. */
+const PPWARM_PREFIX = 'kortix-ppwarm-';
+
+function proj8(projectId: string): string {
+  return projectId.replace(/-/g, '').slice(0, 8);
+}
+
+/**
+ * Content-addressed name for a project's COLD warm image, keyed on
+ * (project, tip, base runtime identity). A new tip OR a runtime-fingerprint bump
+ * moves the name → a fresh bake; a stale name is never served for a moved tip.
+ * Mirrors warm-project.ts's `kortix-wproj-<proj8>-<hash12>` naming (that module
+ * is stateful/prod-only; this is the cold, provider-agnostic equivalent).
+ */
+export function perProjectWarmImageName(projectId: string, tip: string, baseSnapshotName: string): string {
+  const hash = createHash('sha256').update(`${projectId}|${tip}|${baseSnapshotName}`).digest('hex').slice(0, 12);
+  return `${PPWARM_PREFIX}${proj8(projectId)}-${hash}`;
+}
+
+export interface PerProjectWarmResult {
+  snapshotName: string;
+  tip: string;
+  built: boolean;
+  provider: string;
+}
+
+/**
+ * Build (or reuse) a project's COLD warm image: the shared default runtime with
+ * the project's repo checkout baked into /workspace at the default-branch tip.
+ * capture:'none' — NO memory snapshot, NO stateful CH; BOTH Daytona and Platinum
+ * boot it cold and the daemon (git.ts) fast-paths the baked `.git` with no clone.
+ *
+ * Idempotent: an active image under the computed name short-circuits. The name is
+ * tip-keyed, so a moved tip bakes a new one (self-superseding). This is the pure
+ * builder primitive — it does NOT rewrite session routing; a caller opts a
+ * session in by booting `snapshotName`. `provider` defaults to the platform
+ * default provider so it's testable on either backend.
+ */
+export async function ensurePerProjectWarmImage(
+  project: GitBackedProject,
+  opts: { accountId?: string; provider?: string; source?: SnapshotBuildSource } = {},
+): Promise<PerProjectWarmResult> {
+  if (!project.repoUrl) throw new SnapshotBuildError('project has no repo url — cannot bake per-project warm image');
+  const buildProvider = opts.provider ?? config.getDefaultProvider();
+  const provider = getSandboxProvider(buildProvider);
+  if (!provider.isConfigured()) throw new SnapshotBuildError(`Sandbox provider ${buildProvider} is not configured`);
+
+  // Base runtime == the SHARED default (same opencode/agent/CLI a cold session
+  // gets). The repo is layered ON TOP via warmRepo — the userDockerfile is the
+  // platform default's, unchanged, so the runtime is byte-identical to default.
+  const template = await resolveTemplateBySlug(project, DEFAULT_SANDBOX_SLUG);
+  const baseIdentity = await computeTemplateIdentity(project, template);
+
+  const tip = await resolveCommitSha(project, project.defaultBranch);
+  if (!tip) throw new SnapshotBuildError(`could not resolve ${project.defaultBranch} tip for per-project warm`);
+
+  const snapshotName = perProjectWarmImageName(project.projectId, tip, baseIdentity.snapshotName);
+
+  // Idempotency: active image under this (project, tip, runtime) → reuse it.
+  if ((await provider.getSnapshotState(snapshotName)) === 'active') {
+    return { snapshotName, tip, built: false, provider: buildProvider };
+  }
+
+  const warmRepo = await resolveWarmRepoContext(project);
+
+  const buildId = opts.accountId
+    ? await openBuildLog({
+        accountId: opts.accountId,
+        projectId: project.projectId,
+        slug: `${DEFAULT_SANDBOX_SLUG}-warm`,
+        snapshotName,
+        contentHash: baseIdentity.contentHash,
+        commitSha: tip,
+        source: opts.source ?? 'manual',
+      })
+    : null;
+
+  try {
+    console.log(
+      `[snapshots] per-project warm: baking ${snapshotName} (project ${project.projectId.slice(0, 8)}, ` +
+      `tip ${tip.slice(0, 8)}, base ${baseIdentity.snapshotName}, provider=${buildProvider})`,
+    );
+    // COLD build (capture:'none' — buildSnapshot on this branch never captures a
+    // memory snapshot). The ONLY delta from the shared default build is warmRepo,
+    // which bakes /workspace at build time.
+    await provider.buildSnapshot({
+      snapshotName,
+      image: template.image ?? undefined,
+      userDockerfile: baseIdentity.userDockerfile,
+      entrypoint: template.entrypoint ? [template.entrypoint] : undefined,
+      spec: { cpu: template.cpu, memoryGb: template.memoryGb, diskGb: template.diskGb },
+      slug: `${template.slug}-warm`,
+      isShared: false,
+      warmRepo,
+    });
+    if (buildId) await closeBuildLogReady(buildId);
+    return { snapshotName, tip, built: true, provider: buildProvider };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (buildId) await closeBuildLogFailed(buildId, message);
+    throw new SnapshotBuildError(message, err);
+  }
+}
+
+/**
+ * Resolve the build-time clone credentials + runtime proxy origin for a project's
+ * per-project warm bake. Reads the full project row (the GitBackedProject subset
+ * lacks the fields `resolveProjectUpstream` needs). The build-time auth header is
+ * a short-lived git-host credential embedded ONLY in a one-shot RUN; origin is
+ * reset to the Kortix proxy so the daemon re-auths per session at runtime.
+ */
+async function resolveWarmRepoContext(project: GitBackedProject): Promise<WarmRepoContext> {
+  const { projects } = await import('@kortix/db');
+  const { resolveProjectUpstream } = await import('../projects/lib/git');
+  const { proxyGitUrl } = await import('../projects/lib/sessions');
+
+  const [row] = await db.select().from(projects).where(eq(projects.projectId, project.projectId)).limit(1);
+  if (!row) throw new SnapshotBuildError(`project ${project.projectId} not found for warm-repo resolution`);
+
+  const upstream = await resolveProjectUpstream(row as never, 'read');
+  if (!upstream?.url) throw new SnapshotBuildError('no git upstream configured for project — cannot bake per-project warm');
+
+  return {
+    cloneUrl: upstream.url,
+    cloneHeaders: upstream.headers ?? {},
+    branch: project.defaultBranch,
+    originUrl: proxyGitUrl(project.projectId),
+  };
 }
