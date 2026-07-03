@@ -464,6 +464,11 @@ export const projectSecrets = kortixSchema.table(
     // value (true) or has flipped back to the shared one while keeping theirs
     // stored (false). Ignored on shared rows.
     active: boolean('active').default(true).notNull(),
+    // Which agents may use this shared secret. NULL / empty = ALL agents
+    // (project-wide, the default). A non-empty list of agent NAMES restricts it
+    // to those agents' sessions — the executor drops the secret from any session
+    // whose running agent isn't listed (additive narrowing, never widening).
+    agentScope: text('agent_scope').array(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
