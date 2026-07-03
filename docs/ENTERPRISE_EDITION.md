@@ -38,7 +38,14 @@ governance surface:
 | `sso` | SAML SSO config, JIT provisioning, group-claim mapping (`accounts/iam/sso.ts`) | Identity federation is the standard enterprise trigger across this category (Documenso, n8n, GitLab, Onyx, Cal.com all gate SAML the same way) |
 | `scim` | SCIM 2.0 directory provisioning — token mint/revoke + `/scim/v2/*` (`accounts/iam/scim-tokens.ts`, `middleware/scim-auth.ts`) | Pairs with SSO; automated user lifecycle is an IT/security-team need, not an individual one |
 | `rbac` | **Creating/growing** custom RBAC state: custom roles + their permission sets, policy bindings (`accounts/iam/custom-roles.ts`), groups + membership adds (`accounts/iam/groups.ts`), and group→project grant create/re-role (`projects/routes/r7.ts`) | Preset roles cover the common cases for free; defining your own roles/policies and grouping members is the governance layer regulated orgs actually need |
-| `auditAccess` | **Reading, exporting, and streaming** the audit trail — account audit log + export, webhook create/update (`accounts/audit.ts`), webhook **delivery** (`shared/audit-webhooks.ts`, the data plane), and the per-session agent-action audit (`projects/routes/r7.ts`) | Recording is universal (see above); *who gets to look at it* — and pipe it into a SIEM — is the compliance feature |
+| `auditAccess` | **Reading, exporting, and streaming** the audit trail — account audit log + export, webhook create/update (`accounts/audit.ts`), webhook **delivery** (`shared/audit-webhooks.ts`, the data plane), and the per-session agent-action **history** (`projects/routes/r7.ts`) | Recording is universal (see above); *who gets to look at it* — and pipe it into a SIEM — is the compliance feature |
+
+**The approval control plane is never paywalled.** Write/destructive connector
+actions default to `require_approval` on every tier (`executor/policy.ts`), so
+`GET /sessions/:id/audit` never returns a 402 — for unentitled accounts it
+degrades to *unresolved pending approvals only* (`audit_access: false` in the
+response) so the launcher can always see and resolve what's blocking the run.
+Only the historical allowed/denied trail is Enterprise.
 
 **Revocation is never paywalled.** Deleting a custom role, revoking a policy,
 deleting a group, removing a group member, detaching a group grant, or deleting
