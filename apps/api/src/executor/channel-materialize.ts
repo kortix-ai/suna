@@ -31,6 +31,10 @@ function channelSpec(platform: ChannelPlatform, slug: string, name = channelLabe
     // surface, so its actions ask before running (silence per-session with "allow
     // for session"). Slack/meet aren't gated by default.
     sensitive: platform === 'email',
+    // Synthetic — no manifest entry. agent_scope is set DB-side and preserved
+    // across syncs (upsertConnector skips reconciling it for channel/computer),
+    // so this null is only the initial value, never overwrites a later DB edit.
+    agentScope: null,
     app: null,
     account: null,
     url: null,

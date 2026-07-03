@@ -119,6 +119,11 @@ export interface ConnectorSpec {
   /** Sensitive connector (email/files/secrets-bearing): reads gate too — every
    *  action defaults to require_approval unless an explicit policy opens it. */
   sensitive: boolean;
+  /** Which AGENTS may call this connector (the connector-side agent gate, mirror
+   *  of the secret agent_scope). null / empty = ALL agents; a list of agent NAMES
+   *  restricts it to those agents' sessions. Reconciled to executor_connectors.
+   *  agent_scope every sync (toml-authoritative for declared connectors). */
+  agentScope: string[] | null;
   // ── provider-specific ──
   /** pipedream: app slug (`gmail`, `slack`). */
   app: string | null;
@@ -215,6 +220,8 @@ export function connectorSpecToTomlEntry(spec: ConnectorSpec): Record<string, un
   // Only emit credential mode when it differs from the per-app default.
   const defaultMode = spec.provider === 'pipedream' ? 'per_user' : 'shared';
   if (spec.credentialMode !== defaultMode) entry.credential = spec.credentialMode;
+  // Restrict which agents may call it — omit when all-agents (the default).
+  if (spec.agentScope && spec.agentScope.length > 0) entry.agent_scope = spec.agentScope;
   // Provider-specific keys — only emit what carries information.
   if (spec.provider === 'pipedream') {
     if (spec.app) entry.app = spec.app;
@@ -314,6 +321,20 @@ function parseConnectorEntry(entry: unknown, index: number): ParseOk | ParseErr 
   const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;
   const enabled = coerceBool(row.enabled, true);
   const sensitive = coerceBool(row.sensitive, false);
+  // agent_scope = which agents may call this connector. A hand-written list of
+  // agent names; empty/absent = all agents (null). Any string accepted (not
+  // validated against declared [[agents]], mirroring how connectors aren't
+  // validated against the catalog) so a typo simply scopes to a nonexistent agent.
+  const agentScopeList = Array.isArray(row.agent_scope)
+    ? Array.from(
+        new Set(
+          row.agent_scope
+            .filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+            .map((x) => x.trim()),
+        ),
+      )
+    : [];
+  const agentScope = agentScopeList.length > 0 ? agentScopeList : null;
 
   // Credential mode — per-app default, overridable via `credential = "..."`.
   const credRaw = typeof row.credential === 'string' ? row.credential.trim().toLowerCase() : '';
@@ -334,6 +355,7 @@ function parseConnectorEntry(entry: unknown, index: number): ParseOk | ParseErr 
     provider: provider as ConnectorProvider,
     credentialMode,
     sensitive,
+    agentScope,
     app: null,
     account: null,
     url: null,

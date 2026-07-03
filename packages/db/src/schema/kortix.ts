@@ -3118,6 +3118,13 @@ export const executorConnectors = kortixSchema.table(
     authSecret: varchar('auth_secret', { length: 64 }),
     /** Who can use this connector. `project` = all members; `restricted` = the grants below. */
     shareScope: secretShareScopeEnum('share_scope').default('project').notNull(),
+    /** Which AGENTS may call this connector — the connector-side agent gate,
+     *  mirror of project_secrets.agent_scope. NULL/empty = ALL agents; a list of
+     *  agent NAMES restricts it to those agents' sessions (the executor gateway
+     *  drops a call whose running agent isn't listed). Reconciled every sync from
+     *  the toml [[connectors]].agent_scope for DECLARED connectors; set DB-side
+     *  for synthetic (channel/computer) connectors that have no manifest entry. */
+    agentScope: text('agent_scope').array(),
     /** Credential storage model — shared project credential vs each member brings their own. */
     credentialMode: executorCredentialModeEnum('credential_mode').default('shared').notNull(),
     /** Hash over config+auth — skip catalog re-sync when unchanged. */

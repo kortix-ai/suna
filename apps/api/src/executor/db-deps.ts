@@ -227,16 +227,6 @@ async function connectorConnected(row: ConnectorRow, userId: string | null): Pro
     : credentialExists(row.connectorId, userId);
 }
 
-/** The connector's agent_scope (which agents may call it) out of its config jsonb.
- *  Mirrors how `sensitive` is stored. undefined/empty = usable by all agents. */
-function connectorAgentScopeOf(config: unknown): string[] | undefined {
-  const raw = (config as { agent_scope?: unknown } | null)?.agent_scope;
-  if (Array.isArray(raw) && raw.length > 0 && raw.every((x) => typeof x === 'string')) {
-    return raw as string[];
-  }
-  return undefined;
-}
-
 function toGatewayConnector(row: ConnectorRow, grants: Awaited<ReturnType<typeof loadConnectorGrants>>): GatewayConnector {
   const { auth, hasAuth } = authOf(row);
   return {
@@ -252,7 +242,10 @@ function toGatewayConnector(row: ConnectorRow, grants: Awaited<ReturnType<typeof
     credentialMode: row.credentialMode as 'shared' | 'per_user',
     enabled: row.enabled,
     sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
-    agentScope: connectorAgentScopeOf(row.config),
+    // Connector-side agent gate — a dedicated column (reconciled every sync from
+    // the toml for declared connectors), NOT config jsonb (which only rewrites on
+    // a catalog re-fetch). NULL = all agents.
+    agentScope: row.agentScope ?? undefined,
   };
 }
 
@@ -533,7 +526,7 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
     if (!agentMayUseConnector(p.agentGrant ?? null, row.slug)) continue;
     // Connector-side agent_scope: an agent doesn't see a connector restricted to
     // OTHER agents (mirrors the call gate's connectorUsable agent check).
-    if (connectorDeniedForAgent(connectorAgentScopeOf(row.config), catalogAgentName)) continue;
+    if (connectorDeniedForAgent(row.agentScope, catalogAgentName)) continue;
     const grants = grantsByConnector.get(row.connectorId) ?? [];
     if (!isSecretUsableBy(row.shareScope as 'project' | 'restricted', grants, p.subject)) {
       if (!(await inheritedConnsFor()).has(row.slug)) continue;
