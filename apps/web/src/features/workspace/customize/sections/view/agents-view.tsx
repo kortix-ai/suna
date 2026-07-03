@@ -12,11 +12,11 @@ import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
   type AgentGrantSet,
+  type ProjectConfigSummary,
   listConnectors,
   listProjectAccess,
   listProjectResourceGrants,
   listProjectSecrets,
-  type ProjectConfigSummary,
   setAgentScope,
 } from '@kortix/sdk/projects-client';
 import { StarSolid } from '@mynaui/icons-react';
@@ -289,6 +289,9 @@ function AgentScopeCard({
 
   const [env, setEnv] = useState<AgentGrantSet>(scope.env);
   const [connectors, setConnectors] = useState<AgentGrantSet>(scope.connectors);
+  // Bumped on Reset to remount the editors so their local "specific" latch reseeds
+  // from the restored value (agent switches already remount via the keyed pane).
+  const [editorNonce, setEditorNonce] = useState(0);
   // Reset local edits whenever the committed scope changes (agent switch, or a
   // save landed and the config query refetched) so the form tracks the source.
   const committedKey = JSON.stringify({ agentName, env: scope.env, connectors: scope.connectors });
@@ -355,6 +358,7 @@ function AgentScopeCard({
     <div className="border-border/60 bg-muted/20 space-y-4 rounded-lg border p-4">
       <ScopeHeader />
       <ScopeEditor
+        key={`env-${editorNonce}`}
         label="Secrets"
         allLabel="All the launcher can see"
         emptyLabel="No secrets in this project yet."
@@ -363,6 +367,7 @@ function AgentScopeCard({
         onChange={setEnv}
       />
       <ScopeEditor
+        key={`connectors-${editorNonce}`}
         label="Connectors"
         allLabel="Every project connector"
         emptyLabel="No connectors in this project yet."
@@ -386,6 +391,7 @@ function AgentScopeCard({
               onClick={() => {
                 setEnv(scope.env);
                 setConnectors(scope.connectors);
+                setEditorNonce((n) => n + 1);
               }}
             >
               Reset
@@ -446,8 +452,15 @@ function ScopeEditor({
   options: { id: string; label: string }[];
   onChange: (v: AgentGrantSet) => void;
 }) {
+  // "Specific" with nothing selected yet is a real UI state the value type can't
+  // hold — an empty list is indistinguishable from "None". So we latch the user's
+  // choice locally: without this, clicking Specific from All writes `[]`, which
+  // re-derives to None and the checklist never opens (the button looks dead). The
+  // detail pane is keyed per agent, so this state remounts and never bleeds across
+  // agents; picking an item makes the value itself specific and the latch moot.
+  const [wantSpecific, setWantSpecific] = useState(value !== 'all' && value.length > 0);
   const mode: 'all' | 'specific' | 'none' =
-    value === 'all' ? 'all' : value.length === 0 ? 'none' : 'specific';
+    value === 'all' ? 'all' : value.length > 0 || wantSpecific ? 'specific' : 'none';
   const selected = value === 'all' ? new Set<string>() : new Set(value);
   const optionIds = new Set(options.map((o) => o.id));
   // Selected names that aren't in the current option list (deleted resource, or
@@ -458,9 +471,11 @@ function ScopeEditor({
   const rows = [...options, ...orphanRows];
 
   const pick = (m: 'all' | 'specific' | 'none') => {
+    setWantSpecific(m === 'specific');
     if (m === 'all') return onChange('all');
     if (m === 'none') return onChange([]);
-    // → specific: keep the current concrete list ('all' starts empty).
+    // → specific: keep the current concrete list ('all' starts empty). The latch
+    // above keeps us in specific mode even while the list is empty.
     onChange(value === 'all' ? [] : value);
   };
   const toggle = (id: string) => {
