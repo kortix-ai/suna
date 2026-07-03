@@ -32,6 +32,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
       projectId={projectId}
       kind="agent"
       noun="agent"
+      layout="split"
       title="Agents"
       description="Pick an agent from the list to preview it, or create a new one."
       docs="https://kortix.com/docs/concepts/agents"
