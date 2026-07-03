@@ -48,6 +48,24 @@ flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:projectId/detai
     const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/detail", { params: { projectId: p.id } });
     r.status(200);
   });
+  await ctx.step("NONMEMBER → 403", async () => {
+    const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:projectId/detail", { params: { projectId: p.id } });
+    r.status(403);
+  });
+  if (ctx.env.capabilities.admin) {
+    const admin = ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN");
+    await ctx.step("platform admin WITHOUT the bypass header → still 403 (no standing access)", async () => {
+      const r = await admin.get("/v1/projects/:projectId/detail", { params: { projectId: p.id } });
+      r.status(403);
+    });
+    await ctx.step("platform admin WITH x-kortix-admin-bypass → 200 (read-only escape hatch)", async () => {
+      const r = await admin.get("/v1/projects/:projectId/detail", {
+        params: { projectId: p.id },
+        headers: { "x-kortix-admin-bypass": "1" },
+      });
+      r.status(200).body().has("$.project_id", p.id);
+    });
+  }
 });
 
 flow("PROJ-7", { domain: "projects", routes: ["PATCH /v1/projects/:projectId"] }, async (ctx) => {

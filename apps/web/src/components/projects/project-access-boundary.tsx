@@ -9,6 +9,7 @@ import {
   LockKeyhole,
   RefreshCw,
   Send,
+  ShieldAlert,
   UserRound,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -30,6 +31,8 @@ import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 import { Textarea } from '@/components/ui/textarea';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
+import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { setAdminBypass } from '@/lib/api-client';
 import { getProjectDetail, requestProjectAccess } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 
@@ -126,9 +129,11 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { data: adminRole } = useAdminRole();
   const [message, setMessage] = useState('');
   const [sent, setSent] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
+  const [bypassError, setBypassError] = useState<string | null>(null);
 
   const requestMutation = useMutation({
     mutationFn: () => requestProjectAccess(projectId, message),
@@ -145,9 +150,52 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
     },
   });
 
+  // Platform-admin escape hatch: flips the client-wide admin-bypass header
+  // on, then re-fetches this same ['project-detail', projectId] query so the
+  // boundary above (which shares this query cache) picks up the result and
+  // renders the actual project. Read-only server-side (see
+  // apps/api/src/projects/lib/access.ts) and audit-logged against the
+  // project's own account on every use.
+  const bypassMutation = useMutation({
+    mutationFn: async () => {
+      setAdminBypass(true);
+      return queryClient.fetchQuery({
+        queryKey: ['project-detail', projectId],
+        queryFn: () => getProjectDetail(projectId, { showErrors: false }),
+      });
+    },
+    onMutate: () => setBypassError(null),
+    onError: (error: Error) => {
+      setAdminBypass(false);
+      setBypassError(error.message || 'Admin bypass failed.');
+    },
+  });
+
   return (
     <ProjectAccessStateFrame
       icon={<LockKeyhole className="size-5" />}
+      cornerAction={
+        adminRole?.isAdmin ? (
+          <div className="flex flex-col items-end gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-amber-500/50 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
+              onClick={() => bypassMutation.mutate()}
+              disabled={bypassMutation.isPending}
+            >
+              {bypassMutation.isPending ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <ShieldAlert className="size-3.5" />
+              )}
+              ADMIN BYPASS
+            </Button>
+            {bypassError ? <p className="text-destructive text-xs">{bypassError}</p> : null}
+          </div>
+        ) : null
+      }
       eyebrow={tI18nHardcoded.raw(
         'autoComponentsProjectsProjectAccessBoundaryJsxAttrEyebrowPrivateProjectd5b1951c',
       )}
@@ -267,6 +315,7 @@ function ProjectAccessStateFrame({
   panelDescription,
   content,
   footer,
+  cornerAction,
 }: {
   icon: ReactNode;
   eyebrow?: string;
@@ -276,6 +325,7 @@ function ProjectAccessStateFrame({
   panelDescription?: string;
   content?: ReactNode;
   footer?: ReactNode;
+  cornerAction?: ReactNode;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const router = useRouter();
@@ -297,6 +347,10 @@ function ProjectAccessStateFrame({
         className="bg-background/85 dark:bg-background/80 pointer-events-none absolute inset-0"
         aria-hidden="true"
       />
+
+      {cornerAction ? (
+        <div className="absolute right-4 top-4 z-20 sm:right-6 sm:top-6">{cornerAction}</div>
+      ) : null}
 
       <main className="relative z-10 mx-auto flex w-full max-w-4xl items-center">
         <div

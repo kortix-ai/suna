@@ -17,6 +17,22 @@ export interface ApiResponse<T = any> {
   success: boolean;
 }
 
+// Platform-admin read-only bypass toggle (web only). In-memory, per-tab — never
+// persisted — so it resets on reload and can't linger silently. When on, every
+// request from this client carries `x-kortix-admin-bypass: 1`; the API only
+// honors it for a real platform admin/super_admin on a `read` action (see
+// apps/api/src/projects/lib/access.ts), so this is safe to set unconditionally
+// here rather than threading it through every call site.
+let adminBypassEnabled = false;
+
+export function setAdminBypass(enabled: boolean): void {
+  adminBypassEnabled = enabled;
+}
+
+export function isAdminBypassEnabled(): boolean {
+  return adminBypassEnabled;
+}
+
 async function makeRequest<T = any>(
   url: string,
   options: RequestInit & ApiClientOptions = {}
@@ -57,6 +73,10 @@ async function makeRequest<T = any>(
 
     // Merge with any headers from fetchOptions
     Object.assign(headers, fetchOptions.headers as Record<string, string>);
+
+    if (adminBypassEnabled) {
+      headers['x-kortix-admin-bypass'] = '1';
+    }
 
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
