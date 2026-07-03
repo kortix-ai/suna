@@ -1,6 +1,6 @@
 /**
  * Change-request data fetchers for the project-files feature. Thin wrappers
- * over `@/lib/projects-client` so the feature module's hooks can keep their
+ * over `@kortix/sdk/projects-client` so the feature module's hooks can keep their
  * query keys colocated with the rest of the file-explorer caches.
  */
 
@@ -24,7 +24,7 @@ import {
   type ChangeRequestStatus,
   type CommitSessionResult,
   type VersionDiffPreview,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 
 export type {
   ChangeRequest,

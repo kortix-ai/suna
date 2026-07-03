@@ -3,6 +3,7 @@ import {
   reopenComputeForSandbox,
 } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
+import type { ProjectSessionSandbox, SessionStartResult } from '@kortix/api-contract';
 import { auth, json } from '../../openapi';
 import { getProvider, type SandboxStatus } from '../../platform/providers';
 import { db } from '../../shared/db';
@@ -277,35 +278,10 @@ export async function allocateRuntimeOnOpen(
 }
 
 // ── Unified session-open orchestration ──────────────────────────────────────
+// The stage/result wire types live in @kortix/api-contract (the shared wire
+// contract); re-exported here for the existing import sites.
 
-export type SessionStartStage =
-  | 'provisioning'
-  | 'starting'
-  | 'ready'
-  | 'stopped'
-  | 'failed';
-
-export interface SessionStartResult {
-  /** Coarse lifecycle stage the client renders + polls on. */
-  stage: SessionStartStage;
-  /** Immutable project-session agent bound at session creation. */
-  agent_name: string;
-  /** Whether polling /start again can make progress (false = terminal). */
-  retriable: boolean;
-  /** Serialized session_sandboxes row (same shape as GET /sandbox), or null. */
-  sandbox: Record<string, unknown> | null;
-  /** Canonical OpenCode root pin (resolved client-side once the box is ready). */
-  opencode_session_id: string | null;
-  /**
-   * Relative proxy path for this session's OpenCode runtime (port 8000), composed
-   * by the client against the SDK's configured backendUrl. The server owns the
-   * proxy scheme so the client never builds `/p/<id>/<port>` itself — it treats
-   * this as an opaque per-session runtime base. Absent until the box has an
-   * external_id. See `sessionRuntimeUrlPath`.
-   */
-  runtime_url?: string | null;
-  reason?: string;
-}
+export type { SessionStartResult, SessionStartStage } from '@kortix/api-contract';
 
 /**
  * The relative proxy path a client uses for all OpenCode (port 8000) traffic for
@@ -374,9 +350,9 @@ export async function retireSessionSandboxRow(
     .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
 }
 
-function serializeSandboxRow(
+export function serializeSandboxRow(
   row: typeof sessionSandboxes.$inferSelect,
-): Record<string, unknown> {
+): ProjectSessionSandbox {
   return {
     sandbox_id: row.sandboxId,
     session_id: row.sessionId,

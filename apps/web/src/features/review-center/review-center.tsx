@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/tabs';
 import { infoToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import type { ReviewVerdict } from '@/lib/projects-client';
+import type { ReviewVerdict } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { CheckCircleSolid, InboxSolid, ShieldCheckSolid, X } from '@mynaui/icons-react';
 import { Search } from 'lucide-react';

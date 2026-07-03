@@ -44,7 +44,7 @@ import {
   listProjectSandboxes,
   listProjectTriggers,
   type SandboxTemplate,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';

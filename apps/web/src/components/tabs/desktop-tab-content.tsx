@@ -7,7 +7,7 @@ import { ExternalLink, RefreshCw, Loader2, Monitor, AlertTriangle } from 'lucide
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
-import { SANDBOX_PORTS } from '@/lib/platform-client';
+import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 

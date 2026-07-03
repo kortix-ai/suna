@@ -8,7 +8,7 @@ import {
   bulkActReviewItems,
   listReviewItems,
   submitReviewItem,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export const reviewKeys = {

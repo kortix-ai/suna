@@ -87,7 +87,7 @@ import {
   specToAppBody,
   upsertAppInManifest,
 } from "../lib/apps-helpers";
-import { getAccountMembership, withProjectGitAuth } from "../lib/git";
+import { withProjectGitAuth } from "../lib/git";
 import { readBody, requestAuditContext } from "../lib/serializers";
 import {
   commitManifest,
@@ -99,21 +99,20 @@ import {
   parseTriggerDraft,
   removeTriggerFromManifest,
   renderPromptTemplate,
-  setGitTriggerOwner,
   specToBody,
   triggersPausedForProject,
   upsertTriggerInManifest,
   withTriggersPaused,
 } from "../lib/triggers";
 
-// Body keys that change the trigger's *repo manifest* (committed to git). An
-// owner-only edit touches none of these, so we can skip the manifest commit and
-// just update the DB-side owner — owner lives in project_trigger_runtime, never
-// in the portable kortix.toml.
+// Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
+// whose body touches none of these has nothing to commit, so we skip git entirely
+// and treat it as a no-op.
 const TRIGGER_MANIFEST_KEYS = [
   "name",
   "type",
   "agent",
+  "model",
   "enabled",
   "prompt_template",
   "promptTemplate",
@@ -127,33 +126,6 @@ const TRIGGER_MANIFEST_KEYS = [
   "session_mode",
   "sessionMode",
 ] as const;
-
-/**
- * Resolve the owner_user_id from a request body. Returns:
- *   { skip: true }            — body didn't mention an owner; leave it unchanged
- *   { ownerUserId: string|null } — set it (null = reset to account owner)
- *   { error }                 — provided owner isn't a member of the account
- * The default-to-creator behavior lives at the call site (create), not here.
- */
-async function resolveOwnerFromBody(
-  body: Record<string, unknown>,
-  accountId: string,
-): Promise<
-  { skip: true } | { ownerUserId: string | null } | { error: string }
-> {
-  if (!("owner_user_id" in body) && !("ownerUserId" in body))
-    return { skip: true };
-  const raw = (body as any).owner_user_id ?? (body as any).ownerUserId;
-  const ownerUserId = typeof raw === "string" && raw.trim() ? raw.trim() : null;
-  if (ownerUserId) {
-    const membership = await getAccountMembership(ownerUserId, accountId).catch(
-      () => null,
-    );
-    if (!membership)
-      return { error: "owner_user_id must be a member of this account" };
-  }
-  return { ownerUserId };
-}
 
 projectsApp.openapi(
   createRoute({
@@ -208,14 +180,6 @@ projectsApp.openapi(
     const draft = parseTriggerDraft(body, { existingSlug: null });
     if ("error" in draft) return c.json({ error: draft.error }, 400);
 
-    // Owner: default to the creator (so a per_user connector in this trigger's
-    // automated runs uses the creator's accounts), unless an explicit, valid
-    // owner_user_id is supplied. Validate BEFORE committing the manifest.
-    const ownerReq = await resolveOwnerFromBody(body, loaded.row.accountId);
-    if ("error" in ownerReq) return c.json({ error: ownerReq.error }, 400);
-    const ownerUserId =
-      "skip" in ownerReq ? loaded.userId : ownerReq.ownerUserId;
-
     let manifest: ParsedManifest;
     try {
       manifest = await loadManifestForEdit(loaded.row);
@@ -244,9 +208,6 @@ projectsApp.openapi(
     if ("error" in result) {
       return c.json({ error: result.error }, result.status as 400 | 502);
     }
-
-    // Persist the owner (DB-side) after the manifest commit succeeds.
-    await setGitTriggerOwner(projectId, draft.slug, ownerUserId);
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
   },
@@ -346,12 +307,8 @@ projectsApp.openapi(
     );
     if (!current) return c.json({ error: "Not found" }, 404);
 
-    // Owner lives in the DB, not the manifest — validate it up front.
-    const ownerReq = await resolveOwnerFromBody(body, loaded.row.accountId);
-    if ("error" in ownerReq) return c.json({ error: ownerReq.error }, 400);
-
-    // Only commit the repo manifest when a manifest field actually changed. An
-    // owner-only PATCH skips git entirely (owner is a pure platform concern).
+    // Only commit the repo manifest when a manifest field actually changed; a
+    // PATCH that touches none is a no-op that skips git entirely.
     const touchesManifest = TRIGGER_MANIFEST_KEYS.some((k) => k in body);
     if (touchesManifest) {
       // Merge the patch onto the current spec so callers can send partial bodies
@@ -371,11 +328,6 @@ projectsApp.openapi(
       if ("error" in result) {
         return c.json({ error: result.error }, result.status as 400 | 502);
       }
-    }
-
-    // Apply the owner change (if the body specified one) after any manifest commit.
-    if (!("skip" in ownerReq)) {
-      await setGitTriggerOwner(projectId, slug, ownerReq.ownerUserId);
     }
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row));

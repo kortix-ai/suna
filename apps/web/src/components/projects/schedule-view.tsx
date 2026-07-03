@@ -60,20 +60,22 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
 import { EmptyState as EmptyStateBox } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { ModelSelector } from '@/features/session/model-selector';
+import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
+import { type ModelKey, modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
+import { useOpenCodeProviders, useVisibleAgents } from '@/hooks/opencode/use-opencode-sessions';
 import { getEnv } from '@/lib/env-config';
+import { cn } from '@/lib/utils';
 import {
+  type ProjectTrigger,
   createProjectTrigger,
   deleteProjectTrigger,
   fireProjectTrigger,
-  listProjectAccess,
   listProjectTriggers,
   updateProjectTrigger,
   upsertProjectSecret,
-  type ProjectAccessMember,
-  type ProjectTrigger,
-} from '@/lib/projects-client';
-import { cn } from '@/lib/utils';
+} from '@kortix/sdk/projects-client';
 import {
   AlarmClockSolid,
   DangerTriangleSolid,
@@ -97,7 +99,7 @@ import {
   Webhook,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 /* ─── Cron presets ──────────────────────────────────────────────────────── */
 
@@ -604,7 +606,7 @@ function TriggerDetailSheet({
           <div className="space-y-8">
             {isCron ? <CronSection trigger={trigger} /> : <WebhookSection trigger={trigger} />}
             <PromptTemplateSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
-            <OwnerSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
+            <AgentModelSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
             <MetaSection trigger={trigger} />
           </div>
         </SheetBody>
@@ -668,7 +670,7 @@ function TriggerDetailToolbar({
   );
 }
 
-function OwnerSection({
+function AgentModelSection({
   projectId,
   trigger,
   onMutated,
@@ -677,29 +679,72 @@ function OwnerSection({
   trigger: ProjectTrigger;
   onMutated: () => void;
 }) {
-  const save = useMutation({
-    mutationFn: (userId: string) =>
-      updateProjectTrigger(projectId, trigger.slug, { owner_user_id: userId }),
+  const agents = useVisibleAgents({ projectId });
+  const { data: providers } = useOpenCodeProviders();
+  const models = useMemo(() => flattenModels(providers), [providers]);
+  const selectedModel = trigger.model ? wireToModelKey(trigger.model) : null;
+
+  const saveAgent = useMutation({
+    mutationFn: (agent: string) => updateProjectTrigger(projectId, trigger.slug, { agent }),
     onSuccess: () => {
-      successToast('Updated who this runs as');
+      successToast('Agent updated');
       onMutated();
     },
-    onError: (e: Error) => errorToast(e.message || 'Failed to update owner'),
+    onError: (e: Error) => errorToast(e.message || 'Failed to update agent'),
   });
+  const saveModel = useMutation({
+    mutationFn: (model: ModelKey | null) =>
+      updateProjectTrigger(projectId, trigger.slug, {
+        model: model ? modelKeyToWire(model) : null,
+      }),
+    onSuccess: () => {
+      successToast('Model updated');
+      onMutated();
+    },
+    onError: (e: Error) => errorToast(e.message || 'Failed to update model'),
+  });
+
   return (
-    <section className="space-y-2">
-      <Label>Runs as</Label>
-      <RunsAsSelect
-        projectId={projectId}
-        value={trigger.owner_user_id}
-        onChange={(id) => save.mutate(id)}
-        disabled={save.isPending}
-      />
-      <p className="text-muted-foreground/70 text-xs leading-relaxed text-pretty">
-        Automated runs act as this member. Connectors set to “each member brings their own profile”
-        use this person’s connected accounts; shared connectors are unaffected. Defaults to whoever
-        created the trigger.
-      </p>
+    <section className="space-y-4">
+      <div className="space-y-2">
+        <Label>Agent</Label>
+        <div className="bg-card rounded-2xl border px-2 py-1">
+          <AgentSelector
+            agents={agents}
+            selectedAgent={trigger.agent}
+            onSelect={(next) => next && saveAgent.mutate(next)}
+            disabled={saveAgent.isPending}
+          />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <Label>Model</Label>
+          {trigger.model && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs"
+              disabled={saveModel.isPending}
+              onClick={() => saveModel.mutate(null)}
+            >
+              Use default
+            </Button>
+          )}
+        </div>
+        <div className="bg-card rounded-2xl border px-2 py-1">
+          <ModelSelector
+            models={models}
+            providers={providers}
+            selectedModel={selectedModel}
+            onSelect={(next) => saveModel.mutate(next)}
+          />
+        </div>
+        <p className="text-muted-foreground/70 text-xs leading-relaxed text-pretty">
+          Overrides the agent's default model for this trigger's runs. Leave unset to resolve the
+          agent → account → platform default at fire time.
+        </p>
+      </div>
     </section>
   );
 }
@@ -932,7 +977,6 @@ function MetaSection({ trigger }: { trigger: ProjectTrigger }) {
       <PropertyTable
         rows={[
           { label: 'Slug', value: <span className="font-mono text-xs">{trigger.slug}</span> },
-          { label: 'Agent', value: <span className="font-mono text-xs">{trigger.agent}</span> },
           {
             label: 'Source file',
             value: <span className="font-mono text-xs">{trigger.path}</span>,
@@ -990,47 +1034,6 @@ function TriggerModalSection({
   );
 }
 
-function RunsAsSelect({
-  projectId,
-  value,
-  onChange,
-  disabled,
-}: {
-  projectId: string;
-  value: string | null;
-  onChange: (userId: string) => void;
-  disabled?: boolean;
-}) {
-  const { data } = useQuery({
-    queryKey: ['project-access', projectId],
-    queryFn: () => listProjectAccess(projectId),
-    staleTime: 60_000,
-  });
-  const viewerId = data?.viewer_user_id ?? null;
-  const eligible = (data?.members ?? []).filter(
-    (m: ProjectAccessMember) =>
-      m.effective_project_role != null ||
-      m.has_implicit_access ||
-      m.account_role === 'owner' ||
-      m.account_role === 'admin',
-  );
-  const labelFor = (m: ProjectAccessMember) =>
-    `${m.email || m.user_id.slice(0, 8)}${m.user_id === viewerId ? ' (you)' : ''}`;
-  return (
-    <Select value={value ?? undefined} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger className="cursor-pointer">
-        <SelectValue placeholder="Select a member" />
-      </SelectTrigger>
-      <SelectContent>
-        {eligible.map((m) => (
-          <SelectItem key={m.user_id} value={m.user_id} className="cursor-pointer">
-            {labelFor(m)}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
 
 function CreateTriggerModal({
   projectId,
@@ -1056,22 +1059,14 @@ function CreateTriggerModal({
 
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
-  const [agentName, setAgentName] = useState('default');
-  const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
+  const [agentName, setAgentName] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<ModelKey | null>(null);
 
   const [error, setError] = useState<string | null>(null);
 
-  const access = useQuery({
-    queryKey: ['project-access', projectId],
-    queryFn: () => listProjectAccess(projectId),
-    staleTime: 60_000,
-    enabled: open,
-  });
-  useEffect(() => {
-    if (open && ownerUserId == null && access.data?.viewer_user_id) {
-      setOwnerUserId(access.data.viewer_user_id);
-    }
-  }, [open, ownerUserId, access.data?.viewer_user_id]);
+  const agents = useVisibleAgents({ projectId });
+  const { data: providers } = useOpenCodeProviders();
+  const models = useMemo(() => flattenModels(providers), [providers]);
 
   useEffect(() => {
     if (!open) {
@@ -1083,8 +1078,8 @@ function CreateTriggerModal({
       setWebhookSecret('');
       setName('');
       setPrompt('');
-      setAgentName('default');
-      setOwnerUserId(null);
+      setAgentName(null);
+      setSelectedModel(null);
       setError(null);
     }
   }, [open, forcedType]);
@@ -1121,8 +1116,8 @@ function CreateTriggerModal({
         name: trimmedName,
         type: sourceType,
         prompt_template: trimmedPrompt,
-        agent: agentName.trim() || 'default',
-        ...(ownerUserId ? { owner_user_id: ownerUserId } : {}),
+        ...(agentName ? { agent: agentName } : {}),
+        ...(selectedModel ? { model: modelKeyToWire(selectedModel) } : {}),
         ...(sourceType === 'cron'
           ? runAt
             ? { run_at: runAt, timezone: timezone.trim() || 'UTC' }
@@ -1189,7 +1184,7 @@ function CreateTriggerModal({
         : 'Create trigger';
   const dialogDescription =
     forcedType === 'cron'
-      ? 'Set when this schedule fires, what it does, and who it runs as.'
+      ? 'Set when this schedule fires and what it does.'
       : forcedType === 'webhook'
         ? 'Configure the signing secret, action, and identity for this webhook.'
         : 'Pick a source, set when it fires, and what it does.';
@@ -1390,21 +1385,27 @@ function CreateTriggerModal({
                 label="Agent"
                 description="Which agent profile handles each run."
               >
-                <Input
-                  id="trigger-agent"
-                  type="text"
-                  value={agentName}
-                  onChange={(e) => setAgentName(e.target.value)}
-                  placeholder="default"
-                  className="font-mono text-sm"
-                />
+                <div className="bg-card rounded-2xl border px-2 py-1">
+                  <AgentSelector
+                    agents={agents}
+                    selectedAgent={agentName}
+                    onSelect={setAgentName}
+                  />
+                </div>
               </TriggerModalSection>
 
               <TriggerModalSection
-                label="Runs as"
-                description="Every run acts as this member. Personal connectors use their connected accounts."
+                label="Model"
+                description="Overrides the agent's default model for this trigger's runs. Leave unset to use the agent's default."
               >
-                <RunsAsSelect projectId={projectId} value={ownerUserId} onChange={setOwnerUserId} />
+                <div className="bg-card rounded-2xl border px-2 py-1">
+                  <ModelSelector
+                    models={models}
+                    providers={providers}
+                    selectedModel={selectedModel}
+                    onSelect={setSelectedModel}
+                  />
+                </div>
               </TriggerModalSection>
 
               {error && (

@@ -18,7 +18,7 @@ import {
   useMergeChangeRequest,
   useRequestChangesOnChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
-import type { ReviewVerdict } from '@/lib/projects-client';
+import type { ReviewVerdict } from '@kortix/sdk/projects-client';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';

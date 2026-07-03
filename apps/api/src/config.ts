@@ -268,16 +268,6 @@ const envSchema = z.object({
   // box stops; the reaper sweep is the backstop, so this is optional.
   DAYTONA_WEBHOOK_SECRET:      optStr,
 
-  // ── Daytona warm snapshots (experimental memory/process snapshots) ─────────
-  // The MASTER on/off switch is the DB-backed admin toggle (warm_snapshot,
-  // runtime-settings.ts, default ON) — NOT an env var. When it's on AND
-  // DAYTONA_WARM_TARGET names Daytona's VM-class region (e.g. "experimental"),
-  // sessions can boot from a snapshot baked with services already running in
-  // RAM (opencode pre-migrated + serving), cutting cold-boot latency to ~2s.
-  // The warm snapshot is baked imperatively off a stock base snapshot — the
-  // experimental region can't build Dockerfile images. See snapshots/warm-bake.ts.
-  DAYTONA_WARM_TARGET:         optStr,
-  DAYTONA_WARM_BASE_SNAPSHOT:  optStrDefault('daytonaio/sandbox:0.8.0'),
   // When a template's content hash changes and a fresh snapshot is built, drop
   // the now-superseded predecessor immediately (reap-on-repoint) instead of
   // leaving it for the lazy, pressure-gated quota GC. Keeps steady state at ~1
@@ -317,13 +307,19 @@ const envSchema = z.object({
   //   autostop   → idle box stops, compute billing ends. CLAMPED to >=1 at the
   //                use site so a box is NEVER created persistent.
   //                This is what actually stops the money burn.
-  //   autoarchive→ stopped box moves to cold storage after a few days (cheap,
+  //   autoarchive→ stopped box moves to cold storage after a few hours (cheap,
   //                still resumable; kept warm-resumable in the meantime).
+  //                Was 3 days (4320) until 2026-07-02: the org-wide (shared
+  //                across every environment) stopped-sandbox pool rode that
+  //                window up to ~32000GiB, tipping the shared 40000GiB total
+  //                disk quota and failing every create/resume org-wide. 360
+  //                (6h) keeps same-workday warm-resume while capping how much
+  //                disk any one environment's idle churn can hold at once.
   //   autodelete → NEVER (-1). A sandbox is only ever removed when a user
   //                explicitly deletes the session — auto-stop + cold archive
   //                make an idle box nearly free, so we never destroy disk.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES:    optInt(120),
-  KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(4320),   // 3 days
+  KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(360),    // 6 hours
   KORTIX_SANDBOX_AUTODELETE_MINUTES:  optInt(-1),     // never auto-delete
 
   // ── Internal Service Key (auto-generated if missing — never fails) ───────
@@ -644,8 +640,6 @@ export const config = {
   DAYTONA_SERVER_URL: env.DAYTONA_SERVER_URL,
   DAYTONA_TARGET: env.DAYTONA_TARGET,
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
-  DAYTONA_WARM_TARGET: env.DAYTONA_WARM_TARGET,
-  DAYTONA_WARM_BASE_SNAPSHOT: env.DAYTONA_WARM_BASE_SNAPSHOT,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.

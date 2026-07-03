@@ -5,6 +5,7 @@ import {
   diffSsoGroups,
   extractGroupClaims,
   extractSsoProviderId,
+  resolveClaimedGroupIds,
 } from '../iam/sso-sync';
 
 describe('extractSsoProviderId', () => {
@@ -64,6 +65,52 @@ describe('extractGroupClaims', () => {
     expect(
       extractGroupClaims({ app_metadata: { groups: ['a', 1, null, 'b'] } }, 'groups'),
     ).toEqual(['a', 'b']);
+  });
+});
+
+describe('resolveClaimedGroupIds — Entra-tolerant claim→group matching', () => {
+  const mappings = [
+    { claimValue: 'Marketing', groupId: 'g-mkt' },
+    { claimValue: 'Engineering', groupId: 'g-eng' },
+    { claimValue: '11111111-2222-3333-4444-555555555555', groupId: 'g-guid' },
+  ];
+
+  test('exact match resolves the group id', () => {
+    expect([...resolveClaimedGroupIds(['Marketing'], mappings)]).toEqual(['g-mkt']);
+  });
+
+  test('CASE-insensitive: Azure display-name casing mismatch still matches', () => {
+    // Entra sends "MARKETING"; admin typed "Marketing" in the mapping.
+    expect([...resolveClaimedGroupIds(['MARKETING', 'engineering'], mappings)].sort()).toEqual([
+      'g-eng',
+      'g-mkt',
+    ]);
+  });
+
+  test('whitespace-insensitive on both sides', () => {
+    expect([...resolveClaimedGroupIds(['  Marketing  '], mappings)]).toEqual(['g-mkt']);
+  });
+
+  test('GUID object-id claims (Entra default) match regardless of case', () => {
+    expect([...resolveClaimedGroupIds(['11111111-2222-3333-4444-555555555555'.toUpperCase()], mappings)]).toEqual([
+      'g-guid',
+    ]);
+  });
+
+  test('unmapped claim values are ignored (no group)', () => {
+    expect([...resolveClaimedGroupIds(['Finance', 'Sales'], mappings)]).toEqual([]);
+  });
+
+  test('empty claims resolve to nothing', () => {
+    expect(resolveClaimedGroupIds([], mappings).size).toBe(0);
+  });
+
+  test('de-dupes when two claim values map to the same group', () => {
+    const dup = [
+      { claimValue: 'A', groupId: 'g' },
+      { claimValue: 'B', groupId: 'g' },
+    ];
+    expect([...resolveClaimedGroupIds(['a', 'b'], dup)]).toEqual(['g']);
   });
 });
 

@@ -221,10 +221,15 @@ export function serializeAccount(row: typeof accounts.$inferSelect) {
   };
 }
 
-// Auto-claim any pending invitations matching the caller's email. Each invite
-// becomes an account_members row (skipped on duplicate) and its accepted_at is
-// stamped so subsequent calls are no-ops. Errors are swallowed — auto-claim is
+// Auto-claim any pending *account* invitations matching the caller's email. Each
+// invite becomes an account_members row (skipped on duplicate) and its accepted_at
+// is stamped so subsequent calls are no-ops. Errors are swallowed — auto-claim is
 // best-effort and must never block account listing.
+//
+// Project invites (the ones carrying bootstrap grants) are deliberately left
+// untouched: they must go through the explicit accept/decline dialog so the
+// recipient consents AND the project_members grant actually gets applied. See
+// the per-invite skip in the loop below.
 export async function autoClaimPendingInvites(userId: string, email: string): Promise<void> {
   if (!email) return;
   const normalized = email.trim().toLowerCase();
@@ -243,6 +248,14 @@ export async function autoClaimPendingInvites(userId: string, email: string): Pr
       );
 
     for (const invite of pending) {
+      // Project invites carry bootstrap grants and MUST go through the explicit
+      // accept flow (POST /account-invites/:id/accept) — that's the only path
+      // that applies the project_members grants. Silently auto-claiming one here
+      // stamps accepted_at and adds the account membership but never grants
+      // project access, so the inviter sees "accepted" while the invitee joins
+      // the account, can't see the project, and is never shown the accept/decline
+      // dialog. Leave grant-carrying invites pending for the recipient to act on.
+      if ((invite.bootstrapGrants ?? []).length > 0) continue;
       try {
         await db
           .insert(accountMembers)

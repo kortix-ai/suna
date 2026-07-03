@@ -1931,6 +1931,11 @@ export const creditAccounts = kortixSchema.table(
     autoTopupCustomized: boolean('auto_topup_customized').default(false).notNull(),
     autoTopupConsecutiveFailures: integer('auto_topup_consecutive_failures').default(0).notNull(),
     autoTopupDisabledReason: text('auto_topup_disabled_reason'),
+    // Demo/dogfood flag: when true the account gets ALL enterprise entitlements
+    // (SSO, SCIM, …) regardless of tier — a self-serve, interactive preview of
+    // the enterprise surface. NOT a real Enterprise plan (sales-assigned);
+    // production use requires a signed agreement. Default false → fail-closed.
+    demoEnterprise: boolean('demo_enterprise').default(false).notNull(),
   },
   (table) => [
     index('kortix_credit_accounts_account_id_idx').on(table.accountId),
@@ -3100,8 +3105,10 @@ export const accountSsoGroupMappings = kortixSchema.table(
     ssoProviderId: uuid('sso_provider_id')
       .notNull()
       .references(() => accountSsoProviders.ssoProviderId, { onDelete: 'cascade' }),
-    /** Exact match against an entry in the group claim. Case-sensitive
-     *  to match how IdPs ship the values. */
+    /** Match against an entry in the IdP group claim. Compared case- and
+     *  whitespace-INSENSITIVELY at sync time (see iam/sso-sync.ts
+     *  resolveClaimedGroupIds) so an admin can't silently lock users out by
+     *  mistyping the casing of an Entra/Okta group name. */
     claimValue: varchar('claim_value', { length: 256 }).notNull(),
     groupId: uuid('group_id')
       .notNull()

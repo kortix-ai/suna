@@ -8,13 +8,12 @@ import { Sparkles } from 'lucide-react';
 
 type Skill = ConfigEntity;
 
-export function SkillsView({ projectId, embedded }: { projectId: string; embedded?: boolean }) {
+export function SkillsView({ projectId }: { projectId: string }) {
   return (
     <ConfigEntityView<Skill>
       projectId={projectId}
       kind="skill"
       noun="skill"
-      embedded={embedded}
       title="Skills"
       description="Pick a skill from the list to preview it, or create a new one."
       searchPlaceholder="Search skills"

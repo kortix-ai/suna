@@ -3,8 +3,8 @@
 import { useTranslations } from 'next-intl';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, MoreHorizontal, Plug, Plus } from 'lucide-react';
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { CornerDownRight, KeyRound, MoreHorizontal, Plug, Plus } from 'lucide-react';
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -51,26 +51,26 @@ import CustomizeSectionWrapper from '@/features/workspace/customize/sections/com
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import {
   SharingPicker,
+  type SharingSelection,
   intentToSelection,
   isSharingComplete,
   selectionToIntent,
-  type SharingSelection,
 } from '@/features/workspace/shared/sharing-picker';
+import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
+import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
+import { cn } from '@/lib/utils';
+import { useCustomizeStore } from '@/stores/customize-store';
 import {
+  type ConnectorSharing,
+  type ProjectSecret,
+  type ProjectSecretsResponse,
   deletePersonalProjectSecret,
   deleteProjectSecret,
   getProjectDetail,
   listProjectSecrets,
   setPersonalProjectSecret,
   upsertProjectSecret,
-  type ConnectorSharing,
-  type ProjectSecret,
-  type ProjectSecretsResponse,
-} from '@/lib/projects-client';
-import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
-import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
-import { cn } from '@/lib/utils';
-import { useCustomizeStore } from '@/stores/customize-store';
+} from '@kortix/sdk/projects-client';
 import {
   DangerTriangleSolid,
   LockSolid,
@@ -97,6 +97,9 @@ interface SecretRow {
   shareScope: 'project' | 'restricted';
   sharing: ConnectorSharing | null;
   usableByMe: boolean;
+  // Agent(s) the viewer is assigned to that grant this secret (the inheritance
+  // pyramid). Non-null only when inheritance is WHY it's usable.
+  inheritedFrom: string[] | null;
   // The viewer's private override.
   mine: { active: boolean } | null;
   // What actually runs in the viewer's sessions for this key.
@@ -415,6 +418,7 @@ function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefi
     shareScope: item?.share_scope ?? 'project',
     sharing: item?.sharing ?? null,
     usableByMe: Boolean(item?.usable_by_me),
+    inheritedFrom: item?.inherited_from ?? null,
     mine: item?.mine ?? null,
     effectiveSource: item?.effective_source ?? 'none',
     system: Boolean(item?.system),
@@ -440,13 +444,26 @@ function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefi
 
 function sharingScopeLabel(sharing: ConnectorSharing | null): string | null {
   if (!sharing || sharing.mode === 'project') return null;
-  return sharing.mode === 'private' ? 'Owner only' : 'Select members';
+  if (sharing.mode === 'private') return 'Owner only';
+  const groups = sharing.groupIds?.length ?? 0;
+  return groups > 0 ? 'Members & departments' : 'Select members';
+}
+
+function inheritedFromLabel(agents: string[]): string {
+  if (agents.length === 1) return `Inherited from agent ${agents[0]}`;
+  if (agents.length === 2) return `Inherited from agents ${agents[0]} & ${agents[1]}`;
+  return `Inherited from ${agents.length} agents (${agents[0]} +${agents.length - 1})`;
 }
 
 function effectiveStatusLabel(row: SecretRow): string {
   if (row.system) return row.sharedConfigured ? 'Managed by Kortix' : 'Not set';
   if (row.effectiveSource === 'mine') return 'Using your own value';
-  if (row.effectiveSource === 'shared') return 'Using the shared value';
+  if (row.effectiveSource === 'shared') {
+    // Inheritance is the reason it reaches me — say so, not just "shared value".
+    return row.inheritedFrom
+      ? `Using the shared value · ${inheritedFromLabel(row.inheritedFrom)}`
+      : 'Using the shared value';
+  }
   if (row.sharedConfigured && !row.usableByMe) {
     return "Shared value exists but isn't shared with you";
   }
@@ -509,6 +526,17 @@ function SecretTableRow({
             {scopeLabel && (
               <Badge variant="outline" size="xs">
                 {scopeLabel}
+              </Badge>
+            )}
+            {row.inheritedFrom && (
+              <Badge
+                variant="muted"
+                size="xs"
+                className="gap-1"
+                title={`${inheritedFromLabel(row.inheritedFrom)}. You can use this because you're assigned to ${row.inheritedFrom.length > 1 ? 'these agents' : 'this agent'}.`}
+              >
+                <CornerDownRight className="size-3 shrink-0" />
+                Inherited
               </Badge>
             )}
           </div>
@@ -645,7 +673,11 @@ function SecretDialog({
   const fixedName = row?.name ?? null;
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
-  const [sharing, setSharing] = useState<SharingSelection>({ mode: 'project', memberIds: [] });
+  const [sharing, setSharing] = useState<SharingSelection>({
+    mode: 'project',
+    memberIds: [],
+    groupIds: [],
+  });
 
   const requiresValue = !row?.sharedConfigured;
 
@@ -758,7 +790,12 @@ function SecretDialog({
               </p>
             )}
 
-            <SharingPicker projectId={projectId} value={sharing} onChange={setSharing} />
+            <SharingPicker
+              projectId={projectId}
+              value={sharing}
+              onChange={setSharing}
+              hideMembers
+            />
           </ModalBody>
 
           <ModalFooter className="sm:justify-between">

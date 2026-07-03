@@ -5,6 +5,7 @@ export {
   drainSessionLifecycleQueue,
 } from './engine';
 export { deleteSession, restartSession } from './actions';
+export { stopSession } from './stop';
 export { resolveProjectAutomationActor } from './actor';
 export { sessionBackpressureState, triggerBackpressureLimit } from './backpressure';
 export type {

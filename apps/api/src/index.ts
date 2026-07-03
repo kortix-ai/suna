@@ -60,8 +60,6 @@ import {
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
-import { kickWarmBaseBuild } from './snapshots/warm-bake';
-import { warmSnapshotsEnabled } from './shared/daytona';
 import { startLegacyMigrationWorker, stopLegacyMigrationWorker } from './projects/legacy-migration-worker';
 import { registerLegacyMigrationRoutes } from './projects/legacy-migration-routes';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
@@ -356,7 +354,6 @@ const HealthSchema = z
     memory_mb: z.number(),
     timestamp: z.string(),
     billing_enabled: z.boolean(),
-    warm_snapshots: z.boolean(),
     tunnel: z.any(),
     leader: z.boolean(),
     trigger_scheduler: z.any(),
@@ -378,10 +375,6 @@ const healthHandler = (c: any) =>
     memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
     timestamp: new Date().toISOString(),
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
-    // Whether the Daytona warm-snapshot path is live in this env (flag + key +
-    // warm target all present) — see snapshots/warm-bake.ts. Surfaced here so a
-    // misconfigured env var is visible remotely instead of failing silently.
-    warm_snapshots: warmSnapshotsEnabled(),
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
     // The leader pod's trigger-sweep heartbeat: when it last ran, how long it
@@ -553,19 +546,19 @@ app.openapi(
     responses: { 200: json(MaintenanceSchema, 'Updated config'), ...errors(403, 503) },
   }),
   async (c: any) => {
-  const accountId = c.get('userId') as string;
-  const role = await getPlatformRole(accountId);
-  if (role !== 'admin' && role !== 'super_admin') {
-    return c.json({ error: 'Admin access required' }, 403);
-  }
-  if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
-  const body = await c.req.json().catch(() => ({}));
-  const config = { ...DEFAULT_MAINTENANCE, ...body, updatedAt: new Date().toISOString() };
-  await db
-    .insert(platformSettings)
-    .values({ key: MAINTENANCE_KEY, value: config, updatedAt: new Date() })
-    .onConflictDoUpdate({ target: platformSettings.key, set: { value: config, updatedAt: new Date() } });
-  return c.json(config);
+    const userId = c.get('userId') as string;
+    const role = await getPlatformRole(userId);
+    if (role !== 'admin' && role !== 'super_admin') {
+      return c.json({ error: 'Admin access required' }, 403);
+    }
+    if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
+    const body = await c.req.json().catch(() => ({}));
+    const maintenanceConfig = { ...DEFAULT_MAINTENANCE, ...body, updatedAt: new Date().toISOString() };
+    await db
+      .insert(platformSettings)
+      .values({ key: MAINTENANCE_KEY, value: maintenanceConfig, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: platformSettings.key, set: { value: maintenanceConfig, updatedAt: new Date() } });
+    return c.json(maintenanceConfig);
   },
 );
 
@@ -885,10 +878,6 @@ async function startSingletonWorkers() {
   // the first session anywhere lands on a cache hit. Idempotent + best-effort;
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
-  // Experimental: pre-bake the shared memory-state warm base so the first
-  // session can boot from it (~1.3s). No-op unless the warm_snapshot admin toggle
-  // is on + DAYTONA_WARM_TARGET is set; best-effort.
-  kickWarmBaseBuild();
   startLegacyMigrationWorker();
   startSunaMigrationWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row

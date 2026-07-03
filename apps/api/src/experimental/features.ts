@@ -22,16 +22,11 @@
  * {@link buildExperimentalCatalog}, so a new entry lights up everywhere.
  */
 import { config } from '../config';
+import type { ExperimentalFeatureKey } from '@kortix/api-contract';
 
-/** Stable identifiers for experimental features. */
-export type ExperimentalFeatureKey =
-  | 'apps'
-  | 'agent_tunnel'
-  | 'marketplace'
-  | 'agentmail_email'
-  | 'meet'
-  | 'llm_gateway'
-  | 'review_center';
+/** Stable identifiers for experimental features — wire contract is the SoT.
+ *  `review_center` is added to the contract map (ExperimentalFeatureMapSchema). */
+export type { ExperimentalFeatureKey } from '@kortix/api-contract';
 
 /** How settled a feature is — surfaced as a badge so users know what to expect. */
 type ExperimentalStability = 'experimental' | 'beta';

@@ -1,4 +1,5 @@
-import { config } from '../../config';
+import { config, type SandboxProviderName } from '../../config';
+import type { Project, ProjectSession, Secret } from '@kortix/api-contract';
 import { isSecretUsableBy, loadGrants, scopeToIntent, type SecretGrant, type ShareSubject, visibilityToIntent } from '../../executor/share';
 import { db } from '../../shared/db';
 import { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
@@ -51,7 +52,7 @@ export function serializeSession(
     /** Resolved email of the session owner, for "shared by X" display. */
     ownerEmail?: string | null;
   },
-) {
+): ProjectSession {
   const opencodeSessions = Array.isArray(row.metadata?.opencode_sessions)
     ? row.metadata.opencode_sessions
     : [];
@@ -112,7 +113,7 @@ export function isRepoNameTakenError(error: unknown): boolean {
 }
 
 
-export function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole | null; effectiveRole: ProjectRole }) {
+export function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole | null; effectiveRole: ProjectRole }): Project {
   return {
     project_id: row.projectId,
     account_id: row.accountId,
@@ -143,6 +144,19 @@ export function serializeProject(row: ProjectRow, access?: { projectRole: Projec
     experimental: resolveExperimentalFeatures(row.metadata),
     experimental_features: buildExperimentalCatalog(row.metadata),
     apps_enabled: resolveAppsEnabled(row.metadata),
+    // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
+    // is the current pin (null = follow the platform default/distribution);
+    // `available_sandbox_providers` is the enabled set the picker offers
+    // (ALLOWED ∩ has-API-key) — the web client renders + validates against the SAME
+    // set the backend enforces, without a separate (billing-gated) providers route.
+    // Surface the pin only when it's still USABLE (allowed + key) — mirrors the
+    // create path (which ignores a disabled/removed pin and falls back), so the
+    // picker never shows a value with no matching option.
+    default_sandbox_provider: ((): string | null => {
+      const pin = (row.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_provider;
+      return typeof pin === 'string' && config.isProviderEnabled(pin as SandboxProviderName) ? pin : null;
+    })(),
+    available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter((p) => config.isProviderEnabled(p)),
   };
 }
 
@@ -224,13 +238,26 @@ export function buildSecretView(input: {
   personal?: SecretRow;
   subject: ShareSubject;
   canManageShared: boolean;
-}) {
-  const { name, shared, sharedGrants = [], personal, subject, canManageShared } = input;
+  /** Secrets the subject INHERITS via an agent they're assigned to (the "assign
+   *  human → agent" pyramid): name → the agents that declare it. Usable to them
+   *  even if the share scope wouldn't otherwise reach them, and surfaced as
+   *  `inherited_from` so the UI can explain WHY it's usable. */
+  inheritedSources?: ReadonlyMap<string, string[]>;
+}): Secret {
+  const { name, shared, sharedGrants = [], personal, subject, canManageShared, inheritedSources } = input;
   const system = isSystemProjectSecretName(name);
   const isGitAuth = name === PROJECT_GIT_AUTH_SECRET_NAME;
-  const usableByMe = shared
+  // Does the share scope alone reach me (project-wide, or a member/dept grant)?
+  const directlyUsable = shared
     ? isSecretUsableBy(shared.shareScope as 'project' | 'restricted', sharedGrants, subject)
     : false;
+  // Agents I'm assigned to that DECLARE this secret. `inherited_from` names them
+  // only when inheritance is the REASON I can use it — i.e. the share scope
+  // wouldn't otherwise reach me. A project-wide secret I'd have anyway is NOT
+  // labelled inherited. Requires a configured value to inherit (a shared row).
+  const declaredBy = shared ? inheritedSources?.get(name) ?? null : null;
+  const inheritedFrom = !directlyUsable && declaredBy ? declaredBy : null;
+  const usableByMe = directlyUsable || inheritedFrom !== null;
   const mineActive = Boolean(personal?.active);
   const effectiveSource: 'mine' | 'shared' | 'none' =
     personal && mineActive ? 'mine' : usableByMe ? 'shared' : 'none';
@@ -251,6 +278,10 @@ export function buildSecretView(input: {
     share_scope: shared?.shareScope ?? 'project',
     sharing: shared ? scopeToIntent(shared.shareScope as 'project' | 'restricted', sharedGrants) : null,
     usable_by_me: usableByMe,
+    // Provenance for usable_by_me: the agent(s) I'm assigned to that declare this
+    // secret. Non-null means I can use it BECAUSE of that assignment (the
+    // inheritance pyramid), which the UI surfaces as an "Inherited from" badge.
+    inherited_from: inheritedFrom,
     // MY private override (value never returned), and whether I'm using it.
     mine: personal ? { active: personal.active, updated_at: personal.updatedAt.toISOString() } : null,
     // What actually gets injected into my sessions for this key.
@@ -269,6 +300,7 @@ export async function loadSecretViewsForUser(
   projectId: string,
   subject: ShareSubject,
   canManageShared: boolean,
+  inheritedSources?: ReadonlyMap<string, string[]>,
 ): Promise<ReturnType<typeof buildSecretView>[]> {
   const rows = await db
     .select()
@@ -296,6 +328,7 @@ export async function loadSecretViewsForUser(
       personal: slot.personal,
       subject,
       canManageShared,
+      inheritedSources,
     }),
   );
 }

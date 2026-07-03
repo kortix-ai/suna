@@ -59,7 +59,7 @@ import {
   pipedreamConnect,
   pipedreamFinalize,
   type PipedreamApp,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
@@ -191,7 +191,7 @@ function useToolConnect(projectId: string, onConnected: () => void) {
 
 export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
   const contactTier = usePersonalContactTier();
-  const showFounderStep = contactTier !== 'none';
+  const showFounderStep = contactTier === 'personal';
   const { user } = useAuth();
   const defaultName =
     (user?.user_metadata?.full_name as string | undefined) ||

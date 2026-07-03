@@ -497,6 +497,7 @@ function cronEntry(opts: {
   cron: string;
   timezone?: string;
   agent?: string;
+  model?: string;
   enabled?: boolean;
   prompt: string;
 }): string {
@@ -504,6 +505,7 @@ function cronEntry(opts: {
   if (opts.name !== undefined) lines.push(`name = "${opts.name}"`);
   lines.push('type = "cron"');
   if (opts.agent !== undefined) lines.push(`agent = "${opts.agent}"`);
+  if (opts.model !== undefined) lines.push(`model = "${opts.model}"`);
   if (opts.enabled !== undefined) lines.push(`enabled = ${opts.enabled}`);
   lines.push(`cron = "${opts.cron}"`);
   if (opts.timezone !== undefined) lines.push(`timezone = "${opts.timezone}"`);
@@ -710,6 +712,58 @@ describe('git-backed triggers — CRUD', () => {
     expect(updated).toContain('old prompt');
   });
 
+  test('POST /triggers accepts and returns a pinned model', async () => {
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Pinned Model',
+        type: 'cron',
+        cron: '0 0 9 * * *',
+        timezone: 'UTC',
+        prompt_template: 'x',
+        model: 'anthropic/claude-sonnet-4-6',
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.triggers[0]).toMatchObject({
+      slug: 'pinned-model',
+      model: 'anthropic/claude-sonnet-4-6',
+    });
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('model = "anthropic/claude-sonnet-4-6"');
+  });
+
+  // Regression: a PATCH body containing ONLY `model` must still commit the
+  // manifest. TRIGGER_MANIFEST_KEYS previously omitted "model", so
+  // `touchesManifest` was false and the change was silently dropped (200 OK,
+  // nothing persisted, listing kept returning the stale model).
+  test('PATCH /triggers/:slug with only `model` persists it to the manifest', async () => {
+    seedManifest(cronEntry({
+      slug: 'one',
+      name: 'One',
+      agent: 'default',
+      cron: '0 0 9 * * *',
+      prompt: 'body',
+    }));
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/one`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'openai/gpt-5' }),
+    });
+    expect(res.status).toBe(200);
+    expect(commitCalls).toHaveLength(1);
+    expect(commitCalls[0]!.message).toBe('chore: update trigger one');
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('model = "openai/gpt-5"');
+
+    const listing = await app.request(`/v1/projects/${PROJECT_ID}/triggers`);
+    const body = await listing.json();
+    expect(body.triggers[0].model).toBe('openai/gpt-5');
+  });
+
   test('PATCH /triggers/:slug returns 404 when the slug is not in the manifest', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/ghost`, {
@@ -784,6 +838,50 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(runtimeRows).toHaveLength(1);
     expect(runtimeRows[0]!.slug).toBe('daily');
     expect(runtimeRows[0]!.lastFiredAt).toBeTruthy();
+  });
+
+  test('manual fire applies the trigger-level model override to the session', async () => {
+    seedManifest(cronEntry({
+      slug: 'daily',
+      name: 'Daily',
+      cron: '* * * * * *',
+      model: 'anthropic/claude-sonnet-4-6',
+      prompt: 'Run at {{ fired_at }}',
+    }));
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/daily/fire`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(res.status).toBe(202);
+    expect((await res.json()).status).toBe('fired');
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sandboxProvisionCalls).toBe(1);
+    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-sonnet-4-6');
+  });
+
+  test('manual fire without a model leaves the default resolution chain untouched', async () => {
+    seedManifest(cronEntry({
+      slug: 'daily',
+      name: 'Daily',
+      cron: '* * * * * *',
+      prompt: 'Run at {{ fired_at }}',
+    }));
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/daily/fire`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(res.status).toBe(202);
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sandboxProvisionCalls).toBe(1);
+    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBeUndefined();
   });
 
   test('manual fire queues durably under backpressure', async () => {

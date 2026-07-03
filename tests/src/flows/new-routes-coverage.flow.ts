@@ -14,7 +14,7 @@ flow(
   'COV-1',
   {
     domain: 'coverage',
-    routes: ['GET /metrics', 'GET /v1/llm/health'],
+    routes: ['GET /metrics', 'GET /v1/router/health'],
   },
   async (ctx) => {
     await ctx.step('metrics endpoint is mounted or explicitly disabled', async () => {
@@ -22,31 +22,15 @@ flow(
       r.status([200, 404]);
     });
     await ctx.step('LLM gateway health endpoint is mounted', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get('/v1/llm/health');
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/router/health');
       r.status([200, 404]);
     });
   },
 );
 
-flow(
-  'COV-2',
-  {
-    domain: 'coverage',
-    routes: ['GET /v1/admin/api/warm-snapshot-config', 'PUT /v1/admin/api/warm-snapshot-config'],
-  },
-  async (ctx) => {
-    await ctx.step('ANON cannot read warm snapshot config', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get('/v1/admin/api/warm-snapshot-config');
-      r.status(401);
-    });
-    await ctx.step('ANON cannot update warm snapshot config', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .put('/v1/admin/api/warm-snapshot-config', { enabled: false });
-      r.status(401);
-    });
-  },
-);
+// COV-2 (warm-snapshot-config admin toggle) removed — the routes it covered
+// were deleted in #4095 ("remove the dead warm-fork sessions toggle") without
+// retiring this flow, leaving stale manifest drift.
 
 flow(
   'COV-3',

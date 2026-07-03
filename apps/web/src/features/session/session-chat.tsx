@@ -2,6 +2,8 @@
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { SandboxImage } from '@/features/session/sandbox-image';
+import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
+import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import {
   AlertTriangle,
@@ -28,18 +30,25 @@ import {
   Timer,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { usePathname, useRouter } from 'next/navigation';
+import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { GridFileCard } from '@/components/thread/file-attachment/GridFileCard';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
+import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
 import { ConnectProviderDialog } from '@/features/session/model-selector';
+import { getSendRetryDelayMs } from '@/features/session/opencode-send-retry';
 import {
   type QuestionAction,
   QuestionPrompt,
   type QuestionPromptHandle,
 } from '@/features/session/question-prompt';
+import {
+  isInvisibleActivityPart,
+  isNoGroupActivityTool,
+  isShellActivityTool,
+  shellActivityGroupLabel,
+} from '@/features/session/session-activity-groups';
 import {
   type AttachedFile,
   SessionChatInput,
@@ -47,17 +56,9 @@ import {
 } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
-import { getSendRetryDelayMs } from '@/features/session/opencode-send-retry';
-import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
-import {
-  isInvisibleActivityPart,
-  isNoGroupActivityTool,
-  isShellActivityTool,
-  shellActivityGroupLabel,
-} from '@/features/session/session-activity-groups';
 import { SessionWelcome } from '@/features/session/session-welcome';
+import { GridFileCard } from './grid-file-card';
 
-import { SandboxUrlDetector } from '@/components/thread/content/sandbox-url-detector';
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -76,7 +77,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { searchWorkspaceFiles } from '@/features/files';
 import { uploadFile } from '@/features/files/api/opencode-files';
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
+// billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
+import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
+import { SubSessionModal } from '@/features/session/sub-session-modal';
 import { contextToolSummary, contextToolTrigger } from '@/features/session/tool-meta';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool-renderers';
 import {
@@ -85,10 +89,10 @@ import {
 } from '@/features/session/uploaded-file-refs';
 import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
 import {
-  formatPromptModel,
-  formatModelString,
-  parseModelKey,
   type ModelKey,
+  formatModelString,
+  formatPromptModel,
+  parseModelKey,
   useOpenCodeLocal,
 } from '@/hooks/opencode/use-opencode-local';
 import type { PromptPart, ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
@@ -108,24 +112,21 @@ import {
 } from '@/hooks/opencode/use-opencode-sessions';
 import { useSessionSync } from '@/hooks/opencode/use-session-sync';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
-import { getClient } from '@/lib/opencode-sdk';
-// billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
-import { ChatMinimap } from '@/features/session/chat-minimap';
-import { SubSessionModal } from '@/features/session/sub-session-modal';
 import { useModelPricingLookup } from '@/lib/model-pricing';
+import { getClient } from '@/lib/opencode-sdk';
 import {
   type AgentRefLike,
+  type FileRefLike,
   buildAgentRefsBlock,
   buildFileRefsBlock,
-  type FileRefLike,
 } from '@/lib/project-preamble';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import {
-  extractKortixSystemMessages,
-  extractSessionReport,
   type KortixSystemMessage,
   type SessionReport,
+  extractKortixSystemMessages,
+  extractSessionReport,
   stripKortixSystemTags,
 } from '@/lib/utils/kortix-system-tags';
 import { useChatSendStore } from '@/stores/chat-send-store';
@@ -143,9 +144,17 @@ import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
 import {
   type AgentPart,
-  collectTurnParts,
   type Command,
   type FilePart,
+  type MessageWithParts,
+  type Part,
+  type PermissionRequest,
+  type QuestionRequest,
+  type ReasoningPart,
+  type TextPart,
+  type ToolPart,
+  type Turn,
+  collectTurnParts,
   findLastTextPart,
   formatCost,
   formatDuration,
@@ -171,17 +180,10 @@ import {
   isTextPart,
   isToolPart,
   isToolPartHidden,
-  type MessageWithParts,
-  type Part,
-  type PermissionRequest,
-  type QuestionRequest,
-  type ReasoningPart,
   shouldShowToolPart,
   splitUserParts,
-  type TextPart,
-  type ToolPart,
-  type Turn,
 } from '@/ui';
+import { SandboxUrlDetector } from './sandbox-url-detector';
 
 // ============================================================================
 // Reply-to context (select & reply feature)
@@ -849,8 +851,8 @@ function parseLegacyDCPNotification(text: string): DCPNotification | null {
 
   const tokenStr = headerMatch[1];
   const tokensSaved = tokenStr.endsWith('K')
-    ? Math.round(parseFloat(tokenStr.slice(0, -1)) * 1000)
-    : parseInt(tokenStr, 10);
+    ? Math.round(Number.parseFloat(tokenStr.slice(0, -1)) * 1000)
+    : Number.parseInt(tokenStr, 10);
 
   const pruningMatch = text.match(DCP_LEGACY_PRUNING_REGEX);
   let batchSaved = 0;
@@ -859,13 +861,13 @@ function parseLegacyDCPNotification(text: string): DCPNotification | null {
   if (pruningMatch) {
     const batchStr = pruningMatch[1];
     batchSaved = batchStr.endsWith('K')
-      ? Math.round(parseFloat(batchStr.slice(0, -1)) * 1000)
-      : parseInt(batchStr, 10);
+      ? Math.round(Number.parseFloat(batchStr.slice(0, -1)) * 1000)
+      : Number.parseInt(batchStr, 10);
     if (pruningMatch[2]) {
       const extStr = pruningMatch[2];
       extractedTokens = extStr.endsWith('K')
-        ? Math.round(parseFloat(extStr.slice(0, -1)) * 1000)
-        : parseInt(extStr, 10);
+        ? Math.round(Number.parseFloat(extStr.slice(0, -1)) * 1000)
+        : Number.parseInt(extStr, 10);
     }
     reason = pruningMatch[3]?.trim();
   }
@@ -901,10 +903,10 @@ function parseDCPNotifications(text: string): {
   const cleanText = text
     .replace(DCP_TAG_REGEX, (_, attrs: string, body: string) => {
       const type = (parseAttr(attrs, 'type') || 'prune') as 'prune' | 'compress';
-      const tokensSaved = parseInt(parseAttr(attrs, 'tokens-saved') || '0', 10);
-      const batchSaved = parseInt(parseAttr(attrs, 'batch-saved') || '0', 10);
-      const prunedCount = parseInt(parseAttr(attrs, 'pruned-count') || '0', 10);
-      const extractedTokens = parseInt(parseAttr(attrs, 'extracted-tokens') || '0', 10);
+      const tokensSaved = Number.parseInt(parseAttr(attrs, 'tokens-saved') || '0', 10);
+      const batchSaved = Number.parseInt(parseAttr(attrs, 'batch-saved') || '0', 10);
+      const prunedCount = Number.parseInt(parseAttr(attrs, 'pruned-count') || '0', 10);
+      const extractedTokens = Number.parseInt(parseAttr(attrs, 'extracted-tokens') || '0', 10);
       const reason = parseAttr(attrs, 'reason');
 
       // Parse items
@@ -923,8 +925,9 @@ function parseDCPNotifications(text: string): {
       const distilled = distilledMatch ? unescapeXml(distilledMatch[1]) : undefined;
 
       // Compress-specific
-      const messagesCount = parseInt(parseAttr(attrs, 'messages-count') || '0', 10) || undefined;
-      const toolsCount = parseInt(parseAttr(attrs, 'tools-count') || '0', 10) || undefined;
+      const messagesCount =
+        Number.parseInt(parseAttr(attrs, 'messages-count') || '0', 10) || undefined;
+      const toolsCount = Number.parseInt(parseAttr(attrs, 'tools-count') || '0', 10) || undefined;
       const topic = parseAttr(attrs, 'topic');
       const summaryMatch = body.match(DCP_SUMMARY_REGEX);
       const summary = summaryMatch ? unescapeXml(summaryMatch[1]) : undefined;
@@ -2285,7 +2288,7 @@ function SameToolGroup({
   );
 
   const totalDurationMs = useMemo(() => {
-    let earliest = Infinity;
+    let earliest = Number.POSITIVE_INFINITY;
     let latest = 0;
     for (const { part } of entries) {
       const s = (part.state as any)?.time?.start;
@@ -3773,6 +3776,16 @@ export function SessionChat({
   // Project sessions use the server-side project agent roster. Non-project
   // sessions fall back to OpenCode's directory-scoped runtime discovery.
   const { data: agents } = useOpenCodeAgents({ directory: session?.directory, projectId });
+  // Pending connector-approvals for this session pause the run — lock the
+  // composer (like a question) until they're resolved. Shares the query key with
+  // SessionApprovalPrompt, so it's one request.
+  const approvalRouteParams = useParams<{ id?: string; sessionId?: string }>();
+  const { data: approvalAudit } = useSessionAudit(
+    projectId ?? approvalRouteParams.id,
+    approvalRouteParams.sessionId,
+    { refetchInterval: 5_000 },
+  );
+  const hasPendingApproval = (approvalAudit?.actions ?? []).some(isPendingAction);
   const { data: commands } = useOpenCodeCommands();
   const { data: providers } = useOpenCodeProviders();
   const { data: allSessions } = useOpenCodeSessions();
@@ -4620,13 +4633,22 @@ export function SessionChat({
   useEffect(() => {
     if (!isActiveSessionTab || !hasRunningQuestionTool || pendingQuestions.length > 0) return;
 
-    const client = getClient();
     let cancelled = false;
 
     const hydrateQuestions = () => {
       if (questionHydrationInFlightRef.current || cancelled) return;
       const now = Date.now();
       if (now - lastQuestionHydrationAtRef.current < 1500) return;
+
+      // Acquire the client lazily: during the sandbox-loading window getClient()
+      // throws "Server URL not ready". Skip this tick and let the interval retry
+      // once the runtime URL is pinned — never crash to the error boundary.
+      let client: ReturnType<typeof getClient>;
+      try {
+        client = getClient();
+      } catch {
+        return;
+      }
 
       questionHydrationInFlightRef.current = true;
       lastQuestionHydrationAtRef.current = now;
@@ -5870,12 +5892,13 @@ export function SessionChat({
             onSetAccountDefault: (m) => {
               void local.model.defaults.setAccountDefault(m);
             },
-            onSetAgentDefault: lockedAgentName || local.agent.current
-              ? (m) => {
-                  const name = lockedAgentName ?? local.agent.current?.name;
-                  if (name) void local.model.defaults.setAgentDefault(name, m);
-                }
-              : undefined,
+            onSetAgentDefault:
+              lockedAgentName || local.agent.current
+                ? (m) => {
+                    const name = lockedAgentName ?? local.agent.current?.name;
+                    if (name) void local.model.defaults.setAgentDefault(name, m);
+                  }
+                : undefined,
             onSetProjectDefault: (m) => {
               void local.model.defaults.setProjectDefault(m);
             },
@@ -5899,6 +5922,7 @@ export function SessionChat({
           // so a typed message is sent to the agent instead of being swallowed
           // as a custom answer.
           lockForQuestion={!!renderedQuestion && isBusy}
+          lockForApproval={hasPendingApproval}
           onCustomAnswer={(text) => {
             questionPromptRef.current?.submitCustomAnswer(text);
           }}
@@ -5908,25 +5932,30 @@ export function SessionChat({
             questionPromptRef.current?.performAction();
           }}
           inputSlot={
-            renderedQuestion ? (
-              <div
-                className={cn(
-                  'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
-                  questionPromptVisible
-                    ? 'max-h-[520px] translate-y-0 opacity-100 duration-300'
-                    : 'pointer-events-none max-h-0 -translate-y-1 opacity-0 duration-320',
-                )}
-              >
-                <QuestionPrompt
-                  key={renderedQuestion.id}
-                  ref={questionPromptRef}
-                  request={renderedQuestion}
-                  onReply={handleQuestionReply}
-                  onReject={handleQuestionReject}
-                  onActionChange={handleQuestionActionChange}
-                />
-              </div>
-            ) : undefined
+            <>
+              {/* Connector actions a policy gated for approval — pauses the run
+                  until the human decides. Self-hides when nothing's pending. */}
+              <SessionApprovalPrompt />
+              {renderedQuestion ? (
+                <div
+                  className={cn(
+                    'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
+                    questionPromptVisible
+                      ? 'max-h-[520px] translate-y-0 opacity-100 duration-300'
+                      : 'pointer-events-none max-h-0 -translate-y-1 opacity-0 duration-320',
+                  )}
+                >
+                  <QuestionPrompt
+                    key={renderedQuestion.id}
+                    ref={questionPromptRef}
+                    request={renderedQuestion}
+                    onReply={handleQuestionReply}
+                    onReject={handleQuestionReject}
+                    onActionChange={handleQuestionActionChange}
+                  />
+                </div>
+              ) : null}
+            </>
           }
         />
       )}

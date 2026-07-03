@@ -95,15 +95,13 @@ export async function reconcileSnapshotQuota(
         .where(isNotNull(sandboxTemplates.providerSnapshotName))
     ).map((r) => r.name as string),
   );
-  // Per-project warm snapshots (kortix-wproj-*) are referenced via
-  // projects.metadata. Protect a pointer ONLY while its project is alive and
-  // recently ACTIVE (a session in the activity window) — archived/dormant
-  // projects' snapshots are reclaimable. Pointers of reclaimed snapshots are
-  // cleared below so session boot never chases a deleted name.
+  // Legacy per-project warm-snapshot pointers (kortix-wproj-*) may still live in
+  // projects.metadata from before the cold-only unification. Warm baking is gone,
+  // but protect any lingering pointer while its project is alive and recently
+  // ACTIVE so GC never reclaims a name a stale pointer still references.
   const activityCutoff = new Date(now - QUOTA_GC_PROJECT_ACTIVE_MS).toISOString();
   const pointerRows = await db.execute(sql`
-    SELECT p.project_id AS project_id,
-           p.metadata -> 'warm_snapshot' ->> 'name' AS name,
+    SELECT p.metadata -> 'warm_snapshot' ->> 'name' AS name,
            (
              p.status <> 'archived' AND (
                EXISTS (
@@ -116,13 +114,10 @@ export async function reconcileSnapshotQuota(
     WHERE p.metadata -> 'warm_snapshot' ->> 'name' IS NOT NULL
   `);
   const pointerList = ((pointerRows as unknown as { rows?: any[] }).rows ?? (pointerRows as unknown as any[])) as Array<{
-    project_id: string; name: string; active: boolean;
+    name: string; active: boolean;
   }>;
-  const pointerProject = new Map<string, string>();
   for (const r of pointerList) {
-    if (!r.name) continue;
-    pointerProject.set(r.name, r.project_id);
-    if (r.active) referenced.add(r.name);
+    if (r.name && r.active) referenced.add(r.name);
   }
 
   const lastTouch = (s: { lastUsedAt?: string | null; createdAt: string | null }) => {
@@ -146,14 +141,6 @@ export async function reconcileSnapshotQuota(
     console.log(`[snapshot-gc] delete ${snap.name} (last used ${snap.lastUsedAt ?? snap.createdAt}): ${ok ? 'ok' : 'failed'}`);
     if (ok) {
       result.deleted++;
-      // Reclaimed an inactive project's warm snapshot — clear its pointer so
-      // session boot doesn't chase the deleted name (it would just fall back,
-      // but a clean pointer lets the presence hook re-bake without a miss).
-      const projectId = pointerProject.get(snap.name);
-      if (projectId) {
-        const { writeProjectWarmPointer } = await import('./warm-project');
-        await writeProjectWarmPointer(projectId, null).catch(() => {});
-      }
     }
   }
   if (result.namespaceCount >= QUOTA_GC_PRESSURE_THRESHOLD) {

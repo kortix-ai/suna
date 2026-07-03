@@ -31,7 +31,7 @@ function SpreadsheetLoading() {
 
 // Lazy load SpreadsheetViewer as it imports Syncfusion (~1-2 MB)
 const SpreadsheetViewer = dynamic(
-  () => import('@/components/thread/tool-views/spreadsheet/SpreadsheetViewer').then((mod) => mod.SpreadsheetViewer),
+  () => import('@/components/file-renderers/spreadsheet/SpreadsheetViewer').then((mod) => mod.SpreadsheetViewer),
   { ssr: false, loading: () => <SpreadsheetLoading /> }
 );
 

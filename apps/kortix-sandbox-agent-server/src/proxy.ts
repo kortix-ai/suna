@@ -34,6 +34,20 @@ const STRIP_RESPONSE_HEADERS = new Set(['transfer-encoding', 'connection'])
 const PTY_WS_PATH_RE = /^\/pty\/[^/]+\/connect\/?$/
 const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
 
+// Bound on waiting for opencode to respond to a proxied request. Applied only
+// to the wait for the response to arrive (headers), never to a streaming body
+// already in flight — an SSE stream like /global/event legitimately stays open
+// for the life of the session, so aborting on a fixed wall clock would sever
+// healthy long-lived connections. A wedged opencode process (hung event loop,
+// deadlock) otherwise leaves this `fetch` unresolved forever: the daemon's own
+// `/kortix/health` stays green throughout (it never touches opencode), so
+// nothing else catches it, and the browser just sees the request hang until
+// something upstream (ALB/ingress) eventually resets the connection — which
+// surfaces as a confusing "blocked by CORS" error with no real diagnostic
+// value. Failing fast here instead gives a clean 502 that apps/api's own
+// retry+auto-wake loop can act on immediately.
+const UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000
+
 type OpencodeWsData = {
   type: 'opencode-pty'
   url: string
@@ -158,6 +172,7 @@ async function prepareOpencodePtyWsUpgrade(
         ...headers,
         'x-opencode-ticket': '1',
       },
+      signal: AbortSignal.timeout(UPSTREAM_RESPONSE_TIMEOUT_MS),
     })
     if (tokenRes.ok) {
       const body = await tokenRes.json().catch(() => null) as { ticket?: unknown } | null
@@ -351,6 +366,13 @@ export function buildOpencodeApp(
     const method = c.req.method.toUpperCase()
     const hasBody = method !== 'GET' && method !== 'HEAD'
 
+    // Bound only the wait for opencode's response (headers) — not the abort
+    // controller's whole lifetime — so we can free-run a stream once it starts.
+    // Clearing the timer right after `fetch` resolves means the controller can
+    // never fire again, so a long-lived SSE body already in flight (e.g.
+    // /global/event) is never cut off mid-stream.
+    const controller = new AbortController()
+    const responseTimer = setTimeout(() => controller.abort(), UPSTREAM_RESPONSE_TIMEOUT_MS)
     try {
       const fetchInit: RequestInit & { duplex?: 'half' } = {
         method,
@@ -359,8 +381,10 @@ export function buildOpencodeApp(
         // duplex: 'half' is required by undici when piping a ReadableStream body;
         // Bun accepts the extra key too. Not in lib.dom RequestInit yet.
         duplex: 'half',
+        signal: controller.signal,
       }
       const upstream = await fetch(upstreamUrl, fetchInit)
+      clearTimeout(responseTimer)
 
       const respHeaders = new Headers()
       upstream.headers.forEach((value, key) => {
@@ -373,7 +397,16 @@ export function buildOpencodeApp(
         headers: respHeaders,
       })
     } catch (err) {
-      logger.error('[proxy] upstream fetch failed', err)
+      clearTimeout(responseTimer)
+      const timedOut = err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
+      if (timedOut) {
+        logger.error('[proxy] upstream fetch timed out — opencode unresponsive', {
+          path: url.pathname,
+          timeoutMs: UPSTREAM_RESPONSE_TIMEOUT_MS,
+        })
+      } else {
+        logger.error('[proxy] upstream fetch failed', err)
+      }
       return c.json({ error: 'upstream unreachable', details: (err as Error).message }, 502)
     }
   })

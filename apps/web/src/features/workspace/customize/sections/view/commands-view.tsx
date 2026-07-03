@@ -8,13 +8,12 @@ import { SquareSlash } from 'lucide-react';
 
 type Command = ConfigEntity;
 
-export function CommandsView({ projectId, embedded }: { projectId: string; embedded?: boolean }) {
+export function CommandsView({ projectId }: { projectId: string }) {
   return (
     <ConfigEntityView<Command>
       projectId={projectId}
       kind="command"
       noun="command"
-      embedded={embedded}
       title="Commands"
       description="Pick a command from the list to preview it, or create a new one."
       searchPlaceholder="Search commands"

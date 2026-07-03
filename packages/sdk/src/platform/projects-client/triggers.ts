@@ -23,6 +23,10 @@ export interface ProjectTrigger {
   name: string;
   type: ProjectTriggerType;
   agent: string;
+  /** Wire-form model (`provider/model`) pinned to this trigger's runs, or
+   *  null to resolve the default chain (agent → project → account →
+   *  platform) at fire time. */
+  model: string | null;
   enabled: boolean;
   cron: string | null;
   /** ISO-8601 instant for a one-off ("run once") schedule; null for recurring/webhook. */
@@ -31,10 +35,6 @@ export interface ProjectTrigger {
   /** project_secrets key holding the webhook HMAC secret. */
   secret_env: string | null;
   prompt_template: string;
-  /** The project member this trigger's automated runs act AS. A per_user
-   *  connector resolves to this member's connected accounts. null = the
-   *  account owner (default/legacy). */
-  owner_user_id: string | null;
   last_fired_at: string | null;
   /** Public fire URL for webhook triggers; null for cron. */
   webhook_url: string | null;
@@ -73,6 +73,9 @@ export interface CreateProjectTriggerInput {
   prompt_template: string;
   /** Defaults to 'default'. */
   agent?: string;
+  /** Wire-form model (`provider/model`). Omit or pass null to resolve the
+   *  default chain (agent → project → account → platform) at fire time. */
+  model?: string | null;
   enabled?: boolean;
   /** For type='cron'. 6-field croner expression. Omit when using `run_at`. */
   cron?: string;
@@ -82,21 +85,18 @@ export interface CreateProjectTriggerInput {
   timezone?: string;
   /** For type='webhook'. Name of a project_secrets entry. */
   secret_env?: string;
-  /** The member this trigger runs as. Omit to default to the creator;
-   *  null resets to the account owner. */
-  owner_user_id?: string | null;
 }
 
 export interface UpdateProjectTriggerInput {
   name?: string;
   prompt_template?: string;
   agent?: string;
+  /** Wire-form model (`provider/model`). null resets to the default chain. */
+  model?: string | null;
   enabled?: boolean;
   cron?: string;
   timezone?: string;
   secret_env?: string;
-  /** Change who the trigger runs as. null = reset to the account owner. */
-  owner_user_id?: string | null;
 }
 
 export async function listProjectTriggers(projectId: string) {

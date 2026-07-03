@@ -1,9 +1,9 @@
 'use client';
 
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 /**
  * Per-session state for the right-side panel hosted by `session-layout.tsx`.
@@ -26,8 +26,9 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 
 // 'actions' = tool calls · 'browser' = internal browser · 'explorer' = in-sandbox
 // file explorer + preview · 'terminal' = live PTY shell into the sandbox ·
-// 'files' = git changes for this session.
-export type SessionPanelView = 'actions' | 'browser' | 'explorer' | 'terminal' | 'files';
+// 'files' = git changes for this session · 'audit' = governed-action trail +
+// pending approvals for this session.
+export type SessionPanelView = 'actions' | 'browser' | 'explorer' | 'terminal' | 'files' | 'audit';
 
 /**
  * A pending "reveal this file in the Files explorer" request for a session.
@@ -141,11 +142,7 @@ export function getActivePanelSessionId(): string | null {
  * make sure the panel is open — the file-path equivalent of clicking a
  * localhost link (which opens the Browser tab via LocalhostLinkInterceptor).
  */
-export function openFileInSessionPanel(
-  sessionId: string,
-  path: string,
-  line?: number,
-): void {
+export function openFileInSessionPanel(sessionId: string, path: string, line?: number): void {
   useSessionBrowserStore.getState().requestFileOpen(sessionId, path, line);
   useKortixComputerStore.getState().setIsSidePanelOpen(true);
 }

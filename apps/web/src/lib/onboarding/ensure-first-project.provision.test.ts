@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 const provisionCalls: unknown[] = [];
 let projects: Array<{ project_id: string; account_id: string; name: string }> = [];
 
-mock.module('@/lib/projects-client', () => ({
+mock.module('@kortix/sdk/projects-client', () => ({
   listProjectsForAccount: async () => projects,
   provisionProject: async (input: unknown) => {
     provisionCalls.push(input);

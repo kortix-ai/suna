@@ -33,7 +33,7 @@ import { SupportModal } from '@/features/layout/support-modal';
 import { isBillingEnabled } from '@/lib/config';
 import { openExternalRoute } from '@/lib/desktop';
 import { type SettingsTabId } from '@/lib/menu-registry';
-import { listAccounts } from '@/lib/projects-client';
+import { listAccounts } from '@kortix/sdk/projects-client';
 import { createClient } from '@/lib/supabase/client';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';

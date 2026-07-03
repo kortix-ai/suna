@@ -33,7 +33,7 @@ import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { listAccounts, listProjectsForAccount, type KortixProject } from '@/lib/projects-client';
+import { listAccounts, listProjectsForAccount, type KortixProject } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useIsSwitchingProject, useProjectSwitchStore } from '@/stores/project-switch-store';

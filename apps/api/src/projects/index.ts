@@ -32,6 +32,7 @@ import './routes/r9';
 import './routes/r10';
 import './routes/r11';
 import './routes/model-defaults';
+import './routes/agent-scope';
 import './routes/gateway';
 
 // The wired Hono app instances (all routes registered above via side-effect).

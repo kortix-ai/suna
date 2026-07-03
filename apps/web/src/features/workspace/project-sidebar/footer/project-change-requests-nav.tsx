@@ -13,7 +13,7 @@ import { ChangeRequestDetailDialog } from '@/features/project-files/components/c
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useChangeRequests } from '@/features/project-files/hooks/use-change-requests';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { getProjectDetail } from '@/lib/projects-client';
+import { getProjectDetail } from '@kortix/sdk/projects-client';
 import { useCustomizeStore } from '@/stores/customize-store';
 
 interface CrController {

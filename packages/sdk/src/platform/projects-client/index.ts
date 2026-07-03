@@ -17,6 +17,8 @@ export * from './sessions';
 export * from './triggers';
 export * from './session-sandbox';
 export * from './model-defaults';
+export * from './agent-scope';
+export * from './review';
 
 // Cross-cutting types that originally lived in this module. Re-exported
 // explicitly (not the internal `unwrap` helper) to keep the surface identical.

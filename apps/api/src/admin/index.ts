@@ -221,6 +221,73 @@ adminApp.openapi(
   },
 );
 
+// ── Account projects ─────────────────────────────────────────────────────────
+// Everything an account owns on the project-first model — the support-desk
+// view: "search a user, see every project they have, click straight in."
+// Pairs with the ADMIN BYPASS button on the project access-request screen
+// (apps/web/.../project-access-boundary.tsx), which lets a platform admin
+// open one of these links even with no account/project membership.
+adminApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/api/accounts/{id}/projects',
+    tags: ['admin'],
+    summary: 'List projects owned by an account',
+    ...auth,
+    request: { params: z.object({ id: z.string() }) },
+    responses: {
+      200: json(z.object({ projects: z.array(z.any()) }), 'Account projects'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+  try {
+    const accountId = c.req.param('id');
+    const { db } = await import('../shared/db');
+    const { projects, projectSessions } = await import('@kortix/db');
+    const { eq, desc, sql } = await import('drizzle-orm');
+
+    const sessionCount = sql<number>`(
+      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+    const activeSessionCount = sql<number>`(
+      SELECT count(*)::int FROM ${projectSessions} ps
+      WHERE ps.project_id = ${projects.projectId}
+        AND ps.status IN ('queued', 'branching', 'provisioning', 'running'))`;
+    const lastSessionAt = sql<string | null>`(
+      SELECT max(ps.updated_at) FROM ${projectSessions} ps WHERE ps.project_id = ${projects.projectId})`;
+
+    const rows = await db
+      .select({
+        projectId: projects.projectId,
+        name: projects.name,
+        status: projects.status,
+        repoUrl: projects.repoUrl,
+        defaultBranch: projects.defaultBranch,
+        createdAt: projects.createdAt,
+        updatedAt: projects.updatedAt,
+        lastOpenedAt: projects.lastOpenedAt,
+        sessionCount,
+        activeSessionCount,
+        lastSessionAt,
+      })
+      .from(projects)
+      .where(eq(projects.accountId, accountId))
+      .orderBy(desc(projects.updatedAt));
+
+    return c.json({
+      projects: rows.map((r) => ({
+        ...r,
+        sessionCount: Number(r.sessionCount ?? 0),
+        activeSessionCount: Number(r.activeSessionCount ?? 0),
+      })),
+    });
+  } catch (e: any) {
+    return c.json({ projects: [], error: e?.message || String(e) }, 500);
+  }
+  },
+);
+
 // ── Credit ledger ────────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
@@ -474,44 +541,6 @@ adminApp.openapi(
       .onConflictDoUpdate({ target: platformSettings.key, set: { value: weights, updatedAt: new Date() } });
     invalidateProviderDistributionCache();
     return c.json({ ok: true, weights });
-  },
-);
-
-// ── Warm-fork snapshots (per-project ~2s session start; DB-backed, not env) ──
-// GET the warm-snapshot toggle. Master switch for the per-project warm-fork
-// (Platinum + Daytona); per-provider sub-gates still apply (daytona warm target,
-// platinum host). Default ON — pure upside (a failed bake degrades to cold).
-adminApp.openapi(
-  createRoute({
-    method: 'get', path: '/api/warm-snapshot-config', tags: ['admin'],
-    summary: 'Get warm snapshot config', ...auth,
-    responses: { 200: json(z.record(z.string(), z.any()), 'config'), ...errors(401, 403) },
-  }),
-  async (c: any) => {
-    const { warmSnapshotSetting } = await import('../platform/services/runtime-settings');
-    return c.json(warmSnapshotSetting());
-  },
-);
-
-// PUT warm-snapshot toggle ({ enabled }). OFF = every session cold-clones its repo.
-adminApp.openapi(
-  createRoute({
-    method: 'put', path: '/api/warm-snapshot-config', tags: ['admin'],
-    summary: 'Set warm snapshot config', ...auth,
-    request: { body: { content: { 'application/json': { schema: z.object({ enabled: z.boolean() }) } } } },
-    responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(401, 403) },
-  }),
-  async (c: any) => {
-    const body = await c.req.json().catch(() => ({}));
-    const value = { enabled: body?.enabled === true };
-    const { db } = await import('../shared/db');
-    const { platformSettings } = await import('@kortix/db');
-    const { WARM_SNAPSHOT_KEY, invalidateRuntimeSettings, refreshRuntimeSettings } = await import('../platform/services/runtime-settings');
-    await db.insert(platformSettings).values({ key: WARM_SNAPSHOT_KEY, value, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: platformSettings.key, set: { value, updatedAt: new Date() } });
-    invalidateRuntimeSettings();
-    await refreshRuntimeSettings();
-    return c.json({ ok: true, ...value });
   },
 );
 

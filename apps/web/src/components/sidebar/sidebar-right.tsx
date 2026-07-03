@@ -27,7 +27,7 @@ import {
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useCreatePty } from '@/hooks/opencode/use-opencode-pty';
 import { openTabAndNavigate } from '@/stores/tab-store';
-import { SANDBOX_PORTS } from '@/lib/platform-client';
+import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 import {
   getNavItemsClustered,
   isItemActive,
@@ -35,7 +35,7 @@ import {
   type MenuItemDef,
   type NavSubGroup,
 } from '@/lib/menu-registry';
-import { normalizeAppPathname } from '@/lib/instance-routes';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { toast } from '@/lib/toast';

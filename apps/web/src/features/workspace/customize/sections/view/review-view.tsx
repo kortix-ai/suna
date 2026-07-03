@@ -2,7 +2,7 @@
 
 import { ProjectFilesProvider } from '@/features/project-files';
 import { ReviewCenterConnected } from '@/features/review-center/review-center-connected';
-import { getProject } from '@/lib/projects-client';
+import { getProject } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
 
 /**

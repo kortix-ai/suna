@@ -18,14 +18,19 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
+import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
-import { listProjectSessions, restartProjectSession } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
+import {
+  listProjectSessions,
+  restartProjectSession,
+  stopProjectSession,
+} from '@kortix/sdk/projects-client';
 import { HomeSolid, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileDown, Layers, MoreHorizontal, PanelRight, RotateCcw } from 'lucide-react';
+import { FileDown, Layers, MoreHorizontal, PanelRight, RotateCcw, Square } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -84,6 +89,18 @@ export function SessionSiteHeader({
       errorToast(err instanceof Error ? err.message : 'Failed to restart session');
     },
   });
+
+  const stopMutation = useMutation({
+    mutationFn: () => stopProjectSession(projectId!, projectSessionId!),
+    onSuccess: () => {
+      successToast('Session stopped');
+      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+    },
+    onError: (err) => {
+      errorToast(err instanceof Error ? err.message : 'Failed to stop session');
+    },
+  });
+  const canStop = !!projectSession && projectSession.status === 'running' && canShare;
 
   return (
     <>
@@ -160,6 +177,16 @@ export function SessionSiteHeader({
                       {restartMutation.isPending ? <Loading /> : <RotateCcw />}
                       Restart
                     </DropdownMenuItem>
+                    {canStop && (
+                      <DropdownMenuItem
+                        className="cursor-pointer"
+                        disabled={stopMutation.isPending}
+                        onClick={() => stopMutation.mutate()}
+                      >
+                        {stopMutation.isPending ? <Loading /> : <Square />}
+                        Stop
+                      </DropdownMenuItem>
+                    )}
                   </>
                 )}
 
@@ -191,6 +218,8 @@ export function SessionSiteHeader({
             </DropdownMenu>
 
             <SessionChangesIndicator sessionId={sessionId} />
+
+            <SessionPendingApprovalsIndicator sessionId={sessionId} />
 
             <Hint
               side="bottom"

@@ -80,9 +80,13 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // v21: configurable bot name (project setting) + wake word = bot's first name (skill).
 // v22: spoken turns MUST reply by voice (skill) — no chat fallback for speech.
 // v23: auto-recap on meeting end (bot.done webhook -> session produces notes).
-const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v23';
+// v24: hard-fail the bake if the baked opencode-config-deps tree (or the
+// starter tool files against it) can't actually be bundled by Bun — a
+// bundle-breaking axios override once shipped silently baked into every
+// sandbox image (bun install succeeded; the runtime bundle did not).
+const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v24';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
-const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 6);
+const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
 
 function readPositiveIntEnv(name: string, fallback: number): number {

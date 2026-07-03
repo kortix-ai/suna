@@ -81,7 +81,7 @@ export async function listProjectAccessRequests(projectId: string, options?: Api
 export async function approveProjectAccessRequest(
   projectId: string,
   requestId: string,
-  role: ProjectRole = 'viewer',
+  role: ProjectRole = 'user',
 ) {
   return unwrap(
     await backendApi.post<{
@@ -280,6 +280,153 @@ export async function detachGroupFromProject(projectId: string, groupId: string)
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
       `/projects/${projectId}/group-grants/${groupId}`,
+    ),
+  );
+}
+
+// ─── Per-resource (agent/skill/secret) scoping ──────────────────────────────
+
+export type ResourceGrantType = 'agent' | 'skill' | 'secret';
+
+/** A grantable resource (agent name / skill slug) discovered from the repo. */
+export interface ProjectResourceItem {
+  /** Stable grant key — agent name / skill slug. */
+  id: string;
+  /** Display name. */
+  name: string;
+  description: string | null;
+}
+
+/** An agent resource, enriched with its DECLARED scope so the grant UI can
+ *  preview the blast radius of an assignment (the inheritance pyramid): assigning
+ *  the agent also grants these secrets + connectors. `'all'` = every one the
+ *  assignee can already see (nothing extra inherited). */
+export interface ProjectAgentResourceItem extends ProjectResourceItem {
+  declares?: { secrets: string[] | 'all'; connectors: string[] | 'all' };
+}
+
+export interface ProjectResourceGrant {
+  grant_id: string;
+  resource_type: ResourceGrantType;
+  resource_id: string;
+  principal_type: 'member' | 'group';
+  principal_id: string;
+  /** Resolved label — member email or group name. */
+  principal_label: string;
+  granted_by: string | null;
+  created_at: string;
+  expires_at: string | null;
+  /** true = the scoped agent/skill no longer exists (renamed/deleted) — the
+   *  grant is inert and the restriction has lapsed; remove or re-point it. */
+  orphaned?: boolean;
+}
+
+export interface ProjectResourceGrantsResponse {
+  resources: {
+    agents: ProjectAgentResourceItem[];
+    skills: ProjectResourceItem[];
+    secrets: ProjectResourceItem[];
+  };
+  grants: ProjectResourceGrant[];
+}
+
+export async function listProjectResourceGrants(projectId: string) {
+  return unwrap(
+    await backendApi.get<ProjectResourceGrantsResponse>(
+      `/projects/${projectId}/resource-grants`,
+    ),
+  );
+}
+
+export async function createProjectResourceGrant(
+  projectId: string,
+  input: {
+    resourceType: ResourceGrantType;
+    resourceId: string;
+    principalType: 'member' | 'group';
+    principalId: string;
+    expiresAt?: string | null;
+  },
+) {
+  return unwrap(
+    await backendApi.post<{ grant_id: string }>(`/projects/${projectId}/resource-grants`, {
+      resource_type: input.resourceType,
+      resource_id: input.resourceId,
+      principal_type: input.principalType,
+      principal_id: input.principalId,
+      ...(input.expiresAt !== undefined ? { expires_at: input.expiresAt } : {}),
+    }),
+  );
+}
+
+export async function deleteProjectResourceGrant(projectId: string, grantId: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/projects/${projectId}/resource-grants/${grantId}`,
+    ),
+  );
+}
+
+// ─── Approvals (APPROVE / ASK / BLOCK inbox) ────────────────────────────────
+
+/** An executor action a policy gated as `require_approval`, still awaiting a
+ *  human decision. */
+export interface PendingApproval {
+  execution_id: string;
+  action: string;
+  risk: string | null;
+  session_id: string | null;
+  requested_by: string | null;
+  requested_by_email: string | null;
+  requested_at: string;
+  detail: Record<string, unknown> | null;
+}
+
+export interface PendingApprovalsResponse {
+  count: number;
+  approvals: PendingApproval[];
+}
+
+/** The manager inbox of gated actions awaiting approve/deny. */
+export async function listPendingApprovals(projectId: string, options?: { showErrors?: boolean }) {
+  return unwrap(
+    await backendApi.get<PendingApprovalsResponse>(`/projects/${projectId}/approvals`, {
+      showErrors: options?.showErrors,
+    }),
+  );
+}
+
+/** Per-session pending-approval summary for the sidebar "needs input" badge:
+ *  `sessions` maps a (Kortix) session id → count of actions awaiting a decision.
+ *  A manager sees every session; others only the ones they launched. */
+export interface SessionsNeedingInputResponse {
+  total: number;
+  sessions: Record<string, number>;
+}
+
+export async function listSessionsNeedingInput(
+  projectId: string,
+  options?: { showErrors?: boolean },
+) {
+  return unwrap(
+    await backendApi.get<SessionsNeedingInputResponse>(
+      `/projects/${projectId}/approvals/needs-input`,
+      { showErrors: options?.showErrors },
+    ),
+  );
+}
+
+/** Resolve a pending approval. Allowed for a project manager or the session
+ *  launcher; approve lets the action proceed on retry, deny records a refusal. */
+export async function resolveApproval(
+  projectId: string,
+  executionId: string,
+  decision: 'approve' | 'deny',
+) {
+  return unwrap(
+    await backendApi.post<{ ok: boolean }>(
+      `/projects/${projectId}/approvals/${executionId}`,
+      { decision },
     ),
   );
 }

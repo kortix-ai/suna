@@ -10,7 +10,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
-import type { ProjectAccessResponse } from '@/lib/projects-client';
+import type { ProjectAccessResponse } from '@kortix/sdk/projects-client';
 
 const DEMO_PROJECT = 'demo';
 const DEMO_ACCESS: ProjectAccessResponse = {
@@ -86,7 +86,7 @@ const client = new QueryClient();
 client.setQueryData(['project-access', DEMO_PROJECT], DEMO_ACCESS);
 
 function Panel({ title }: { title: string }) {
-  const [value, setValue] = useState<SharingSelection>({ mode: 'members', memberIds: ['u2'] });
+  const [value, setValue] = useState<SharingSelection>({ mode: 'members', memberIds: ['u2'], groupIds: [] });
   return (
     <div className="border-border/60 bg-card w-[420px] rounded-2xl border p-5">
       <h2 className="text-foreground mb-3 text-base font-semibold">{title}</h2>
