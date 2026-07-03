@@ -19,7 +19,7 @@ import {
   useRequestChangesOnChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { listProjectSessions, type ReviewVerdict } from '@kortix/sdk/projects-client';
+import { type ReviewVerdict, listProjectSessions } from '@kortix/sdk/projects-client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useMemo } from 'react';
@@ -43,12 +43,8 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
   const close = useCloseChangeRequest();
   const requestChanges = useRequestChangesOnChangeRequest();
 
-  const items = useMemo(
-    () => (data?.review_items ?? []).map((row) => mapApiReviewItem(row, projectName)),
-    [data, projectName],
-  );
-
   // Session names for the per-session filter + group headers (sessionId → label).
+  // Also names the originating session in each approval's description.
   const { data: sessions } = useQuery({
     queryKey: ['project-sessions', projectId],
     queryFn: () => listProjectSessions(projectId),
@@ -62,6 +58,12 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
     }
     return m;
   }, [sessions]);
+
+  const items = useMemo(
+    () =>
+      (data?.review_items ?? []).map((row) => mapApiReviewItem(row, projectName, sessionLabels)),
+    [data, projectName, sessionLabels],
+  );
 
   const refreshInbox = () => qc.invalidateQueries({ queryKey: ['review-center', projectId] });
 
