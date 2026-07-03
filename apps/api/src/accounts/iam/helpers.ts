@@ -11,6 +11,8 @@ import type { TierEntitlements } from '../../types';
 const ENTITLEMENT_LABEL: Record<keyof TierEntitlements, string> = {
   sso: 'SAML single sign-on',
   scim: 'SCIM directory provisioning',
+  rbac: 'Custom roles, policies, and groups',
+  auditAccess: 'Audit log access and export',
 };
 
 /**

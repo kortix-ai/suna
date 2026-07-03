@@ -118,6 +118,20 @@ export interface TierEntitlements {
   sso: boolean;
   /** SCIM 2.0 directory provisioning (token mint/revoke + /scim/v2 endpoints). */
   scim: boolean;
+  /**
+   * Custom RBAC: user-defined roles, fine-grained policy bindings, and groups
+   * (IAM v1 — custom-roles.ts + groups.ts). Built-in preset roles (owner/admin/
+   * member/manager/editor/user) stay free on every tier — this only gates the
+   * ability to define custom roles/policies/groups beyond those presets.
+   */
+  rbac: boolean;
+  /**
+   * Read/export access to the audit trail (account audit log + per-session
+   * agent-action audit) and audit-webhook streaming. Recording is NEVER gated —
+   * every tier's actions are always captured; this only gates who can read,
+   * export, or stream them out.
+   */
+  auditAccess: boolean;
 }
 
 export interface TierConfig {
