@@ -31,6 +31,12 @@ import { authenticatedFetch } from "../platform/auth";
 import { isConfigured } from "../platform/config";
 import { getActiveOpenCodeUrl } from "../state/server-store/active";
 
+// Sandbox env/secrets client (`GET/PUT/DELETE /env`) and the `/kortix/triggers`
+// wrapper both live in sibling modules, re-exported here so hosts only ever
+// import daemon operations from this one subpath.
+export { listEnv, setEnv, deleteEnv, env } from "./env";
+export { triggersRequest } from "./triggers";
+
 
 /**
  * Per-URL client cache. Unlike `getClient()` (which tracks only the single
@@ -104,4 +110,46 @@ export function dropClientForUrl(url: string): void {
  */
 export function resetClient(): void {
 	clientsByUrl.clear();
+}
+
+async function daemonErrorMessage(res: Response): Promise<string> {
+	const text = await res.text().catch(() => '');
+	try {
+		const parsed = JSON.parse(text) as { error?: string; message?: string };
+		return parsed?.error || parsed?.message || text || res.statusText || `HTTP ${res.status}`;
+	} catch {
+		return text || res.statusText || `HTTP ${res.status}`;
+	}
+}
+
+export type SystemReloadMode = 'dispose-only' | 'full';
+
+export interface SystemReloadResult {
+	success: boolean;
+	mode: SystemReloadMode;
+	steps: string[];
+	errors: string[];
+}
+
+/**
+ * Reload the in-sandbox Kortix services daemon (opencode + its plugins).
+ * `'dispose-only'` tears down and re-creates config without a full process
+ * restart; `'full'` restarts the whole daemon process. Hits the active
+ * runtime's `POST /kortix/services/system/reload` — same auth path as every
+ * other sandbox call (`authenticatedFetch` via the active server URL).
+ */
+export async function systemReload(mode: SystemReloadMode): Promise<SystemReloadResult> {
+	const url = getActiveOpenCodeUrl();
+	if (!url) {
+		throw new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
+	}
+	const response = await authenticatedFetch(`${url}/kortix/services/system/reload`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ mode }),
+	});
+	if (!response.ok) {
+		throw new Error(`System reload failed (${response.status}): ${await daemonErrorMessage(response)}`);
+	}
+	return response.json() as Promise<SystemReloadResult>;
 }

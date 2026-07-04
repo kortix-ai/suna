@@ -1,7 +1,7 @@
 'use client';
 
 import { useAuth } from '@/features/providers/auth-provider';
-import { authenticatedFetch } from '@/lib/auth-token';
+import { deleteEnv, listEnv, setEnv } from '@kortix/sdk/opencode-client';
 import { useServerStore } from '@/stores/server-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -22,10 +22,7 @@ export function useSecrets() {
     queryKey,
     queryFn: async (): Promise<Record<string, string>> => {
       if (!instanceUrl) return {};
-      const res = await authenticatedFetch(`${instanceUrl}/env`);
-      if (!res.ok) throw new Error('Failed to fetch secrets');
-      const data = await res.json();
-      return data.secrets ?? {};
+      return listEnv();
     },
     enabled: !isAuthLoading && !!user && !!instanceUrl,
   });
@@ -42,16 +39,7 @@ export function useSetSecret() {
   return useMutation({
     mutationFn: async ({ key, value }: { key: string; value: string }) => {
       if (!instanceUrl) throw new Error('No active instance selected');
-      const res = await authenticatedFetch(`${instanceUrl}/env/${encodeURIComponent(key)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || 'Failed to save secret');
-      }
-      return res.json();
+      await setEnv(key, value);
     },
     onMutate: async ({ key, value }) => {
       await qc.cancelQueries({ queryKey });
@@ -81,14 +69,7 @@ export function useDeleteSecret() {
   return useMutation({
     mutationFn: async (key: string) => {
       if (!instanceUrl) throw new Error('No active instance selected');
-      const res = await authenticatedFetch(`${instanceUrl}/env/${encodeURIComponent(key)}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || 'Failed to delete secret');
-      }
-      return res.json();
+      await deleteEnv(key);
     },
     onMutate: async (key) => {
       await qc.cancelQueries({ queryKey });

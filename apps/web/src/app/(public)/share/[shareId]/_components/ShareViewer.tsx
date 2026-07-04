@@ -33,29 +33,11 @@ import { motion, AnimatePresence } from 'motion/react';
 // Types
 // ============================================================================
 
-interface SessionInfo {
-  id: string;
-  title: string;
-  version?: string;
-  time: { created: number; updated?: number };
-  share?: { url: string };
-}
-
-interface MessagePart {
-  id: string;
-  type: string;
-  text?: string;
-  content?: any;
-  time?: { created: number; updated?: number };
-}
+type SessionInfo = Session;
+type MessagePart = Part;
 
 interface MessageWithParts {
-  info: {
-    id: string;
-    sessionID: string;
-    role: 'user' | 'assistant';
-    time: { created: number; updated?: number };
-  };
+  info: Message;
   parts: MessagePart[];
 }
 
@@ -65,32 +47,29 @@ interface ShareData {
 }
 
 // ============================================================================
-// Data fetching — uses the standard OpenCode session & message APIs
+// Data fetching — uses the standard OpenCode session & message APIs, via the
+// SDK client (so auth injection + error normalization live in one place).
 // ============================================================================
 
-import { getActiveOpenCodeUrl } from '@/stores/server-store';
+import { getClient } from '@kortix/sdk/opencode-client';
+import type { Message, Part, Session } from '@kortix/sdk/opencode-client';
+
+function unwrap<T>(result: { data?: T; error?: unknown }): T {
+  if (result.error) {
+    const err = result.error as { data?: { message?: string }; message?: string };
+    throw new Error(err?.data?.message || err?.message || 'Failed to load share');
+  }
+  return result.data as T;
+}
 
 async function fetchShareData(shareId: string): Promise<ShareData> {
-  const baseUrl = getActiveOpenCodeUrl();
-  const sessionsRes = await fetch(`${baseUrl}/session`, {
-    headers: { 'Accept': 'application/json' },
-  });
-  if (!sessionsRes.ok) throw new Error('Failed to load sessions');
-  const contentType = sessionsRes.headers.get('content-type') || '';
-  if (!contentType.includes('application/json')) throw new Error('Unexpected response from server');
+  const client = getClient();
 
-  const sessions: SessionInfo[] = await sessionsRes.json();
+  const sessions = unwrap(await client.session.list());
   const session = sessions.find((s) => s.id.endsWith(shareId) && s.share?.url);
   if (!session) throw new Error('Share not found');
 
-  const messagesRes = await fetch(`${baseUrl}/session/${session.id}/message`, {
-    headers: { 'Accept': 'application/json' },
-  });
-  if (!messagesRes.ok) throw new Error('Failed to load messages');
-  const msgContentType = messagesRes.headers.get('content-type') || '';
-  if (!msgContentType.includes('application/json')) throw new Error('Unexpected response from server');
-
-  const messages: MessageWithParts[] = await messagesRes.json();
+  const messages = unwrap(await client.session.messages({ sessionID: session.id }));
   return { session, messages };
 }
 
@@ -266,7 +245,7 @@ function ShareMessageView({
   role: 'user' | 'assistant';
   parts: MessagePart[];
 }) {
-  const text = parts.map(partToText).join('\n').trim();
+  const text = parts.map((part) => partToText(part as unknown as { text?: string; content?: unknown })).join('\n').trim();
   if (!text) return null;
 
   if (role === 'user') {
@@ -316,7 +295,7 @@ function AssistantBlock({
       <div className="flex w-full break-words">
         <div className="space-y-1.5 min-w-0 flex-1">
           {parts.map((part) => {
-            const partText = partToText(part);
+            const partText = partToText(part as unknown as { text?: string; content?: unknown });
             if (!partText.trim()) return null;
             return (
               <div key={part.id} className="break-words overflow-hidden">

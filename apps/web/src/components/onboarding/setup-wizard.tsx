@@ -25,12 +25,11 @@ import { modelKeyToWire, useModelStore } from '@/hooks/opencode/use-model-store'
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { backendApi } from '@/lib/api-client';
 import { setModelDefault } from '@kortix/sdk/projects-client';
-import { authenticatedFetch } from '@/lib/auth-token';
+import { setEnv } from '@kortix/sdk/opencode-client';
 import { isBillingEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { getActiveOpenCodeUrl } from '@/stores/server-store';
 import {
   ArrowLeft,
   BookOpen,
@@ -696,14 +695,13 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
     }
 
     setSaving(true);
-    const base = getActiveOpenCodeUrl();
     const { succeeded, failed } = await saveToolKeys(toSave, async (key, value) => {
-      const res = await authenticatedFetch(`${base}/env/${encodeURIComponent(key)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value: value.trim() }),
-      });
-      return { ok: res.ok };
+      try {
+        await setEnv(key, value.trim());
+        return { ok: true };
+      } catch {
+        return { ok: false };
+      }
     });
     setSaving(false);
     setSavedCount(succeeded.length);
