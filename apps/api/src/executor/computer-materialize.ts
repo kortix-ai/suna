@@ -34,6 +34,9 @@ function computerSpec(): ConnectorSpec {
     enabled: true,
     provider: 'computer',
     credentialMode: 'shared',
+    sensitive: false,
+    // Synthetic — agent_scope is set DB-side and preserved across syncs (see channelSpec).
+    agentScope: null,
     app: null,
     account: null,
     url: null,

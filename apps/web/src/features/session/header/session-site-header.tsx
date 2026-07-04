@@ -13,7 +13,7 @@ import {
 import Hint from '@/components/ui/hint';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import Loading from '@/components/ui/loading';
-import { SidebarTrigger } from '@/components/ui/sidebar';
+import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
@@ -22,11 +22,16 @@ import { SessionPendingApprovalsIndicator } from '@/features/session/header/sess
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
+import { desktopPlatform, isDesktop } from '@/lib/desktop';
 import { cn } from '@/lib/utils';
-import { listProjectSessions, restartProjectSession } from '@kortix/sdk/projects-client';
+import {
+  listProjectSessions,
+  restartProjectSession,
+  stopProjectSession,
+} from '@kortix/sdk/projects-client';
 import { HomeSolid, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileDown, Layers, MoreHorizontal, PanelRight, RotateCcw } from 'lucide-react';
+import { FileDown, Layers, MoreHorizontal, PanelRight, RotateCcw, Square } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -53,6 +58,16 @@ export function SessionSiteHeader({
   const router = useRouter();
   const pathname = usePathname();
   const queryClient = useQueryClient();
+  // Desktop shell with the sidebar hidden (offcanvas): this header reaches the
+  // window's left edge, where the macOS traffic lights and the shell's
+  // "Open sidebar" toggle (fixed at x 72–100) live — indent the leading
+  // buttons past both and drop them onto the same center line (y≈26).
+  const { state: sidebarState } = useSidebar();
+  const [desktopShell] = useState<'macos' | 'other' | null>(() =>
+    isDesktop() ? (desktopPlatform() === 'macos' ? 'macos' : 'other') : null,
+  );
+  const sidebarHidden = desktopShell !== null && sidebarState === 'collapsed';
+
   const [exportOpen, setExportOpen] = useState(false);
   const [compactOpen, setCompactOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -86,11 +101,40 @@ export function SessionSiteHeader({
     },
   });
 
+  const stopMutation = useMutation({
+    mutationFn: () => stopProjectSession(projectId!, projectSessionId!),
+    onSuccess: () => {
+      successToast('Session stopped');
+      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+    },
+    onError: (err) => {
+      errorToast(err instanceof Error ? err.message : 'Failed to stop session');
+    },
+  });
+  const canStop = !!projectSession && projectSession.status === 'running' && canShare;
+
   return (
     <>
       <div className="pointer-events-none absolute top-0 right-0 left-0 z-20">
-        <div className="flex items-center justify-between p-2 pb-0">
-          <div className="pointer-events-auto flex items-center gap-0.5">
+        {/* Hidden sidebar on desktop: drop the whole row onto the title-bar
+            line (children h-[28px] → center y≈26, matching the traffic lights
+            and the shell's Open-sidebar toggle), and indent the leading side
+            past the lights + toggle. px values on purpose — the lights are
+            OS-positioned; rem sizes drift with the root font. Both groups stay
+            in flow so justify-between keeps the trailing cluster on the right. */}
+        <div
+          className={cn(
+            'flex items-center justify-between p-2 pb-0',
+            sidebarHidden && 'pt-[12px]',
+          )}
+        >
+          <div
+            className={cn(
+              'pointer-events-auto flex items-center gap-0.5',
+              sidebarHidden && 'h-[28px]',
+              sidebarHidden && (desktopShell === 'macos' ? 'ml-[96px]' : 'ml-[32px]'),
+            )}
+          >
             {isProjectSession && (
               <>
                 <SidebarTrigger
@@ -109,7 +153,12 @@ export function SessionSiteHeader({
             {leadingAction}
           </div>
 
-          <div className="pointer-events-auto flex items-center gap-1.5">
+          <div
+            className={cn(
+              'pointer-events-auto flex items-center gap-1.5',
+              sidebarHidden && 'h-[28px]',
+            )}
+          >
             <DropdownMenu>
               <Hint
                 side="bottom"
@@ -161,6 +210,16 @@ export function SessionSiteHeader({
                       {restartMutation.isPending ? <Loading /> : <RotateCcw />}
                       Restart
                     </DropdownMenuItem>
+                    {canStop && (
+                      <DropdownMenuItem
+                        className="cursor-pointer"
+                        disabled={stopMutation.isPending}
+                        onClick={() => stopMutation.mutate()}
+                      >
+                        {stopMutation.isPending ? <Loading /> : <Square />}
+                        Stop
+                      </DropdownMenuItem>
+                    )}
                   </>
                 )}
 

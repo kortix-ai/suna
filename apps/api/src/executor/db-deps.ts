@@ -16,12 +16,14 @@ import {
   executorProjectSettings,
   projectSessions,
   projects,
+  sessionToolApprovals,
 } from '@kortix/db';
 import { db } from '../shared/db';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { authorize } from '../iam';
 import { loadProjectForUser } from '../projects/lib/access';
 import {
+  connectorDeniedForAgent,
   isSecretUsableBy,
   resolveShareSubject,
   scopeToIntent,
@@ -71,6 +73,8 @@ import {
   getProjectPoliciesFromManifest,
   setConnectorCredentialShared,
   setConnectorCredentialModeInManifest,
+  setConnectorSensitiveInManifest,
+  setConnectorAgentScope,
   setConnectorNameInManifest,
   getConnectorPoliciesFromManifest,
   getConnectorConfigFromManifest,
@@ -120,6 +124,48 @@ export async function waitForApprovalDecision(
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
   return 'timeout';
+}
+
+/** "Allow for this session" check (gateway hot path): is this exact
+ *  (session, connector, action) already session-approved? */
+export async function isSessionToolApproved(
+  sessionId: string,
+  connectorId: string,
+  actionPath: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: sessionToolApprovals.id })
+    .from(sessionToolApprovals)
+    .where(
+      and(
+        eq(sessionToolApprovals.sessionId, sessionId),
+        eq(sessionToolApprovals.connectorId, connectorId),
+        eq(sessionToolApprovals.actionPath, actionPath),
+      ),
+    )
+    .limit(1);
+  return !!row;
+}
+
+/** Record an "allow for the rest of this session" grant (resolve endpoint).
+ *  Idempotent: a repeat of the same (session, connector, action) is a no-op. */
+export async function recordSessionToolApproval(input: {
+  sessionId: string;
+  projectId: string;
+  connectorId: string;
+  actionPath: string;
+  grantedBy: string | null;
+}): Promise<void> {
+  await db
+    .insert(sessionToolApprovals)
+    .values({
+      sessionId: input.sessionId,
+      projectId: input.projectId,
+      connectorId: input.connectorId,
+      actionPath: input.actionPath,
+      grantedBy: input.grantedBy,
+    })
+    .onConflictDoNothing();
 }
 
 type ConnectorRow = typeof executorConnectors.$inferSelect;
@@ -196,6 +242,11 @@ function toGatewayConnector(row: ConnectorRow, grants: Awaited<ReturnType<typeof
     grants,
     credentialMode: row.credentialMode as 'shared' | 'per_user',
     enabled: row.enabled,
+    sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
+    // Connector-side agent gate — a dedicated column (reconciled every sync from
+    // the toml for declared connectors), NOT config jsonb (which only rewrites on
+    // a catalog re-fetch). NULL = all agents.
+    agentScope: row.agentScope ?? undefined,
   };
 }
 
@@ -281,6 +332,14 @@ function makeDbGatewayDeps(): GatewayDeps {
     },
     inheritedConnectorSlugs: (projectId, subject) =>
       resolveInheritedConnectorSlugs(projectId, subject.userId, subject.groupIds),
+    sessionAgentName: async (sessionId) => {
+      const [row] = await db
+        .select({ agentName: projectSessions.agentName })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, sessionId))
+        .limit(1);
+      return row?.agentName ?? null;
+    },
     loadPolicies: loadConnectorPoliciesFor,
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,
@@ -307,6 +366,7 @@ function makeDbGatewayDeps(): GatewayDeps {
       return row?.id ?? null;
     },
     waitForApprovalDecision: waitForApprovalDecision,
+    isSessionToolApproved: isSessionToolApproved,
     executePipedream: ({ projectId, connectorSlug, app, actionKey, args, accountId, userId }) =>
       runPipedreamAction(projectId, connectorSlug, app, actionKey, args, accountId, userId),
     executePipedreamProxy: ({ projectId, connectorSlug, args, accountId, userId }) =>
@@ -446,11 +506,28 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
     return inheritedConns;
   };
 
+  // The running agent's name (projectSessions.agent_name) for the connector
+  // agent_scope filter below — resolved once, from the SAME source the call gate
+  // (gateway.sessionAgentName) and the secret gate use, so the list never shows a
+  // connector the call gate would deny with `agent_not_scoped`.
+  let catalogAgentName: string | null = null;
+  if (p.sessionId) {
+    const [srow] = await db
+      .select({ agentName: projectSessions.agentName })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, p.sessionId))
+      .limit(1);
+    catalogAgentName = srow?.agentName ?? null;
+  }
+
   const out: CatalogConnector[] = [];
   for (const row of conns) {
     // Per-agent assignment: an agent only sees connectors its grant lists —
     // consistent with the call gate, so it never lists a tool it can't invoke.
     if (!agentMayUseConnector(p.agentGrant ?? null, row.slug)) continue;
+    // Connector-side agent_scope: an agent doesn't see a connector restricted to
+    // OTHER agents (mirrors the call gate's connectorUsable agent check).
+    if (connectorDeniedForAgent(row.agentScope, catalogAgentName)) continue;
     const grants = grantsByConnector.get(row.connectorId) ?? [];
     if (!isSecretUsableBy(row.shareScope as 'project' | 'restricted', grants, p.subject)) {
       if (!(await inheritedConnsFor()).has(row.slug)) continue;
@@ -539,6 +616,8 @@ async function listConnectors(projectId: string, viewerUserId: string): Promise<
       platform: channelPlatform(row.config),
       status: row.status,
       credentialMode: mode,
+      sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
+      agentScope: row.agentScope ?? null,
       actions: actions.map((a) => ({ path: a.path, name: a.name, description: a.description ?? '', risk: a.risk, inputSchema: a.inputSchema ?? null })),
       authSecret: hasAuth ? 'credential' : null,
       sharing: scopeToIntent(row.shareScope as 'project' | 'restricted', grants),
@@ -648,6 +727,8 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
     return { ok: true as const };
   },
   setCredentialMode: (projectId, accountId, slug, mode) => setConnectorCredentialModeInManifest(projectId, accountId, slug, mode),
+  setSensitive: (projectId, accountId, slug, sensitive) => setConnectorSensitiveInManifest(projectId, accountId, slug, sensitive),
+  setAgentScope: (projectId, accountId, slug, agentScope) => setConnectorAgentScope(projectId, accountId, slug, agentScope),
   setConnectorName: (projectId, accountId, slug, name) => setConnectorNameInManifest(projectId, accountId, slug, name),
   getConnectorPolicies,
   getConnectorConfig,

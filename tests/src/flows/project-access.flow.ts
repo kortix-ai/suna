@@ -346,6 +346,89 @@ flow(
   },
 );
 
+flow(
+  "PACC-7",
+  {
+    domain: "projects",
+    routes: [
+      "GET /v1/projects/:projectId/resource-grants",
+      "POST /v1/projects/:projectId/resource-grants",
+      "DELETE /v1/projects/:projectId/resource-grants/:grantId",
+      "POST /v1/projects/:projectId/secrets",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember("member");
+    const p = await team.project();
+    const secretName = `QA_SECRET_${p.id.replace(/-/g, "").slice(0, 8)}`.toUpperCase();
+    let grantId = "";
+
+    await ctx.step("create a shared project secret to scope", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/projects/:projectId/secrets",
+        { name: secretName, value: "not-secret-test-value" },
+        { params: { projectId: p.id } },
+      );
+      r.status(200).body().has("$.name", secretName);
+    });
+
+    await ctx.step("OWNER lists grantable resources and existing grants → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/resource-grants", { params: { projectId: p.id } });
+      r.status(200).body().exists("$.resources").exists("$.grants");
+    });
+
+    await ctx.step("OWNER scopes the secret to an account member → 201", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/projects/:projectId/resource-grants",
+        {
+          resource_type: "secret",
+          resource_id: secretName,
+          principal_type: "member",
+          principal_id: member.userId,
+        },
+        { params: { projectId: p.id } },
+      );
+      r.status(201).body().exists("$.grant_id").has("$.resource_type", "secret");
+      grantId = r.json<any>().grant_id;
+    });
+
+    await ctx.step("invalid resource type → 400", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/projects/:projectId/resource-grants",
+        {
+          resource_type: "database",
+          resource_id: secretName,
+          principal_type: "member",
+          principal_id: member.userId,
+        },
+        { params: { projectId: p.id } },
+      );
+      r.status(400);
+    });
+
+    await ctx.step("OWNER deletes the resource grant → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/projects/:projectId/resource-grants/:grantId", {
+          params: { projectId: p.id, grantId },
+        });
+      r.status(200).body().has("$.ok", true);
+    });
+
+    await ctx.step("deleting the same grant again → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/projects/:projectId/resource-grants/:grantId", {
+          params: { projectId: p.id, grantId },
+        });
+      r.status(404);
+    });
+  },
+);
+
 // ─── Account-invite accept side (recipient-driven) ───────────────────────
 //
 // A clean accept/decline needs the invited user to sign in as the addressed

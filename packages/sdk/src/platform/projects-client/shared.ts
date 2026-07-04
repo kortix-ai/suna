@@ -1,7 +1,7 @@
 // Shared helpers + cross-cutting types used by multiple projects-client modules.
 
 export type AccountRole = 'owner' | 'admin' | 'member';
-export type ProjectRole = 'manager' | 'editor' | 'user';
+export type ProjectRole = 'manager' | 'editor' | 'member';
 
 export type ConnectorSharing =
   | { mode: 'project' }

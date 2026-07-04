@@ -15,7 +15,7 @@ import {
 describe('PROJECT_ROLE_DESCRIPTORS', () => {
   test('covers every project role', () => {
     expect(Object.keys(PROJECT_ROLE_DESCRIPTORS).sort()).toEqual(
-      ['editor', 'manager', 'user'],
+      ['editor', 'manager', 'member'],
     );
   });
 
@@ -47,12 +47,12 @@ describe('PROJECT_ROLE_DESCRIPTORS', () => {
     }
   });
 
-  test('user (floor role) blurb communicates it can use the project (start sessions)', () => {
-    // User is the base *usable* role — it can start sessions and use the
+  test('member (floor role) blurb communicates it can use the project (start sessions)', () => {
+    // Member is the base *usable* role — it can start sessions and use the
     // agent chat, NOT a read-only role. If this fails, we've regressed the
     // whole point of the floor descriptor (a role that can't open a session
     // is useless).
-    expect(PROJECT_ROLE_DESCRIPTORS.user.blurb.toLowerCase()).toMatch(/session|chat|use/);
+    expect(PROJECT_ROLE_DESCRIPTORS.member.blurb.toLowerCase()).toMatch(/session|chat|use/);
   });
 
   test('manager blurb communicates member management', () => {
@@ -61,24 +61,24 @@ describe('PROJECT_ROLE_DESCRIPTORS', () => {
     expect(text).toMatch(/invite|member|settings/);
   });
 
-  test('editor blurb references the user role (additive framing)', () => {
+  test('editor blurb references the member role (additive framing)', () => {
     // Roles are strict supersets in role-perms.ts. The blurbs should
     // tell that story so users understand "Editor includes everything a
-    // User can do" rather than treating them as disjoint.
-    expect(PROJECT_ROLE_DESCRIPTORS.editor.blurb.toLowerCase()).toContain('user');
+    // Member can do" rather than treating them as disjoint.
+    expect(PROJECT_ROLE_DESCRIPTORS.editor.blurb.toLowerCase()).toContain('member');
   });
 
-  test('user copy calls out firing triggers (its defining capability over read-only)', () => {
+  test('member copy calls out firing triggers (its defining capability over read-only)', () => {
     // Firing triggers is what makes the floor role a real operator role, not a
     // bystander. Keep it explicit in both blurb and summary.
-    expect(PROJECT_ROLE_DESCRIPTORS.user.summary.toLowerCase()).toContain('trigger');
-    expect(PROJECT_ROLE_DESCRIPTORS.user.blurb.toLowerCase()).toContain('trigger');
+    expect(PROJECT_ROLE_DESCRIPTORS.member.summary.toLowerCase()).toContain('trigger');
+    expect(PROJECT_ROLE_DESCRIPTORS.member.blurb.toLowerCase()).toContain('trigger');
   });
 });
 
 describe('PROJECT_ROLES_ASCENDING', () => {
-  test('matches role hierarchy user → editor → manager', () => {
-    expect(PROJECT_ROLES_ASCENDING).toEqual(['user', 'editor', 'manager']);
+  test('matches role hierarchy member → editor → manager', () => {
+    expect(PROJECT_ROLES_ASCENDING).toEqual(['member', 'editor', 'manager']);
   });
 });
 

@@ -248,6 +248,10 @@ export interface SessionAuditAction {
 export interface SessionAudit {
   session_id: string;
   agent: string | null;
+  /** False when the account lacks the Enterprise `auditAccess` entitlement —
+   *  `actions` then contains only unresolved pending approvals, not the full
+   *  historical trail. Absent on older backends (treat as true). */
+  audit_access?: boolean;
   count: number;
   actions: SessionAuditAction[];
 }
@@ -303,6 +307,19 @@ export async function restartProjectSession(
   return unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/restart`,
+      {},
+    ),
+  );
+}
+
+/** Manual pause: stops the running sandbox in place, resumable via start(). */
+export async function stopProjectSession(
+  projectId: string,
+  sessionId: string,
+) {
+  return unwrap(
+    await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
+      `/projects/${projectId}/sessions/${sessionId}/stop`,
       {},
     ),
   );

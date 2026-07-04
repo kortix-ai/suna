@@ -5,16 +5,12 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
+  type AppSpec,
   appSpecToTomlEntry,
   extractApps,
   manifestHashForApp,
-  type AppSpec,
 } from '../projects/apps';
-import {
-  KNOWN_SCHEMA_VERSION,
-  parseManifestString,
-  serializeManifest,
-} from '../projects/triggers';
+import { KNOWN_SCHEMA_VERSION, parseManifestString, serializeManifest } from '../projects/triggers';
 
 const MIN_PROJECT = `
 [project]
@@ -88,7 +84,12 @@ framework = "next"
       framework: 'next',
       build: { command: 'pnpm build', outDir: 'dist' },
       env: { NEXT_PUBLIC_API_URL: 'https://api.example.com', NODE_ENV: 'production' },
-      source: { type: 'git', repo: 'https://github.com/me/monorepo', branch: 'main', rootPath: 'apps/marketing' },
+      source: {
+        type: 'git',
+        repo: 'https://github.com/me/monorepo',
+        branch: 'main',
+        rootPath: 'apps/marketing',
+      },
     });
   });
 
@@ -116,7 +117,10 @@ domains = ["tarball.style.dev"]
   url = "https://example.com/builds/site.tar.gz"
 `);
     expect(errors).toEqual([]);
-    expect(specs[0]!.source).toEqual({ type: 'tar', url: 'https://example.com/builds/site.tar.gz' });
+    expect(specs[0]!.source).toEqual({
+      type: 'tar',
+      url: 'https://example.com/builds/site.tar.gz',
+    });
   });
 
   test('build with only command (no out_dir)', () => {
@@ -239,7 +243,8 @@ domains = ["mid.style.dev"]
 
 describe('[[apps]] — round-trip via appSpecToTomlEntry', () => {
   test('a full spec round-trips back through serialize + parse unchanged', () => {
-    const manifest = parseManifestString(manifestWith(`
+    const manifest = parseManifestString(
+      manifestWith(`
 [[apps]]
 slug = "rt"
 name = "Round-trip"
@@ -260,7 +265,8 @@ framework = "next"
 
   [apps.env]
   FOO = "bar"
-`));
+`),
+    );
     const { specs } = extractApps(manifest);
     const entry = appSpecToTomlEntry(specs[0] as AppSpec);
     // Re-pack into a fresh manifest and re-parse — every field survives.
@@ -277,7 +283,12 @@ framework = "next"
       domains: ['rt.style.dev'],
       build: { command: 'pnpm build', outDir: 'dist' },
       env: { FOO: 'bar' },
-      source: { type: 'git', repo: 'https://github.com/me/rt', branch: 'main', rootPath: 'apps/rt' },
+      source: {
+        type: 'git',
+        repo: 'https://github.com/me/rt',
+        branch: 'main',
+        rootPath: 'apps/rt',
+      },
     });
   });
 
@@ -297,6 +308,8 @@ framework = "next"
     const reparsed = extractApps({
       schemaVersion: KNOWN_SCHEMA_VERSION,
       raw: { project: { name: 't' }, apps: [entry] },
+      format: 'toml',
+      path: 'kortix.toml',
     });
     expect(reparsed.errors).toEqual([]);
     expect(reparsed.specs[0]!.source).toEqual({ type: 'tar', url: 'https://example.com/t.tar.gz' });
@@ -515,23 +528,31 @@ describe('manifestHashForApp', () => {
   });
 
   test('hash ignores slug + name (renaming is not a redeploy)', () => {
-    expect(manifestHashForApp(baseSpec({ slug: 'a', name: 'A' })))
-      .toBe(manifestHashForApp(baseSpec({ slug: 'b', name: 'B' })));
+    expect(manifestHashForApp(baseSpec({ slug: 'a', name: 'A' }))).toBe(
+      manifestHashForApp(baseSpec({ slug: 'b', name: 'B' })),
+    );
   });
 
   test('hash changes when source changes', () => {
-    expect(manifestHashForApp(baseSpec({ source: { type: 'git', repo: 'https://github.com/me/x', branch: 'main', rootPath: null } })))
-      .not.toBe(manifestHashForApp(baseSpec()));
+    expect(
+      manifestHashForApp(
+        baseSpec({
+          source: { type: 'git', repo: 'https://github.com/me/x', branch: 'main', rootPath: null },
+        }),
+      ),
+    ).not.toBe(manifestHashForApp(baseSpec()));
   });
 
   test('hash changes when env changes', () => {
-    expect(manifestHashForApp(baseSpec({ env: { FOO: 'bar' } })))
-      .not.toBe(manifestHashForApp(baseSpec()));
+    expect(manifestHashForApp(baseSpec({ env: { FOO: 'bar' } }))).not.toBe(
+      manifestHashForApp(baseSpec()),
+    );
   });
 
   test('hash ignores domain ordering', () => {
-    expect(manifestHashForApp(baseSpec({ domains: ['a.dev', 'b.dev'] })))
-      .toBe(manifestHashForApp(baseSpec({ domains: ['b.dev', 'a.dev'] })));
+    expect(manifestHashForApp(baseSpec({ domains: ['a.dev', 'b.dev'] }))).toBe(
+      manifestHashForApp(baseSpec({ domains: ['b.dev', 'a.dev'] })),
+    );
   });
 });
 

@@ -21,6 +21,12 @@ export interface AdminConnector {
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
   /** Credential storage model — one shared project credential vs each member's own. */
   credentialMode: 'shared' | 'per_user';
+  /** Marked sensitive — its reads gate too (require_approval by default). */
+  sensitive: boolean;
+  /** Which agents may call it. null / [] = ALL agents (default); a list of agent
+   *  names restricts it to those agents' sessions. The connector-side agent gate
+   *  (mirror of the secret agent_scope). */
+  agentScope: string[] | null;
   actions: ConnectorAction[];
   authSecret: string | null;
   sharing: ConnectorSharing | null;
@@ -70,6 +76,33 @@ export async function setConnectorCredentialMode(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
       `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential-mode`,
       { mode },
+    ),
+  );
+}
+
+/** Toggle a connector's `sensitive` flag — sensitive connectors gate reads too
+ *  (every action defaults to require_approval unless a policy opens it). */
+export async function setConnectorSensitive(projectId: string, slug: string, sensitive: boolean) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/sensitive`,
+      { sensitive },
+    ),
+  );
+}
+
+/** Set which AGENTS may call a connector (the connector-side agent gate, mirror
+ *  of the secret agent_scope). `agentScope = null | []` = all agents; a list of
+ *  agent names restricts it. Writes kortix.toml for declared connectors. */
+export async function setConnectorAgentScope(
+  projectId: string,
+  slug: string,
+  agentScope: string[] | null,
+) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/agent-scope`,
+      { agent_scope: agentScope },
     ),
   );
 }

@@ -12,7 +12,7 @@ import {
 } from './shared';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
-export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'meet' | 'llm_gateway';
+export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'meet' | 'llm_gateway' | 'review_center';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {

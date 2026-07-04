@@ -13,6 +13,7 @@ import { isSecretUsableBy, loadGrants, type ShareSubject } from '../executor/sha
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
 const ENVELOPE_VERSION = 'v1';
+const GCM_AUTH_TAG_LENGTH = 16;
 
 function b64url(input: Buffer): string {
   return input.toString('base64url');
@@ -42,7 +43,9 @@ function projectSecretKey(projectId: string): Buffer {
 
 export function encryptProjectSecret(projectId: string, value: string): string {
   const iv = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', projectSecretKey(projectId), iv);
+  const cipher = createCipheriv('aes-256-gcm', projectSecretKey(projectId), iv, {
+    authTagLength: GCM_AUTH_TAG_LENGTH,
+  });
   const ciphertext = Buffer.concat([
     cipher.update(value, 'utf8'),
     cipher.final(),
@@ -56,8 +59,14 @@ export function decryptProjectSecret(projectId: string, valueEnc: string): strin
   if (version !== ENVELOPE_VERSION || !ivB64 || !tagB64 || !ciphertextB64) {
     throw new Error('Unsupported project secret envelope');
   }
-  const decipher = createDecipheriv('aes-256-gcm', projectSecretKey(projectId), fromB64url(ivB64));
-  decipher.setAuthTag(fromB64url(tagB64));
+  const tag = fromB64url(tagB64);
+  if (tag.length !== GCM_AUTH_TAG_LENGTH) {
+    throw new Error('Unsupported project secret auth tag length');
+  }
+  const decipher = createDecipheriv('aes-256-gcm', projectSecretKey(projectId), fromB64url(ivB64), {
+    authTagLength: GCM_AUTH_TAG_LENGTH,
+  });
+  decipher.setAuthTag(tag);
   return Buffer.concat([
     decipher.update(fromB64url(ciphertextB64)),
     decipher.final(),
@@ -274,6 +283,73 @@ export async function resolveDeclaredSharedSecrets(
     env[row.name] = decryptProjectSecret(projectId, row.valueEnc);
   }
   return env;
+}
+
+// ─── Secret → agent access (the secret-side allowlist) ──────────────────────
+// Which agents may use a shared secret. NULL/empty `agent_scope` = all agents
+// (project-wide, default); a non-empty list of agent NAMES restricts it to those
+// agents' sessions. The executor (buildSessionSandboxEnvVars) reads the scopes
+// and drops any secret whose allowlist excludes the running agent — an ADDITIVE
+// narrowing on top of the share model, never a widening.
+
+/**
+ * Secret NAME → agent-name allowlist, for every shared project secret RESTRICTED
+ * to specific agents (non-empty `agent_scope`). All-agents secrets (NULL/empty)
+ * are omitted — the executor only needs the restricted ones to know what to drop.
+ */
+export async function loadSecretAgentScopes(projectId: string): Promise<Map<string, string[]>> {
+  const rows = await db
+    .select({ name: projectSecrets.name, agentScope: projectSecrets.agentScope })
+    .from(projectSecrets)
+    .where(and(eq(projectSecrets.projectId, projectId), isNull(projectSecrets.ownerUserId)));
+  const map = new Map<string, string[]>();
+  for (const row of rows) {
+    const scope = row.agentScope;
+    if (Array.isArray(scope) && scope.length > 0) map.set(row.name, scope);
+  }
+  return map;
+}
+
+/**
+ * Given the project's secret→agent scopes (name → allowed agent names) and the
+ * agent a session runs AS, the set of secret names that agent may NOT use — a
+ * secret is denied iff it's scoped (present in the map) and its allowlist
+ * excludes the agent. All-agents secrets never enter the map, so they're never
+ * denied. Pure: this is the whole security decision the executor applies.
+ */
+export function secretNamesDeniedForAgent(
+  scopes: ReadonlyMap<string, string[]>,
+  agentName: string,
+): Set<string> {
+  const denied = new Set<string>();
+  for (const [name, allowed] of scopes) {
+    if (!allowed.includes(agentName)) denied.add(name);
+  }
+  return denied;
+}
+
+/**
+ * Set (or clear) the agent allowlist for a shared secret. `agents = null` or an
+ * empty array clears it → usable by ALL agents again. Names are trimmed, empties
+ * dropped, deduped. Returns false when the shared secret row doesn't exist.
+ */
+export async function setSecretAgentScope(
+  projectId: string,
+  name: string,
+  agents: string[] | null,
+): Promise<boolean> {
+  const normalizedName = name.trim().toUpperCase();
+  const cleaned = agents ? Array.from(new Set(agents.map((a) => a.trim()).filter(Boolean))) : [];
+  const res = await db
+    .update(projectSecrets)
+    .set({ agentScope: cleaned.length > 0 ? cleaned : null, updatedAt: new Date() })
+    .where(and(
+      eq(projectSecrets.projectId, projectId),
+      eq(projectSecrets.name, normalizedName),
+      isNull(projectSecrets.ownerUserId),
+    ))
+    .returning({ secretId: projectSecrets.secretId });
+  return res.length > 0;
 }
 
 // ─── Secret access as resource grants ───────────────────────────────────────

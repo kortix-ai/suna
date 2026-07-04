@@ -1,25 +1,69 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { parse as parseToml } from 'smol-toml';
+import {
+  type ManifestFormat,
+  manifestCandidatePaths,
+  parseManifestText,
+} from '@kortix/manifest-schema';
 
 /**
- * Local kortix.toml editing — the CLI mutates config IN THE FILE (the source of
+ * Local manifest editing — the CLI mutates config IN THE FILE (the source of
  * truth), not via a server round-trip. Edits are comment-preserving: we append
  * or excise whole array-of-tables blocks (and do targeted scalar replacement)
  * with text surgery rather than parse→stringify, so the heavily-commented
  * scaffold survives intact. `kortix ship` then reconciles the change.
+ *
+ * DUAL-FORMAT: reads resolve kortix.yaml OR kortix.toml (yaml preferred). But
+ * the structural text surgery below is TOML-specific — it CANNOT edit YAML — so
+ * write operations guard-throw on a kortix.yaml project (assertTomlEditable)
+ * rather than corrupt it. Reads + `kortix validate` work with either format.
  */
 
+/** Resolve the on-disk manifest, preferring kortix.yaml. Returns the existing
+ *  file (+ format), or the canonical kortix.toml default when none exists. */
+function resolveManifest(cwd: string = process.cwd()): {
+  path: string;
+  format: ManifestFormat;
+  exists: boolean;
+} {
+  for (const cand of manifestCandidatePaths()) {
+    const abs = resolve(cwd, cand.path);
+    if (existsSync(abs)) return { path: abs, format: cand.format, exists: true };
+  }
+  return { path: resolve(cwd, 'kortix.toml'), format: 'toml', exists: false };
+}
+
 export function manifestFile(cwd: string = process.cwd()): string {
-  return resolve(cwd, 'kortix.toml');
+  return resolveManifest(cwd).path;
 }
 
 export function readManifestText(cwd?: string): string {
-  const path = manifestFile(cwd);
-  if (!existsSync(path)) {
-    throw new Error('No kortix.toml here — run `kortix init` first (config is file-based).');
+  const m = resolveManifest(cwd);
+  if (!m.exists) {
+    throw new Error('No kortix manifest here — run `kortix init` first (config is file-based).');
   }
-  return readFileSync(path, 'utf8');
+  return readFileSync(m.path, 'utf8');
+}
+
+/** Parse the resolved manifest in its own format (read-only; works for both). */
+function readParsedManifest(cwd?: string): Record<string, unknown> {
+  const m = resolveManifest(cwd);
+  if (!m.exists) {
+    throw new Error('No kortix manifest here — run `kortix init` first (config is file-based).');
+  }
+  return parseManifestText(readFileSync(m.path, 'utf8'), m.format);
+}
+
+/** The structural editors below are comment-preserving TOML text surgery and
+ *  cannot safely rewrite YAML. Guard write ops so a `kortix.yaml` project fails
+ *  clearly instead of getting corrupted by TOML regex edits. */
+function assertTomlEditable(cwd?: string): void {
+  const m = resolveManifest(cwd);
+  if (m.exists && m.format !== 'toml') {
+    throw new Error(
+      'Editing kortix.yaml from the CLI is not supported yet — edit the file directly, or use kortix.toml. (Reads and `kortix validate` work with either format.)',
+    );
+  }
 }
 
 function writeManifestText(text: string, cwd?: string): void {
@@ -40,11 +84,18 @@ function resolveSection(data: Record<string, unknown>, section: string): unknown
 }
 
 /** Does an `[[section]]` block with `field = "value"` already exist? */
-export function arrayEntryExists(section: string, field: string, value: string, cwd?: string): boolean {
-  const data = parseToml(readManifestText(cwd)) as Record<string, unknown>;
+export function arrayEntryExists(
+  section: string,
+  field: string,
+  value: string,
+  cwd?: string,
+): boolean {
+  const data = readParsedManifest(cwd);
   const arr = resolveSection(data, section);
   if (!Array.isArray(arr)) return false;
-  return arr.some((e) => e && typeof e === 'object' && (e as Record<string, unknown>)[field] === value);
+  return arr.some(
+    (e) => e && typeof e === 'object' && (e as Record<string, unknown>)[field] === value,
+  );
 }
 
 /** Read a single `[[section]]` entry as an object (or null). */
@@ -54,18 +105,23 @@ export function readArrayEntry(
   value: string,
   cwd?: string,
 ): Record<string, unknown> | null {
-  const data = parseToml(readManifestText(cwd)) as Record<string, unknown>;
+  const data = readParsedManifest(cwd);
   const arr = resolveSection(data, section);
   if (!Array.isArray(arr)) return null;
   return (
-    (arr.find((e) => e && typeof e === 'object' && (e as Record<string, unknown>)[field] === value) as
-      | Record<string, unknown>
-      | undefined) ?? null
+    (arr.find(
+      (e) => e && typeof e === 'object' && (e as Record<string, unknown>)[field] === value,
+    ) as Record<string, unknown> | undefined) ?? null
   );
 }
 
 /** Append an `[[section]]` block built from `fields` (insertion order). */
-export function appendArrayBlock(section: string, fields: Record<string, unknown>, cwd?: string): void {
+export function appendArrayBlock(
+  section: string,
+  fields: Record<string, unknown>,
+  cwd?: string,
+): void {
+  assertTomlEditable(cwd);
   const text = readManifestText(cwd);
   const block = serializeArrayBlock(section, fields);
   const sep = text.endsWith('\n') ? (text.endsWith('\n\n') ? '' : '\n') : '\n\n';
@@ -77,7 +133,13 @@ export function appendArrayBlock(section: string, fields: Record<string, unknown
  * not found. The block runs from its `[[section]]` header to the line before
  * the next top-level `[`/`[[` header (or EOF), minus trailing blank lines.
  */
-export function removeArrayBlock(section: string, field: string, value: string, cwd?: string): boolean {
+export function removeArrayBlock(
+  section: string,
+  field: string,
+  value: string,
+  cwd?: string,
+): boolean {
+  assertTomlEditable(cwd);
   const text = readManifestText(cwd);
   const lines = text.split('\n');
   const headerRe = new RegExp(`^\\s*\\[\\[\\s*${escapeRe(section)}\\s*\\]\\]\\s*$`);
@@ -93,9 +155,16 @@ export function removeArrayBlock(section: string, field: string, value: string, 
     if (!blockMatches) continue;
     // Also swallow a single leading comment block + blank line that introduces it.
     let start = i;
-    while (start > 0 && (lines[start - 1]!.trim().startsWith('#') || lines[start - 1]!.trim() === '')) {
+    while (
+      start > 0 &&
+      (lines[start - 1]!.trim().startsWith('#') || lines[start - 1]!.trim() === '')
+    ) {
       // Only swallow contiguous comments immediately above (not the whole file).
-      if (lines[start - 1]!.trim() === '' && (start - 2 < 0 || !lines[start - 2]!.trim().startsWith('#'))) break;
+      if (
+        lines[start - 1]!.trim() === '' &&
+        (start - 2 < 0 || !lines[start - 2]!.trim().startsWith('#'))
+      )
+        break;
       start -= 1;
     }
     const next = [...lines.slice(0, start), ...lines.slice(end)];
@@ -118,6 +187,7 @@ export function setScalarInArrayBlock(
   value: string | number | boolean,
   cwd?: string,
 ): boolean {
+  assertTomlEditable(cwd);
   const text = readManifestText(cwd);
   const lines = text.split('\n');
   const headerRe = new RegExp(`^\\s*\\[\\[\\s*${escapeRe(section)}\\s*\\]\\]\\s*$`);
@@ -150,7 +220,13 @@ export function setScalarInArrayBlock(
  * Set `key = value` inside a top-level `[table]` (e.g. `[policy]`), in place.
  * Creates the table at EOF if absent. Comment-preserving.
  */
-export function setTableScalar(table: string, key: string, value: string | number | boolean, cwd?: string): void {
+export function setTableScalar(
+  table: string,
+  key: string,
+  value: string | number | boolean,
+  cwd?: string,
+): void {
+  assertTomlEditable(cwd);
   const text = readManifestText(cwd);
   const lines = text.split('\n');
   const headerRe = new RegExp(`^\\s*\\[\\s*${escapeRe(table)}\\s*\\]\\s*$`);

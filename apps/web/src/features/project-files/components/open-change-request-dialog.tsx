@@ -21,10 +21,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import Loading from '@/components/ui/loading';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
 import type { ProjectBranch, ProjectSession } from '@kortix/sdk/projects-client';
-import { GitBranch, Loader2 } from 'lucide-react';
+import { Layers } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBranches } from '../hooks/use-branches';
@@ -61,7 +62,7 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 function BranchValue({ name }: { name: string }) {
   return (
     <div className="flex min-w-0 items-center gap-1.5">
-      <GitBranch className="text-muted-foreground size-3 shrink-0" />
+      <Layers className="text-muted-foreground size-3 shrink-0" />
       <span className="text-foreground truncate font-mono text-xs">{name}</span>
     </div>
   );
@@ -70,7 +71,7 @@ function BranchValue({ name }: { name: string }) {
 function BranchRow({ branch }: { branch: ProjectBranch }) {
   return (
     <div className="flex items-center justify-start gap-2 py-0.5">
-      <GitBranch className="text-muted-foreground size-4 shrink-0" />
+      <Layers className="text-muted-foreground size-4 shrink-0" />
 
       <div className="flex flex-col items-start gap-0">
         {branch.subject && (
@@ -182,7 +183,7 @@ export function OpenChangeRequestDialog({
       },
       {
         onSuccess: (cr) => {
-          successToast(`Opened change request #${cr.number}`);
+          successToast(`Change #${cr.number} proposed for review`);
           onOpenChange(false);
           onCreated?.(cr.cr_id);
         },
@@ -379,7 +380,7 @@ export function OpenChangeRequestDialog({
                 disabled={!canSubmit || openMutation.isPending}
                 onClick={handleSubmit}
               >
-                {openMutation.isPending && <Loader2 className="mr-2 size-3.5 animate-spin" />}
+                {openMutation.isPending && <Loading className="size-3.5 shrink-0" />}
                 {tHardcodedUi.raw(
                   'featuresProjectFilesComponentsOpenChangeRequestDialog.line386JsxTextOpenChangeRequest',
                 )}

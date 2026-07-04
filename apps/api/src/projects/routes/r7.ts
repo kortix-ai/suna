@@ -1,3 +1,4 @@
+import { recordSessionToolApproval } from '../../executor/db-deps';
 import { isSessionVisibleTo, loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../executor/share';
 import {
   PROJECT_ACTIONS,
@@ -23,6 +24,8 @@ import { addSecretResourceGrant, listSecretResourceGrants, removeSecretResourceG
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
 import { createSession, deleteSession } from '../session-lifecycle';
+import { requireEntitlement } from '../../accounts/iam/helpers';
+import { accountHasEntitlement } from '../../billing/services/entitlements';
 
 function parseBoundedPositiveInt(
   raw: string | undefined,
@@ -166,15 +169,22 @@ projectsApp.openapi(
   // threaded and the agent-grant fold fires: an agent-session token must also
   // hold project.members.manage to mutate group grants, not just its user.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+  // Group→project grants are part of the Enterprise RBAC surface (groups are
+  // gated in accounts/iam/groups.ts); gate the mutation here too so grants
+  // can't be minted through the project-scoped path.
+  {
+    const denied = await requireEntitlement(c, loaded.row.accountId, 'rbac');
+    if (denied) return denied;
+  }
 
   const body = await readBody(c);
   const groupId = normalizeString(body.group_id ?? body.groupId);
-  // parseProjectRole folds the legacy `viewer` alias into `user`, so a grant
-  // is never persisted with the retired role.
+  // parseProjectRole folds the legacy `viewer`/`user` aliases into `member`, so
+  // a grant is never persisted with a retired role.
   const role = parseProjectRole(body.role);
   if (!groupId) return c.json({ error: 'group_id is required' }, 400);
   if (!role) {
-    return c.json({ error: 'role must be manager, editor, or user' }, 400);
+    return c.json({ error: 'role must be manager, editor, or member' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
@@ -246,11 +256,18 @@ projectsApp.openapi(
   // threaded and the agent-grant fold fires: an agent-session token must also
   // hold project.members.manage to mutate group grants, not just its user.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+  // Enterprise RBAC gate — same reasoning as the POST above. DELETE below is
+  // deliberately ungated: revoking access is never paywalled, so a downgraded
+  // account can always detach grants it can no longer manage.
+  {
+    const denied = await requireEntitlement(c, loaded.row.accountId, 'rbac');
+    if (denied) return denied;
+  }
 
   const body = await readBody(c);
   const role = parseProjectRole(body.role);
   if (!role) {
-    return c.json({ error: 'role must be manager, editor, or user' }, 400);
+    return c.json({ error: 'role must be manager, editor, or member' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
@@ -595,7 +612,8 @@ projectsApp.openapi(
 // verdict, who acted, and (for approvals) who resolved it. This is the enterprise
 // "what did the agent actually do" trail, read straight from executor_executions.
 // Same visibility gate as the session detail/transcript (project read + the
-// session must be visible to the caller).
+// session must be visible to the caller). Non-Enterprise accounts get only the
+// unresolved pending approvals (never a 402 — see the entitlement note below).
 
 projectsApp.openapi(
   createRoute({
@@ -625,6 +643,15 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const visible = await loadVisibleSession(loaded, sessionId);
     if (!visible) return c.json({ error: 'Not found' }, 404);
+    // The historical trail is Enterprise (`auditAccess`), but this endpoint is
+    // also the approval CONTROL PLANE: write/destructive connector actions
+    // default to require_approval on every tier (executor/policy.ts), the web
+    // app polls this route from every open session to render the approval
+    // prompt, and it is the launcher's only view of what's blocking the run.
+    // A 402 here breaks approvals for every non-Enterprise account (and toasts
+    // the upsell on each poll) — so unentitled accounts degrade to unresolved
+    // pending approvals only instead of being denied.
+    const audited = await accountHasEntitlement(loaded.row.accountId, 'auditAccess');
 
     const rows = await db
       .select({
@@ -640,7 +667,19 @@ projectsApp.openapi(
         resolvedAt: executorExecutions.resolvedAt,
       })
       .from(executorExecutions)
-      .where(and(eq(executorExecutions.projectId, projectId), eq(executorExecutions.sessionId, sessionId)))
+      .where(
+        and(
+          eq(executorExecutions.projectId, projectId),
+          eq(executorExecutions.sessionId, sessionId),
+          ...(audited
+            ? []
+            : [
+                eq(executorExecutions.status, 'pending_approval'),
+                isNull(executorExecutions.approvedBy),
+                isNull(executorExecutions.resolvedAt),
+              ]),
+        ),
+      )
       // Most-recent-first: when a busy session exceeds `limit`, keep the RECENT
       // actions (truncating oldest), not the other way round.
       .orderBy(desc(executorExecutions.createdAt))
@@ -655,6 +694,10 @@ projectsApp.openapi(
     return c.json({
       session_id: sessionId,
       agent: (visible.row.agentName as string | null) ?? null,
+      // False when the account lacks the Enterprise `auditAccess` entitlement:
+      // `actions` then contains only unresolved pending approvals, and the UI
+      // shows the upgrade path for the full trail.
+      audit_access: audited,
       count: rows.length,
       // Most-recent-first trail of every executor-gated action this session took.
       actions: rows.map((r) => ({
@@ -873,6 +916,11 @@ projectsApp.openapi(
     if (decision !== 'approve' && decision !== 'deny') {
       return c.json({ error: "decision must be 'approve' or 'deny'" }, 400);
     }
+    // 'once' (default) = approve just this call; 'session' = also stop asking for
+    // THIS connector+action for the rest of the session. Only meaningful on
+    // approve. (A policy `block` never reaches this endpoint as pending, so
+    // "allow for session" can only ever widen require_approval → run.)
+    const scope = normalizeString(body.scope) === 'session' ? 'session' : 'once';
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -881,6 +929,8 @@ projectsApp.openapi(
       .select({
         executionId: executorExecutions.executionId,
         sessionId: executorExecutions.sessionId,
+        connectorId: executorExecutions.connectorId,
+        actionPath: executorExecutions.actionPath,
         status: executorExecutions.status,
         approvedBy: executorExecutions.approvedBy,
         resolvedAt: executorExecutions.resolvedAt,
@@ -961,7 +1011,27 @@ projectsApp.openapi(
       return c.json({ error: 'Approval already resolved' }, 409);
     }
 
-    return c.json({ ok: true });
+    // "Allow for this session": record (session, connector, action) so the
+    // gateway auto-runs the same tool for the rest of the session. Best-effort +
+    // idempotent — a failure here doesn't undo the (already-committed) approval.
+    if (decision === 'approve' && scope === 'session' && row.sessionId && row.connectorId) {
+      try {
+        await recordSessionToolApproval({
+          sessionId: row.sessionId,
+          projectId,
+          connectorId: row.connectorId,
+          actionPath: row.actionPath,
+          grantedBy: loaded.userId,
+        });
+      } catch (err) {
+        console.warn('[approvals] failed to record session allow', {
+          executionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return c.json({ ok: true, scope });
   },
 );
 

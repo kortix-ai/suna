@@ -322,7 +322,7 @@ export function iamActionForProjectAccess(action: ProjectAccessAction): string {
       return 'project.read';
     case 'session':
       // Starting / running / stopping a session. Granted to every project
-      // role (a plain `user` included) so the floor role can actually use
+      // role (a plain `member` included) so the floor role can actually use
       // Kortix, while project customization stays behind project.write.
       return 'project.session.start';
     case 'write':
@@ -562,13 +562,13 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   // doesn't hand back a role — it answers yes/no. Mirror the prior
   // mapping so any code reading effectiveRole still gets sensible
   // labels: owner/admin → manager, explicit project_members row →
-  // that role, otherwise → 'user' (the engine permitted read but
+  // that role, otherwise → 'member' (the engine permitted read but
   // we don't know the exact tier).
   // For a service account there's no account role; capabilities come purely from
-  // its policies (already enforced by `verdict`). Use the safe-minimum 'user'
+  // its policies (already enforced by `verdict`). Use the safe-minimum 'member'
   // label, exactly as for a member granted access via a policy with no role tier.
   const effectiveRole =
-    (accountRole ? effectiveProjectRole(accountRole, projectRole) : projectRole) ?? 'user';
+    (accountRole ? effectiveProjectRole(accountRole, projectRole) : projectRole) ?? 'member';
   (c as any).set('accountId', row.accountId);
 
   if (action !== 'read' || roleAllows(effectiveRole as ProjectRole, 'write')) {

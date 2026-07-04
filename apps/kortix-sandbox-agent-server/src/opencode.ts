@@ -129,10 +129,14 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
         // mode (cold/Daytona) it's the real gateway base + key, as before.
         baseURL: proxyMode ? llmProxyUrl! : llmBaseUrl!,
         apiKey: proxyMode ? LLM_PROXY_PLACEHOLDER_KEY : llmApiKey!,
-        // Catalog is org-stable: prefer a baked file (lets the warm seed bake the
-        // full catalog with no per-session token), else fetch from the real
-        // gateway (needs a real base+key — only available in direct mode).
-        catalogFile: env.KORTIX_LLM_CATALOG_FILE,
+        // Catalog is org-stable, so prefer the baked file — the full model catalog
+        // ships in every image at BAKED_LLM_CATALOG_PATH. Defaulting to it means a
+        // COLD boot (Daytona + Platinum) reads the file and SKIPS the ~2.2s gateway
+        // /models fetch that otherwise gates opencode's port bind on the critical
+        // path — matching how the warm seed (KORTIX_LLM_CATALOG_FILE) already
+        // behaves. Missing/empty file → readCatalogFile returns null → the fetch
+        // (step 2) still runs as the fallback, so this only ever removes latency.
+        catalogFile: env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH,
         fetchBaseURL: llmBaseUrl,
         fetchApiKey: llmApiKey,
       }),

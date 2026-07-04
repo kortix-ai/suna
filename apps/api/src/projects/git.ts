@@ -48,6 +48,7 @@ export {
   searchRepoFileNames,
   grepRepoFiles,
   readRepoFile,
+  readManifestFromRepo,
   archiveRepoSubtree,
   getFileAtRef,
   getFileHistory,

@@ -130,6 +130,13 @@ export {
   changeRequestStatusEnum,
   changeRequests,
   changeRequestsRelations,
+  // Review Center
+  reviewItemKindEnum,
+  reviewItemStatusEnum,
+  reviewItemRiskEnum,
+  reviewItemSourceEnum,
+  reviewItems,
+  reviewItemsRelations,
   // IAM
   accountGroupSourceEnum,
   accountGroups,
@@ -169,6 +176,7 @@ export {
   executorProjectPolicies,
   executorProjectSettings,
   executorExecutions,
+  sessionToolApprovals,
   executorConnectorsRelations,
   executorConnectorActionsRelations,
   executorConnectorPoliciesRelations,

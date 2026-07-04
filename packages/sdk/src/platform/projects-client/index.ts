@@ -23,6 +23,7 @@ export * from './channels';
 export * from './gateway';
 export * from './apps';
 export * from './transcription';
+export * from './review';
 
 // Cross-cutting types that originally lived in this module. Re-exported
 // explicitly (not the internal `unwrap` helper) to keep the surface identical.

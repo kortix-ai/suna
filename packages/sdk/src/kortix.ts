@@ -321,6 +321,10 @@ export function createKortix(config: KortixPlatformConfig) {
         forgetReady();
         return P.restartProjectSession(projectId, sessionId);
       },
+      stop: () => {
+        forgetReady();
+        return P.stopProjectSession(projectId, sessionId);
+      },
       setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) =>
         P.setProjectSessionSharing(projectId, sessionId, intent),
       previews: () => P.getSessionPreviewCandidates(projectId, sessionId),

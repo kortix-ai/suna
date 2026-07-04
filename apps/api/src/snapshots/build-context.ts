@@ -73,6 +73,23 @@ export interface StagedContext {
 }
 
 /**
+ * Per-project COLD warm: bake the project's repo checkout into /workspace at
+ * build time. Passed straight through to the Dockerfile layer, which clones the
+ * repo (build-time creds, one RUN) and skips the /workspace wipe. Omit for the
+ * shared, project-independent default image.
+ */
+export interface WarmRepoContext {
+  /** Upstream URL to clone from at BUILD time (real git host or proxy). */
+  cloneUrl: string;
+  /** Auth headers for the build-time clone (git -c http.extraHeader). */
+  cloneHeaders: Record<string, string>;
+  /** Branch to check out (default-branch tip). */
+  branch: string;
+  /** Proxy origin the baked checkout's `origin` resets to (runtime re-auth). */
+  originUrl: string;
+}
+
+/**
  * Stage a build context for `snapshotName` from the user's Dockerfile. Returns
  * the temp dir + composed Dockerfile path. The CALLER is responsible for
  * removing contextDir when done.
@@ -80,6 +97,7 @@ export interface StagedContext {
 export async function stageBuildContext(
   snapshotName: string,
   userDockerfile: string,
+  warmRepo?: WarmRepoContext,
 ): Promise<StagedContext> {
   const AGENT_BIN_PATH = agentBinPath();
   const CLI_BIN_PATH = cliBinPath();
@@ -161,6 +179,7 @@ export async function stageBuildContext(
     executorSdkPath: 'kortix-executor-sdk',
     opencodeConfigPath,
     catalogPath: 'kortix-llm-catalog.json',
+    warmRepo,
   });
 
   // ── Buildah-portability guard ──────────────────────────────────────────────

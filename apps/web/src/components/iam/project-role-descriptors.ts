@@ -25,17 +25,17 @@ export interface ProjectRoleDescriptor {
 }
 
 export const PROJECT_ROLE_DESCRIPTORS: Record<ProjectRole, ProjectRoleDescriptor> = {
-  user: {
-    label: 'User',
+  member: {
+    label: 'Member',
     blurb: 'Read + run sessions and chat, plus fire the project’s triggers.',
     summary:
       'The floor role for using the project: read everything, run sessions, chat with the agent, and fire its triggers on demand. Can’t edit, deploy, change config, or manage members.',
   },
   editor: {
     label: 'Editor',
-    blurb: 'Everything a user does, plus edit and customize the project.',
+    blurb: 'Everything a member does, plus edit and customize the project.',
     summary:
-      'Everything a user can do, plus edit the project, deploy, and create or delete triggers. Cannot invite members, change member roles, or delete the project.',
+      'Everything a member can do, plus edit the project, deploy, and create or delete triggers. Cannot invite members, change member roles, or delete the project.',
   },
   manager: {
     label: 'Manager',
@@ -46,7 +46,7 @@ export const PROJECT_ROLE_DESCRIPTORS: Record<ProjectRole, ProjectRoleDescriptor
 };
 
 /** Ordered low → high. Useful for rendering dropdowns consistently. */
-export const PROJECT_ROLES_ASCENDING: ProjectRole[] = ['user', 'editor', 'manager'];
+export const PROJECT_ROLES_ASCENDING: ProjectRole[] = ['member', 'editor', 'manager'];
 
 export interface AccountRoleDescriptor {
   label: string;

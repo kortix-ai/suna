@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { envSpecFromManifest, lintManifest, loadLocalManifest } from '../manifest';
 import { parse as parseToml } from 'smol-toml';
+import { envSpecFromManifest, lintManifest, loadLocalManifest } from '../manifest';
 
 function lintToml(toml: string) {
   return lintManifest(parseToml(toml) as Record<string, unknown>);
@@ -140,5 +140,51 @@ describe('loadLocalManifest', () => {
   test('throws on a TOML syntax error', () => {
     writeFileSync(join(dir, 'kortix.toml'), `kortix_version = = 1\n`);
     expect(() => loadLocalManifest(dir)).toThrow();
+  });
+
+  test('reads a kortix.yaml and reports its format', () => {
+    writeFileSync(
+      join(dir, 'kortix.yaml'),
+      `kortix_version: 1\nenv:\n  required: [FOO]\n  optional: [bar]\n`,
+    );
+    const m = loadLocalManifest(dir);
+    expect(m).not.toBeNull();
+    expect(m!.format).toBe('yaml');
+    expect(m!.path.endsWith('kortix.yaml')).toBe(true);
+    expect(m!.env.required).toEqual(['FOO']);
+    expect(m!.env.optional).toEqual(['BAR']);
+  });
+
+  test('prefers kortix.yaml when both files exist', () => {
+    writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n[project]\nname = "from-toml"\n`);
+    writeFileSync(join(dir, 'kortix.yaml'), `kortix_version: 1\nproject:\n  name: from-yaml\n`);
+    const m = loadLocalManifest(dir);
+    expect(m!.format).toBe('yaml');
+    expect((m!.data.project as { name: string }).name).toBe('from-yaml');
+  });
+});
+
+describe('manifest-edit guards yaml', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'kortix-edit-'));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('structural edits refuse a kortix.yaml project (no corruption)', async () => {
+    const { appendArrayBlock } = await import('../manifest-edit');
+    writeFileSync(join(dir, 'kortix.yaml'), `kortix_version: 1\nproject:\n  name: demo\n`);
+    expect(() => appendArrayBlock('triggers', { slug: 'x', type: 'cron' }, dir)).toThrow(
+      /kortix\.yaml.*not supported/i,
+    );
+  });
+
+  test('structural edits still work on a kortix.toml project', async () => {
+    const { appendArrayBlock, arrayEntryExists } = await import('../manifest-edit');
+    writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n`);
+    appendArrayBlock('triggers', { slug: 'nightly', type: 'cron' }, dir);
+    expect(arrayEntryExists('triggers', 'slug', 'nightly', dir)).toBe(true);
   });
 });

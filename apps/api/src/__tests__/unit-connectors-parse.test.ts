@@ -174,6 +174,55 @@ spec = ".kortix/executor/internal.http.toml"
   });
 });
 
+describe('[[connectors]] — agent_scope (connector-side agent gate)', () => {
+  test('parses agent_scope into a deduped name list; toml round-trips', () => {
+    const { specs, errors } = parseAndExtract(`
+[[connectors]]
+slug = "github"
+provider = "http"
+base_url = "https://api.github.com"
+agent_scope = ["pr-bot", "release-bot", "pr-bot"]
+`);
+    expect(errors).toEqual([]);
+    expect(specs[0]!.agentScope).toEqual(['pr-bot', 'release-bot']);
+    // Round-trips back to the [[connectors]] block.
+    expect(connectorSpecToTomlEntry(specs[0]!).agent_scope).toEqual(['pr-bot', 'release-bot']);
+  });
+
+  test('omitted / empty agent_scope = all agents (null), and is not emitted', () => {
+    const { specs } = parseAndExtract(`
+[[connectors]]
+slug = "a"
+provider = "http"
+base_url = "https://x.test"
+`);
+    expect(specs[0]!.agentScope).toBeNull();
+    expect(connectorSpecToTomlEntry(specs[0]!)).not.toHaveProperty('agent_scope');
+
+    const { specs: emptySpecs } = parseAndExtract(`
+[[connectors]]
+slug = "b"
+provider = "http"
+base_url = "https://x.test"
+agent_scope = []
+`);
+    expect(emptySpecs[0]!.agentScope).toBeNull();
+  });
+
+  test('agent_scope is NOT in the manifest hash (a scope change is a cheap reconcile, no catalog re-fetch)', () => {
+    const base = `
+[[connectors]]
+slug = "c"
+provider = "http"
+base_url = "https://x.test"
+`;
+    const scoped = `${base}agent_scope = ["only-me"]\n`;
+    const h1 = manifestHashForConnector(parseAndExtract(base).specs[0]!);
+    const h2 = manifestHashForConnector(parseAndExtract(scoped).specs[0]!);
+    expect(h1).toBe(h2);
+  });
+});
+
 describe('[[connectors]] — credential mode', () => {
   test('defaults: pipedream → per_user, others → shared', () => {
     const pd = parseAndExtract(`

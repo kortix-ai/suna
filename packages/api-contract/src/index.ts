@@ -51,6 +51,7 @@ export const ExperimentalFeatureMapSchema = z.object({
   agentmail_email: z.boolean(),
   meet: z.boolean(),
   llm_gateway: z.boolean(),
+  review_center: z.boolean(),
 });
 export type ExperimentalFeatureMap = z.infer<typeof ExperimentalFeatureMapSchema>;
 
@@ -70,8 +71,8 @@ export const ExperimentalFeatureViewSchema = z.object({
 });
 export type ExperimentalFeatureView = z.infer<typeof ExperimentalFeatureViewSchema>;
 
-/** Assignable project roles (`viewer` is deprecated and no longer emitted). */
-export const PROJECT_ROLES = ['manager', 'editor', 'user'] as const;
+/** Assignable project roles (`user`/`viewer` are deprecated and no longer emitted). */
+export const PROJECT_ROLES = ['manager', 'editor', 'member'] as const;
 export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
 export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
 
@@ -303,6 +304,11 @@ export const SecretSchema = z.object({
   configured: z.boolean(),
   share_scope: z.enum(['project', 'restricted']),
   sharing: SharingIntentSchema.nullable(),
+  /** Which agents may use this secret. null / [] = ALL agents (default); a list
+   *  of agent names restricts it to those agents' sessions. The single access
+   *  control the Secrets page exposes now that per-member "only me" is retired.
+   *  Nullish for back-compat with older API builds that predate the field. */
+  agent_scope: z.array(z.string()).nullish(),
   usable_by_me: z.boolean(),
   /** Provenance for `usable_by_me`: the agent(s) the caller is assigned to that
    *  declare this secret (the "assign human → agent" inheritance pyramid).

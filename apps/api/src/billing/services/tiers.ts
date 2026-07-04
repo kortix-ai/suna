@@ -154,8 +154,8 @@ export function getComputeDescription(serverType: string): string {
 // Enterprise feature gates. Every self-serve tier (Free / Team) gets NONE;
 // the sales-assigned `enterprise` tier gets ALL. See TierEntitlements in
 // ../../types and the requireEntitlement() guard in the IAM routes.
-const NO_ENTERPRISE: TierEntitlements = { sso: false, scim: false };
-const ALL_ENTERPRISE: TierEntitlements = { sso: true, scim: true };
+const NO_ENTERPRISE: TierEntitlements = { sso: false, scim: false, rbac: false, auditAccess: false };
+const ALL_ENTERPRISE: TierEntitlements = { sso: true, scim: true, rbac: true, auditAccess: true };
 
 const TIERS: Record<string, TierConfig> = {
   none: {

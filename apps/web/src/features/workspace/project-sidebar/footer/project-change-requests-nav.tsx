@@ -1,6 +1,7 @@
 'use client';
 
-import { ArrowRight, GitBranch, GitPullRequest } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { ArrowRight, FileDiff } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useMemo, useState } from 'react';
 
@@ -12,6 +13,8 @@ import { ChangeRequestDetailDialog } from '@/features/project-files/components/c
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useChangeRequests } from '@/features/project-files/hooks/use-change-requests';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { getProjectDetail } from '@kortix/sdk/projects-client';
+import { useCustomizeStore } from '@/stores/customize-store';
 
 interface CrController {
   crs: ChangeRequest[];
@@ -61,8 +64,8 @@ function OpenCrChooser({
     <div className="w-full overflow-hidden py-1">
       <div className="border-border flex items-center justify-between gap-3 border-b px-3.5 py-1.5">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="grid size-8 shrink-0 place-items-center rounded-md bg-emerald-500/10 text-emerald-600">
-            <GitPullRequest className="size-4" />
+          <span className="bg-kortix-green/10 text-kortix-green grid size-8 shrink-0 place-items-center rounded-md">
+            <FileDiff className="size-4" />
           </span>
           <div className="min-w-0">
             <h3 className="text-foreground truncate text-sm font-medium">
@@ -98,16 +101,10 @@ function OpenCrChooser({
                 </span>
               </div>
               <div className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
-                <GitBranch className="size-3 shrink-0" />
-                <span className="truncate font-mono">{cr.head_ref.slice(0, 7)}</span>
-                <span className="text-muted-foreground/60">→</span>
-                {cr.base_ref === 'main' ? (
-                  <Badge variant="kortix" size="xs">
-                    {cr.base_ref.slice(0, 7)}
-                  </Badge>
-                ) : (
-                  <span className="shrink-0 truncate font-mono">{cr.base_ref}</span>
-                )}
+                <span className="shrink-0">into</span>
+                <Badge variant="kortix" size="xs" className="truncate">
+                  {cr.base_ref}
+                </Badge>
               </div>
             </div>
             <ArrowRight className="text-muted-foreground/50 group-hover:text-foreground size-3.5 shrink-0 transition-colors" />
@@ -118,30 +115,50 @@ function OpenCrChooser({
   );
 }
 
-function NavItemInner() {
+function NavItemInner({ projectId }: { projectId: string }) {
   const c = useOpenCrController();
   const isMobile = useIsMobile();
+  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  // When the Review Center is enabled for this project, this pill becomes the
+  // single entry point into the unified inbox (Customize → Review) — change
+  // requests, approvals and agent outputs all live in one place — instead of
+  // opening a single CR's detail dialog.
+  const detail = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    enabled: !!projectId,
+    staleTime: 60_000,
+  });
+  const reviewEnabled = detail.data?.project?.experimental?.review_center ?? false;
 
   if (c.count === 0) return null;
 
-  const label = c.count === 1 ? 'Review change' : 'Review changes';
+  const label = reviewEnabled ? 'Review' : c.count === 1 ? 'Review change' : 'Review changes';
   const baseRef = c.crs[0]?.base_ref ?? '';
 
   const menuButton = (
     <SidebarMenuButton
       variant="success"
       className="text-sm! font-medium [&_svg]:size-4!"
-      onClick={c.count === 1 ? () => c.openCr(c.crs[0].cr_id) : undefined}
+      onClick={
+        reviewEnabled
+          ? () => openCustomize('review')
+          : c.count === 1
+            ? () => c.openCr(c.crs[0].cr_id)
+            : undefined
+      }
     >
-      <GitPullRequest />
+      <FileDiff />
       <span>{label}</span>
       <span className="ml-auto pr-1 text-xs tabular-nums">{c.count}</span>
     </SidebarMenuButton>
   );
 
+  // Review on → always one button into the inbox. Review off → keep the existing
+  // CR shortcut (button for a single CR, popover chooser for several).
   return (
     <SidebarMenuItem>
-      {c.count === 1 ? (
+      {reviewEnabled || c.count === 1 ? (
         menuButton
       ) : (
         <Popover open={c.listOpen} onOpenChange={c.setListOpen}>
@@ -157,7 +174,9 @@ function NavItemInner() {
         </Popover>
       )}
 
-      <ChangeRequestDetailDialog crId={c.selectedCrId} onClose={() => c.setSelectedCrId(null)} />
+      {!reviewEnabled && (
+        <ChangeRequestDetailDialog crId={c.selectedCrId} onClose={() => c.setSelectedCrId(null)} />
+      )}
     </SidebarMenuItem>
   );
 }
@@ -165,7 +184,7 @@ function NavItemInner() {
 export function ProjectChangeRequestsNavItem({ projectId }: { projectId: string }) {
   return (
     <ProjectFilesProvider value={{ projectId, ref: '' }}>
-      <NavItemInner />
+      <NavItemInner projectId={projectId} />
     </ProjectFilesProvider>
   );
 }

@@ -12,6 +12,7 @@
 
 import { daytonaProvider } from './daytona';
 import { platinumProvider } from './platinum';
+import type { WarmRepoContext } from '../build-context';
 
 interface SandboxResourceSpec {
   cpu?: number;
@@ -33,6 +34,14 @@ export interface BuildableTemplate {
   slug: string;
   /** Shared platform default (vs per-project). Every template is built cold. */
   isShared?: boolean;
+  /**
+   * Per-project COLD warm: bake the project's repo checkout into /workspace at
+   * build time. Threaded straight to `stageBuildContext` → the Dockerfile layer,
+   * which clones the repo (build-time creds) and keeps /workspace. The image
+   * stays capture:'none' (no memory snapshot) — BOTH providers boot it cold.
+   * Absent for the shared default image (workspace stays empty).
+   */
+  warmRepo?: WarmRepoContext;
 }
 
 export type ProviderState =

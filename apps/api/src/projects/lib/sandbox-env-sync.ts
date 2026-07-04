@@ -8,7 +8,9 @@ import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import {
   listProjectSecretsForUser,
+  loadSecretAgentScopes,
   projectSecretsRevision,
+  secretNamesDeniedForAgent,
 } from '../secrets';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
 import { daytonaPreviewHeaders, waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
@@ -29,7 +31,7 @@ async function resolveOwnerRawEnv(
 ): Promise<Record<string, string> | null> {
   if (!sessionId) return null;
   const [row] = await db
-    .select({ createdBy: projectSessions.createdBy })
+    .select({ createdBy: projectSessions.createdBy, agentName: projectSessions.agentName })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
@@ -39,7 +41,19 @@ async function resolveOwnerRawEnv(
   // already applied here (the share model, isSecretUsableBy) — a secret shared
   // only with specific members/depts never enters the live-sync env for a user
   // outside its allow-list. Same single source of truth as session start.
-  return listProjectSecretsForUser(projectId, subject);
+  const env = await listProjectSecretsForUser(projectId, subject);
+  // Apply the SAME secret→agent scope filter as sandbox boot
+  // (buildSessionSandboxEnvVars). A hot-push must not deliver an agent-scoped
+  // secret to a session whose running agent isn't on its allow-list — otherwise
+  // a secret restricted to agent A leaks into a running agent-B sandbox on the
+  // next secret update / per-prompt sync. All-agents secrets are never denied.
+  const agentScopes = await loadSecretAgentScopes(projectId);
+  if (agentScopes.size > 0) {
+    for (const name of secretNamesDeniedForAgent(agentScopes, row.agentName ?? '')) {
+      delete env[name];
+    }
+  }
+  return env;
 }
 
 export async function resolveSandboxEnvSnapshot(
