@@ -53,6 +53,7 @@ import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-sw
 import { useAdminRole } from '@/hooks/admin';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
+import { isDesktop } from '@/lib/desktop';
 import { listProjectSessions } from '@kortix/sdk/projects-client';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
@@ -73,7 +74,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HiDotsHorizontal } from 'react-icons/hi';
 import { IconType } from 'react-icons/lib';
 import { SidebarUpgradeButton, SidebarUpgradeRailItem } from './footer/project-upgrade-button';
@@ -96,6 +97,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const { state, setOpenMobile, toggleSidebar } = useSidebar();
   const isExpanded = state === 'expanded';
   const isMobile = useIsMobile();
+  // Desktop shell: no icon rail — the sidebar is either fully open or fully
+  // hidden (offcanvas), reopened from the shell's toggle next to the window
+  // controls. The expanded header carries the collapse toggle, and the resize
+  // rail hides while collapsed. Client-only tree (ProjectShell gates on
+  // auth), so reading the UA at first render is safe.
+  const [isDesktopApp] = useState(() => isDesktop());
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
 
   // Filter lives in a persisted store (keyed by project) so it survives the
@@ -173,7 +180,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
 
   return (
     <Sidebar
-      collapsible="icon"
+      collapsible={isDesktopApp ? 'offcanvas' : 'icon'}
       variant="inset"
       className="bg-sidebar [scrollbar-width:'none'] [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden"
     >
@@ -197,6 +204,18 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 <div className="w-full min-w-0">
                   <ProjectSwitcher variant="sidebar" />
                 </div>
+                {isDesktopApp && (
+                  <Hint label="Collapse sidebar" side="right">
+                    <button
+                      type="button"
+                      aria-label="Collapse sidebar"
+                      onClick={toggleSidebar}
+                      className="text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 ease-out"
+                    >
+                      <PanelLeft className="cn-rtl-flip size-4" />
+                    </button>
+                  </Hint>
+                )}
               </motion.div>
             ) : (
               <motion.div
@@ -369,7 +388,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
         <UserMenu user={user} variant="sidebar" />
       </SidebarFooter>
 
-      <SidebarRail />
+      {/* Desktop: no resize rail while collapsed — the icon rail is fixed-width
+          and the handle reads as clutter next to the traffic lights. */}
+      {(isExpanded || !isDesktopApp) && <SidebarRail />}
     </Sidebar>
   );
 }

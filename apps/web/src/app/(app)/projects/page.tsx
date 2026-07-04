@@ -359,7 +359,7 @@ export default function ProjectsPage() {
       <main className="ring-input bg-background px-mobile flex-1 rounded-t-xl py-10 ring sm:py-12">
         <div className="mx-auto w-full max-w-6xl space-y-8">
           <SunaMigrationBanner accountId={activeAccountId} />
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="kx-fade-up flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0 space-y-1">
               <h1 className="text-foreground text-2xl font-semibold tracking-tight sm:text-3xl">
                 Projects
@@ -421,7 +421,7 @@ export default function ProjectsPage() {
               {showProjectsLoading && (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {PROJECT_SKELETON_KEYS.map((key) => (
-                    <Skeleton key={key} className="h-[92px] rounded-2xl" />
+                    <Skeleton key={key} className="h-[92px] rounded-lg" />
                   ))}
                 </div>
               )}
@@ -482,7 +482,7 @@ export default function ProjectsPage() {
               )}
 
               {(filtered.length > 0 || legacyMachines.length > 0) && (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="kx-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {legacyMachines.map((machine) => (
                     <LegacyMachineCard
                       key={machine.sandbox_id}
@@ -514,7 +514,7 @@ export default function ProjectsPage() {
               {showAllLoading && (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {PROJECT_SKELETON_KEYS.map((key) => (
-                    <Skeleton key={key} className="h-[92px] rounded-2xl" />
+                    <Skeleton key={key} className="h-[92px] rounded-lg" />
                   ))}
                 </div>
               )}
@@ -559,7 +559,7 @@ export default function ProjectsPage() {
               )}
 
               {!showAllLoading && legacyMachines.length > 0 && (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="kx-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {legacyMachines.map((machine) => (
                     <LegacyMachineCard
                       key={machine.sandbox_id}
@@ -576,15 +576,17 @@ export default function ProjectsPage() {
 
               {!showAllLoading &&
                 accountGroups.map((group) => (
-                  <section key={group.account.account_id} className="space-y-4">
+                  <section key={group.account.account_id} className="kx-fade-up space-y-4">
                     <div className="flex items-center gap-2.5">
                       <EntityAvatar label={group.account.name || 'Account'} size="sm" />
                       <h2 className="text-foreground text-sm font-semibold tracking-tight">
                         {group.account.name || 'Account'}
                       </h2>
-                      <span className="text-muted-foreground text-xs">{group.projects.length}</span>
+                      <span className="text-muted-foreground text-xs tabular-nums">
+                        {group.projects.length}
+                      </span>
                     </div>
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="kx-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       {group.projects.map((project) => (
                         <ProjectCard
                           key={project.project_id}

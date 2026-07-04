@@ -730,6 +730,59 @@
   animation: stream-char-reveal 150ms ease-out forwards;
 }
 
+/* Page-enter motion: soft fade-up for standalone pages (/projects). `both`
+   keeps delayed elements hidden until their turn. Stagger delays are capped
+   so long lists never feel slow — everything past the sixth child enters
+   together. */
+@keyframes kx-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.kx-fade-up,
+.kx-stagger > * {
+  animation: kx-fade-up 300ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+.kx-stagger > :nth-child(2) {
+  animation-delay: 40ms;
+}
+.kx-stagger > :nth-child(3) {
+  animation-delay: 80ms;
+}
+.kx-stagger > :nth-child(4) {
+  animation-delay: 120ms;
+}
+.kx-stagger > :nth-child(5) {
+  animation-delay: 160ms;
+}
+.kx-stagger > :nth-child(n + 6) {
+  animation-delay: 200ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kx-fade-up,
+  .kx-stagger > * {
+    animation-name: kx-fade;
+    animation-delay: 0ms;
+  }
+}
+
+@keyframes kx-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @keyframes blur-fade-in {
   from {
     opacity: 0;
@@ -1029,13 +1082,10 @@ html[data-desktop='true'] [data-side='right'] [data-sidebar='header'] {
 html[data-desktop-platform='macos'] [data-side='right'] [data-sidebar='header'] {
   height: 40px !important;
 }
-/* Collapsed sidebar's icon-mode rail: bumped from 3.25rem (52px) to
-   4.5rem (72px) on desktop only, so it's wide enough to fully contain
-   the macOS traffic lights (~70px wide) without them spilling onto the
-   inset. Expanded sidebar width is unchanged (web parity). */
-html[data-desktop='true'] [data-slot='sidebar-wrapper'] {
-  --sidebar-width-icon: 4.5rem;
-}
+/* Desktop has no collapsed icon rail: the project sidebar switches to
+   `collapsible="offcanvas"` in the shell (project-sidebar.tsx), so a
+   collapsed sidebar is fully hidden and reopened from the shell toggle
+   next to the window controls. Web keeps the icon rail. */
 /* The inset's title-bar row is the tab bar (`role="tablist"`). The React
    class is h-[38px] for web. On desktop we bump to 52px to give the
    window-drag region room; macOS overrides that to 40px to line up with
@@ -1114,13 +1164,39 @@ html[data-desktop-platform='macos'] {
 }
 
 /* AppHeader (the breadcrumb bar on standalone pages like /projects, /accounts):
-   clear the OS window controls on desktop by reserving space ABOVE the header
-   (a blank strip that holds the macOS traffic lights / Win-Linux control
-   cluster), instead of indenting the header sideways. Keeps the breadcrumb
-   left-aligned and the page content at full width. `py-4` (1rem) is preserved
-   on top of the title-bar inset. */
+   Win/Linux shells clear the OS window controls by reserving space ABOVE the
+   header (a blank strip that holds the control cluster). */
 html[data-desktop='true'] .kx-app-header {
   padding-top: calc(var(--kx-titlebar-inset) + 1rem);
+}
+/* macOS: no reserved strip — the header row shares the title-bar band with
+   the traffic lights (same Linear-style approach as the workspace tab bar).
+   The band is a fixed 60px with content flex-centered, so the row sits on
+   the exact same line as the lights (center y≈30, pixel-calibrated against
+   real macOS 26 screenshots — Tahoe draws ~14pt lights lower than the
+   classic geometry). The left indent clears the ~80px light gutter only
+   while the centered max-w-6xl container would underlap it; on wide windows
+   it falls back to the web's px-mobile values (1.5rem below xl, 0 at xl+)
+   so the header stays aligned with the page. */
+html[data-desktop-platform='macos'] .kx-app-header {
+  min-height: 60px;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: max(1.5rem, calc(84px - max(0px, (100vw - 72rem) / 2)));
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+@media (min-width: 1280px) {
+  html[data-desktop-platform='macos'] .kx-app-header {
+    padding-left: max(0px, calc(84px - (100vw - 72rem) / 2));
+  }
+}
+html[data-desktop-platform='macos'] .kx-app-header button,
+html[data-desktop-platform='macos'] .kx-app-header a,
+html[data-desktop-platform='macos'] .kx-app-header input,
+html[data-desktop-platform='macos'] .kx-app-header [role='button'] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 /* Reusable title-bar spacer: a blank, draggable strip the height of the OS
