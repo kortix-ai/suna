@@ -13,7 +13,15 @@ let questionRejectImpl: (args: unknown) => Promise<{ data?: unknown; error?: unk
 let sessionPromptImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
   async () => ({ data: {} });
 
+class RuntimeNotReadyError extends Error {
+  constructor(message = '[opencode-sdk] Server URL not ready — sandbox is still loading') {
+    super(message);
+    this.name = 'RuntimeNotReadyError';
+  }
+}
+
 mock.module('../opencode/client', () => ({
+  RuntimeNotReadyError,
   getClient: () => ({
     permission: { reply: (args: unknown) => permissionReplyImpl(args) },
     question: {
@@ -142,6 +150,13 @@ describe('classifySendError', () => {
   test('classifies a runtime-not-ready error from getClient()', () => {
     const err = new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
     expect(classifySendError(err).kind).toBe('runtime-not-ready');
+  });
+
+  test('classifies a RuntimeNotReadyError via instanceof, even with a non-matching message', () => {
+    const err = new RuntimeNotReadyError('totally different wording');
+    const result = classifySendError(err);
+    expect(result.kind).toBe('runtime-not-ready');
+    expect(result.cause).toBe(err);
   });
 
   test('classifies a 402-shaped error as billing', () => {

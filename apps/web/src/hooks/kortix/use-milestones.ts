@@ -15,68 +15,23 @@ import {
   useQueryClient,
   keepPreviousData,
 } from '@tanstack/react-query';
-import { authenticatedFetch } from '@/lib/auth-token';
 import { useServerStore } from '@/stores/server-store';
-import type { Ticket } from './use-kortix-tickets';
+import {
+  listMilestones,
+  getMilestone,
+  listMilestoneEvents,
+  createMilestone,
+  updateMilestone,
+  closeMilestone,
+  reopenMilestone,
+  deleteMilestone,
+  updateTicket,
+} from '@kortix/sdk/opencode-client';
+import type { MilestoneStatus, MilestoneProgress, Milestone, MilestoneDetail, MilestoneEvent } from '@kortix/sdk/opencode-client';
 
-export type MilestoneStatus = 'open' | 'closed' | 'cancelled';
-
-export interface MilestoneProgress {
-  total: number;
-  done: number;
-  in_progress: number;
-  blocked: number;
-  review: number;
-  other: number;
-}
-
-export interface Milestone {
-  id: string;
-  project_id: string;
-  number: number;
-  title: string;
-  description_md: string;
-  acceptance_md: string;
-  status: MilestoneStatus;
-  due_at: string | null;
-  completed_at: string | null;
-  closed_by_type: 'user' | 'agent' | 'system' | null;
-  closed_by_id: string | null;
-  created_by_type: 'user' | 'agent' | 'system';
-  created_by_id: string | null;
-  color_hue: number | null;
-  icon: string | null;
-  created_at: string;
-  updated_at: string;
-  progress: MilestoneProgress;
-  percent_complete: number;
-}
-
-export interface MilestoneDetail extends Milestone {
-  tickets: Ticket[];
-}
-
-export interface MilestoneEvent {
-  id: string;
-  milestone_id: string;
-  project_id: string;
-  actor_type: 'user' | 'agent' | 'system';
-  actor_id: string | null;
-  type: string;
-  message: string | null;
-  payload_json: string | null;
-  created_at: string;
-}
-
-async function kfetch<T>(serverUrl: string, apiPath: string, init?: RequestInit): Promise<T> {
-  const url = `${serverUrl.replace(/\/+$/, '')}${apiPath}`;
-  const res = await authenticatedFetch(url, init);
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Kortix API ${res.status}: ${text.slice(0, 300)}`);
-  }
-  return res.json();
-}
+// The request/response shapes live in the SDK now (`@kortix/sdk/opencode-client`);
+// re-exported here for existing importers.
+export type { MilestoneStatus, MilestoneProgress, Milestone, MilestoneDetail, MilestoneEvent };
 
 export const milestoneKeys = {
   list: (pid?: string, status: 'open' | 'closed' | 'all' = 'all') => ['kortix', 'milestones', pid ?? '', status] as const,
@@ -90,8 +45,7 @@ export function useMilestones(projectId?: string, statusFilter: 'open' | 'closed
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<Milestone[]>({
     queryKey: milestoneKeys.list(projectId, statusFilter),
-    queryFn: () =>
-      kfetch<Milestone[]>(serverUrl, `/kortix/projects/${encodeURIComponent(projectId!)}/milestones?status=${statusFilter}`),
+    queryFn: () => listMilestones(serverUrl, projectId!, statusFilter),
     enabled: !!projectId,
     refetchInterval: 5000,
     refetchIntervalInBackground: false,
@@ -103,8 +57,7 @@ export function useMilestone(projectId?: string, ref?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<MilestoneDetail>({
     queryKey: milestoneKeys.detail(projectId ?? '', ref ?? ''),
-    queryFn: () =>
-      kfetch<MilestoneDetail>(serverUrl, `/kortix/projects/${encodeURIComponent(projectId!)}/milestones/${encodeURIComponent(ref!)}`),
+    queryFn: () => getMilestone(serverUrl, projectId!, ref!),
     enabled: !!projectId && !!ref,
     refetchInterval: 5000,
     refetchIntervalInBackground: false,
@@ -116,8 +69,7 @@ export function useMilestoneEvents(projectId?: string, ref?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<MilestoneEvent[]>({
     queryKey: milestoneKeys.events(projectId ?? '', ref ?? ''),
-    queryFn: () =>
-      kfetch<MilestoneEvent[]>(serverUrl, `/kortix/projects/${encodeURIComponent(projectId!)}/milestones/${encodeURIComponent(ref!)}/events`),
+    queryFn: () => listMilestoneEvents(serverUrl, projectId!, ref!),
     enabled: !!projectId && !!ref,
     refetchInterval: 5000,
     placeholderData: keepPreviousData,
@@ -140,12 +92,7 @@ export function useCreateMilestone() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
   return useMutation<Milestone, Error, CreateMilestoneInput>({
-    mutationFn: ({ projectId, ...body }) =>
-      kfetch<Milestone>(serverUrl, `/kortix/projects/${encodeURIComponent(projectId)}/milestones`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }),
+    mutationFn: ({ projectId, ...body }) => createMilestone(serverUrl, projectId, body),
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.projectId] });
     },
@@ -162,12 +109,7 @@ export function useUpdateMilestone() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
   return useMutation<Milestone, Error, UpdateMilestoneInput>({
-    mutationFn: ({ projectId, ref, patch }) =>
-      kfetch<Milestone>(serverUrl, `/kortix/projects/${encodeURIComponent(projectId)}/milestones/${encodeURIComponent(ref)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      }),
+    mutationFn: ({ projectId, ref, patch }) => updateMilestone(serverUrl, projectId, ref, patch),
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.projectId] });
       qc.invalidateQueries({ queryKey: milestoneKeys.detail(vars.projectId, vars.ref) });
@@ -180,11 +122,7 @@ export function useCloseMilestone() {
   const qc = useQueryClient();
   return useMutation<Milestone, Error, { projectId: string; ref: string; summary_md?: string; cancelled?: boolean }>({
     mutationFn: ({ projectId, ref, summary_md, cancelled }) =>
-      kfetch<Milestone>(serverUrl, `/kortix/projects/${encodeURIComponent(projectId)}/milestones/${encodeURIComponent(ref)}/close`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ summary_md, cancelled }),
-      }),
+      closeMilestone(serverUrl, projectId, ref, { summary_md, cancelled }),
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.projectId] });
       qc.invalidateQueries({ queryKey: milestoneKeys.detail(vars.projectId, vars.ref) });
@@ -196,10 +134,7 @@ export function useReopenMilestone() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
   return useMutation<Milestone, Error, { projectId: string; ref: string }>({
-    mutationFn: ({ projectId, ref }) =>
-      kfetch<Milestone>(serverUrl, `/kortix/projects/${encodeURIComponent(projectId)}/milestones/${encodeURIComponent(ref)}/reopen`, {
-        method: 'POST',
-      }),
+    mutationFn: ({ projectId, ref }) => reopenMilestone(serverUrl, projectId, ref),
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.projectId] });
       qc.invalidateQueries({ queryKey: milestoneKeys.detail(vars.projectId, vars.ref) });
@@ -211,10 +146,7 @@ export function useDeleteMilestone() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
   return useMutation<{ ok: boolean }, Error, { projectId: string; ref: string }>({
-    mutationFn: ({ projectId, ref }) =>
-      kfetch<{ ok: boolean }>(serverUrl, `/kortix/projects/${encodeURIComponent(projectId)}/milestones/${encodeURIComponent(ref)}`, {
-        method: 'DELETE',
-      }),
+    mutationFn: ({ projectId, ref }) => deleteMilestone(serverUrl, projectId, ref),
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.projectId] });
     },
@@ -226,12 +158,7 @@ export function useSetTicketMilestone() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
   return useMutation<unknown, Error, { projectId: string; ticketId: string; milestoneId: string | null }>({
-    mutationFn: ({ ticketId, milestoneId }) =>
-      kfetch(serverUrl, `/kortix/tickets/${encodeURIComponent(ticketId)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ milestone_id: milestoneId }),
-      }),
+    mutationFn: ({ ticketId, milestoneId }) => updateTicket(serverUrl, ticketId, { milestone_id: milestoneId }),
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ['kortix', 'milestones', vars.projectId] });
       qc.invalidateQueries({ queryKey: ['kortix', 'tickets', vars.projectId] });
