@@ -48,6 +48,32 @@ export function isSecretUsableBy(
   return false;
 }
 
+/**
+ * Pure: is a connector scoped to specific agents DENIED to the running agent?
+ * The connector-side agent gate — mirror of the secret `agent_scope` (see
+ * projects/secrets.ts `secretNamesDeniedForAgent`), a DIFFERENT axis from the
+ * agent-side `[[agents]].connectors` self-narrowing (`agentMayUseConnector`).
+ *
+ *   NULL / empty scope → usable by ALL agents (never denied).
+ *   non-empty scope    → denies any agent NOT in it, INCLUDING a null /
+ *                        unidentifiable agent (fail closed: a scoped connector
+ *                        must never reach a session whose agent can't be
+ *                        confirmed in the allow-list).
+ *
+ * `agentName` is the SESSION's agent (projectSessions.agent_name) — the same
+ * source the secret gate uses — so the two axes agree on identity: e.g. the
+ * fully-privileged `default` agent is denied a connector scoped to [pr-bot],
+ * exactly as it is for a secret scoped to [pr-bot].
+ */
+export function connectorDeniedForAgent(
+  agentScope: string[] | null | undefined,
+  agentName: string | null,
+): boolean {
+  if (!agentScope || agentScope.length === 0) return false;
+  if (!agentName) return true;
+  return !agentScope.includes(agentName);
+}
+
 /** The dashboard's three sharing options, before persistence. */
 export type SharingIntent =
   | { mode: 'project' }

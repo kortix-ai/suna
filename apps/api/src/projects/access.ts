@@ -1,9 +1,10 @@
-// `user` is the floor project role. The retired `viewer` tier folded into it
-// (see parseProjectRole, which still accepts `viewer` as a legacy alias).
-export type ProjectRole = 'manager' | 'editor' | 'user';
+// `member` is the floor project role (renamed from `user`). The retired `user`
+// and `viewer` tiers fold into it (see parseProjectRole, which still accepts
+// both as legacy aliases).
+export type ProjectRole = 'manager' | 'editor' | 'member';
 export type AccountRole = 'owner' | 'admin' | 'member';
 // 'session' sits between 'read' and 'write': any project member (a plain
-// `user` included) may start and run sessions, but not customize the project.
+// `member` included) may start and run sessions, but not customize the project.
 export type ProjectAccessAction = 'read' | 'session' | 'write' | 'manage';
 
 export function isAccountManager(role: AccountRole): boolean {
@@ -13,7 +14,7 @@ export function isAccountManager(role: AccountRole): boolean {
 export function roleAllows(role: ProjectRole | null, action: ProjectAccessAction): boolean {
   if (!role) return false;
   if (action === 'read') return true;
-  // Every project role can use sessions — `user` is the base *usable* role.
+  // Every project role can use sessions — `member` is the base *usable* role.
   if (action === 'session') return true;
   if (action === 'write') return role === 'editor' || role === 'manager';
   return role === 'manager';
@@ -30,10 +31,11 @@ export function effectiveProjectRole(
 export function parseProjectRole(value: unknown): ProjectRole | null {
   if (typeof value !== 'string') return null;
   const normalized = value.trim().toLowerCase();
-  // `viewer` is a deprecated alias — fold it into `user` so legacy clients and
-  // old rows keep working, but no new `viewer` ever enters the system.
-  if (normalized === 'viewer') return 'user';
-  return normalized === 'manager' || normalized === 'editor' || normalized === 'user'
+  // `user` and `viewer` are deprecated aliases — fold both into `member` so
+  // legacy clients and old rows keep working, but no new `user`/`viewer` ever
+  // enters the system.
+  if (normalized === 'viewer' || normalized === 'user') return 'member';
+  return normalized === 'manager' || normalized === 'editor' || normalized === 'member'
     ? normalized
     : null;
 }
@@ -68,7 +70,7 @@ export interface EffectiveAccessFold {
 }
 
 const PROJECT_ROLE_RANK: Record<ProjectRole, number> = {
-  user: 1,
+  member: 1,
   editor: 2,
   manager: 3,
 };

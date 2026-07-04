@@ -364,6 +364,50 @@ describe('handleCall — policy layer', () => {
     expect(waitedOn).toBe('exec-existing');
     expect(records).toHaveLength(0); // did NOT stack a new pending row on retry
   });
+
+  test('session-allowed → require_approval RUNS without holding or re-prompting', async () => {
+    const { deps, fetchCalls } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    let waited = false;
+    deps.waitForApprovalDecision = async () => {
+      waited = true;
+      return 'approved';
+    };
+    // Exact (session, connector, action) already allowed for this session.
+    deps.isSessionToolApproved = async (sid, _cid, action) =>
+      sid === 'sess-1' && action === 'charges.create';
+    const res = await handleCall(deps, baseInput);
+    expect(res.status).toBe('ok');
+    expect(fetchCalls.length).toBeGreaterThan(0); // the call actually ran
+    expect(waited).toBe(false); // never held / re-prompted
+  });
+
+  test('session-allow for a DIFFERENT action does not bypass this one', async () => {
+    const { deps } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    deps.recordExecution = async () => 'exec-p';
+    deps.isSessionToolApproved = async (_sid, _cid, action) => action === 'charges.refund';
+    // No waiter → the still-gated call returns pending (not run).
+    expect((await handleCall(deps, baseInput)).status).toBe('pending_approval');
+  });
+
+  test('policy BLOCK is never session-allowed (the check is not even consulted)', async () => {
+    const { deps } = makeDeps({
+      policies: [{ match: '*', action: 'block' }],
+      enforcePolicies: true,
+    });
+    let consulted = false;
+    deps.isSessionToolApproved = async () => {
+      consulted = true;
+      return true; // even if it would say "allowed"
+    };
+    expect(await handleCall(deps, baseInput)).toEqual({ status: 'denied', reason: 'policy_block' });
+    expect(consulted).toBe(false); // block short-circuits before any session-allow check
+  });
 });
 
 describe('handleCall — layered policies (project → connector → default)', () => {

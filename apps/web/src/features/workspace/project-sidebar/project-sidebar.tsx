@@ -42,8 +42,12 @@ import {
 import {
   ProjectCustomizeNavItem,
   ProjectCustomizeRailItem,
+  ProjectFilesNavItem,
+  ProjectFilesRailItem,
   useCustomizeKeyboardShortcut,
 } from '@/features/workspace/project-sidebar/footer/project-customize-nav';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import {
   ProjectSandboxAlert,
   ProjectSandboxAlertRailItem,
@@ -134,6 +138,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const isAdmin = adminRoleData?.isAdmin ?? false;
 
   const accountId = useBillingAccountId();
+
+  // Customization is an editor+ capability — a plain `member` sees Files (a
+  // separate top-level entry) but not the Customize panel entry. Hide-by-default
+  // until the probe resolves so a member never even flashes the entry.
+  const canCustomize = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed;
 
   const { user: authUser } = useAuth();
   const user = useMemo(
@@ -281,7 +290,8 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             <ProjectSandboxAlertRailItem projectId={projectId} />
             <ProjectAppsRailItem projectId={projectId} />
             <ProjectChatGptConnectRailItem projectId={projectId} />
-            <ProjectCustomizeRailItem />
+            <ProjectFilesRailItem />
+            {canCustomize && <ProjectCustomizeRailItem />}
             <SidebarUpgradeRailItem accountId={accountId} />
           </div>
         </div>
@@ -376,7 +386,8 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <ProjectSandboxAlert projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectAppsNavItem projectId={projectId} />
-              <ProjectCustomizeNavItem />
+              <ProjectFilesNavItem />
+              {canCustomize && <ProjectCustomizeNavItem />}
               <ProjectChatGptConnectNavItem projectId={projectId} />
               <SidebarUpgradeButton accountId={accountId} />
             </SidebarMenu>

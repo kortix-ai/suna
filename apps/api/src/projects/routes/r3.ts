@@ -9,7 +9,7 @@ import { getTemplateById } from '../../snapshots/templates';
 import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
-import { decryptProjectSecret, encryptProjectSecret, isValidSecretName } from '../secrets';
+import { decryptProjectSecret, encryptProjectSecret, isValidSecretName, setSecretAgentScope } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { resolveInheritedResourceNames } from '../lib/agent-inheritance';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
@@ -519,6 +519,24 @@ projectsApp.openapi(
     }
   }
 
+  // Optional agent allowlist — the secret-side "which agents may use this"
+  // control. `agent_scope: null | []` = all agents (default); an array of agent
+  // names restricts it to those agents' sessions. Absent (undefined) → leave
+  // as-is, so a value-only edit doesn't silently clear the scope.
+  let agentScope: string[] | null | undefined;
+  if (body.agent_scope !== undefined) {
+    if (body.agent_scope === null) {
+      agentScope = null;
+    } else if (
+      Array.isArray(body.agent_scope) &&
+      body.agent_scope.every((a: unknown) => typeof a === 'string')
+    ) {
+      agentScope = body.agent_scope as string[];
+    } else {
+      return c.json({ error: 'agent_scope must be null or an array of agent names' }, 400);
+    }
+  }
+
   // Look up the existing SHARED row so a sharing-only edit doesn't force
   // re-entering the value. Creating a brand-new secret still requires a value.
   const [existing] = await db
@@ -567,6 +585,7 @@ projectsApp.openapi(
   }
 
   if (sharing) await setSecretSharing(secretId, sharing);
+  if (agentScope !== undefined) await setSecretAgentScope(projectId, name, agentScope);
 
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
 

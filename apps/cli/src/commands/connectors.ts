@@ -35,6 +35,8 @@ interface AdminConnector {
   actions: ConnectorAction[];
   authSecret: string | null;
   sharing: ConnectorSharing | null;
+  /** Which agents may call it. null / [] = all agents; a list = restricted. */
+  agentScope: string[] | null;
   secretSet: boolean;
 }
 
@@ -71,6 +73,9 @@ Subcommands:
                                     (or --apply to remove on the cloud now).
   rename <slug> <name…>             Set a connector's display name (applies now).
   mode <slug> <shared|per_user>     Set the profile model (applies now + re-syncs).
+  agent-scope <slug> --agents a,b   Restrict which AGENTS may call it (applies now:
+  agent-scope <slug> --all-agents   commits kortix.toml [[connectors]].agent_scope
+                                    + re-syncs). --all-agents clears the restriction.
   sync                              Reconcile the catalog from the shipped kortix.toml.
   credential <slug> [value]         Set a connector's credential (prompts if
                                     no value; reads stdin with \`-\`).
@@ -124,9 +129,12 @@ export async function runConnectors(argv: string[]): Promise<number> {
   let asStdin = false;
   let json = false;
   let applyRemote = false;
+  let allAgents = false;
   try {
     json = takeFlagBool(rest, ['--json']);
     applyRemote = takeFlagBool(rest, ['--apply']);
+    allAgents = takeFlagBool(rest, ['--all-agents']);
+    f.agents = takeFlagValue(rest, ['--agents']);
     f.project = takeFlagValue(rest, ['--project']);
     f.host = takeFlagValue(rest, ['--host']);
     f.name = takeFlagValue(rest, ['--name']);
@@ -245,7 +253,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
         }
         process.stdout.write(`\n  ${C.bold}${c.name}${C.reset} ${C.faded}(${c.slug})${C.reset}\n`);
         process.stdout.write(`  ${C.dim}provider ${C.reset}${c.provider}   ${C.dim}status ${C.reset}${statusCell(c.status)}   ${C.dim}cred ${C.reset}${c.credentialMode}${c.secretSet ? ` ${C.green}(set)${C.reset}` : ''}\n`);
-        process.stdout.write(`  ${C.dim}sharing ${C.reset}${sharingLabel(c.sharing)}\n\n`);
+        process.stdout.write(`  ${C.dim}sharing ${C.reset}${sharingLabel(c.sharing)}   ${C.dim}agents ${C.reset}${c.agentScope && c.agentScope.length ? c.agentScope.join(', ') : 'all'}\n\n`);
         if (c.actions.length === 0) {
           process.stdout.write(`  ${C.dim}No tools materialized yet — run \`kortix connectors sync\`.${C.reset}\n\n`);
           return 0;
@@ -381,6 +389,31 @@ export async function runConnectors(argv: string[]): Promise<number> {
         if (mode !== 'shared' && mode !== 'per_user') return missing('<shared|per_user>');
         await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/credential-mode`, { mode });
         process.stdout.write(`${status.ok(`Profile model for ${C.bold}${slug}${C.reset} → ${mode}`)}\n`);
+        return 0;
+      }
+      case 'agent-scope':
+      case 'agents':
+      case 'scope': {
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        // --all-agents clears the restriction (all agents); --agents a,b restricts
+        // to those agents. The API commits kortix.toml + re-syncs (toml-authoritative).
+        let agentScope: string[] | null;
+        if (allAgents) {
+          agentScope = null;
+        } else if (f.agents !== undefined) {
+          const list = splitCsv(f.agents);
+          if (list.length === 0) return missing('at least one agent (or --all-agents to clear)');
+          agentScope = list;
+        } else {
+          return missing('--agents <a,b> or --all-agents');
+        }
+        await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/agent-scope`, {
+          agent_scope: agentScope,
+        });
+        process.stdout.write(
+          `${status.ok(`${C.bold}${slug}${C.reset} → ${agentScope ? `agents: ${agentScope.join(', ')}` : 'all agents'}`)} ${C.dim}(kortix.toml + synced)${C.reset}\n`,
+        );
         return 0;
       }
       case 'apps': {

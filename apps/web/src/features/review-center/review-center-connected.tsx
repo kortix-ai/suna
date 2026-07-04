@@ -18,9 +18,9 @@ import {
   useMergeChangeRequest,
   useRequestChangesOnChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
-import type { ReviewVerdict } from '@kortix/sdk/projects-client';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { useQueryClient } from '@tanstack/react-query';
+import { type ReviewVerdict, listProjectSessions } from '@kortix/sdk/projects-client';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useMemo } from 'react';
 import { useActReviewItem, useBulkActReviewItems, useReviewItems } from './hooks/use-review-items';
@@ -36,16 +36,33 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
   const qc = useQueryClient();
   const router = useRouter();
   const closeCustomize = useCustomizeStore((s) => s.close);
-  const { data, isLoading } = useReviewItems();
+  const { data, isLoading, isFetching } = useReviewItems();
   const act = useActReviewItem();
   const bulk = useBulkActReviewItems();
   const merge = useMergeChangeRequest();
   const close = useCloseChangeRequest();
   const requestChanges = useRequestChangesOnChangeRequest();
 
+  // Session names for the per-session filter + group headers (sessionId → label).
+  // Also names the originating session in each approval's description.
+  const { data: sessions } = useQuery({
+    queryKey: ['project-sessions', projectId],
+    queryFn: () => listProjectSessions(projectId),
+    enabled: !!projectId,
+    staleTime: 30_000,
+  });
+  const sessionLabels = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const s of sessions ?? []) {
+      if (s.name) m[s.session_id] = s.name;
+    }
+    return m;
+  }, [sessions]);
+
   const items = useMemo(
-    () => (data?.review_items ?? []).map((row) => mapApiReviewItem(row, projectName)),
-    [data, projectName],
+    () =>
+      (data?.review_items ?? []).map((row) => mapApiReviewItem(row, projectName, sessionLabels)),
+    [data, projectName, sessionLabels],
   );
 
   const refreshInbox = () => qc.invalidateQueries({ queryKey: ['review-center', projectId] });
@@ -110,6 +127,8 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
     <ReviewCenter
       initialItems={items}
       isLoading={isLoading}
+      isFetching={isFetching}
+      sessionLabels={sessionLabels}
       onAct={handleAct}
       onBulkAct={(ids, verdict) =>
         bulk.mutate({ ids, verdict }, { onError: (e) => errorToast(e.message) })

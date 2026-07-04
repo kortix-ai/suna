@@ -122,9 +122,10 @@ export function useResolveApproval(projectId: string | undefined, sessionId: str
     mutationFn: ({
       executionId,
       decision,
-    }: { executionId: string; decision: 'approve' | 'deny' }) => {
+      scope = 'once',
+    }: { executionId: string; decision: 'approve' | 'deny'; scope?: 'once' | 'session' }) => {
       if (!projectId) throw new Error('No project in context');
-      return resolveApproval(projectId, executionId, decision);
+      return resolveApproval(projectId, executionId, decision, scope);
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: sessionAuditKey(projectId, sessionId) });
