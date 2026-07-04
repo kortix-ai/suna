@@ -25,10 +25,18 @@ import {
  */
 export function DesktopChrome() {
   const [platform, setPlatform] = useState<DesktopPlatform | null>(null);
+  // Only the Electron shell hides the native macOS traffic lights (its
+  // preload exposes this marker) — the Tauri shell keeps them, so drawing
+  // our own there would double them up.
+  const [isElectronShell, setIsElectronShell] = useState(false);
 
   useEffect(() => {
     if (!isDesktop()) return;
     setPlatform(desktopPlatform());
+    setIsElectronShell(
+      (window as unknown as { kortixDesktop?: { shell?: string } }).kortixDesktop?.shell ===
+        'electron',
+    );
 
     // Reapply persisted zoom on mount. WKWebView resets to 1.0 each launch,
     // so we always have to push the saved value back in.
@@ -66,7 +74,89 @@ export function DesktopChrome() {
   return (
     <div className="kx-desktop-chrome" aria-hidden>
       <div className="kx-desktop-drag" data-tauri-drag-region />
+      {platform === 'macos' && isElectronShell ? <MacTrafficLights /> : null}
       {platform && platform !== 'macos' ? <WindowControls /> : null}
+    </div>
+  );
+}
+
+/**
+ * Custom macOS traffic lights. The native ones render permanently gray on
+ * macOS 26 (Tahoe) for hidden-title-bar Electron windows, so the shell hides
+ * them (main.js `setWindowButtonVisibility(false)`) and we draw our own in
+ * the same zone (x 10–70, center y≈26 — the calibrated title-bar line) wired
+ * to the same window controls. Native behaviors kept: glyphs appear on
+ * group hover, dots dim to gray when the window loses focus.
+ */
+const MAC_LIGHTS = [
+  {
+    action: () => void desktopWindow.close(),
+    label: 'Close',
+    color: '#ff5f57',
+    glyph: (
+      <path d="M3.5 3.5 L9.5 9.5 M9.5 3.5 L3.5 9.5" stroke="#4d0000" strokeWidth="1.2" strokeLinecap="round" />
+    ),
+  },
+  {
+    action: () => void desktopWindow.minimize(),
+    label: 'Minimize',
+    color: '#febc2e',
+    glyph: <path d="M3 6.5 L10 6.5" stroke="#985712" strokeWidth="1.2" strokeLinecap="round" />,
+  },
+  {
+    action: () => void desktopWindow.toggleMaximize(),
+    label: 'Zoom',
+    color: '#28c840',
+    glyph: (
+      <path d="M6.5 3 L6.5 10 M3 6.5 L10 6.5" stroke="#0b5d16" strokeWidth="1.2" strokeLinecap="round" />
+    ),
+  },
+] as const;
+
+function MacTrafficLights() {
+  // Native lights dim to gray when the window isn't focused — mirror that.
+  const [focused, setFocused] = useState(true);
+  useEffect(() => {
+    setFocused(document.hasFocus());
+    const onFocus = () => setFocused(true);
+    const onBlur = () => setFocused(false);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
+
+  return (
+    // Native geometry, pinned in raw px (rem drifts with the root font):
+    // 20px hit boxes butted together → dot centers at x 16/36/56, zone ends
+    // at 66 — inside the ~70px gutter every header indent already clears.
+    <div className="group fixed top-[16px] left-[6px] z-[10000] flex [-webkit-app-region:no-drag] [app-region:no-drag]">
+      {MAC_LIGHTS.map((light) => (
+        <button
+          key={light.label}
+          type="button"
+          aria-label={light.label}
+          onClick={light.action}
+          className="flex h-[20px] w-[20px] cursor-default items-center justify-center"
+        >
+          <span
+            className="flex h-[13px] w-[13px] items-center justify-center rounded-full shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.15)] transition-[background-color] duration-150"
+            style={{ backgroundColor: focused ? light.color : 'var(--kx-light-inactive, #8e8e8e)' }}
+          >
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 13 13"
+              aria-hidden
+              className="opacity-0 transition-opacity duration-100 group-hover:opacity-100"
+            >
+              {light.glyph}
+            </svg>
+          </span>
+        </button>
+      ))}
     </div>
   );
 }

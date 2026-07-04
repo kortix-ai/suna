@@ -183,12 +183,11 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
             aria-label="Open sidebar"
             onClick={toggleSidebar}
             className={cn(
-              // top-[16px] + 28px box centers the button on the traffic
-              // lights' midline (y≈30 — pixel-calibrated against real macOS 26
-              // window screenshots: Tahoe draws ~14pt lights lower than the
-              // classic geometry). px values on purpose: the lights are
-              // OS-positioned in window px, while rem sizes drift with the
-              // root font size.
+              // top-[12px] + 28px box centers the button on the traffic
+              // lights' midline (y=26 — the app draws its own lights there;
+              // see DesktopChrome → MacTrafficLights). px values on purpose:
+              // the lights are positioned in window px, while rem sizes
+              // drift with the root font size.
               'kx-fade-up hover:bg-accent/60 text-muted-foreground hover:text-foreground fixed top-[12px] z-50 flex h-[28px] w-[28px] [-webkit-app-region:no-drag] cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96] [app-region:no-drag]',
               // macOS: sit just past the traffic lights (they end at x≈62),
               // mirroring their own 10px inset. Win/Linux: controls live

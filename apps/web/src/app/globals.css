@@ -1171,15 +1171,15 @@ html[data-desktop='true'] .kx-app-header {
 }
 /* macOS: no reserved strip — the header row shares the title-bar band with
    the traffic lights (same Linear-style approach as the workspace tab bar).
-   The band is a fixed 60px with content flex-centered, so the row sits on
-   the exact same line as the lights (center y≈30, pixel-calibrated against
-   real macOS 26 screenshots — Tahoe draws ~14pt lights lower than the
-   classic geometry). The left indent clears the ~80px light gutter only
-   while the centered max-w-6xl container would underlap it; on wide windows
-   it falls back to the web's px-mobile values (1.5rem below xl, 0 at xl+)
-   so the header stays aligned with the page. */
+   The band is a fixed 52px with content flex-centered, so the row sits on
+   the exact same line as the traffic lights (center y=26 — the app draws
+   its own lights there; see DesktopChrome → MacTrafficLights). The left
+   indent clears the ~80px light gutter only while the centered max-w-6xl
+   container would underlap it; on wide windows it falls back to the web's
+   px-mobile values (1.5rem below xl, 0 at xl+) so the header stays aligned
+   with the page. */
 html[data-desktop-platform='macos'] .kx-app-header {
-  min-height: 60px;
+  min-height: 52px;
   padding-top: 0;
   padding-bottom: 0;
   padding-left: max(1.5rem, calc(84px - max(0px, (100vw - 72rem) / 2)));
