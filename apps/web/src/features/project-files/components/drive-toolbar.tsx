@@ -22,19 +22,21 @@ import {
   ArrowUpDown,
   ChevronRight,
   Download,
+  Eye,
+  EyeOff,
   FilePlus,
   FolderPlus,
   GitCommitHorizontal,
   GitPullRequest,
   LayoutGrid,
   RefreshCw,
+  Search,
   Upload,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useFileList } from '../hooks/use-file-list';
 import type { SortField } from '../store/files-store';
-import { useFilesStore } from '../store/files-store';
+import { isWithinRoot, useFilesStore } from '../store/files-store';
 import { VersionSelector } from './version-selector';
 
 interface DriveToolbarProps {
@@ -42,10 +44,16 @@ interface DriveToolbarProps {
   onNewFolder: () => void;
   onNewFile: () => void;
   onDownloadDir: () => void;
+  onRefresh: () => void;
+  isRefreshing?: boolean;
   isDownloading?: boolean;
   readOnly?: boolean;
   readOnlyLabel?: string;
   showVersionSelector?: boolean;
+  /** Toolbar button for the Cmd+P file-name search overlay. */
+  showSearch?: boolean;
+  /** Dotfile visibility toggle (list is pre-filtered by the data hook). */
+  showHiddenToggle?: boolean;
   checkpointsToggle?: { open: boolean; onToggle: () => void };
   changeRequestsToggle?: { open: boolean; onToggle: () => void; openCount?: number };
   openChangeRequestAction?: { onClick: () => void; disabled?: boolean };
@@ -56,10 +64,14 @@ export function DriveToolbar({
   onNewFolder,
   onNewFile,
   onDownloadDir,
+  onRefresh,
+  isRefreshing,
   isDownloading,
   readOnly = false,
   readOnlyLabel: _readOnlyLabel = 'Read-only · backed by Git',
   showVersionSelector = false,
+  showSearch = false,
+  showHiddenToggle = false,
   checkpointsToggle,
   changeRequestsToggle,
   openChangeRequestAction,
@@ -74,11 +86,16 @@ export function DriveToolbar({
   const setSortBy = useFilesStore((s) => s.setSortBy);
   const toggleSortOrder = useFilesStore((s) => s.toggleSortOrder);
   const rootPath = useFilesStore((s) => s.rootPath);
-
-  const { refetch: refetchFiles, isFetching } = useFileList(currentPath);
+  const showHidden = useFilesStore((s) => s.showHidden);
+  const toggleHidden = useFilesStore((s) => s.toggleHidden);
+  const toggleSearch = useFilesStore((s) => s.toggleSearch);
 
   const homePath = rootPath || '/workspace';
   const homeLabel = rootPath ? rootPath.split('/').filter(Boolean).pop() || 'root' : '/workspace';
+
+  // Outside the home root (e.g. /tmp) the crumbs render as an absolute chain
+  // instead of pretending the path nests under /workspace
+  const outsideHome = !rootPath && !isWithinRoot(currentPath, homePath);
 
   const isRoot = currentPath === '/' || currentPath === '.' || currentPath === '';
   const allSegments = useMemo(
@@ -191,12 +208,21 @@ export function DriveToolbar({
                 >
                   <nav className="flex w-max min-w-0 items-center gap-0.5">
                     {segments.map((segment, index) => {
-                      if (!rootPath && index === 0 && segment === 'workspace') return null;
+                      if (!rootPath && !outsideHome && index === 0 && segment === 'workspace')
+                        return null;
                       const isLast = index === segments.length - 1;
+                      // First crumb of an outside-home path anchors the absolute chain
+                      const isAbsoluteAnchor = outsideHome && index === 0;
 
                       return (
                         <div key={index} className="flex shrink-0 items-center gap-0.5">
-                          <ChevronRight className="text-muted-foreground size-3.5 shrink-0" />
+                          {isAbsoluteAnchor ? (
+                            <span className="text-muted-foreground/40 shrink-0 px-1 text-xs select-none">
+                              ·
+                            </span>
+                          ) : (
+                            <ChevronRight className="text-muted-foreground size-3.5 shrink-0" />
+                          )}
                           <Button
                             onClick={() => handleSegmentClick(index)}
                             variant="ghost"
@@ -204,9 +230,10 @@ export function DriveToolbar({
                             className={cn(
                               'max-w-[140px] shrink-0 truncate sm:max-w-[200px]',
                               isLast ? 'text-foreground font-medium' : 'text-muted-foreground',
+                              isAbsoluteAnchor && 'font-mono text-xs',
                             )}
                           >
-                            {segment}
+                            {isAbsoluteAnchor ? `/${segment}` : segment}
                           </Button>
                         </div>
                       );
@@ -260,16 +287,41 @@ export function DriveToolbar({
               </DropdownMenuContent>
             </DropdownMenu>
 
+            {showHiddenToggle && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={cn(!showHidden && 'text-muted-foreground')}
+                onClick={toggleHidden}
+                title={showHidden ? 'Hide dotfiles' : 'Show dotfiles'}
+              >
+                {showHidden ? <Eye /> : <EyeOff />}
+              </Button>
+            )}
+
+            {showSearch && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={toggleSearch}
+                title={tHardcodedUi.raw(
+                  'featuresFilesComponentsDriveToolbar.line270JsxAttrTitleSearchFilesCtrlP',
+                )}
+              >
+                <Search />
+              </Button>
+            )}
+
             <Separator orientation="vertical" className="data-[orientation=vertical]:h-[70%]" />
 
             <Button
               variant="ghost"
               size="icon-sm"
-              onClick={() => refetchFiles()}
-              disabled={isFetching}
+              onClick={onRefresh}
+              disabled={isRefreshing}
               title="Refresh"
             >
-              <RefreshCw className={cn(isFetching && 'animate-spin')} />
+              <RefreshCw className={cn(isRefreshing && 'animate-spin')} />
             </Button>
 
             <Button

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { FileText, Folder, Search, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useFileSearch } from '../hooks';
+import { useFileExplorerSource } from '../explorer-source';
 import { useFilesStore } from '../store/files-store';
 
 export function FileSearch() {
@@ -32,6 +32,7 @@ export function FileSearch() {
     inputRef.current?.focus();
   }, []);
 
+  const { useFileSearch } = useFileExplorerSource();
   const { data: results, isLoading } = useFileSearch(debouncedQuery, {
     limit: 30,
     enabled: debouncedQuery.length > 0,

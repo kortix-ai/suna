@@ -17,11 +17,11 @@ import { useGatewayCatalogSync } from '@/hooks/opencode/use-gateway-catalog-sync
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
 import { parseCustomizeSection } from '@/lib/customize-sections';
-import { getProjectDetail } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import { getProjectDetail } from '@kortix/sdk/projects-client';
 
 const CommandPalette = lazy(() =>
   import('@/features/workspace/command-palette').then((mod) => ({
@@ -159,8 +159,11 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
   return (
     <div
       className={cn(
-        'bg-background border-border relative flex min-h-0 flex-1 flex-col overflow-hidden border-l-[1.5px]',
-        !isExpanded && 'ml-0.5',
+        'bg-background border-border relative flex min-h-0 flex-1 flex-col overflow-hidden border-l',
+        // Desktop app, collapsed sidebar: the icon rail already separates the
+        // panes, so drop the divider and the nudge (data-desktop is set on
+        // <html> pre-hydration by DESKTOP_INIT_SCRIPT).
+        !isExpanded && 'ml-0.5 [[data-desktop]_&]:ml-0 [[data-desktop]_&]:border-l-0',
       )}
     >
       {children}

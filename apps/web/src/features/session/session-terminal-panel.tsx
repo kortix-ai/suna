@@ -112,7 +112,7 @@ export function SessionTerminalPanel({
   // Sandbox mode — shared SSH terminal into the sandbox.
   if (currentSandboxId) {
     return (
-      <div className="h-full w-full bg-[#0f0f14]">
+      <div className="h-full w-full bg-[#0f0f0f]">
         <SSHTerminal sandboxId={currentSandboxId} className="h-full" />
       </div>
     );
@@ -121,7 +121,7 @@ export function SessionTerminalPanel({
   // Waiting for the sandbox runtime, or spinning up / loading the PTY list.
   if (!runtimeReady || isLoading || (!pty && (createPty.isPending || ensuringRef.current))) {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center bg-[#0f0f14]">
+      <div className="flex h-full w-full flex-col items-center justify-center bg-[#0f0f0f]">
         <CircleDashed className="text-muted-foreground h-4 w-4 animate-spin" />
         <span className="text-muted-foreground mt-2 text-xs">
           {tI18nHardcoded.raw('autoFeaturesSessionSessionTerminalPanelJsxTextConnecting80303e70')}
@@ -133,7 +133,7 @@ export function SessionTerminalPanel({
   // No PTY and not (re)spawning — offer to start one.
   if (!pty) {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-[#0f0f14]">
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-[#0f0f0f]">
         <Terminal className="text-muted-foreground/30 h-8 w-8" />
         <Button variant="outline" size="sm" onClick={ensurePty} className="gap-1.5">
           <Plus className="h-3.5 w-3.5" />
@@ -144,7 +144,7 @@ export function SessionTerminalPanel({
   }
 
   return (
-    <div className="relative h-full w-full bg-[#0f0f14]">
+    <div className="relative h-full w-full bg-[#0f0f0f]">
       <PtyTerminal
         pty={pty}
         serverUrl={serverUrl}

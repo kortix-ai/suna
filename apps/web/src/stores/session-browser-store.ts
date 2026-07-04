@@ -10,7 +10,7 @@ import { persist } from 'zustand/middleware';
  *
  * The right panel has three views:
  *   - `actions` — KortixComputer (tool calls, the original "Actions" pane)
- *   - `browser` — internal browser (PreviewTabContent iframe + address bar)
+ *   - `browser` — internal browser (BrowserPanel iframe + address bar)
  *   - `files`   — files CRUD'd in this session's sandbox (SessionFilesPanel),
  *                 with merge-to-main / open-change-request actions
  *

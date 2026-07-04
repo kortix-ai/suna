@@ -21,7 +21,6 @@ import {
   Image as ImageIcon,
   Layers,
   Loader2,
-  MessageSquare,
   Pencil,
   Reply,
   Scissors,
@@ -71,6 +70,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -81,8 +81,8 @@ import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
-import { contextToolSummary, contextToolTrigger } from '@/features/session/tool-meta';
-import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool-renderers';
+import { contextToolSummary, contextToolTrigger } from '@/features/session/tool/tool-meta';
+import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import {
   buildOptimisticPromptTextWithUploads,
   buildPromptPartsWithUploads,
@@ -138,7 +138,7 @@ import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
-import { getActiveOpenCodeUrl, useServerStore } from '@/stores/server-store';
+import { getActiveOpenCodeUrl } from '@/stores/server-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
@@ -354,14 +354,8 @@ function SystemMessageIndicator({ messages }: { messages: KortixSystemMessage[] 
 // Answered question card — collapsible summary of completed Q&A
 // ============================================================================
 
-function AnsweredQuestionCard({
-  part,
-  defaultExpanded = false,
-}: {
-  part: ToolPart;
-  defaultExpanded?: boolean;
-}) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
+function AnsweredQuestionCard({ part }: { part: ToolPart }) {
+  const [expanded, setExpanded] = useState(false);
   const input = (part.state as any)?.input ?? {};
   const metadata = (part.state as any)?.metadata ?? {};
   const questions: Array<{ question: string; options?: { label: string }[] }> = Array.isArray(
@@ -375,43 +369,47 @@ function AnsweredQuestionCard({
   const answeredCount = answers.filter((a) => a.length > 0).length;
 
   return (
-    <Collapsible open={expanded} onOpenChange={setExpanded}>
-      <div className="border-border/40 bg-muted/20 overflow-hidden rounded-2xl border">
-        <CollapsibleTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            className="hover:bg-muted/40 flex h-auto w-full items-center justify-start gap-1.5 rounded-none px-2.5 py-1.5 text-left"
-          >
-            <MessageSquare className="text-muted-foreground size-3.5 shrink-0" />
-            <span className="text-foreground text-xs font-medium">Questions</span>
-            <span className="text-muted-foreground/70 text-xs">{answeredCount} answered</span>
-            <ChevronDown
-              className={cn(
-                'text-muted-foreground ml-auto size-3 transition-transform',
-                expanded && 'rotate-180',
-              )}
-            />
-          </Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="border-border/30 border-t">
-            {questions.map((q, i) => {
-              const answer = answers[i] || [];
-              const answerText = answer.join(', ') || 'No answer';
-              return (
-                <div key={i} className="border-border/30 border-b px-2.5 py-2 last:border-b-0">
-                  <div className="[&_*]:!text-muted-foreground/70 [&_strong]:!text-muted-foreground/60 [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_ul]:!my-0">
-                    <UnifiedMarkdown content={q.question} />
-                  </div>
-                  <div className="text-foreground mt-0.5 text-sm font-medium">{answerText}</div>
+    <Disclosure
+      variant="outline"
+      className="overflow-hidden bg-card"
+      open={expanded}
+      onOpenChange={setExpanded}
+    >
+      <DisclosureTrigger variant="outline">
+        <Button
+          type="button"
+          variant="popover"
+          className="flex h-auto w-full bg-card items-center justify-start gap-1.5 rounded-none px-4 py-2.5 text-left"
+        >
+          <span className="text-foreground text-xs font-medium">Questions</span>
+          <span className="text-muted-foreground text-xs tabular-nums">
+            {answeredCount} answered
+          </span>
+          <ChevronDown
+            className={cn(
+              'text-muted-foreground ml-auto shrink-0 transition-transform',
+              expanded && 'rotate-180',
+            )}
+          />
+        </Button>
+      </DisclosureTrigger>
+      <DisclosureContent variant="outline" contentClassName="border-border border-t">
+        <div className="space-y-4 px-4 py-2.5">
+          {questions.map((q, i) => {
+            const answer = answers[i] || [];
+            const answerText = answer.join(', ') || 'No answer';
+            return (
+              <div key={i} className="space-y-1">
+                <div className="[&_*]:!text-muted-foreground [&_strong]:!text-muted-foreground [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_p]:!text-pretty [&_ul]:!my-0">
+                  <UnifiedMarkdown content={q.question} />
                 </div>
-              );
-            })}
-          </div>
-        </CollapsibleContent>
-      </div>
-    </Collapsible>
+                <p className="text-foreground text-sm font-medium text-pretty">{answerText}</p>
+              </div>
+            );
+          })}
+        </div>
+      </DisclosureContent>
+    </Disclosure>
   );
 }
 
@@ -3404,7 +3402,7 @@ function SessionTurn({
                   const answeredPart = answeredQuestionPartsById.get(part.id);
                   if (answeredPart) {
                     return (
-                      <AnsweredQuestionCard key={part.id} part={answeredPart} defaultExpanded />
+                      <AnsweredQuestionCard key={part.id} part={answeredPart} />
                     );
                   }
                   // Unanswered/dismissed questions: don't render in steps;
@@ -3495,7 +3493,7 @@ function SessionTurn({
                   </div>
                 );
               }
-              return <AnsweredQuestionCard key={item.id} part={item.part} defaultExpanded />;
+              return <AnsweredQuestionCard key={item.id} part={item.part} />;
             });
           })()}
         </div>
@@ -5565,7 +5563,7 @@ export function SessionChat({
   return (
     <div
       className={cn(
-        'relative flex h-full flex-col pt-10',
+        'relative flex h-full flex-col',
         // Transparent in the welcome state so the root-level full-bleed wallpaper
         // (portaled into SessionLayout) reads through; solid once real content
         // takes over. Same base color either way, so non-welcome is unchanged.
@@ -5631,7 +5629,7 @@ export function SessionChat({
           <div
             ref={scrollContainerCallbackRef}
             className={cn(
-              'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto] px-4 py-4',
+              'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto]',
               shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
             )}
             onMouseUp={handleChatMouseUp}
@@ -5641,7 +5639,7 @@ export function SessionChat({
             <div
               ref={contentRef}
               role="log"
-              className="mx-auto w-full max-w-3xl min-w-0 px-3 sm:px-6"
+              className="mx-auto w-full max-w-3xl min-w-0 px-3 py-6 sm:px-6"
             >
               <div className="flex min-w-0 flex-col">
                 {/* Optimistic user message */}

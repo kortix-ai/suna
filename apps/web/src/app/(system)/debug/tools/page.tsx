@@ -2,10 +2,10 @@
 
 import { useTranslations } from 'next-intl';
 
-import { SessionActionsPanel } from '@/features/session/session-actions-panel';
+import { SessionActionsPanel } from '@/features/session/action-panel/session-actions-panel';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { SessionFilesPanel } from '@/features/session/session-files-panel';
-import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool-renderers';
+import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useState } from 'react';
 
@@ -148,6 +148,34 @@ const GROUPS: Group[] = [
             "src/app/page.tsx(12,7): error TS2322: Type 'string' is not assignable to type 'number'.",
           ),
         ),
+      },
+      {
+        label: 'pty_spawn',
+        node: part(
+          'pty_spawn',
+          done(
+            { command: 'pnpm dev', title: 'Dev server' },
+            '<pty_spawned>\nID: pty_4f2a\nTitle: Dev server\nCommand: pnpm dev\nStatus: running\nPID: 48213\nWorkdir: /workspace/apps/web\n</pty_spawned>',
+          ),
+        ),
+      },
+      {
+        label: 'pty_read',
+        node: part(
+          'pty_read',
+          done(
+            { id: 'pty_4f2a' },
+            '<pty_output id="pty_4f2a" status="running">\n00001| $ pnpm dev\n00002| ▲ Next.js 16.0.0\n00003| - Local:  http://localhost:3000\n00004| ✓ Ready in 1.2s\n(End of buffer — 4 lines total)\n</pty_output>',
+          ),
+        ),
+      },
+      {
+        label: 'pty_write',
+        node: part('pty_write', done({ id: 'pty_4f2a', input: 'rs\n' }, 'ok')),
+      },
+      {
+        label: 'pty_kill',
+        node: part('pty_kill', done({ id: 'pty_4f2a' }, 'Process pty_4f2a terminated.')),
       },
     ],
   },
@@ -450,6 +478,26 @@ const GROUPS: Group[] = [
               type: 'error',
               title: 'Build failed',
               content: 'Error: Cannot find module "@/lib/missing"\n  at /workspace/src/app.ts:3:1',
+            },
+            '',
+          ),
+        ),
+      },
+      {
+        label: 'show (carousel pills)',
+        node: part(
+          'show',
+          done(
+            {
+              items: [
+                { type: 'url', url: 'http://localhost:3000' },
+                { type: 'file', path: '/workspace/reports/q3-summary.pdf' },
+                { type: 'file', path: '/workspace/decks/launch-deck.pptx' },
+                { type: 'file', path: '/workspace/docs/contract.docx' },
+                { type: 'file', path: '/workspace/data/metrics.xlsx' },
+                { type: 'file', path: '/workspace/site/index.html' },
+                { type: 'file', path: '/workspace/src/components/app.tsx' },
+              ],
             },
             '',
           ),

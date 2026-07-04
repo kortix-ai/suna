@@ -7,7 +7,7 @@ import { ProgressRing } from '@/components/ui/progress-ring';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
-import { getFileIcon } from '@/features/files/components/file-icon';
+import { getFileIcon } from '@/features/project-files';
 import { normalizeProviderList } from '@/hooks/opencode/provider-selection';
 import type {
   Agent,
@@ -262,7 +262,7 @@ export function AgentSelector({
             </button>
           </CommandPopoverTrigger>
         </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-[240px] text-xs">
+        <TooltipContent side="top" className="max-w-[240px] ">
           {disabled ? (
             <p>
               {

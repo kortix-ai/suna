@@ -14,21 +14,23 @@ import type { Pty } from '@kortix/sdk/opencode-client';
 // Theme
 // ============================================================================
 
+// Neutral (zero-chroma) surface matching the app's dark background — no blue
+// tint. Selection stays neutral so it reads on any ANSI color underneath.
 const terminalTheme: ITheme = {
-  background: '#0f0f14',
-  foreground: '#e4e4e7',
-  cursor: '#e4e4e7',
-  cursorAccent: '#0f0f14',
-  selectionBackground: 'rgba(139, 92, 246, 0.3)',
-  black: '#27272a',
+  background: '#0f0f0f',
+  foreground: '#e5e5e5',
+  cursor: '#e5e5e5',
+  cursorAccent: '#0f0f0f',
+  selectionBackground: 'rgba(255, 255, 255, 0.18)',
+  black: '#262626',
   red: '#f87171',
   green: '#4ade80',
   yellow: '#fbbf24',
   blue: '#60a5fa',
   magenta: '#c084fc',
   cyan: '#22d3ee',
-  white: '#e4e4e7',
-  brightBlack: '#52525b',
+  white: '#e5e5e5',
+  brightBlack: '#525252',
   brightRed: '#fca5a5',
   brightGreen: '#86efac',
   brightYellow: '#fde047',
@@ -390,8 +392,8 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
       ref={terminalRef}
       className={cn(
         'overflow-hidden',
-        'bg-[#0f0f14]',
-        'p-2 px-3',
+        'bg-[#0f0f0f]',
+        'px-3 py-2',
         hidden && 'invisible pointer-events-none',
         className,
       )}

@@ -405,13 +405,14 @@ function createMainWindow() {
     show: false, // revealed once the remote app finishes loading (splash covers the gap)
     backgroundColor: BG_COLOR,
     title: 'Kortix',
-    // macOS: hidden title bar with the traffic lights nudged to sit centered in
-    // the app's ~40px tab bar — mirrors lib.rs traffic_light_position(10, 22)
-    // and the 72px collapsed-sidebar rail math.
+    // macOS: hidden title bar with the traffic lights nudged down to sit
+    // vertically centered in the ~60px AppHeader bar (center ≈30px; the button
+    // center ≈ y + 6, so y=24). Kept in sync with the .kx-app-header min-height
+    // in globals.css and the collapsed-sidebar rail math.
     ...(isMac
       ? {
           titleBarStyle: 'hidden',
-          trafficLightPosition: { x: 10, y: 18 },
+          trafficLightPosition: { x: 10, y: 24 },
         }
       : fs.existsSync(winIcon)
         ? { icon: winIcon }

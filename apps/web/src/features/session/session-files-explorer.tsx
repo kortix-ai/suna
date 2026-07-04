@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { FileExplorerPage, FilesStoreProvider, useFilesStore } from '@/features/files';
+import { FilesStoreProvider, useFilesStore } from '@/features/files';
+import { SandboxFileExplorer } from '@/features/files/sandbox-file-explorer';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import {
   SessionVersionHeader,
@@ -14,8 +15,9 @@ import { SessionDiffViewer } from '@/features/session/session-diff-viewer';
  *
  * An elegant version header frames the screen as a standalone copy of the
  * project's main version, with two plain tabs:
- *   • All files (default) — the full Google-Drive-style explorer the /files
- *                page uses ({@link FileExplorerPage}), pointed at the sandbox.
+ *   • All files (default) — the SAME Drive-style explorer the /files page
+ *                uses ({@link DriveExplorer}), pointed at the live sandbox
+ *                via {@link sandboxExplorerSource} (writable, searchable).
  *   • Changes (secondary) — the real per-file diff viewer
  *                ({@link SessionDiffViewer}), the same diff UI used elsewhere.
  *
@@ -95,7 +97,7 @@ function SessionFilesExplorerInner({
         {showDiff ? (
           <SessionDiffViewer sessionId={chatSessionId!} />
         ) : (
-          <FileExplorerPage
+          <SandboxFileExplorer
             embedded
             shareContext={
               projectId && projectSessionId

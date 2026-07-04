@@ -14,6 +14,15 @@ export {
   type ProjectFilesContextValue,
 } from './context';
 
+// Explorer source injection (shared Drive explorer, per-surface data access)
+export {
+  FileExplorerSourceProvider,
+  useFileExplorerSource,
+  type ExplorerCapabilities,
+  type FileExplorerSource,
+} from './explorer-source';
+export { gitRefExplorerSource } from './git-ref-explorer-source';
+
 // Types
 export type {
   FileNode,
@@ -115,20 +124,18 @@ export { useVersionStore, useSelectedVersion } from './store/version-store';
 
 // Components
 export {
-  FileBrowser,
-  FileViewer,
+  DriveExplorer,
   FileContentRenderer,
   FileSearch,
   FileBreadcrumbs,
+  FilePathBreadcrumbs,
   FileTreeItem,
-  FileHistoryPanel,
-  FileTree,
+  FileThumbnail,
   FileExplorerPage,
-  FileExplorerToolbar,
-  FileExplorerStatusBar,
   VersionSelector,
   CheckpointsPanel,
   getFileCategory,
+  getFileIcon,
   getLanguageFromExt,
 } from './components';
 export type { FileContentRendererProps } from './components';

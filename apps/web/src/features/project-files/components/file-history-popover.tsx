@@ -24,7 +24,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { useFileHistory, useFileCommitDiff } from '../hooks/use-file-history';
+import { useFileExplorerSource } from '../explorer-source';
 import type { GitCommit } from '../types';
 import { createTwoFilesPatch } from 'diff';
 import { DiffView } from '@/components/diff/diff-view';
@@ -69,6 +69,7 @@ function formatFullDate(timestamp: number): string {
 
 function CompactCommitDiff({ filePath, commitHash }: { filePath: string; commitHash: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const { useFileCommitDiff } = useFileExplorerSource();
   const { data: diff, isLoading, error } = useFileCommitDiff(filePath, commitHash);
 
   if (isLoading) return <div className="p-2"><Skeleton className="h-16 w-full" /></div>;
@@ -183,6 +184,7 @@ interface FileHistoryPopoverContentProps {
 
 export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopoverContentProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const { useFileHistory } = useFileExplorerSource();
   const { data: history, isLoading, error } = useFileHistory(filePath);
 
   const fileName = filePath.split('/').pop() || '';
@@ -214,10 +216,14 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
           </div>
         )}
 
-        {error && !isLoading && (
+        {!!error && !isLoading && (
           <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
             <AlertCircle className="h-6 w-6 text-muted-foreground/30" />
-            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line216JsxTextFailedToLoadHistory')}</p>
+            <p className="text-xs text-muted-foreground">
+              {error instanceof Error && error.message.includes('not a git repository')
+                ? 'Not a git repository'
+                : tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line216JsxTextFailedToLoadHistory')}
+            </p>
           </div>
         )}
 

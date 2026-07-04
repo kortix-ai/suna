@@ -1,13 +1,13 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
-import React, { useState, useCallback } from 'react';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Download, FileText } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import Loading from '@/components/ui/loading';
 import { downloadFile } from '@/features/files/api/opencode-files';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { cn } from '@/lib/utils';
+import { Download, Presentation } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useCallback, useState } from 'react';
 
 interface PptxRendererProps {
   content?: string | null;
@@ -28,10 +28,6 @@ interface PptxRendererProps {
   onFullScreen?: () => void;
 }
 
-/**
- * PptxRenderer — there is no reliable in-browser PowerPoint renderer, so we
- * present a clean download action rather than a half-working preview.
- */
 export function PptxRenderer({
   blob,
   filePath,
@@ -68,21 +64,25 @@ export function PptxRenderer({
   }, [onDownload, blob, filePath, fileName]);
 
   const busy = isDownloading || downloading;
+  const displayName = fileName.split('/').pop() ?? fileName;
 
   return (
-    <div className={cn('w-full h-full flex items-center justify-center', className)}>
-      <div className="text-center space-y-4 p-8">
-        <div className="mx-auto w-16 h-16 rounded-xl bg-muted/50 flex items-center justify-center">
-          <FileText className="h-8 w-8 text-muted-foreground" />
-        </div>
-        <p className="text-sm font-medium text-foreground">{fileName}</p>
-        <Button size="sm" onClick={handleDownload} disabled={busy}>
-          {busy ? (
-            <KortixLoader size="small" />
-          ) : (
-            <Download className="h-4 w-4 mr-2" />
-          )}{tHardcodedUi.raw('componentsFileRenderersPptxRenderer.line212JsxTextDownloadToView')}</Button>
-      </div>
-    </div>
+    <EmptyState
+      className={cn('h-full w-full', className)}
+      icon={Presentation}
+      size="sm"
+      title={displayName}
+      action={
+        <Button
+          // variant="outline"
+          size="sm"
+          onClick={handleDownload}
+          disabled={busy}
+        >
+          {busy ? <Loading className="shrink-0" /> : <Download className="shrink-0" />}
+          {tHardcodedUi.raw('componentsFileRenderersPptxRenderer.line212JsxTextDownloadToView')}
+        </Button>
+      }
+    />
   );
 }

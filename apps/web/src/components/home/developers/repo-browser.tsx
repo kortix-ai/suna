@@ -1,7 +1,7 @@
 'use client';
 
 import { FileContentRenderer, FileSourceProvider, type FileSource } from '@/features/file-viewer';
-import { getFileIcon } from '@/features/files/components/file-icon';
+import { getFileIcon } from '@/features/project-files';
 import { cn } from '@/lib/utils';
 import { ChevronRight, GitBranch } from 'lucide-react';
 import { useTranslations } from 'next-intl';

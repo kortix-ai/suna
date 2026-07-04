@@ -9,7 +9,7 @@
  *   - Plain left-click on a `/projects/[id]/sessions/[sessionId]` page →
  *     populate that session's preview tab (`session-preview:{sessionId}`
  *     in `useTabStore`), flip the side panel to Browser view, and let
- *     `PreviewTabContent` render the iframe through the proxy.
+ *     `BrowserPanel` render the iframe through the proxy.
  *
  *   - Cmd / Ctrl / Shift / middle-click → the listener doesn't fire; the
  *     anchor falls back to native browser behavior. Since the `href` was
@@ -19,7 +19,7 @@
  *   - Off a session page (e.g. dashboards, settings) → window.open the
  *     proxy URL. There's no in-app surface to host the iframe there.
  *
- *   - The in-panel `PreviewTabContent` has its own "open externally"
+ *   - The in-panel `BrowserPanel` has its own "open externally"
  *     button for explicitly popping the current iframe out to a new tab.
  *
  * Mount once at the app root — uses a single delegated `click` listener

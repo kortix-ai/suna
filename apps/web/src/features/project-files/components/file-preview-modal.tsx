@@ -1,19 +1,29 @@
 'use client';
 
+import { useMemo } from 'react';
+import { STATUS_TEXT } from '@/components/ui/status';
 import { FilePreviewModal as BaseFilePreviewModal } from '@/features/file-viewer';
+import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
-import { useProjectFileSource } from '../file-source';
+import { useFileExplorerSource } from '../explorer-source';
 import { useFilesStore } from '../store/files-store';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { getFileIcon } from './file-icon';
 
 /**
- * Project git-ref file preview modal. Thin wrapper over the shared
- * <FilePreviewModal> that supplies the project store, the ref-scoped data
- * source and the checkpoint history popover. No git-status chip / open-in-tab
- * (this is a read-only ref view).
+ * File preview modal for the shared Drive explorer. Thin wrapper over the
+ * shared <FilePreviewModal> that supplies the explorer store, the injected
+ * data source and the checkpoint history popover. The per-file git-status
+ * chip renders only for sources that expose live status (sandbox), never for
+ * read-only ref views.
  */
-export function FilePreviewModal() {
+export function FilePreviewModal({
+  embedded = false,
+  shareContext,
+}: {
+  embedded?: boolean;
+  shareContext?: { projectId: string; sessionId: string };
+} = {}) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const selectedFilePath = useFilesStore((s) => s.selectedFilePath);
   const panelMode = useFilesStore((s) => s.panelMode);
@@ -22,7 +32,34 @@ export function FilePreviewModal() {
   const prevFile = useFilesStore((s) => s.prevFile);
   const filePathList = useFilesStore((s) => s.filePathList);
   const currentFileIndex = useFilesStore((s) => s.currentFileIndex);
-  const source = useProjectFileSource();
+
+  const explorer = useFileExplorerSource();
+  const source = explorer.useFileViewerSource();
+
+  // Git state for THIS file — shows what changed in this version.
+  const { data: gitStatuses } = explorer.useGitStatus();
+  const fileStatus = useMemo(() => {
+    if (!explorer.capabilities.gitStatusChip) return null;
+    if (!selectedFilePath || !gitStatuses) return null;
+    const rel = selectedFilePath.replace(/^\/workspace\//, '');
+    return gitStatuses.find((s) => s.path === rel || s.path === selectedFilePath) ?? null;
+  }, [explorer.capabilities.gitStatusChip, selectedFilePath, gitStatuses]);
+
+  const statusSlot = fileStatus ? (
+    <span
+      className={cn(
+        'bg-muted/60 flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize',
+        fileStatus.status === 'added' && STATUS_TEXT.success,
+        fileStatus.status === 'deleted' && STATUS_TEXT.destructive,
+        fileStatus.status === 'modified' && STATUS_TEXT.warning,
+      )}
+      title={`This file is ${fileStatus.status} in this version`}
+    >
+      {fileStatus.status}
+      {fileStatus.added > 0 && <span className="tabular-nums">+{fileStatus.added}</span>}
+      {fileStatus.removed > 0 && <span className="tabular-nums">−{fileStatus.removed}</span>}
+    </span>
+  ) : null;
 
   return (
     <BaseFilePreviewModal
@@ -41,6 +78,9 @@ export function FilePreviewModal() {
           variant: 'monochrome',
         })
       }
+      statusSlot={statusSlot}
+      shareContext={shareContext}
+      embedded={embedded}
       historyLabel={tI18nHardcoded.raw(
         'autoFeaturesProjectFilesComponentsFilePreviewModalJsxAttrHistoryLabel0736a6ed',
       )}

@@ -107,7 +107,9 @@ function isBrowserNavigation(incomingHeaders: Headers): boolean {
 // Minimal, dependency-free HTML shown when a sandbox port can't be reached —
 // instead of the browser's bare "HTTP ERROR 502" interstitial. Self-contained
 // (inline CSS/JS), dark-mode aware, and gently auto-retries a few times to ride
-// out the boot window before falling back to a manual Retry button.
+// out the boot window before falling back to a manual Retry button. Colors and
+// the button mirror the web app's tokens (globals.css --secondary/--foreground;
+// Button variant="secondary" size="sm").
 function portUnreachableHtml(port: number): string {
   return `<!doctype html>
 <html lang="en">
@@ -116,44 +118,53 @@ function portUnreachableHtml(port: number): string {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Port ${port} isn't responding</title>
 <style>
-  :root { color-scheme: light dark; }
+  :root {
+    color-scheme: light dark;
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.1448 0 0);
+    --secondary: oklch(0.9502 0 0);
+    --muted-foreground: oklch(0.5555 0 0);
+    --kortix-yellow: oklch(0.732 0.15 90.688);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: oklch(0.1448 0 0);
+      --foreground: oklch(0.9851 0 0);
+      --secondary: oklch(0.2686 0 0);
+      --muted-foreground: oklch(0.709 0 0);
+    }
+  }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body {
     display: flex; align-items: center; justify-content: center;
     font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    background: #fafafa; color: #18181b; padding: 24px;
+    background: var(--background); color: var(--foreground); padding: 24px;
+    -webkit-font-smoothing: antialiased;
   }
-  @media (prefers-color-scheme: dark) { body { background: #0a0a0a; color: #e4e4e7; } }
-  .card { max-width: 420px; width: 100%; text-align: center; }
+  .card { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+  h1 { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; margin: 0; }
   .dot {
-    width: 10px; height: 10px; border-radius: 999px; background: #f59e0b;
-    display: inline-block; margin-right: 8px; vertical-align: middle;
+    width: 8px; height: 8px; border-radius: 999px; background: var(--kortix-yellow);
     animation: pulse 1.4s ease-in-out infinite;
   }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
-  h1 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
-  p { margin: 0 0 6px; color: #71717a; }
-  @media (prefers-color-scheme: dark) { p { color: #a1a1aa; } }
-  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
-  .actions { margin-top: 20px; }
   button {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 28px; padding: 0 12px; border: 0; border-radius: 8px;
     font: inherit; font-weight: 500; cursor: pointer;
-    padding: 8px 16px; border-radius: 8px; border: 1px solid #e4e4e7;
-    background: #18181b; color: #fafafa; transition: opacity .15s;
+    background: var(--secondary); color: var(--foreground);
+    transition: background-color .15s;
   }
-  button:hover { opacity: .85; }
-  @media (prefers-color-scheme: dark) { button { background: #fafafa; color: #18181b; border-color: #27272a; } }
-  .status { margin-top: 14px; font-size: 12px; color: #a1a1aa; min-height: 16px; }
+  button:hover { background: color-mix(in oklab, var(--secondary) 90%, transparent); }
+  .status { font-size: 12px; color: var(--muted-foreground); min-height: 18px; margin: 0; }
 </style>
 </head>
 <body>
   <div class="card">
-    <h1><span class="dot"></span>Port ${port} isn't responding yet</h1>
-    <p>Nothing is answering on <code>localhost:${port}</code>.</p>
-    <p>The service may still be starting, or it isn't running.</p>
-    <div class="actions"><button id="retry" type="button">Retry now</button></div>
-    <div class="status" id="status"></div>
+    <h1><span class="dot"></span>Port ${port} isn't responding</h1>
+    <button id="retry" type="button">Retry</button>
+    <p class="status" id="status"></p>
   </div>
   <script>
     (function () {
@@ -167,16 +178,14 @@ function portUnreachableHtml(port: number): string {
       });
       if (n < MAX) {
         var left = Math.round(DELAY / 1000);
-        statusEl.textContent = 'Retrying automatically in ' + left + 's… (' + (n + 1) + '/' + MAX + ')';
+        statusEl.textContent = 'Retrying in ' + left + 's\\u2026';
         var t = setInterval(function () {
           left -= 1;
-          statusEl.textContent = left > 0
-            ? 'Retrying automatically in ' + left + 's… (' + (n + 1) + '/' + MAX + ')'
-            : 'Retrying…';
+          statusEl.textContent = left > 0 ? 'Retrying in ' + left + 's\\u2026' : 'Retrying\\u2026';
         }, 1000);
         setTimeout(function () { clearInterval(t); reload(); }, DELAY);
       } else {
-        statusEl.textContent = 'Still not responding after several tries. Use Retry once the service is up.';
+        statusEl.textContent = 'Still not responding.';
       }
     })();
   </script>

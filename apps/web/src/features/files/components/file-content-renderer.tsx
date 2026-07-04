@@ -14,7 +14,7 @@ import { workspaceFileSource } from '../file-source';
 export { getFileCategory, getLanguageFromExt };
 export type { FileCategory, FileContentRendererProps };
 
-/** The shared file viewer/editor, bound to the live workspace. */
+/** The shared file viewer, bound to the live sandbox workspace. */
 export function FileContentRenderer(props: FileContentRendererProps) {
   return (
     <FileSourceProvider value={workspaceFileSource}>

@@ -95,20 +95,5 @@ export {
   type FilesStoreApi,
 } from './store/files-store';
 
-// Components
-export {
-  FileBrowser,
-  FileViewer,
-  FileContentRenderer,
-  FileSearch,
-  FileBreadcrumbs,
-  FileTreeItem,
-  FileHistoryPanel,
-  FileTree,
-  FileExplorerPage,
-  FileExplorerToolbar,
-  FileExplorerStatusBar,
-  getFileCategory,
-  getLanguageFromExt,
-} from './components';
-export type { FileContentRendererProps } from './components';
+// Explorer source (the shared Drive explorer UI lives in features/project-files)
+export { sandboxExplorerSource } from './sandbox-explorer-source';

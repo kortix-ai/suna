@@ -104,8 +104,8 @@ export function SessionSiteHeader({
 
   return (
     <>
-      <div className="pointer-events-none absolute top-0 right-0 left-0 z-20">
-        <div className="flex items-center justify-between p-2 pb-0">
+      <div className="z-20 w-full border-b">
+        <div className="flex items-center justify-between p-2">
           <div className="pointer-events-auto flex items-center gap-0.5">
             {isProjectSession && (
               <>
@@ -141,7 +141,7 @@ export function SessionSiteHeader({
                       'componentsSessionSessionSiteHeader.line105JsxTextMoreActions',
                     )}
                   >
-                    <MoreHorizontal className="size-4" />
+                    <MoreHorizontal />
                   </Button>
                 </DropdownMenuTrigger>
               </Hint>
@@ -241,7 +241,7 @@ export function SessionSiteHeader({
                 size="icon"
                 onClick={onToggleSidePanel}
                 className={cn(
-                  'h-8 w-8 cursor-pointer transition-colors',
+                  'cursor-pointer transition-colors',
                   isSidePanelOpen
                     ? 'text-foreground'
                     : 'text-muted-foreground hover:text-foreground',

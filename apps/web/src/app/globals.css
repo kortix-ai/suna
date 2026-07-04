@@ -137,8 +137,8 @@
   --color-kortix-red: var(--kortix-red);
   /* App typography scale. Keep html at 100% so browser and OS zoom
      preferences remain intact; adjust readable UI sizes through tokens. */
-  --text-xs: 0.75rem;
-  --text-xs--line-height: calc(1 / 0.75);
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: calc(1 / 0.8125);
   --text-sm: 0.875rem;
   --text-sm--line-height: calc(1.25 / 0.875);
   --text-base: 1rem;
@@ -202,6 +202,30 @@
   --animate-elliptical-orbit: elliptical-orbit 20s linear infinite;
   --animate-shiny-text: shiny-text 8s infinite;
   --animate-kortix-bullet-flow: kortix-bullet-flow 4s ease-in-out infinite;
+  /* Error feedback — damped horizontal shake (decaying amplitude, transform-only) */
+  --animate-shake: shake 400ms var(--ease-in-out) both;
+
+  @keyframes shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    10% {
+      transform: translateX(-6px);
+    }
+    30% {
+      transform: translateX(5px);
+    }
+    50% {
+      transform: translateX(-3px);
+    }
+    70% {
+      transform: translateX(2px);
+    }
+    90% {
+      transform: translateX(-1px);
+    }
+  }
 
   @keyframes kortix-bullet-flow {
     0%,
@@ -442,13 +466,13 @@
   --primary-foreground: oklch(0.9851 0 0);
   --secondary: oklch(0.9502 0 0);
   --secondary-foreground: oklch(0.2046 0 0);
-  --muted: oklch(0.9702 0 0);
+  --muted: oklch(0.9502 0 0);
   --muted-foreground: oklch(0.5555 0 0);
   --accent: oklch(0.9702 0 0);
   --accent-foreground: oklch(0.2046 0 0);
   --destructive: oklch(0.583 0.2387 28.4765);
   --destructive-foreground: oklch(0.9851 0 0);
-  --border: oklch(0.9219 0 0);
+  --border: oklch(0.9019 0 0);
   --input: oklch(0.9612 0 0);
   --ring: oklch(0.709 0 0);
   --chart-1: oklch(0.8781 0.1688 91.8567);
@@ -803,6 +827,14 @@
   animation: pulse-heartbeat 1.2s ease-in-out infinite;
 }
 
+/* Shake is pure positional motion; the error state is already conveyed by
+   color/message, so drop it entirely under reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-shake {
+    animation: none;
+  }
+}
+
 /* Limited-iteration pulse — e.g. animate-pulse-3 runs the default pulse 3 times */
 @utility animate-pulse-* {
   animation-name: pulse;
@@ -1114,13 +1146,31 @@ html[data-desktop-platform='macos'] {
 }
 
 /* AppHeader (the breadcrumb bar on standalone pages like /projects, /accounts):
-   clear the OS window controls on desktop by reserving space ABOVE the header
-   (a blank strip that holds the macOS traffic lights / Win-Linux control
-   cluster), instead of indenting the header sideways. Keeps the breadcrumb
-   left-aligned and the page content at full width. `py-4` (1rem) is preserved
-   on top of the title-bar inset. */
+   a thin, FULL-WIDTH unified titlebar on desktop. We drop the web's centered
+   `max-w-6xl` here so the row runs edge-to-edge — otherwise the centering
+   pushes the logo toward the middle, far from the traffic lights, leaving a
+   big empty gap on the left. */
 html[data-desktop='true'] .kx-app-header {
-  padding-top: calc(var(--kx-titlebar-inset) + 1rem);
+  max-width: none;
+  margin-inline: 0;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+  /* Win/Linux: controls live in a 32px top-right strip — the right cluster has
+     to clear it, so keep the row just below the strip. */
+  padding-top: calc(var(--kx-titlebar-inset) + 0.25rem);
+  padding-bottom: 0.375rem;
+}
+/* macOS: give the bar a fixed height and vertically center the row inside it,
+   so the row's center lines up with the traffic-light center. A 60px bar →
+   center at 30px → the lights must sit at center 30 too (main.js
+   trafficLightPosition y=24, since center = y + ~6), landing them in the exact
+   middle with generous breathing room above and below. Left cluster is padded
+   past the lights (they end at x≈67); right stays at the edge. */
+html[data-desktop-platform='macos'] .kx-app-header {
+  min-height: 3.75rem;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: calc(var(--kx-titlebar-inset) + 3rem);
 }
 
 /* Reusable title-bar spacer: a blank, draggable strip the height of the OS
@@ -1448,6 +1498,65 @@ html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-customize-hea
   }
   100% {
     opacity: 1;
+  }
+}
+
+/* Material-style spinner: linear orbit + eased dash = smooth perceived speed change */
+@keyframes spinner-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spinner-spin {
+  0% {
+    transform: rotate(0deg);
+    animation-timing-function: cubic-bezier(0.77, 0, 0.175, 1);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spinner-dash {
+  0% {
+    stroke-dasharray: 1, 63;
+    stroke-dashoffset: 0;
+  }
+  50% {
+    stroke-dasharray: 37, 63;
+    stroke-dashoffset: -14;
+  }
+  100% {
+    stroke-dasharray: 37, 63;
+    stroke-dashoffset: -49;
+  }
+}
+
+.animate-spinner-orbit {
+  transform-origin: center;
+  animation: spinner-orbit 2s linear infinite;
+}
+
+.animate-spinner-spin {
+  transform-origin: center;
+  animation: spinner-spin 1.1s infinite;
+}
+
+.animate-spinner-dash {
+  transform-origin: center;
+  animation: spinner-dash 1.5s cubic-bezier(0.77, 0, 0.175, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-spinner-orbit,
+  .animate-spinner-spin {
+    animation: spinner-orbit 1.5s linear infinite;
+  }
+
+  .animate-spinner-dash {
+    animation-duration: 1.5s;
+    animation-timing-function: linear;
   }
 }
 

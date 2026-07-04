@@ -50,8 +50,8 @@ const TriggersPage = lazy(() =>
 
 
 const FilesPage = lazy(() =>
-	import('@/features/files/components/file-explorer-page').then((m) => ({
-		default: m.FileExplorerPage,
+	import('@/features/files/sandbox-file-explorer').then((m) => ({
+		default: m.SandboxFileExplorer,
 	})),
 );
 

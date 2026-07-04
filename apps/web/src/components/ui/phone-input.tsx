@@ -32,10 +32,16 @@ type PhoneInputProps = Omit<
 const PhoneInput: React.ForwardRefExoticComponent<PhoneInputProps> =
   React.forwardRef<React.ElementRef<typeof RPNInput.default>, PhoneInputProps>(
     ({ className, onChange, value, ...props }, ref) => {
+      const isInvalid =
+        props['aria-invalid'] === true || props['aria-invalid'] === 'true';
       return (
         <RPNInput.default
           ref={ref}
-          className={cn('flex', className)}
+          className={cn(
+            'flex',
+            isInvalid && 'motion-safe:animate-shake',
+            className,
+          )}
           flagComponent={FlagComponent}
           countrySelectComponent={CountrySelect}
           inputComponent={InputComponent}
@@ -63,7 +69,8 @@ const InputComponent = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className, ...props }, ref) => (
     <Input
       type="text"
-      className={cn('rounded-e-lg rounded-s-none', className)}
+      // The wrapper owns the shake — a second one here would compound the translate.
+      className={cn('rounded-e-lg rounded-s-none aria-invalid:animate-none!', className)}
       {...props}
       ref={ref}
     />

@@ -26,7 +26,21 @@
  *    → hero link card or proxied iframe
  */
 
-import React, { useCallback, useEffect, useMemo, useState, lazy, Suspense } from 'react';
+import { TextWithPaths } from '@/components/common/clickable-path';
+import { CodeHighlight, UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import { Button } from '@/components/ui/button';
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
+import { toSandboxAbsolutePath } from '@/features/files/api/opencode-files';
+import { FileContentRenderer } from '@/features/files/components/file-content-renderer';
+import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
+import { useFileContent } from '@/features/files/hooks/use-file-content';
+import { useHeicBlob } from '@/hooks/use-heic-url';
+import { safeHttpUrl } from '@/lib/safe-url';
+import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
+import { cn } from '@/lib/utils';
+import { isHeicFile } from '@/lib/utils/heic-convert';
+import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
+import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 import {
   AlertTriangle,
   ChevronLeft,
@@ -39,30 +53,14 @@ import {
   Loader2,
   Music,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { toSandboxAbsolutePath } from '@/features/files/api/opencode-files';
-import { useFileContent } from '@/features/files/hooks/use-file-content';
-import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
-import { CodeHighlight, UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
-import { TextWithPaths } from '@/components/common/clickable-path';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ImageRenderer } from './image-renderer';
 import { VideoRenderer } from './video-renderer';
-import { FileContentRenderer } from '@/features/files/components/file-content-renderer';
-import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
-import { isHeicFile } from '@/lib/utils/heic-convert';
-import { useHeicBlob } from '@/hooks/use-heic-url';
-import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
-import { safeHttpUrl } from '@/lib/safe-url';
 
 // ── Lazy-load heavy renderers ──────────────────────────────────────────────
 
-const PdfRenderer = lazy(() =>
-  import('./pdf-renderer').then((m) => ({ default: m.PdfRenderer })),
-);
-const CsvRenderer = lazy(() =>
-  import('./csv-renderer').then((m) => ({ default: m.CsvRenderer })),
-);
+const PdfRenderer = lazy(() => import('./pdf-renderer').then((m) => ({ default: m.PdfRenderer })));
+const CsvRenderer = lazy(() => import('./csv-renderer').then((m) => ({ default: m.CsvRenderer })));
 const XlsxRenderer = lazy(() =>
   import('./xlsx-renderer').then((m) => ({ default: m.XlsxRenderer })),
 );
@@ -88,13 +86,19 @@ export const SHOW_HTML_EXT_RE = /\.(html?|htm)$/i;
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 export function showFavicon(url: string): string | null {
-  try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=128`; }
-  catch { return null; }
+  try {
+    return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=128`;
+  } catch {
+    return null;
+  }
 }
 
 export function showDomain(url: string): string {
-  try { return new URL(url).hostname.replace('www.', ''); }
-  catch { return url; }
+  try {
+    return new URL(url).hostname.replace('www.', '');
+  } catch {
+    return url;
+  }
 }
 
 export function showAspectRatioToCSS(ar: string | undefined): string | undefined {
@@ -130,16 +134,16 @@ const BLOB_TYPES = new Set(['image', 'video', 'audio', 'docx', 'pptx']);
 function RendererFallback({ className }: { className?: string }) {
   return (
     <div className={cn('flex items-center justify-center', className || 'h-[420px]')}>
-      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/40" />
+      <Loader2 className="text-muted-foreground/40 h-4 w-4 animate-spin" />
     </div>
   );
 }
 
 function LoadError({ message }: { message: string }) {
   return (
-    <div className="flex flex-col items-center justify-center h-[300px] gap-2 p-8 text-center">
-      <FileWarning className="h-6 w-6 text-muted-foreground/30" />
-      <p className="text-xs text-muted-foreground/60 max-w-sm">{message}</p>
+    <div className="flex h-[300px] flex-col items-center justify-center gap-2 p-8 text-center">
+      <FileWarning className="text-muted-foreground/30 h-6 w-6" />
+      <p className="text-muted-foreground/60 max-w-sm text-xs">{message}</p>
     </div>
   );
 }
@@ -147,12 +151,12 @@ function LoadError({ message }: { message: string }) {
 function FileCard({ title, fileName, path }: { title?: string; fileName: string; path: string }) {
   return (
     <div className="flex items-center gap-4 px-5 py-5">
-      <div className="flex items-center justify-center size-12 rounded-xl bg-muted/20">
-        <FileText className="size-6 text-muted-foreground/40" />
+      <div className="bg-muted/20 flex size-12 items-center justify-center rounded-xl">
+        <FileText className="text-muted-foreground/40 size-6" />
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-foreground truncate">{title || fileName}</div>
-        <div className="text-xs text-muted-foreground/50 font-mono truncate mt-0.5">{path}</div>
+      <div className="min-w-0 flex-1">
+        <div className="text-foreground truncate text-sm font-medium">{title || fileName}</div>
+        <div className="text-muted-foreground/50 mt-0.5 truncate font-mono text-xs">{path}</div>
       </div>
     </div>
   );
@@ -207,9 +211,7 @@ export function ShowContentRenderer({
   // `mediaH`   → visual media (image/video/pdf/sheets/docs/generic file)
   // `textWrap` → scrollable text/code/markdown surfaces
   const mediaH = fill ? 'h-full' : 'h-[420px]';
-  const textWrap = fill
-    ? 'px-5 py-5 h-full overflow-auto'
-    : 'px-5 py-5 max-h-96 overflow-auto';
+  const textWrap = fill ? 'px-5 py-5 h-full overflow-auto' : 'px-5 py-5 max-h-96 overflow-auto';
   // In fill mode the show card owns its own internal scroll, so we drop the
   // `data-scrollable` hook the panel uses to uncap inline content (otherwise the
   // panel body would scroll the whole card instead of the content within it).
@@ -260,7 +262,12 @@ export function ShowContentRenderer({
   // NOT the SDK text-read endpoint. More reliable for binary content.
   const needsBlob = BLOB_TYPES.has(effectiveType) && !!sandboxPath;
   const blobFilePath = needsBlob ? sandboxPath : null;
-  const { blobUrl, blob: rawBlob, isLoading: blobLoading, error: blobError } = useBinaryBlob(blobFilePath);
+  const {
+    blobUrl,
+    blob: rawBlob,
+    isLoading: blobLoading,
+    error: blobError,
+  } = useBinaryBlob(blobFilePath);
 
   // HEIC conversion — converts the raw blob to renderable JPEG
   const isHeic = isImage && isHeicFile(fileName);
@@ -271,17 +278,17 @@ export function ShowContentRenderer({
 
   // PDF: base64 content via SDK, decoded by PdfRenderer into a Blob URL.
   const pdfLoadPath = isPdf && sandboxPath ? sandboxPath : null;
-  const { data: pdfData, isLoading: pdfLoading, error: pdfError } = useFileContent(
-    pdfLoadPath,
-    { enabled: !!pdfLoadPath },
-  );
+  const {
+    data: pdfData,
+    isLoading: pdfLoading,
+    error: pdfError,
+  } = useFileContent(pdfLoadPath, { enabled: !!pdfLoadPath });
 
   // CSV/TSV: text content via SDK
   const csvLoadPath = isCsv && sandboxPath ? sandboxPath : null;
-  const { data: csvData, isLoading: csvLoading } = useFileContent(
-    csvLoadPath,
-    { enabled: !!csvLoadPath },
-  );
+  const { data: csvData, isLoading: csvLoading } = useFileContent(csvLoadPath, {
+    enabled: !!csvLoadPath,
+  });
 
   // HTML blob URL (inline content, no SDK call)
   const htmlBlobUrl = useMemo(() => {
@@ -291,20 +298,23 @@ export function ShowContentRenderer({
   }, [isHtml, content]);
 
   // Error fallback for FileContentRenderer (used for generic 'file' type)
-  const fileErrorFallback = useCallback((_error: string, fp: string) => {
-    const name = fp.split('/').pop() || fp;
-    return (
-      <div className="flex items-center gap-4 px-5 py-5 h-full">
-        <div className="flex items-center justify-center size-12 rounded-xl bg-muted/20">
-          <FileText className="size-6 text-muted-foreground/40" />
+  const fileErrorFallback = useCallback(
+    (_error: string, fp: string) => {
+      const name = fp.split('/').pop() || fp;
+      return (
+        <div className="flex h-full items-center gap-4 px-5 py-5">
+          <div className="bg-muted/20 flex size-12 items-center justify-center rounded-xl">
+            <FileText className="text-muted-foreground/40 size-6" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-foreground truncate text-sm font-medium">{title || name}</div>
+            <div className="text-muted-foreground/50 mt-0.5 truncate font-mono text-xs">{path}</div>
+          </div>
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-foreground truncate">{title || name}</div>
-          <div className="text-xs text-muted-foreground/50 font-mono truncate mt-0.5">{path}</div>
-        </div>
-      </div>
-    );
-  }, [title, path]);
+      );
+    },
+    [title, path],
+  );
 
   // ═════════════════════════════════════════════════════════════════════════
   // Load-status reporting — lets the parent (ShowTool) hide a dead reference
@@ -382,7 +392,7 @@ export function ShowContentRenderer({
     if (!safeExternalUrl) {
       return (
         <div className="px-5 py-4">
-          <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs truncate">
+          <div className="text-muted-foreground flex items-center gap-2 truncate font-mono text-xs">
             <Globe className="size-3.5 shrink-0" />
             {url}
           </div>
@@ -392,40 +402,40 @@ export function ShowContentRenderer({
     const favicon = showFavicon(safeExternalUrl);
     const domain = showDomain(safeExternalUrl);
     return (
-      <div className={cn('px-5 py-5', fill && 'h-full flex items-center')}>
+      <div className={cn('px-5 py-5', fill && 'flex h-full items-center')}>
         <a
           href={safeExternalUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="group flex w-full items-center gap-4 p-4 rounded-2xl border border-border/30 bg-muted/5 hover:bg-muted/20 transition-colors"
+          className="group border-border/30 bg-muted/5 hover:bg-muted/20 flex w-full items-center gap-4 rounded-2xl border p-4 transition-colors"
         >
-          <div className="flex items-center justify-center size-10 rounded-lg bg-muted/30 flex-shrink-0 overflow-hidden">
+          <div className="bg-muted/30 flex size-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg">
             {favicon ? (
               /* eslint-disable-next-line @next/next/no-img-element */
               <img
                 src={favicon}
                 alt=""
                 className="size-6 rounded"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
               />
             ) : (
-              <Globe className="size-5 text-muted-foreground/50" />
+              <Globe className="text-muted-foreground/50 size-5" />
             )}
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-foreground group-hover:text-primary transition-colors truncate">
+          <div className="min-w-0 flex-1">
+            <div className="text-foreground group-hover:text-primary truncate text-sm font-medium transition-colors">
               {title || domain}
             </div>
-            <div className="text-xs text-muted-foreground/60 font-mono truncate mt-0.5">
+            <div className="text-muted-foreground/60 mt-0.5 truncate font-mono text-xs">
               {domain}
             </div>
             {description && (
-              <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                {description}
-              </div>
+              <div className="text-muted-foreground mt-1 line-clamp-2 text-xs">{description}</div>
             )}
           </div>
-          <ExternalLink className="size-4 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors flex-shrink-0" />
+          <ExternalLink className="text-muted-foreground/30 group-hover:text-muted-foreground/60 size-4 flex-shrink-0 transition-colors" />
         </a>
       </div>
     );
@@ -474,12 +484,17 @@ export function ShowContentRenderer({
     if (blobError) return <LoadError message={blobError} />;
     if (blobUrl) {
       return (
-        <div className={cn('flex flex-col items-center justify-center gap-5', fill ? 'h-full' : 'py-10')}>
-          <div className="w-14 h-14 rounded-2xl bg-muted/50 flex items-center justify-center">
-            <Music className="size-6 text-muted-foreground/40" />
+        <div
+          className={cn(
+            'flex flex-col items-center justify-center gap-5',
+            fill ? 'h-full' : 'py-10',
+          )}
+        >
+          <div className="bg-muted/50 flex h-14 w-14 items-center justify-center rounded-2xl">
+            <Music className="text-muted-foreground/40 size-6" />
           </div>
           {(title || fileName) && (
-            <p className="text-xs text-muted-foreground/60">{title || fileName}</p>
+            <p className="text-muted-foreground/60 text-xs">{title || fileName}</p>
           )}
           <audio controls src={blobUrl} className="w-full max-w-sm" preload="metadata" />
         </div>
@@ -493,7 +508,10 @@ export function ShowContentRenderer({
   // ═════════════════════════════════════════════════════════════════════════
   if (isPdf && path) {
     if (pdfLoading) return <RendererFallback className={mediaH} />;
-    if (pdfError) return <LoadError message={pdfError instanceof Error ? pdfError.message : String(pdfError)} />;
+    if (pdfError)
+      return (
+        <LoadError message={pdfError instanceof Error ? pdfError.message : String(pdfError)} />
+      );
     if (pdfData?.content) {
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
@@ -603,10 +621,7 @@ export function ShowContentRenderer({
   if (isCode && content) {
     return (
       <div className={textWrap}>
-        <CodeHighlight
-          code={content}
-          language={language || 'text'}
-        />
+        <CodeHighlight code={content} language={language || 'text'} />
       </div>
     );
   }
@@ -659,10 +674,12 @@ export function ShowContentRenderer({
   // ═════════════════════════════════════════════════════════════════════════
   if (effectiveType === 'error' && content) {
     return (
-      <div className={cn('px-5 py-4', fill && 'h-full flex items-center')}>
+      <div className={cn('px-5 py-4', fill && 'flex h-full items-center')}>
         <div className="flex items-start gap-3">
-          <AlertTriangle className="size-4 flex-shrink-0 mt-0.5 text-red-500" />
-          <p className="text-sm text-foreground whitespace-pre-wrap"><TextWithPaths text={content} /></p>
+          <AlertTriangle className="mt-0.5 size-4 flex-shrink-0 text-red-500" />
+          <p className="text-foreground text-sm whitespace-pre-wrap">
+            <TextWithPaths text={content} />
+          </p>
         </div>
       </div>
     );
@@ -674,24 +691,32 @@ export function ShowContentRenderer({
   return (
     <div className={cn('px-5 py-4', fill && 'h-full overflow-auto')}>
       {content && (
-        <div data-scrollable={scrollableAttr} className={fill ? undefined : 'max-h-96 overflow-auto'}>
+        <div
+          data-scrollable={scrollableAttr}
+          className={fill ? undefined : 'max-h-96 overflow-auto'}
+        >
           <UnifiedMarkdown content={content} />
         </div>
       )}
       {path && !content && (
-        <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs truncate">
+        <div className="text-muted-foreground flex items-center gap-2 truncate font-mono text-xs">
           <FileIcon className="size-3.5 shrink-0" />
           {path}
         </div>
       )}
       {safeExternalUrl && !content && (
-        <a href={safeExternalUrl} target="_blank" rel="noopener noreferrer" className="text-primary font-mono text-xs truncate hover:underline flex items-center gap-1.5">
+        <a
+          href={safeExternalUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary flex items-center gap-1.5 truncate font-mono text-xs hover:underline"
+        >
           <ExternalLink className="size-3.5" />
           {safeExternalUrl}
         </a>
       )}
       {url && !safeExternalUrl && !content && (
-        <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs truncate">
+        <div className="text-muted-foreground flex items-center gap-2 truncate font-mono text-xs">
           <Globe className="size-3.5 shrink-0" />
           {url}
         </div>
@@ -725,27 +750,141 @@ export interface ShowCarouselProps {
   fill?: boolean;
 }
 
-export function ShowCarousel({ items, LocalhostPreview, onIndexChange, fill = false }: ShowCarouselProps) {
+const SHOW_TYPE_LABELS: Record<string, string> = {
+  file: 'File',
+  image: 'Image',
+  url: 'URL',
+  text: 'Text',
+  error: 'Error',
+  video: 'Video',
+  audio: 'Audio',
+  code: 'Code',
+  markdown: 'Markdown',
+  pdf: 'PDF',
+  html: 'HTML',
+  csv: 'CSV',
+  xlsx: 'Sheet',
+  docx: 'Doc',
+  pptx: 'Slides',
+};
+
+// Document formats show just their uppercase extension (PDF, PPTX, DOCX, XLSX…)
+// instead of a filename pill. Everything else (code/text/html/css/tsx…) shows its basename.
+const SHOW_DOC_EXT_RE = /\.(pdf|docx?|pptx?|xlsx?)$/i;
+const SHOW_DOC_TYPE_RE = /^(pdf|docx?|pptx?|xlsx?)$/i;
+
+/** Document extension for a carousel item (pdf/doc/ppt/xls families), or null. */
+function getShowDocExt(item: ShowCarouselItem): string | null {
+  const match = item.path?.match(SHOW_DOC_EXT_RE);
+  if (match) return match[1].toLowerCase();
+  const type = item.type ?? '';
+  if (SHOW_DOC_TYPE_RE.test(type)) return type.toLowerCase();
+  return null;
+}
+
+function truncateLabel(value: string, max = 18): string {
+  if (value.length <= max) return value;
+  return `${value.slice(0, max - 1)}…`;
+}
+
+/** Short pill label for a carousel segment — port, doc extension, filename, domain, or type. */
+export function getShowCarouselItemLabel(item: ShowCarouselItem): string {
+  const localhost = item.url ? parseLocalhostUrl(item.url) : null;
+  if (localhost && !isAppRouteUrl(item.url)) return `:${localhost.port}`;
+
+  const docExt = getShowDocExt(item);
+  if (docExt) return docExt.toUpperCase();
+
+  if (item.title?.trim()) return truncateLabel(item.title.trim());
+
+  if (item.url) {
+    const external = safeHttpUrl(item.url);
+    if (external) return truncateLabel(showDomain(external));
+  }
+
+  if (item.path) {
+    const base = item.path.split('/').filter(Boolean).pop();
+    if (base) return truncateLabel(base);
+  }
+
+  return SHOW_TYPE_LABELS[item.type] ?? truncateLabel(item.type || 'Item');
+}
+
+function getShowCarouselItemAriaLabel(
+  item: ShowCarouselItem,
+  index: number,
+  total: number,
+): string {
+  const parts = [`Item ${index + 1} of ${total}`];
+  if (item.title) parts.push(item.title);
+  else parts.push(getShowCarouselItemLabel(item));
+  if (item.type) parts.push(item.type);
+  return parts.join(' · ');
+}
+
+export function ShowCarousel({
+  items,
+  LocalhostPreview,
+  onIndexChange,
+  fill = false,
+}: ShowCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const count = items.length;
+  const segmentRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
-  const goTo = useCallback((idx: number) => {
-    const clamped = Math.max(0, Math.min(idx, count - 1));
-    setCurrentIndex(clamped);
-    onIndexChange?.(clamped);
-  }, [count, onIndexChange]);
+  const labels = useMemo(() => items.map(getShowCarouselItemLabel), [items]);
+
+  const goTo = useCallback(
+    (idx: number) => {
+      const clamped = Math.max(0, Math.min(idx, count - 1));
+      setCurrentIndex(clamped);
+      onIndexChange?.(clamped);
+    },
+    [count, onIndexChange],
+  );
 
   const prev = useCallback(() => goTo(currentIndex - 1), [goTo, currentIndex]);
   const next = useCallback(() => goTo(currentIndex + 1), [goTo, currentIndex]);
 
+  useEffect(() => {
+    segmentRefs.current[currentIndex]?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+      inline: 'center',
+    });
+  }, [currentIndex]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (
+        el &&
+        (el.tagName === 'INPUT' ||
+          el.tagName === 'TEXTAREA' ||
+          el.isContentEditable ||
+          el.closest('.cm-editor') ||
+          el.closest('.ProseMirror'))
+      ) {
+        return;
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        prev();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        next();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [prev, next]);
+
   const currentItem = items[currentIndex];
   if (!currentItem) return null;
 
-  const itemTitle = currentItem.title || currentItem.type || '';
-
   return (
     <div className={cn(fill && 'flex h-full flex-col')}>
-      {/* ── Content area — fills in the panel, stable min height inline ── */}
       <div className={cn(fill ? 'min-h-0 flex-1 overflow-hidden' : 'min-h-[420px]')}>
         <ShowContentRenderer
           type={currentItem.type}
@@ -761,52 +900,72 @@ export function ShowCarousel({ items, LocalhostPreview, onIndexChange, fill = fa
         />
       </div>
 
-      {/* ── Navigation bar ── */}
       {count > 1 && (
-        <div className="flex shrink-0 items-center gap-3 px-5 py-3 border-t border-border/15">
-          {/* Prev */}
-          <button
-            type="button"
-            onClick={prev}
-            disabled={currentIndex === 0}
-            className="p-1.5 rounded-lg transition-colors disabled:opacity-20 hover:bg-muted text-muted-foreground hover:text-foreground"
-          >
-            <ChevronLeft className="size-4" />
-          </button>
-
-          {/* Dots + label */}
-          <div className="flex-1 flex flex-col items-center gap-1.5 min-w-0">
-            {itemTitle && (
-              <span className="text-xs text-muted-foreground/80 font-medium truncate max-w-full">
-                {itemTitle}
-              </span>
-            )}
-            <div className="flex items-center gap-1.5">
-              {items.map((_, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => goTo(i)}
-                  className={cn(
-                    'rounded-full transition-colors',
-                    i === currentIndex
-                      ? 'w-5 h-1.5 bg-foreground/60'
-                      : 'w-1.5 h-1.5 bg-foreground/15 hover:bg-foreground/30',
-                  )}
-                />
-              ))}
-            </div>
+        <div className="border-border flex shrink-0 items-center gap-2 border-t px-2 py-1.5 pr-3.5">
+          <div className="flex shrink-0 items-center">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={prev}
+              className="hit-area-2 hit-area-r-0 transition-transform active:scale-[0.96]"
+              disabled={currentIndex === 0}
+              aria-label="Previous item"
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={next}
+              className="hit-area-2 hit-area-l-0 transition-transform active:scale-[0.96]"
+              disabled={currentIndex >= count - 1}
+              aria-label="Next item"
+            >
+              <ChevronRight className="size-4" />
+            </Button>
           </div>
 
-          {/* Next */}
-          <button
-            type="button"
-            onClick={next}
-            disabled={currentIndex === count - 1}
-            className="p-1.5 rounded-lg transition-colors disabled:opacity-20 hover:bg-muted text-muted-foreground hover:text-foreground"
+          <FadedScrollArea
+            orientation="horizontal"
+            fadeColor="from-background"
+            className="min-w-0 flex-1 overscroll-x-contain"
           >
-            <ChevronRight className="size-4" />
-          </button>
+            <div className="flex w-max min-w-0 items-center gap-1">
+              {items.map((item, i) => {
+                const label = labels[i] ?? 'Item';
+                const isPortLabel = label.startsWith(':');
+                return (
+                  <button
+                    key={i}
+                    ref={(el) => {
+                      segmentRefs.current[i] = el;
+                    }}
+                    type="button"
+                    onClick={() => goTo(i)}
+                    aria-label={getShowCarouselItemAriaLabel(item, i, count)}
+                    aria-current={i === currentIndex ? 'true' : undefined}
+                    className={cn(
+                      'shrink-0 rounded-md px-2 py-1 text-xs font-medium',
+                      'transition-[background-color,color,transform] active:scale-[0.96]',
+                      i === currentIndex
+                        ? 'bg-foreground/10 text-foreground'
+                        : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                    )}
+                  >
+                    <span className={cn(isPortLabel && 'tabular-nums')}>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </FadedScrollArea>
+
+          <span className="text-muted-foreground shrink-0 pl-1 text-xs tabular-nums">
+            {currentIndex + 1}
+            <span className="text-muted-foreground/40">/</span>
+            {count}
+          </span>
         </div>
       )}
     </div>
