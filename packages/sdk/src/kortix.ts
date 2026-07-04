@@ -105,6 +105,23 @@ export function createKortix(config: KortixPlatformConfig) {
     createSession: P.createProjectSession,
   };
 
+  /** GitHub App installation + repository linking — account-scoped, not project-scoped. */
+  const github = {
+    linkRepository: P.linkRepository,
+    getInstallation: P.getGitHubInstallation,
+    listInstallations: P.listGitHubInstallations,
+    listRepositories: P.listGitHubRepositories,
+    saveInstallation: P.saveGitHubInstallation,
+    deleteInstallation: P.deleteGitHubInstallation,
+  };
+
+  /** Public share links for a sandbox port (`/v1/p/share`) — sandbox-scoped, not project-scoped. */
+  const sandboxShares = {
+    list: P.listSandboxShares,
+    create: P.createSandboxShare,
+    revoke: P.revokeSandboxShare,
+  };
+
   /** Id-bound handle for a single project: every sub-resource, projectId pre-applied. */
   function project(projectId: string) {
     return {
@@ -221,6 +238,109 @@ export function createKortix(config: KortixPlatformConfig) {
         create: (input?: Parameters<typeof P.createProjectSession>[1]) =>
           P.createProjectSession(projectId, input),
       },
+
+      /** Review Center — the per-project human-in-the-loop inbox (change requests, tool approvals, agent outputs/decisions). */
+      review: {
+        list: (params?: Parameters<typeof P.listReviewItems>[1]) => P.listReviewItems(projectId, params),
+        get: (reviewItemId: string) => P.getReviewItem(projectId, reviewItemId),
+        submit: (input: Parameters<typeof P.submitReviewItem>[1]) =>
+          P.submitReviewItem(projectId, input),
+        act: (...a: DropFirst<Parameters<typeof P.actReviewItem>>) => P.actReviewItem(projectId, ...a),
+        bulkAct: (input: Parameters<typeof P.bulkActReviewItems>[1]) =>
+          P.bulkActReviewItems(projectId, input),
+      },
+
+      /** The manager inbox of executor-gated actions awaiting approve/deny (APPROVE / ASK / BLOCK). */
+      approvals: {
+        list: (options?: Parameters<typeof P.listPendingApprovals>[1]) =>
+          P.listPendingApprovals(projectId, options),
+        resolve: (...a: DropFirst<Parameters<typeof P.resolveApproval>>) =>
+          P.resolveApproval(projectId, ...a),
+        sessionsNeedingInput: (options?: Parameters<typeof P.listSessionsNeedingInput>[1]) =>
+          P.listSessionsNeedingInput(projectId, options),
+      },
+
+      /** Gateway observability — LLM request logs, cost/latency rollups, budgets, gateway API keys. */
+      gateway: {
+        logs: (opts?: Parameters<typeof P.listGatewayLogs>[1]) => P.listGatewayLogs(projectId, opts),
+        log: (logId: string) => P.getGatewayLog(projectId, logId),
+        overview: (days?: number) => P.getGatewayOverview(projectId, days),
+        series: (days?: number) => P.getGatewaySeries(projectId, days),
+        breakdown: (days?: number) => P.getGatewayBreakdown(projectId, days),
+        sessions: (days?: number) => P.getGatewaySessions(projectId, days),
+        errors: (days?: number) => P.getGatewayErrors(projectId, days),
+        budgets: () => P.getGatewayBudgets(projectId),
+        setBudget: (input: Parameters<typeof P.setGatewayBudget>[1]) =>
+          P.setGatewayBudget(projectId, input),
+        deleteBudget: (budgetId: string) => P.deleteGatewayBudget(projectId, budgetId),
+        keys: () => P.getGatewayKeys(projectId),
+        createKey: (name: string) => P.createGatewayKey(projectId, name),
+        revokeKey: (keyId: string) => P.revokeGatewayKey(projectId, keyId),
+      },
+
+      /** Slack + email + Meet channel integrations. */
+      channels: {
+        slack: {
+          installation: () => P.getSlackInstallation(projectId),
+          connect: (input: Parameters<typeof P.connectSlack>[1]) => P.connectSlack(projectId, input),
+          mode: () => P.getSlackMode(projectId),
+          manifest: () => P.getSlackManifest(projectId),
+          disconnect: () => P.disconnectSlack(projectId),
+        },
+        email: {
+          installation: (connectorSlug?: string | null) =>
+            P.getEmailInstallation(projectId, connectorSlug),
+          mode: () => P.getEmailMode(projectId),
+          connect: (input: Parameters<typeof P.connectEmail>[1]) => P.connectEmail(projectId, input),
+          disconnect: (connectorSlug?: string | null) => P.disconnectEmail(projectId, connectorSlug),
+          updatePolicy: (...a: DropFirst<Parameters<typeof P.updateEmailPolicy>>) =>
+            P.updateEmailPolicy(projectId, ...a),
+        },
+        meet: {
+          voices: () => P.getMeetVoices(projectId),
+          setVoice: (voice: string) => P.setMeetVoice(projectId, voice),
+          setBotName: (name: string) => P.setMeetBotName(projectId, name),
+          previewVoice: (voiceId: string) => P.previewMeetVoice(projectId, voiceId),
+        },
+      },
+
+      /** Project apps/deployments — the `/projects/:id/apps/*` family. */
+      apps: {
+        list: () => P.listProjectApps(projectId),
+        create: (input: Parameters<typeof P.createProjectApp>[1]) => P.createProjectApp(projectId, input),
+        update: (...a: DropFirst<Parameters<typeof P.updateProjectApp>>) =>
+          P.updateProjectApp(projectId, ...a),
+        remove: (slug: string) => P.deleteProjectApp(projectId, slug),
+        deploy: (slug: string) => P.deployProjectApp(projectId, slug),
+        stop: (slug: string) => P.stopProjectApp(projectId, slug),
+        logs: (slug: string) => P.getProjectAppLogs(projectId, slug),
+      },
+
+      /** Default model preferences (account/agent/project scope, gateway-resolved). */
+      modelDefaults: {
+        get: () => P.getModelDefaults(projectId),
+        set: (input: Parameters<typeof P.setModelDefault>[1]) => P.setModelDefault(projectId, input),
+        clear: (params: Parameters<typeof P.clearModelDefault>[1]) =>
+          P.clearModelDefault(projectId, params),
+      },
+
+      /** Sandbox templates + snapshot builds — Dockerfile/image/warm-pool config, beyond `sandboxHealth`/`sandboxTemplates`. */
+      sandbox: {
+        list: () => P.listProjectSandboxes(projectId),
+        snapshots: () => P.listProjectSnapshots(projectId),
+        rebuildSnapshot: (slug?: string) => P.rebuildProjectSnapshot(projectId, slug),
+        fixWithAgent: () => P.fixSandboxWithAgent(projectId),
+        createTemplate: (input: Parameters<typeof P.createSandboxTemplate>[1]) =>
+          P.createSandboxTemplate(projectId, input),
+        updateTemplate: (...a: DropFirst<Parameters<typeof P.updateSandboxTemplate>>) =>
+          P.updateSandboxTemplate(projectId, ...a),
+        removeTemplate: (templateId: string) => P.deleteSandboxTemplate(projectId, templateId),
+        buildTemplate: (templateId: string) => P.buildSandboxTemplate(projectId, templateId),
+      },
+
+      /** Bind specific secrets + connectors to an agent (the inheritance pyramid's declaration step). */
+      setAgentScope: (...a: DropFirst<Parameters<typeof P.setAgentScope>>) =>
+        P.setAgentScope(projectId, ...a),
 
       session: (sessionId: string) => session(projectId, sessionId),
     };
@@ -424,6 +544,12 @@ export function createKortix(config: KortixPlatformConfig) {
     projects,
     project,
     session,
+    /** GitHub App installation + repository linking (account-scoped). */
+    github,
+    /** Public share links for a sandbox port (`/v1/p/share`, sandbox-scoped). */
+    sandboxShares,
+    /** Speech-to-text transcription (`/transcription` — not project-scoped). */
+    transcribe: P.transcribeAudio,
     /** Escape hatch: the typed opencode client for the active sandbox. */
     runtime,
   };

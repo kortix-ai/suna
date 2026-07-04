@@ -56,6 +56,145 @@ test('session(...).audit hits the audit endpoint with the given limit', async ()
   expect(last().url).toContain('/projects/PID123/sessions/SID456/audit?limit=10');
 });
 
+// ── review / approvals / gateway / channels / apps / model-defaults / sandbox
+// / github / transcribe / sandbox-shares — the facade groups wired to close
+// the projects-client coverage gap (~85/187 wired before) ───────────────────
+
+test('project(id).review hits the review-items endpoints', async () => {
+  await kortix.project('PID123').review.list({ segment: 'needs_you' });
+  expect(last().url).toContain('/projects/PID123/review/items?segment=needs_you');
+
+  await kortix.project('PID123').review.get('RI1');
+  expect(last().url).toContain('/projects/PID123/review/items/RI1');
+
+  await kortix.project('PID123').review.act('RI1', { verdict: 'approve' });
+  expect(last().url).toContain('/projects/PID123/review/items/RI1/act');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').review.bulkAct({ ids: ['RI1', 'RI2'], verdict: 'reject' });
+  expect(last().url).toContain('/projects/PID123/review/bulk');
+
+  await kortix.project('PID123').review.submit({ kind: 'output', title: 'Result' });
+  expect(last().url).toContain('/projects/PID123/review/items');
+  expect(last().method).toBe('POST');
+});
+
+test('project(id).approvals hits the approvals inbox endpoints', async () => {
+  await kortix.project('PID123').approvals.list();
+  expect(last().url).toContain('/projects/PID123/approvals');
+
+  await kortix.project('PID123').approvals.sessionsNeedingInput();
+  expect(last().url).toContain('/projects/PID123/approvals/needs-input');
+
+  await kortix.project('PID123').approvals.resolve('EXEC1', 'approve');
+  expect(last().url).toContain('/projects/PID123/approvals/EXEC1');
+  expect(last().method).toBe('POST');
+});
+
+test('project(id).gateway hits the gateway observability + budget + key endpoints', async () => {
+  await kortix.project('PID123').gateway.logs({ limit: 10 });
+  expect(last().url).toContain('/projects/PID123/gateway/logs?limit=10');
+
+  await kortix.project('PID123').gateway.overview(7);
+  expect(last().url).toContain('/projects/PID123/gateway/overview?days=7');
+
+  await kortix.project('PID123').gateway.budgets();
+  expect(last().url).toContain('/projects/PID123/gateway/budgets');
+
+  await kortix.project('PID123').gateway.setBudget({ scope: 'project', limit_usd: 50 });
+  expect(last().url).toContain('/projects/PID123/gateway/budgets');
+  expect(last().method).toBe('PUT');
+
+  await kortix.project('PID123').gateway.createKey('ci-key');
+  expect(last().url).toContain('/projects/PID123/gateway/keys');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').gateway.revokeKey('KEY1');
+  expect(last().url).toContain('/projects/PID123/gateway/keys/KEY1');
+  expect(last().method).toBe('DELETE');
+});
+
+test('project(id).channels covers slack, email and meet', async () => {
+  await kortix.project('PID123').channels.slack.installation();
+  expect(last().url).toContain('/projects/PID123/channels/slack/installation');
+
+  await kortix.project('PID123').channels.email.mode();
+  expect(last().url).toContain('/projects/PID123/channels/email/mode');
+
+  await kortix.project('PID123').channels.meet.voices();
+  expect(last().url).toContain('/projects/PID123/channels/meet/voices');
+
+  await kortix.project('PID123').channels.meet.setVoice('voice-1');
+  expect(last().url).toContain('/projects/PID123/channels/meet/voice');
+  expect(last().method).toBe('PUT');
+});
+
+test('project(id).apps hits the apps/deployments endpoints', async () => {
+  await kortix.project('PID123').apps.list();
+  expect(last().url).toContain('/projects/PID123/apps');
+
+  await kortix.project('PID123').apps.deploy('web');
+  expect(last().url).toContain('/projects/PID123/apps/web/deploy');
+  expect(last().method).toBe('POST');
+});
+
+test('project(id).modelDefaults gets/sets/clears the default model', async () => {
+  await kortix.project('PID123').modelDefaults.get();
+  expect(last().url).toContain('/projects/PID123/model-defaults');
+
+  await kortix.project('PID123').modelDefaults.set({ scope: 'project', model: 'anthropic/claude' });
+  expect(last().method).toBe('PUT');
+
+  await kortix.project('PID123').modelDefaults.clear({ scope: 'project' });
+  expect(last().method).toBe('DELETE');
+});
+
+test('project(id).sandbox hits the sandbox/snapshot/template admin endpoints', async () => {
+  await kortix.project('PID123').sandbox.list();
+  expect(last().url).toContain('/projects/PID123/sandboxes');
+
+  await kortix.project('PID123').sandbox.snapshots();
+  expect(last().url).toContain('/projects/PID123/snapshots');
+
+  await kortix.project('PID123').sandbox.rebuildSnapshot();
+  expect(last().url).toContain('/projects/PID123/snapshots/rebuild');
+  expect(last().method).toBe('POST');
+});
+
+test('project(id).setAgentScope binds the project id + agent name', async () => {
+  await kortix.project('PID123').setAgentScope('researcher', { env: 'all' });
+  expect(last().url).toContain('/projects/PID123/agents/researcher/scope');
+  expect(last().method).toBe('PUT');
+});
+
+test('kortix.github covers install/list/link/repo endpoints (account-scoped, not project-scoped)', async () => {
+  await kortix.github.getInstallation('ACC1');
+  expect(last().url).toContain('/projects/github/installation?account_id=ACC1');
+
+  await kortix.github.listRepositories('ACC1');
+  expect(last().url).toContain('/projects/github/repositories?account_id=ACC1');
+});
+
+test('kortix.sandboxShares hits /p/share (sandbox-scoped, not project-scoped)', async () => {
+  await kortix.sandboxShares.list('SB1');
+  expect(last().url).toContain('/p/share?sandbox_id=SB1');
+
+  await kortix.sandboxShares.create({ sandboxId: 'SB1', port: 8000 });
+  expect(last().url).toContain('/p/share');
+  expect(last().method).toBe('POST');
+
+  await kortix.sandboxShares.revoke('SB1', 'TOK1');
+  expect(last().url).toContain('/p/share/TOK1?sandbox_id=SB1');
+  expect(last().method).toBe('DELETE');
+});
+
+test('kortix.transcribe hits the top-level /transcription endpoint (not project-scoped)', async () => {
+  const file = new File(['audio'], 'clip.webm', { type: 'audio/webm' });
+  await kortix.transcribe(file);
+  expect(last().url).toContain('/transcription');
+  expect(last().method).toBe('POST');
+});
+
 // ── per-handle runtime isolation (regression: two session handles used to
 // share the module-global "active runtime", so the second handle's
 // ensureReady() silently redirected the first handle's send/health/preview

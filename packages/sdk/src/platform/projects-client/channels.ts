@@ -170,3 +170,64 @@ export async function updateEmailPolicy(
     'Failed to update email policy',
   );
 }
+
+// ── Meet — the bot voice + display name a project's Google/Zoom Meet channel uses ──
+
+export interface MeetVoice {
+  id: string;
+  name: string;
+  desc: string;
+}
+
+export interface MeetVoicesResponse {
+  selected: string;
+  bot_name: string;
+  default_bot_name: string;
+  speak_enabled: boolean;
+  voices: MeetVoice[];
+}
+
+export async function getMeetVoices(projectId: string): Promise<MeetVoicesResponse | null> {
+  const res = await backendApi.get<MeetVoicesResponse>(
+    `/projects/${encodeURIComponent(projectId)}/channels/meet/voices`,
+    { showErrors: false },
+  );
+  if (!res.success) return null;
+  return res.data ?? null;
+}
+
+export async function setMeetVoice(projectId: string, voice: string): Promise<{ selected: string }> {
+  return unwrap(
+    await backendApi.put<{ selected: string }>(
+      `/projects/${encodeURIComponent(projectId)}/channels/meet/voice`,
+      { voice },
+      { showErrors: false },
+    ),
+    'Failed to save voice',
+  );
+}
+
+export async function setMeetBotName(projectId: string, name: string): Promise<{ bot_name: string }> {
+  return unwrap(
+    await backendApi.put<{ bot_name: string }>(
+      `/projects/${encodeURIComponent(projectId)}/channels/meet/name`,
+      { name },
+      { showErrors: false },
+    ),
+    'Failed to save name',
+  );
+}
+
+/** Returns a base64-encoded audio sample for the given voice, or null on failure. */
+export async function previewMeetVoice(
+  projectId: string,
+  voiceId: string,
+): Promise<string | null> {
+  const res = await backendApi.post<{ b64: string }>(
+    `/projects/${encodeURIComponent(projectId)}/channels/meet/voices/${encodeURIComponent(voiceId)}/preview`,
+    {},
+    { showErrors: false },
+  );
+  if (!res.success || !res.data?.b64) return null;
+  return res.data.b64;
+}
