@@ -7,7 +7,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { handleApiError } from '@/lib/error-handler';
 import { registerQueryClient } from '@/lib/query-client-singleton';
 
-import { isBillingError } from '@/lib/api/errors';
+import { isBillingError } from '@kortix/sdk/react';
 
 export function ReactQueryProvider({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => {
