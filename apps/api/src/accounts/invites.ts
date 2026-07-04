@@ -72,13 +72,13 @@ async function lookupAuthEmail(userId: string | null): Promise<string | null> {
 // unrelated future code path can't break invite acceptance.
 type ValidatedGrant = {
   project_id: string;
-  role: 'manager' | 'editor' | 'user';
+  role: 'manager' | 'editor' | 'member';
   expires_at: string | null;
 };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// `viewer` is accepted as a deprecated alias and folded into `user`; anything
-// outside this canonical set is rejected.
-const VALID_PROJECT_ROLES = new Set(['manager', 'editor', 'user']);
+// `viewer` and the legacy `user` tier are accepted as deprecated aliases and
+// folded into `member`; anything outside this canonical set is rejected.
+const VALID_PROJECT_ROLES = new Set(['manager', 'editor', 'member']);
 
 function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -86,7 +86,7 @@ function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
   if (typeof g.project_id !== 'string' || !UUID_RE.test(g.project_id)) return null;
   if (typeof g.role !== 'string') return null;
   const normalizedRole = g.role.trim().toLowerCase();
-  const role = normalizedRole === 'viewer' ? 'user' : normalizedRole;
+  const role = normalizedRole === 'viewer' || normalizedRole === 'user' ? 'member' : normalizedRole;
   if (!VALID_PROJECT_ROLES.has(role)) return null;
   // expires_at is optional; when present must parse to a real date.
   let expiresAt: string | null = null;
@@ -98,7 +98,7 @@ function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
   }
   return {
     project_id: g.project_id,
-    role: role as 'manager' | 'editor' | 'user',
+    role: role as 'manager' | 'editor' | 'member',
     expires_at: expiresAt,
   };
 }

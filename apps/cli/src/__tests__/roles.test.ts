@@ -28,9 +28,9 @@ let stdout = '';
 let stderr = '';
 let requests: Array<{ url: string; method: string; body: any }> = [];
 
-// Built-in `viewer` (read-only) + a custom `support_agent` role.
+// Built-in `member` (project floor role) + a custom `support_agent` role.
 const ROLES = [
-  { role_id: 'builtin:user', key: 'user', name: 'User', description: null, resource_type: 'project', is_system: true, account_id: null },
+  { role_id: 'builtin:member', key: 'member', name: 'Member', description: null, resource_type: 'project', is_system: true, account_id: null },
   { role_id: 'role_77', key: 'support_agent', name: 'Support Agent', description: 'Read + run', resource_type: 'project', is_system: false, account_id: 'account_1' },
 ];
 
@@ -188,7 +188,7 @@ describe('kortix roles', () => {
   });
 
   test('set-actions refuses a built-in role', async () => {
-    const code = await runRoles(['set-actions', 'user', '--actions', 'project.read']);
+    const code = await runRoles(['set-actions', 'member', '--actions', 'project.read']);
     expect(code).toBe(2);
     expect(stripAnsi(stderr)).toContain('read-only');
     // No PUT was attempted.
@@ -196,7 +196,7 @@ describe('kortix roles', () => {
   });
 
   test('rm refuses a built-in role but deletes a custom one', async () => {
-    expect(await runRoles(['rm', 'user'])).toBe(2);
+    expect(await runRoles(['rm', 'member'])).toBe(2);
     expect(requests.some((r) => r.method === 'DELETE')).toBe(false);
 
     requests = [];
@@ -211,7 +211,7 @@ describe('kortix roles', () => {
     const out = stripAnsi(stdout);
     expect(out).toContain('[[roles]]');
     expect(out).toContain('key = "support_agent"'); // custom role
-    expect(out).not.toContain('key = "user"'); // built-in excluded
+    expect(out).not.toContain('key = "member"'); // built-in excluded
     expect(out).toContain('[[policies]]');
     expect(out).toContain('role_key = "support_agent"'); // bound by KEY (portable)
   });

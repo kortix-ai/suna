@@ -1,3 +1,4 @@
+import { recordSessionToolApproval } from '../../executor/db-deps';
 import { isSessionVisibleTo, loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../executor/share';
 import {
   PROJECT_ACTIONS,
@@ -178,12 +179,12 @@ projectsApp.openapi(
 
   const body = await readBody(c);
   const groupId = normalizeString(body.group_id ?? body.groupId);
-  // parseProjectRole folds the legacy `viewer` alias into `user`, so a grant
-  // is never persisted with the retired role.
+  // parseProjectRole folds the legacy `viewer`/`user` aliases into `member`, so
+  // a grant is never persisted with a retired role.
   const role = parseProjectRole(body.role);
   if (!groupId) return c.json({ error: 'group_id is required' }, 400);
   if (!role) {
-    return c.json({ error: 'role must be manager, editor, or user' }, 400);
+    return c.json({ error: 'role must be manager, editor, or member' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
@@ -266,7 +267,7 @@ projectsApp.openapi(
   const body = await readBody(c);
   const role = parseProjectRole(body.role);
   if (!role) {
-    return c.json({ error: 'role must be manager, editor, or user' }, 400);
+    return c.json({ error: 'role must be manager, editor, or member' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
@@ -915,6 +916,11 @@ projectsApp.openapi(
     if (decision !== 'approve' && decision !== 'deny') {
       return c.json({ error: "decision must be 'approve' or 'deny'" }, 400);
     }
+    // 'once' (default) = approve just this call; 'session' = also stop asking for
+    // THIS connector+action for the rest of the session. Only meaningful on
+    // approve. (A policy `block` never reaches this endpoint as pending, so
+    // "allow for session" can only ever widen require_approval → run.)
+    const scope = normalizeString(body.scope) === 'session' ? 'session' : 'once';
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -923,6 +929,8 @@ projectsApp.openapi(
       .select({
         executionId: executorExecutions.executionId,
         sessionId: executorExecutions.sessionId,
+        connectorId: executorExecutions.connectorId,
+        actionPath: executorExecutions.actionPath,
         status: executorExecutions.status,
         approvedBy: executorExecutions.approvedBy,
         resolvedAt: executorExecutions.resolvedAt,
@@ -1003,7 +1011,27 @@ projectsApp.openapi(
       return c.json({ error: 'Approval already resolved' }, 409);
     }
 
-    return c.json({ ok: true });
+    // "Allow for this session": record (session, connector, action) so the
+    // gateway auto-runs the same tool for the rest of the session. Best-effort +
+    // idempotent — a failure here doesn't undo the (already-committed) approval.
+    if (decision === 'approve' && scope === 'session' && row.sessionId && row.connectorId) {
+      try {
+        await recordSessionToolApproval({
+          sessionId: row.sessionId,
+          projectId,
+          connectorId: row.connectorId,
+          actionPath: row.actionPath,
+          grantedBy: loaded.userId,
+        });
+      } catch (err) {
+        console.warn('[approvals] failed to record session allow', {
+          executionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return c.json({ ok: true, scope });
   },
 );
 

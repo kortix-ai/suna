@@ -2,19 +2,20 @@
 // rename), DELETE. Registers onto the shared scimRouter via side effect.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { and, eq, inArray } from 'drizzle-orm';
 import { accountGroupMembers, accountGroups, accountMembers } from '@kortix/db';
-import { db } from '../shared/db';
+import { and, eq, inArray } from 'drizzle-orm';
 import { invalidateIamCacheForGroup, invalidateIamCacheForUsers } from '../iam/cache-invalidation';
 import { scimError } from '../middleware/scim-auth';
-import { json, errors } from '../openapi';
+import { errors, json } from '../openapi';
+import { db } from '../shared/db';
 import {
-  scimRouter,
   ScimResource,
-  parseFilter,
-  listResponse,
   buildGroup,
+  isUnsupportedFilter,
+  listResponse,
+  parseFilter,
   scimAudit,
+  scimRouter,
 } from './app';
 
 // ─── Groups ───────────────────────────────────────────────────────────────
@@ -35,37 +36,40 @@ scimRouter.openapi(
     },
   }),
   async (c: any) => {
-  const accountId = c.req.param('accountId');
-  const filter = parseFilter(c.req.query('filter'));
-
-  const rows = await db
-    .select({
-      groupId: accountGroups.groupId,
-      name: accountGroups.name,
-      externalId: accountGroups.externalId,
-      createdAt: accountGroups.createdAt,
-      updatedAt: accountGroups.updatedAt,
-    })
-    .from(accountGroups)
-    .where(eq(accountGroups.accountId, accountId));
-
-  let filteredRows = rows;
-  if (filter) {
-    if (filter.attr === 'displayName') {
-      filteredRows = rows.filter((r) => r.name === filter.value);
-    } else if (filter.attr === 'id') {
-      filteredRows = rows.filter((r) => r.groupId === filter.value);
-    } else if (filter.attr === 'externalId') {
-      filteredRows = rows.filter((r) => r.externalId === filter.value);
-    } else {
-      filteredRows = [];
+    const accountId = c.req.param('accountId');
+    const rawFilter = c.req.query('filter');
+    // Supplied-but-unsupported filter → 400, not a silent full-list (RFC 7644 §3.4.2.2).
+    if (isUnsupportedFilter(rawFilter)) {
+      return scimError(c, 400, 'Unsupported filter — only `attribute eq "value"` is supported');
     }
-  }
+    const filter = parseFilter(rawFilter);
 
-  const resources = await Promise.all(
-    filteredRows.map((r) => buildGroup(accountId, r)),
-  );
-  return c.json(listResponse(resources));
+    const rows = await db
+      .select({
+        groupId: accountGroups.groupId,
+        name: accountGroups.name,
+        externalId: accountGroups.externalId,
+        createdAt: accountGroups.createdAt,
+        updatedAt: accountGroups.updatedAt,
+      })
+      .from(accountGroups)
+      .where(eq(accountGroups.accountId, accountId));
+
+    let filteredRows = rows;
+    if (filter) {
+      if (filter.attr === 'displayName') {
+        filteredRows = rows.filter((r) => r.name === filter.value);
+      } else if (filter.attr === 'id') {
+        filteredRows = rows.filter((r) => r.groupId === filter.value);
+      } else if (filter.attr === 'externalId') {
+        filteredRows = rows.filter((r) => r.externalId === filter.value);
+      } else {
+        filteredRows = [];
+      }
+    }
+
+    const resources = await Promise.all(filteredRows.map((r) => buildGroup(accountId, r)));
+    return c.json(listResponse(resources));
   },
 );
 
@@ -82,23 +86,23 @@ scimRouter.openapi(
     },
   }),
   async (c: any) => {
-  const accountId = c.req.param('accountId');
-  const groupId = c.req.param('groupId');
+    const accountId = c.req.param('accountId');
+    const groupId = c.req.param('groupId');
 
-  const [row] = await db
-    .select({
-      groupId: accountGroups.groupId,
-      name: accountGroups.name,
-      externalId: accountGroups.externalId,
-      createdAt: accountGroups.createdAt,
-      updatedAt: accountGroups.updatedAt,
-    })
-    .from(accountGroups)
-    .where(and(eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId)))
-    .limit(1);
-  if (!row) return scimError(c, 404, 'Group not found');
+    const [row] = await db
+      .select({
+        groupId: accountGroups.groupId,
+        name: accountGroups.name,
+        externalId: accountGroups.externalId,
+        createdAt: accountGroups.createdAt,
+        updatedAt: accountGroups.updatedAt,
+      })
+      .from(accountGroups)
+      .where(and(eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId)))
+      .limit(1);
+    if (!row) return scimError(c, 404, 'Group not found');
 
-  return c.json(await buildGroup(accountId, row));
+    return c.json(await buildGroup(accountId, row));
   },
 );
 
@@ -118,94 +122,86 @@ scimRouter.openapi(
     },
   }),
   async (c: any) => {
-  const accountId = c.req.param('accountId');
-  let body: Record<string, unknown>;
-  try {
-    body = await c.req.json();
-  } catch {
-    return scimError(c, 400, 'Body must be JSON');
-  }
-
-  const displayName =
-    typeof body.displayName === 'string' ? body.displayName.trim() : '';
-  if (!displayName) return scimError(c, 400, 'displayName is required');
-  if (displayName.length > 128) {
-    return scimError(c, 400, 'displayName too long (max 128 chars)');
-  }
-
-  const externalId =
-    typeof body.externalId === 'string' && body.externalId.trim()
-      ? body.externalId.trim()
-      : null;
-
-  let groupId: string;
-  try {
-    const [row] = await db
-      .insert(accountGroups)
-      .values({
-        accountId,
-        name: displayName,
-        source: 'scim',
-        externalId,
-        createdBy: null,
-      })
-      .returning();
-    groupId = row.groupId;
-  } catch (err: unknown) {
-    if (err instanceof Error && /unique|duplicate/i.test(err.message)) {
-      return scimError(c, 409, 'A group with this displayName already exists');
+    const accountId = c.req.param('accountId');
+    let body: Record<string, unknown>;
+    try {
+      body = await c.req.json();
+    } catch {
+      return scimError(c, 400, 'Body must be JSON');
     }
-    throw err;
-  }
 
-  // Initial members can be supplied in the create body.
-  if (Array.isArray(body.members)) {
-    const userIds = (body.members as Array<{ value?: unknown }>)
-      .map((m) => (typeof m.value === 'string' ? m.value : null))
-      .filter((v): v is string => !!v);
-    if (userIds.length > 0) {
-      const valid = await db
-        .select({ userId: accountMembers.userId })
-        .from(accountMembers)
-        .where(
-          and(
-            eq(accountMembers.accountId, accountId),
-            inArray(accountMembers.userId, userIds),
-          ),
-        );
-      const validSet = new Set(valid.map((v) => v.userId));
-      const rows = userIds
-        .filter((u) => validSet.has(u))
-        .map((u) => ({ groupId, userId: u }));
-      if (rows.length > 0) {
-        await db.insert(accountGroupMembers).values(rows).onConflictDoNothing();
+    const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
+    if (!displayName) return scimError(c, 400, 'displayName is required');
+    if (displayName.length > 128) {
+      return scimError(c, 400, 'displayName too long (max 128 chars)');
+    }
+
+    const externalId =
+      typeof body.externalId === 'string' && body.externalId.trim() ? body.externalId.trim() : null;
+
+    let groupId: string;
+    try {
+      const [row] = await db
+        .insert(accountGroups)
+        .values({
+          accountId,
+          name: displayName,
+          source: 'scim',
+          externalId,
+          createdBy: null,
+        })
+        .returning();
+      groupId = row.groupId;
+    } catch (err: unknown) {
+      if (err instanceof Error && /unique|duplicate/i.test(err.message)) {
+        return scimError(c, 409, 'A group with this displayName already exists');
+      }
+      throw err;
+    }
+
+    // Initial members can be supplied in the create body.
+    if (Array.isArray(body.members)) {
+      const userIds = (body.members as Array<{ value?: unknown }>)
+        .map((m) => (typeof m.value === 'string' ? m.value : null))
+        .filter((v): v is string => !!v);
+      if (userIds.length > 0) {
+        const valid = await db
+          .select({ userId: accountMembers.userId })
+          .from(accountMembers)
+          .where(
+            and(eq(accountMembers.accountId, accountId), inArray(accountMembers.userId, userIds)),
+          );
+        const validSet = new Set(valid.map((v) => v.userId));
+        const rows = userIds.filter((u) => validSet.has(u)).map((u) => ({ groupId, userId: u }));
+        if (rows.length > 0) {
+          await db.insert(accountGroupMembers).values(rows).onConflictDoNothing();
+        }
       }
     }
-  }
 
-  await invalidateIamCacheForGroup(groupId);
+    await invalidateIamCacheForGroup(groupId);
 
-  await scimAudit(c, {
-    accountId,
-    action: 'scim.group.create',
-    resourceType: 'account_group',
-    resourceId: groupId,
-    after: { name: displayName, external_id: externalId },
-  });
+    await scimAudit(c, {
+      accountId,
+      action: 'scim.group.create',
+      resourceType: 'account_group',
+      resourceId: groupId,
+      after: { name: displayName, external_id: externalId },
+    });
 
-  const [row] = await db
-    .select({
-      groupId: accountGroups.groupId,
-      name: accountGroups.name,
-      externalId: accountGroups.externalId,
-      createdAt: accountGroups.createdAt,
-      updatedAt: accountGroups.updatedAt,
-    })
-    .from(accountGroups)
-    .where(eq(accountGroups.groupId, groupId))
-    .limit(1);
+    const [row] = await db
+      .select({
+        groupId: accountGroups.groupId,
+        name: accountGroups.name,
+        externalId: accountGroups.externalId,
+        createdAt: accountGroups.createdAt,
+        updatedAt: accountGroups.updatedAt,
+      })
+      .from(accountGroups)
+      .where(eq(accountGroups.groupId, groupId))
+      .limit(1);
 
-  return c.json(await buildGroup(accountId, row!), 201);
+    return c.json(await buildGroup(accountId, row!), 201);
   },
 );
 
@@ -233,165 +229,155 @@ scimRouter.openapi(
     },
   }),
   async (c: any) => {
-  const accountId = c.req.param('accountId');
-  const groupId = c.req.param('groupId');
+    const accountId = c.req.param('accountId');
+    const groupId = c.req.param('groupId');
 
-  const [group] = await db
-    .select({ groupId: accountGroups.groupId, name: accountGroups.name })
-    .from(accountGroups)
-    .where(and(eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId)))
-    .limit(1);
-  if (!group) return scimError(c, 404, 'Group not found');
+    const [group] = await db
+      .select({ groupId: accountGroups.groupId, name: accountGroups.name })
+      .from(accountGroups)
+      .where(and(eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId)))
+      .limit(1);
+    if (!group) return scimError(c, 404, 'Group not found');
 
-  let body: Record<string, unknown>;
-  try {
-    body = await c.req.json();
-  } catch {
-    return scimError(c, 400, 'Body must be JSON');
-  }
+    let body: Record<string, unknown>;
+    try {
+      body = await c.req.json();
+    } catch {
+      return scimError(c, 400, 'Body must be JSON');
+    }
 
-  const operations = Array.isArray(body.Operations)
-    ? (body.Operations as Array<Record<string, unknown>>)
-    : [];
+    const operations = Array.isArray(body.Operations)
+      ? (body.Operations as Array<Record<string, unknown>>)
+      : [];
 
-  // Snapshot the pre-PATCH members so we can bust REMOVED users too (the
-  // current-member helper below only covers who's left after the ops).
-  const beforeMemberIds = (
-    await db
-      .select({ userId: accountGroupMembers.userId })
-      .from(accountGroupMembers)
-      .where(eq(accountGroupMembers.groupId, groupId))
-  ).map((r) => r.userId);
+    // Snapshot the pre-PATCH members so we can bust REMOVED users too (the
+    // current-member helper below only covers who's left after the ops).
+    const beforeMemberIds = (
+      await db
+        .select({ userId: accountGroupMembers.userId })
+        .from(accountGroupMembers)
+        .where(eq(accountGroupMembers.groupId, groupId))
+    ).map((r) => r.userId);
 
-  for (const op of operations) {
-    const opName = typeof op.op === 'string' ? op.op.toLowerCase() : '';
-    const path = typeof op.path === 'string' ? op.path : '';
+    for (const op of operations) {
+      const opName = typeof op.op === 'string' ? op.op.toLowerCase() : '';
+      const path = typeof op.path === 'string' ? op.path : '';
 
-    // displayName / externalId replace
-    if (opName === 'replace' && path === 'displayName' && typeof op.value === 'string') {
-      const next = op.value.trim();
-      if (next) {
+      // displayName / externalId replace
+      if (opName === 'replace' && path === 'displayName' && typeof op.value === 'string') {
+        const next = op.value.trim();
+        if (next) {
+          await db
+            .update(accountGroups)
+            .set({ name: next, updatedAt: new Date() })
+            .where(eq(accountGroups.groupId, groupId));
+        }
+        continue;
+      }
+      if (opName === 'replace' && path === 'externalId' && typeof op.value === 'string') {
         await db
           .update(accountGroups)
-          .set({ name: next, updatedAt: new Date() })
+          .set({ externalId: op.value, updatedAt: new Date() })
           .where(eq(accountGroups.groupId, groupId));
+        continue;
       }
-      continue;
-    }
-    if (opName === 'replace' && path === 'externalId' && typeof op.value === 'string') {
-      await db
-        .update(accountGroups)
-        .set({ externalId: op.value, updatedAt: new Date() })
-        .where(eq(accountGroups.groupId, groupId));
-      continue;
-    }
 
-    // Azure AD: replace with no path, value is an object containing members
-    if (opName === 'replace' && !path && op.value && typeof op.value === 'object') {
-      const v = op.value as Record<string, unknown>;
-      if (Array.isArray(v.members)) {
-        const userIds = (v.members as Array<{ value?: unknown }>)
-          .map((m) => (typeof m.value === 'string' ? m.value : null))
-          .filter((u): u is string => !!u);
-        // Wholesale replace: drop existing, insert new (validated members only).
-        await db
-          .delete(accountGroupMembers)
-          .where(eq(accountGroupMembers.groupId, groupId));
-        if (userIds.length > 0) {
-          const valid = await db
-            .select({ userId: accountMembers.userId })
-            .from(accountMembers)
-            .where(
-              and(
-                eq(accountMembers.accountId, accountId),
-                inArray(accountMembers.userId, userIds),
-              ),
-            );
-          const validSet = new Set(valid.map((vv) => vv.userId));
-          const rows = userIds
-            .filter((u) => validSet.has(u))
-            .map((u) => ({ groupId, userId: u }));
-          if (rows.length > 0) {
-            await db.insert(accountGroupMembers).values(rows).onConflictDoNothing();
+      // Azure AD: replace with no path, value is an object containing members
+      if (opName === 'replace' && !path && op.value && typeof op.value === 'object') {
+        const v = op.value as Record<string, unknown>;
+        if (Array.isArray(v.members)) {
+          const userIds = (v.members as Array<{ value?: unknown }>)
+            .map((m) => (typeof m.value === 'string' ? m.value : null))
+            .filter((u): u is string => !!u);
+          // Wholesale replace: drop existing, insert new (validated members only).
+          await db.delete(accountGroupMembers).where(eq(accountGroupMembers.groupId, groupId));
+          if (userIds.length > 0) {
+            const valid = await db
+              .select({ userId: accountMembers.userId })
+              .from(accountMembers)
+              .where(
+                and(
+                  eq(accountMembers.accountId, accountId),
+                  inArray(accountMembers.userId, userIds),
+                ),
+              );
+            const validSet = new Set(valid.map((vv) => vv.userId));
+            const rows = userIds
+              .filter((u) => validSet.has(u))
+              .map((u) => ({ groupId, userId: u }));
+            if (rows.length > 0) {
+              await db.insert(accountGroupMembers).values(rows).onConflictDoNothing();
+            }
           }
         }
+        continue;
       }
-      continue;
-    }
 
-    // Member adds: op=add, path=members, value=[{value:userId}, ...]
-    if (opName === 'add' && path === 'members' && Array.isArray(op.value)) {
-      const userIds = (op.value as Array<{ value?: unknown }>)
-        .map((m) => (typeof m.value === 'string' ? m.value : null))
-        .filter((u): u is string => !!u);
-      if (userIds.length === 0) continue;
-      const valid = await db
-        .select({ userId: accountMembers.userId })
-        .from(accountMembers)
-        .where(
-          and(
-            eq(accountMembers.accountId, accountId),
-            inArray(accountMembers.userId, userIds),
-          ),
-        );
-      const validSet = new Set(valid.map((v) => v.userId));
-      const rows = userIds
-        .filter((u) => validSet.has(u))
-        .map((u) => ({ groupId, userId: u }));
-      if (rows.length > 0) {
-        await db.insert(accountGroupMembers).values(rows).onConflictDoNothing();
-      }
-      continue;
-    }
-
-    // Member removes: path looks like members[value eq "userId"]
-    if (opName === 'remove' && path.startsWith('members')) {
-      const m = path.match(/value\s+eq\s+"([^"]+)"/i);
-      if (m) {
-        await db
-          .delete(accountGroupMembers)
+      // Member adds: op=add, path=members, value=[{value:userId}, ...]
+      if (opName === 'add' && path === 'members' && Array.isArray(op.value)) {
+        const userIds = (op.value as Array<{ value?: unknown }>)
+          .map((m) => (typeof m.value === 'string' ? m.value : null))
+          .filter((u): u is string => !!u);
+        if (userIds.length === 0) continue;
+        const valid = await db
+          .select({ userId: accountMembers.userId })
+          .from(accountMembers)
           .where(
-            and(
-              eq(accountGroupMembers.groupId, groupId),
-              eq(accountGroupMembers.userId, m[1]!),
-            ),
+            and(eq(accountMembers.accountId, accountId), inArray(accountMembers.userId, userIds)),
           );
+        const validSet = new Set(valid.map((v) => v.userId));
+        const rows = userIds.filter((u) => validSet.has(u)).map((u) => ({ groupId, userId: u }));
+        if (rows.length > 0) {
+          await db.insert(accountGroupMembers).values(rows).onConflictDoNothing();
+        }
+        continue;
       }
-      continue;
+
+      // Member removes: path looks like members[value eq "userId"]
+      if (opName === 'remove' && path.startsWith('members')) {
+        const m = path.match(/value\s+eq\s+"([^"]+)"/i);
+        if (m) {
+          await db
+            .delete(accountGroupMembers)
+            .where(
+              and(eq(accountGroupMembers.groupId, groupId), eq(accountGroupMembers.userId, m[1]!)),
+            );
+        }
+        continue;
+      }
     }
-  }
 
-  await db
-    .update(accountGroups)
-    .set({ updatedAt: new Date() })
-    .where(eq(accountGroups.groupId, groupId));
+    await db
+      .update(accountGroups)
+      .set({ updatedAt: new Date() })
+      .where(eq(accountGroups.groupId, groupId));
 
-  // Membership may have changed → bust both who was a member before and who is
-  // now, so role changes via this group apply immediately (not after the TTL).
-  invalidateIamCacheForUsers(beforeMemberIds);
-  await invalidateIamCacheForGroup(groupId);
+    // Membership may have changed → bust both who was a member before and who is
+    // now, so role changes via this group apply immediately (not after the TTL).
+    invalidateIamCacheForUsers(beforeMemberIds);
+    await invalidateIamCacheForGroup(groupId);
 
-  await scimAudit(c, {
-    accountId,
-    action: 'scim.group.update',
-    resourceType: 'account_group',
-    resourceId: groupId,
-    before: { name: group.name },
-    after: { operations: operations.length },
-  });
+    await scimAudit(c, {
+      accountId,
+      action: 'scim.group.update',
+      resourceType: 'account_group',
+      resourceId: groupId,
+      before: { name: group.name },
+      after: { operations: operations.length },
+    });
 
-  const [row] = await db
-    .select({
-      groupId: accountGroups.groupId,
-      name: accountGroups.name,
-      externalId: accountGroups.externalId,
-      createdAt: accountGroups.createdAt,
-      updatedAt: accountGroups.updatedAt,
-    })
-    .from(accountGroups)
-    .where(eq(accountGroups.groupId, groupId))
-    .limit(1);
-  return c.json(await buildGroup(accountId, row!));
+    const [row] = await db
+      .select({
+        groupId: accountGroups.groupId,
+        name: accountGroups.name,
+        externalId: accountGroups.externalId,
+        createdAt: accountGroups.createdAt,
+        updatedAt: accountGroups.updatedAt,
+      })
+      .from(accountGroups)
+      .where(eq(accountGroups.groupId, groupId))
+      .limit(1);
+    return c.json(await buildGroup(accountId, row!));
   },
 );
 
@@ -408,32 +394,32 @@ scimRouter.openapi(
     },
   }),
   async (c: any) => {
-  const accountId = c.req.param('accountId');
-  const groupId = c.req.param('groupId');
+    const accountId = c.req.param('accountId');
+    const groupId = c.req.param('groupId');
 
-  // Capture members before the cascade so we can bust their cached roles —
-  // deleting the group drops every grant it conferred.
-  const memberIds = (
-    await db
-      .select({ userId: accountGroupMembers.userId })
-      .from(accountGroupMembers)
-      .where(eq(accountGroupMembers.groupId, groupId))
-  ).map((r) => r.userId);
+    // Capture members before the cascade so we can bust their cached roles —
+    // deleting the group drops every grant it conferred.
+    const memberIds = (
+      await db
+        .select({ userId: accountGroupMembers.userId })
+        .from(accountGroupMembers)
+        .where(eq(accountGroupMembers.groupId, groupId))
+    ).map((r) => r.userId);
 
-  const rows = await db
-    .delete(accountGroups)
-    .where(and(eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId)))
-    .returning({ groupId: accountGroups.groupId, name: accountGroups.name });
-  if (rows.length === 0) return c.body(null, 204);
-  invalidateIamCacheForUsers(memberIds);
+    const rows = await db
+      .delete(accountGroups)
+      .where(and(eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId)))
+      .returning({ groupId: accountGroups.groupId, name: accountGroups.name });
+    if (rows.length === 0) return c.body(null, 204);
+    invalidateIamCacheForUsers(memberIds);
 
-  await scimAudit(c, {
-    accountId,
-    action: 'scim.group.delete',
-    resourceType: 'account_group',
-    resourceId: groupId,
-    before: { name: rows[0]!.name },
-  });
-  return c.body(null, 204);
+    await scimAudit(c, {
+      accountId,
+      action: 'scim.group.delete',
+      resourceType: 'account_group',
+      resourceId: groupId,
+      before: { name: rows[0]!.name },
+    });
+    return c.body(null, 204);
   },
 );

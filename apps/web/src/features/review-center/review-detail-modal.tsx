@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { Kbd } from '@/components/ui/kbd';
 import {
   Modal,
   ModalBody,
@@ -48,6 +49,9 @@ export interface ReviewActions {
   approveAllSafe: (itemId: string) => void;
   /** Open the item's originating session (e.g. to watch the agent revise). */
   openSession?: (sessionId: string) => void;
+  /** Live-data mode. Executor approvals are resolved in-session (KORTIX-207), so
+   *  the inbox guides to the session rather than faking an inline decision. */
+  connected?: boolean;
 }
 
 function rel(iso: string): string {
@@ -162,6 +166,21 @@ function ChangeBody({
         </div>
       )}
 
+      {d.advanced && d.advanced.files.length > 0 && (
+        <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+          <span className="text-kortix-green font-medium tabular-nums">
+            +{d.advanced.additions.toLocaleString()}
+          </span>
+          <span className="text-kortix-orange font-medium tabular-nums">
+            −{d.advanced.deletions.toLocaleString()}
+          </span>
+          <span className="text-muted-foreground/40">·</span>
+          <span>
+            {d.advanced.files.length} {d.advanced.files.length === 1 ? 'file' : 'files'} changed
+          </span>
+        </div>
+      )}
+
       {d.crId ? <ChangeFilesModal crId={d.crId} /> : null}
 
       {(verification.length > 0 || d.previewUrl) && (
@@ -221,17 +240,23 @@ function ChangeBody({
 // ── approval ──────────────────────────────────────────────────────────────
 function ApprovalActionRow({
   action,
+  connected,
   onApprove,
   onDeny,
   onAlwaysAllow,
+  onOpenSession,
 }: {
   action: ApprovalAction;
+  /** Live mode: resolve in-session (KORTIX-207), so hide the fake inline verdict. */
+  connected?: boolean;
   onApprove: () => void;
   onDeny: () => void;
   onAlwaysAllow: () => void;
+  onOpenSession?: () => void;
 }) {
   const Icon = APPROVAL_ACTION_ICON[action.icon];
   const safe = isSafeRisk(action.risk);
+  const args = action.argsPreview ?? [];
   return (
     <div className="bg-popover rounded-md border px-4 py-3">
       <div className="flex items-start gap-3">
@@ -253,7 +278,21 @@ function ApprovalActionRow({
           <div className="text-muted-foreground mt-0.5 text-sm text-pretty">
             {action.consequence}
           </div>
-          <div className="text-muted-foreground/70 mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+          {/* The concrete arguments — recipients, amount, command — so the human
+              decides on the real thing, not just the verb. */}
+          {args.length > 0 && (
+            <dl className="border-border/60 mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-t pt-2 text-xs">
+              {args.map((a) => (
+                <div key={a.key} className="col-span-2 grid grid-cols-subgrid">
+                  <dt className="text-muted-foreground/70 font-mono">{a.key}</dt>
+                  <dd className="text-foreground truncate font-mono" title={a.value}>
+                    {a.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          <div className="text-muted-foreground/70 mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
             <span className="font-mono">
               {action.connector} · {action.action}
             </span>
@@ -266,6 +305,12 @@ function ApprovalActionRow({
             <Badge variant={action.decided === 'approved' ? 'success' : 'destructive'} size="sm">
               {action.decided === 'approved' ? 'Approved' : 'Denied'}
             </Badge>
+          ) : connected ? (
+            // Executor approvals resume in the session's own approval prompt.
+            <Button variant="secondary" size="sm" onClick={onOpenSession} disabled={!onOpenSession}>
+              Approve in session
+              <ArrowUpRight className="size-3.5" />
+            </Button>
           ) : (
             <div className="flex flex-col items-end gap-1.5">
               <div className="flex items-center gap-1.5">
@@ -301,32 +346,58 @@ function ApprovalBody({
 }) {
   const list = item.detail.actions ?? [];
   const safePending = list.filter((a) => isSafeRisk(a.risk) && !a.decided);
+  const openSession =
+    actions.openSession && item.sessionId
+      ? () => actions.openSession?.(item.sessionId as string)
+      : undefined;
   return (
     <>
-      {safePending.length > 0 && (
+      {actions.connected ? (
+        // Live mode: executor approvals are resolved in the session's connector
+        // prompt, not the inbox (KORTIX-207) — guide there rather than fake it.
         <InfoBanner
-          tone="success"
-          title={`${safePending.length} ${safePending.length === 1 ? 'action is' : 'actions are'} safe to approve together`}
+          tone="info"
+          title="Approve these from the session"
           action={
-            <Button
-              size="sm"
-              onClick={() => {
-                actions.approveAllSafe(item.id);
-                successToast(`Approved ${safePending.length} safe actions`);
-              }}
-            >
-              Approve all safe
-            </Button>
+            openSession && (
+              <Button size="sm" variant="secondary" onClick={openSession}>
+                Open session
+                <ArrowUpRight className="size-3.5" />
+              </Button>
+            )
           }
         >
-          Reads and low-risk writes. Risky actions stay below for you to decide one by one.
+          Tool approvals resume in the agent&apos;s own conversation, where you can approve or deny
+          with full context. This is the read-only preview.
         </InfoBanner>
+      ) : (
+        safePending.length > 0 && (
+          <InfoBanner
+            tone="success"
+            title={`${safePending.length} ${safePending.length === 1 ? 'action is' : 'actions are'} safe to approve together`}
+            action={
+              <Button
+                size="sm"
+                onClick={() => {
+                  actions.approveAllSafe(item.id);
+                  successToast(`Approved ${safePending.length} safe actions`);
+                }}
+              >
+                Approve all safe
+              </Button>
+            }
+          >
+            Reads and low-risk writes. Risky actions stay below for you to decide one by one.
+          </InfoBanner>
+        )
       )}
       <div className="space-y-2">
         {list.map((a) => (
           <ApprovalActionRow
             key={a.id}
             action={a}
+            connected={actions.connected}
+            onOpenSession={openSession}
             onApprove={() => {
               actions.decideAction(item.id, a.id, 'approved');
               successToast(`Approved · ${a.title}`);
@@ -411,36 +482,39 @@ function DecisionBody({
         )}
       </Panel>
       <div className="space-y-2">
-        {(d.options ?? []).map((opt) => (
-          <button
-            key={opt.id}
-            type="button"
-            disabled={answered}
-            onClick={() => {
-              actions.resolve(item.id, 'done', `Answered · ${opt.label} — agent resumed`);
-              onClose();
-            }}
-            className={cn(
-              'bg-popover w-full rounded-md border px-4 py-3 text-left transition-colors',
-              !answered && 'hover:border-primary/40 hover:bg-primary/[0.03] active:scale-[0.99]',
-              answered && 'opacity-60',
-            )}
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-foreground text-sm font-medium">{opt.label}</span>
-              {opt.recommended && (
-                <Badge variant="kortix" size="xs">
-                  Recommended
-                </Badge>
+        {[...(d.options ?? [])]
+          .sort((a, b) => (b.recommended ? 1 : 0) - (a.recommended ? 1 : 0))
+          .map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              disabled={answered}
+              onClick={() => {
+                actions.resolve(item.id, 'done', `Answered · ${opt.label} — agent resumed`);
+                onClose();
+              }}
+              className={cn(
+                'focus-visible:ring-kortix-blue w-full rounded-md border px-4 py-3 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none',
+                opt.recommended ? 'border-primary/40 bg-primary/[0.03]' : 'bg-popover',
+                !answered && 'hover:border-primary/40 hover:bg-primary/[0.05] active:scale-[0.99]',
+                answered && 'opacity-60',
               )}
-            </div>
-            {opt.description && (
-              <div className="text-muted-foreground mt-0.5 text-sm text-pretty">
-                {opt.description}
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-foreground text-sm font-medium">{opt.label}</span>
+                {opt.recommended && (
+                  <Badge variant="kortix" size="xs">
+                    Recommended
+                  </Badge>
+                )}
               </div>
-            )}
-          </button>
-        ))}
+              {opt.description && (
+                <div className="text-muted-foreground mt-0.5 text-sm text-pretty">
+                  {opt.description}
+                </div>
+              )}
+            </button>
+          ))}
       </div>
     </>
   );
@@ -466,7 +540,7 @@ function BatchBody({ item }: { item: Extract<ReviewItem, { kind: 'batch' }> }) {
               {c.status === 'done' ? (
                 <CheckCircleSolid className="text-kortix-green size-4 shrink-0" />
               ) : (
-                <Eye className="text-kortix-yellow size-4 shrink-0" />
+                <Eye className="dark:text-kortix-yellow size-4 shrink-0 text-yellow-600" />
               )}
               <span className="text-foreground min-w-0 flex-1 truncate text-sm">{c.title}</span>
               {c.status === 'needs_review' && (
@@ -502,11 +576,21 @@ function FeedbackComposer({
         ref={ref}
         value={text}
         onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+            e.preventDefault();
+            onSend(text.trim());
+          }
+        }}
         rows={3}
         placeholder="What should the agent change? (optional — sent back as a follow-up)"
         className="bg-popover focus-visible:border-primary/40 w-full resize-none rounded-md border px-3 py-2 text-sm outline-none"
       />
       <div className="flex items-center justify-end gap-2">
+        <span className="text-muted-foreground/60 mr-auto text-xs">
+          <Kbd>⌘</Kbd>
+          <Kbd>↵</Kbd> to send
+        </span>
         <Button variant="outline-ghost" size="sm" onClick={onCancel}>
           Cancel
         </Button>
@@ -605,6 +689,7 @@ function Footer({
         </Button>
       )}
       <Button
+        variant={item.risk === 'high' ? 'danger' : item.risk === 'medium' ? 'warning' : 'default'}
         disabled={hasConflicts}
         onClick={() => {
           actions.resolve(item.id, 'approved', `${item.primaryAction} · done`);

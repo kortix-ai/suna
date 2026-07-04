@@ -15,7 +15,19 @@
  * no DB calls, just `(rawToml: string | object) → ManifestValidationResult`.
  */
 
-import { parse as parseToml, TomlError } from 'smol-toml';
+import { TomlError } from 'smol-toml';
+import { type ManifestFormat, parseManifestText } from './format';
+
+export {
+  type ManifestFormat,
+  type ManifestCandidate,
+  MANIFEST_FILENAME_TOML,
+  MANIFEST_FILENAME_YAML,
+  manifestCandidatePaths,
+  manifestFormatForPath,
+  parseManifestText,
+  serializeManifestObject,
+} from './format';
 
 /** Maximum manifest schema version this validator understands. */
 const KNOWN_SCHEMA_VERSION = 1;
@@ -96,36 +108,39 @@ export interface ManifestValidationResult {
 }
 
 /**
- * Validate a manifest. Accepts either the raw TOML string (canonical input
- * for CLI / git pushes) or an already-parsed object (callers that already
- * went through `smol-toml.parse`).
+ * Validate a manifest. Accepts either the raw manifest string (canonical input
+ * for CLI / git pushes) or an already-parsed object. When given a string, pass
+ * the `format` so it's parsed with the right parser — defaults to TOML for
+ * backward compatibility; pass `'yaml'` for a `kortix.yaml`.
  */
 export function validateManifest(
   input: string | Record<string, unknown>,
+  format: ManifestFormat = 'toml',
 ): ManifestValidationResult {
   const issues: ManifestIssue[] = [];
   let parsed: Record<string, unknown> | null = null;
 
   if (typeof input === 'string') {
     try {
-      parsed = parseToml(input) as Record<string, unknown>;
+      parsed = parseManifestText(input, format);
     } catch (err) {
-      if (err instanceof TomlError) {
-        const tomlError = err as Error & { line?: unknown; column?: unknown };
-        issues.push({
-          path: '<toml>',
-          message: `Syntax error: ${tomlError.message}`,
-          severity: 'error',
-          line: typeof tomlError.line === 'number' ? tomlError.line : undefined,
-          column: typeof tomlError.column === 'number' ? tomlError.column : undefined,
-        });
-      } else {
-        issues.push({
-          path: '<toml>',
-          message: `Failed to parse TOML: ${err instanceof Error ? err.message : String(err)}`,
-          severity: 'error',
-        });
-      }
+      // Both parsers expose a source position, in different shapes: TomlError
+      // carries flat line/column; the yaml package's YAMLParseError carries a
+      // `linePos` array of { line, col }.
+      const pos = err as {
+        line?: unknown;
+        column?: unknown;
+        linePos?: Array<{ line?: number; col?: number }>;
+      };
+      const line = typeof pos.line === 'number' ? pos.line : pos.linePos?.[0]?.line;
+      const column = typeof pos.column === 'number' ? pos.column : pos.linePos?.[0]?.col;
+      issues.push({
+        path: err instanceof TomlError ? '<toml>' : `<${format}>`,
+        message: `Syntax error: ${err instanceof Error ? err.message : String(err)}`,
+        severity: 'error',
+        line: typeof line === 'number' ? line : undefined,
+        column: typeof column === 'number' ? column : undefined,
+      });
       return { valid: false, parsed: null, issues };
     }
   } else {
@@ -179,25 +194,57 @@ export function formatIssues(issues: ManifestIssue[], opts: { color?: boolean } 
 // PROJECT_ACTIONS + CHANNEL_ACTIONS). The unit-agents-parse drift-guard test
 // fails loudly if these diverge (this package can't import apps/api).
 export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
-  'project.read', 'project.write', 'project.delete', 'project.deploy',
-  'project.cr.open', 'project.cr.merge',
-  'project.session.read', 'project.session.start', 'project.session.exec', 'project.session.stop',
-  'project.members.read', 'project.members.manage',
-  'project.trigger.read', 'project.trigger.create', 'project.trigger.update', 'project.trigger.delete', 'project.trigger.fire',
-  'project.gateway.logs.read', 'project.gateway.spend.read', 'project.gateway.routing.edit',
-  'project.gateway.budget.set', 'project.gateway.keys.manage',
+  'project.read',
+  'project.write',
+  'project.delete',
+  'project.deploy',
+  'project.cr.open',
+  'project.cr.merge',
+  'project.session.read',
+  'project.session.start',
+  'project.session.exec',
+  'project.session.stop',
+  'project.members.read',
+  'project.members.manage',
+  'project.trigger.read',
+  'project.trigger.create',
+  'project.trigger.update',
+  'project.trigger.delete',
+  'project.trigger.fire',
+  'project.gateway.logs.read',
+  'project.gateway.spend.read',
+  'project.gateway.routing.edit',
+  'project.gateway.budget.set',
+  'project.gateway.keys.manage',
   // IAM v1 per-capability leaves.
-  'project.agent.read', 'project.agent.write',
-  'project.skill.read', 'project.skill.write',
-  'project.command.read', 'project.command.write',
-  'project.schedule.read', 'project.schedule.write',
-  'project.webhook.read', 'project.webhook.write',
-  'project.file.read', 'project.file.write',
-  'project.customize.read', 'project.customize.write',
-  'project.gitops.read', 'project.gitops.push', 'project.gitops.merge',
-  'project.secret.read', 'project.secret.write',
-  'project.connector.read', 'project.connector.write',
-  'channel.read', 'channel.connect', 'channel.send', 'channel.disconnect',
+  'project.agent.read',
+  'project.agent.write',
+  'project.skill.read',
+  'project.skill.write',
+  'project.command.read',
+  'project.command.write',
+  'project.schedule.read',
+  'project.schedule.write',
+  'project.webhook.read',
+  'project.webhook.write',
+  'project.file.read',
+  'project.file.write',
+  'project.customize.read',
+  'project.customize.write',
+  'project.gitops.read',
+  'project.gitops.push',
+  'project.gitops.merge',
+  'project.secret.read',
+  'project.secret.write',
+  'project.connector.read',
+  'project.connector.write',
+  'project.review.read',
+  'project.review.submit',
+  'project.review.act',
+  'channel.read',
+  'channel.connect',
+  'channel.send',
+  'channel.disconnect',
 ];
 
 /** Validate a `connectors` / `kortix_cli` grant value (array | "all" | "none"). */
@@ -213,17 +260,29 @@ function validateGrantList(
     // Runtime parseGrantSet treats "" the same as "none" (default-deny).
     const v = value.trim().toLowerCase();
     if (v !== '' && v !== 'all' && v !== 'none') {
-      issues.push({ path: where, message: `${label} string must be "all" or "none" (or an array of names).`, severity: 'error' });
+      issues.push({
+        path: where,
+        message: `${label} string must be "all" or "none" (or an array of names).`,
+        severity: 'error',
+      });
     }
     return;
   }
   if (!Array.isArray(value)) {
-    issues.push({ path: where, message: `${label} must be an array of strings, "all", or "none".`, severity: 'error' });
+    issues.push({
+      path: where,
+      message: `${label} must be an array of strings, "all", or "none".`,
+      severity: 'error',
+    });
     return;
   }
   value.forEach((item, k) => {
     if (typeof item !== 'string' || !item.trim()) {
-      issues.push({ path: `${where}[${k}]`, message: `${label} entries must be non-empty strings.`, severity: 'error' });
+      issues.push({
+        path: `${where}[${k}]`,
+        message: `${label} entries must be non-empty strings.`,
+        severity: 'error',
+      });
       return;
     }
     const s = item.trim();
@@ -241,7 +300,11 @@ function validateGrantList(
 function validateAgents(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
-    issues.push({ path, message: '`agents` must be an array of tables — use `[[agents]]`.', severity: 'error' });
+    issues.push({
+      path,
+      message: '`agents` must be an array of tables — use `[[agents]]`.',
+      severity: 'error',
+    });
     return;
   }
   const seen = new Set<string>();
@@ -255,9 +318,17 @@ function validateAgents(node: unknown, path: string, issues: ManifestIssue[]): v
     if (!name) {
       issues.push({ path: `${where}.name`, message: 'name is required.', severity: 'error' });
     } else if (!SLUG_RE.test(name)) {
-      issues.push({ path: `${where}.name`, message: `"${name}" is not a valid agent name (lowercase letters, digits, dashes, underscores).`, severity: 'error' });
+      issues.push({
+        path: `${where}.name`,
+        message: `"${name}" is not a valid agent name (lowercase letters, digits, dashes, underscores).`,
+        severity: 'error',
+      });
     } else if (seen.has(name)) {
-      issues.push({ path: `${where}.name`, message: `duplicate agent name "${name}".`, severity: 'error' });
+      issues.push({
+        path: `${where}.name`,
+        message: `duplicate agent name "${name}".`,
+        severity: 'error',
+      });
     } else {
       seen.add(name);
     }
@@ -276,7 +347,7 @@ function validateRoot(raw: Record<string, unknown>, issues: ManifestIssue[]): vo
     });
     return;
   }
-  const version = typeof versionRaw === 'number' ? versionRaw : NaN;
+  const version = typeof versionRaw === 'number' ? versionRaw : Number.NaN;
   if (!Number.isFinite(version) || version < 1 || Math.floor(version) !== version) {
     issues.push({
       path: 'kortix_version',
@@ -294,11 +365,7 @@ function validateRoot(raw: Record<string, unknown>, issues: ManifestIssue[]): vo
   }
 }
 
-function validateProject(
-  node: unknown,
-  path: string,
-  issues: ManifestIssue[],
-): void {
+function validateProject(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node == null) return; // optional
   if (!isTable(node)) {
     issues.push({ path, message: '[project] must be a table.', severity: 'error' });
@@ -353,11 +420,7 @@ function validateEnv(node: unknown, path: string, issues: ManifestIssue[]): void
   }
 }
 
-function validateOpenCode(
-  node: unknown,
-  path: string,
-  issues: ManifestIssue[],
-): void {
+function validateOpenCode(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node == null) return;
   if (!isTable(node)) {
     issues.push({ path, message: '[opencode] must be a table.', severity: 'error' });
@@ -372,11 +435,7 @@ function validateOpenCode(
  * carries no direct image keys — those belonged to the removed singular
  * `[sandbox]` table, so any that linger are flagged as legacy.
  */
-function validateSandbox(
-  node: unknown,
-  path: string,
-  issues: ManifestIssue[],
-): void {
+function validateSandbox(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node == null) return;
   if (!isTable(node)) {
     issues.push({
@@ -389,7 +448,18 @@ function validateSandbox(
   // Legacy singular `[sandbox]` shape: image/build keys set directly on the
   // table instead of inside a `[[sandbox.templates]]` entry. Reject with a
   // migration hint rather than silently ignoring them.
-  const LEGACY_SANDBOX_KEYS = ['image', 'dockerfile', 'slug', 'cpu', 'memory', 'disk', 'entrypoint', 'context', 'context_dir', 'gpu'];
+  const LEGACY_SANDBOX_KEYS = [
+    'image',
+    'dockerfile',
+    'slug',
+    'cpu',
+    'memory',
+    'disk',
+    'entrypoint',
+    'context',
+    'context_dir',
+    'gpu',
+  ];
   const stray = LEGACY_SANDBOX_KEYS.filter((k) => node[k] !== undefined);
   if (stray.length > 0) {
     issues.push({
@@ -415,7 +485,11 @@ function validateSandbox(
       const slugs = Array.isArray(node.templates)
         ? node.templates
             .filter(isTable)
-            .map((t) => (typeof (t as Record<string, unknown>).slug === 'string' ? ((t as Record<string, unknown>).slug as string).trim() : ''))
+            .map((t) =>
+              typeof (t as Record<string, unknown>).slug === 'string'
+                ? ((t as Record<string, unknown>).slug as string).trim()
+                : '',
+            )
             .filter(Boolean)
         : [];
       if (!slugs.includes(want)) {
@@ -429,16 +503,13 @@ function validateSandbox(
   }
 }
 
-function validateSandboxTemplates(
-  node: unknown,
-  path: string,
-  issues: ManifestIssue[],
-): void {
+function validateSandboxTemplates(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
       path,
-      message: '`sandbox.templates` must be an array of tables — use `[[sandbox.templates]]`, not `[sandbox.templates]`.',
+      message:
+        '`sandbox.templates` must be an array of tables — use `[[sandbox.templates]]`, not `[sandbox.templates]`.',
       severity: 'error',
     });
     return;
@@ -510,7 +581,8 @@ function validateSandboxTemplates(
       } else if (!img.includes(':') && !img.includes('@')) {
         issues.push({
           path: `${where}.image`,
-          message: 'Image reference must include a tag (e.g. `:3.12-slim`) or digest (`@sha256:…`).',
+          message:
+            'Image reference must include a tag (e.g. `:3.12-slim`) or digest (`@sha256:…`).',
           severity: 'error',
         });
       }
@@ -533,11 +605,7 @@ function validateSandboxTemplates(
   });
 }
 
-function rejectLegacySandboxes(
-  node: unknown,
-  path: string,
-  issues: ManifestIssue[],
-): void {
+function rejectLegacySandboxes(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node === undefined) return;
   issues.push({
     path,
@@ -596,9 +664,11 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
     // `session_mode`/`sessionMode`. The gate must accept whatever the runtime
     // accepts, or it falsely blocks a manifest that materializes fine.
     const promptRaw =
-      typeof entry.prompt === 'string' ? entry.prompt
-      : typeof entry.prompt_template === 'string' ? entry.prompt_template
-      : '';
+      typeof entry.prompt === 'string'
+        ? entry.prompt
+        : typeof entry.prompt_template === 'string'
+          ? entry.prompt_template
+          : '';
     if (!promptRaw.trim()) {
       issues.push({
         path: `${where}.prompt`,
@@ -608,15 +678,19 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
     }
     if (type === 'cron') {
       const cron =
-        typeof entry.cron === 'string' ? entry.cron.trim()
-        : typeof entry.schedule === 'string' ? entry.schedule.trim()
-        : '';
+        typeof entry.cron === 'string'
+          ? entry.cron.trim()
+          : typeof entry.schedule === 'string'
+            ? entry.schedule.trim()
+            : '';
       // A one-off ("run once") schedule carries `run_at` (ISO-8601 instant)
       // instead of a recurring `cron` expression — exactly one must be set.
       const runAt =
-        typeof entry.run_at === 'string' ? entry.run_at.trim()
-        : typeof entry.runAt === 'string' ? entry.runAt.trim()
-        : '';
+        typeof entry.run_at === 'string'
+          ? entry.run_at.trim()
+          : typeof entry.runAt === 'string'
+            ? entry.runAt.trim()
+            : '';
       if (runAt) {
         if (Number.isNaN(Date.parse(runAt))) {
           issues.push({
@@ -638,7 +712,11 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
           message: 'timezone must be an IANA string.',
           severity: 'error',
         });
-      } else if (typeof entry.timezone === 'string' && entry.timezone.trim() && !isValidIanaTimeZone(entry.timezone.trim())) {
+      } else if (
+        typeof entry.timezone === 'string' &&
+        entry.timezone.trim() &&
+        !isValidIanaTimeZone(entry.timezone.trim())
+      ) {
         // Runtime rejects a non-IANA zone (e.g. "PST") and the trigger never fires.
         issues.push({
           path: `${where}.timezone`,
@@ -648,9 +726,11 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
       }
     } else if (type === 'webhook') {
       const secret =
-        typeof entry.secret_env === 'string' ? entry.secret_env.trim()
-        : typeof entry.secretEnv === 'string' ? entry.secretEnv.trim()
-        : '';
+        typeof entry.secret_env === 'string'
+          ? entry.secret_env.trim()
+          : typeof entry.secretEnv === 'string'
+            ? entry.secretEnv.trim()
+            : '';
       if (!secret) {
         issues.push({
           path: `${where}.secret_env`,
@@ -673,9 +753,11 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
       });
     }
     const sessionModeRaw =
-      typeof entry.session_mode === 'string' ? entry.session_mode
-      : typeof entry.sessionMode === 'string' ? entry.sessionMode
-      : undefined;
+      typeof entry.session_mode === 'string'
+        ? entry.session_mode
+        : typeof entry.sessionMode === 'string'
+          ? entry.sessionMode
+          : undefined;
     if (sessionModeRaw !== undefined) {
       const sessionMode = sessionModeRaw.trim().toLowerCase();
       if (sessionMode !== 'fresh' && sessionMode !== 'reuse') {
@@ -689,11 +771,7 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
   });
 }
 
-function validateConnectors(
-  node: unknown,
-  path: string,
-  issues: ManifestIssue[],
-): void {
+function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -714,9 +792,17 @@ function validateConnectors(
     if (!slug) {
       issues.push({ path: `${where}.slug`, message: 'slug is required.', severity: 'error' });
     } else if (!SLUG_RE.test(slug)) {
-      issues.push({ path: `${where}.slug`, message: `"${slug}" is not a valid slug.`, severity: 'error' });
+      issues.push({
+        path: `${where}.slug`,
+        message: `"${slug}" is not a valid slug.`,
+        severity: 'error',
+      });
     } else if (seenSlugs.has(slug)) {
-      issues.push({ path: `${where}.slug`, message: `duplicate slug "${slug}".`, severity: 'error' });
+      issues.push({
+        path: `${where}.slug`,
+        message: `duplicate slug "${slug}".`,
+        severity: 'error',
+      });
     } else {
       seenSlugs.add(slug);
     }
@@ -769,7 +855,11 @@ function validateConnectors(
         severity: 'error',
       });
     }
-    if (provider === 'http' && typeof entry.base_url !== 'string' && typeof entry.baseUrl !== 'string') {
+    if (
+      provider === 'http' &&
+      typeof entry.base_url !== 'string' &&
+      typeof entry.baseUrl !== 'string'
+    ) {
       issues.push({
         path: `${where}.base_url`,
         message: 'http connectors require `base_url`.',
@@ -777,7 +867,8 @@ function validateConnectors(
       });
     }
     if (provider === 'channel') {
-      const platform = typeof entry.platform === 'string' ? entry.platform.trim().toLowerCase() : '';
+      const platform =
+        typeof entry.platform === 'string' ? entry.platform.trim().toLowerCase() : '';
       if (!(CHANNEL_PLATFORMS as readonly string[]).includes(platform)) {
         issues.push({
           path: `${where}.platform`,
@@ -802,7 +893,8 @@ function validateConnectors(
     if (provider === 'openapi' && typeof entry.spec !== 'string') {
       issues.push({
         path: `${where}.spec`,
-        message: 'openapi connectors need a `spec` (URL or repo path); without it the connector fails to materialize.',
+        message:
+          'openapi connectors need a `spec` (URL or repo path); without it the connector fails to materialize.',
         severity: 'warning',
       });
     }
@@ -819,7 +911,8 @@ function validateConnectors(
     if (provider === 'pipedream' && entry.auth !== undefined) {
       issues.push({
         path: `${where}.auth`,
-        message: 'pipedream connectors authenticate via the connected account — [connectors.auth] is ignored at runtime.',
+        message:
+          'pipedream connectors authenticate via the connected account — [connectors.auth] is ignored at runtime.',
         severity: 'warning',
       });
     }
@@ -840,14 +933,16 @@ function validateConnectors(
         if (provider === 'channel' && t !== 'none') {
           issues.push({
             path: `${where}.auth`,
-            message: 'channel connectors authenticate via the platform install token — omit [connectors.auth].',
+            message:
+              'channel connectors authenticate via the platform install token — omit [connectors.auth].',
             severity: 'error',
           });
         }
         if (auth.secret !== undefined) {
           issues.push({
             path: `${where}.auth.secret`,
-            message: 'auth.secret is no longer supported; set connector credentials in the platform.',
+            message:
+              'auth.secret is no longer supported; set connector credentials in the platform.',
             severity: 'error',
           });
         }
@@ -909,7 +1004,11 @@ function validateChannels(node: unknown, path: string, issues: ManifestIssue[]):
     }
     const platform = typeof entry.platform === 'string' ? entry.platform.trim() : '';
     if (!platform) {
-      issues.push({ path: `${where}.platform`, message: 'platform is required (e.g. "slack").', severity: 'error' });
+      issues.push({
+        path: `${where}.platform`,
+        message: 'platform is required (e.g. "slack").',
+        severity: 'error',
+      });
     } else if (seenPlatforms.has(platform)) {
       issues.push({
         path: `${where}.platform`,
@@ -920,15 +1019,27 @@ function validateChannels(node: unknown, path: string, issues: ManifestIssue[]):
       seenPlatforms.add(platform);
     }
     if (entry.enabled !== undefined && !isEnabledValue(entry.enabled)) {
-      issues.push({ path: `${where}.enabled`, message: 'enabled must be a boolean.', severity: 'error' });
+      issues.push({
+        path: `${where}.enabled`,
+        message: 'enabled must be a boolean.',
+        severity: 'error',
+      });
     }
     if (entry.events !== undefined) {
       if (!Array.isArray(entry.events)) {
-        issues.push({ path: `${where}.events`, message: 'events must be an array of strings.', severity: 'error' });
+        issues.push({
+          path: `${where}.events`,
+          message: 'events must be an array of strings.',
+          severity: 'error',
+        });
       } else {
         entry.events.forEach((ev, j) => {
           if (typeof ev !== 'string') {
-            issues.push({ path: `${where}.events[${j}]`, message: 'must be a string.', severity: 'error' });
+            issues.push({
+              path: `${where}.events[${j}]`,
+              message: 'must be a string.',
+              severity: 'error',
+            });
           }
         });
       }
@@ -957,24 +1068,44 @@ function validateApps(node: unknown, path: string, issues: ManifestIssue[]): voi
     if (!slug) {
       issues.push({ path: `${where}.slug`, message: 'slug is required.', severity: 'error' });
     } else if (!SLUG_RE.test(slug)) {
-      issues.push({ path: `${where}.slug`, message: `"${slug}" is not a valid slug.`, severity: 'error' });
+      issues.push({
+        path: `${where}.slug`,
+        message: `"${slug}" is not a valid slug.`,
+        severity: 'error',
+      });
     } else if (seenSlugs.has(slug)) {
-      issues.push({ path: `${where}.slug`, message: `duplicate slug "${slug}".`, severity: 'error' });
+      issues.push({
+        path: `${where}.slug`,
+        message: `duplicate slug "${slug}".`,
+        severity: 'error',
+      });
     } else {
       seenSlugs.add(slug);
     }
     expectStringOrAbsent(entry.name, `${where}.name`, issues);
     expectStringOrAbsent(entry.framework, `${where}.framework`, issues);
     if (entry.enabled !== undefined && !isEnabledValue(entry.enabled)) {
-      issues.push({ path: `${where}.enabled`, message: 'enabled must be a boolean.', severity: 'error' });
+      issues.push({
+        path: `${where}.enabled`,
+        message: 'enabled must be a boolean.',
+        severity: 'error',
+      });
     }
     if (entry.domains !== undefined) {
       if (!Array.isArray(entry.domains)) {
-        issues.push({ path: `${where}.domains`, message: 'domains must be an array of strings.', severity: 'error' });
+        issues.push({
+          path: `${where}.domains`,
+          message: 'domains must be an array of strings.',
+          severity: 'error',
+        });
       } else {
         entry.domains.forEach((d, j) => {
           if (typeof d !== 'string') {
-            issues.push({ path: `${where}.domains[${j}]`, message: 'must be a string.', severity: 'error' });
+            issues.push({
+              path: `${where}.domains[${j}]`,
+              message: 'must be a string.',
+              severity: 'error',
+            });
           }
         });
       }
@@ -983,11 +1114,16 @@ function validateApps(node: unknown, path: string, issues: ManifestIssue[]): voi
       // The runtime requires [apps.source]; without it the app never deploys.
       issues.push({
         path: `${where}.source`,
-        message: 'no [apps.source] declared; the runtime requires one, so this app will not deploy.',
+        message:
+          'no [apps.source] declared; the runtime requires one, so this app will not deploy.',
         severity: 'warning',
       });
     } else if (!isTable(entry.source)) {
-      issues.push({ path: `${where}.source`, message: 'source must be a table.', severity: 'error' });
+      issues.push({
+        path: `${where}.source`,
+        message: 'source must be a table.',
+        severity: 'error',
+      });
     } else {
       const type = typeof entry.source.type === 'string' ? entry.source.type : '';
       if (type !== 'git' && type !== 'tar') {
@@ -1009,16 +1145,28 @@ function validateApps(node: unknown, path: string, issues: ManifestIssue[]): voi
     }
     if (entry.env !== undefined) {
       if (!isTable(entry.env)) {
-        issues.push({ path: `${where}.env`, message: 'env must be a table of string KEY=VALUE pairs.', severity: 'error' });
+        issues.push({
+          path: `${where}.env`,
+          message: 'env must be a table of string KEY=VALUE pairs.',
+          severity: 'error',
+        });
       } else {
         // The runtime rejects non-string values and non-env-name keys; warn so a
         // hand-edited manifest isn't blocked but the author sees what will fail.
         for (const [k, v] of Object.entries(entry.env)) {
           if (typeof v !== 'string') {
-            issues.push({ path: `${where}.env.${k}`, message: 'app env values must be strings; the runtime rejects non-string values.', severity: 'warning' });
+            issues.push({
+              path: `${where}.env.${k}`,
+              message: 'app env values must be strings; the runtime rejects non-string values.',
+              severity: 'warning',
+            });
           }
           if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) {
-            issues.push({ path: `${where}.env.${k}`, message: `"${k}" is not a valid env-var name; the runtime rejects it.`, severity: 'warning' });
+            issues.push({
+              path: `${where}.env.${k}`,
+              message: `"${k}" is not a valid env-var name; the runtime rejects it.`,
+              severity: 'warning',
+            });
           }
         }
       }
@@ -1042,22 +1190,14 @@ function isValidIanaTimeZone(tz: string): boolean {
   }
 }
 
-function expectStringOrAbsent(
-  value: unknown,
-  path: string,
-  issues: ManifestIssue[],
-): void {
+function expectStringOrAbsent(value: unknown, path: string, issues: ManifestIssue[]): void {
   if (value === undefined || value === null) return;
   if (typeof value !== 'string') {
     issues.push({ path, message: 'must be a string.', severity: 'error' });
   }
 }
 
-function expectRelativePathOrAbsent(
-  value: unknown,
-  path: string,
-  issues: ManifestIssue[],
-): void {
+function expectRelativePathOrAbsent(value: unknown, path: string, issues: ManifestIssue[]): void {
   if (value === undefined || value === null) return;
   if (typeof value !== 'string') {
     issues.push({ path, message: 'must be a string path.', severity: 'error' });
@@ -1093,7 +1233,11 @@ function expectBoundedIntOrAbsent(
 ): void {
   if (value === undefined || value === null) return;
   const num =
-    typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN;
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== ''
+        ? Number(value)
+        : Number.NaN;
   if (!Number.isFinite(num) || num <= 0) {
     issues.push({ path, message: `must be a positive integer.`, severity: 'error' });
     return;

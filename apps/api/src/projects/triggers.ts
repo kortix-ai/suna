@@ -34,11 +34,22 @@
  * apps/api/src/projects/index.ts.
  */
 
-import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
-import { readRepoFile, type GitBackedProject } from './git';
+import {
+  MANIFEST_FILENAME_YAML,
+  type ManifestFormat,
+  manifestCandidatePaths,
+  manifestFormatForPath,
+  parseManifestText,
+  serializeManifestObject,
+} from '@kortix/manifest-schema';
+import { type GitBackedProject, readManifestFromRepo, readRepoFile } from './git';
 
-/** Where the manifest lives. Same path the rest of the platform looks for. */
+/** Where the manifest lives. Same path the rest of the platform looks for.
+ *  A project may instead use `kortix.yaml` ({@link MANIFEST_FILENAME_YAML}) —
+ *  reads prefer it if present; this stays the canonical name for breadcrumbs
+ *  and the toml/legacy default. */
 export const MANIFEST_FILENAME = 'kortix.toml';
+export { MANIFEST_FILENAME_YAML };
 
 /**
  * Schema version of the manifest. Bumped when we make a breaking change to
@@ -118,8 +129,15 @@ export interface GitTriggerParseError {
 
 export interface ParsedManifest {
   schemaVersion: number;
-  /** The raw decoded TOML object — callers shouldn't usually need this. */
+  /** The raw decoded object — callers shouldn't usually need this. */
   raw: Record<string, unknown>;
+  /** Which on-disk format this manifest is in. Drives serialization back to the
+   *  same format on commit. Required so every construction site is explicit. */
+  format: ManifestFormat;
+  /** The repo-relative file the manifest was read from (or should be written to
+   *  for a synthesized one) — e.g. `kortix.yaml` or `kortix.toml`. Lets the
+   *  commit path write to the exact same file, honoring `.yml` and custom dirs. */
+  path: string;
 }
 
 /** Result of `loadProjectTriggers` — same shape callers got pre-refactor. */
@@ -131,63 +149,74 @@ export interface LoadedTriggers {
 /* ─── Manifest IO ───────────────────────────────────────────────────────── */
 
 /**
- * Read + parse the project's kortix.toml. Returns null if the file is
- * absent (so the caller can treat the repo as "not a Kortix project yet").
+ * Read + parse the project's manifest. Returns null if no manifest file is
+ * present (so the caller can treat the repo as "not a Kortix project yet").
  * Throws on parse errors so the caller can surface them up — we don't
  * silently swallow a malformed manifest.
+ *
+ * DUAL-FORMAT: prefers `kortix.yaml` over `kortix.toml` when both exist, else
+ * falls back to whichever is present (honoring a custom `manifest_path`). The
+ * resolved file + format ride along on the ParsedManifest so the commit path
+ * writes back to the exact same file in the same format.
  */
-export async function readManifest(
-  project: GitBackedProject,
-): Promise<ParsedManifest | null> {
-  let raw: string;
+export async function readManifest(project: GitBackedProject): Promise<ParsedManifest | null> {
+  let found: { path: string; content: string } | null;
   try {
-    // Honor a project's custom manifest_path. Hardcoding kortix.toml here would
-    // silently read the wrong (often missing) file for such projects → no
-    // [[agents]] parsed → per-agent env/connector scoping turns OFF (the grant
-    // resolves to null = unrestricted). Fall back to the canonical name for
-    // legacy projects whose manifest_path is unset.
-    raw = await readRepoFile(project, project.manifestPath || MANIFEST_FILENAME, project.defaultBranch);
+    // manifest_path DEFAULTS to kortix.toml at project creation, so we can't
+    // rely on it to point at yaml — we actively probe the .yaml/.yml siblings
+    // first (manifestCandidatePaths), which also keeps per-agent env/connector
+    // scoping ON for a yaml-only project (a missing [[agents]] read = grants
+    // resolve to null = unrestricted).
+    const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
+    found = await readManifestFromRepo(project, candidates, project.defaultBranch);
   } catch {
     return null;
   }
-  return parseManifestString(raw);
+  if (!found) return null;
+  return parseManifestString(found.content, manifestFormatForPath(found.path), found.path);
 }
 
 /**
- * Synchronous parse from a TOML string. Exported so the CRUD path can
- * round-trip (read existing string, parse, mutate, serialize) without
- * touching the network.
+ * Synchronous parse from a manifest string. Exported so the CRUD path can
+ * round-trip (read existing string, parse, mutate, serialize) without touching
+ * the network. `format`/`path` default to TOML/kortix.toml so an existing
+ * caller passing only a string is unchanged.
  */
-export function parseManifestString(raw: string): ParsedManifest {
-  const parsed = parseToml(raw) as Record<string, unknown>;
-  const version = typeof parsed.kortix_version === 'number'
-    ? parsed.kortix_version
-    : typeof parsed.kortix_version === 'string'
-      ? Number(parsed.kortix_version)
-      : KNOWN_SCHEMA_VERSION;
+export function parseManifestString(
+  raw: string,
+  format: ManifestFormat = 'toml',
+  path: string = format === 'yaml' ? MANIFEST_FILENAME_YAML : MANIFEST_FILENAME,
+): ParsedManifest {
+  const parsed = parseManifestText(raw, format);
+  const version =
+    typeof parsed.kortix_version === 'number'
+      ? parsed.kortix_version
+      : typeof parsed.kortix_version === 'string'
+        ? Number(parsed.kortix_version)
+        : KNOWN_SCHEMA_VERSION;
 
   if (!Number.isFinite(version) || version < 1) {
     throw new Error('kortix_version must be a positive integer');
   }
   if (Math.floor(version) > KNOWN_SCHEMA_VERSION) {
     throw new Error(
-      `Unsupported kortix.toml schema version ${version}. This platform understands up to v${KNOWN_SCHEMA_VERSION}; upgrade the platform or pin the manifest.`,
+      `Unsupported ${path} schema version ${version}. This platform understands up to v${KNOWN_SCHEMA_VERSION}; upgrade the platform or pin the manifest.`,
     );
   }
 
-  return { schemaVersion: Math.floor(version), raw: parsed };
+  return { schemaVersion: Math.floor(version), raw: parsed, format, path };
 }
 
-/** Serialize a parsed manifest back to TOML text for committing. */
+/** Serialize a parsed manifest back to text (in its own format) for committing. */
 export function serializeManifest(manifest: ParsedManifest): string {
-  // Ensure kortix_version is the FIRST key so the resulting TOML is
-  // self-describing at a glance. smol-toml emits keys in insertion order.
+  // Ensure kortix_version is the FIRST key so the manifest is self-describing at
+  // a glance. Both smol-toml and the yaml package emit keys in insertion order.
   const out: Record<string, unknown> = { kortix_version: manifest.schemaVersion };
   for (const [key, value] of Object.entries(manifest.raw)) {
     if (key === 'kortix_version') continue;
     out[key] = value;
   }
-  return stringifyToml(out);
+  return serializeManifestObject(out, manifest.format);
 }
 
 /* ─── Trigger extraction ────────────────────────────────────────────────── */
@@ -205,11 +234,13 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
   if (!Array.isArray(rawTriggers)) {
     return {
       specs: [],
-      errors: [{
-        slug: '(top-level)',
-        path: MANIFEST_FILENAME,
-        error: '`triggers` must be an array of tables — use [[triggers]], not [triggers]',
-      }],
+      errors: [
+        {
+          slug: '(top-level)',
+          path: MANIFEST_FILENAME,
+          error: '`triggers` must be an array of tables — use [[triggers]], not [triggers]',
+        },
+      ],
     };
   }
 
@@ -246,20 +277,20 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
  * arrays + a single top-level error when the manifest fails to parse —
  * never throws.
  */
-export async function loadProjectTriggers(
-  project: GitBackedProject,
-): Promise<LoadedTriggers> {
+export async function loadProjectTriggers(project: GitBackedProject): Promise<LoadedTriggers> {
   let manifest: ParsedManifest | null;
   try {
     manifest = await readManifest(project);
   } catch (err) {
     return {
       specs: [],
-      errors: [{
-        slug: '(manifest)',
-        path: MANIFEST_FILENAME,
-        error: (err as Error).message || 'Failed to read manifest',
-      }],
+      errors: [
+        {
+          slug: '(manifest)',
+          path: MANIFEST_FILENAME,
+          error: (err as Error).message || 'Failed to read manifest',
+        },
+      ],
     };
   }
   if (!manifest) return { specs: [], errors: [] };
@@ -334,7 +365,10 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
   const slug = typeof row.slug === 'string' ? row.slug.trim() : '';
   if (!slug) return err(`(index-${index})`, `[[triggers]] entry #${index + 1} is missing a slug`);
   if (!SLUG_RE.test(slug)) {
-    return err(slug, `Invalid slug "${slug}" — lowercase letters, digits, dashes, underscores only`);
+    return err(
+      slug,
+      `Invalid slug "${slug}" — lowercase letters, digits, dashes, underscores only`,
+    );
   }
 
   const typeRaw = typeof row.type === 'string' ? row.type.trim() : '';
@@ -343,29 +377,32 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
   }
   const type = typeRaw as GitTriggerType;
 
-  const prompt = typeof row.prompt === 'string'
-    ? row.prompt
-    : typeof row.prompt_template === 'string'
-      ? row.prompt_template
-      : '';
+  const prompt =
+    typeof row.prompt === 'string'
+      ? row.prompt
+      : typeof row.prompt_template === 'string'
+        ? row.prompt_template
+        : '';
   if (!prompt.trim()) {
     return err(slug, 'prompt is required and may not be empty');
   }
 
   const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;
-  const agent = typeof row.agent === 'string' && row.agent.trim()
-    ? row.agent.trim()
-    : typeof row.agent_name === 'string' && row.agent_name.trim()
-      ? row.agent_name.trim()
-      : 'default';
+  const agent =
+    typeof row.agent === 'string' && row.agent.trim()
+      ? row.agent.trim()
+      : typeof row.agent_name === 'string' && row.agent_name.trim()
+        ? row.agent_name.trim()
+        : 'default';
   const model = typeof row.model === 'string' && row.model.trim() ? row.model.trim() : null;
   const enabled = coerceBool(row.enabled, true);
 
-  const sessionModeRaw = typeof row.session_mode === 'string'
-    ? row.session_mode.trim().toLowerCase()
-    : typeof row.sessionMode === 'string'
-      ? row.sessionMode.trim().toLowerCase()
-      : '';
+  const sessionModeRaw =
+    typeof row.session_mode === 'string'
+      ? row.session_mode.trim().toLowerCase()
+      : typeof row.sessionMode === 'string'
+        ? row.sessionMode.trim().toLowerCase()
+        : '';
   if (sessionModeRaw && sessionModeRaw !== 'fresh' && sessionModeRaw !== 'reuse') {
     return err(slug, `session_mode must be "fresh" or "reuse" (got "${sessionModeRaw}")`);
   }
@@ -374,21 +411,25 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
   const path = `${MANIFEST_FILENAME}#triggers.${slug}`;
 
   if (type === 'cron') {
-    const cron = typeof row.cron === 'string'
-      ? row.cron.trim()
-      : typeof row.schedule === 'string'
-        ? row.schedule.trim()
-        : '';
-    const runAtRaw = typeof row.run_at === 'string'
-      ? row.run_at.trim()
-      : typeof row.runAt === 'string'
-        ? row.runAt.trim()
-        : '';
-    const timezone = typeof row.timezone === 'string' && row.timezone.trim()
-      ? row.timezone.trim()
-      : 'UTC';
+    const cron =
+      typeof row.cron === 'string'
+        ? row.cron.trim()
+        : typeof row.schedule === 'string'
+          ? row.schedule.trim()
+          : '';
+    const runAtRaw =
+      typeof row.run_at === 'string'
+        ? row.run_at.trim()
+        : typeof row.runAt === 'string'
+          ? row.runAt.trim()
+          : '';
+    const timezone =
+      typeof row.timezone === 'string' && row.timezone.trim() ? row.timezone.trim() : 'UTC';
     if (!isValidTimeZone(timezone)) {
-      return err(slug, `timezone must be a valid IANA name like "UTC" or "America/New_York" (got "${timezone}")`);
+      return err(
+        slug,
+        `timezone must be a valid IANA name like "UTC" or "America/New_York" (got "${timezone}")`,
+      );
     }
 
     // A one-off ("run once") schedule carries `run_at` instead of `cron`.
@@ -417,7 +458,8 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
       };
     }
 
-    if (!cron) return err(slug, 'cron triggers must declare a `cron` expression or a one-off `run_at`');
+    if (!cron)
+      return err(slug, 'cron triggers must declare a `cron` expression or a one-off `run_at`');
     return {
       ok: true,
       spec: {
@@ -439,13 +481,17 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
   }
 
   // webhook
-  const secretEnv = typeof row.secret_env === 'string'
-    ? row.secret_env.trim()
-    : typeof row.secretEnv === 'string'
-      ? row.secretEnv.trim()
-      : '';
+  const secretEnv =
+    typeof row.secret_env === 'string'
+      ? row.secret_env.trim()
+      : typeof row.secretEnv === 'string'
+        ? row.secretEnv.trim()
+        : '';
   if (!secretEnv) {
-    return err(slug, 'webhook triggers must declare `secret_env` pointing at a project_secrets entry');
+    return err(
+      slug,
+      'webhook triggers must declare `secret_env` pointing at a project_secrets entry',
+    );
   }
   if (!/^[A-Z_][A-Z0-9_]*$/.test(secretEnv)) {
     return err(slug, `secret_env must look like a project_secrets name (got "${secretEnv}")`);

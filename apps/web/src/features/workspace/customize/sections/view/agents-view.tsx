@@ -1,24 +1,28 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Check, Loader2, ShieldCheck, User, Users } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ModelSelector } from '@/features/session/model-selector';
+import { flattenModels } from '@/features/session/session-chat-input';
 import { ConfigEntityView } from '@/features/workspace/customize/sections/component/config-entity-view';
 import { formatMode } from '@/features/workspace/customize/shared/utils';
+import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
+import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
   type AgentGrantSet,
+  type ProjectConfigSummary,
   listConnectors,
   listProjectAccess,
   listProjectResourceGrants,
   listProjectSecrets,
-  type ProjectConfigSummary,
   setAgentScope,
 } from '@kortix/sdk/projects-client';
 import { StarSolid } from '@mynaui/icons-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Bot, Check, Loader2, ShieldCheck, Sparkles, User, Users } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
@@ -28,6 +32,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
       projectId={projectId}
       kind="agent"
       noun="agent"
+      layout="split"
       title="Agents"
       description="Pick an agent from the list to preview it, or create a new one."
       docs="https://kortix.com/docs/concepts/agents"
@@ -80,6 +85,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
       renderDetailExtra={(agent) => (
         <div className="space-y-3">
           <AgentAssignments projectId={projectId} agentName={agent.name} />
+          <AgentModel projectId={projectId} agentName={agent.name} />
           <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
         </div>
       )}
@@ -138,8 +144,104 @@ function AgentAssignments({ projectId, agentName }: { projectId: string; agentNa
         ))}
       </div>
       <p className="text-muted-foreground/50 text-[11px] leading-relaxed">
-        These members &amp; departments inherit this agent's declared secrets &amp; connectors (below)
-        as their own — usable in Secrets, sessions, and connector calls.
+        These members &amp; departments inherit this agent's declared secrets &amp; connectors
+        (below) as their own — usable in Secrets, sessions, and connector calls.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Which model this agent runs on. Sets the per-agent gateway default (scope=agent,
+ * DB-backed, instant — no git commit): a session for this agent that asks for the
+ * synthetic `auto` model resolves to this pick. When unset, the agent falls back
+ * to the project → account → platform default. Manager-gated (the model-defaults
+ * route asserts `manage`); everyone else sees the read-only resolved model.
+ */
+function AgentModel({ projectId, agentName }: { projectId: string; agentName: string }) {
+  const accessQuery = useQuery({
+    queryKey: ['project-access', projectId],
+    queryFn: () => listProjectAccess(projectId),
+    staleTime: 20_000,
+  });
+  const canManage = Boolean(accessQuery.data?.can_manage);
+  const { data: providers } = useOpenCodeProviders();
+  const models = useMemo(() => flattenModels(providers), [providers]);
+  const defaults = useModelDefaults(projectId);
+  const explicit = defaults.agentDefaults[agentName] ?? null;
+  const resolved = defaults.resolveDefaultFor(agentName) ?? null;
+
+  const nameOf = (m: { providerID: string; modelID: string } | null) =>
+    m
+      ? (models.find((x) => x.providerID === m.providerID && x.modelID === m.modelID)?.modelName ??
+        `${m.providerID}/${m.modelID}`)
+      : null;
+
+  return (
+    <div className="border-border/60 bg-muted/20 space-y-2.5 rounded-lg border p-4">
+      <div className="flex items-center gap-2">
+        <Sparkles className="text-muted-foreground/70 size-3.5 shrink-0" />
+        <span className="text-foreground/80 text-xs font-medium">Model</span>
+        {explicit ? (
+          <Badge variant="muted" size="xs">
+            Pinned
+          </Badge>
+        ) : null}
+      </div>
+
+      {canManage ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <ModelSelector
+            models={models}
+            providers={providers}
+            selectedModel={explicit}
+            onSelect={(m) => {
+              if (m) {
+                void defaults.setAgentDefault(agentName, m);
+                toast.success(`${agentName} → ${nameOf(m)}`);
+              } else {
+                void defaults.clearAgentDefault(agentName);
+              }
+            }}
+          />
+          {explicit ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => {
+                void defaults.clearAgentDefault(agentName);
+                toast.success(`${agentName} follows the default model again`);
+              }}
+            >
+              Reset to default
+            </Button>
+          ) : null}
+        </div>
+      ) : (
+        <Badge variant="outline" size="sm" className="font-mono">
+          {nameOf(resolved) ?? 'Auto'}
+        </Badge>
+      )}
+
+      <p className="text-muted-foreground/50 text-[11px] leading-relaxed">
+        {explicit ? (
+          <>
+            Every session run by <span className="font-medium">{agentName}</span> uses{' '}
+            <span className="font-medium">{nameOf(explicit)}</span>.
+          </>
+        ) : (
+          <>
+            Follows the project / account default
+            {resolved ? (
+              <>
+                {' '}
+                (<span className="font-medium">{nameOf(resolved)}</span>)
+              </>
+            ) : null}
+            . Pick a model to pin this agent to it.
+          </>
+        )}
       </p>
     </div>
   );
@@ -187,6 +289,9 @@ function AgentScopeCard({
 
   const [env, setEnv] = useState<AgentGrantSet>(scope.env);
   const [connectors, setConnectors] = useState<AgentGrantSet>(scope.connectors);
+  // Bumped on Reset to remount the editors so their local "specific" latch reseeds
+  // from the restored value (agent switches already remount via the keyed pane).
+  const [editorNonce, setEditorNonce] = useState(0);
   // Reset local edits whenever the committed scope changes (agent switch, or a
   // save landed and the config query refetched) so the form tracks the source.
   const committedKey = JSON.stringify({ agentName, env: scope.env, connectors: scope.connectors });
@@ -253,6 +358,7 @@ function AgentScopeCard({
     <div className="border-border/60 bg-muted/20 space-y-4 rounded-lg border p-4">
       <ScopeHeader />
       <ScopeEditor
+        key={`env-${editorNonce}`}
         label="Secrets"
         allLabel="All the launcher can see"
         emptyLabel="No secrets in this project yet."
@@ -261,6 +367,7 @@ function AgentScopeCard({
         onChange={setEnv}
       />
       <ScopeEditor
+        key={`connectors-${editorNonce}`}
         label="Connectors"
         allLabel="Every project connector"
         emptyLabel="No connectors in this project yet."
@@ -284,6 +391,7 @@ function AgentScopeCard({
               onClick={() => {
                 setEnv(scope.env);
                 setConnectors(scope.connectors);
+                setEditorNonce((n) => n + 1);
               }}
             >
               Reset
@@ -344,19 +452,30 @@ function ScopeEditor({
   options: { id: string; label: string }[];
   onChange: (v: AgentGrantSet) => void;
 }) {
+  // "Specific" with nothing selected yet is a real UI state the value type can't
+  // hold — an empty list is indistinguishable from "None". So we latch the user's
+  // choice locally: without this, clicking Specific from All writes `[]`, which
+  // re-derives to None and the checklist never opens (the button looks dead). The
+  // detail pane is keyed per agent, so this state remounts and never bleeds across
+  // agents; picking an item makes the value itself specific and the latch moot.
+  const [wantSpecific, setWantSpecific] = useState(value !== 'all' && value.length > 0);
   const mode: 'all' | 'specific' | 'none' =
-    value === 'all' ? 'all' : value.length === 0 ? 'none' : 'specific';
+    value === 'all' ? 'all' : value.length > 0 || wantSpecific ? 'specific' : 'none';
   const selected = value === 'all' ? new Set<string>() : new Set(value);
   const optionIds = new Set(options.map((o) => o.id));
   // Selected names that aren't in the current option list (deleted resource, or
   // typed via kortix.toml) — keep them visible so they can be unchecked.
-  const orphanRows = [...selected].filter((id) => !optionIds.has(id)).map((id) => ({ id, label: id }));
+  const orphanRows = [...selected]
+    .filter((id) => !optionIds.has(id))
+    .map((id) => ({ id, label: id }));
   const rows = [...options, ...orphanRows];
 
   const pick = (m: 'all' | 'specific' | 'none') => {
+    setWantSpecific(m === 'specific');
     if (m === 'all') return onChange('all');
     if (m === 'none') return onChange([]);
-    // → specific: keep the current concrete list ('all' starts empty).
+    // → specific: keep the current concrete list ('all' starts empty). The latch
+    // above keeps us in specific mode even while the list is empty.
     onChange(value === 'all' ? [] : value);
   };
   const toggle = (id: string) => {
@@ -422,9 +541,7 @@ function ScopeEditor({
                     {isSel && <Check className="size-3" />}
                   </span>
                   <span className="min-w-0 flex-1 truncate font-mono">{o.label}</span>
-                  {isOrphan && (
-                    <span className="text-amber-600 dark:text-amber-400">missing</span>
-                  )}
+                  {isOrphan && <span className="text-amber-600 dark:text-amber-400">missing</span>}
                 </button>
               );
             })}

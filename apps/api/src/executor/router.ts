@@ -114,6 +114,11 @@ export interface AdminConnectorView extends CatalogConnector {
   authSecret: string | null;
   /** Credential storage mode — shared project credential vs each member's own. */
   credentialMode: 'shared' | 'per_user';
+  /** Marked sensitive — its reads gate too (require_approval by default). */
+  sensitive: boolean;
+  /** Which agents may call it. null / [] = all agents; a list = restricted to
+   *  those agent names. The connector-side agent gate (mirror of secret scope). */
+  agentScope: string[] | null;
   /** Current access (who can use), for the dashboard picker. */
   sharing: SharingIntent | null;
   /** Whether the viewing user's credential is set (shared row, or their own for per_user). */
@@ -180,6 +185,22 @@ export interface ExecutorRouterDeps {
     accountId: string,
     slug: string,
     mode: 'shared' | 'per_user',
+  ): Promise<CrudOutcome>;
+  /** Toggle a connector's `sensitive` flag (gate reads too) in kortix.toml + re-sync. */
+  setSensitive?(
+    projectId: string,
+    accountId: string,
+    slug: string,
+    sensitive: boolean,
+  ): Promise<CrudOutcome>;
+  /** Set which AGENTS may call a connector (connector-side agent gate). null/[] =
+   *  all agents. Writes kortix.toml [[connectors]].agent_scope for declared
+   *  connectors (+ re-sync), or the column directly for synthetic ones. */
+  setAgentScope?(
+    projectId: string,
+    accountId: string,
+    slug: string,
+    agentScope: string[] | null,
   ): Promise<CrudOutcome>;
   /** Rename a connector (display label) in kortix.toml + re-sync. */
   setConnectorName?(
@@ -785,6 +806,93 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         return c.json({ error: 'mode must be "shared" or "per_user"' }, 400);
       }
       const result = await deps.setCredentialMode(projectId, admin.accountId, slug, mode);
+      return result.ok
+        ? c.json({ ok: true, sync: result.sync })
+        : c.json({ error: result.error }, result.status as 400);
+    },
+  );
+
+  // ── Admin: toggle a connector's `sensitive` flag (reads gate too) ─────────
+  app.openapi(
+    createRoute({
+      method: 'put',
+      path: '/projects/{projectId}/connectors/{slug}/sensitive',
+      tags: ['executor'],
+      summary: "Toggle a connector's sensitive flag (gate reads too)",
+      ...auth,
+      request: {
+        params: ProjectSlugParam,
+        body: { content: { 'application/json': { schema: OpaqueSchema } } },
+      },
+      responses: {
+        200: json(CrudOkSchema, 'Sensitive flag updated'),
+        ...errors(400, 403, 404, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const slug = c.req.param('slug');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.setSensitive) return c.json({ error: 'not supported' }, 501);
+      let body: any;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: 'invalid_json' }, 400);
+      }
+      if (typeof body?.sensitive !== 'boolean') {
+        return c.json({ error: 'sensitive must be a boolean' }, 400);
+      }
+      const result = await deps.setSensitive(projectId, admin.accountId, slug, body.sensitive);
+      return result.ok
+        ? c.json({ ok: true, sync: result.sync })
+        : c.json({ error: result.error }, result.status as 400);
+    },
+  );
+
+  // ── Admin: set which AGENTS may call a connector (connector-side agent gate) ─
+  app.openapi(
+    createRoute({
+      method: 'put',
+      path: '/projects/{projectId}/connectors/{slug}/agent-scope',
+      tags: ['executor'],
+      summary: 'Set which agents may call a connector (null/[] = all agents)',
+      ...auth,
+      request: {
+        params: ProjectSlugParam,
+        body: { content: { 'application/json': { schema: OpaqueSchema } } },
+      },
+      responses: {
+        200: json(CrudOkSchema, 'Agent scope updated'),
+        ...errors(400, 403, 404, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const slug = c.req.param('slug');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.setAgentScope) return c.json({ error: 'not supported' }, 501);
+      let body: any;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: 'invalid_json' }, 400);
+      }
+      // agent_scope: null | [] = all agents; a list of agent names restricts it.
+      let agentScope: string[] | null;
+      if (body?.agent_scope == null) {
+        agentScope = null;
+      } else if (
+        Array.isArray(body.agent_scope) &&
+        body.agent_scope.every((a: unknown) => typeof a === 'string')
+      ) {
+        agentScope = body.agent_scope as string[];
+      } else {
+        return c.json({ error: 'agent_scope must be null or an array of agent names' }, 400);
+      }
+      const result = await deps.setAgentScope(projectId, admin.accountId, slug, agentScope);
       return result.ok
         ? c.json({ ok: true, sync: result.sync })
         : c.json({ error: result.error }, result.status as 400);

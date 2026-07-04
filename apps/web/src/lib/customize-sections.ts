@@ -26,7 +26,6 @@ export type CustomizeSection =
   | 'llm-keys'
   | 'computers'
   | 'members'
-  | 'approvals'
   | 'schedules'
   | 'webhooks'
   | 'channels'
@@ -55,7 +54,6 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'llm-keys',
   'computers',
   'members',
-  'approvals',
   'schedules',
   'webhooks',
   'channels',

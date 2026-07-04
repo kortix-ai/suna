@@ -1,9 +1,14 @@
 // Project config introspection: parses kortix.toml + the OpenCode config dir
 // (agents/skills/commands) out of the repo into a ProjectConfigSummary.
 
-import { parse as parseToml } from 'smol-toml';
-import { extractAgents, type LoadedAgents } from '../agents';
-import { readRepoFile, listRepoFiles } from './files';
+import {
+  type ManifestFormat,
+  manifestCandidatePaths,
+  manifestFormatForPath,
+  parseManifestText,
+} from '@kortix/manifest-schema';
+import { type LoadedAgents, extractAgents } from '../agents';
+import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
 
 async function optionalFile(project: GitBackedProject, filePath: string) {
@@ -29,7 +34,10 @@ function stripTomlComment(line: string) {
 
 function parseTomlValue(rawValue: string): unknown {
   const value = rawValue.trim();
-  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
     return value.slice(1, -1);
   }
   if (value.startsWith('[') && value.endsWith(']')) {
@@ -80,7 +88,10 @@ function asStringArray(value: unknown) {
 }
 
 function envRequirements(manifest: Record<string, unknown>) {
-  const env = typeof manifest.env === 'object' && manifest.env ? manifest.env as Record<string, unknown> : {};
+  const env =
+    typeof manifest.env === 'object' && manifest.env
+      ? (manifest.env as Record<string, unknown>)
+      : {};
   return {
     required: asStringArray(env.required),
     optional: asStringArray(env.optional),
@@ -110,17 +121,21 @@ function agentNameFromPath(path: string) {
   return path.split('/').pop()?.replace(/\.md$/, '') || path;
 }
 
-function parseFullManifest(raw: string | null): Record<string, unknown> | null {
+function parseFullManifest(
+  raw: string | null,
+  format: ManifestFormat,
+): Record<string, unknown> | null {
   if (!raw) return null;
   try {
-    return parseToml(raw) as Record<string, unknown>;
+    return parseManifestText(raw, format);
   } catch {
     return null;
   }
 }
 
 function hasAgentsDeclaration(raw: string | null): boolean {
-  return Boolean(raw && /^\s*\[\[?agents\]?\]/m.test(raw));
+  // TOML `[[agents]]` / `[agents]`, OR YAML `agents:`.
+  return Boolean(raw && (/^\s*\[\[?agents\]?\]/m.test(raw) || /^\s*agents\s*:/m.test(raw)));
 }
 
 type NativeAgentSummary = Omit<ProjectConfigSummary['agents'][number], 'source' | 'enabled'>;
@@ -147,7 +162,8 @@ export function resolveConfigAgents(
     agents: loadedAgents.specs
       .filter((spec) => spec.enabled)
       .map((spec) => {
-        const native = (spec.file ? nativeByPath.get(spec.file) : undefined) ?? nativeByName.get(spec.name);
+        const native =
+          (spec.file ? nativeByPath.get(spec.file) : undefined) ?? nativeByName.get(spec.name);
         return {
           name: spec.name,
           path: spec.file ?? native?.path ?? spec.path,
@@ -167,21 +183,41 @@ export function resolveConfigAgents(
   };
 }
 
-export async function loadProjectConfig(project: GitBackedProject, files?: ProjectFileEntry[]): Promise<ProjectConfigSummary> {
-  const repoFiles = files ?? await listRepoFiles(project, project.defaultBranch);
-  const manifestRaw = await optionalFile(project, project.manifestPath);
-  const parsedManifest = parseFullManifest(manifestRaw);
+export async function loadProjectConfig(
+  project: GitBackedProject,
+  files?: ProjectFileEntry[],
+): Promise<ProjectConfigSummary> {
+  const repoFiles = files ?? (await listRepoFiles(project, project.defaultBranch));
+  // Dual-format: resolve kortix.yaml (preferred) or kortix.toml, then parse in
+  // the matched format. Without this, a yaml-only project reads no manifest here
+  // → its [[agents]] scoping silently vanishes from the config introspection.
+  const resolved = await readManifestFromRepo(
+    project,
+    manifestCandidatePaths(project.manifestPath).map((c) => c.path),
+    project.defaultBranch,
+  ).catch(() => null);
+  const manifestRaw = resolved?.content ?? null;
+  const manifestFormat: ManifestFormat = resolved ? manifestFormatForPath(resolved.path) : 'toml';
+  const manifestFilePath = resolved?.path ?? project.manifestPath;
+  const parsedManifest = parseFullManifest(manifestRaw, manifestFormat);
   const manifest = parsedManifest ?? parseManifest(manifestRaw);
   const loadedAgents = parsedManifest
-    ? extractAgents({ schemaVersion: 1, raw: parsedManifest })
+    ? extractAgents({
+        schemaVersion: 1,
+        raw: parsedManifest,
+        format: manifestFormat,
+        path: manifestFilePath,
+      })
     : hasAgentsDeclaration(manifestRaw)
       ? {
           specs: [],
-          errors: [{
-            name: '(manifest)',
-            path: project.manifestPath,
-            error: 'Failed to parse agents declaration',
-          }],
+          errors: [
+            {
+              name: '(manifest)',
+              path: manifestFilePath,
+              error: 'Failed to parse agents declaration',
+            },
+          ],
         }
       : { specs: [], errors: [] };
   const opencodeDir = resolveOpencodeDir(manifest);
@@ -201,16 +237,18 @@ export async function loadProjectConfig(project: GitBackedProject, files?: Proje
     .map((file) => file.path)
     .filter((path) => agentRe.test(path))
     .sort();
-  const nativeAgents = await Promise.all(agentPaths.map(async (path) => {
-    const raw = await optionalFile(project, path);
-    const meta = parseFrontmatter(raw);
-    return {
-      name: meta.name || meta.slug || agentNameFromPath(path),
-      path,
-      description: meta.description || null,
-      mode: meta.mode || null,
-    };
-  }));
+  const nativeAgents = await Promise.all(
+    agentPaths.map(async (path) => {
+      const raw = await optionalFile(project, path);
+      const meta = parseFrontmatter(raw);
+      return {
+        name: meta.name || meta.slug || agentNameFromPath(path),
+        path,
+        description: meta.description || null,
+        mode: meta.mode || null,
+      };
+    }),
+  );
   const { agent_discovery, agents } = resolveConfigAgents(nativeAgents, loadedAgents);
 
   const seenSkills = new Set<string>();
@@ -224,15 +262,17 @@ export async function loadProjectConfig(project: GitBackedProject, files?: Proje
     })
     .map((match) => ({ slug: match[1], path: `${opencodeDir}/skills/${match[1]}/SKILL.md` }))
     .sort((a, b) => a.slug.localeCompare(b.slug));
-  const skills = await Promise.all(skillPaths.map(async ({ slug, path }) => {
-    const raw = await optionalFile(project, path);
-    const meta = parseFrontmatter(raw);
-    return {
-      name: meta.name || slug,
-      path,
-      description: meta.description || null,
-    };
-  }));
+  const skills = await Promise.all(
+    skillPaths.map(async ({ slug, path }) => {
+      const raw = await optionalFile(project, path);
+      const meta = parseFrontmatter(raw);
+      return {
+        name: meta.name || slug,
+        path,
+        description: meta.description || null,
+      };
+    }),
+  );
 
   // OpenCode slash commands — `<opencode>/command/<slug>.md` or
   // `<opencode>/commands/<slug>.md` (both forms accepted by the runtime; we
@@ -243,15 +283,17 @@ export async function loadProjectConfig(project: GitBackedProject, files?: Proje
     .filter((match): match is RegExpMatchArray => Boolean(match))
     .map((match) => ({ slug: match[1], path: match.input as string }))
     .sort((a, b) => a.slug.localeCompare(b.slug));
-  const commands = await Promise.all(commandPaths.map(async ({ slug, path }) => {
-    const raw = await optionalFile(project, path);
-    const meta = parseFrontmatter(raw);
-    return {
-      name: meta.name || slug,
-      path,
-      description: meta.description || null,
-    };
-  }));
+  const commands = await Promise.all(
+    commandPaths.map(async ({ slug, path }) => {
+      const raw = await optionalFile(project, path);
+      const meta = parseFrontmatter(raw);
+      return {
+        name: meta.name || slug,
+        path,
+        description: meta.description || null,
+      };
+    }),
+  );
 
   const signals = {
     manifest: Boolean(manifestRaw),
