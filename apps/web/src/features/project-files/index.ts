@@ -52,9 +52,6 @@ export {
   type UploadResult,
 } from './api/opencode-files';
 
-// API — semantic search (LSS)
-export { searchLss } from './api/lss-search';
-
 // API — git history
 export { getFileHistory, getFileCommitDiff, getFileAtCommit } from './api/git-history';
 

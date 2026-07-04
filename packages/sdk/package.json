@@ -14,7 +14,7 @@
   "sideEffects": false,
   "dependencies": {
     "@kortix/llm-catalog": "workspace:*",
-    "@opencode-ai/sdk": "^1.14.28",
+    "@opencode-ai/sdk": "1.17.11",
     "zustand": "^5.0.3"
   },
   "peerDependencies": {

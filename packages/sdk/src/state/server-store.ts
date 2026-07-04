@@ -5,7 +5,7 @@ import type { ServerStore } from './server-store/types';
 
 // Re-export the public surface that lives in sibling modules so importers of
 // '../state/server-store' (and '@kortix/sdk/server-store') stay unchanged.
-export { getSandboxUrlForExternalId } from './server-store/url-helpers';
+export { getSandboxUrlForExternalId, getPublicShareUrlForToken } from './server-store/url-helpers';
 export {
   deriveSubdomainOpts,
   getActiveDbSandboxId,

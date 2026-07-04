@@ -46,9 +46,6 @@ export {
 // Pure path heuristics
 export { hasFileExtension } from './path-utils';
 
-// API — semantic search (LSS)
-export { searchLss } from './api/lss-search';
-
 // API — git history
 export { getFileHistory, getFileCommitDiff, getFileAtCommit } from './api/git-history';
 

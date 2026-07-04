@@ -6,8 +6,7 @@ const sidebarSource = readFileSync(join(import.meta.dir, 'project-sidebar.tsx'),
 const filesNavSource = readFileSync(join(import.meta.dir, 'project-files-nav.tsx'), 'utf8');
 
 describe('sidebar Files entry', () => {
-  test('sidebar renders the Files item in expanded and collapsed states', () => {
-    expect(sidebarSource).toContain('<ProjectFilesNavItem />');
+  test('sidebar renders the Files rail item in collapsed state', () => {
     expect(sidebarSource).toContain('<ProjectFilesRailItem />');
   });
 

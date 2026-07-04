@@ -90,9 +90,15 @@ export {
 export { useSessionPicks, type SessionPicks } from './use-session-picks';
 export { useRuntimePhase, type RuntimePhase } from './use-runtime-phase';
 export {
+  useQuestionSelfHeal,
+  hasRunningQuestionTool,
+  type UseQuestionSelfHealOptions,
+} from './use-question-self-heal';
+export {
   startStashKey,
   writeStartStash,
   readStartStash,
   clearStartStash,
+  migrateLegacyStash,
   type StartStash,
 } from './session-start-stash';

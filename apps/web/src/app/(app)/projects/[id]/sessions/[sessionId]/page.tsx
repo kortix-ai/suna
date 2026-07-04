@@ -34,7 +34,7 @@ import {
   restartProjectSession,
   sessionStartKey,
 } from '@kortix/sdk/projects-client';
-import { useSession } from '@kortix/sdk/react';
+import { migrateLegacyStash, useSession } from '@kortix/sdk/react';
 
 /**
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.
@@ -82,9 +82,14 @@ export default function ProjectSessionPage() {
   // seeding (no client health poll), and the canonical id. Gated on the billing
   // check so a no-plan account never spins on a sandbox that won't provision.
   // replayStartStash:false — the web has its own pending-prompt hand-off (below).
+  // chatEngine:false — this page only reads boot/lifecycle fields (switched,
+  // stage, sandbox, opencodeSessionId); `SessionChat` below mounts its own
+  // useSessionSync + useQuestionSelfHeal. Leaving the default `true` here would
+  // double-mount both against the same session for no reason.
   const session = useSession(projectId, sessionId, {
     enabled: !!user && !billingGatePending && !noPlan,
     replayStartStash: false,
+    chatEngine: false,
   });
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';
@@ -358,7 +363,11 @@ function ActiveSessionChat({
   if (!pinRef.current.id && rootSessionId) pinRef.current.id = rootSessionId;
   const chatSessionId = selectedSession?.id ?? pinRef.current.id ?? rootSessionId ?? null;
 
-  // Migrate the home-composer prompt onto SessionChat's consumer key DURING RENDER.
+  // Migrate the home-composer prompt onto the canonical SDK start-stash DURING
+  // RENDER — the project-home composer stashes under the ROUTE session id
+  // (before the canonical OpenCode session exists); once it resolves, hand the
+  // prompt off to `chatSessionId`'s stash, which `readStartStash` (SessionChat's
+  // pending-prompt effect, or `useSession`'s own replay) reads uniformly.
   const promptMigratedForRef = useRef<string | null>(null);
   if (
     typeof window !== 'undefined' &&
@@ -366,21 +375,11 @@ function ActiveSessionChat({
     promptMigratedForRef.current !== chatSessionId
   ) {
     promptMigratedForRef.current = chatSessionId;
-    const fromKey = `project_pending_prompt:${sessionId}`;
-    const pending = sessionStorage.getItem(fromKey);
-    if (pending) {
-      const toKey = `opencode_pending_prompt:${chatSessionId}`;
-      if (sessionStorage.getItem(toKey) === null) sessionStorage.setItem(toKey, pending);
-      sessionStorage.removeItem(fromKey);
-    }
-    const fromOptKey = `project_pending_options:${sessionId}`;
-    const pendingOptions = sessionStorage.getItem(fromOptKey);
-    if (pendingOptions) {
-      const toOptKey = `opencode_pending_options:${chatSessionId}`;
-      if (sessionStorage.getItem(toOptKey) === null)
-        sessionStorage.setItem(toOptKey, pendingOptions);
-      sessionStorage.removeItem(fromOptKey);
-    }
+    migrateLegacyStash(
+      `project_pending_prompt:${sessionId}`,
+      `project_pending_options:${sessionId}`,
+      chatSessionId,
+    );
   }
 
   // ── Readiness benchmarking marks ───────────────────────────────────────

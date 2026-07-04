@@ -25,12 +25,12 @@ import { modelKeyToWire, useModelStore } from '@/hooks/opencode/use-model-store'
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { backendApi } from '@/lib/api-client';
 import { setModelDefault } from '@kortix/sdk/projects-client';
-import { authenticatedFetch } from '@/lib/auth-token';
+import { setEnv } from '@kortix/sdk/opencode-client';
+import { useServerStore } from '@/stores/server-store';
 import { isBillingEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { getActiveOpenCodeUrl } from '@/stores/server-store';
 import {
   ArrowLeft,
   BookOpen,
@@ -681,6 +681,7 @@ const TOOL_SECRETS = [
 function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const isCloud = isBillingEnabled();
+  const instanceUrl = useServerStore((s) => s.getActiveServerUrl());
   const [modalOpen, setModalOpen] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -694,16 +695,19 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
       setModalOpen(false);
       return;
     }
+    if (!instanceUrl) {
+      toast.error("Couldn't save tool keys: no active instance");
+      return;
+    }
 
     setSaving(true);
-    const base = getActiveOpenCodeUrl();
     const { succeeded, failed } = await saveToolKeys(toSave, async (key, value) => {
-      const res = await authenticatedFetch(`${base}/env/${encodeURIComponent(key)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value: value.trim() }),
-      });
-      return { ok: res.ok };
+      try {
+        await setEnv(instanceUrl, key, value.trim());
+        return { ok: true };
+      } catch {
+        return { ok: false };
+      }
     });
     setSaving(false);
     setSavedCount(succeeded.length);
@@ -718,7 +722,7 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
       return;
     }
     setModalOpen(false);
-  }, [values]);
+  }, [values, instanceUrl]);
 
   return (
     <>

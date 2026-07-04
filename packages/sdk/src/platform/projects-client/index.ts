@@ -18,6 +18,11 @@ export * from './triggers';
 export * from './session-sandbox';
 export * from './model-defaults';
 export * from './agent-scope';
+export * from './billing';
+export * from './channels';
+export * from './gateway';
+export * from './apps';
+export * from './transcription';
 export * from './review';
 
 // Cross-cutting types that originally lived in this module. Re-exported

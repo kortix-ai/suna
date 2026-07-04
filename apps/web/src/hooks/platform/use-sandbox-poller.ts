@@ -14,9 +14,12 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { getSupabaseAccessToken } from '@/lib/auth-token';
-import { backendApi } from '@/lib/api-client';
 import { getEnv } from '@/lib/env-config';
 import type { ProvisioningStageInfo } from '@/lib/provisioning-stages';
+import {
+  getSandboxProvisionStatus,
+  getSandboxProvisionStreamUrl,
+} from '@kortix/sdk/platform-client';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -28,17 +31,6 @@ export interface SandboxPollerState {
   machineInfo: { ip: string; serverType: string; location: string } | null;
   error: string | null;
   stageEnteredAt: number | null; // timestamp when current stage was entered
-}
-
-interface StatusResponse {
-  status: 'provisioning' | 'active' | 'error' | 'stopped' | 'archived' | 'not_found';
-  stage: string | null;
-  stageProgress: number | null;
-  stageMessage: string | null;
-  machineInfo: { ip: string; serverType: string; location: string } | null;
-  stages: ProvisioningStageInfo[] | null;
-  error?: string | null;
-  startedAt: string | null;
 }
 
 interface UseSandboxPollerOpts {
@@ -232,13 +224,9 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
 
   // ── HTTP polling fallback ────────────────────────────────────────────────
 
-  const fetchStatus = useCallback(async (): Promise<StatusResponse | null> => {
+  const fetchStatus = useCallback(async () => {
     if (!sandboxId) return null;
-    const res = await backendApi.get<StatusResponse>(`/platform/sandbox/${sandboxId}/status`, {
-      showErrors: false,
-      timeout: 10_000,
-    });
-    return res.success ? (res.data ?? null) : null;
+    return getSandboxProvisionStatus(sandboxId);
   }, [sandboxId]);
 
   const startFallbackPolling = useCallback(() => {
@@ -324,8 +312,7 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
       const token = await getSupabaseAccessToken();
       if (!token) throw new Error('No auth token');
 
-      const baseUrl = getPlatformUrl();
-      const sseUrl = `${baseUrl}/platform/sandbox/${sandboxId}/provision-stream?token=${encodeURIComponent(token)}`;
+      const sseUrl = getSandboxProvisionStreamUrl(sandboxId, token);
 
       const es = new EventSource(sseUrl);
       eventSourceRef.current = es;
