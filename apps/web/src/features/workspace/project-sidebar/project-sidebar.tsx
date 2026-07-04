@@ -42,30 +42,25 @@ import {
 import {
   ProjectCustomizeNavItem,
   ProjectCustomizeRailItem,
-  ProjectFilesNavItem,
   ProjectFilesRailItem,
   useCustomizeKeyboardShortcut,
 } from '@/features/workspace/project-sidebar/footer/project-customize-nav';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
 import {
   ProjectSandboxAlert,
   ProjectSandboxAlertRailItem,
 } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
-import {
-  ProjectFilesNavItem,
-  ProjectFilesRailItem,
-} from '@/features/workspace/project-sidebar/project-files-nav';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-switcher';
 import { useAdminRole } from '@/hooks/admin';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
-import { listProjectSessions } from '@kortix/sdk/projects-client';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { useSessionFilterStore } from '@/stores/session-filter-store';
+import { listProjectSessions } from '@kortix/sdk/projects-client';
 import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
