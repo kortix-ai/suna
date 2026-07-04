@@ -1,0 +1,102 @@
+'use client';
+
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
+import Hint from '@/components/ui/hint';
+import { cn } from '@/lib/utils';
+import { ListSolid } from '@mynaui/icons-react';
+import { FileDiff, History, LayoutGrid } from 'lucide-react';
+import { useFilesStore } from '../store/files-store';
+
+interface DriveHeaderProps {
+  historyToggle: { open: boolean; onToggle: () => void };
+  reviewsToggle: { open: boolean; onToggle: () => void; openCount?: number };
+}
+
+/**
+ * Drive-style page header for the project Files section: plain-language
+ * title + purpose line on the left, version-history / proposed-changes
+ * toggles and the list⇄grid switch on the right.
+ */
+export function DriveHeader({ historyToggle, reviewsToggle }: DriveHeaderProps) {
+  const viewMode = useFilesStore((s) => s.viewMode);
+  const setViewMode = useFilesStore((s) => s.setViewMode);
+
+  const reviewCount = reviewsToggle.openCount ?? 0;
+
+  return (
+    <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 pt-5 pb-4">
+      <div className="min-w-0 space-y-1">
+        <h2 className="text-foreground text-xl font-medium">Files</h2>
+        <p className="text-muted-foreground text-sm text-pretty">
+          Every document, asset, and piece of work in this project lives here.
+        </p>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-1.5">
+        <Button
+          type="button"
+          variant={historyToggle.open ? 'secondary' : 'ghost'}
+          size="sm"
+          onClick={historyToggle.onToggle}
+          title="Browse every saved version of this project"
+          className={cn(!historyToggle.open && 'text-muted-foreground hover:text-foreground')}
+        >
+          <History className="size-4 shrink-0" />
+          <span className="hidden sm:inline">History</span>
+        </Button>
+
+        <Button
+          type="button"
+          variant={reviewsToggle.open ? 'secondary' : 'ghost'}
+          size="sm"
+          onClick={reviewsToggle.onToggle}
+          title={
+            reviewCount > 0
+              ? `${reviewCount} proposed change${reviewCount === 1 ? '' : 's'} waiting for review`
+              : 'Review changes proposed by your agents'
+          }
+          className={cn(
+            !reviewsToggle.open &&
+              reviewCount === 0 &&
+              'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <FileDiff className="size-4 shrink-0" />
+          <span className="hidden sm:inline">Proposed changes</span>
+          {reviewCount > 0 && (
+            <Badge variant="success" size="xs" className="ml-0.5 tabular-nums">
+              {reviewCount}
+            </Badge>
+          )}
+        </Button>
+
+        <ButtonGroup className="ml-1">
+          <Hint label="List view">
+            <Button
+              type="button"
+              variant={viewMode === 'list' ? 'secondary' : 'outline'}
+              size="icon-sm"
+              aria-pressed={viewMode === 'list'}
+              onClick={() => setViewMode('list')}
+            >
+              <ListSolid className="size-4" />
+            </Button>
+          </Hint>
+          <Hint label="Grid view">
+            <Button
+              type="button"
+              variant={viewMode === 'grid' ? 'secondary' : 'outline'}
+              size="icon-sm"
+              aria-pressed={viewMode === 'grid'}
+              onClick={() => setViewMode('grid')}
+            >
+              <LayoutGrid className="size-4" />
+            </Button>
+          </Hint>
+        </ButtonGroup>
+      </div>
+    </header>
+  );
+}

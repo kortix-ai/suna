@@ -15,9 +15,8 @@ import {
   FilePlus2,
   FileSymlink,
   FileX2,
-  GitBranch,
-  GitCommitHorizontal,
-  Loader2,
+  History,
+  Layers,
   Search,
   X,
 } from 'lucide-react';
@@ -27,6 +26,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -68,14 +68,14 @@ function formatFull(timestamp: number): string {
 function statusIconFor(status: ProjectCommitFile['status'], className = 'size-3.5') {
   switch (status) {
     case 'added':
-      return <FilePlus2 className={cn(className, 'text-emerald-500')} />;
+      return <FilePlus2 className={cn(className, 'text-kortix-green')} />;
     case 'deleted':
-      return <FileX2 className={cn(className, 'text-red-500')} />;
+      return <FileX2 className={cn(className, 'text-kortix-red')} />;
     case 'renamed':
     case 'copied':
-      return <FileSymlink className={cn(className, 'text-orange-500')} />;
+      return <FileSymlink className={cn(className, 'text-kortix-orange')} />;
     default:
-      return <FileEdit className={cn(className, 'text-blue-500')} />;
+      return <FileEdit className={cn(className, 'text-kortix-blue')} />;
   }
 }
 
@@ -135,10 +135,10 @@ function FileRailRow({
       </span>
       <span className="flex items-center gap-1 text-xs tabular-nums shrink-0">
         {file.additions > 0 && (
-          <span className="text-emerald-500">+{file.additions}</span>
+          <span className="text-kortix-green">+{file.additions}</span>
         )}
         {file.deletions > 0 && (
-          <span className="text-red-500">−{file.deletions}</span>
+          <span className="text-kortix-red">−{file.deletions}</span>
         )}
       </span>
     </button>
@@ -165,7 +165,7 @@ function MainDiffColumn({
   if (!file) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
-        <GitCommitHorizontal className="h-10 w-10 text-muted-foreground/20" />
+        <History className="h-10 w-10 text-muted-foreground/20" />
         <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line166JsxTextSelectAFileToViewTheDiff')}</p>
       </div>
     );
@@ -195,10 +195,10 @@ function MainDiffColumn({
           {statusBadgeFor(file.status)}
           <span className="flex items-center gap-1.5 text-xs tabular-nums">
             {file.additions > 0 && (
-              <span className="text-emerald-500 font-medium">+{file.additions}</span>
+              <span className="text-kortix-green font-medium">+{file.additions}</span>
             )}
             {file.deletions > 0 && (
-              <span className="text-red-500 font-medium">−{file.deletions}</span>
+              <span className="text-kortix-red font-medium">−{file.deletions}</span>
             )}
           </span>
         </div>
@@ -225,7 +225,7 @@ function MainDiffColumn({
         )}
         {data && !data.patch && !isLoading && (
           <div className="flex flex-col items-center justify-center gap-2 p-10 text-center">
-            <GitCommitHorizontal className="h-6 w-6 text-muted-foreground/30" />
+            <History className="h-6 w-6 text-muted-foreground/30" />
             <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line226JsxTextNoTextualDiff')}</p>
             <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line228JsxTextFileMayBeBinaryOrUnchangedInThis')}</p>
           </div>
@@ -429,7 +429,7 @@ export function CheckpointDetailDialog({
           )}
 
           <div className="flex items-center gap-2.5 min-w-0 flex-1">
-            <GitCommitHorizontal className="h-4 w-4 text-muted-foreground shrink-0" />
+            <History className="h-4 w-4 text-muted-foreground shrink-0" />
             {isLoading ? (
               <Skeleton className="h-4 w-64" />
             ) : (
@@ -447,7 +447,7 @@ export function CheckpointDetailDialog({
                   className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2 py-1 text-xs text-muted-foreground"
                   title={`Version: ${activeRef}`}
                 >
-                  <GitBranch className="h-3 w-3" />
+                  <Layers className="h-3 w-3" />
                   {activeRef}
                 </span>
               )}
@@ -484,7 +484,7 @@ export function CheckpointDetailDialog({
                 title={tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line482JsxAttrTitleCopyCheckpointId')}
               >
                 {copied ? (
-                  <Check className="h-3 w-3 text-emerald-500" />
+                  <Check className="text-kortix-green h-3 w-3" />
                 ) : (
                   <Copy className="h-3 w-3 text-muted-foreground/70" />
                 )}
@@ -513,10 +513,10 @@ export function CheckpointDetailDialog({
                   </span>
                   <span className="flex items-center gap-2 tabular-nums">
                     {totals.add > 0 && (
-                      <span className="text-emerald-500">+{totals.add}</span>
+                      <span className="text-kortix-green">+{totals.add}</span>
                     )}
                     {totals.del > 0 && (
-                      <span className="text-red-500">−{totals.del}</span>
+                      <span className="text-kortix-red">−{totals.del}</span>
                     )}
                   </span>
                 </div>
@@ -571,7 +571,7 @@ export function CheckpointDetailDialog({
           <main className="flex-1 min-w-0 flex flex-col">
             {isLoading && !data && (
               <div className="flex flex-col items-center justify-center h-full gap-2">
-                <Loader2 className="h-5 w-5 text-muted-foreground/40 animate-spin" />
+                <Loading className="h-5 w-5 shrink-0" />
                 <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsCheckpointDetailDialog.line575JsxTextLoadingCheckpoint')}</p>
               </div>
             )}

@@ -288,7 +288,6 @@ function ListRow({
               <span className="text-muted-foreground text-sm">—</span>
             )}
           </TableCell>
-          <TableCell className="text-muted-foreground text-sm">—</TableCell>
           <TableCell>
             {!isRenaming && (
               <div className="flex justify-end">
@@ -360,7 +359,6 @@ function ElevatedDirRow({ node, onNavigate }: { node: FileNode; onNavigate: () =
       <TableCell>
         <ChalkBadge label="System" />
       </TableCell>
-      <TableCell className="text-muted-foreground text-sm">—</TableCell>
       <TableCell />
     </TableRow>
   );
@@ -460,16 +458,6 @@ export function DriveListView({
               >
                 Type
                 <SortIcon field="type" />
-              </Button>
-            </TableHead>
-            <TableHead>
-              <Button
-                onClick={() => handleHeaderClick('size')}
-                variant="transparent"
-                className="text-muted-foreground hover:text-foreground m-0 h-fit w-fit p-0 font-normal has-[>svg]:p-0"
-              >
-                Size
-                <SortIcon field="size" />
               </Button>
             </TableHead>
             <TableHead className="w-[52px]">

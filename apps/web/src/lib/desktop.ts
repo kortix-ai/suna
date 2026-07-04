@@ -90,6 +90,20 @@ export function desktopPlatform(): DesktopPlatform | null {
   return 'linux';
 }
 
+export type DesktopShellPlatform = 'macos' | 'other';
+
+/**
+ * Chrome-layout bucket for the desktop shell: macOS puts the window controls
+ * top-left (traffic lights), everything else top-right. `null` on the web.
+ * Shared by the title-bar surfaces (project shell, session header, tab bar)
+ * so they indent/align consistently.
+ */
+export function desktopShellPlatform(): DesktopShellPlatform | null {
+  const platform = desktopPlatform();
+  if (!platform) return null;
+  return platform === 'macos' ? 'macos' : 'other';
+}
+
 type TauriWindow = {
   minimize: () => Promise<void>;
   toggleMaximize: () => Promise<void>;
