@@ -11,16 +11,16 @@
 //   - PATCH  /:accountId/audit/webhooks/:id
 //   - DELETE /:accountId/audit/webhooks/:id
 
-import { Context } from 'hono';
 import { createRoute, z } from '@hono/zod-openapi';
-import { and, asc, desc, eq, gte, like, lt, or, type SQL } from 'drizzle-orm';
 import { auditEvents, auditWebhooks } from '@kortix/db';
-import { db } from '../shared/db';
-import { generateWebhookSecret } from '../shared/audit-webhooks';
-import { recordAuditEvent } from '../shared/audit';
-import type { AppEnv } from '../types';
+import { type SQL, and, asc, desc, eq, gte, like, lt, or } from 'drizzle-orm';
+import type { Context } from 'hono';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
-import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
+import { ErrorSchema, auth, errors, json, makeOpenApiApp } from '../openapi';
+import { recordAuditEvent } from '../shared/audit';
+import { deliverTestEvent, generateWebhookSecret } from '../shared/audit-webhooks';
+import { db } from '../shared/db';
+import type { AppEnv } from '../types';
 import { requireEntitlement } from './iam/helpers';
 
 export const auditRouter = makeOpenApiApp<AppEnv>();
@@ -57,6 +57,11 @@ const AuditWebhookSchema = z
     created_at: z.string(),
     updated_at: z.string(),
     secret: z.string().optional(),
+    // Present only on the create response: the outcome of the one-shot test
+    // delivery, so the UI can warn on a bad URL instead of silent failure.
+    test: z
+      .object({ ok: z.boolean(), status: z.number().optional(), error: z.string().optional() })
+      .optional(),
   })
   .openapi('AuditWebhook');
 const AuditWebhookListSchema = z
@@ -95,10 +100,7 @@ function buildFilters(
   if (actionPrefix) {
     conditions.push(
       actionPrefix.includes('.') && !actionPrefix.endsWith('.')
-        ? or(
-            eq(auditEvents.action, actionPrefix),
-            like(auditEvents.action, `${actionPrefix}.%`),
-          )!
+        ? or(eq(auditEvents.action, actionPrefix), like(auditEvents.action, `${actionPrefix}.%`))!
         : like(auditEvents.action, `${actionPrefix}%`),
     );
   }
@@ -139,66 +141,65 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.AUDIT_READ);
-  const denied = await requireEntitlement(c, accountId, 'auditAccess');
-  if (denied) return denied;
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.AUDIT_READ);
+    const denied = await requireEntitlement(c, accountId, 'auditAccess');
+    if (denied) return denied;
 
-  const actionPrefix = c.req.query('action')?.trim() || null;
-  const sinceRaw = c.req.query('since')?.trim() || null;
-  const cursor = c.req.query('cursor')?.trim() || null;
-  const limitRaw = Number.parseInt(c.req.query('limit') ?? '', 10);
-  const limit = Number.isFinite(limitRaw)
-    ? Math.min(Math.max(limitRaw, 1), MAX_LIMIT)
-    : DEFAULT_LIMIT;
+    const actionPrefix = c.req.query('action')?.trim() || null;
+    const sinceRaw = c.req.query('since')?.trim() || null;
+    const cursor = c.req.query('cursor')?.trim() || null;
+    const limitRaw = Number.parseInt(c.req.query('limit') ?? '', 10);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(Math.max(limitRaw, 1), MAX_LIMIT)
+      : DEFAULT_LIMIT;
 
-  const conditions = buildFilters(accountId, actionPrefix, sinceRaw);
+    const conditions = buildFilters(accountId, actionPrefix, sinceRaw);
 
-  // Keyset cursor encoded as "<isoTimestamp>|<eventId>" so equal timestamps
-  // tie-break by event id (stable order). Cheaper than OFFSET on long lists.
-  if (cursor) {
-    const [tsStr, lastId] = cursor.split('|');
-    const ts = new Date(tsStr);
-    if (!Number.isNaN(ts.getTime()) && lastId) {
-      conditions.push(
-        or(
-          lt(auditEvents.occurredAt, ts),
-          and(eq(auditEvents.occurredAt, ts), lt(auditEvents.eventId, lastId)),
-        )!,
-      );
+    // Keyset cursor encoded as "<isoTimestamp>|<eventId>" so equal timestamps
+    // tie-break by event id (stable order). Cheaper than OFFSET on long lists.
+    if (cursor) {
+      const [tsStr, lastId] = cursor.split('|');
+      const ts = new Date(tsStr);
+      if (!Number.isNaN(ts.getTime()) && lastId) {
+        conditions.push(
+          or(
+            lt(auditEvents.occurredAt, ts),
+            and(eq(auditEvents.occurredAt, ts), lt(auditEvents.eventId, lastId)),
+          )!,
+        );
+      }
     }
-  }
 
-  const rows = await db
-    .select()
-    .from(auditEvents)
-    .where(and(...conditions))
-    .orderBy(desc(auditEvents.occurredAt), desc(auditEvents.eventId))
-    .limit(limit + 1);
+    const rows = await db
+      .select()
+      .from(auditEvents)
+      .where(and(...conditions))
+      .orderBy(desc(auditEvents.occurredAt), desc(auditEvents.eventId))
+      .limit(limit + 1);
 
-  const hasMore = rows.length > limit;
-  const page = hasMore ? rows.slice(0, limit) : rows;
-  const last = page[page.length - 1];
-  const nextCursor =
-    hasMore && last ? `${last.occurredAt.toISOString()}|${last.eventId}` : null;
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page[page.length - 1];
+    const nextCursor = hasMore && last ? `${last.occurredAt.toISOString()}|${last.eventId}` : null;
 
-  return c.json({
-    events: page.map((r) => ({
-      event_id: r.eventId,
-      occurred_at: r.occurredAt.toISOString(),
-      actor_user_id: r.actorUserId,
-      action: r.action,
-      resource_type: r.resourceType,
-      resource_id: r.resourceId,
-      before: r.before,
-      after: r.after,
-      ip: r.ip,
-      user_agent: r.userAgent,
-      metadata: r.metadata,
-    })),
-    next_cursor: nextCursor,
-  });
+    return c.json({
+      events: page.map((r) => ({
+        event_id: r.eventId,
+        occurred_at: r.occurredAt.toISOString(),
+        actor_user_id: r.actorUserId,
+        action: r.action,
+        resource_type: r.resourceType,
+        resource_id: r.resourceId,
+        before: r.before,
+        after: r.after,
+        ip: r.ip,
+        user_agent: r.userAgent,
+        metadata: r.metadata,
+      })),
+      next_cursor: nextCursor,
+    });
   },
 );
 
@@ -261,91 +262,91 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.AUDIT_READ);
-  const denied = await requireEntitlement(c, accountId, 'auditAccess');
-  if (denied) return denied;
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.AUDIT_READ);
+    const denied = await requireEntitlement(c, accountId, 'auditAccess');
+    if (denied) return denied;
 
-  const format = (c.req.query('format') || 'csv').toLowerCase();
-  if (format !== 'csv' && format !== 'jsonl') {
-    return c.json({ error: 'format must be csv or jsonl' }, 400);
-  }
+    const format = (c.req.query('format') || 'csv').toLowerCase();
+    if (format !== 'csv' && format !== 'jsonl') {
+      return c.json({ error: 'format must be csv or jsonl' }, 400);
+    }
 
-  const actionPrefix = c.req.query('action')?.trim() || null;
-  const sinceRaw = c.req.query('since')?.trim() || null;
+    const actionPrefix = c.req.query('action')?.trim() || null;
+    const sinceRaw = c.req.query('since')?.trim() || null;
 
-  const conditions = buildFilters(accountId, actionPrefix, sinceRaw);
+    const conditions = buildFilters(accountId, actionPrefix, sinceRaw);
 
-  const rows = await db
-    .select()
-    .from(auditEvents)
-    .where(and(...conditions))
-    // Export is chronological (oldest → newest) — that's the order humans
-    // expect when grepping through a CSV; pagination uses reverse order.
-    .orderBy(asc(auditEvents.occurredAt), asc(auditEvents.eventId))
-    .limit(EXPORT_MAX);
+    const rows = await db
+      .select()
+      .from(auditEvents)
+      .where(and(...conditions))
+      // Export is chronological (oldest → newest) — that's the order humans
+      // expect when grepping through a CSV; pagination uses reverse order.
+      .orderBy(asc(auditEvents.occurredAt), asc(auditEvents.eventId))
+      .limit(EXPORT_MAX);
 
-  const filenameDate = new Date().toISOString().slice(0, 10);
-  const filename = `audit-${filenameDate}.${format}`;
+    const filenameDate = new Date().toISOString().slice(0, 10);
+    const filename = `audit-${filenameDate}.${format}`;
 
-  if (format === 'jsonl') {
-    const body = rows
-      .map((r) =>
-        JSON.stringify({
-          event_id: r.eventId,
-          occurred_at: r.occurredAt.toISOString(),
-          action: r.action,
-          actor_user_id: r.actorUserId,
-          resource_type: r.resourceType,
-          resource_id: r.resourceId,
-          ip: r.ip,
-          user_agent: r.userAgent,
-          before: r.before,
-          after: r.after,
-          metadata: r.metadata,
-        }),
-      )
-      .join('\n');
-    return new Response(body, {
+    if (format === 'jsonl') {
+      const body = rows
+        .map((r) =>
+          JSON.stringify({
+            event_id: r.eventId,
+            occurred_at: r.occurredAt.toISOString(),
+            action: r.action,
+            actor_user_id: r.actorUserId,
+            resource_type: r.resourceType,
+            resource_id: r.resourceId,
+            ip: r.ip,
+            user_agent: r.userAgent,
+            before: r.before,
+            after: r.after,
+            metadata: r.metadata,
+          }),
+        )
+        .join('\n');
+      return new Response(body, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/x-ndjson; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${filename}"`,
+          'X-Audit-Row-Count': String(rows.length),
+          'X-Audit-Capped': rows.length >= EXPORT_MAX ? 'true' : 'false',
+        },
+      });
+    }
+
+    // CSV
+    const lines: string[] = [CSV_HEADERS.join(',')];
+    for (const r of rows) {
+      lines.push(
+        [
+          csvEscape(r.eventId),
+          csvEscape(r.occurredAt.toISOString()),
+          csvEscape(r.action),
+          csvEscape(r.actorUserId),
+          csvEscape(r.resourceType),
+          csvEscape(r.resourceId),
+          csvEscape(r.ip),
+          csvEscape(r.userAgent),
+          csvEscape(r.before),
+          csvEscape(r.after),
+          csvEscape(r.metadata),
+        ].join(','),
+      );
+    }
+    return new Response(lines.join('\n'), {
       status: 200,
       headers: {
-        'Content-Type': 'application/x-ndjson; charset=utf-8',
+        'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': `attachment; filename="${filename}"`,
         'X-Audit-Row-Count': String(rows.length),
         'X-Audit-Capped': rows.length >= EXPORT_MAX ? 'true' : 'false',
       },
     });
-  }
-
-  // CSV
-  const lines: string[] = [CSV_HEADERS.join(',')];
-  for (const r of rows) {
-    lines.push(
-      [
-        csvEscape(r.eventId),
-        csvEscape(r.occurredAt.toISOString()),
-        csvEscape(r.action),
-        csvEscape(r.actorUserId),
-        csvEscape(r.resourceType),
-        csvEscape(r.resourceId),
-        csvEscape(r.ip),
-        csvEscape(r.userAgent),
-        csvEscape(r.before),
-        csvEscape(r.after),
-        csvEscape(r.metadata),
-      ].join(','),
-    );
-  }
-  return new Response(lines.join('\n'), {
-    status: 200,
-    headers: {
-      'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="${filename}"`,
-      'X-Audit-Row-Count': String(rows.length),
-      'X-Audit-Capped': rows.length >= EXPORT_MAX ? 'true' : 'false',
-    },
-  });
   },
 );
 
@@ -395,18 +396,18 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-  // No entitlement gate on listing: a downgraded admin must be able to see
-  // leftover webhooks to delete them. Creation/update stay gated below.
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    // No entitlement gate on listing: a downgraded admin must be able to see
+    // leftover webhooks to delete them. Creation/update stay gated below.
 
-  const rows = await db
-    .select()
-    .from(auditWebhooks)
-    .where(eq(auditWebhooks.accountId, accountId))
-    .orderBy(desc(auditWebhooks.createdAt));
-  return c.json({ webhooks: rows.map((r) => serializeWebhook(r)) });
+    const rows = await db
+      .select()
+      .from(auditWebhooks)
+      .where(eq(auditWebhooks.accountId, accountId))
+      .orderBy(desc(auditWebhooks.createdAt));
+    return c.json({ webhooks: rows.map((r) => serializeWebhook(r)) });
   },
 );
 
@@ -428,71 +429,76 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-  const denied = await requireEntitlement(c, accountId, 'auditAccess');
-  if (denied) return denied;
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    const denied = await requireEntitlement(c, accountId, 'auditAccess');
+    if (denied) return denied;
 
-  const body = await readBody(c);
+    const body = await readBody(c);
 
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
-  if (!name) return c.json({ error: 'name is required' }, 400);
-  if (name.length > 128) return c.json({ error: 'name too long (max 128 chars)' }, 400);
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    if (!name) return c.json({ error: 'name is required' }, 400);
+    if (name.length > 128) return c.json({ error: 'name too long (max 128 chars)' }, 400);
 
-  const url = typeof body.url === 'string' ? body.url.trim() : '';
-  if (!url) return c.json({ error: 'url is required' }, 400);
-  // Cheap sanity guard. Real reachability is verified at delivery time;
-  // here we just refuse blatantly-broken inputs.
-  try {
-    const u = new URL(url);
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') {
-      return c.json({ error: 'url must be http(s)' }, 400);
+    const url = typeof body.url === 'string' ? body.url.trim() : '';
+    if (!url) return c.json({ error: 'url is required' }, 400);
+    // Cheap sanity guard. Real reachability is verified at delivery time;
+    // here we just refuse blatantly-broken inputs.
+    try {
+      const u = new URL(url);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+        return c.json({ error: 'url must be http(s)' }, 400);
+      }
+    } catch {
+      return c.json({ error: 'url is not a valid URL' }, 400);
     }
-  } catch {
-    return c.json({ error: 'url is not a valid URL' }, 400);
-  }
 
-  const actionPrefix =
-    typeof body.action_prefix === 'string' && body.action_prefix.trim()
-      ? body.action_prefix.trim()
-      : typeof body.actionPrefix === 'string' && body.actionPrefix.trim()
-        ? body.actionPrefix.trim()
-        : null;
+    const actionPrefix =
+      typeof body.action_prefix === 'string' && body.action_prefix.trim()
+        ? body.action_prefix.trim()
+        : typeof body.actionPrefix === 'string' && body.actionPrefix.trim()
+          ? body.actionPrefix.trim()
+          : null;
 
-  const secret = generateWebhookSecret();
+    const secret = generateWebhookSecret();
 
-  const [row] = await db
-    .insert(auditWebhooks)
-    .values({
+    const [row] = await db
+      .insert(auditWebhooks)
+      .values({
+        accountId,
+        url,
+        secret,
+        name,
+        actionPrefix,
+        enabled: true,
+        createdBy: userId,
+      })
+      .returning();
+
+    // Audit the webhook config itself — meta-auditing.
+    await recordAuditEvent({
       accountId,
-      url,
-      secret,
-      name,
-      actionPrefix,
-      enabled: true,
-      createdBy: userId,
-    })
-    .returning();
+      actorUserId: userId,
+      action: 'iam.audit.webhook.create',
+      resourceType: 'audit_webhook',
+      resourceId: row.webhookId,
+      after: { name: row.name, url: row.url, action_prefix: row.actionPrefix },
+      ip:
+        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || null,
+      userAgent: c.req.header('user-agent') || null,
+    });
 
-  // Audit the webhook config itself — meta-auditing.
-  await recordAuditEvent({
-    accountId,
-    actorUserId: userId,
-    action: 'iam.audit.webhook.create',
-    resourceType: 'audit_webhook',
-    resourceId: row.webhookId,
-    after: { name: row.name, url: row.url, action_prefix: row.actionPrefix },
-    ip:
-      c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
-      c.req.header('x-real-ip') ||
-      null,
-    userAgent: c.req.header('user-agent') || null,
-  });
+    // Fire a one-shot test delivery so a mistyped/unreachable URL surfaces at
+    // creation time — not 30 minutes into a demo staring at an empty SIEM. The
+    // webhook is created regardless (a transient outage shouldn't block setup);
+    // the outcome rides back on the response so the UI can warn. Stamps
+    // last_error / last_delivered_at on the row just like a real delivery.
+    const test = await deliverTestEvent(row);
 
-  // Reveal the secret EXACTLY ONCE so the admin can paste it into their
-  // verification code. Subsequent GETs never include it.
-  return c.json(serializeWebhook(row, true), 201);
+    // Reveal the secret EXACTLY ONCE so the admin can paste it into their
+    // verification code. Subsequent GETs never include it.
+    return c.json({ ...serializeWebhook(row, true), test }, 201);
   },
 );
 
@@ -513,63 +519,59 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const webhookId = c.req.param('webhookId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-  const denied = await requireEntitlement(c, accountId, 'auditAccess');
-  if (denied) return denied;
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    const webhookId = c.req.param('webhookId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    const denied = await requireEntitlement(c, accountId, 'auditAccess');
+    if (denied) return denied;
 
-  const [before] = await db
-    .select()
-    .from(auditWebhooks)
-    .where(
-      and(eq(auditWebhooks.webhookId, webhookId), eq(auditWebhooks.accountId, accountId)),
-    )
-    .limit(1);
-  if (!before) return c.json({ error: 'webhook not found' }, 404);
+    const [before] = await db
+      .select()
+      .from(auditWebhooks)
+      .where(and(eq(auditWebhooks.webhookId, webhookId), eq(auditWebhooks.accountId, accountId)))
+      .limit(1);
+    if (!before) return c.json({ error: 'webhook not found' }, 404);
 
-  const body = await readBody(c);
-  const updates: Record<string, unknown> = { updatedAt: new Date() };
+    const body = await readBody(c);
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
 
-  if (typeof body.name === 'string') {
-    const next = body.name.trim();
-    if (!next || next.length > 128) return c.json({ error: 'invalid name' }, 400);
-    updates.name = next;
-  }
-  if (typeof body.enabled === 'boolean') {
-    updates.enabled = body.enabled;
-  }
-  if (body.action_prefix !== undefined || body.actionPrefix !== undefined) {
-    const raw = body.action_prefix ?? body.actionPrefix;
-    updates.actionPrefix = typeof raw === 'string' && raw.trim() ? raw.trim() : null;
-  }
-  // url is intentionally NOT editable here — the integration on the other
-  // side is keyed by URL + secret, and rotating either should be a
-  // delete + create operation so audit captures both events distinctly.
+    if (typeof body.name === 'string') {
+      const next = body.name.trim();
+      if (!next || next.length > 128) return c.json({ error: 'invalid name' }, 400);
+      updates.name = next;
+    }
+    if (typeof body.enabled === 'boolean') {
+      updates.enabled = body.enabled;
+    }
+    if (body.action_prefix !== undefined || body.actionPrefix !== undefined) {
+      const raw = body.action_prefix ?? body.actionPrefix;
+      updates.actionPrefix = typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+    }
+    // url is intentionally NOT editable here — the integration on the other
+    // side is keyed by URL + secret, and rotating either should be a
+    // delete + create operation so audit captures both events distinctly.
 
-  const [updated] = await db
-    .update(auditWebhooks)
-    .set(updates)
-    .where(eq(auditWebhooks.webhookId, webhookId))
-    .returning();
+    const [updated] = await db
+      .update(auditWebhooks)
+      .set(updates)
+      .where(eq(auditWebhooks.webhookId, webhookId))
+      .returning();
 
-  await recordAuditEvent({
-    accountId,
-    actorUserId: userId,
-    action: 'iam.audit.webhook.update',
-    resourceType: 'audit_webhook',
-    resourceId: webhookId,
-    before: { name: before.name, enabled: before.enabled, action_prefix: before.actionPrefix },
-    after: { name: updated.name, enabled: updated.enabled, action_prefix: updated.actionPrefix },
-    ip:
-      c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
-      c.req.header('x-real-ip') ||
-      null,
-    userAgent: c.req.header('user-agent') || null,
-  });
+    await recordAuditEvent({
+      accountId,
+      actorUserId: userId,
+      action: 'iam.audit.webhook.update',
+      resourceType: 'audit_webhook',
+      resourceId: webhookId,
+      before: { name: before.name, enabled: before.enabled, action_prefix: before.actionPrefix },
+      after: { name: updated.name, enabled: updated.enabled, action_prefix: updated.actionPrefix },
+      ip:
+        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || null,
+      userAgent: c.req.header('user-agent') || null,
+    });
 
-  return c.json(serializeWebhook(updated));
+    return c.json(serializeWebhook(updated));
   },
 );
 
@@ -589,36 +591,32 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const webhookId = c.req.param('webhookId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-  // No entitlement gate: deleting a webhook is cleanup, always allowed — and
-  // delivery itself is entitlement-gated in shared/audit-webhooks.ts, so a
-  // leftover row on a downgraded account streams nothing either way.
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    const webhookId = c.req.param('webhookId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    // No entitlement gate: deleting a webhook is cleanup, always allowed — and
+    // delivery itself is entitlement-gated in shared/audit-webhooks.ts, so a
+    // leftover row on a downgraded account streams nothing either way.
 
-  const rows = await db
-    .delete(auditWebhooks)
-    .where(
-      and(eq(auditWebhooks.webhookId, webhookId), eq(auditWebhooks.accountId, accountId)),
-    )
-    .returning({ name: auditWebhooks.name, url: auditWebhooks.url });
-  if (rows.length === 0) return c.json({ error: 'webhook not found' }, 404);
+    const rows = await db
+      .delete(auditWebhooks)
+      .where(and(eq(auditWebhooks.webhookId, webhookId), eq(auditWebhooks.accountId, accountId)))
+      .returning({ name: auditWebhooks.name, url: auditWebhooks.url });
+    if (rows.length === 0) return c.json({ error: 'webhook not found' }, 404);
 
-  await recordAuditEvent({
-    accountId,
-    actorUserId: userId,
-    action: 'iam.audit.webhook.delete',
-    resourceType: 'audit_webhook',
-    resourceId: webhookId,
-    before: { name: rows[0]!.name, url: rows[0]!.url },
-    ip:
-      c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
-      c.req.header('x-real-ip') ||
-      null,
-    userAgent: c.req.header('user-agent') || null,
-  });
+    await recordAuditEvent({
+      accountId,
+      actorUserId: userId,
+      action: 'iam.audit.webhook.delete',
+      resourceType: 'audit_webhook',
+      resourceId: webhookId,
+      before: { name: rows[0]!.name, url: rows[0]!.url },
+      ip:
+        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || null,
+      userAgent: c.req.header('user-agent') || null,
+    });
 
-  return c.json({ deleted: true });
+    return c.json({ deleted: true });
   },
 );

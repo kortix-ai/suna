@@ -37,6 +37,31 @@ export const SECONDARY_ACTION: Partial<Record<ReviewKind, string>> = {
   batch: 'Open list',
 };
 
+/** Title-case a dotted/underscored slug: `send_email` → `Send Email`. */
+function titleCase(slug: string): string {
+  return slug
+    .split(/[._-]/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+/** A friendly label for a connector tool path: `gmail.send_email` → `(Gmail)
+ *  Send Email`. The connector is the first segment; the rest is the action. */
+export function humanizeActionPath(path: string): string {
+  const dot = path.indexOf('.');
+  if (dot <= 0) return titleCase(path);
+  return `(${titleCase(path.slice(0, dot))}) ${titleCase(path.slice(dot + 1))}`;
+}
+
+/** Split a `connector.action` path into its two parts (connector = first segment). */
+function splitActionPath(path: string): { connector: string; action: string } {
+  const dot = path.indexOf('.');
+  return dot > 0
+    ? { connector: path.slice(0, dot), action: path.slice(dot + 1) }
+    : { connector: path, action: '' };
+}
+
 /** Two-letter avatar initials from an agent label. */
 export function agentInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -110,15 +135,18 @@ function approvalDetail(d: AnyRec, row: ApiReviewItem): ApprovalDetail {
     };
   }
   // Executor-approval adapter → a single action built from the call descriptor.
-  const path = str(d.action_path);
+  // `action_path` is `connector.action` (e.g. `gmail.send_email`); the row's
+  // `connector_id` is an opaque UUID, so we take the connector NAME from the path.
+  const path = str(d.action_path) ?? '';
+  const { connector, action } = splitActionPath(path);
   return {
     actions: [
       {
         id: str(d.execution_id) ?? row.review_item_id,
-        title: row.title || `Run ${path ?? 'action'}`,
-        connector: str(d.connector_id) ?? '',
-        action: path ?? '',
-        consequence: row.summary || 'Awaiting your approval',
+        title: path ? humanizeActionPath(path) : row.title || 'Run action',
+        connector,
+        action,
+        consequence: 'Runs against the real connector once you approve',
         risk: row.risk,
         icon: 'generic',
         argsPreview: [],
@@ -180,14 +208,31 @@ function normalizeDetail(kind: ReviewKind, row: ApiReviewItem): ReviewItem['deta
   }
 }
 
-export function mapApiReviewItem(row: ApiReviewItem, projectName: string): ReviewItem {
+export function mapApiReviewItem(
+  row: ApiReviewItem,
+  projectName: string,
+  sessionLabels: Record<string, string> = {},
+): ReviewItem {
   const kind = row.kind as ReviewKind;
   const agent = row.agent || 'Agent';
+  const sessionId = row.origin_session_id ?? undefined;
+  const sessionName = sessionId ? sessionLabels[sessionId] : undefined;
+  // Approval titles arrive as the raw tool path (`Approve: gmail.send_email`);
+  // show a friendly `(Gmail) Send Email` and let the description name the
+  // originating session instead of repeating the path.
+  const actionPath = kind === 'approval' ? str(rec(row.detail).action_path) : undefined;
+  const title = actionPath ? humanizeActionPath(actionPath) : row.title;
+  const summary =
+    kind === 'change'
+      ? changeSummary(rec(row.detail), row.summary)
+      : kind === 'approval'
+        ? (sessionName ?? (sessionId ? 'From a running session' : row.summary))
+        : row.summary;
   return {
     id: row.review_item_id,
     kind,
-    title: row.title,
-    summary: kind === 'change' ? changeSummary(rec(row.detail), row.summary) : row.summary,
+    title,
+    summary,
     risk: row.risk,
     status: row.status as ReviewStatus,
     source: row.source,
@@ -195,7 +240,7 @@ export function mapApiReviewItem(row: ApiReviewItem, projectName: string): Revie
     agent,
     actor: { name: agent, initials: agentInitials(agent) },
     createdAt: row.created_at,
-    sessionId: row.origin_session_id ?? undefined,
+    sessionId,
     primaryAction: PRIMARY_ACTION[kind],
     secondaryAction: SECONDARY_ACTION[kind],
     // Build a complete, defaulted detail for the kind — never trust the raw jsonb

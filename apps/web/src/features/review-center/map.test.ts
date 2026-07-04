@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { ApiReviewItem } from '@kortix/sdk/projects-client';
-import { PRIMARY_ACTION, agentInitials, mapApiReviewItem, statusToVerdict } from './map';
+import {
+  PRIMARY_ACTION,
+  agentInitials,
+  humanizeActionPath,
+  mapApiReviewItem,
+  statusToVerdict,
+} from './map';
 import type { ReviewItem } from './types';
 
 const changeDetailOf = (i: ReviewItem) => (i as Extract<ReviewItem, { kind: 'change' }>).detail;
@@ -100,25 +106,61 @@ describe('mapApiReviewItem', () => {
     expect(d.advanced.files).toEqual([]);
   });
 
-  test('normalizes a thin executor-approval detail into a single action', () => {
+  test('normalizes a thin executor-approval detail into a single humanized action', () => {
     const item = mapApiReviewItem(
       {
         ...row,
         kind: 'approval',
         title: 'Approve: gmail.messages.send',
         risk: 'high',
-        detail: { execution_id: 'ex-1', action_path: 'gmail.messages.send', connector_id: 'gmail' },
+        // connector_id is an opaque UUID — the connector NAME comes from the path.
+        detail: { execution_id: 'ex-1', action_path: 'gmail.messages.send', connector_id: 'uuid-x' },
       },
       'P',
     );
+    // Row title is humanized from the tool path, not the raw `Approve: …`.
+    expect(item.title).toBe('(Gmail) Messages Send');
     const d = approvalDetailOf(item);
     expect(d.actions).toHaveLength(1);
     expect(d.actions[0]).toMatchObject({
       id: 'ex-1',
-      action: 'gmail.messages.send',
+      title: '(Gmail) Messages Send',
+      action: 'messages.send',
       connector: 'gmail',
       risk: 'high',
     });
+  });
+
+  test('approval description names the originating session when known', () => {
+    const base: ApiReviewItem = {
+      ...row,
+      kind: 'approval',
+      origin_session_id: 'sess-1',
+      title: 'Approve: gmail.send_email',
+      summary: 'gmail.send_email · awaiting approval',
+      detail: { execution_id: 'ex-2', action_path: 'gmail.send_email', connector_id: 'uuid-y' },
+    };
+    // With the session label resolved, the description is the session's name.
+    const named = mapApiReviewItem(base, 'P', { 'sess-1': 'Fix the login bug' });
+    expect(named.title).toBe('(Gmail) Send Email');
+    expect(named.summary).toBe('Fix the login bug');
+    // Unknown label but a session id present → a neutral pointer, never the path.
+    const unnamed = mapApiReviewItem(base, 'P');
+    expect(unnamed.summary).toBe('From a running session');
+    expect(unnamed.summary).not.toContain('gmail');
+  });
+});
+
+describe('humanizeActionPath', () => {
+  test('formats connector.action as (Connector) Title Case Action', () => {
+    expect(humanizeActionPath('gmail.send_email')).toBe('(Gmail) Send Email');
+    expect(humanizeActionPath('gmail.messages.send')).toBe('(Gmail) Messages Send');
+    expect(humanizeActionPath('github.repos.delete')).toBe('(Github) Repos Delete');
+  });
+
+  test('a bare token with no connector prefix is just title-cased', () => {
+    expect(humanizeActionPath('send_email')).toBe('Send Email');
+    expect(humanizeActionPath('')).toBe('');
   });
 });
 

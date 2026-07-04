@@ -15,9 +15,9 @@
 //      ("Inherited Editor via Engineering + 1 more").
 
 export type AccountRole = 'owner' | 'admin' | 'member';
-// `user` is the project floor role; `viewer` was folded into it and is no
+// `member` is the project floor role; `viewer` was folded into it and is no
 // longer emitted by the API.
-export type ProjectRole = 'manager' | 'editor' | 'user';
+export type ProjectRole = 'manager' | 'editor' | 'member';
 
 export interface AccountMeta {
   email: string | null;
@@ -105,7 +105,7 @@ export function floatCurrentUserFirst<T extends { user_id: string }>(
 const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
   manager: 'Manager',
   editor: 'Editor',
-  user: 'User',
+  member: 'Member',
 };
 
 export interface ProjectAccessRowInput {
@@ -158,8 +158,8 @@ export function inheritedFromGroupSummary(row: ProjectAccessRowInput): string | 
   const sources = row.group_sources!;
   const head = sources[0];
   const rest = sources.length - 1;
-  // Fallback guards against a stale `viewer` value from cache — it folds to User.
-  const label = PROJECT_ROLE_LABEL[row.effective_project_role!] ?? 'User';
+  // Fallback guards against a stale `viewer` value from cache — it folds to Member.
+  const label = PROJECT_ROLE_LABEL[row.effective_project_role!] ?? 'Member';
   return rest > 0
     ? `Inherited ${label} via ${head.group_name} + ${rest} more`
     : `Inherited ${label} via ${head.group_name}`;

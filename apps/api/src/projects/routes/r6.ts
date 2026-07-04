@@ -435,8 +435,8 @@ projectsApp.openapi(
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
-  const role = body.role === undefined ? 'user' : parseProjectRole(body.role);
-  if (!role) return c.json({ error: 'role must be one of manager|editor|user' }, 400);
+  const role = body.role === undefined ? 'member' : parseProjectRole(body.role);
+  if (!role) return c.json({ error: 'role must be one of manager|editor|member' }, 400);
 
   const [request] = await db
     .select()
@@ -578,7 +578,7 @@ projectsApp.openapi(
   const email = (typeof body.email === 'string' ? body.email : '').trim().toLowerCase();
   const role = parseProjectRole(body.role);
   if (!email) return c.json({ error: 'email is required' }, 400);
-  if (!role) return c.json({ error: 'role must be one of manager|editor|user' }, 400);
+  if (!role) return c.json({ error: 'role must be one of manager|editor|member' }, 400);
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
 
@@ -792,9 +792,9 @@ projectsApp.openapi(
       if (!grant) return null;
       return {
         invite_id: r.inviteId,
-        // Normalize a legacy `viewer` grant to `user` so the API never emits
-        // the retired role.
-        project_role: parseProjectRole(grant.role) ?? 'user',
+        // Normalize a legacy `viewer`/`user` grant to `member` so the API never
+        // emits a retired role.
+        project_role: parseProjectRole(grant.role) ?? 'member',
         expires_at: grant.expires_at ?? null,
         invited_by_email: r.invitedBy ? (inviterEmails.get(r.invitedBy) ?? null) : null,
         created_at: r.createdAt.toISOString(),
@@ -994,7 +994,7 @@ projectsApp.openapi(
 
   const body = await readBody(c);
   const role = parseProjectRole(body.role);
-  if (!role) return c.json({ error: 'role must be one of manager|editor|user' }, 400);
+  if (!role) return c.json({ error: 'role must be one of manager|editor|member' }, 400);
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
 

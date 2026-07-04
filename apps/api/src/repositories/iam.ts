@@ -3,10 +3,10 @@
 // in PR5d together with the V1 engine.
 // Pure CRUD; route handlers do their own assertAuthorized() calls.
 
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { accountGroupMembers, accountGroups, accountMembers } from '@kortix/db';
-import { db } from '../shared/db';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { invalidateIamCacheForUser, invalidateIamCacheForUsers } from '../iam/cache-invalidation';
+import { db } from '../shared/db';
 
 // ─── Groups ────────────────────────────────────────────────────────────────
 
@@ -128,10 +128,14 @@ export type GroupMember = {
   addedBy: string | null;
 };
 
-export async function listGroupMembers(
-  accountId: string,
-  groupId: string,
-): Promise<GroupMember[]> {
+// Safety valve against a runaway full-table load: a SCIM-synced group can hold
+// tens of thousands of members, and this list is loaded fully into memory. The
+// cap keeps a single admin view from OOM-ing the process under concurrent load.
+// It's generous enough not to truncate any realistic directory; genuine
+// >cap groups need keyset pagination (a follow-up), not an unbounded query.
+export const GROUP_MEMBER_LIST_CAP = 10_000;
+
+export async function listGroupMembers(accountId: string, groupId: string): Promise<GroupMember[]> {
   // Ensure the group belongs to the account before returning members.
   const [group] = await db
     .select({ groupId: accountGroups.groupId })
@@ -149,7 +153,8 @@ export async function listGroupMembers(
     })
     .from(accountGroupMembers)
     .where(eq(accountGroupMembers.groupId, groupId))
-    .orderBy(asc(accountGroupMembers.addedAt));
+    .orderBy(asc(accountGroupMembers.addedAt))
+    .limit(GROUP_MEMBER_LIST_CAP);
 }
 
 export async function addGroupMembers(args: {
@@ -191,10 +196,7 @@ export async function addGroupMembers(args: {
   return { added: inserted.length };
 }
 
-export async function removeGroupMember(
-  groupId: string,
-  userId: string,
-): Promise<boolean> {
+export async function removeGroupMember(groupId: string, userId: string): Promise<boolean> {
   const rows = await db
     .delete(accountGroupMembers)
     .where(and(eq(accountGroupMembers.groupId, groupId), eq(accountGroupMembers.userId, userId)))
@@ -220,8 +222,6 @@ export async function listGroupsForMember(
     })
     .from(accountGroupMembers)
     .innerJoin(accountGroups, eq(accountGroups.groupId, accountGroupMembers.groupId))
-    .where(
-      and(eq(accountGroups.accountId, accountId), eq(accountGroupMembers.userId, userId)),
-    )
+    .where(and(eq(accountGroups.accountId, accountId), eq(accountGroupMembers.userId, userId)))
     .orderBy(asc(accountGroups.name));
 }

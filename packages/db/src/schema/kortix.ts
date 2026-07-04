@@ -75,14 +75,15 @@ export const sessionLifecycleCommandStatusEnum = kortixSchema.enum(
   ],
 );
 
-// `user` is the floor project role. `viewer` is DEPRECATED — it was folded
-// into `user` (existing rows migrated, see the project_role_user_floor
-// migration) and is no longer assignable. The value lingers only because
-// Postgres can't drop an enum member; nothing reads or writes it.
+// `member` is the floor project role (renamed from `user`, see the
+// project_role_member_rename migration). `user` and the older `viewer` are
+// DEPRECATED — both fold into `member` via parseProjectRole/normalizeProjectRole
+// and are no longer assignable. `viewer` lingers because Postgres can't drop an
+// enum member; `user` was renamed in place. Nothing reads or writes either.
 export const projectRoleEnum = kortixSchema.enum('project_role', [
   'manager',
   'editor',
-  'user',
+  'member',
   'viewer',
 ]);
 
@@ -198,15 +199,15 @@ export const accountInvitations = kortixSchema.table(
      *  account invite + records the project grant here; on accept,
      *  the user joins the org as a member AND gets the project role
      *  in the same transaction. Shape:
-     *    [{ project_id: uuid, role: 'manager'|'editor'|'user',
+     *    [{ project_id: uuid, role: 'manager'|'editor'|'member',
      *       expires_at?: iso }]
      *  Multiple grants are allowed — the same email could be invited
      *  to several projects at once via repeated calls (they upsert).
-     *  Legacy rows may carry the retired 'viewer' role; readers fold it
-     *  into 'user' via parseProjectRole. */
+     *  Legacy rows may carry the retired 'user'/'viewer' role; readers
+     *  fold both into 'member' via parseProjectRole. */
     bootstrapGrants: jsonb('bootstrap_grants').$type<Array<{
       project_id: string;
-      role: 'manager' | 'editor' | 'user';
+      role: 'manager' | 'editor' | 'member';
       expires_at?: string | null;
     }>>(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
@@ -374,7 +375,7 @@ export const projectMembers = kortixSchema.table(
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull(),
-    projectRole: projectRoleEnum('project_role').default('user').notNull(),
+    projectRole: projectRoleEnum('project_role').default('member').notNull(),
     grantedBy: uuid('granted_by'),
     /** Optional auto-revoke timestamp. NULL = permanent grant.
      *  When set and in the past, the V2 engine treats the row as if it
@@ -463,6 +464,11 @@ export const projectSecrets = kortixSchema.table(
     // value (true) or has flipped back to the shared one while keeping theirs
     // stored (false). Ignored on shared rows.
     active: boolean('active').default(true).notNull(),
+    // Which agents may use this shared secret. NULL / empty = ALL agents
+    // (project-wide, the default). A non-empty list of agent NAMES restricts it
+    // to those agents' sessions — the executor drops the secret from any session
+    // whose running agent isn't listed (additive narrowing, never widening).
+    agentScope: text('agent_scope').array(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -2642,7 +2648,7 @@ export const projectGroupGrants = kortixSchema.table(
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    role: projectRoleEnum('role').default('user').notNull(),
+    role: projectRoleEnum('role').default('member').notNull(),
     grantedBy: uuid('granted_by'),
     /** Optional auto-revoke timestamp. NULL = permanent attachment.
      *  Same semantics as project_members.expires_at. */
@@ -3207,6 +3213,13 @@ export const executorConnectors = kortixSchema.table(
     authSecret: varchar('auth_secret', { length: 64 }),
     /** Who can use this connector. `project` = all members; `restricted` = the grants below. */
     shareScope: secretShareScopeEnum('share_scope').default('project').notNull(),
+    /** Which AGENTS may call this connector — the connector-side agent gate,
+     *  mirror of project_secrets.agent_scope. NULL/empty = ALL agents; a list of
+     *  agent NAMES restricts it to those agents' sessions (the executor gateway
+     *  drops a call whose running agent isn't listed). Reconciled every sync from
+     *  the toml [[connectors]].agent_scope for DECLARED connectors; set DB-side
+     *  for synthetic (channel/computer) connectors that have no manifest entry. */
+    agentScope: text('agent_scope').array(),
     /** Credential storage model — shared project credential vs each member brings their own. */
     credentialMode: executorCredentialModeEnum('credential_mode').default('shared').notNull(),
     /** Hash over config+auth — skip catalog re-sync when unchanged. */
@@ -3392,6 +3405,40 @@ export const executorExecutions = kortixSchema.table(
     index('idx_executor_executions_project').on(table.projectId),
     index('idx_executor_executions_connector').on(table.connectorId),
     index('idx_executor_executions_status').on(table.status),
+  ],
+);
+
+/**
+ * "Allow for this session" decisions on `require_approval` connector calls. When
+ * a human approves a gated action and picks "allow for the rest of this
+ * session", (session, connector, action) is recorded here; the executor gateway
+ * consults it BEFORE holding a require_approval call, so the same tool never
+ * re-prompts within the session. Only widens `require_approval` → run — a policy
+ * `block` is never recorded (the resolve endpoint refuses it). Ephemeral: FKs
+ * cascade on project/connector delete.
+ */
+export const sessionToolApprovals = kortixSchema.table(
+  'session_tool_approvals',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    sessionId: uuid('session_id').notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    connectorId: uuid('connector_id')
+      .notNull()
+      .references(() => executorConnectors.connectorId, { onDelete: 'cascade' }),
+    actionPath: varchar('action_path', { length: 512 }).notNull(),
+    grantedBy: uuid('granted_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('session_tool_approvals_unique').on(
+      table.sessionId,
+      table.connectorId,
+      table.actionPath,
+    ),
+    index('session_tool_approvals_session_idx').on(table.sessionId),
   ],
 );
 

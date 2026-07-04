@@ -41,38 +41,53 @@ type BadgeVariant =
 
 export const KIND_META: Record<
   ReviewKind,
-  { label: string; icon: IconCmp; tile: string; iconColor: string }
+  { label: string; icon: IconCmp; tile: string; iconColor: string; bar: string }
 > = {
   change: {
     label: 'Change',
     icon: GitPullRequest,
     tile: 'bg-kortix-blue/15',
     iconColor: 'text-kortix-blue',
+    bar: 'before:bg-kortix-blue',
   },
   approval: {
     label: 'Approval',
     icon: ShieldCheckSolid,
     tile: 'bg-kortix-orange/15',
     iconColor: 'text-kortix-orange',
+    bar: 'before:bg-kortix-orange',
   },
   output: {
     label: 'Output',
     icon: SparklesSolid,
     tile: 'bg-kortix-purple/15',
     iconColor: 'text-kortix-purple',
+    bar: 'before:bg-kortix-purple',
   },
   decision: {
     label: 'Question',
     icon: QuestionCircleSolid,
     tile: 'bg-kortix-yellow/15',
-    iconColor: 'text-kortix-yellow',
+    // Darker than the tile hue — kortix-yellow (oklch L≈0.73) is the palette's
+    // lowest-contrast token for a glyph on a light tint. See a11y note.
+    iconColor: 'text-yellow-600 dark:text-kortix-yellow',
+    bar: 'before:bg-kortix-yellow',
   },
   batch: {
     label: 'Finished',
     icon: CheckCircleSolid,
     tile: 'bg-kortix-green/15',
     iconColor: 'text-kortix-green',
+    bar: 'before:bg-kortix-green',
   },
+};
+
+/** Left-accent-bar class for the segment's risk tone (Needs-you escalation). */
+export const RISK_BAR: Record<ReviewRisk, string> = {
+  none: 'before:bg-kortix-green',
+  low: 'before:bg-kortix-green',
+  medium: 'before:bg-kortix-orange',
+  high: 'before:bg-destructive',
 };
 
 // Risk pills use StatusBadge (faint tinted fill + colored text) rather than the
