@@ -2,12 +2,11 @@
 
 import { useTranslations } from 'next-intl';
 
+import Link from 'next/link';
+
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
-import { LegacyMachineCard } from '@/components/projects/legacy-machine-card';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
-import { SunaMigrationBanner } from '@/components/projects/suna-migration-banner';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Input } from '@/components/ui/input';
 import { SectionCard } from '@/components/ui/section-card';
@@ -18,16 +17,14 @@ import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { UpgradeButton } from '@/features/billing/upgrade-button';
 import { Icon } from '@/features/icon/icon';
 import { AppHeader } from '@/features/layout/app-header';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { ProjectCreateModal } from '@/features/projects/modal/project-create-modal';
 import { RenameProjectDialog } from '@/features/projects/modal/rename-project-modal';
 import NewProjectControl from '@/features/projects/new-project-control';
 import ProjectCard from '@/features/projects/project-card';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateAccountState, useAccountState } from '@/hooks/billing';
-import {
-  useLegacyMachines,
-  useStartLegacyMigration,
-} from '@/hooks/legacy/use-legacy-machine-migration';
+import { useLegacyMachines } from '@/hooks/legacy/use-legacy-machine-migration';
 import { billingApi } from '@/lib/api/billing';
 import { isBillingEnabled } from '@/lib/config';
 import {
@@ -35,14 +32,14 @@ import {
   hasFirstProjectBootstrapSignal,
   shouldAutoCreateFirstProject,
 } from '@/lib/onboarding/ensure-first-project';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { type ProjectsViewMode, useProjectsViewStore } from '@/stores/projects-view-store';
 import {
   type KortixProject,
   archiveProject,
   listAccounts,
   listProjectsForAccount,
 } from '@kortix/sdk/projects-client';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { type ProjectsViewMode, useProjectsViewStore } from '@/stores/projects-view-store';
 import { Search } from '@mynaui/icons-react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, FolderPlus } from 'lucide-react';
@@ -190,7 +187,6 @@ export default function ProjectsPage() {
     enabled: !!user && !!activeAccountId,
     accountId: activeAccountId,
   });
-  const startMigration = useStartLegacyMigration(activeAccountId);
 
   // ── Onboarding: only explicit signup/subscription returns auto-bootstrap the
   // first project. A normal empty projects list can come from deleting the last
@@ -261,12 +257,6 @@ export default function ProjectsPage() {
     router,
   ]);
 
-  const handleMigrate = (sandboxId: string) =>
-    startMigration.mutate(sandboxId, {
-      onSuccess: () => successToast('Migration started — this runs in the background'),
-      onError: (e: Error) => errorToast(e.message || 'Failed to start migration'),
-    });
-
   const archiveMutation = useMutation({
     mutationFn: archiveProject,
     onMutate: (projectId) => setArchivingId(projectId),
@@ -285,23 +275,9 @@ export default function ProjectsPage() {
     [filterProjects, projectsQuery.data],
   );
 
-  const projectIds = useMemo(
-    () => new Set((projectsQuery.data ?? []).map((p) => p.project_id)),
-    [projectsQuery.data],
-  );
-
-  const legacyMachines = useMemo(() => {
-    const items = legacyMachinesQuery.data?.sandboxes ?? [];
-    const q = query.trim().toLowerCase();
-    return items.filter((machine) => {
-      const projectId = machine.migration?.project_id;
-      if (machine.migration?.status === 'completed' && projectId && projectIds.has(projectId)) {
-        return false;
-      }
-      if (!q) return true;
-      return machine.name.toLowerCase().includes(q) || machine.provider.toLowerCase().includes(q);
-    });
-  }, [legacyMachinesQuery.data, query, projectIds]);
+  // Legacy machines are no longer shown inline on Projects; the count only drives
+  // the discreet link to the hidden /legacy-machines archive.
+  const hasLegacyMachines = (legacyMachinesQuery.data?.sandboxes?.length ?? 0) > 0;
 
   if (authLoading || !user) {
     return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
@@ -314,21 +290,15 @@ export default function ProjectsPage() {
   }
 
   const total = projectsQuery.data?.length ?? 0;
-  const totalLegacy = legacyMachinesQuery.data?.sandboxes?.length ?? 0;
   const showProjectsLoading = accountsQuery.isLoading || projectsQuery.isLoading;
   const showEmptyState =
-    !!activeAccountId &&
-    !showProjectsLoading &&
-    !projectsQuery.isError &&
-    total === 0 &&
-    totalLegacy === 0;
+    !!activeAccountId && !showProjectsLoading && !projectsQuery.isError && total === 0;
   const showNoResults =
     !!activeAccountId &&
     !showProjectsLoading &&
     !projectsQuery.isError &&
-    total + totalLegacy > 0 &&
-    filtered.length === 0 &&
-    legacyMachines.length === 0;
+    total > 0 &&
+    filtered.length === 0;
 
   const allRawTotal = viewAll
     ? accounts.reduce((n, _a, i) => n + (allAccountQueries[i]?.data?.length ?? 0), 0)
@@ -336,13 +306,8 @@ export default function ProjectsPage() {
   const allFilteredTotal = accountGroups.reduce((n, g) => n + g.projects.length, 0);
   const showAllLoading =
     viewAll && (accountsQuery.isLoading || allAccountQueries.some((q) => q.isLoading));
-  const showAllEmpty = viewAll && !showAllLoading && allRawTotal === 0 && totalLegacy === 0;
-  const showAllNoResults =
-    viewAll &&
-    !showAllLoading &&
-    allRawTotal + totalLegacy > 0 &&
-    allFilteredTotal === 0 &&
-    legacyMachines.length === 0;
+  const showAllEmpty = viewAll && !showAllLoading && allRawTotal === 0;
+  const showAllNoResults = viewAll && !showAllLoading && allRawTotal > 0 && allFilteredTotal === 0;
 
   const openCreateModal = (accountId: string | null) => {
     setCreateAccountId(accountId);
@@ -350,16 +315,17 @@ export default function ProjectsPage() {
   };
 
   return (
-    <div className="bg-foreground/5 flex min-h-screen flex-col">
-      <AppHeader
-        user={user}
-        breadcrumb="Projects"
-        actions={<UpgradeButton accountId={activeAccountId ?? undefined} />}
-      />
-      <main className="ring-input bg-background px-mobile flex-1 rounded-t-xl py-10 ring sm:py-12">
+    <div className="flex min-h-screen flex-col">
+      <div className="w-full border-b">
+        <AppHeader
+          user={user}
+          breadcrumb="Projects"
+          actions={<UpgradeButton accountId={activeAccountId ?? undefined} />}
+        />
+      </div>
+      <main className="bg-background px-mobile flex-1 py-10 sm:py-12">
         <div className="mx-auto w-full max-w-6xl space-y-8">
-          <SunaMigrationBanner accountId={activeAccountId} />
-          <div className="kx-fade-up flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0 space-y-1">
               <h1 className="text-foreground text-2xl font-semibold tracking-tight sm:text-3xl">
                 Projects
@@ -421,7 +387,7 @@ export default function ProjectsPage() {
               {showProjectsLoading && (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {PROJECT_SKELETON_KEYS.map((key) => (
-                    <Skeleton key={key} className="h-[92px] rounded-lg" />
+                    <Skeleton key={key} className="h-[92px] rounded-2xl" />
                   ))}
                 </div>
               )}
@@ -481,19 +447,8 @@ export default function ProjectsPage() {
                 </SectionCard>
               )}
 
-              {(filtered.length > 0 || legacyMachines.length > 0) && (
-                <div className="kx-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {legacyMachines.map((machine) => (
-                    <LegacyMachineCard
-                      key={machine.sandbox_id}
-                      machine={machine}
-                      starting={
-                        startMigration.isPending && startMigration.variables === machine.sandbox_id
-                      }
-                      onMigrate={() => handleMigrate(machine.sandbox_id)}
-                      onOpenProject={(projectId) => router.push(`/projects/${projectId}`)}
-                    />
-                  ))}
+              {filtered.length > 0 && (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {filtered.map((project) => (
                     <ProjectCard
                       key={project.project_id}
@@ -514,7 +469,7 @@ export default function ProjectsPage() {
               {showAllLoading && (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {PROJECT_SKELETON_KEYS.map((key) => (
-                    <Skeleton key={key} className="h-[92px] rounded-lg" />
+                    <Skeleton key={key} className="h-[92px] rounded-2xl" />
                   ))}
                 </div>
               )}
@@ -558,35 +513,17 @@ export default function ProjectsPage() {
                 </SectionCard>
               )}
 
-              {!showAllLoading && legacyMachines.length > 0 && (
-                <div className="kx-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {legacyMachines.map((machine) => (
-                    <LegacyMachineCard
-                      key={machine.sandbox_id}
-                      machine={machine}
-                      starting={
-                        startMigration.isPending && startMigration.variables === machine.sandbox_id
-                      }
-                      onMigrate={() => handleMigrate(machine.sandbox_id)}
-                      onOpenProject={(projectId) => router.push(`/projects/${projectId}`)}
-                    />
-                  ))}
-                </div>
-              )}
-
               {!showAllLoading &&
                 accountGroups.map((group) => (
-                  <section key={group.account.account_id} className="kx-fade-up space-y-4">
+                  <section key={group.account.account_id} className="space-y-4">
                     <div className="flex items-center gap-2.5">
                       <EntityAvatar label={group.account.name || 'Account'} size="sm" />
                       <h2 className="text-foreground text-sm font-semibold tracking-tight">
                         {group.account.name || 'Account'}
                       </h2>
-                      <span className="text-muted-foreground text-xs tabular-nums">
-                        {group.projects.length}
-                      </span>
+                      <span className="text-muted-foreground text-xs">{group.projects.length}</span>
                     </div>
-                    <div className="kx-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       {group.projects.map((project) => (
                         <ProjectCard
                           key={project.project_id}
@@ -603,6 +540,16 @@ export default function ProjectsPage() {
                     </div>
                   </section>
                 ))}
+            </div>
+          )}
+          {hasLegacyMachines && (
+            <div className="pt-2 text-center">
+              <Link
+                href="/legacy-machines"
+                className="text-muted-foreground hover:text-foreground text-xs underline underline-offset-4 transition-colors"
+              >
+                Looking for older machines?
+              </Link>
             </div>
           )}
         </div>
