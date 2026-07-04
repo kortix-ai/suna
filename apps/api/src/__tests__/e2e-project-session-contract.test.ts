@@ -599,6 +599,7 @@ mock.module('../shared/db', () => ({
               shareScope: values.shareScope ?? 'project',
               ownerUserId: values.ownerUserId ?? null,
               active: values.active ?? true,
+              agentScope: values.agentScope ?? null,
               createdBy: values.createdBy ?? null,
               createdAt:
                 existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
@@ -908,6 +909,7 @@ describe('project session API contract', () => {
         shareScope: 'project',
         ownerUserId: null,
         active: true,
+        agentScope: null,
         createdBy: USER_ID,
         createdAt: new Date('2026-01-02T00:00:00Z'),
         updatedAt: new Date('2026-01-02T00:00:00Z'),

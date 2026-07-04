@@ -1,20 +1,43 @@
-import { config } from '../../config';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { TriggerList } from '@kortix/api-contract';
+import { projectSessions, projectTriggerRuntime, projects } from '@kortix/db';
+import { Cron } from 'croner';
+import { and, desc, eq, ne, sql } from 'drizzle-orm';
+import type { Context } from 'hono';
+import { config } from '../../config';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import { isLeader } from '../../shared/leader-election';
 import { runProjectAppSweep } from '../app-sweep';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
-import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
-import { KNOWN_SCHEMA_VERSION, MANIFEST_FILENAME, loadProjectTriggers, readManifest, serializeManifest, triggerSpecToTomlEntry, type GitTriggerSessionMode, type GitTriggerSpec, type ParsedManifest } from '../triggers';
-import { projectSessions, projectTriggerRuntime, projects } from '@kortix/db';
-import { Cron } from 'croner';
-import { and, desc, eq, ne, sql } from 'drizzle-orm';
-import { Context } from 'hono';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { type GitHubAuthContext, commitFile, getFileSha } from '../github';
+import {
+  continueSession,
+  createSession,
+  drainSessionLifecycleQueue,
+  resolveProjectAutomationActor,
+  sessionBackpressureState,
+} from '../session-lifecycle';
+import {
+  type GitTriggerSessionMode,
+  type GitTriggerSpec,
+  KNOWN_SCHEMA_VERSION,
+  MANIFEST_FILENAME,
+  type ParsedManifest,
+  loadProjectTriggers,
+  readManifest,
+  serializeManifest,
+  triggerSpecToTomlEntry,
+} from '../triggers';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
-import { ProjectRow, RequestAuditContext, deriveKortixApiRoot, isPlainObject, normalizeBoolean, normalizeString } from './serializers';
-import { continueSession, createSession, drainSessionLifecycleQueue, resolveProjectAutomationActor, sessionBackpressureState } from '../session-lifecycle';
+import {
+  type ProjectRow,
+  type RequestAuditContext,
+  deriveKortixApiRoot,
+  isPlainObject,
+  normalizeBoolean,
+  normalizeString,
+} from './serializers';
 
 export function normalizeSignatureHeader(value: string | null): string | null {
   const header = normalizeString(value);
@@ -22,8 +45,11 @@ export function normalizeSignatureHeader(value: string | null): string | null {
   return header.startsWith('sha256=') ? header.slice('sha256='.length) : header;
 }
 
-
-export function verifyWebhookSignature(rawBody: string, secret: string, signatureHeader: string | null) {
+export function verifyWebhookSignature(
+  rawBody: string,
+  secret: string,
+  signatureHeader: string | null,
+) {
   const signature = normalizeSignatureHeader(signatureHeader);
   if (!signature || !/^[a-f0-9]{64}$/i.test(signature)) return false;
 
@@ -73,7 +99,6 @@ export function verifyWebhookToken(token: string | null, secret: string): boolea
   return timingSafeEqual(actual, expected);
 }
 
-
 export function parseWebhookJsonBody(rawBody: string): unknown {
   if (!rawBody.trim()) return {};
   try {
@@ -82,7 +107,6 @@ export function parseWebhookJsonBody(rawBody: string): unknown {
     return { raw: rawBody };
   }
 }
-
 
 export function valueAtPath(source: unknown, path: string[]): unknown {
   let current = source;
@@ -93,14 +117,12 @@ export function valueAtPath(source: unknown, path: string[]): unknown {
   return current;
 }
 
-
 export function templateValue(value: unknown): string {
   if (value === undefined || value === null) return '';
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return JSON.stringify(value);
 }
-
 
 export function renderPromptTemplate(template: string, payload: Record<string, unknown>) {
   return template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, token: string) => {
@@ -110,7 +132,6 @@ export function renderPromptTemplate(template: string, payload: Record<string, u
     return templateValue(value);
   });
 }
-
 
 export function webhookPayload(c: Context, rawBody: string) {
   const body = parseWebhookJsonBody(rawBody);
@@ -123,7 +144,6 @@ export function webhookPayload(c: Context, rawBody: string) {
     },
   };
 }
-
 
 export async function triggerBackpressureState(accountId: string, projectId: string) {
   return sessionBackpressureState(accountId, projectId);
@@ -140,11 +160,9 @@ export async function triggerBackpressureState(accountId: string, projectId: str
 
 export type TriggerSchedulerTimer = ReturnType<typeof setInterval>;
 
-
 export const globalForProjectTriggers = globalThis as typeof globalThis & {
   __kortixProjectTriggerSchedulerTimer?: TriggerSchedulerTimer | null;
 };
-
 
 export let triggerSchedulerTimer: TriggerSchedulerTimer | null = null;
 
@@ -162,7 +180,13 @@ export interface TriggerSchedulerHealth {
   lastSweepStartedAt: string | null;
   lastSweepCompletedAt: string | null;
   lastSweepDurationMs: number | null;
-  lastResult: { scanned: number; fired: number; queued: number; failed: number; skipped: number } | null;
+  lastResult: {
+    scanned: number;
+    fired: number;
+    queued: number;
+    failed: number;
+    skipped: number;
+  } | null;
   lastError: string | null;
 }
 const schedulerHealth: TriggerSchedulerHealth = {
@@ -258,7 +282,10 @@ export function isSweepStale(opts: {
 function schedulerStaleMs(): number {
   // Generous: several intervals OR one full sweep-timeout window, whichever is
   // larger, so we never false-alarm on a legitimately long (but completing) pass.
-  return Math.max(5 * triggerSchedulerIntervalMs(), triggerSweepTimeoutMs() + triggerSchedulerIntervalMs());
+  return Math.max(
+    5 * triggerSchedulerIntervalMs(),
+    triggerSweepTimeoutMs() + triggerSchedulerIntervalMs(),
+  );
 }
 
 /** Is the leader's trigger sweep stalled right now? (Wraps the pure check.) */
@@ -283,12 +310,10 @@ export function connectorSweepIntervalMs() {
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 120_000;
 }
 
-
 export function triggerSchedulerIntervalMs() {
   const raw = Number((config as any).KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS);
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 60_000;
 }
-
 
 export function nextCronRun(schedule: string, from: Date, timezone?: string): Date | null {
   const job = new Cron(schedule, { paused: true, ...(timezone ? { timezone } : {}) });
@@ -350,7 +375,11 @@ export async function runProjectTriggerSweep(now = new Date()): Promise<{
     // Overall hard cap so a hang anywhere (project scan, mirror load, fire) can
     // never block the guard indefinitely. The per-item timeouts inside the sweep
     // keep one bad project/trigger from starving the rest within a single pass.
-    await withTimeout(runGitTriggerSweep(now, result), triggerSweepTimeoutMs(), 'project trigger sweep');
+    await withTimeout(
+      runGitTriggerSweep(now, result),
+      triggerSweepTimeoutMs(),
+      'project trigger sweep',
+    );
     schedulerHealth.lastError = null;
     return result;
   } catch (err) {
@@ -397,7 +426,11 @@ async function selectActiveProjects(pageSize = 500): Promise<ProjectRow[]> {
   return all;
 }
 
-export async function runProjectConnectorSweep(): Promise<{ scanned: number; synced: number; errors: number }> {
+export async function runProjectConnectorSweep(): Promise<{
+  scanned: number;
+  synced: number;
+  errors: number;
+}> {
   if (connectorSweepRunning) return { scanned: 0, synced: 0, errors: 0 };
   connectorSweepRunning = true;
   const out = { scanned: 0, synced: 0, errors: 0 };
@@ -413,7 +446,11 @@ export async function runProjectConnectorSweep(): Promise<{ scanned: number; syn
         out.errors += res.errors.length;
       } catch (err) {
         out.errors += 1;
-        console.warn('[project-connectors] sweep failed', project.projectId, err instanceof Error ? err.message : err);
+        console.warn(
+          '[project-connectors] sweep failed',
+          project.projectId,
+          err instanceof Error ? err.message : err,
+        );
       }
     }
     return out;
@@ -460,8 +497,11 @@ export async function resolveTriggerActor(project: ProjectRow): Promise<string |
   return resolveProjectAutomationActor(project.accountId);
 }
 
-
-export function isGitCronSpecDue(spec: GitTriggerSpec, lastFiredAt: Date | null, now: Date): boolean {
+export function isGitCronSpecDue(
+  spec: GitTriggerSpec,
+  lastFiredAt: Date | null,
+  now: Date,
+): boolean {
   // One-off ("run once") schedules: fire exactly once at/after `runAt`. The
   // last_fired_at stamp written on the first fire keeps it dormant forever
   // after — no cron, no self-disable needed.
@@ -480,19 +520,16 @@ export function isGitCronSpecDue(spec: GitTriggerSpec, lastFiredAt: Date | null,
   }
 }
 
-
 export async function getGitTriggerRuntime(projectId: string, slug: string) {
   const [row] = await db
     .select()
     .from(projectTriggerRuntime)
-    .where(and(
-      eq(projectTriggerRuntime.projectId, projectId),
-      eq(projectTriggerRuntime.slug, slug),
-    ))
+    .where(
+      and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, slug)),
+    )
     .limit(1);
   return row ?? null;
 }
-
 
 export async function markGitTriggerFired(
   projectId: string,
@@ -502,10 +539,24 @@ export async function markGitTriggerFired(
 ) {
   await db
     .insert(projectTriggerRuntime)
-    .values({ projectId, slug, lastFiredAt: when, lastStatus: status, lastError: null, lastAttemptAt: when, updatedAt: when })
+    .values({
+      projectId,
+      slug,
+      lastFiredAt: when,
+      lastStatus: status,
+      lastError: null,
+      lastAttemptAt: when,
+      updatedAt: when,
+    })
     .onConflictDoUpdate({
       target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
-      set: { lastFiredAt: when, lastStatus: status, lastError: null, lastAttemptAt: when, updatedAt: when },
+      set: {
+        lastFiredAt: when,
+        lastStatus: status,
+        lastError: null,
+        lastAttemptAt: when,
+        updatedAt: when,
+      },
     });
 }
 
@@ -523,7 +574,14 @@ export async function markGitTriggerAttemptFailed(
   const lastError = error.slice(0, 1000);
   await db
     .insert(projectTriggerRuntime)
-    .values({ projectId, slug, lastStatus: 'failed', lastError, lastAttemptAt: when, updatedAt: when })
+    .values({
+      projectId,
+      slug,
+      lastStatus: 'failed',
+      lastError,
+      lastAttemptAt: when,
+      updatedAt: when,
+    })
     .onConflictDoUpdate({
       target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
       set: { lastStatus: 'failed', lastError, lastAttemptAt: when, updatedAt: when },
@@ -571,7 +629,14 @@ export async function fireGitTrigger(input: {
   source: 'cron' | 'webhook' | 'manual';
   idempotencyKey?: string | null;
   request?: RequestAuditContext;
-}): Promise<{ status: 'fired' | 'queued' | 'failed'; sessionId?: string; commandId?: string; error?: string; reason?: string; deduped?: boolean }> {
+}): Promise<{
+  status: 'fired' | 'queued' | 'failed';
+  sessionId?: string;
+  commandId?: string;
+  error?: string;
+  reason?: string;
+  deduped?: boolean;
+}> {
   const { spec, project, payload, renderedPrompt, source } = input;
   // The session's owning identity (created_by / billing / audit). Automated runs
   // never impersonate a picked human — the agent's declared scope governs access.
@@ -667,7 +732,6 @@ export async function fireGitTrigger(input: {
   };
 }
 
-
 export function summarizeTriggerPayload(payload: Record<string, unknown>): Record<string, unknown> {
   // Strip the rendered body from session metadata — sessions already get the
   // prompt as KORTIX_INITIAL_PROMPT, and we don't want huge payloads in
@@ -685,9 +749,16 @@ export function summarizeTriggerPayload(payload: Record<string, unknown>): Recor
  * for everyone else.
  */
 
-export async function runGitTriggerSweep(now: Date, accumulator: {
-  scanned: number; fired: number; queued: number; failed: number; skipped: number;
-}): Promise<void> {
+export async function runGitTriggerSweep(
+  now: Date,
+  accumulator: {
+    scanned: number;
+    fired: number;
+    queued: number;
+    failed: number;
+    skipped: number;
+  },
+): Promise<void> {
   const projectsForSweep = await selectActiveProjects();
 
   for (const project of projectsForSweep) {
@@ -712,10 +783,19 @@ export async function runGitTriggerSweep(now: Date, accumulator: {
       // sweep with zero feedback — a prime "my trigger isn't running" trap.
       for (const e of loaded.errors) {
         console.warn('[project-triggers/git] parse error', project.projectId, e.slug, e.error);
-        await markGitTriggerAttemptFailed(project.projectId, e.slug, now, `parse error: ${e.error}`);
+        await markGitTriggerAttemptFailed(
+          project.projectId,
+          e.slug,
+          now,
+          `parse error: ${e.error}`,
+        );
       }
     } catch (err) {
-      console.warn('[project-triggers/git] load failed', project.projectId, err instanceof Error ? err.message : err);
+      console.warn(
+        '[project-triggers/git] load failed',
+        project.projectId,
+        err instanceof Error ? err.message : err,
+      );
       continue;
     }
 
@@ -745,8 +825,9 @@ export async function runGitTriggerSweep(now: Date, accumulator: {
       // trigger due), not per sweep tick — so a fire we timed out on but that
       // actually lands late isn't duplicated when the next tick retries.
       const dueSlotKey =
-        (spec.cron ? nextCronRun(spec.cron, lastFired ?? new Date(0), spec.timezone)?.toISOString() : spec.runAt) ??
-        scheduledAt;
+        (spec.cron
+          ? nextCronRun(spec.cron, lastFired ?? new Date(0), spec.timezone)?.toISOString()
+          : spec.runAt) ?? scheduledAt;
 
       let result: Awaited<ReturnType<typeof fireGitTrigger>>;
       try {
@@ -775,16 +856,16 @@ export async function runGitTriggerSweep(now: Date, accumulator: {
       if (result.status === 'fired') {
         await markGitTriggerFired(project.projectId, spec.slug, now, 'fired');
         accumulator.fired += 1;
-      }
-      else if (result.status === 'queued') {
+      } else if (result.status === 'queued') {
         await markGitTriggerFired(project.projectId, spec.slug, now, 'queued');
         accumulator.queued += 1;
-      }
-      else {
+      } else {
         // A failed fire is NOT stamped as fired, so it retries next tick — but
         // we record why so "trigger isn't running" is diagnosable from the API.
         await markGitTriggerAttemptFailed(
-          project.projectId, spec.slug, now,
+          project.projectId,
+          spec.slug,
+          now,
           result.error ?? result.reason ?? 'trigger fire failed',
         );
         accumulator.failed += 1;
@@ -792,7 +873,6 @@ export async function runGitTriggerSweep(now: Date, accumulator: {
     }
   }
 }
-
 
 export function startProjectTriggerScheduler(): void {
   if ((config as any).KORTIX_TRIGGER_SCHEDULER_ENABLED === false) return;
@@ -806,40 +886,49 @@ export function startProjectTriggerScheduler(): void {
     // self-heal guard in runProjectTriggerSweep reclaims the stuck sweep on this
     // same tick; this console.error is the alert signal for log-based monitoring.
     if (schedulerSweepIsStale(isLeader())) {
-      console.error('[project-triggers] SCHEDULER STALLED — leader but last sweep has not completed', {
-        lastSweepStartedAt: schedulerHealth.lastSweepStartedAt,
-        lastSweepCompletedAt: schedulerHealth.lastSweepCompletedAt,
-      });
+      console.error(
+        '[project-triggers] SCHEDULER STALLED — leader but last sweep has not completed',
+        {
+          lastSweepStartedAt: schedulerHealth.lastSweepStartedAt,
+          lastSweepCompletedAt: schedulerHealth.lastSweepCompletedAt,
+        },
+      );
     }
 
-    drainSessionLifecycleQueue({ limit: 10 }).then((result) => {
-      if (result.claimed || result.failed) {
-        console.log('[session-lifecycle] queue drain completed', result);
-      }
-    }).catch((error) => {
-      console.error('[session-lifecycle] queue drain failed:', error);
-    });
+    drainSessionLifecycleQueue({ limit: 10 })
+      .then((result) => {
+        if (result.claimed || result.failed) {
+          console.log('[session-lifecycle] queue drain completed', result);
+        }
+      })
+      .catch((error) => {
+        console.error('[session-lifecycle] queue drain failed:', error);
+      });
 
-    runProjectTriggerSweep().then((result) => {
-      if (result.fired || result.queued || result.failed) {
-        console.log('[project-triggers] sweep completed', result);
-      }
-    }).catch((error) => {
-      console.error('[project-triggers] sweep failed:', error);
-    });
+    runProjectTriggerSweep()
+      .then((result) => {
+        if (result.fired || result.queued || result.failed) {
+          console.log('[project-triggers] sweep completed', result);
+        }
+      })
+      .catch((error) => {
+        console.error('[project-triggers] sweep failed:', error);
+      });
 
     // Same cadence drives the [[apps]] auto-deploy sweep. Run independently
     // so a slow app deploy never blocks the cron trigger fires. Skipped
     // entirely when the experimental flag is off — no point reading
     // every project's manifest just to ignore the `apps` block.
     if (config.KORTIX_APPS_EXPERIMENTAL) {
-      runProjectAppSweep().then((result) => {
-        if (result.deployed || result.failed) {
-          console.log('[project-apps] sweep completed', result);
-        }
-      }).catch((error) => {
-        console.error('[project-apps] sweep failed:', error);
-      });
+      runProjectAppSweep()
+        .then((result) => {
+          if (result.deployed || result.failed) {
+            console.log('[project-apps] sweep completed', result);
+          }
+        })
+        .catch((error) => {
+          console.error('[project-apps] sweep failed:', error);
+        });
     }
 
     // Connector reconcile backstop — slower cadence than the trigger sweep so
@@ -847,19 +936,19 @@ export function startProjectTriggerScheduler(): void {
     // edits (raw git push / CLI) and heals any DB drift / retries error rows.
     if (Date.now() - lastConnectorSweepAt >= connectorSweepIntervalMs()) {
       lastConnectorSweepAt = Date.now();
-      runProjectConnectorSweep().then((result) => {
-        if (result.synced || result.errors) {
-          console.log('[project-connectors] sweep completed', result);
-        }
-      }).catch((error) => {
-        console.error('[project-connectors] sweep failed:', error);
-      });
+      runProjectConnectorSweep()
+        .then((result) => {
+          if (result.synced || result.errors) {
+            console.log('[project-connectors] sweep completed', result);
+          }
+        })
+        .catch((error) => {
+          console.error('[project-connectors] sweep failed:', error);
+        });
     }
-
   }, triggerSchedulerIntervalMs());
   globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer = triggerSchedulerTimer;
 }
-
 
 export function stopProjectTriggerScheduler(): void {
   if (triggerSchedulerTimer) {
@@ -883,14 +972,18 @@ export function buildPublicWebhookUrl(projectId: string, slug: string): string {
 
 /** Builds the GET-listing response shape (specs + runtime + errors). */
 
-export async function loadTriggersForResponse(projectId: string, project: ProjectRow): Promise<TriggerList> {
+export async function loadTriggersForResponse(
+  projectId: string,
+  project: ProjectRow,
+): Promise<TriggerList> {
   const { specs, errors } = await loadProjectTriggers(await withProjectGitAuth(project));
-  const runtimeRows = specs.length === 0
-    ? []
-    : await db
-        .select()
-        .from(projectTriggerRuntime)
-        .where(eq(projectTriggerRuntime.projectId, projectId));
+  const runtimeRows =
+    specs.length === 0
+      ? []
+      : await db
+          .select()
+          .from(projectTriggerRuntime)
+          .where(eq(projectTriggerRuntime.projectId, projectId));
   const runtimeBySlug = new Map(runtimeRows.map((row) => [row.slug, row]));
 
   return {
@@ -912,10 +1005,7 @@ export async function loadTriggersForResponse(projectId: string, project: Projec
       last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,
       last_error: runtimeBySlug.get(spec.slug)?.lastError ?? null,
       last_attempt_at: runtimeBySlug.get(spec.slug)?.lastAttemptAt?.toISOString() ?? null,
-      webhook_url:
-        spec.type === 'webhook'
-          ? buildPublicWebhookUrl(projectId, spec.slug)
-          : null,
+      webhook_url: spec.type === 'webhook' ? buildPublicWebhookUrl(projectId, spec.slug) : null,
     })),
     // Server-side activation state for this project's whole trigger set. When
     // true, the platform won't auto-run any of them (cron sweep skips, webhooks
@@ -924,7 +1014,6 @@ export async function loadTriggersForResponse(projectId: string, project: Projec
     errors,
   };
 }
-
 
 export interface TriggerDraft {
   slug: string;
@@ -942,7 +1031,6 @@ export interface TriggerDraft {
   sessionMode: GitTriggerSessionMode;
 }
 
-
 export function parseTriggerDraft(
   body: Record<string, unknown>,
   opts: { existingSlug: string | null },
@@ -951,17 +1039,18 @@ export function parseTriggerDraft(
   const name = normalizeString((body as any).name);
   if (!name) return { error: 'name is required' };
 
-  const slug = opts.existingSlug
-    ?? rawSlug
-    ?? slugify(name);
+  const slug = opts.existingSlug ?? rawSlug ?? slugify(name);
   if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
     return { error: `Invalid slug "${slug}" — use letters, digits, dashes, underscores only` };
   }
 
-  const type = (body as any).type === 'webhook' ? 'webhook' : (body as any).type === 'cron' ? 'cron' : null;
+  const type =
+    (body as any).type === 'webhook' ? 'webhook' : (body as any).type === 'cron' ? 'cron' : null;
   if (!type) return { error: 'type must be "cron" or "webhook"' };
 
-  const promptTemplate = normalizeString((body as any).prompt_template ?? (body as any).promptTemplate);
+  const promptTemplate = normalizeString(
+    (body as any).prompt_template ?? (body as any).promptTemplate,
+  );
   if (!promptTemplate) return { error: 'prompt_template is required' };
 
   const agent = normalizeString((body as any).agent ?? (body as any).agent_name) ?? 'default';
@@ -1000,7 +1089,8 @@ export function parseTriggerDraft(
       };
     }
     const cron = normalizeString((body as any).cron ?? (body as any).schedule);
-    if (!cron) return { error: 'cron triggers must declare a `cron` expression or a one-off `run_at`' };
+    if (!cron)
+      return { error: 'cron triggers must declare a `cron` expression or a one-off `run_at`' };
     return {
       slug,
       name,
@@ -1057,16 +1147,16 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
   };
 }
 
-
 export function slugify(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-{2,}/g, '-')
-    .slice(0, 128) || 'trigger';
+  return (
+    input
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .replace(/-{2,}/g, '-')
+      .slice(0, 128) || 'trigger'
+  );
 }
-
 
 export function draftToSpec(draft: TriggerDraft): GitTriggerSpec {
   return {
@@ -1095,6 +1185,8 @@ export function draftToSpec(draft: TriggerDraft): GitTriggerSpec {
 export async function loadManifestForEdit(project: ProjectRow): Promise<ParsedManifest> {
   const existing = await readManifest(await withProjectGitAuth(project));
   if (existing) return existing;
+  // No manifest yet → synthesize a minimal one. Brand-new repos scaffold TOML
+  // (matching the CLI scaffold); YAML is opt-in by committing a kortix.yaml.
   return {
     schemaVersion: KNOWN_SCHEMA_VERSION,
     raw: {
@@ -1102,6 +1194,8 @@ export async function loadManifestForEdit(project: ProjectRow): Promise<ParsedMa
       runtime: { root: '.opencode' },
       env: { required: [], optional: [] },
     },
+    format: 'toml',
+    path: project.manifestPath || MANIFEST_FILENAME,
   };
 }
 
@@ -1126,16 +1220,11 @@ export function upsertTriggerInManifest(
 
 /** Remove a trigger by slug from the manifest's triggers array. */
 
-export function removeTriggerFromManifest(
-  manifest: ParsedManifest,
-  slug: string,
-): ParsedManifest {
+export function removeTriggerFromManifest(manifest: ParsedManifest, slug: string): ParsedManifest {
   const current = Array.isArray(manifest.raw.triggers)
     ? (manifest.raw.triggers as Record<string, unknown>[])
     : [];
-  const next = current.filter(
-    (entry) => !(typeof entry?.slug === 'string' && entry.slug === slug),
-  );
+  const next = current.filter((entry) => !(typeof entry?.slug === 'string' && entry.slug === slug));
   return { ...manifest, raw: { ...manifest.raw, triggers: next } };
 }
 
@@ -1151,6 +1240,10 @@ export async function commitManifest(
 ): Promise<{ ok: true } | { error: string; status: number }> {
   const content = serializeManifest(manifest);
   const branch = project.defaultBranch;
+  // Write back to the SAME file we read (kortix.yaml or kortix.toml, or a custom
+  // path) in its own format — never a hardcoded name, or a yaml project's edits
+  // would silently land in a second kortix.toml the runtime doesn't read.
+  const manifestFile = manifest.path || project.manifestPath || MANIFEST_FILENAME;
 
   // GitHub repos: commit through the Contents API (App / PAT auth) — the
   // lightweight single-file path that doesn't need a full clone.
@@ -1160,14 +1253,23 @@ export async function commitManifest(
     try {
       auth = (await resolveProjectGitAuth(project)).auth ?? undefined;
     } catch (err) {
-      return { error: `GitHub auth unavailable: ${(err as Error).message || String(err)}`, status: 502 };
+      return {
+        error: `GitHub auth unavailable: ${(err as Error).message || String(err)}`,
+        status: 502,
+      };
     }
-    const existingSha = await getFileSha({ owner: repo.owner, repo: repo.repo, path: MANIFEST_FILENAME, branch, auth });
+    const existingSha = await getFileSha({
+      owner: repo.owner,
+      repo: repo.repo,
+      path: manifestFile,
+      branch,
+      auth,
+    });
     try {
       await commitFile({
         owner: repo.owner,
         repo: repo.repo,
-        path: MANIFEST_FILENAME,
+        path: manifestFile,
         content,
         message,
         branch,
@@ -1175,7 +1277,10 @@ export async function commitManifest(
         auth,
       });
     } catch (err) {
-      return { error: `Failed to commit ${MANIFEST_FILENAME}: ${(err as Error).message || String(err)}`, status: 502 };
+      return {
+        error: `Failed to commit ${manifestFile}: ${(err as Error).message || String(err)}`,
+        status: 502,
+      };
     }
     invalidateProjectMirror(project.projectId);
     return { ok: true };
@@ -1198,7 +1303,7 @@ export async function commitManifest(
 
   try {
     await commitFileToBranch(gitProject, {
-      path: MANIFEST_FILENAME,
+      path: manifestFile,
       content,
       message,
       branch,
@@ -1206,7 +1311,10 @@ export async function commitManifest(
       authorEmail: 'noreply@kortix.ai',
     });
   } catch (err) {
-    return { error: `Failed to commit ${MANIFEST_FILENAME}: ${(err as Error).message || String(err)}`, status: 502 };
+    return {
+      error: `Failed to commit ${manifestFile}: ${(err as Error).message || String(err)}`,
+      status: 502,
+    };
   }
 
   invalidateProjectMirror(project.projectId);

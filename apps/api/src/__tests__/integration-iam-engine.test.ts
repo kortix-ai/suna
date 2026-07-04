@@ -4,7 +4,7 @@
  * Proves the model an enterprise (essentia-inc) relies on, end to end against a
  * fully ISOLATED account + project seeded here and torn down after:
  *   - deny-by-default (a plain member with no grant is denied)
- *   - built-in project roles (user ⊂ editor ⊂ manager)
+ *   - built-in project roles (member ⊂ editor ⊂ manager)
  *   - account owner/admin are implicit Managers on every project
  *   - group → project role (the SCIM/SSO bulk-access channel), incl. max-rank
  *   - DB custom role → policy binding → enforcement, scoped to one project
@@ -43,7 +43,7 @@ async function seedMember(role: 'owner' | 'admin' | 'member'): Promise<string> {
   await db.insert(accountMembers).values({ userId, accountId: ACCOUNT, accountRole: role });
   return userId;
 }
-async function grantProject(userId: string, role: 'user' | 'editor' | 'manager') {
+async function grantProject(userId: string, role: 'member' | 'editor' | 'manager') {
   await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId, projectRole: role });
 }
 async function seedGroup(name: string): Promise<string> {
@@ -75,9 +75,9 @@ describe('authorizeV2 — deny-by-default + built-in project roles', () => {
     );
   });
 
-  test("project role 'user' can read + run sessions but not write or manage", async () => {
+  test("project role 'member' can read + run sessions but not write or manage", async () => {
     const u = await seedMember('member');
-    await grantProject(u, 'user');
+    await grantProject(u, 'member');
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_READ, proj(PROJECT))).toBe(true);
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_SESSION_START, proj(PROJECT))).toBe(true);
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_WRITE, proj(PROJECT))).toBe(false);
@@ -136,7 +136,7 @@ describe('authorizeV2 — group → project role (the SCIM/SSO bulk channel)', (
       { groupId: gHigh, userId: u },
     ]);
     await db.insert(projectGroupGrants).values([
-      { projectId: PROJECT, groupId: gLow, accountId: ACCOUNT, role: 'user' },
+      { projectId: PROJECT, groupId: gLow, accountId: ACCOUNT, role: 'member' },
       { projectId: PROJECT, groupId: gHigh, accountId: ACCOUNT, role: 'manager' },
     ]);
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, proj(PROJECT))).toBe(true);
@@ -146,7 +146,7 @@ describe('authorizeV2 — group → project role (the SCIM/SSO bulk channel)', (
 describe('authorizeV2 — DB custom role → policy binding (allow-only union)', () => {
   test('a project-scoped custom role grants an extra action on ONE project only', async () => {
     const u = await seedMember('member');
-    await grantProject(u, 'user'); // baseline: no deploy
+    await grantProject(u, 'member'); // baseline: no deploy
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_DEPLOY, proj(PROJECT))).toBe(false);
 
     // Custom role that grants project.deploy, bound to this member for THIS project.
