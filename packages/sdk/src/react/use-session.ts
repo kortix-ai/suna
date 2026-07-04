@@ -34,6 +34,8 @@ import {
   sessionStartKey,
   startProjectSession,
 } from '../platform/projects-client';
+import { BillingError, parseBillingError } from '../platform/api/errors';
+import { formatOpenCodeRuntimeError } from '../platform/opencode-errors';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
 import { useOpenCodeEventStream } from './use-opencode-events';
 import type { ModelKey } from './use-model-store';
@@ -45,6 +47,9 @@ import { useSessionPicks } from './use-session-picks';
 import { useSessionSync } from './use-session-sync';
 import { useVisibleAgents } from './use-visible-agents';
 import {
+  rejectQuestion as rejectQuestionApi,
+  replyToPermission,
+  replyToQuestion,
   useAbortOpenCodeSession,
   useExecuteOpenCodeCommand,
   useSendOpenCodeMessage,
@@ -52,6 +57,122 @@ import {
 
 /** Coarse session lifecycle for the host's top-level gating. */
 export type SessionPhase = 'starting' | 'ready' | 'error';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Send-error classification. `send`/the reply actions below never throw for
+// back-compat (`send`) or so a host doesn't need a try/catch for the common
+// case; failures are surfaced as this typed union instead.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Discriminant for `KortixSendError` — what kind of failure interrupted a send. */
+export type KortixSendErrorKind = 'billing' | 'runtime-not-ready' | 'runtime-error';
+
+/** Typed failure surfaced by `send` (via `sendError`) and thrown by
+ * `answerQuestion`/`rejectQuestion`/`answerPermission`. */
+export interface KortixSendError {
+  kind: KortixSendErrorKind;
+  /** Human-readable message, already formatted for display. */
+  message: string;
+  /** Present when `kind === 'billing'` — the parsed 402 detail. */
+  billing?: BillingError;
+  /** The original thrown value, for callers that want more detail. */
+  cause: unknown;
+}
+
+// `getClient()` (packages/sdk/src/opencode/client.ts) throws this exact message
+// when the sandbox url hasn't been resolved yet (session still starting).
+const RUNTIME_NOT_READY_MARKER = 'Server URL not ready';
+
+/** Classify a thrown/rejected error from a send or a permission/question reply
+ * into a `KortixSendError`. Pure — safe to unit test without a runtime. */
+export function classifySendError(error: unknown): KortixSendError {
+  if (error instanceof Error && error.message.includes(RUNTIME_NOT_READY_MARKER)) {
+    return {
+      kind: 'runtime-not-ready',
+      message: 'The session runtime is still starting — try again in a moment.',
+      cause: error,
+    };
+  }
+
+  if (error && typeof error === 'object') {
+    const parsed = parseBillingError(error);
+    if (parsed instanceof BillingError) {
+      return { kind: 'billing', message: parsed.message, billing: parsed, cause: error };
+    }
+  }
+
+  const formatted = formatOpenCodeRuntimeError(error);
+  return { kind: 'runtime-error', message: formatted.message, cause: error };
+}
+
+/** The optimistic-send + last-error state `send` drives. Modeled as a small
+ * reducer-ish pair of pure helpers so the transition logic is unit-testable
+ * without rendering the hook. */
+export interface SendState {
+  /** Pending optimistic message text, or null. */
+  pending: string | null;
+  /** Last send failure, or null. Reset on every new `send` call. */
+  sendError: KortixSendError | null;
+}
+
+const IDLE_SEND_STATE: SendState = { pending: null, sendError: null };
+
+/** New state when a send is kicked off — always clears any previous error. */
+export function sendStateOnStart(text: string): SendState {
+  return { pending: text, sendError: null };
+}
+
+/** New state when a send fails — drops the optimistic message and classifies
+ * the error. */
+export function sendStateOnError(error: unknown): SendState {
+  return { pending: null, sendError: classifySendError(error) };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Permission/question replies. Standalone (not closures over hook state) since
+// they only need the global runtime client + the global pending store — both
+// singletons — so they double as the implementation AND a directly testable,
+// hook-free surface.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Answer an agent question through the session's runtime and drop it from
+ * local pending state — but only once the server has actually accepted the
+ * reply. On failure the question stays pending and a `KortixSendError` is
+ * thrown.
+ */
+export async function answerQuestion(requestId: string, answers: string[][]): Promise<void> {
+  try {
+    await replyToQuestion(requestId, answers);
+  } catch (error) {
+    throw classifySendError(error);
+  }
+  useOpenCodePendingStore.getState().removeQuestion(requestId);
+}
+
+/** Reject an agent question through the session's runtime (see `answerQuestion`). */
+export async function rejectQuestion(requestId: string): Promise<void> {
+  try {
+    await rejectQuestionApi(requestId);
+  } catch (error) {
+    throw classifySendError(error);
+  }
+  useOpenCodePendingStore.getState().removeQuestion(requestId);
+}
+
+/** Answer an agent permission request through the session's runtime (see `answerQuestion`). */
+export async function answerPermission(
+  requestId: string,
+  reply: 'once' | 'always' | 'reject',
+  message?: string,
+): Promise<void> {
+  try {
+    await replyToPermission(requestId, reply, message);
+  } catch (error) {
+    throw classifySendError(error);
+  }
+  useOpenCodePendingStore.getState().removePermission(requestId);
+}
 
 export interface UseSessionOptions {
   /** Long-poll budget (ms) the client requests on `/start`; the server clamps it. */
@@ -174,14 +295,17 @@ export function useSession(
     () => sync.messages.filter((m) => m.info.role === 'user').length,
     [sync.messages],
   );
-  const [pending, setPending] = useState<string | null>(null);
+  const [sendState, setSendState] = useState<SendState>(IDLE_SEND_STATE);
+  const pending = sendState.pending;
   const pendingBaseCount = useRef(0);
   useEffect(() => {
-    if (pending && userMsgCount > pendingBaseCount.current) setPending(null);
+    if (pending && userMsgCount > pendingBaseCount.current) {
+      setSendState((s) => (s.pending ? { ...s, pending: null } : s));
+    }
   }, [userMsgCount, pending]);
   useEffect(() => {
     if (!pending) return;
-    const t = setTimeout(() => setPending(null), 30_000);
+    const t = setTimeout(() => setSendState((s) => (s.pending ? { ...s, pending: null } : s)), 30_000);
     return () => clearTimeout(t);
   }, [pending]);
 
@@ -191,7 +315,7 @@ export function useSession(
   ) => {
     if (!ocSessionId) return;
     pendingBaseCount.current = userMsgCount;
-    setPending(text);
+    setSendState(sendStateOnStart(text));
     const model = override?.model ?? picks.model;
     const agent = override?.agent ?? picks.agent;
     const opts = { ...(model ? { model } : {}), ...(agent ? { agent } : {}) };
@@ -201,7 +325,7 @@ export function useSession(
         parts: [{ type: 'text', text }],
         ...(Object.keys(opts).length ? { options: opts } : {}),
       },
-      { onError: () => setPending(null) },
+      { onError: (err) => setSendState(sendStateOnError(err)) },
     );
   };
 
@@ -216,7 +340,7 @@ export function useSession(
     if (ocSessionId) abortMutation.mutate(ocSessionId);
     questions.forEach((q) => removeQuestion(q.id));
     permissions.forEach((p) => removePermission(p.id));
-    setPending(null);
+    setSendState(IDLE_SEND_STATE);
   };
 
   const phase: SessionPhase = terminal ? 'error' : switched ? 'ready' : 'starting';
@@ -272,6 +396,11 @@ export function useSession(
     reason: startData?.reason ?? null,
     /** Pending optimistic message text, or null. */
     pending,
+    /** True while the current `send` mutation is in flight. */
+    isSending: sendMutation.isPending,
+    /** Last `send` failure, typed (billing / runtime-not-ready / runtime-error),
+     * or null. Reset on every new `send` call. */
+    sendError: sendState.sendError,
 
     // server-side capabilities (pre-runtime)
     models,
@@ -284,7 +413,21 @@ export function useSession(
     send,
     cancel,
     runCommand,
+    /** Answer an agent question through the server and drop it from pending
+     * state on success; throws a `KortixSendError` and leaves it pending on
+     * failure. */
+    answerQuestion,
+    /** Reject an agent question through the server (see `answerQuestion`). */
+    rejectQuestion,
+    /** Answer an agent permission request through the server (see `answerQuestion`). */
+    answerPermission,
+    /** @deprecated Drops the question from local state WITHOUT replying to the
+     * server — the agent run stays blocked waiting on it. Use `answerQuestion`
+     * / `rejectQuestion` instead. */
     removeQuestion,
+    /** @deprecated Drops the permission request from local state WITHOUT
+     * replying to the server — the agent run stays blocked waiting on it. Use
+     * `answerPermission` instead. */
     removePermission,
     /** Force a re-poll of /start (e.g. a Retry button on the boot screen). */
     retry: () => {

@@ -1,5 +1,4 @@
 import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
-import { getClient } from './opencode/client';
 /**
  * createKortix — the single opinionated entry point to the Kortix data layer.
  *
@@ -17,12 +16,12 @@ import { getClient } from './opencode/client';
  * exact types with zero re-typing. The `project()`/`session()` handles bind ids
  * for ergonomics. Reactive data still comes from `@kortix/sdk/react` hooks.
  */
+import { getClient, getClientForUrl } from './opencode/client';
 import { type KortixPlatformConfig, configureKortix } from './platform/config';
 import * as P from './platform/projects-client';
 import { getSessionHealth } from './session/health';
 import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from './session/url';
 import { setCurrentRuntime } from './state/current-runtime';
-import { getActiveSandboxId } from './state/server-store/active';
 import { getSandboxUrlForExternalId } from './state/server-store/url-helpers';
 
 /** A model the agent can run, as the opencode runtime identifies it. */
@@ -33,23 +32,41 @@ function runtime(): OpencodeClient {
   return getClient();
 }
 
+/**
+ * Thrown by a session handle's runtime-scoped operations (`.runtime`,
+ * `.health()`, `.previewUrl()`, `.proxyUrl()`) when called before the handle
+ * has resolved its own sandbox runtime. These never fall back to whatever
+ * sandbox happens to be globally active (a different session's runtime) —
+ * the caller must resolve THIS handle's runtime first.
+ */
+export class SessionNotReadyError extends Error {
+  constructor(action: string) {
+    super(
+      `Session runtime not ready — call \`await session.ensureReady()\` (it drives \`start()\` to completion and resolves this session's own sandbox runtime) before calling \`${action}\`.`,
+    );
+    this.name = 'SessionNotReadyError';
+  }
+}
+
 export function createKortix(config: KortixPlatformConfig) {
   // Wire the platform seam once. All wrapped functions read it.
   configureKortix(config);
 
   /**
    * Resolve the proxy/preview URL context (sandboxId + api base) from config +
-   * the active runtime, so a session's `previewUrl`/`proxyUrl` never make the
-   * host name a sandbox.
+   * a THIS-handle's own resolved sandbox id, so a session's `previewUrl`/
+   * `proxyUrl` never make the host name a sandbox — and never reads whichever
+   * sandbox happens to be globally active (which may belong to a different
+   * session handle).
    */
-  function resolvePreviewOpts(): SubdomainUrlOptions {
+  function resolvePreviewOptsForSandbox(sandboxId: string): SubdomainUrlOptions {
     const apiBaseUrl = config.backendUrl;
     let backendPort = 80;
     try {
       const u = new URL(apiBaseUrl);
       backendPort = u.port ? Number(u.port) : u.protocol === 'https:' ? 443 : 80;
     } catch {}
-    return { sandboxId: getActiveSandboxId() ?? '', backendPort, apiBaseUrl };
+    return { sandboxId, backendPort, apiBaseUrl };
   }
 
   /** Account-scoped operations. */
@@ -208,18 +225,28 @@ export function createKortix(config: KortixPlatformConfig) {
   function session(projectId: string, sessionId: string) {
     // Opinionated-action state, scoped to THIS handle. The opencode runtime is
     // keyed by the OpenCode session id (resolved server-side at /start), NOT the
-    // Kortix `sessionId` — they differ. We resolve+cache it once, and remember a
-    // chosen model so `send` carries it.
-    let _ready: { opencodeSessionId: string } | null = null;
+    // Kortix `sessionId` — they differ. We resolve+cache it once (including the
+    // resolved runtime URL + sandbox id), and remember a chosen model so `send`
+    // carries it. Every runtime-scoped operation below reads ONLY this cached
+    // record — never the module-global "currently active" runtime — so two
+    // session handles pointed at two different sandboxes never cross wires.
+    let _ready: { opencodeSessionId: string; runtimeUrl: string; sandboxId: string } | null = null;
     let _model: SessionModel | undefined;
     let _agent: string | undefined;
 
     /**
-     * Make this session's runtime reachable and return its OpenCode session id.
-     * Idempotent: `start` provisions/resumes the sandbox (long-poll until ready),
-     * we point the active runtime at it, and cache the resolved id for reuse.
+     * Make this session's runtime reachable and return its OpenCode session id
+     * (plus this handle's own resolved runtime URL + sandbox id). Idempotent:
+     * `start` provisions/resumes the sandbox (long-poll until ready), we cache
+     * the resolved runtime for THIS handle, and — for React hosts that still
+     * read the shared "current runtime" store — also point it there. No
+     * operation on this handle ever reads that global back.
      */
-    async function ensureReady(): Promise<{ opencodeSessionId: string }> {
+    async function ensureReady(): Promise<{
+      opencodeSessionId: string;
+      runtimeUrl: string;
+      sandboxId: string;
+    }> {
       if (_ready) return _ready;
       const started = await P.startProjectSession(projectId, sessionId, 30_000);
       if (
@@ -230,10 +257,26 @@ export function createKortix(config: KortixPlatformConfig) {
       ) {
         throw new Error(`Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`);
       }
-      // Point the app's runtime at this session's box — no global "switch".
       const externalId = (started.sandbox as { external_id?: string | null }).external_id;
-      if (externalId) setCurrentRuntime(getSandboxUrlForExternalId(externalId), externalId);
-      _ready = { opencodeSessionId: started.opencode_session_id };
+      if (!externalId) {
+        throw new Error('Session sandbox has no external_id — cannot resolve its runtime URL');
+      }
+      const runtimeUrl = getSandboxUrlForExternalId(externalId);
+      // Point the app's shared runtime store at this session too, so React
+      // hosts (which read the global current-runtime) keep working — but this
+      // handle's own operations never read it back, only `_ready` below.
+      setCurrentRuntime(runtimeUrl, externalId);
+      _ready = { opencodeSessionId: started.opencode_session_id, runtimeUrl, sandboxId: externalId };
+      return _ready;
+    }
+
+    /** Throw `SessionNotReadyError` if `ensureReady()` hasn't resolved yet. */
+    function requireReady(action: string): {
+      opencodeSessionId: string;
+      runtimeUrl: string;
+      sandboxId: string;
+    } {
+      if (!_ready) throw new SessionNotReadyError(action);
       return _ready;
     }
 
@@ -258,20 +301,37 @@ export function createKortix(config: KortixPlatformConfig) {
         revoke: (...a: DropFirst2<Parameters<typeof P.revokeSessionPublicShare>>) =>
           P.revokeSessionPublicShare(projectId, sessionId, ...a),
       },
+      /** Per-session audit trail of executor-gated agent actions. */
+      audit: (limit?: number, options?: { showErrors?: boolean }) =>
+        P.getSessionAudit(projectId, sessionId, limit, options),
+
+      /**
+       * Resolve THIS handle's own runtime (idempotent): provisions/resumes the
+       * sandbox (long-poll until ready) and caches the resolved OpenCode session
+       * id + runtime URL + sandbox id for every other call on this handle. Call
+       * this (or `send`/`abort`, which call it internally) before `.runtime`,
+       * `.health()`, `.previewUrl()`, or `.proxyUrl()` — those throw
+       * `SessionNotReadyError` instead of falling back to whatever sandbox
+       * happens to be globally active.
+       */
+      ensureReady,
 
       // ── runtime health + preview (the session owns its runtime) ──────────
-      /** Liveness/readiness of this session's runtime (`GET /kortix/health`). */
-      health: (init?: RequestInit) => getSessionHealth(undefined, init),
-      /** Proxy/preview URL for a port this session's runtime exposes. */
+      /** Liveness/readiness of THIS session's runtime (`GET /kortix/health`). */
+      health: (init?: RequestInit) => getSessionHealth(requireReady('health').runtimeUrl, init),
+      /** Proxy/preview URL for a port THIS session's runtime exposes. */
       previewUrl: (port: number, path = '/') =>
-        rewriteLocalhostUrl(port, path, resolvePreviewOpts()),
+        rewriteLocalhostUrl(port, path, resolvePreviewOptsForSandbox(requireReady('previewUrl').sandboxId)),
       /** Rewrite a localhost URL the agent printed into a reachable proxy URL. */
-      proxyUrl: (url?: string) => proxyLocalhostUrl(url, resolvePreviewOpts()),
+      proxyUrl: (url?: string) =>
+        proxyLocalhostUrl(url, resolvePreviewOptsForSandbox(requireReady('proxyUrl').sandboxId)),
 
       // ── agent actions (opinionated wrappers over the runtime) ────────────
       // These do the right thing end-to-end for scripts/non-React hosts: ensure
-      // the runtime is up, point the SDK at it, resolve the OpenCode session id,
-      // and act. React hosts use `@kortix/sdk/react` hooks instead, which bind to
+      // the runtime is up, resolve the OpenCode session id, and act through a
+      // client bound to THIS handle's own runtime URL (never the module-global
+      // "active" one, so parallel handles on different sandboxes never cross
+      // wires). React hosts use `@kortix/sdk/react` hooks instead, which bind to
       // the same resolved id reactively (see the white-label reference app).
       /** Pick the model `send` will use for subsequent prompts (until changed). */
       setModel: (model: SessionModel | undefined) => {
@@ -287,10 +347,10 @@ export function createKortix(config: KortixPlatformConfig) {
        * choices for this message only.
        */
       send: async (text: string, opts?: { model?: SessionModel; agent?: string }) => {
-        const { opencodeSessionId } = await ensureReady();
+        const { opencodeSessionId, runtimeUrl } = await ensureReady();
         const model = opts?.model ?? _model;
         const agent = opts?.agent ?? _agent;
-        return runtime().session.prompt({
+        return getClientForUrl(runtimeUrl).session.prompt({
           sessionID: opencodeSessionId,
           parts: [{ type: 'text', text }],
           ...(model ? { model } : {}),
@@ -299,16 +359,16 @@ export function createKortix(config: KortixPlatformConfig) {
       },
       /** Abort the agent's current run in this session. */
       abort: async () => {
-        const { opencodeSessionId } = await ensureReady();
-        return runtime().session.abort({ sessionID: opencodeSessionId });
+        const { opencodeSessionId, runtimeUrl } = await ensureReady();
+        return getClientForUrl(runtimeUrl).session.abort({ sessionID: opencodeSessionId });
       },
 
-      // ── runtime (opencode v2, active sandbox) ────────────────────────────
+      // ── runtime (opencode v2, THIS session's own sandbox) ────────────────
       // The typed opencode client, reached ONLY through the SDK. The host never
       // imports `@opencode-ai/sdk`. Opinionated wrappers (prompt/abort/setModel
       // with server-owned side-effects) layer on top of this as they land.
       get runtime(): OpencodeClient {
-        return runtime();
+        return getClientForUrl(requireReady('runtime').runtimeUrl);
       },
     };
   }

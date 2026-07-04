@@ -135,45 +135,67 @@ export function ascendingId(prefix: 'msg' | 'prt' = 'msg'): string {
   return `${prefix}_${hex}${rand}`;
 }
 
-export function useSendOpenCodeMessage() {
-  return useMutation({
-    mutationFn: async ({
-      sessionId,
-      parts,
-      options,
-      messageID,
-    }: {
-      sessionId: string;
-      parts: PromptPart[];
-      options?: SendMessageOptions;
-      messageID?: string;
-    }) => {
-      const mappedParts = parts.map((p) => {
-        if (p.type === 'file') return { type: 'file' as const, mime: p.mime, url: p.url, filename: p.filename, source: p.source };
-        if (p.type === 'agent') return { type: 'agent' as const, name: p.name, source: p.source };
-        return { type: 'text' as const, text: p.text };
-      });
-      const payload = {
-        sessionID: sessionId,
-        parts: mappedParts,
-        ...(messageID && { messageID }),
-        ...(options?.model && { model: options.model }),
-        ...(options?.agent && { agent: options.agent }),
-        ...(options?.variant && { variant: options.variant }),
-      };
+export interface SendOpenCodeMessageArgs {
+  sessionId: string;
+  parts: PromptPart[];
+  options?: SendMessageOptions;
+  messageID?: string;
+}
 
-      // Match OpenCode exactly: use session.prompt() (blocking endpoint).
-      // The call blocks until the AI finishes, but we fire-and-forget from
-      // the UI side (handleSend doesn't await the mutation result).
-      // SSE events drive all incremental UI updates via the sync store.
-      const client = getClient();
-      const result = await client.session.prompt(payload as any);
-      if (result.error) {
-        const err = result.error as any;
-        throw new Error(err?.data?.message || err?.message || 'Failed to send message');
-      }
-    },
+/** Error thrown by `promptOpenCodeMessage` on a non-2xx response — carries the
+ * HTTP status (mirroring `response`/`status` so `parseBillingError` can detect
+ * a 402) alongside the raw error payload. */
+export interface SendOpenCodeMessageError extends Error {
+  status?: number;
+  response?: { status: number };
+  data?: unknown;
+}
+
+/**
+ * Send a prompt to a session (matches OpenCode's `session.prompt()`, the
+ * blocking endpoint — the call blocks until the AI finishes; UI callers
+ * fire-and-forget since SSE events drive all incremental updates via the sync
+ * store). Extracted from `useSendOpenCodeMessage`'s mutationFn so it's a plain
+ * async function callable — and unit-testable — without a mutation/hook context.
+ */
+export async function promptOpenCodeMessage({
+  sessionId,
+  parts,
+  options,
+  messageID,
+}: SendOpenCodeMessageArgs): Promise<void> {
+  const mappedParts = parts.map((p) => {
+    if (p.type === 'file') return { type: 'file' as const, mime: p.mime, url: p.url, filename: p.filename, source: p.source };
+    if (p.type === 'agent') return { type: 'agent' as const, name: p.name, source: p.source };
+    return { type: 'text' as const, text: p.text };
   });
+  const payload = {
+    sessionID: sessionId,
+    parts: mappedParts,
+    ...(messageID && { messageID }),
+    ...(options?.model && { model: options.model }),
+    ...(options?.agent && { agent: options.agent }),
+    ...(options?.variant && { variant: options.variant }),
+  };
+
+  const client = getClient();
+  const result = await client.session.prompt(payload as any);
+  if (result.error) {
+    const err = result.error as any;
+    const status = (result.response as Response | undefined)?.status;
+    const message = err?.data?.message || err?.message || 'Failed to send message';
+    const wrapped = new Error(message) as SendOpenCodeMessageError;
+    if (status) {
+      wrapped.status = status;
+      wrapped.response = { status };
+    }
+    wrapped.data = err?.data ?? err;
+    throw wrapped;
+  }
+}
+
+export function useSendOpenCodeMessage() {
+  return useMutation({ mutationFn: promptOpenCodeMessage });
 }
 
 export function useAbortOpenCodeSession() {

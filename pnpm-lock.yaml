@@ -672,9 +672,6 @@ importers:
       '@next/third-parties':
         specifier: ^15.3.1
         version: 15.5.19(next@15.5.18)(react@19.1.0)
-      '@opencode-ai/sdk':
-        specifier: 1.17.11
-        version: 1.17.11
       '@paper-design/shaders-react':
         specifier: ^0.0.76
         version: 0.0.76(@types/react@19.1.17)(react@19.1.0)
@@ -1343,7 +1340,7 @@ importers:
         specifier: workspace:*
         version: link:../llm-catalog
       '@opencode-ai/sdk':
-        specifier: ^1.14.28
+        specifier: 1.17.11
         version: 1.17.11
       zustand:
         specifier: ^5.0.3

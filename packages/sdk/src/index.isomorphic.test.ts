@@ -87,5 +87,8 @@ test('root entry loads and createKortix constructs outside React', async () => {
   const session = kortix.session('p', 's');
   expect(typeof session.send).toBe('function');
   expect(typeof session.health).toBe('function');
-  expect(session.previewUrl(3000)).toContain('3000');
+  // previewUrl (like health/proxyUrl/runtime) never falls back to a globally
+  // active sandbox — it throws until this handle resolves its OWN runtime via
+  // ensureReady()/start()/send(). See kortix.test.ts for the resolved-runtime cases.
+  expect(() => session.previewUrl(3000)).toThrow(/Session runtime not ready/);
 });

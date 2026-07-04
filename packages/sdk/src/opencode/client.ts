@@ -15,37 +15,22 @@ import {
 } from "@opencode-ai/sdk/v2/client";
 
 // Re-export the ENTIRE opencode v2 type surface through the SDK, so a host app
-// imports `Event`, `Part`, `Message`, `Session`, `Pty`, `Config`, … from
-// `@kortix/sdk/opencode-client` and NEVER from `@opencode-ai/sdk` directly. This
-// also pins everyone to the SDK's single opencode-sdk version (kills the
-// 1.17.9-vs-1.14.28 type skew). The SDK is the sole owner of that dependency.
+// imports `Event`, `Part`, `Message`, `Session`, `Pty`, `Config`, `Agent`,
+// `ProviderListResponse`, … from `@kortix/sdk/opencode-client` and NEVER from
+// `@opencode-ai/sdk` directly. `packages/sdk/package.json` pins the package's
+// OWN `@opencode-ai/sdk` dependency to one exact version — it does not, by
+// itself, force every workspace package to resolve that same version (pnpm can
+// still hoist a different range elsewhere). What actually "pins everyone" is
+// that host code only ever imports opencode types through this re-export, so
+// there is exactly one set of type declarations in play for host code, even if
+// multiple `@opencode-ai/sdk` copies exist on disk.
 export type * from "@opencode-ai/sdk/v2/client";
 export type { OpencodeClient };
 
 import { authenticatedFetch } from "../platform/auth";
-import { platformConfig } from "../platform/config";
+import { isConfigured } from "../platform/config";
 import { getActiveOpenCodeUrl } from "../state/server-store/active";
 
-
-/**
- * Resolve the backend base URL as an ABSOLUTE URL.
- *
- * `getEnv().BACKEND_URL` may be root-relative (e.g. "/v1") in the sandbox
- * preview, where the browser deliberately hits the same origin. Server-side
- * (SSR), prefer the absolute `process.env.BACKEND_URL` so `new URL(...)` has a
- * valid base; in the browser, fall back to resolving the relative value against
- * the current origin. Mirrors the pattern in platform-client.ts.
- */
-function getAbsoluteBackendUrl(): string {
-	if (typeof process !== "undefined" && process.env?.BACKEND_URL) {
-		return process.env.BACKEND_URL;
-	}
-	const value = platformConfig().backendUrl;
-	if (value.startsWith("/") && typeof window !== "undefined") {
-		return new URL(value, window.location.origin).toString();
-	}
-	return value;
-}
 
 /**
  * Per-URL client cache. Unlike `getClient()` (which tracks only the single
@@ -54,18 +39,6 @@ function getAbsoluteBackendUrl(): string {
  * its own runtime at the same time. Keyed by absolute base URL.
  */
 const clientsByUrl = new Map<string, OpencodeClient>();
-
-function shouldUsePlatformAuth(baseUrl: string): boolean {
-	try {
-		const target = new URL(baseUrl);
-		const backend = new URL(getAbsoluteBackendUrl());
-		const backendPath = backend.pathname.replace(/\/+$/, "");
-		return target.origin === backend.origin &&
-			(target.pathname === backendPath || target.pathname.startsWith(`${backendPath}/`));
-	} catch {
-		return false;
-	}
-}
 
 /**
  * Get (or create) the SDK client for the current active server.
@@ -90,6 +63,14 @@ export function getClient(): OpencodeClient {
  * globally active server. Use this to run multiple session sandboxes in
  * parallel (e.g. one live SSE stream per open session). Clients are cached per
  * URL so repeat calls are cheap and share one connection.
+ *
+ * ALWAYS injects the platform bearer token via `authenticatedFetch` — every
+ * sandbox URL the SDK builds is a `${backendUrl}/p/{externalId}/{port}` proxy
+ * route, so it always needs the same auth as any other backend call (the
+ * daemon has no separate auth of its own). There is no "public sandbox URL"
+ * case that would justify a bare, unauthenticated fetch — sending one would
+ * silently 401/leak. If the host never called `configureKortix()`, fail loudly
+ * instead of quietly sending an unauthenticated request.
  */
 export function getClientForUrl(url: string): OpencodeClient {
 	if (!url) {
@@ -98,11 +79,13 @@ export function getClientForUrl(url: string): OpencodeClient {
 	const existing = clientsByUrl.get(url);
 	if (existing) return existing;
 
-	const fetchImpl = shouldUsePlatformAuth(url)
-		? (authenticatedFetch as typeof fetch)
-		: (((input, init) => fetch(input, init)) as typeof fetch);
+	if (!isConfigured()) {
+		throw new Error(
+			'[opencode-sdk] No auth token provider configured — call configureKortix()/createKortix() before talking to a sandbox runtime.',
+		);
+	}
 
-	const client = createOpencodeClient({ baseUrl: url, fetch: fetchImpl });
+	const client = createOpencodeClient({ baseUrl: url, fetch: authenticatedFetch as typeof fetch });
 	clientsByUrl.set(url, client);
 	return client;
 }
