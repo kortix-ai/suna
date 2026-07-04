@@ -1,6 +1,42 @@
 import { test, expect, beforeEach, mock } from 'bun:test';
 import { configureKortix } from '../platform/config';
-import {
+
+let activeUrl = '';
+mock.module('../state/server-store/active', () => ({
+  getActiveOpenCodeUrl: () => activeUrl,
+}));
+
+// This file must be hermetic against process-wide `mock.module('../platform/auth', ...)`
+// registrations made by OTHER test files (files/client.test.ts, opencode/env.test.ts,
+// opencode/triggers.test.ts, session/session.test.ts all mock the same shared module
+// path). Bun's `mock.module` is process-wide and permanent for the whole `bun test`
+// sweep — whichever file's registration is resident when THIS file's own dynamic
+// `import('./client')` below runs wins for every call made through that import. So this
+// file registers its OWN mock for '../platform/auth' — with a controllable token +
+// authenticatedFetch implementation this file fully owns — instead of depending on the
+// real module's behavior, and imports './client' via `await import(...)` (matching the
+// pattern already used by files/client.test.ts / opencode/env.test.ts /
+// opencode/triggers.test.ts) so it resolves against ITS OWN mock regardless of load order.
+let authToken: string | null = 'test-token';
+mock.module('../platform/auth', () => ({
+  getAuthToken: async () => authToken,
+  getAuthTokenWithRetry: async () => authToken,
+  authenticatedFetch: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const headers = new Headers(input instanceof Request ? input.headers : init?.headers);
+    if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
+    if (input instanceof Request) {
+      return fetch(new Request(input, { headers }));
+    }
+    return fetch(input, { ...init, headers });
+  },
+  invalidateTokenCache: () => {},
+  setCachedAuthToken: () => {},
+  setBootstrapAuthToken: () => {},
+  getSupabaseAccessToken: async () => authToken,
+  getSupabaseAccessTokenWithRetry: async () => authToken,
+}));
+
+const {
   dropClientForUrl,
   dropPublicClientForUrl,
   getClientForUrl,
@@ -8,18 +44,14 @@ import {
   resetClient,
   resetPublicClient,
   systemReload,
-} from './client';
-
-let activeUrl = '';
-mock.module('../state/server-store/active', () => ({
-  getActiveOpenCodeUrl: () => activeUrl,
-}));
+} = await import('./client');
 
 beforeEach(() => {
   resetClient();
   resetPublicClient();
   activeUrl = '';
-  configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => 'test-token' });
+  authToken = 'test-token';
+  configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => authToken ?? null });
 });
 
 function captureRequests() {
