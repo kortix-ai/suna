@@ -24,7 +24,7 @@ import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { isBillingEnabled } from '@/lib/config';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
-import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
+import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';

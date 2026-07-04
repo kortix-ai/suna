@@ -80,6 +80,18 @@ export default function ProjectIndexPage() {
       newSession({
         create: buildNewSessionCreateInput(options),
         onNavigate: (sessionId) => {
+          // NOT converted to the SDK's `writeStartStash` (kept on the legacy
+          // `project_pending_*` keys): `sessionId` here is the route/Kortix
+          // session id, not the OpenCode pin the session page resolves later
+          // (`useCanonicalOpenCodeSession`/`ensureOpencodeSessionPin` mint a
+          // separate id). `sessions/[sessionId]/page.tsx` migrates this exact
+          // raw string via `migrateLegacyStash` onto the resolved pin AND uses
+          // its raw presence (not `readStartStash`) to decide whether to show
+          // the instant shell as already-submitted on first mount; that file
+          // isn't owned by this change, and `migrateLegacyStash` only
+          // understands this legacy string shape at the source key (it does a
+          // raw `sessionStorage.getItem`, not a JSON-aware read) — writing the
+          // canonical stash under this id instead would go unread by both.
           sessionStorage.setItem(`project_pending_prompt:${sessionId}`, text);
           if (files?.length) {
             usePendingFilesStore.getState().setPendingFiles(files);

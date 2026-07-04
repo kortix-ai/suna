@@ -76,6 +76,16 @@ export function useConfigureThread(projectId: string): ConfigureThread {
       // so flipping it back would only flash the idle button.
       newSession({
         onNavigate: (sessionId) => {
+          // NOT converted to the SDK's `writeStartStash` (kept on the legacy
+          // `project_pending_prompt` key): `sessionId` is the route/Kortix
+          // session id here, not the OpenCode pin the session page resolves
+          // later. `sessions/[sessionId]/page.tsx` forwards this exact raw
+          // string onto the resolved pin via `migrateLegacyStash`, which only
+          // understands this legacy shape at the source key — writing the
+          // canonical stash under this id instead would go unread once the
+          // pin resolves to a different id. Same situation as the
+          // project-home composer's producer (see its onNavigate for the full
+          // trace).
           sessionStorage.setItem(`project_pending_prompt:${sessionId}`, prompt);
           closeCustomize();
         },

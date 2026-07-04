@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { getClient } from '@/lib/opencode-sdk';
-import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
+import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
 import type { ServerHealth, OpenCodeProjectInfo } from '../types';
 

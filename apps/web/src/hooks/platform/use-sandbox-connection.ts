@@ -12,7 +12,7 @@ import {
 	setSandboxStatus,
 	setSandboxVersion,
 	useSandboxConnectionStore,
-} from "@/stores/sandbox-connection-store";
+} from "@kortix/sdk/sandbox-connection-store";
 import { useServerStore } from "@/stores/server-store";
 
 /**

@@ -20,6 +20,7 @@ export {
   platformConfig,
   isConfigured,
   type KortixPlatformConfig,
+  type KortixFeatureFlagOverrides,
 } from './platform/config';
 
 /**
@@ -42,6 +43,20 @@ export type * from './files/types';
 
 /** Generate a session id (RFC 4122 v4, with a non-secure-context fallback). */
 export { generateSessionId } from './platform/session-id';
+
+/**
+ * Session transcript formatting — pure `SessionInfo`/`MessageWithParts` →
+ * Markdown, zero DOM deps, so any host (web, mobile, CLI) exports a transcript
+ * the same way.
+ */
+export {
+  DEFAULT_TRANSCRIPT_OPTIONS,
+  formatTranscript,
+  getTranscriptFilename,
+  type MessageWithParts,
+  type SessionInfo,
+  type TranscriptOptions,
+} from './transcript';
 
 /**
  * A session's runtime surface — proxy/preview/web-proxy URL building + the

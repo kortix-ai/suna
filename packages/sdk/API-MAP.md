@@ -65,7 +65,7 @@ Injection seam, not an endpoint. `configureKortix({ getToken })` → Supabase to
 - runtime providers+models: `client.provider.list` → `/provider/list` (filtered to `kortix` + `opencode`)
 - catalog/budget: `GET /v1/llm/models`, `GET /v1/projects/:id/llm-catalog`
 - selection + persistence: `useOpenCodeLocal`, `useModelStore` ✅
-- **gateway observability** (`/v1/projects/:id/gateway/{overview,logs,keys,budgets,series,errors}`) → 🟡 has `projects-gateway-client.ts` in web, NOT in SDK
+- **gateway observability** (`/v1/projects/:id/gateway/{overview,logs,keys,budgets,series,errors}`) → client fully in SDK (`projects-client/gateway.ts`) ✅; hooks still web-local 🟡
 
 ### 8. Agents · commands · tools · skills · MCP
 | op | runtime | SDK |
@@ -80,18 +80,18 @@ Injection seam, not an endpoint. `configureKortix({ getToken })` → Supabase to
 ### 9. Terminal (PTY)  ✅
 `client.pty.{list,create,remove,update}` + `WS /pty/:id/connect?token=` → `getPtyWebSocketUrl`.
 
-### 10. Workspace files  ❌ **the real gap**
-Daemon-direct (bypasses v2 client), **not wrapped by SDK** — web hits these via `authenticatedFetch`:
-| op | daemon HTTP |
-|---|---|
-| list dir | `GET /file?path=` |
-| read text | `GET /file/content?path=` |
-| read binary | `GET /file/raw?path=` |
-| git status | `GET /file/status` |
-| find files | `GET /find/file?query=&type=` (also `client.find.files`) |
-| ripgrep text | `GET /find?pattern=` |
-| upload / mkdir / rename / delete | `POST /file/upload`, `POST /file/mkdir`, `POST /file/rename`, `DELETE /file` |
-SDK ships only `findOpenCodeFiles` (search helper) + `file-keys` (query keys). Hooks live in `features/files/` (+ duplicated in `features/project-files/`). **Dead exports to drop: `useLssSearch`, `useWorkspaceSearch`, `useTextSearch`.**
+### 10. Workspace files  ✅ (client) · 🟡 (hooks)
+Daemon-direct (bypasses v2 client), full 12-op client now in the SDK (`@kortix/sdk/files` → `files/client.ts`):
+| op | daemon HTTP | SDK |
+|---|---|---|
+| list dir | `GET /file?path=` | ✅ `files.listFiles` |
+| read text | `GET /file/content?path=` | ✅ `files.readFile` |
+| read binary | `GET /file/raw?path=` | ✅ `files.readBlob` |
+| git status | `GET /file/status` | ✅ `files.getFileStatus` |
+| find files | `GET /find/file?query=&type=` (also `client.find.files`) | ✅ `files.findFiles` |
+| ripgrep text | `GET /find?pattern=` | ✅ `files.findText` |
+| upload / create / copy / delete / mkdir / rename | `POST /file/upload`, `POST /file/mkdir`, `POST /file/rename`, `DELETE /file` | ✅ `files.{uploadFile,createFile,copyFile,deleteFile,mkdir,renameFile}` |
+React hooks are still web-local (`features/files/`, + duplicated in `features/project-files/` — collapsing that twin remains open). **`useWorkspaceSearch` is alive and consumed (`features/workspace/command-palette.tsx`) — not dead.** `useLssSearch` / `useTextSearch` are already gone.
 
 ### 11. Git / versions / change-requests  🟡
 Client fns in SDK (`git-history.ts`, `change-requests.ts`), **hooks web-local** (`features/project-files`):
@@ -117,10 +117,13 @@ Client fns in SDK (`git-history.ts`, `change-requests.ts`), **hooks web-local** 
 - sandbox proxy `ALL /v1/p/:sandboxId/:port/*` + preview auth/share → used by opencode-client baseURL ✅
 
 ### 15. Account state / billing (for entitlement + UI)  🟡
-`GET /v1/billing/account-state` (+ minimal) → web-local (`hooks/billing`, `lib/api/billing`). Needed by the SDK consumer for tier/entitlement gating; the rest of `/v1/billing/*` (checkout/credits/portal) is product-UI, optional for SDK.
+`GET /v1/billing/account-state` (+ minimal) client now in SDK (`projects-client/billing.ts`) ✅; hooks still web-local (`hooks/billing`, `lib/api/billing`) 🟡. Needed by the SDK consumer for tier/entitlement gating; the rest of `/v1/billing/*` (checkout/credits/portal) is product-UI, optional for SDK.
 
 ### 16. Transcription / misc session input  🟡
-`POST /v1/transcription` (voice) → web-local.
+`POST /v1/transcription` (voice) client now in SDK (`projects-client/transcription.ts`) ✅; hooks still web-local (`hooks/transcription`) 🟡.
+
+### 17. Channels / apps (project-scoped)  🟡
+Slack/email inbound-outbound installs (`projects-client/channels.ts`) and the `/v1/projects/:id/apps/*` deployment family (`projects-client/apps.ts`) — clients ✅ in SDK; hooks web-local.
 
 ---
 
@@ -144,12 +147,16 @@ Map exists, but these belong to the platform app, not the agent SDK:
 | Auth, Projects, Secrets, Access, Session lifecycle | ✅ complete |
 | Session runtime (messages/events/permissions/diff/todo) | ✅ complete |
 | Models, Agents, Commands, Tools, MCP, PTY | ✅ complete |
+| **Workspace files (read/write/status/search)** | ✅ full client in SDK (`@kortix/sdk/files`); hooks web-local |
 | Skills create/update/delete | ❌ web-local (daemon file I/O) |
-| **Workspace files (read/write/status/search)** | ❌ **not wrapped — the core gap** |
-| Git / versions / change-requests | 🟡 client fns ✅, hooks web-local |
-| Gateway observability, triggers, sandbox-admin, executor, billing, transcription | 🟡 web-local |
+| Git / versions / change-requests, gateway observability, triggers, sandbox-admin, billing/account-state, transcription, channels, apps | 🟡 client fns ✅ in SDK, hooks still web-local |
+| Executor connectors runtime | 🟡 web-local |
+| kortix-master daemon family (tasks/tickets/projects/milestones/credentials/services) | 🟡 client landing in this branch (`opencode/kortix-master.ts`), not yet exported from the SDK barrel; hooks web-local |
 
 ### To make the SDK the whole data layer
-1. **Add a `files` client to the SDK** wrapping the daemon `/file` + `/find` endpoints → move `features/files` hooks in; **collapse the `features/project-files` twin** into it (backend-parameterized); **drop the 3 dead search hooks**.
-2. **Wrap the existing client fns as hooks** in the SDK: git/versions/change-requests, triggers, gateway-observability, sandbox-admin, account-state.
-3. Everything else (the agent loop) is already SDK — that's the verified path.
+1. ~~Add a `files` client to the SDK~~ — **done**: `@kortix/sdk/files` wraps the daemon `/file` + `/find` endpoints (12 ops). Remaining: move `features/files` hooks in; **collapse the `features/project-files` twin** into it (backend-parameterized).
+2. **Wrap the existing client fns as hooks** in the SDK: git/versions/change-requests, triggers, gateway-observability, sandbox-admin, billing/account-state.
+3. **Framework-free event stream** — the SSE surface (`client.global.event()`) is only consumed today through React hooks (`use-session-sync`, `use-opencode-events`); a non-React host has no way to subscribe.
+4. **Land + export the kortix-master daemon client** (tasks/tickets/projects/milestones/credentials/services) from the SDK barrel once its hooks move down.
+5. **Mobile adoption** — the SDK is the shared implementation in principle, but the mobile app hasn't migrated its data layer onto it yet.
+6. Everything else (the agent loop) is already SDK — that's the verified path.
