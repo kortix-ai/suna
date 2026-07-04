@@ -41,6 +41,9 @@ export function SessionAuditPanel({
   const actions = data?.actions ?? [];
   const pending = actions.filter(isPendingAction);
   const history = actions.filter((a) => !isPendingAction(a));
+  // Non-Enterprise accounts get pending approvals only — the historical trail
+  // is gated on the `auditAccess` entitlement (absent field = entitled backend).
+  const historyGated = data?.audit_access === false;
 
   const decide = (executionId: string, decision: 'approve' | 'deny') => {
     setBusy((b) => ({ ...b, [executionId]: decision }));
@@ -86,9 +89,13 @@ export function SessionAuditPanel({
         ) : actions.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
             <ShieldCheck className="text-muted-foreground/60 size-6" />
-            <p className="text-foreground text-sm font-medium">No governed actions yet</p>
+            <p className="text-foreground text-sm font-medium">
+              {historyGated ? 'Nothing awaiting approval' : 'No governed actions yet'}
+            </p>
             <p className="text-muted-foreground text-xs">
-              When the agent runs a tool or connector a policy gates, it shows up here.
+              {historyGated
+                ? 'Actions the agent needs approval for show up here. The full audit trail is available on the Enterprise plan.'
+                : 'When the agent runs a tool or connector a policy gates, it shows up here.'}
             </p>
           </div>
         ) : (
@@ -202,6 +209,13 @@ export function SessionAuditPanel({
                   ))}
                 </List>
               </section>
+            )}
+
+            {historyGated && (
+              <p className="text-muted-foreground px-6 py-4 text-xs">
+                The full audit trail of allowed and denied actions is available on the Enterprise
+                plan.
+              </p>
             )}
           </>
         )}

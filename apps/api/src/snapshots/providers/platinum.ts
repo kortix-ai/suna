@@ -115,7 +115,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
    *  staging and the S3 upload self-heals (mirrors the daytona adapter). */
   private async buildOnce(input: BuildableTemplate, userDockerfile: string, tap?: BuildLogTap): Promise<void> {
     // Stage the SAME context Daytona builds (Dockerfile + agent/cli/entrypoint/…).
-    const ctx = await stageBuildContext(input.snapshotName, userDockerfile);
+    const ctx = await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo);
     const tarPath = join(ctx.contextDir, '..', `${input.snapshotName.replace(/[^a-zA-Z0-9_.-]/g, '_')}.tar.gz`);
     try {
       const tar = Bun.spawn(['tar', '-czf', tarPath, '-C', ctx.contextDir, '.']);

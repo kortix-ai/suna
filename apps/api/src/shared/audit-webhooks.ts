@@ -7,6 +7,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { auditWebhooks } from '@kortix/db';
 import { db } from './db';
+import { accountHasEntitlement } from '../billing/services/entitlements';
 
 /** Payload shape sent to the customer's webhook. Stable contract — bump
  *  schema_version if ever changing the shape. */
@@ -70,6 +71,17 @@ async function deliverAll(payload: AuditWebhookPayload): Promise<void> {
     throw err;
   }
   if (hooks.length === 0) return;
+
+  // Entitlement gate on the DATA PLANE, not just the management routes: a
+  // downgraded account's leftover webhook rows must stop streaming the audit
+  // feed. Checked only when the account actually has enabled hooks, so the
+  // common no-webhook case pays nothing. Fail closed on lookup errors —
+  // a webhook missing one event beats leaking audit data.
+  try {
+    if (!(await accountHasEntitlement(accountId, 'auditAccess'))) return;
+  } catch {
+    return;
+  }
 
   // Filter by action prefix if the hook is restricted.
   const matches = hooks.filter(
