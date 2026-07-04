@@ -9,10 +9,13 @@ import { useEffect } from 'react';
 
 /** Transient errors thrown while a session's sandbox/opencode runtime is still
  *  booting — a stray `getClient()` before the runtime URL is pinned. These are
- *  NOT real failures; they clear within a couple seconds. */
-function isRuntimeNotReadyError(error: Error): boolean {
+ *  NOT real failures; they clear within a couple seconds. Exported for
+ *  `error.test.ts`. */
+export function isRuntimeNotReadyError(error: Error): boolean {
   const m = error?.message ?? '';
-  return /server url not ready|sandbox is still loading|opencode not ready/i.test(m);
+  return /server url not ready|sandbox is still loading|opencode not ready|session runtime not ready|no auth token provider configured/i.test(
+    m,
+  );
 }
 
 export default function Error({

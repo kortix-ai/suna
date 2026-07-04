@@ -48,11 +48,34 @@ interface ShareData {
 
 // ============================================================================
 // Data fetching — uses the standard OpenCode session & message APIs, via the
-// SDK client (so auth injection + error normalization live in one place).
+// SDK client (so error normalization lives in one place).
+//
+// This page is unauthenticated (`(public)/share/[shareId]`) and — unlike
+// `/share/session/[token]` — has no share TOKEN in its route at all: `shareId`
+// is only ever matched against an opencode session id suffix
+// (`s.id.endsWith(shareId)`) on whatever the app's currently-active runtime
+// happens to be. There is no project/session id here to resolve a sandbox
+// through, so this can never be wired through the backend's public-share
+// proxy (`/v1/p/public-share/{token}/{port}` — see
+// `getPublicClientForUrl`/`getPublicShareUrlForToken`) — that proxy also
+// blocks the opencode API port (8000) outright (`PUBLIC_SHARE_BLOCKED_PORTS`
+// in `apps/api/src/shared/session-public-shares.ts`), so it could not serve
+// `session.list()`/`session.messages()` even if a token were threaded through.
+//
+// What we restore here is the actual pre-regression behavior: a bare,
+// UNAUTHENTICATED request against whatever `getActiveOpenCodeUrl()` resolves
+// to (the self-hosted single-sandbox default when there's no active Kortix
+// session pinned — see `state/server-store/active.ts`). Before this file was
+// migrated onto the SDK client, it used a hand-rolled `fetch()` with no auth
+// header for exactly this reason; `getClient()`/`authenticatedFetch` broke
+// that for logged-out visitors by synthesizing a 401 with no network call at
+// all (see `platform/auth.ts`). `getPublicClientForUrl` is the typed-client
+// equivalent of that original plain fetch.
 // ============================================================================
 
-import { getClient } from '@kortix/sdk/opencode-client';
+import { getPublicClientForUrl } from '@kortix/sdk/opencode-client';
 import type { Message, Part, Session } from '@kortix/sdk/opencode-client';
+import { getActiveOpenCodeUrl } from '@kortix/sdk/server-store';
 
 function unwrap<T>(result: { data?: T; error?: unknown }): T {
   if (result.error) {
@@ -63,7 +86,9 @@ function unwrap<T>(result: { data?: T; error?: unknown }): T {
 }
 
 async function fetchShareData(shareId: string): Promise<ShareData> {
-  const client = getClient();
+  const baseUrl = getActiveOpenCodeUrl();
+  if (!baseUrl) throw new Error('Share not found');
+  const client = getPublicClientForUrl(baseUrl);
 
   const sessions = unwrap(await client.session.list());
   const session = sessions.find((s) => s.id.endsWith(shareId) && s.share?.url);

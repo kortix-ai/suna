@@ -346,7 +346,11 @@ export async function provisionProjectWithToken(
       signal: AbortSignal.timeout(opts.timeoutMs ?? 90_000),
     });
     if (res.ok) {
-      const project = (await res.json()) as KortixProject;
+      const project = (await res.json().catch(() => null)) as KortixProject | null;
+      // A 200 whose body doesn't actually carry a project_id is not a usable
+      // success — report it as not-ok instead of handing the caller a project
+      // it can't build a `/projects/{id}` path from.
+      if (!project?.project_id) return { ok: false, limitReached: false };
       return { ok: true, project };
     }
     if (res.status === 403) {

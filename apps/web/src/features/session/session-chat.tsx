@@ -4079,7 +4079,17 @@ export function SessionChat({
             },
           });
         } catch (err) {
-          if (!cancelled) handlePromptError(err);
+          if (!cancelled) {
+            // Mirror the sendPendingPrompt() failure branch above: ANY failure
+            // of this effect's send (including the boot-retry window in
+            // promptOpenCodeMessage being exhausted) must restore the stash +
+            // reset the handled flag, or a brand-new session's first prompt is
+            // unrecoverable — nothing else ever re-reads sessionStorage for it.
+            writeStartStash(sessionId, stash);
+            usePendingFilesStore.getState().setPendingFiles(pendingFiles);
+            pendingPromptHandled.current = false;
+            handlePromptError(err);
+          }
         }
       })();
     };

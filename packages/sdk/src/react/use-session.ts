@@ -190,14 +190,55 @@ export interface UseSessionOptions {
    * a query `enabled` flag.
    */
   enabled?: boolean;
+  /**
+   * Mount the chat-consumption engine — `useSessionSync` (messages/status/diffs/
+   * todos, including its 10s busy-poll SSE-stall fallback) and `useQuestionSelfHeal`
+   * (the 2s missed-`question.asked` self-heal poll) — on top of the boot/lifecycle
+   * machinery every host needs. Default true.
+   *
+   * Set this false when the host mounts its OWN chat surface for the same
+   * `(projectId, sessionId)` (e.g. apps/web's `SessionChat`, which has its own
+   * `useSessionSync` + `useQuestionSelfHeal`): with two callers of `useSession`
+   * alive for the same session — this hook (for boot/lifecycle) and the host's
+   * chat component — leaving it `true` would double-mount both pollers, running
+   * the question self-heal poll twice and the busy-poll fallback at ~2x cadence
+   * for no benefit, since nothing reads this hook's chat fields anyway.
+   *
+   * When `false`: `messages`/`diffs`/`todos` are empty arrays, `status` is the
+   * idle status, `isBusy`/`isLoading` are `false`, `questions`/`permissions` stay
+   * live (populated by SSE via the still-active event stream, just without the
+   * self-heal poll backstop), and `replayStartStash` is force-disabled (it reads
+   * the now-empty chat state, so it would never fire correctly). Everything the
+   * boot/lifecycle fields need — `start`/`switch`/`runtimePhase`/`sandbox`/`stage`/
+   * `opencodeSessionId` — is unaffected.
+   */
+  chatEngine?: boolean;
 }
+
+/** Stable, empty chat state — used when `chatEngine: false` so the hook's
+ * public chat fields stay type-stable (empty arrays/idle status, never
+ * `undefined`) instead of leaking whatever an unmounted-in-spirit
+ * `useSessionSync('')` call happens to return. */
+const DISABLED_CHAT_ENGINE_SYNC = {
+  messages: [] as ReturnType<typeof useSessionSync>['messages'],
+  status: { type: 'idle' } as ReturnType<typeof useSessionSync>['status'],
+  isBusy: false,
+  isLoading: false,
+  diffs: [] as ReturnType<typeof useSessionSync>['diffs'],
+  todos: [] as ReturnType<typeof useSessionSync>['todos'],
+};
 
 export function useSession(
   projectId: string,
   sessionId: string,
   options: UseSessionOptions = {},
 ) {
-  const { waitMs = 15_000, replayStartStash = true, enabled = true } = options;
+  const {
+    waitMs = 15_000,
+    replayStartStash = true,
+    enabled = true,
+    chatEngine = true,
+  } = options;
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
   const start = useQuery({
@@ -260,14 +301,22 @@ export function useSession(
     pinFromStart: startData?.opencode_session_id ?? null,
   });
   const ocSessionId = rootSessionId ?? '';
-  const sync = useSessionSync(ocSessionId);
+  // Always call the hook (rules-of-hooks) so it stays in the same position
+  // every render, but starve it with an empty session id when the chat engine
+  // is off — `useSessionSync('')` fetches/polls nothing (its effects no-op on
+  // a falsy/non-canonical session id) — and use a fixed, type-stable empty
+  // result instead of whatever it happens to return for that starved call.
+  const rawSync = useSessionSync(chatEngine ? ocSessionId : '');
+  const sync = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
   const runtimePhase = useRuntimePhase();
 
   // 5b. Self-heal a missed `question.asked` SSE event (a `question` tool part
   // rendering as running with nothing in the pending store) — see
   // `useQuestionSelfHeal` for why this is distinct from the SSE reconnect-gap
-  // hydration in `useOpenCodeEventStream`.
-  useQuestionSelfHeal(ocSessionId, sync.messages, { enabled: !!ocSessionId });
+  // hydration in `useOpenCodeEventStream`. Disabled entirely when `chatEngine`
+  // is off — see that option's jsdoc: a host mounting its own chat surface
+  // already runs its own copy of this poller for the same session.
+  useQuestionSelfHeal(ocSessionId, sync.messages, { enabled: chatEngine && !!ocSessionId });
 
   // 6. Interactive prompts live in the pending store (the SSE writes them there,
   // keyed by request id carrying sessionID). useSessionSync does NOT surface them.
@@ -358,9 +407,13 @@ export function useSession(
   const phase: SessionPhase = terminal ? 'error' : switched ? 'ready' : 'starting';
 
   // 10. Replay the new-session hand-off once ready + thread empty (exactly once).
+  // Force-disabled when `chatEngine` is off: this reads `sync.isLoading`/
+  // `sync.messages`, which are the fixed empty stand-ins above when the chat
+  // engine isn't mounted, so it could never correctly gate on thread-empty —
+  // a host that disables the chat engine already owns its own hand-off.
   const startedRef = useRef(false);
   useEffect(() => {
-    if (!replayStartStash) return;
+    if (!replayStartStash || !chatEngine) return;
     if (startedRef.current || phase !== 'ready' || sync.isLoading) return;
     const stash = readStartStash(sessionId);
     if (!stash) return;
@@ -371,7 +424,7 @@ export function useSession(
     if (stash.agent) picks.setAgent(stash.agent);
     send(stash.prompt, { model: stash.model, agent: stash.agent, variant: stash.variant });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, sync.isLoading, sync.messages.length, sessionId, replayStartStash]);
+  }, [phase, sync.isLoading, sync.messages.length, sessionId, replayStartStash, chatEngine]);
 
   return {
     projectId,

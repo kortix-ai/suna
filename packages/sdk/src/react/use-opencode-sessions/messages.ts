@@ -263,6 +263,11 @@ export interface SendOpenCodeMessageError extends Error {
  * instead of surfacing an error the user can't act on. A real 4xx (bad
  * request / auth / unknown model) is never retried.
  *
+ * `getClient()` is resolved INSIDE the retry loop (not once up front) so its
+ * own "Server URL not ready" throw — the runtime url not pinned yet, which a
+ * brand-new session's very first prompt can race — gets the same boot-window
+ * retry treatment instead of propagating instantly with zero retries.
+ *
  * Extracted from `useSendOpenCodeMessage`'s mutationFn so it's a plain async
  * function callable — and unit-testable — without a mutation/hook context.
  */
@@ -287,12 +292,19 @@ export async function promptOpenCodeMessage({
     ...(options?.variant && { variant: options.variant }),
   };
 
-  const client = getClient();
-
   for (let attempt = 1; ; attempt++) {
     let status: number | undefined;
     let error: unknown;
     try {
+      // Resolve the client INSIDE the retry loop, not once before it. During
+      // the sandbox-loading window `getClient()` throws "Server URL not
+      // ready" (see opencode/client.ts) — that's a boot-phase condition
+      // exactly like the proxy's 503 "opencode not ready" below, so it must
+      // participate in the SAME boot/wake retry window rather than propagate
+      // instantly with zero retries. A brand-new session's very first prompt
+      // can race the runtime url being pinned; without this the send throws
+      // before a single retry and the prompt is dropped.
+      const client = getClient();
       // The SDK resolves (not rejects) on HTTP errors, returning
       // { error, response } instead of throwing.
       const result = await client.session.promptAsync(payload as any);
@@ -300,7 +312,7 @@ export async function promptOpenCodeMessage({
       error = result.error;
       status = (result.response as Response | undefined)?.status;
     } catch (err) {
-      error = err; // thrown = transport failure (no status).
+      error = err; // thrown = transport failure (no status) OR getClient() not-ready.
     }
 
     const delay = getSendRetryDelayMs(attempt, status, error);

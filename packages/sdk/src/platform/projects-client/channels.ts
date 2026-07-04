@@ -34,6 +34,7 @@ export async function connectSlack(
       input,
       { showErrors: false },
     ),
+    'Failed to connect',
   );
 }
 
@@ -59,6 +60,7 @@ export async function getSlackManifest(projectId: string): Promise<Record<string
       `/webhooks/slack/${encodeURIComponent(projectId)}/manifest`,
       { showErrors: false },
     ),
+    'Failed to load Slack manifest',
   );
 }
 
@@ -138,6 +140,7 @@ export async function connectEmail(
       input,
       { showErrors: false },
     ),
+    'Failed to connect email',
   );
 }
 
@@ -164,5 +167,6 @@ export async function updateEmailPolicy(
       { connector_slug: connectorSlug ?? 'kortix_email', sender_policy: senderPolicy },
       { showErrors: false },
     ),
+    'Failed to update email policy',
   );
 }

@@ -22,6 +22,11 @@ import * as P from './platform/projects-client';
 import { getSessionHealth } from './session/health';
 import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from './session/url';
 import { setCurrentRuntime } from './state/current-runtime';
+import {
+  clearSessionRuntime,
+  getSessionRuntime,
+  type SessionRuntimeEntry,
+} from './state/session-runtime-registry';
 import { getSandboxUrlForExternalId } from './state/server-store/url-helpers';
 
 /** A model the agent can run, as the opencode runtime identifies it. */
@@ -230,24 +235,38 @@ export function createKortix(config: KortixPlatformConfig) {
     // carries it. Every runtime-scoped operation below reads ONLY this cached
     // record — never the module-global "currently active" runtime — so two
     // session handles pointed at two different sandboxes never cross wires.
-    let _ready: { opencodeSessionId: string; runtimeUrl: string; sandboxId: string } | null = null;
+    let _ready: SessionRuntimeEntry | null = null;
     let _model: SessionModel | undefined;
     let _agent: string | undefined;
 
     /**
+     * Adopt an already-resolved runtime for THIS (projectId, sessionId) from
+     * the shared session-runtime registry, if this handle hasn't resolved one
+     * itself yet. This is what lets a brand-new `kortix.session(pid, sid)`
+     * handle — e.g. a one-off poll tick, or a handle created independently of
+     * the one that actually drove `/start` — use a session another handle (or
+     * the React `useSession` hook) already brought up, instead of throwing
+     * `SessionNotReadyError` or re-provisioning.
+     */
+    function tryResolveReady(): SessionRuntimeEntry | null {
+      if (_ready) return _ready;
+      const cached = getSessionRuntime(projectId, sessionId);
+      if (cached) _ready = cached;
+      return _ready;
+    }
+
+    /**
      * Make this session's runtime reachable and return its OpenCode session id
      * (plus this handle's own resolved runtime URL + sandbox id). Idempotent:
-     * `start` provisions/resumes the sandbox (long-poll until ready), we cache
-     * the resolved runtime for THIS handle, and — for React hosts that still
-     * read the shared "current runtime" store — also point it there. No
-     * operation on this handle ever reads that global back.
+     * adopts the registry entry if another handle already resolved this
+     * session; otherwise `start` provisions/resumes the sandbox (long-poll
+     * until ready) — which itself populates the registry on success — and we
+     * cache the resolved runtime for THIS handle. Also points the app's shared
+     * "current runtime" store there, for React hosts that still read it.
      */
-    async function ensureReady(): Promise<{
-      opencodeSessionId: string;
-      runtimeUrl: string;
-      sandboxId: string;
-    }> {
-      if (_ready) return _ready;
+    async function ensureReady(): Promise<SessionRuntimeEntry> {
+      const cached = tryResolveReady();
+      if (cached) return cached;
       const started = await P.startProjectSession(projectId, sessionId, 30_000);
       if (
         !started ||
@@ -270,14 +289,17 @@ export function createKortix(config: KortixPlatformConfig) {
       return _ready;
     }
 
-    /** Throw `SessionNotReadyError` if `ensureReady()` hasn't resolved yet. */
-    function requireReady(action: string): {
-      opencodeSessionId: string;
-      runtimeUrl: string;
-      sandboxId: string;
-    } {
-      if (!_ready) throw new SessionNotReadyError(action);
-      return _ready;
+    /** Throw `SessionNotReadyError` if neither this handle nor the registry has resolved a runtime yet. */
+    function requireReady(action: string): SessionRuntimeEntry {
+      const ready = tryResolveReady();
+      if (!ready) throw new SessionNotReadyError(action);
+      return ready;
+    }
+
+    /** Clear this handle's cached runtime + the shared registry entry (restart/delete). */
+    function forgetReady(): void {
+      _ready = null;
+      clearSessionRuntime(projectId, sessionId);
     }
 
     return {
@@ -285,10 +307,20 @@ export function createKortix(config: KortixPlatformConfig) {
       get: (opts?: { showErrors?: boolean }) => P.getProjectSession(projectId, sessionId, opts),
       update: (input: Parameters<typeof P.updateProjectSession>[2]) =>
         P.updateProjectSession(projectId, sessionId, input),
-      delete: () => P.deleteProjectSession(projectId, sessionId),
+      delete: () => {
+        // A deleted session's sandbox is gone — never let a later handle for
+        // this (projectId, sessionId) resolve a runtime that no longer exists.
+        forgetReady();
+        return P.deleteProjectSession(projectId, sessionId);
+      },
       start: (...a: DropFirst2<Parameters<typeof P.startProjectSession>>) =>
         P.startProjectSession(projectId, sessionId, ...a),
-      restart: () => P.restartProjectSession(projectId, sessionId),
+      restart: () => {
+        // Restart may re-provision a DIFFERENT sandbox — a stale cached/
+        // registered runtime would route subsequent calls at a dead box.
+        forgetReady();
+        return P.restartProjectSession(projectId, sessionId);
+      },
       setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) =>
         P.setProjectSessionSharing(projectId, sessionId, intent),
       previews: () => P.getSessionPreviewCandidates(projectId, sessionId),
@@ -317,8 +349,16 @@ export function createKortix(config: KortixPlatformConfig) {
       ensureReady,
 
       // ── runtime health + preview (the session owns its runtime) ──────────
-      /** Liveness/readiness of THIS session's runtime (`GET /kortix/health`). */
-      health: (init?: RequestInit) => getSessionHealth(requireReady('health').runtimeUrl, init),
+      /**
+       * Liveness/readiness of THIS session's runtime (`GET /kortix/health`).
+       * Unlike `.previewUrl()`/`.proxyUrl()`/`.runtime`, this never throws
+       * `SessionNotReadyError` — a health poller (e.g. a header dot ticking
+       * every 15s on a fresh inline handle) needs to be callable BEFORE the
+       * session has ever resolved a runtime. It degrades to the same graceful
+       * `{ status: 0, ok: false }` shape `getSessionHealth` already returns for
+       * "no URL yet", instead of forcing every caller to guard with `ensureReady()`.
+       */
+      health: (init?: RequestInit) => getSessionHealth(tryResolveReady()?.runtimeUrl ?? null, init),
       /** Proxy/preview URL for a port THIS session's runtime exposes. */
       previewUrl: (port: number, path = '/') =>
         rewriteLocalhostUrl(port, path, resolvePreviewOptsForSandbox(requireReady('previewUrl').sandboxId)),

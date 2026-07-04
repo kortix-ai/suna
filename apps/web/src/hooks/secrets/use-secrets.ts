@@ -22,7 +22,7 @@ export function useSecrets() {
     queryKey,
     queryFn: async (): Promise<Record<string, string>> => {
       if (!instanceUrl) return {};
-      return listEnv();
+      return listEnv(instanceUrl);
     },
     enabled: !isAuthLoading && !!user && !!instanceUrl,
   });
@@ -39,7 +39,7 @@ export function useSetSecret() {
   return useMutation({
     mutationFn: async ({ key, value }: { key: string; value: string }) => {
       if (!instanceUrl) throw new Error('No active instance selected');
-      await setEnv(key, value);
+      await setEnv(instanceUrl, key, value);
     },
     onMutate: async ({ key, value }) => {
       await qc.cancelQueries({ queryKey });
@@ -69,7 +69,7 @@ export function useDeleteSecret() {
   return useMutation({
     mutationFn: async (key: string) => {
       if (!instanceUrl) throw new Error('No active instance selected');
-      await deleteEnv(key);
+      await deleteEnv(instanceUrl, key);
     },
     onMutate: async (key) => {
       await qc.cancelQueries({ queryKey });

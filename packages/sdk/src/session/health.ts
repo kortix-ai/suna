@@ -52,14 +52,21 @@ export function isRuntimeReady(health: SessionHealthResponse | null): boolean {
 
 /**
  * `GET /kortix/health` — returns the HTTP status plus the parsed body. Never
- * throws on a non-ok status; callers decide what a given status means. Defaults
- * to the active runtime when no explicit URL is given.
+ * throws on a non-ok status; callers decide what a given status means.
+ *
+ * `runtimeUrl` OMITTED (`undefined`) falls back to the module-global "active"
+ * runtime, for callers that don't scope to a specific session. Passing `null`
+ * or `''` EXPLICITLY means "this session has no resolved runtime yet" and
+ * short-circuits to the graceful `{ status: 0, ok: false }` shape WITHOUT
+ * falling back to the active runtime — a per-session handle (e.g.
+ * `kortix.session(pid, sid).health()`) must never silently probe whichever
+ * DIFFERENT session's sandbox happens to be globally active.
  */
 export async function getSessionHealth(
   runtimeUrl?: string | null,
   init?: RequestInit,
 ): Promise<SessionHealthResult> {
-  const url = (runtimeUrl ?? getActiveOpenCodeUrl()) || null;
+  const url = (runtimeUrl === undefined ? getActiveOpenCodeUrl() : runtimeUrl) || null;
   if (!url) return { status: 0, ok: false, health: null, body: '' };
   const res = await authenticatedFetch(
     `${url}/kortix/health`,

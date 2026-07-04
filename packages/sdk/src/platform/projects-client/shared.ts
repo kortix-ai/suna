@@ -36,9 +36,19 @@ export interface ProjectFileEntry {
   size: number | null;
 }
 
-export function unwrap<T>(response: { data?: T; success: boolean; error?: Error }) {
+/**
+ * Unwrap a `backendApi` response, throwing on failure. `fallbackMessage` is
+ * used only when the response carries no `error` of its own (e.g. a 200 whose
+ * body is missing/empty) — pass the old per-endpoint string a call site had
+ * before it was consolidated onto this shared helper, so failures still read
+ * like "Failed to connect" instead of a generic "Project request failed".
+ */
+export function unwrap<T>(
+  response: { data?: T; success: boolean; error?: Error },
+  fallbackMessage = 'Project request failed',
+) {
   if (!response.success || response.data === undefined) {
-    throw response.error ?? new Error('Project request failed');
+    throw response.error ?? new Error(fallbackMessage);
   }
   return response.data;
 }

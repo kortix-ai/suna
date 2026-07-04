@@ -3,8 +3,16 @@ import { describe, expect, test, beforeEach, mock } from 'bun:test';
 let promptImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
   async () => ({ data: {} });
 
+// Overridable per-test so "Server URL not ready" (getClient() throwing before
+// the runtime url is pinned) can be simulated N times before it starts
+// resolving — mirrors the real client's throw during the sandbox-loading
+// window (see opencode/client.ts).
+let getClientImpl: () => { session: { promptAsync: (args: unknown) => Promise<unknown> } } = () => ({
+  session: { promptAsync: (args: unknown) => promptImpl(args) },
+});
+
 mock.module('../../opencode/client', () => ({
-  getClient: () => ({ session: { promptAsync: (args: unknown) => promptImpl(args) } }),
+  getClient: () => getClientImpl(),
 }));
 
 mock.module('../../platform/logger', () => ({
@@ -21,6 +29,7 @@ import {
 
 beforeEach(() => {
   promptImpl = async () => ({ data: {} });
+  getClientImpl = () => ({ session: { promptAsync: (args: unknown) => promptImpl(args) } });
 });
 
 describe('promptOpenCodeMessage', () => {
@@ -153,6 +162,67 @@ describe('promptOpenCodeMessage', () => {
 
     expect(calls).toBe(4);
     expect((err as Error).message).toBe('Failed to fetch');
+  });
+
+  test('getClient() throwing "Server URL not ready" a few times still lands the send within the boot window', async () => {
+    // Regression: getClient() used to be resolved ONCE before the retry loop,
+    // so this throw propagated instantly with zero retries and permanently
+    // dropped the first prompt of a brand-new session (the runtime url isn't
+    // pinned yet). It must now be resolved INSIDE the loop and get the same
+    // boot-window retry treatment as the sandbox proxy's 503.
+    let getClientCalls = 0;
+    getClientImpl = () => {
+      getClientCalls++;
+      if (getClientCalls < 3) {
+        throw new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
+      }
+      return { session: { promptAsync: (args: unknown) => promptImpl(args) } };
+    };
+    let promptCalls = 0;
+    promptImpl = async () => {
+      promptCalls++;
+      return { data: {} };
+    };
+
+    await expect(
+      promptOpenCodeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] }),
+    ).resolves.toBeUndefined();
+
+    expect(getClientCalls).toBe(3);
+    expect(promptCalls).toBe(1);
+  });
+
+  test('getClient() never becoming ready exhausts the boot window and throws', async () => {
+    let getClientCalls = 0;
+    getClientImpl = () => {
+      getClientCalls++;
+      throw new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
+    };
+
+    // The full boot window is ~29s of real backoff (see BOOT_BACKOFF_MS) —
+    // collapse the waits to fire immediately so this test exercises the
+    // "never recovers" exhaustion path without blocking the suite for half a
+    // minute; the attempt-count/classification logic under test is unaffected.
+    const realSetTimeout = globalThis.setTimeout;
+    (globalThis as unknown as { setTimeout: typeof setTimeout }).setTimeout = ((
+      fn: (...args: unknown[]) => void,
+    ) => realSetTimeout(fn, 0)) as typeof setTimeout;
+    try {
+      const err = await promptOpenCodeMessage({
+        sessionId: 'sess-1',
+        parts: [{ type: 'text', text: 'hi' }],
+      }).then(
+        () => undefined,
+        (e) => e,
+      );
+
+      // BOOT_BACKOFF_MS has 10 entries → 11 total attempts before giving up.
+      expect(getClientCalls).toBe(11);
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).toContain('Server URL not ready');
+    } finally {
+      globalThis.setTimeout = realSetTimeout;
+    }
   });
 });
 

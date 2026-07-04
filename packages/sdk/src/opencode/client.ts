@@ -112,6 +112,59 @@ export function resetClient(): void {
 	clientsByUrl.clear();
 }
 
+/**
+ * Per-URL client cache for PUBLIC, unauthenticated access — same caching shape
+ * as `getClientForUrl`, but talks to the sandbox with a bare `fetch` instead
+ * of `authenticatedFetch`.
+ *
+ * `getClientForUrl` assumes its URL is an authenticated
+ * `${backendUrl}/p/{externalId}/{port}` proxy route that always needs the
+ * platform bearer token — that's correct for every session a logged-in host
+ * talks to. This is the one legitimate exception: a route the backend has
+ * deliberately made reachable by a LOGGED-OUT visitor (e.g. the unauthenticated
+ * public-share proxy, `/v1/p/public-share/{token}/{port}` — see
+ * `apps/api/src/sandbox-proxy/routes/public-share.ts`, which strips the
+ * `authorization` header on the way through anyway). Routing that through
+ * `authenticatedFetch` doesn't just send a redundant header — for an anonymous
+ * visitor with no token, `authenticatedFetch` synthesizes a 401 response
+ * WITHOUT ever making the network call (see `platform/auth.ts`), which breaks
+ * the primary audience of a public share link before the request goes out.
+ *
+ * Never point this at an authenticated proxy route — that would send a naked,
+ * unauthenticated request somewhere that expects a bearer token.
+ */
+const publicClientsByUrl = new Map<string, OpencodeClient>();
+
+/**
+ * Get (or create) a PUBLIC, unauthenticated client bound to a specific base
+ * URL. See the {@link publicClientsByUrl} comment for why this exists as a
+ * deliberate, separate cache/factory rather than a flag on `getClientForUrl`.
+ */
+export function getPublicClientForUrl(url: string): OpencodeClient {
+	if (!url) {
+		throw new Error('[opencode-sdk] getPublicClientForUrl called without a url');
+	}
+	const existing = publicClientsByUrl.get(url);
+	if (existing) return existing;
+
+	const client = createOpencodeClient({ baseUrl: url, fetch });
+	publicClientsByUrl.set(url, client);
+	return client;
+}
+
+/**
+ * Drop a cached public client (e.g. when a share link is revoked). No-op if
+ * the URL was never cached.
+ */
+export function dropPublicClientForUrl(url: string): void {
+	publicClientsByUrl.delete(url);
+}
+
+/** Drop cached public clients so the next call recreates them. */
+export function resetPublicClient(): void {
+	publicClientsByUrl.clear();
+}
+
 async function daemonErrorMessage(res: Response): Promise<string> {
 	const text = await res.text().catch(() => '');
 	try {

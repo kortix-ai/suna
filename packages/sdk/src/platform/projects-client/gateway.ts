@@ -166,11 +166,15 @@ export async function listGatewayLogs(
   const qs = q.toString();
   return unwrap(
     await backendApi.get<GatewayLogsResponse>(`/projects/${projectId}/gateway/logs${qs ? `?${qs}` : ''}`),
+    'Gateway request failed',
   );
 }
 
 export async function getGatewayLog(projectId: string, logId: string): Promise<GatewayLogDetail> {
-  return unwrap(await backendApi.get<GatewayLogDetail>(`/projects/${projectId}/gateway/logs/${logId}`));
+  return unwrap(
+    await backendApi.get<GatewayLogDetail>(`/projects/${projectId}/gateway/logs/${logId}`),
+    'Gateway request failed',
+  );
 }
 
 export async function getGatewayOverview(projectId: string, days?: number): Promise<GatewayOverview> {
@@ -178,6 +182,7 @@ export async function getGatewayOverview(projectId: string, days?: number): Prom
     await backendApi.get<GatewayOverview>(
       `/projects/${projectId}/gateway/overview${days ? `?days=${days}` : ''}`,
     ),
+    'Gateway request failed',
   );
 }
 
@@ -186,6 +191,7 @@ export async function getGatewaySeries(projectId: string, days?: number): Promis
     await backendApi.get<GatewaySeries>(
       `/projects/${projectId}/gateway/series${days ? `?days=${days}` : ''}`,
     ),
+    'Gateway request failed',
   );
 }
 
@@ -194,6 +200,7 @@ export async function getGatewayBreakdown(projectId: string, days?: number): Pro
     await backendApi.get<GatewayBreakdown>(
       `/projects/${projectId}/gateway/breakdown${days ? `?days=${days}` : ''}`,
     ),
+    'Gateway request failed',
   );
 }
 
@@ -202,6 +209,7 @@ export async function getGatewaySessions(projectId: string, days?: number): Prom
     await backendApi.get<GatewaySessions>(
       `/projects/${projectId}/gateway/sessions${days ? `?days=${days}` : ''}`,
     ),
+    'Gateway request failed',
   );
 }
 
@@ -210,18 +218,25 @@ export async function getGatewayErrors(projectId: string, days?: number): Promis
     await backendApi.get<GatewayErrorsResponse>(
       `/projects/${projectId}/gateway/errors${days ? `?days=${days}` : ''}`,
     ),
+    'Gateway request failed',
   );
 }
 
 export async function getGatewayBudgets(projectId: string): Promise<GatewayBudgetsResponse> {
-  return unwrap(await backendApi.get<GatewayBudgetsResponse>(`/projects/${projectId}/gateway/budgets`));
+  return unwrap(
+    await backendApi.get<GatewayBudgetsResponse>(`/projects/${projectId}/gateway/budgets`),
+    'Gateway request failed',
+  );
 }
 
 export async function setGatewayBudget(
   projectId: string,
   input: SetGatewayBudgetInput,
 ): Promise<{ ok: boolean }> {
-  return unwrap(await backendApi.put<{ ok: boolean }>(`/projects/${projectId}/gateway/budgets`, input));
+  return unwrap(
+    await backendApi.put<{ ok: boolean }>(`/projects/${projectId}/gateway/budgets`, input),
+    'Gateway request failed',
+  );
 }
 
 export async function deleteGatewayBudget(
@@ -230,6 +245,7 @@ export async function deleteGatewayBudget(
 ): Promise<{ ok: boolean }> {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/gateway/budgets/${budgetId}`),
+    'Gateway request failed',
   );
 }
 
@@ -240,6 +256,7 @@ export async function getGatewayKeys(
     await backendApi.get<{ keys: GatewayKeyRow[]; gateway_url?: string | null }>(
       `/projects/${projectId}/gateway/keys`,
     ),
+    'Gateway request failed',
   );
 }
 
@@ -249,6 +266,7 @@ export async function createGatewayKey(
 ): Promise<CreatedGatewayKey> {
   return unwrap(
     await backendApi.post<CreatedGatewayKey>(`/projects/${projectId}/gateway/keys`, { name }),
+    'Gateway request failed',
   );
 }
 
@@ -258,5 +276,6 @@ export async function revokeGatewayKey(
 ): Promise<{ ok: boolean }> {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/gateway/keys/${keyId}`),
+    'Gateway request failed',
   );
 }

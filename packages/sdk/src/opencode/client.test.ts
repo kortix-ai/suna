@@ -1,6 +1,14 @@
 import { test, expect, beforeEach, mock } from 'bun:test';
 import { configureKortix } from '../platform/config';
-import { dropClientForUrl, getClientForUrl, resetClient, systemReload } from './client';
+import {
+  dropClientForUrl,
+  dropPublicClientForUrl,
+  getClientForUrl,
+  getPublicClientForUrl,
+  resetClient,
+  resetPublicClient,
+  systemReload,
+} from './client';
 
 let activeUrl = '';
 mock.module('../state/server-store/active', () => ({
@@ -9,6 +17,7 @@ mock.module('../state/server-store/active', () => ({
 
 beforeEach(() => {
   resetClient();
+  resetPublicClient();
   activeUrl = '';
   configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => 'test-token' });
 });
@@ -56,6 +65,53 @@ test('getClientForUrl caches one client per url; dropClientForUrl evicts it', ()
   dropClientForUrl('http://x.local/p/s1/8000');
   const a3 = getClientForUrl('http://x.local/p/s1/8000');
   expect(a3).not.toBe(a1);
+});
+
+// ── getPublicClientForUrl — the UNAUTHENTICATED client factory, for routes the
+// backend deliberately makes reachable by a logged-out visitor (e.g. the
+// public-share proxy). Regression: the old `getClient()` path always injects
+// the platform bearer token via `authenticatedFetch`, which synthesizes a 401
+// with no network call at all when there's no token — breaking anonymous
+// access entirely (see ShareViewer.tsx). ──────────────────────────────────
+
+test('getPublicClientForUrl never sends an Authorization header, even with a token configured', async () => {
+  const calls = captureRequests();
+  const client = getPublicClientForUrl('http://backend.local/v1/p/public-share/tok123/3000');
+  await client.session.abort({ sessionID: 'sess-1' });
+
+  expect(calls.length).toBe(1);
+  expect(calls[0].auth).toBeNull();
+});
+
+test('getPublicClientForUrl works without configureKortix ever having been called (no token-provider requirement)', async () => {
+  // A real anonymous visitor's tab may never call configureKortix() with a
+  // getToken — getClientForUrl would throw '[opencode-sdk] No auth token
+  // provider configured' here; the public client must not.
+  const calls = captureRequests();
+  const client = getPublicClientForUrl('http://backend.local/v1/p/public-share/tok123/3000');
+  await expect(client.session.abort({ sessionID: 'sess-1' })).resolves.toBeDefined();
+  expect(calls.length).toBe(1);
+});
+
+test('getPublicClientForUrl throws on an empty url', () => {
+  expect(() => getPublicClientForUrl('')).toThrow();
+});
+
+test('getPublicClientForUrl caches one client per url; dropPublicClientForUrl evicts it', () => {
+  const a1 = getPublicClientForUrl('http://backend.local/v1/p/public-share/tok123/3000');
+  const a2 = getPublicClientForUrl('http://backend.local/v1/p/public-share/tok123/3000');
+  expect(a1).toBe(a2);
+
+  dropPublicClientForUrl('http://backend.local/v1/p/public-share/tok123/3000');
+  const a3 = getPublicClientForUrl('http://backend.local/v1/p/public-share/tok123/3000');
+  expect(a3).not.toBe(a1);
+});
+
+test('getPublicClientForUrl and getClientForUrl keep separate caches for the same url', () => {
+  const url = 'http://backend.local/v1/p/public-share/tok123/3000';
+  const pub = getPublicClientForUrl(url);
+  const auth = getClientForUrl(url);
+  expect(pub).not.toBe(auth);
 });
 
 function captureRawFetchCalls(response: () => Response) {

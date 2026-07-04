@@ -37,7 +37,12 @@ export async function resolveFirstProjectPathForNewUser(opts: {
     { account_id: accountId, name: 'My First Project', seed_starter: true },
   );
 
-  if (result.ok) return `/projects/${result.project.project_id}`;
+  if (result.ok) {
+    if (result.project.project_id) return `/projects/${result.project.project_id}`;
+    // A 200 with no project_id is not a usable success — fall through to the
+    // safe default (`/projects`) rather than building a broken path.
+    return null;
+  }
 
   if (result.limitReached) {
     const retry = await listProjects();

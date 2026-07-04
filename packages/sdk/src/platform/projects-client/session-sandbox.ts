@@ -1,6 +1,8 @@
 // Session sandbox — runtime sandbox row + the session-open (/start) flow.
 
 import { backendApi } from '../api-client';
+import { setSessionRuntime } from '../../state/session-runtime-registry';
+import { getSandboxUrlForExternalId } from '../../state/server-store/url-helpers';
 
 // ---------------------------------------------------------------------------
 // Session sandbox — runtime row in `kortix.session_sandboxes`. Separate from
@@ -75,7 +77,22 @@ export async function startProjectSession(
     { showErrors: false },
   );
   if (!response.success || !response.data) return null;
-  return response.data;
+  const result = response.data;
+  // Populate the shared session-runtime registry the instant a session goes
+  // ready, regardless of WHICH caller drove this /start (the facade's
+  // `ensureReady()` or the React `useSession` hook — both call this one
+  // function). Every other handle for the same session id — a fresh
+  // `kortix.session(pid, sid)` created for a one-off poll, e.g. — can then
+  // adopt this entry instead of throwing SessionNotReadyError or re-POSTing.
+  const externalId = result.sandbox?.external_id;
+  if (result.stage === 'ready' && externalId && result.opencode_session_id) {
+    setSessionRuntime(projectId, sessionId, {
+      opencodeSessionId: result.opencode_session_id,
+      runtimeUrl: getSandboxUrlForExternalId(externalId),
+      sandboxId: externalId,
+    });
+  }
+  return result;
 }
 
 /**

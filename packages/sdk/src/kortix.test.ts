@@ -138,14 +138,27 @@ test('previewUrl uses the handle\'s own sandbox id, not whichever session resolv
   expect(b.previewUrl(3000, '/docs')).toBe('http://test.local/p/sb-B/3000/docs');
 });
 
-test('health()/previewUrl()/proxyUrl()/runtime throw SessionNotReadyError before ensureReady()', () => {
+test('previewUrl()/proxyUrl()/runtime throw SessionNotReadyError before ensureReady()', () => {
   const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   const s = k.session('PROJ', 'SESS-NEW');
 
-  expect(() => s.health()).toThrow(SessionNotReadyError);
   expect(() => s.previewUrl(3000)).toThrow(SessionNotReadyError);
   expect(() => s.proxyUrl('http://localhost:3000')).toThrow(SessionNotReadyError);
   expect(() => s.runtime).toThrow(SessionNotReadyError);
+});
+
+// health() is a liveness POLL, not an action gated on the runtime being up —
+// pollers (e.g. a header dot ticking every 15s on a fresh inline
+// `kortix.session(...)` handle, see apps/whitelabel-demo/session-header.tsx)
+// must be able to call it before the session has ever resolved a runtime, so
+// it degrades to the graceful "no URL yet" shape instead of throwing.
+test('health() resolves gracefully (ok: false) before ensureReady() instead of throwing', async () => {
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const s = k.session('PROJ', 'SESS-NEVER-STARTED');
+
+  const result = await s.health();
+  expect(result.ok).toBe(false);
+  expect(result.status).toBe(0);
 });
 
 test('health() resolves against the handle\'s own runtime URL once ready', async () => {
@@ -158,4 +171,63 @@ test('health() resolves against the handle\'s own runtime URL once ready', async
   await a.health();
 
   expect(calls.some((c) => c.url.includes('/p/sb-A/8000/kortix/health'))).toBe(true);
+});
+
+// ── shared session-runtime registry (regression: apps/whitelabel-demo's
+// session-header.tsx polls health() on a FRESH `kortix.session(...)` handle
+// every 15s, and preview-panel.tsx calls previewUrl() in render on a handle
+// that never itself called ensureReady() — both used to throw
+// SessionNotReadyError forever because a handle's `_ready` cache never
+// survived past that one instance) ──────────────────────────────────────────
+
+test('a second fresh handle for the same session adopts the registry entry — no ensureReady() of its own needed', async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'POST' });
+    if (url.includes('/sessions/SESS-REG-1/start')) {
+      return jsonResponse(sessionStartPayload('sb-reg1', 'ocs-reg1'));
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const first = k.session('PROJ', 'SESS-REG-1');
+  await first.ensureReady();
+
+  // Brand-new handle for the SAME (projectId, sessionId) — never called ensureReady.
+  const second = k.session('PROJ', 'SESS-REG-1');
+  expect(second.previewUrl(4000, '/y')).toBe('http://test.local/p/sb-reg1/4000/y');
+
+  calls.length = 0;
+  const health = await second.health();
+  expect(health.ok).toBe(true);
+  expect(calls.some((c) => c.url.includes('/p/sb-reg1/8000/kortix/health'))).toBe(true);
+});
+
+test('restart clears the registry entry so a subsequent send re-resolves the runtime', async () => {
+  let startCount = 0;
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'POST' });
+    if (url.includes('/sessions/SESS-REG-2/start')) {
+      startCount += 1;
+      const sandboxId = startCount === 1 ? 'sb-reg2-old' : 'sb-reg2-new';
+      return jsonResponse(sessionStartPayload(sandboxId, `ocs-reg2-${startCount}`));
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const handle = k.session('PROJ', 'SESS-REG-2');
+
+  await handle.ensureReady();
+  expect(startCount).toBe(1);
+
+  await handle.restart();
+
+  calls.length = 0;
+  await handle.send('hello again');
+  const promptCall = calls.find((c) => c.url.includes('/message'));
+  expect(promptCall?.url).toContain('/p/sb-reg2-new/8000');
+  expect(startCount).toBe(2);
 });
