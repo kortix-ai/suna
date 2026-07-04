@@ -276,6 +276,73 @@ export async function resolveDeclaredSharedSecrets(
   return env;
 }
 
+// ─── Secret → agent access (the secret-side allowlist) ──────────────────────
+// Which agents may use a shared secret. NULL/empty `agent_scope` = all agents
+// (project-wide, default); a non-empty list of agent NAMES restricts it to those
+// agents' sessions. The executor (buildSessionSandboxEnvVars) reads the scopes
+// and drops any secret whose allowlist excludes the running agent — an ADDITIVE
+// narrowing on top of the share model, never a widening.
+
+/**
+ * Secret NAME → agent-name allowlist, for every shared project secret RESTRICTED
+ * to specific agents (non-empty `agent_scope`). All-agents secrets (NULL/empty)
+ * are omitted — the executor only needs the restricted ones to know what to drop.
+ */
+export async function loadSecretAgentScopes(projectId: string): Promise<Map<string, string[]>> {
+  const rows = await db
+    .select({ name: projectSecrets.name, agentScope: projectSecrets.agentScope })
+    .from(projectSecrets)
+    .where(and(eq(projectSecrets.projectId, projectId), isNull(projectSecrets.ownerUserId)));
+  const map = new Map<string, string[]>();
+  for (const row of rows) {
+    const scope = row.agentScope;
+    if (Array.isArray(scope) && scope.length > 0) map.set(row.name, scope);
+  }
+  return map;
+}
+
+/**
+ * Given the project's secret→agent scopes (name → allowed agent names) and the
+ * agent a session runs AS, the set of secret names that agent may NOT use — a
+ * secret is denied iff it's scoped (present in the map) and its allowlist
+ * excludes the agent. All-agents secrets never enter the map, so they're never
+ * denied. Pure: this is the whole security decision the executor applies.
+ */
+export function secretNamesDeniedForAgent(
+  scopes: ReadonlyMap<string, string[]>,
+  agentName: string,
+): Set<string> {
+  const denied = new Set<string>();
+  for (const [name, allowed] of scopes) {
+    if (!allowed.includes(agentName)) denied.add(name);
+  }
+  return denied;
+}
+
+/**
+ * Set (or clear) the agent allowlist for a shared secret. `agents = null` or an
+ * empty array clears it → usable by ALL agents again. Names are trimmed, empties
+ * dropped, deduped. Returns false when the shared secret row doesn't exist.
+ */
+export async function setSecretAgentScope(
+  projectId: string,
+  name: string,
+  agents: string[] | null,
+): Promise<boolean> {
+  const normalizedName = name.trim().toUpperCase();
+  const cleaned = agents ? Array.from(new Set(agents.map((a) => a.trim()).filter(Boolean))) : [];
+  const res = await db
+    .update(projectSecrets)
+    .set({ agentScope: cleaned.length > 0 ? cleaned : null, updatedAt: new Date() })
+    .where(and(
+      eq(projectSecrets.projectId, projectId),
+      eq(projectSecrets.name, normalizedName),
+      isNull(projectSecrets.ownerUserId),
+    ))
+    .returning({ secretId: projectSecrets.secretId });
+  return res.length > 0;
+}
+
 // ─── Secret access as resource grants ───────────────────────────────────────
 // The "Resource access" card (Members) and the Secret "Who can access this"
 // dialog both operate on ONE source of truth for secret audience: the share

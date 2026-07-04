@@ -250,3 +250,52 @@ describe('blocked-from-search behavior', () => {
     ).toBe(true);
   });
 });
+
+describe('sensitive connector — reads gate too', () => {
+  const resolve = (opts: {
+    risk: 'read' | 'write';
+    defaultMode: 'risk' | 'allow_all';
+    sensitive?: boolean;
+    connectorPolicies?: Policy[];
+  }) =>
+    resolveEffectiveAction({
+      fullPath: 'gmail.messages.list',
+      relPath: 'messages.list',
+      projectPolicies: [],
+      connectorPolicies: opts.connectorPolicies ?? [],
+      risk: opts.risk,
+      defaultMode: opts.defaultMode,
+      sensitive: opts.sensitive,
+    });
+
+  test('non-sensitive READ under risk mode runs silently (baseline unchanged)', () => {
+    expect(resolve({ risk: 'read', defaultMode: 'risk' })).toEqual({
+      action: 'always_run',
+      source: 'risk_default',
+    });
+  });
+
+  test('sensitive READ under risk mode → require_approval', () => {
+    expect(resolve({ risk: 'read', defaultMode: 'risk', sensitive: true }).action).toBe(
+      'require_approval',
+    );
+  });
+
+  test('sensitive READ overrides allow_all (targeted flag beats the coarse default)', () => {
+    expect(resolve({ risk: 'read', defaultMode: 'allow_all' }).action).toBe('always_run');
+    expect(resolve({ risk: 'read', defaultMode: 'allow_all', sensitive: true }).action).toBe(
+      'require_approval',
+    );
+  });
+
+  test('an explicit connector policy still opens a specific action on a sensitive connector', () => {
+    expect(
+      resolve({
+        risk: 'read',
+        defaultMode: 'risk',
+        sensitive: true,
+        connectorPolicies: [{ match: 'messages.list', action: 'always_run' }],
+      }),
+    ).toEqual({ action: 'always_run', source: 'connector' });
+  });
+});

@@ -242,6 +242,124 @@ export async function setConnectorCredentialModeInManifest(
   return { ok: true, sync };
 }
 
+/**
+ * Toggle a connector's `sensitive` flag in kortix.toml, commit, re-sync. A
+ * sensitive connector gates its reads too (every action defaults to
+ * require_approval unless an explicit policy opens it) — for email/files/
+ * secrets-bearing integrations where reading is itself an exfiltration surface.
+ */
+export async function setConnectorSensitiveInManifest(
+  projectId: string,
+  accountId: string,
+  slug: string,
+  sensitive: boolean,
+): Promise<CrudResult> {
+  const row = await loadRow(projectId);
+  if (!row) return { ok: false, error: 'project not found', status: 404 };
+
+  let manifest;
+  try {
+    manifest = await loadManifestForEdit(row);
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
+  }
+
+  const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
+  const entry = current.find((c) => c?.slug === slug);
+  if (!entry) return { ok: false, error: 'connector not found', status: 404 };
+  // Omit the key when false so the emitted TOML stays minimal (false is the default).
+  if (sensitive) entry.sensitive = true;
+  else delete entry.sensitive;
+  manifest.raw.connectors = current;
+
+  const parsed = extractConnectors(manifest);
+  const err = parsed.errors.find((e) => e.slug === slug);
+  if (err) return { ok: false, error: err.error, status: 400 };
+
+  const committed = await commitManifest(row, manifest, `chore: mark ${slug} ${sensitive ? 'sensitive' : 'not sensitive'}`);
+  if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
+
+  const sync = await syncProjectConnectors(projectId, accountId);
+  return { ok: true, sync };
+}
+
+/**
+ * Set which AGENTS may call a connector (the connector-side agent gate, mirror of
+ * the secret agent_scope). `agentScope = null | []` = all agents.
+ *
+ * Two write paths, one entry point — picked by whether the connector is DECLARED:
+ *   • DECLARED (in kortix.toml): write `[[connectors]].agent_scope`, commit, and
+ *     re-sync. The sync reconciles executor_connectors.agent_scope from the toml,
+ *     so git stays the source of truth (toml-authoritative).
+ *   • SYNTHETIC (channel/computer — no manifest entry): write the column directly.
+ *     Sync deliberately preserves it (upsertConnector skips agent_scope for those
+ *     providers), so a direct edit survives.
+ */
+export async function setConnectorAgentScope(
+  projectId: string,
+  accountId: string,
+  slug: string,
+  agentScope: string[] | null,
+): Promise<CrudResult> {
+  const row = await loadRow(projectId);
+  if (!row) return { ok: false, error: 'project not found', status: 404 };
+
+  const cleaned =
+    agentScope && agentScope.length > 0
+      ? Array.from(new Set(agentScope.map((a) => a.trim()).filter(Boolean)))
+      : [];
+  const value = cleaned.length > 0 ? cleaned : null;
+
+  let manifest;
+  try {
+    manifest = await loadManifestForEdit(row);
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
+  }
+
+  const current = Array.isArray(manifest.raw.connectors)
+    ? (manifest.raw.connectors as Record<string, unknown>[])
+    : [];
+  const entry = current.find((c) => c?.slug === slug);
+
+  // Synthetic connector (no manifest entry, e.g. a channel/computer install):
+  // there's nothing in git to author — set the column directly. Guard on the
+  // connector actually existing in this project so a typo can't no-op silently.
+  if (!entry) {
+    const [existing] = await db
+      .select({ connectorId: executorConnectors.connectorId })
+      .from(executorConnectors)
+      .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
+      .limit(1);
+    if (!existing) return { ok: false, error: 'connector not found', status: 404 };
+    await db
+      .update(executorConnectors)
+      .set({ agentScope: value, updatedAt: new Date() })
+      .where(eq(executorConnectors.connectorId, existing.connectorId));
+    return { ok: true, sync: { synced: 1, errors: [] } };
+  }
+
+  // Declared connector — toml is authoritative. Omit the key when all-agents so
+  // the emitted TOML stays minimal (mirrors how `sensitive` is dropped on false).
+  if (value) entry.agent_scope = value;
+  else delete entry.agent_scope;
+  manifest.raw.connectors = current;
+
+  const parsed = extractConnectors(manifest);
+  const err = parsed.errors.find((e) => e.slug === slug);
+  if (err) return { ok: false, error: err.error, status: 400 };
+
+  const committed = await commitManifest(
+    row,
+    manifest,
+    `chore: scope ${slug} to ${value ? value.join(', ') : 'all agents'}`,
+  );
+  if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
+
+  const sync = await syncProjectConnectors(projectId, accountId);
+  return { ok: true, sync };
+}
+
 /** Rename a connector — patches the kortix.toml entry's `name` (display label) + re-syncs. */
 export async function setConnectorNameInManifest(
   projectId: string,

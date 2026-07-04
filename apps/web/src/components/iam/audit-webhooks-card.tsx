@@ -6,10 +6,10 @@ import { useTranslations } from 'next-intl';
 // internal SIEM). The secret is shown EXACTLY ONCE at creation so it can
 // be pasted into the receiver's signature-verification code.
 
-import { FormEvent, useState } from 'react';
+import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Check, Copy, Loader2, Plus, Trash2 } from 'lucide-react';
-import { toast } from '@/lib/toast';
+import { type FormEvent, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -26,12 +26,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  type AuditWebhook,
+  type CreatedAuditWebhook,
   createAuditWebhook,
   deleteAuditWebhook,
   listAuditWebhooks,
   updateAuditWebhook,
-  type AuditWebhook,
-  type CreatedAuditWebhook,
 } from '@/lib/iam-client';
 
 interface AuditWebhooksCardProps {
@@ -100,14 +100,20 @@ export function AuditWebhooksCard({ accountId, canManage }: AuditWebhooksCardPro
     <section className="rounded-xl border border-border/70 bg-card">
       <header className="flex items-center justify-between gap-3 border-b border-border/60 px-6 py-4">
         <div>
-          <h2 className="text-base font-semibold text-foreground">{tHardcodedUi.raw('componentsIamAuditWebhooksCard.line101JsxTextAuditWebhooks')}</h2>
+          <h2 className="text-base font-semibold text-foreground">
+            {tHardcodedUi.raw('componentsIamAuditWebhooksCard.line101JsxTextAuditWebhooks')}
+          </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {tHardcodedUi.raw('componentsIamAuditWebhooksCard.line103JsxTextShipEveryAuditEventToYourSIEMOr')}</p>
+            {tHardcodedUi.raw(
+              'componentsIamAuditWebhooksCard.line103JsxTextShipEveryAuditEventToYourSIEMOr',
+            )}
+          </p>
         </div>
         {canManage && (
           <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
             <Plus className="h-4 w-4" />
-            {tHardcodedUi.raw('componentsIamAuditWebhooksCard.line110JsxTextNewWebhook')}</Button>
+            {tHardcodedUi.raw('componentsIamAuditWebhooksCard.line110JsxTextNewWebhook')}
+          </Button>
         )}
       </header>
 
@@ -121,28 +127,30 @@ export function AuditWebhooksCard({ accountId, canManage }: AuditWebhooksCardPro
 
         {!hooksQuery.isLoading && hooks.length === 0 && (
           <p className="rounded-2xl border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">
-            {tHardcodedUi.raw('componentsIamAuditWebhooksCard.line125JsxTextNoWebhooksConfigured')}</p>
+            {tHardcodedUi.raw('componentsIamAuditWebhooksCard.line125JsxTextNoWebhooksConfigured')}
+          </p>
         )}
 
         {!hooksQuery.isLoading && hooks.length > 0 && (
           <ul className="space-y-2">
             {hooks.map((h) => (
-              <li
-                key={h.webhook_id}
-                className="rounded-2xl border border-border/60 px-3 py-2.5"
-              >
+              <li key={h.webhook_id} className="rounded-2xl border border-border/60 px-3 py-2.5">
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-foreground">
-                        {h.name}
-                      </span>
+                      <span className="truncate text-sm font-medium text-foreground">{h.name}</span>
                       {h.enabled ? (
-                        <Badge variant="outline" className="h-4 rounded-md px-1 text-[9px] font-normal">
+                        <Badge
+                          variant="outline"
+                          className="h-4 rounded-md px-1 text-[9px] font-normal"
+                        >
                           enabled
                         </Badge>
                       ) : (
-                        <Badge variant="destructive" className="h-4 rounded-md px-1 text-[9px] font-normal">
+                        <Badge
+                          variant="destructive"
+                          className="h-4 rounded-md px-1 text-[9px] font-normal"
+                        >
                           disabled
                         </Badge>
                       )}
@@ -159,7 +167,12 @@ export function AuditWebhooksCard({ accountId, canManage }: AuditWebhooksCardPro
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
                       <code className="truncate font-mono">{h.url}</code>
                       <span>·</span>
-                      <span>{tHardcodedUi.raw('componentsIamAuditWebhooksCard.line164JsxTextLastDelivered')}{' '}{relative(h.last_delivered_at)}</span>
+                      <span>
+                        {tHardcodedUi.raw(
+                          'componentsIamAuditWebhooksCard.line164JsxTextLastDelivered',
+                        )}{' '}
+                        {relative(h.last_delivered_at)}
+                      </span>
                     </div>
                     {h.last_error && (
                       <div className="mt-1 flex items-start gap-1.5 text-[11px] text-destructive">
@@ -221,7 +234,9 @@ export function AuditWebhooksCard({ accountId, canManage }: AuditWebhooksCardPro
             ? `Stop sending audit events to "${deleteTarget.name}"? Existing receivers must be reconfigured if you re-create it.`
             : ''
         }
-        confirmLabel={tHardcodedUi.raw('componentsIamAuditWebhooksCard.line226JsxAttrConfirmLabelDeleteWebhook')}
+        confirmLabel={tHardcodedUi.raw(
+          'componentsIamAuditWebhooksCard.line226JsxAttrConfirmLabelDeleteWebhook',
+        )}
         isPending={deleteMutation.isPending}
         onConfirm={() => {
           if (deleteTarget) deleteMutation.mutate(deleteTarget.webhook_id);
@@ -270,6 +285,15 @@ function CreateAuditWebhookDialog({
     onSuccess: (hook) => {
       setCreated(hook);
       queryClient.invalidateQueries({ queryKey: ['audit-webhooks', accountId] });
+      // Surface the create-time test delivery so a bad URL is caught now, not
+      // after silently dropping real audit events.
+      if (hook.test && !hook.test.ok) {
+        toast.warning(
+          `Webhook saved, but the test delivery failed${hook.test.error ? `: ${hook.test.error}` : ''}. Check the URL — events won't arrive until it succeeds.`,
+        );
+      } else if (hook.test?.ok) {
+        toast.success('Webhook created — test event delivered successfully.');
+      }
     },
     onError: (err: Error) => toast.error(err.message || 'Failed to create webhook'),
   });
@@ -295,8 +319,31 @@ function CreateAuditWebhookDialog({
 
         {created ? (
           <div className="space-y-4">
+            {/* Test-delivery result — reassures on success, and makes a broken
+                URL impossible to miss (the failure mode that silently drops
+                every real audit event). */}
+            {created.test &&
+              (created.test.ok ? (
+                <div className="flex items-start gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+                  <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    Test event delivered — your endpoint is reachable and events will stream here.
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    Test delivery failed{created.test.error ? `: ${created.test.error}` : ''}.
+                    Events won&apos;t arrive until the URL responds — fix it, then delete and
+                    re-create.
+                  </span>
+                </div>
+              ))}
             <div>
-              <Label className="text-xs">{tHardcodedUi.raw('componentsIamAuditWebhooksCard.line300JsxTextSigningSecret')}</Label>
+              <Label className="text-xs">
+                {tHardcodedUi.raw('componentsIamAuditWebhooksCard.line300JsxTextSigningSecret')}
+              </Label>
               <div className="mt-1 flex items-center gap-2">
                 <code className="flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
                   {created.secret}
@@ -304,7 +351,9 @@ function CreateAuditWebhookDialog({
                 <Button
                   variant="outline"
                   size="icon"
-                  aria-label={tHardcodedUi.raw('componentsIamAuditWebhooksCard.line308JsxAttrAriaLabelCopySecret')}
+                  aria-label={tHardcodedUi.raw(
+                    'componentsIamAuditWebhooksCard.line308JsxAttrAriaLabelCopySecret',
+                  )}
                   onClick={() => copyToClipboard(created.secret, 'Secret copied')}
                 >
                   <Copy className="h-3.5 w-3.5" />
@@ -312,7 +361,9 @@ function CreateAuditWebhookDialog({
               </div>
             </div>
             <div>
-              <Label className="text-xs">{tHardcodedUi.raw('componentsIamAuditWebhooksCard.line316JsxTextDestinationURL')}</Label>
+              <Label className="text-xs">
+                {tHardcodedUi.raw('componentsIamAuditWebhooksCard.line316JsxTextDestinationURL')}
+              </Label>
               <div className="mt-1 flex items-center gap-2">
                 <code className="flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
                   {created.url}
@@ -334,7 +385,9 @@ function CreateAuditWebhookDialog({
                 id="hook-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder={tHardcodedUi.raw('componentsIamAuditWebhooksCard.line338JsxAttrPlaceholderSplunkProduction')}
+                placeholder={tHardcodedUi.raw(
+                  'componentsIamAuditWebhooksCard.line338JsxAttrPlaceholderSplunkProduction',
+                )}
                 maxLength={128}
                 autoFocus
                 required
@@ -342,7 +395,9 @@ function CreateAuditWebhookDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="hook-url">{tHardcodedUi.raw('componentsIamAuditWebhooksCard.line346JsxTextDestinationURL')}</Label>
+              <Label htmlFor="hook-url">
+                {tHardcodedUi.raw('componentsIamAuditWebhooksCard.line346JsxTextDestinationURL')}
+              </Label>
               <Input
                 id="hook-url"
                 value={url}
@@ -356,9 +411,7 @@ function CreateAuditWebhookDialog({
             <div className="space-y-1.5">
               <Label htmlFor="hook-prefix">
                 {tHardcodedUi.raw('componentsIamAuditWebhooksCard.line359JsxTextActionPrefix')}{' '}
-                <span className="text-xs font-normal text-muted-foreground">
-                  (optional)
-                </span>
+                <span className="text-xs font-normal text-muted-foreground">(optional)</span>
               </Label>
               <Input
                 id="hook-prefix"
@@ -396,7 +449,10 @@ function CreateAuditWebhookDialog({
                 ))}
               </div>
               <p className="text-[11px] text-muted-foreground">
-                {tHardcodedUi.raw('componentsIamAuditWebhooksCard.line400JsxTextOnlyDeliverEventsWhoseActionStartsWithThis')}</p>
+                {tHardcodedUi.raw(
+                  'componentsIamAuditWebhooksCard.line400JsxTextOnlyDeliverEventsWhoseActionStartsWithThis',
+                )}
+              </p>
             </div>
             <DialogFooter>
               <Button
@@ -407,12 +463,10 @@ function CreateAuditWebhookDialog({
               >
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                disabled={!name.trim() || !url.trim() || mutation.isPending}
-              >
+              <Button type="submit" disabled={!name.trim() || !url.trim() || mutation.isPending}>
                 {mutation.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-                {tHardcodedUi.raw('componentsIamAuditWebhooksCard.line418JsxTextCreateWebhook')}</Button>
+                {tHardcodedUi.raw('componentsIamAuditWebhooksCard.line418JsxTextCreateWebhook')}
+              </Button>
             </DialogFooter>
           </form>
         )}

@@ -164,7 +164,7 @@ describe('ProjectSchema', () => {
 
   test('accepts null roles for inherited access', () => {
     const parsed = ProjectSchema.parse(
-      projectFixture({ project_role: null, effective_project_role: 'user' }),
+      projectFixture({ project_role: null, effective_project_role: 'member' }),
     );
     expect(parsed.project_role).toBeNull();
   });

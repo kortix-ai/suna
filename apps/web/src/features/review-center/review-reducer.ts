@@ -84,19 +84,81 @@ export function matchesQuery(item: ReviewItem, query: string): boolean {
   return `${item.title} ${item.summary} ${item.project} ${item.agent}`.toLowerCase().includes(q);
 }
 
-/** Items visible for the current segment + kind filter + search query. */
+/** Items visible for the current segment + kind + query + optional session,
+ *  newest-first. The explicit sort keeps the top of Needs-you the most recent
+ *  blocking item and stops a poll refetch from reordering rows (which would
+ *  jump the j/k focus cursor). Ties break on id for a stable order. */
 export function filterItems(
   items: ReviewItem[],
   segment: ReviewSegment,
   kind: ReviewKind | 'all',
   query = '',
+  sessionFilter: string | 'all' = 'all',
 ): ReviewItem[] {
-  return items.filter(
-    (i) =>
-      segmentForStatus(i.status) === segment &&
-      (kind === 'all' || i.kind === kind) &&
-      matchesQuery(i, query),
-  );
+  return items
+    .filter(
+      (i) =>
+        segmentForStatus(i.status) === segment &&
+        (kind === 'all' || i.kind === kind) &&
+        (sessionFilter === 'all' || (i.sessionId ?? '') === sessionFilter) &&
+        matchesQuery(i, query),
+    )
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
+}
+
+/** One "group by session" bucket. `sessionId === null` is the catch-all for
+ *  items with no originating session (e.g. a project-level submission). */
+export interface SessionGroup {
+  sessionId: string | null;
+  label: string;
+  items: ReviewItem[];
+}
+
+/** Resolve a session id → human label, falling back to a short id. */
+function sessionLabel(sessionId: string, labelFor: (id: string) => string | undefined): string {
+  return labelFor(sessionId) ?? `Session ${sessionId.slice(0, 8)}`;
+}
+
+/**
+ * Group items by their originating session — newest-activity first, with the
+ * "No session" bucket always last. Reviews and approvals for a session end up
+ * side by side under one header. `labelFor` resolves a session id to its name.
+ */
+export function groupBySession(
+  items: ReviewItem[],
+  labelFor: (sessionId: string) => string | undefined,
+): SessionGroup[] {
+  const byId = new Map<string | null, ReviewItem[]>();
+  for (const i of items) {
+    const key = i.sessionId ?? null;
+    const list = byId.get(key);
+    if (list) list.push(i);
+    else byId.set(key, [i]);
+  }
+  const newest = (list: ReviewItem[]) =>
+    list.reduce((m, i) => (i.createdAt > m ? i.createdAt : m), '');
+  return [...byId.entries()]
+    .map(([sessionId, list]) => ({
+      sessionId,
+      label: sessionId === null ? 'No session' : sessionLabel(sessionId, labelFor),
+      items: list,
+    }))
+    .sort((a, b) => {
+      if (a.sessionId === null) return 1; // "No session" sinks last
+      if (b.sessionId === null) return -1;
+      return newest(b.items).localeCompare(newest(a.items));
+    });
+}
+
+/** Distinct sessions present across items (for the session-filter dropdown),
+ *  each with a resolved label, ordered by newest activity. */
+export function sessionOptions(
+  items: ReviewItem[],
+  labelFor: (sessionId: string) => string | undefined,
+): { sessionId: string; label: string }[] {
+  return groupBySession(items, labelFor)
+    .filter((g): g is SessionGroup & { sessionId: string } => g.sessionId !== null)
+    .map((g) => ({ sessionId: g.sessionId, label: g.label }));
 }
 
 /** Set the same status on many items at once (multi-select bulk approve / dismiss). */

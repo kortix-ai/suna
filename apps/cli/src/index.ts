@@ -2,6 +2,7 @@
 import { printBanner } from './banner.ts';
 import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
+import { runAgents } from './commands/agents.ts';
 import { runApps } from './commands/apps.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
@@ -78,6 +79,7 @@ const COMMANDS: readonly Command[] = [
     blurb: 'List, link, set-default, open Kortix cloud projects',
   },
   { name: 'secrets', args: '<subcommand>', blurb: 'Manage project secrets (project-scoped)' },
+  { name: 'agents', args: '<subcommand>', blurb: "Set which model each agent runs on" },
   { name: 'env', args: '<subcommand>', blurb: 'Pull/push project secrets as a dotenv file' },
   { name: 'sessions', args: '<subcommand>', blurb: 'List, create, restart project sessions' },
   { name: 'chat', args: '[session-id]', blurb: "Talk to a session's agent (REPL or --prompt)" },
@@ -233,6 +235,9 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'secrets') {
     return runSecrets(argv.slice(1));
+  }
+  if (argv[0] === 'agents') {
+    return runAgents(argv.slice(1));
   }
   if (argv[0] === 'self-host') {
     return runSelfHost(argv.slice(1));

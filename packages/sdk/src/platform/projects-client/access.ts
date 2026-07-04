@@ -81,7 +81,7 @@ export async function listProjectAccessRequests(projectId: string, options?: Api
 export async function approveProjectAccessRequest(
   projectId: string,
   requestId: string,
-  role: ProjectRole = 'user',
+  role: ProjectRole = 'member',
 ) {
   return unwrap(
     await backendApi.post<{
@@ -422,11 +422,14 @@ export async function resolveApproval(
   projectId: string,
   executionId: string,
   decision: 'approve' | 'deny',
+  // 'once' (default) = just this call; 'session' = also stop asking for this
+  // connector+action for the rest of the session.
+  scope: 'once' | 'session' = 'once',
 ) {
   return unwrap(
-    await backendApi.post<{ ok: boolean }>(
+    await backendApi.post<{ ok: boolean; scope?: 'once' | 'session' }>(
       `/projects/${projectId}/approvals/${executionId}`,
-      { decision },
+      { decision, scope },
     ),
   );
 }
