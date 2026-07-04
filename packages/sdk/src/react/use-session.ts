@@ -41,6 +41,7 @@ import { useOpenCodeEventStream } from './use-opencode-events';
 import type { ModelKey } from './use-model-store';
 import { useProjectConfig } from './use-project-config';
 import { useProjectModels } from './use-project-models';
+import { useQuestionSelfHeal } from './use-question-self-heal';
 import { useRuntimePhase } from './use-runtime-phase';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { useSessionPicks } from './use-session-picks';
@@ -262,6 +263,12 @@ export function useSession(
   const sync = useSessionSync(ocSessionId);
   const runtimePhase = useRuntimePhase();
 
+  // 5b. Self-heal a missed `question.asked` SSE event (a `question` tool part
+  // rendering as running with nothing in the pending store) — see
+  // `useQuestionSelfHeal` for why this is distinct from the SSE reconnect-gap
+  // hydration in `useOpenCodeEventStream`.
+  useQuestionSelfHeal(ocSessionId, sync.messages, { enabled: !!ocSessionId });
+
   // 6. Interactive prompts live in the pending store (the SSE writes them there,
   // keyed by request id carrying sessionID). useSessionSync does NOT surface them.
   const questionMap = useOpenCodePendingStore((s) => s.questions);
@@ -311,14 +318,19 @@ export function useSession(
 
   const send = (
     text: string,
-    override?: { model?: ModelKey | null; agent?: string | null },
+    override?: { model?: ModelKey | null; agent?: string | null; variant?: string | null },
   ) => {
     if (!ocSessionId) return;
     pendingBaseCount.current = userMsgCount;
     setSendState(sendStateOnStart(text));
     const model = override?.model ?? picks.model;
     const agent = override?.agent ?? picks.agent;
-    const opts = { ...(model ? { model } : {}), ...(agent ? { agent } : {}) };
+    const variant = override?.variant;
+    const opts = {
+      ...(model ? { model } : {}),
+      ...(agent ? { agent } : {}),
+      ...(variant ? { variant } : {}),
+    };
     sendMutation.mutate(
       {
         sessionId: ocSessionId,
@@ -357,7 +369,7 @@ export function useSession(
     if (sync.messages.length > 0) return;
     if (stash.model) picks.setModel(stash.model);
     if (stash.agent) picks.setAgent(stash.agent);
-    send(stash.prompt, { model: stash.model, agent: stash.agent });
+    send(stash.prompt, { model: stash.model, agent: stash.agent, variant: stash.variant });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, sync.isLoading, sync.messages.length, sessionId, replayStartStash]);
 

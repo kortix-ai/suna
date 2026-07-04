@@ -2,10 +2,109 @@
 
 import { useMutation } from '@tanstack/react-query';
 import { getClient } from '../../opencode/client';
+import { logger } from '../../platform/logger';
 import { useSyncStore } from '../../state/sync-store';
 import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 import type { MessageWithParts, PromptPart, SendMessageOptions } from './keys';
 import { unwrap } from './shared';
+
+// ============================================================================
+// Send retry policy — ported from apps/web's `opencode-send-retry.ts` so every
+// host that sends a prompt through `promptOpenCodeMessage` inherits it, not
+// just apps/web.
+//
+// Two failure shapes flow through here:
+//   1. A thrown error (transport failure — the request never completed). No
+//      HTTP status is available.
+//   2. A resolved SDK response carrying `{ error, response }` (the SDK resolves
+//      rather than rejects on HTTP errors). `response.status` is the status.
+//
+// A freshly-created session points at a sandbox that may still be booting. The
+// proxy comes up before opencode's binary binds its port, so it answers with a
+// `503 "opencode not ready"` for a few seconds. That is a boot signal, not a
+// real failure — retrying across the full boot window lets the first prompt
+// land instead of flashing an "opencode not ready" error banner the user can't
+// act on.
+// ============================================================================
+
+/** Generic transient blips (server restart, tunnel hiccup): short, snappy. */
+const TRANSIENT_BACKOFF_MS = [400, 1000, 2000];
+
+/**
+ * Boot/wake window — covers a sandbox binding its opencode port, whether that's
+ * a cold first-session boot OR a wake from auto-stop (sandbox resume + opencode
+ * rebind, which is slower). Stretched to ~30s so the prompt lands instead of the
+ * client giving up and reverting a message that actually ran once the box woke.
+ */
+const BOOT_BACKOFF_MS = [400, 800, 1500, 2500, 4000, 4000, 4000, 4000, 4000, 4000];
+
+/** Pull a human-readable message out of any error/response-error shape. */
+export function extractSendErrorMessage(error: unknown): string {
+  if (!error) return '';
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object') {
+    const err = error as Record<string, any>;
+    const root = err.data ?? err;
+    const msg = root?.message || err.message || root?.error || err.error;
+    if (typeof msg === 'string') return msg;
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return '';
+    }
+  }
+  return String(error);
+}
+
+/**
+ * The sandbox proxy returns `503 "opencode not ready"` while opencode's binary
+ * is still booting inside a freshly-created sandbox — or while a sandbox is
+ * waking from auto-stop and rebinding its port. Match the common "not ready /
+ * waking / booting / provisioning" shapes, not just the exact string.
+ */
+export function isOpenCodeNotReadyError(error: unknown): boolean {
+  return /opencode not ready|not ready|not yet ready|waking|booting|still booting|provision/i.test(
+    extractSendErrorMessage(error),
+  );
+}
+
+/**
+ * A status the server might recover from on its own: no status (thrown
+ * transport error), any 5xx, or a 408/429 backpressure signal. A 4xx is a real
+ * client error (bad request / auth / unknown model) and is never retried.
+ */
+export function isTransientSendStatus(status: number | undefined): boolean {
+  return status === undefined || status >= 500 || status === 408 || status === 429;
+}
+
+/**
+ * Delay (ms) to wait before the next send attempt, or `null` when the send
+ * should stop retrying and surface the error.
+ *
+ * @param attempt 1-based index of the attempt that just failed (1 = first send).
+ *                The returned delay precedes attempt `attempt + 1`.
+ */
+export function getSendRetryDelayMs(
+  attempt: number,
+  status: number | undefined,
+  error: unknown,
+): number | null {
+  // A 503 from our sandbox proxy ALWAYS means "sandbox/opencode not ready" — a
+  // cold boot or a wake from auto-stop — so give it the full boot/wake window,
+  // not the short transient one, even when the error body didn't carry a tidy
+  // message. Giving up early here is exactly what reverted a prompt that then
+  // landed once the box finished waking.
+  const isBoot = status === 503 || isOpenCodeNotReadyError(error);
+  const schedule = isBoot
+    ? BOOT_BACKOFF_MS
+    : isTransientSendStatus(status)
+      ? TRANSIENT_BACKOFF_MS
+      : null;
+  if (!schedule) return null;
+  if (attempt < 1 || attempt > schedule.length) return null;
+  return schedule[attempt - 1];
+}
 
 // ============================================================================
 // Messages
@@ -152,11 +251,20 @@ export interface SendOpenCodeMessageError extends Error {
 }
 
 /**
- * Send a prompt to a session (matches OpenCode's `session.prompt()`, the
- * blocking endpoint — the call blocks until the AI finishes; UI callers
- * fire-and-forget since SSE events drive all incremental updates via the sync
- * store). Extracted from `useSendOpenCodeMessage`'s mutationFn so it's a plain
- * async function callable — and unit-testable — without a mutation/hook context.
+ * Send a prompt to a session via `session.promptAsync()` — the server accepts
+ * the prompt and returns immediately (204); the actual turn streams back over
+ * SSE into the sync store. Callers must NOT await this for the turn to finish,
+ * only for the server's accept/reject of the prompt itself.
+ *
+ * Retries transient failures (a thrown transport error, or a 5xx/408/429
+ * response) with backoff — see the retry policy above. The sandbox proxy's
+ * `503 "opencode not ready"` boot signal gets the full ~30s boot/wake window so
+ * the very first prompt against a cold or waking sandbox lands on its own
+ * instead of surfacing an error the user can't act on. A real 4xx (bad
+ * request / auth / unknown model) is never retried.
+ *
+ * Extracted from `useSendOpenCodeMessage`'s mutationFn so it's a plain async
+ * function callable — and unit-testable — without a mutation/hook context.
  */
 export async function promptOpenCodeMessage({
   sessionId,
@@ -173,24 +281,42 @@ export async function promptOpenCodeMessage({
     sessionID: sessionId,
     parts: mappedParts,
     ...(messageID && { messageID }),
+    ...(options?.directory && { directory: options.directory }),
     ...(options?.model && { model: options.model }),
     ...(options?.agent && { agent: options.agent }),
     ...(options?.variant && { variant: options.variant }),
   };
 
   const client = getClient();
-  const result = await client.session.prompt(payload as any);
-  if (result.error) {
-    const err = result.error as any;
-    const status = (result.response as Response | undefined)?.status;
-    const message = err?.data?.message || err?.message || 'Failed to send message';
-    const wrapped = new Error(message) as SendOpenCodeMessageError;
-    if (status) {
-      wrapped.status = status;
-      wrapped.response = { status };
+
+  for (let attempt = 1; ; attempt++) {
+    let status: number | undefined;
+    let error: unknown;
+    try {
+      // The SDK resolves (not rejects) on HTTP errors, returning
+      // { error, response } instead of throwing.
+      const result = await client.session.promptAsync(payload as any);
+      if (!result?.error) return; // 204 — server accepted the prompt.
+      error = result.error;
+      status = (result.response as Response | undefined)?.status;
+    } catch (err) {
+      error = err; // thrown = transport failure (no status).
     }
-    wrapped.data = err?.data ?? err;
-    throw wrapped;
+
+    const delay = getSendRetryDelayMs(attempt, status, error);
+    if (delay === null) {
+      const err = error as any;
+      const message = err?.data?.message || err?.message || 'Failed to send message';
+      const wrapped = new Error(message) as SendOpenCodeMessageError;
+      if (status) {
+        wrapped.status = status;
+        wrapped.response = { status };
+      }
+      wrapped.data = err?.data ?? err;
+      throw wrapped;
+    }
+    logger.warn('promptOpenCodeMessage retrying send', { sessionId, attempt, status });
+    await new Promise((resolve) => setTimeout(resolve, delay));
   }
 }
 

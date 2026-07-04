@@ -20,7 +20,7 @@ mock.module('../opencode/client', () => ({
       reply: (args: unknown) => questionReplyImpl(args),
       reject: (args: unknown) => questionRejectImpl(args),
     },
-    session: { prompt: (args: unknown) => sessionPromptImpl(args) },
+    session: { promptAsync: (args: unknown) => sessionPromptImpl(args) },
   }),
 }));
 
