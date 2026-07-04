@@ -48,6 +48,10 @@ import {
   ProjectSandboxAlert,
   ProjectSandboxAlertRailItem,
 } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
+import {
+  ProjectFilesNavItem,
+  ProjectFilesRailItem,
+} from '@/features/workspace/project-sidebar/project-files-nav';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-switcher';
 import { useAdminRole } from '@/hooks/admin';
@@ -263,6 +267,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             <ProjectAppsRailItem projectId={projectId} />
             <ProjectChatGptConnectRailItem projectId={projectId} />
             <ProjectCustomizeRailItem />
+            <ProjectFilesRailItem />
             <SidebarUpgradeRailItem accountId={accountId} />
           </div>
         </div>
@@ -358,6 +363,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectAppsNavItem projectId={projectId} />
               <ProjectCustomizeNavItem />
+              <ProjectFilesNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
               <SidebarUpgradeButton accountId={accountId} />
             </SidebarMenu>
