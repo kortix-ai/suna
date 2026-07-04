@@ -119,7 +119,7 @@ than `@kortix/sdk/react`.
   (Holds today — no host imports it.)
 - **No raw `backendApi` / `authenticatedFetch` in host code.** Use the facade or a
   subpath module. (Aspirational: apps/web still calls `backendApi` via its
-  `@/lib/api-client` re-export in ~40 files and keeps a parallel
+  `@/lib/api-client` re-export in ~30 files and keeps a parallel
   `authenticatedFetch` in `apps/web/src/lib/auth-token.ts` — migration pending.)
 - **React data** comes from `@kortix/sdk/react` hooks; **imperative actions** from
   the `createKortix` facade.

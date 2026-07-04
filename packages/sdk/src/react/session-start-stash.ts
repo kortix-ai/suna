@@ -120,6 +120,7 @@ export function clearStartStash(sessionId: string): void {
  * migrate.
  */
 export function migrateStash(fromSessionId: string, toSessionId: string): void {
+  if (fromSessionId === toSessionId) return;
   try {
     if (!readStartStash(toSessionId)) {
       const stash = readStartStash(fromSessionId);
