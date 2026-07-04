@@ -99,6 +99,7 @@ export {
   writeStartStash,
   readStartStash,
   clearStartStash,
+  migrateStash,
   migrateLegacyStash,
   type StartStash,
 } from './session-start-stash';

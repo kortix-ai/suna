@@ -29,6 +29,7 @@ import {
   clearStartStash,
   forkDraftKey,
   migrateLegacyStash,
+  migrateStash,
   readForkDraft,
   readStartStash,
   startStashKey,
@@ -174,6 +175,85 @@ describe('migrateLegacyStash', () => {
     expect(readStartStash('oc_target3')?.prompt).toBe('already here');
     // Source keys are still cleared even when the migration was skipped.
     expect(sessionStorage.getItem('project_pending_prompt:proj-ses-3')).toBeNull();
+  });
+});
+
+describe('migrateStash', () => {
+  // Producers that already write the canonical shape (writeStartStash) key it
+  // by a route/project id before the real OpenCode session id exists; a later
+  // render resolves the real id and needs to hand the stash off. Unlike
+  // `migrateLegacyStash` (which only understands a raw bare-prompt + options
+  // pair at arbitrary keys), `migrateStash` reads the source via
+  // `readStartStash`, so it understands a canonical JSON stash as the source.
+  test('moves a canonical stash from one session id to another', () => {
+    writeStartStash('route_1', {
+      prompt: 'build me a widget',
+      model: { providerID: 'kortix', modelID: 'auto' },
+      agent: 'build',
+      variant: 'thinking',
+    });
+
+    migrateStash('route_1', 'oc_1');
+
+    expect(readStartStash('oc_1')).toEqual({
+      prompt: 'build me a widget',
+      model: { providerID: 'kortix', modelID: 'auto' },
+      agent: 'build',
+      variant: 'thinking',
+    });
+    // Source is always cleared, canonical key included.
+    expect(sessionStorage.getItem(startStashKey('route_1'))).toBeNull();
+    expect(readStartStash('route_1')).toBeNull();
+  });
+
+  test('moves a canonical stash with only some options set', () => {
+    writeStartStash('route_2', { prompt: 'do a thing', model: null, agent: 'plan' });
+
+    migrateStash('route_2', 'oc_2');
+
+    expect(readStartStash('oc_2')).toEqual({
+      prompt: 'do a thing',
+      model: null,
+      agent: 'plan',
+    });
+  });
+
+  test('a legacy bare-prompt source still migrates', () => {
+    sessionStorage.setItem('opencode_pending_prompt:route_3', 'legacy prompt');
+    sessionStorage.setItem(
+      'opencode_pending_options:route_3',
+      JSON.stringify({ agent: 'build', variant: 'thinking' }),
+    );
+
+    migrateStash('route_3', 'oc_3');
+
+    expect(readStartStash('oc_3')).toEqual({
+      prompt: 'legacy prompt',
+      model: null,
+      agent: 'build',
+      variant: 'thinking',
+    });
+    // Both the canonical and legacy source keys are cleared.
+    expect(sessionStorage.getItem(startStashKey('route_3'))).toBeNull();
+    expect(sessionStorage.getItem('opencode_pending_prompt:route_3')).toBeNull();
+    expect(sessionStorage.getItem('opencode_pending_options:route_3')).toBeNull();
+  });
+
+  test('source is always cleared, even when there is nothing to migrate', () => {
+    migrateStash('route_missing', 'oc_missing');
+    expect(readStartStash('oc_missing')).toBeNull();
+    expect(sessionStorage.getItem(startStashKey('route_missing'))).toBeNull();
+  });
+
+  test('never clobbers a stash the target already has', () => {
+    writeStartStash('oc_4', { prompt: 'already here', model: null, agent: null });
+    writeStartStash('route_4', { prompt: 'a different prompt', model: null, agent: null });
+
+    migrateStash('route_4', 'oc_4');
+
+    expect(readStartStash('oc_4')?.prompt).toBe('already here');
+    // Source is still cleared even when the migration was skipped.
+    expect(readStartStash('route_4')).toBeNull();
   });
 });
 
