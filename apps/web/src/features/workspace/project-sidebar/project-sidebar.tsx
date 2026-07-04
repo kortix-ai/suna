@@ -42,12 +42,9 @@ import {
 import {
   ProjectCustomizeNavItem,
   ProjectCustomizeRailItem,
-  ProjectFilesNavItem,
   ProjectFilesRailItem,
   useCustomizeKeyboardShortcut,
 } from '@/features/workspace/project-sidebar/footer/project-customize-nav';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
 import {
   ProjectSandboxAlert,
   ProjectSandboxAlertRailItem,
@@ -58,11 +55,13 @@ import { useAdminRole } from '@/hooks/admin';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
 import { isDesktop } from '@/lib/desktop';
-import { listProjectSessions } from '@kortix/sdk/projects-client';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { useSessionFilterStore } from '@/stores/session-filter-store';
+import { listProjectSessions } from '@kortix/sdk/projects-client';
 import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -292,6 +291,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             <ProjectChatGptConnectRailItem projectId={projectId} />
             <ProjectFilesRailItem />
             {canCustomize && <ProjectCustomizeRailItem />}
+            <ProjectFilesRailItem />
             <SidebarUpgradeRailItem accountId={accountId} />
           </div>
         </div>
@@ -386,8 +386,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <ProjectSandboxAlert projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectAppsNavItem projectId={projectId} />
-              <ProjectFilesNavItem />
-              {canCustomize && <ProjectCustomizeNavItem />}
+              <ProjectCustomizeNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
               <SidebarUpgradeButton accountId={accountId} />
             </SidebarMenu>

@@ -11,14 +11,14 @@ import { cn } from '@/lib/utils';
 import { formatRelative } from '@kortix/shared';
 import {
   AlertCircle,
+  CheckCircle2,
   ChevronDown,
-  GitBranch,
-  GitMerge,
-  GitPullRequest,
-  GitPullRequestClosed,
+  FileDiff,
+  Layers,
   Plus,
   RefreshCw,
   X,
+  XCircle,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { ChangeRequest, ChangeRequestStatus } from '../api/change-requests';
@@ -53,12 +53,12 @@ function tsFromCr(cr: ChangeRequest): number {
 
 function crTimeLabel(cr: ChangeRequest): string {
   if (cr.status === 'merged' && cr.merged_at) {
-    return `merged ${formatRelative(cr.merged_at, { extended: 'full' }) ?? ''}`;
+    return `applied ${formatRelative(cr.merged_at, { extended: 'full' }) ?? ''}`;
   }
   if (cr.status === 'closed' && cr.closed_at) {
-    return `closed ${formatRelative(cr.closed_at, { extended: 'full' }) ?? ''}`;
+    return `dismissed ${formatRelative(cr.closed_at, { extended: 'full' }) ?? ''}`;
   }
-  return `opened ${formatRelative(cr.created_at, { extended: 'full' }) ?? ''}`;
+  return `proposed ${formatRelative(cr.created_at, { extended: 'full' }) ?? ''}`;
 }
 
 function groupByDate(crs: ChangeRequest[]) {
@@ -87,11 +87,11 @@ function groupByDate(crs: ChangeRequest[]) {
 // ---------------------------------------------------------------------------
 
 function CrIcon({ status }: { status: ChangeRequestStatus }) {
-  if (status === 'merged') return <GitMerge className="h-3.5 w-3.5 text-violet-500" />;
+  if (status === 'merged') return <CheckCircle2 className="text-kortix-purple h-3.5 w-3.5" />;
   if (status === 'closed') {
-    return <GitPullRequestClosed className="text-muted-foreground h-3.5 w-3.5" />;
+    return <XCircle className="text-muted-foreground h-3.5 w-3.5" />;
   }
-  return <GitPullRequest className="h-3.5 w-3.5 text-emerald-500" />;
+  return <FileDiff className="text-kortix-green h-3.5 w-3.5" />;
 }
 
 function CrListItem({
@@ -123,12 +123,11 @@ function CrListItem({
           <p className="text-foreground truncate text-sm font-medium">{cr.title}</p>
         </div>
         <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
-          <GitBranch className="h-3 w-3 shrink-0" />
-          <span className="max-w-[120px] truncate font-mono">{cr.head_ref}</span>
-          <span>→</span>
-          <span className="max-w-[80px] truncate font-mono">{cr.base_ref}</span>
-          <span className="text-muted-foreground/30">·</span>
           <span title={formatFull(ts)}>{crTimeLabel(cr)}</span>
+          <span className="text-muted-foreground/30">·</span>
+          <span className="truncate" title={`Applies to the "${cr.base_ref}" version`}>
+            into {cr.base_ref}
+          </span>
         </div>
       </div>
     </button>
@@ -192,7 +191,7 @@ export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPan
               className="bg-muted/50 text-muted-foreground/90 flex max-w-[140px] items-center gap-1 truncate rounded-full px-1.5 py-0.5 text-xs"
               title={`Version: ${activeRef}`}
             >
-              <GitBranch className="h-3 w-3" />
+              <Layers className="h-3 w-3" />
               {activeRef}
             </span>
           )}
@@ -230,8 +229,8 @@ export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPan
           >
             <TabsListCompact className="w-fit">
               <TabsTriggerCompact value="open">Open</TabsTriggerCompact>
-              <TabsTriggerCompact value="merged">Merged</TabsTriggerCompact>
-              <TabsTriggerCompact value="closed">Closed</TabsTriggerCompact>
+              <TabsTriggerCompact value="merged">Applied</TabsTriggerCompact>
+              <TabsTriggerCompact value="closed">Dismissed</TabsTriggerCompact>
               <TabsTriggerCompact value="all">All</TabsTriggerCompact>
             </TabsListCompact>
           </Tabs>
@@ -262,9 +261,8 @@ export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPan
 
             {!isLoading && !error && total === 0 && (
               <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
-                <GitPullRequest className="text-muted-foreground/30 h-6 w-6" />
+                <FileDiff className="text-muted-foreground/30 h-6 w-6" />
                 <p className="text-muted-foreground text-xs">
-                  No {status === 'all' ? '' : status}
                   {tHardcodedUi.raw(
                     'featuresProjectFilesComponentsChangeRequestsPanel.line199JsxTextChangeRequests',
                   )}

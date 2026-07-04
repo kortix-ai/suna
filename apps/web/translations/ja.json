@@ -5607,12 +5607,12 @@
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "このセッションは独立したバージョンです",
-      "line83JsxTextChangesHereLiveOnAStandaloneVersionOf": "ここでの変更は、プロジェクトの独立したバージョンに保存されます。分離元:",
-      "line85JsxTextSoYouCanWorkInParallelWithoutAffecting": "。そのため、影響を与えずに並行作業できます。これらをメインのKortixバージョンに取り込むには、エージェントに",
-      "line88JsxTextChangeRequest": "変更リクエスト",
-      "line89JsxTextYouCanReviewAndMergeItInto": "を開くよう依頼してください。レビューして次へマージできます:",
+      "line83JsxTextChangesHereLiveOnAStandaloneVersionOf": "ここでの変更はこのセッション専用のプロジェクトコピーにあり、次とは分離されています:",
+      "line85JsxTextSoYouCanWorkInParallelWithoutAffecting": "。並行して作業しても影響しません。プロジェクトに反映するには、エージェントに",
+      "line88JsxTextChangeRequest": "変更の提案を依頼してください",
+      "line89JsxTextYouCanReviewAndMergeItInto": "。承認すると次に反映されます:",
       "line91JsxTextWheneverYouAposReReady": "にマージできます。",
-      "line96JsxTextAskAgentToOpenAChangeRequest": "エージェントに変更リクエストを開かせる",
+      "line96JsxTextAskAgentToOpenAChangeRequest": "エージェントにこの変更の提案を依頼",
       "line113JsxTextLoadingChanges": "変更を読み込み中…",
       "line151JsxTextNoChangesYetFilesTheAgentCreatesOr": "まだ変更はありません。このセッションでエージェントが作成または編集したファイルはここに表示されます。",
       "line144JsxTextInThisSessionTheseLiveOnlyHereUntil": "このセッション内 - これらはマージされるまでここだけに存在します：",
@@ -6209,7 +6209,7 @@
       "line692JsxTextFailedToLoadFile": "ファイルの読み込みに失敗しました",
       "line805JsxTextStartingPreviewServer": "プレビューサーバーを起動中…",
       "line844JsxTextBinaryFile": "バイナリファイル",
-      "line869JsxTextUncommittedChanges": "未コミットの変更",
+      "line869JsxTextUncommittedChanges": "このセッションで変更されました",
       "line915JsxTextInvalidJson": "無効な JSON",
       "line963JsxTextQuot": "\"",
       "line963JsxTextQuotb4125902": "\""
@@ -6245,8 +6245,8 @@
     "featuresFilesComponentsFileHistoryPopover": {
       "line72JsxTextFailedToLoadDiff": "差分を読み込めませんでした",
       "line102JsxTextNoDiff": "差分なし",
-      "line160JsxAttrTitleCopyHash": "ハッシュをコピー",
-      "line226JsxTextNoCommitHistory": "コミット履歴がありません",
+      "line160JsxAttrTitleCopyHash": "バージョンIDをコピー",
+      "line226JsxTextNoCommitHistory": "バージョン履歴はまだありません",
       "line242JsxTextShowingFirst": "最初の"
     },
     "featuresFilesComponentsFilePreviewModal": {
@@ -6291,49 +6291,49 @@
       "line356JsxTextNoChangesDetected": "変更は検出されませんでした。"
     },
     "featuresProjectFilesComponentsChangeRequestsPanel": {
-      "line131JsxTextChangeRequests": "変更リクエスト",
-      "line145JsxAttrTitleOpenANewChangeRequest": "新しい変更リクエストを開く",
-      "line199JsxTextChangeRequests": "変更リクエスト",
-      "line209JsxTextOpenTheFirstOne": "最初のものを開く"
+      "line131JsxTextChangeRequests": "提案された変更",
+      "line145JsxAttrTitleOpenANewChangeRequest": "新しい変更を提案",
+      "line199JsxTextChangeRequests": "提案された変更はまだありません",
+      "line209JsxTextOpenTheFirstOne": "最初の変更を提案する"
     },
     "featuresProjectFilesComponentsCheckpointDetailDialog": {
       "line166JsxTextSelectAFileToViewTheDiff": "差分を表示するファイルを選択",
       "line220JsxTextFailedToLoadDiff": "差分を読み込めませんでした",
       "line226JsxTextNoTextualDiff": "テキスト差分なし",
-      "line228JsxTextFileMayBeBinaryOrUnchangedInThis": "このファイルはバイナリであるか、このチェックポイントでは変更されていない可能性があります。",
-      "line407JsxAttrTitlePreviousCheckpoint": "前のチェックポイント (←)",
-      "line417JsxAttrTitleNextCheckpoint": "次のチェックポイント (→)",
-      "line482JsxAttrTitleCopyCheckpointId": "チェックポイント ID をコピー",
+      "line228JsxTextFileMayBeBinaryOrUnchangedInThis": "ファイルはバイナリか、このバージョンでは変更されていない可能性があります。",
+      "line407JsxAttrTitlePreviousCheckpoint": "前のバージョン (←)",
+      "line417JsxAttrTitleNextCheckpoint": "次のバージョン (→)",
+      "line482JsxAttrTitleCopyCheckpointId": "バージョンIDをコピー",
       "line528JsxAttrPlaceholderFilterFiles": "ファイルを絞り込み",
-      "line546JsxTextFailedToLoadCheckpoint": "チェックポイントを読み込めませんでした",
-      "line575JsxTextLoadingCheckpoint": "チェックポイントを読み込み中…"
+      "line546JsxTextFailedToLoadCheckpoint": "バージョンを読み込めませんでした",
+      "line575JsxTextLoadingCheckpoint": "バージョンを読み込み中…"
     },
     "featuresProjectFilesComponentsCheckpointsPanel": {
-      "line230JsxTextFailedToLoadCheckpoints": "チェックポイントを読み込めませんでした",
-      "line241JsxTextNoCheckpointsYet": "チェックポイントはまだありません",
+      "line230JsxTextFailedToLoadCheckpoints": "バージョン履歴を読み込めませんでした",
+      "line241JsxTextNoCheckpointsYet": "保存されたバージョンはまだありません",
       "line278JsxTextShowingTheMostRecent": "最新のものを表示中"
     },
     "featuresProjectFilesComponentsDiffPreviewBanner": {
-      "line33JsxTextCalculatingTheDiff": "差分を計算中…",
-      "line44JsxAttrTitleCouldnTComputeTheDiff": "差分を計算できませんでした",
-      "line57JsxTextSameVersionOnBothSidesPickDifferentVersions": "両側が同じバージョンです — 別のバージョンを選択してください。",
-      "line65JsxTextNoChangesBetweenTheseVersionsTheSourceNeeds": "これらのバージョン間に変更はありません。変更リクエストが意味を持つには、ソースがターゲットより先に進んでいる必要があります。"
+      "line33JsxTextCalculatingTheDiff": "バージョンを比較中…",
+      "line44JsxAttrTitleCouldnTComputeTheDiff": "これらのバージョンを比較できませんでした",
+      "line57JsxTextSameVersionOnBothSidesPickDifferentVersions": "両側が同じバージョンです。異なる2つのバージョンを選択してください。",
+      "line65JsxTextNoChangesBetweenTheseVersionsTheSourceNeeds": "これらのバージョン間に変更はまだありません。まず変更を加えてから提案してください。"
     },
     "featuresProjectFilesComponentsDriveGridView": {
       "line209JsxTextOpenFolder": "フォルダーを開く",
       "line231JsxTextCopyPath": "パスをコピー",
       "line390JsxTextOpenInTab": "タブで開く",
-      "line402JsxTextCheckpointHistory": "チェックポイント履歴",
+      "line402JsxTextCheckpointHistory": "バージョン履歴",
       "line420JsxTextCopyPath": "パスをコピー",
       "line604JsxTextThisFolderIsEmpty": "このフォルダーは空です",
       "line606JsxTextNoFilesOrSubfoldersAtThisPathIn": "現在のバージョンでは、このパスにファイルやサブフォルダーはありません。"
     },
     "featuresProjectFilesComponentsDriveListView": {
       "line255JsxTextOpenInTab": "タブで開く",
-      "line267JsxTextCheckpointHistory": "チェックポイント履歴",
+      "line267JsxTextCheckpointHistory": "バージョン履歴",
       "line285JsxTextCopyPath": "パスをコピー",
       "line396JsxTextThisFolderIsEmpty": "このフォルダーは空です",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "現在のバージョンでは、このパスにファイルやサブフォルダーはありません。"
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "エージェントが保存した内容やこのプロジェクトのファイルがここに表示されます。"
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "ダブルクリックしてパスを編集",
@@ -6414,9 +6414,9 @@
     "featuresProjectFilesComponentsFileHistoryPopover": {
       "line72JsxTextFailedToLoadDiff": "差分を読み込めませんでした",
       "line102JsxTextNoDiff": "差分なし",
-      "line160JsxAttrTitleCopyCheckpointId": "チェックポイント ID をコピー",
+      "line160JsxAttrTitleCopyCheckpointId": "バージョンIDをコピー",
       "line216JsxTextFailedToLoadHistory": "履歴を読み込めませんでした",
-      "line224JsxTextNoCheckpointsYet": "チェックポイントはまだありません",
+      "line224JsxTextNoCheckpointsYet": "バージョンはまだありません",
       "line240JsxTextShowingTheMostRecent": "最新のものを表示中"
     },
     "featuresProjectFilesComponentsFilePreviewModal": {
@@ -6455,16 +6455,16 @@
       "line41JsxAttrTitleOpenInNewTab": "新しいタブで開く"
     },
     "featuresProjectFilesComponentsOpenChangeRequestDialog": {
-      "line226JsxTextOpenChangeRequest": "変更リクエストを開く",
-      "line231JsxTextProposeMergingThisSessionAposSWorkInto": "このセッションの作業を次にマージすることを提案",
-      "line232JsxTextTheSessionNeedsToHaveCommittedAndPushed": "。差分を表示するには、セッションでコミットとプッシュが完了している必要があります。",
-      "line237JsxTextProposeMergingOneVersionIntoAnotherTheMerge": "あるバージョンを別のバージョンへマージすることを提案します。マージは、プロジェクトのgitホストに対してKortix経由で実行されます。",
-      "line246JsxAttrTitleNoNonDefaultVersionsYet": "デフォルト以外のバージョンはまだありません。",
-      "line247JsxTextStartASessionEachSessionLivesOnIts": "セッションを開始してください — 各セッションは独自のブランチ上にあります — そこから変更リクエストを開けるようになります。",
+      "line226JsxTextOpenChangeRequest": "変更を提案",
+      "line231JsxTextProposeMergingThisSessionAposSWorkInto": "このセッションの作業内容を次に追加することを提案します:",
+      "line232JsxTextTheSessionNeedsToHaveCommittedAndPushed": "。レビューするには、セッションに保存済みの作業が必要です。",
+      "line237JsxTextProposeMergingOneVersionIntoAnotherTheMerge": "あるバージョンの変更を別のバージョンに取り込むことを提案します。適用前にすべて確認できます。",
+      "line246JsxAttrTitleNoNonDefaultVersionsYet": "他のバージョンはまだありません。",
+      "line247JsxTextStartASessionEachSessionLivesOnIts": "セッションを開始してください。各セッションは独自のバージョンで動作し、そこから変更を提案できます。",
       "line305JsxAttrPlaceholderPickAVersion": "バージョンを選択",
-      "line354JsxTextPickTwoDifferentVersionsYouCanAposT": "2つの異なるバージョンを選択してください — バージョンをそれ自身にマージすることはできません。",
-      "line369JsxAttrPlaceholderContextForReviewersWhatChangedAndWhy": "レビュー担当者向けのコンテキスト — 何が変わったのか、なぜ変わったのか。",
-      "line386JsxTextOpenChangeRequest": "変更リクエストを開く"
+      "line354JsxTextPickTwoDifferentVersionsYouCanAposT": "異なる2つのバージョンを選択してください。同じバージョン同士は比較できません。",
+      "line369JsxAttrPlaceholderContextForReviewersWhatChangedAndWhy": "レビュアー向けの説明: 何をなぜ変更したか。",
+      "line386JsxTextOpenChangeRequest": "変更を提案"
     },
     "featuresProjectFilesComponentsVersionSelector": {
       "line88JsxAttrTitleSwitchVersion": "バージョンを切り替え",
@@ -6903,11 +6903,11 @@
     "autoFeaturesMarketingStorySectionsJsxAttrStatusTextGatheringOvernightUpdates3a9550bf": "夜間の更新を収集中...",
     "autoFeaturesProjectFilesComponentsFilePreviewModalJsxAttrHistoryLabel0736a6ed": "チェックポイント履歴",
     "autoFeaturesProjectsModalRenameProjectModalJsxAttrPlaceholderProjectac0cf289": "プロジェクト名",
-    "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624": "変更リクエストを開く",
+    "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624": "変更を提案",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextViewChangesaf192a3b": "変更を表示",
     "autoFeaturesSessionInstantSessionShellJsxAttrSessionTitleNewSession6b8dfd00": "新しいセッション",
     "autoFeaturesSessionSessionTerminalPanelJsxTextConnecting80303e70": "接続中…",
-    "autoFeaturesSessionSessionVersionHeaderJsxTextOpenChangeRequesta0b45de3": "変更リクエストを開く",
+    "autoFeaturesSessionSessionVersionHeaderJsxTextOpenChangeRequesta0b45de3": "変更を提案",
     "autoFeaturesSessionToolRenderersJsxAttrMessageNoTasksYet198712c5": "まだタスクはありません",
     "autoFeaturesSessionToolRenderersJsxTextInputSchema878a1df6": "入力スキーマ",
     "autoAppAppAccountsIdGroupsGroupIdPageJsxTextAn3a706d13": "アカウント所有者または管理者。このグループの役割に関係なく、すべてのプロジェクトのマネージャーを任されます。",
@@ -7989,16 +7989,16 @@
     "autoFeaturesMarketingWhyKortixJsxTextEveryAIPlatformSounds31a0bf4e": "どの AI プラットフォームも、机上では同じように聞こえます。 Kortix で実行すると実際に何が変わるのかを次に示します。",
     "autoFeaturesMarketingWhyKortixJsxTextGetGoingFastGrow2d378210": "急いでください。心配せずに成長してください。",
     "autoFeaturesMarketingWhyKortixJsxTextKortixIsnTJustb8425b28": "Kortix は簡単に始めることができるだけでなく、ユーザーとともに成長するように構築されています。",
-    "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTexta48f1c83": "PRを閉じる",
-    "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxText9f1f82e8": "変更リクエスト",
+    "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTexta48f1c83": "却下",
+    "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxText9f1f82e8": "提案された変更",
     "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxText420d0ec9": "•",
     "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxText7ba43c2e": "ファイルが変更されました",
-    "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxText561449ba": "合計の差分",
+    "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxText561449ba": "変更の合計",
     "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTexte4dd9886": "−",
     "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxAttr29624185": "変更されたファイルにジャンプ",
     "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTexta17e79af": "• +",
     "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTexte014913b": "変更を確認する",
-    "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTextec240dc2": "このファイルに使用できるテキストの差分はありません。",
+    "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTextec240dc2": "このファイルのプレビューはありません。",
     "autoFeaturesProjectFilesComponentsFileSearchJsxAttrAriaLabel732c1816": "検索を閉じる",
     "autoFeaturesProjectsModalProjectCreateModalJsxTextGoBack8b169f5b": "戻る",
     "autoFeaturesProjectsModalRenameProjectModalJsxTextRenameProjectcbab96f4": "プロジェクト名の変更",
@@ -8010,8 +8010,8 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextNotIn5d967721": "あなたの中にはない",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet689021ee": "バージョンはまだ",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextThisSession009eeb83": "このセッションは別のバージョンです",
-    "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextTheseChanges18316b37": "。これらの変更はここにのみ存在し、あなたのものにはありません。",
-    "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet922de6bd": "バージョンはまだです。変更リクエストを開いてそれらをマージします。",
+    "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextTheseChanges18316b37": "。これらの変更はここにのみ存在し、まだ次には含まれていません:",
+    "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet922de6bd": "バージョン。変更を提案してレビューと適用を受けてください。",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "名前を変更…",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "シェア…",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "Kortix コンピューターが起動しています",
@@ -8019,11 +8019,11 @@
     "autoFeaturesSessionSessionVersionHeaderJsxAttrAriaLabelFiles9fd01463": "ファイルビュー",
     "autoFeaturesSessionSessionVersionHeaderJsxAttrLabelAllFiles4f423738": "すべてのファイル",
     "autoFeaturesSessionSessionVersionHeaderJsxTextWhatThisSession2da8e6ce": "このセッションのバージョンでの変更点",
-    "autoFeaturesSessionSessionVersionHeaderJsxTextASeparateVersionc3d7a454": "— の別バージョン",
+    "autoFeaturesSessionSessionVersionHeaderJsxTextASeparateVersionc3d7a454": "。これは次の別バージョンです:",
     "autoFeaturesSessionSessionVersionHeaderJsxTextTheseEditsStaya67c1667": "。これらの編集はここに残り、影響しません",
     "autoFeaturesSessionSessionVersionHeaderJsxTextUntilYou3cf21807": "あなたまで",
-    "autoFeaturesSessionSessionVersionHeaderJsxTextOpenAChange52446e59": "変更リクエストを開く",
-    "autoFeaturesSessionSessionVersionHeaderJsxTextToMergeThemde828b03": "それらをマージします。",
+    "autoFeaturesSessionSessionVersionHeaderJsxTextOpenAChange52446e59": "変更を提案",
+    "autoFeaturesSessionSessionVersionHeaderJsxTextToMergeThemde828b03": "してレビューと適用を受けてください。",
     "autoFeaturesSessionToolRenderersJsxTextOpenPrivatePreview0d54e929": "プライベートプレビューを開く",
     "autoFeaturesSessionToolRenderersJsxAttrMessageMemoryIsEmptyc797bb83": "メモリが空です。",
     "autoFeaturesSessionToolRenderersJsxAttrMessageNoChanges0aa33a4a": "変更はありません。",
