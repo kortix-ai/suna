@@ -757,7 +757,7 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette'],
     kind: 'settings',
     settingsTab: 'appearance',
-    keywords: 'appearance theme color mode wallpaper',
+    keywords: 'appearance theme color mode wallpaper shader shaders background',
   },
   {
     id: 'pref-sounds',
