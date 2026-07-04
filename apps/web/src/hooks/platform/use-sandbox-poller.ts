@@ -91,8 +91,9 @@ function getPlatformUrl(): string {
 }
 
 function getSandboxUrl(sandboxId: string): string {
-  const base = getPlatformUrl().replace('/v1', '');
-  return `${base}/p/${sandboxId}/8000`;
+  // The sandbox proxy is mounted at /v1/p — stripping /v1 here (as this once
+  // did) 404s on every deployment, so the readiness poll only ever timed out.
+  return `${getPlatformUrl()}/p/${sandboxId}/8000`;
 }
 
 // ─── Shared OpenCode `/global/health` probe ─────────────────────────────────

@@ -97,7 +97,6 @@ import {
 import type { PromptPart, ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
 import {
   ascendingId,
-  promptOpenCodeMessage,
   rejectQuestion,
   replyToPermission,
   replyToQuestion,
@@ -115,13 +114,17 @@ import { useAutoScroll } from '@/hooks/use-auto-scroll';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { getClient } from '@/lib/opencode-sdk';
 import {
+  abandonOptimisticSend,
+  applyOptimisticAbort,
+  beginOptimisticSend,
   classifySendError,
   clearStartStash,
   type KortixSendError,
   readStartStash,
+  replayStartStash,
+  sendAndRecover,
   useQuestionSelfHeal,
   writeForkDraft,
-  writeStartStash,
 } from '@kortix/sdk/react';
 import {
   type AgentRefLike,
@@ -3885,228 +3888,121 @@ export function SessionChat({
     return null;
   });
 
-  const addOptimisticUserMessage = useCallback(
-    (messageId: string, text: string, partIds?: string[]) => {
-      const parts = text.trim()
-        ? [
-            {
-              id: partIds?.[0] ?? ascendingId('prt'),
-              sessionID: sessionId,
-              messageID: messageId,
-              type: 'text',
-              text,
-            } as any,
-          ]
-        : [];
-      const info = {
-        id: messageId,
-        sessionID: sessionId,
-        role: 'user',
-        time: { created: Date.now() },
-      } as any;
-
-      useSyncStore.getState().optimisticAdd(sessionId, info, parts as any);
-    },
-    [sessionId],
-  );
-
-  const removeOptimisticUserMessage = useCallback(
-    (messageId: string) => {
-      useSyncStore.getState().optimisticRemove(sessionId, messageId);
-    },
-    [sessionId],
-  );
-
   // Hydrate options from the SDK's start-stash and send the pending prompt for
   // new sessions. The dashboard/project page (or the instant session shell)
   // stashes the prompt and navigates here. We send the message from here (not
   // the producer) so that SSE listeners and polling are already active when the
   // response starts streaming back.
-  // Uses a retry loop (up to 5 attempts, 50ms apart) when reading the stash to
-  // handle the race condition where the effect fires before the producer has
-  // written it. `promptOpenCodeMessage` (the SDK's send path) owns the
-  // boot/transient retry across the sandbox wake window — this effect only
-  // resolves model/agent readiness and builds the optimistic message.
+  //
+  // The write-race retry (stash read), readiness poll (agent/model), and
+  // failure-recovery (stash restore + classify + idle + rehydrate-or-remove)
+  // mechanics are all owned by the SDK's `replayStartStash` — this effect only
+  // supplies the web-specific pieces: resolving agent/model/variant readiness
+  // against this session's own local model/agent stores, building the
+  // optimistic text + outgoing parts (file uploads), and restoring pending
+  // files on failure.
   useEffect(() => {
     if (pendingPromptHandled.current) return;
-    let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
-    const attemptSend = (attempt: number) => {
-      if (cancelled) return;
-      const stash = readStartStash(sessionId);
-      if (!stash?.prompt) {
-        // Retry up to 5 times with 50ms delay to handle race condition
-        if (attempt < 5) {
-          retryTimer = setTimeout(() => attemptSend(attempt + 1), 50);
-          return;
+    // Set by `prepare` below (once, before any failure can occur) so
+    // `onFailure` can restore the same files it consumed.
+    let filesToRestoreOnFailure: AttachedFile[] = [];
+
+    const handle = replayStartStash<{ options: Record<string, unknown> }>({
+      sessionId,
+      classify: classifySessionError,
+      checkReadiness: (stash) => {
+        // Restore agent/model/variant selections from the producer.
+        const options: Record<string, unknown> = {};
+        let selectedModelForSend: ModelKey | undefined;
+        const isSelectableModel = (model: ModelKey): boolean =>
+          localModelList.some(
+            (m) => m.providerID === model.providerID && m.modelID === model.modelID,
+          ) && localModelVisible(model);
+        if (stash.agent) {
+          if (!lockedAgentName || stash.agent === lockedAgentName) {
+            options.agent = stash.agent;
+            localAgentSet(stash.agent);
+          }
         }
-        // Exhausted retries — no pending prompt
-        return;
-      }
-      const pendingPrompt = stash.prompt;
-      // Restore agent/model/variant selections from the producer
-      const options: Record<string, unknown> = {};
-      let selectedModelForSend: ModelKey | undefined;
-      const isSelectableModel = (model: ModelKey): boolean =>
-        localModelList.some(
-          (m) => m.providerID === model.providerID && m.modelID === model.modelID,
-        ) && localModelVisible(model);
-      if (stash.agent) {
-        if (!lockedAgentName || stash.agent === lockedAgentName) {
-          options.agent = stash.agent;
-          localAgentSet(stash.agent);
+        if (stash.model && isSelectableModel(stash.model as ModelKey)) {
+          options.model = stash.model;
+          selectedModelForSend = stash.model as ModelKey;
+          localModelSet(stash.model as ModelKey);
         }
-      }
-      if (stash.model && isSelectableModel(stash.model)) {
-        options.model = stash.model;
-        selectedModelForSend = stash.model;
-        localModelSet(stash.model);
-      }
-      if (stash.variant) {
-        options.variant = stash.variant;
-        localVariantSet(stash.variant);
-      }
-
-      if (lockedAgentName) {
-        options.agent = lockedAgentName;
-      }
-
-      if (!selectedModelForSend && localModelSendKey) {
-        options.model = localModelSendKey;
-        selectedModelForSend = localModelSendKey;
-      }
-
-      if (!selectedModelForSend) {
-        if (attempt < 120) {
-          retryTimer = setTimeout(() => attemptSend(attempt + 1), 250);
-          return;
+        if (stash.variant) {
+          options.variant = stash.variant;
+          localVariantSet(stash.variant);
         }
+        if (lockedAgentName) {
+          options.agent = lockedAgentName;
+        }
+        if (!selectedModelForSend && localModelSendKey) {
+          options.model = localModelSendKey;
+          selectedModelForSend = localModelSendKey;
+        }
+        if (!selectedModelForSend) return null;
+        return { options };
+      },
+      onReadinessTimeout: () => {
         setCommandError({ kind: 'runtime-error', message: NO_MODEL_AVAILABLE_MESSAGE, cause: null });
-        return;
-      }
+      },
+      prepare: (stash, ready) => {
+        pendingPromptHandled.current = true;
+        setPollingActive(true);
+        setPendingSendInFlight(true);
+        clearStartStash(sessionId);
 
-      pendingPromptHandled.current = true;
-      setPollingActive(true);
-      setPendingSendInFlight(true);
-      useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
-      clearStartStash(sessionId);
+        const sendOpts = ready.options as {
+          agent?: string;
+          model?: ModelKey;
+          variant?: string;
+        };
+        const messageID = ascendingId('msg');
+        const textPartId = ascendingId('prt');
+        // Consume pending files before rendering the optimistic message so
+        // uploaded file cards are visible while the sandbox is still starting.
+        const pendingFiles = usePendingFilesStore.getState().consumePendingFiles();
+        filesToRestoreOnFailure = pendingFiles;
+        const optimisticPendingPrompt = buildOptimisticPromptTextWithUploads(
+          stash.prompt,
+          pendingFiles,
+        );
+        setOptimisticPrompt(optimisticPendingPrompt);
+        setPendingSendMessageId(messageID);
+        lastSendTimeRef.current = Date.now();
 
-      const sendOpts = Object.keys(options).length > 0 ? (options as any) : undefined;
-      const messageID = ascendingId('msg');
-      const textPartId = ascendingId('prt');
-      // Consume pending files before rendering the optimistic message so
-      // uploaded file cards are visible while the sandbox is still starting.
-      const pendingFiles = usePendingFilesStore.getState().consumePendingFiles();
-      const optimisticPendingPrompt = buildOptimisticPromptTextWithUploads(
-        pendingPrompt,
-        pendingFiles,
-      );
-      setOptimisticPrompt(optimisticPendingPrompt);
-      setPendingSendMessageId(messageID);
-      addOptimisticUserMessage(messageID, optimisticPendingPrompt, [textPartId]);
-      lastSendTimeRef.current = Date.now();
-
-      const handlePromptError = (err?: unknown) => {
+        return {
+          messageId: messageID,
+          optimisticText: optimisticPendingPrompt,
+          partIds: [textPartId],
+          sendOptions: {
+            ...(session?.directory ? { directory: session.directory } : {}),
+            ...(sendOpts?.agent && { agent: sendOpts.agent }),
+            ...(sendOpts?.model && { model: formatPromptModel(sendOpts.model) }),
+            ...(sendOpts?.variant && { variant: sendOpts.variant }),
+          },
+          // Upload local files and build the parts array (text + file refs).
+          buildParts: async () => {
+            const built = await buildPromptPartsWithUploads(stash.prompt, pendingFiles, uploadFile);
+            return [{ type: 'text' as const, text: built.text }, ...built.remoteParts];
+          },
+        };
+      },
+      onFailure: (_stash, _err, classified) => {
         setPendingSendInFlight(false);
         setPendingSendMessageId(null);
         setOptimisticPrompt(null);
         setPollingActive(false);
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-        if (err) setCommandError(classifySessionError(err));
-        // Fetch real messages from the server. Some error paths
-        // (e.g. missing API key) return the error directly in the
-        // HTTP response without ever emitting a session.error SSE
-        // event. Without this fetch, removing the optimistic message
-        // leaves the UI blank because no SSE event will bring in the
-        // server-persisted messages.
-        let client: ReturnType<typeof getClient>;
-        try {
-          client = getClient();
-        } catch {
-          removeOptimisticUserMessage(messageID);
-          return;
-        }
-        client.session
-          .messages({ sessionID: sessionId })
-          .then((res) => {
-            if (res.data) {
-              // hydrate() already drops superseded optimistic messages AND
-              // bridges their text onto the real server message. Do NOT also
-              // call clearOptimisticMessages here: on an error send whose user
-              // message the server hasn't persisted yet, that wipes the user's
-              // typed text and leaves an empty bubble. Keeping the optimistic
-              // message means the user always still sees what they sent.
-              useSyncStore.getState().hydrate(sessionId, res.data as any);
-            } else {
-              // No server data — just remove the optimistic message
-              removeOptimisticUserMessage(messageID);
-            }
-          })
-          .catch(() => {
-            // Fetch failed — fall back to removing the optimistic message
-            removeOptimisticUserMessage(messageID);
-          });
-      };
-      // Upload local files and build the parts array (text + file refs)
-      const sendPendingPrompt = async () => {
-        const built = await buildPromptPartsWithUploads(pendingPrompt, pendingFiles, uploadFile);
-        return [{ type: 'text' as const, text: built.text }, ...built.remoteParts];
-      };
+        setCommandError(classified);
+        usePendingFilesStore.getState().setPendingFiles(filesToRestoreOnFailure);
+        pendingPromptHandled.current = false;
+      },
+    });
 
-      void (async () => {
-        let parts: Awaited<ReturnType<typeof sendPendingPrompt>>;
-        try {
-          parts = await sendPendingPrompt();
-        } catch (err) {
-          writeStartStash(sessionId, stash);
-          usePendingFilesStore.getState().setPendingFiles(pendingFiles);
-          pendingPromptHandled.current = false;
-          handlePromptError(err);
-          return;
-        }
-
-        // Fire-and-forget via the SDK's send path — it owns the boot/transient
-        // retry across the sandbox wake window (see `promptOpenCodeMessage`).
-        // Don't send messageID — let the server generate it with its own clock
-        // to avoid clock-skew issues.
-        try {
-          await promptOpenCodeMessage({
-            sessionId,
-            parts,
-            options: {
-              ...(session?.directory ? { directory: session.directory } : {}),
-              ...(sendOpts?.agent && { agent: sendOpts.agent }),
-              ...(sendOpts?.model && { model: formatPromptModel(sendOpts.model as ModelKey) }),
-              ...(sendOpts?.variant && { variant: sendOpts.variant }),
-            },
-          });
-        } catch (err) {
-          if (!cancelled) {
-            // Mirror the sendPendingPrompt() failure branch above: ANY failure
-            // of this effect's send (including the boot-retry window in
-            // promptOpenCodeMessage being exhausted) must restore the stash +
-            // reset the handled flag, or a brand-new session's first prompt is
-            // unrecoverable — nothing else ever re-reads sessionStorage for it.
-            writeStartStash(sessionId, stash);
-            usePendingFilesStore.getState().setPendingFiles(pendingFiles);
-            pendingPromptHandled.current = false;
-            handlePromptError(err);
-          }
-        }
-      })();
-    };
-
-    attemptSend(0);
-
-    return () => {
-      cancelled = true;
-      if (retryTimer) clearTimeout(retryTimer);
-    };
+    return () => handle.cancel();
   }, [
     sessionId,
-    addOptimisticUserMessage,
-    removeOptimisticUserMessage,
     localAgentSet,
     localModelCurrentKey,
     localModelSendKey,
@@ -4871,8 +4767,7 @@ export function SessionChat({
 
       // Optimistic: show message immediately in sync store + set busy
       // Matches OpenCode: sync.set("session_status", session.id, { type: "busy" })
-      addOptimisticUserMessage(messageID, optimisticText, [textPartId]);
-      useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
+      beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);
 
       // Scroll so the new user message appears at the top of the viewport.
       // MutationObserver recalcs spacer automatically when the new turn renders.
@@ -4913,8 +4808,9 @@ export function SessionChat({
       try {
         built = await buildPromptPartsWithUploads(textPrompt.text, attachedFiles, uploadFile);
       } catch (err) {
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-        removeOptimisticUserMessage(messageID);
+        // Never reached the network — nothing to rehydrate from the server,
+        // so just clear busy and drop the optimistic message outright.
+        abandonOptimisticSend(sessionId, messageID);
         const classified = classifySessionError(err);
         setCommandError(classified);
         throw err instanceof Error ? err : new Error(classified.message);
@@ -4988,40 +4884,6 @@ export function SessionChat({
         return { type: 'text' as const, text: p.text };
       });
       const sendOpts = Object.keys(options).length > 0 ? options : undefined;
-      const handleSendError = (err: unknown) => {
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-        setCommandError(classifySessionError(err));
-        // Fetch real messages from the server. Some error paths
-        // (e.g. missing API key) return the error directly in the
-        // HTTP response without emitting a session.error SSE event.
-        // Without this fetch, removing the optimistic message can
-        // leave the UI blank.
-        let client: ReturnType<typeof getClient>;
-        try {
-          client = getClient();
-        } catch {
-          removeOptimisticUserMessage(messageID);
-          return;
-        }
-        client.session
-          .messages({ sessionID: sessionId })
-          .then((res) => {
-            if (res.data) {
-              // hydrate() already drops superseded optimistic messages AND
-              // bridges their text onto the real server message. Do NOT also
-              // call clearOptimisticMessages here: on an error send whose user
-              // message the server hasn't persisted yet, that wipes the user's
-              // typed text and leaves an empty bubble. Keeping the optimistic
-              // message means the user always still sees what they sent.
-              useSyncStore.getState().hydrate(sessionId, res.data as any);
-            } else {
-              removeOptimisticUserMessage(messageID);
-            }
-          })
-          .catch(() => {
-            removeOptimisticUserMessage(messageID);
-          });
-      };
 
       // Sending to the sandbox's OpenCode server can transiently fail — the
       // container may be waking from auto-stop, restarting, or the tunnel
@@ -5029,24 +4891,29 @@ export function SessionChat({
       // failures with backoff so a flaky send self-heals; only a real 4xx (bad
       // request / auth / missing model key), or exhausting the retry window,
       // surfaces here. The optimistic user message + busy status stay up the
-      // whole time, so the UI shows the send in progress throughout.
-      try {
-        await promptOpenCodeMessage({
-          sessionId,
-          parts: mappedParts,
-          options: {
-            // Pass the session's directory so opencode resolves project-scoped
-            // agents (.opencode/agent/*.md under the project) and applies them
-            // when the user picked a project agent from the picker.
-            ...(session?.directory ? { directory: session.directory } : {}),
-            ...(sendOpts?.agent ? { agent: sendOpts.agent } : {}),
-            ...(sendOpts?.model ? { model: formatPromptModel(sendOpts.model as ModelKey) } : {}),
-            ...(sendOpts?.variant ? { variant: sendOpts.variant } : {}),
-          } as any,
-        });
-      } catch (err) {
-        handleSendError(err);
-        throw err instanceof Error ? err : new Error(formatCommandError(err));
+      // whole time, so the UI shows the send in progress throughout. On
+      // failure, `sendAndRecover` runs the shared recovery routine: clear
+      // busy, then either rehydrate real messages from the server (some error
+      // paths — e.g. missing API key — never emit a `session.error` SSE
+      // event) or drop the optimistic message if the server has no record.
+      const result = await sendAndRecover({
+        sessionId,
+        messageId: messageID,
+        parts: mappedParts,
+        options: {
+          // Pass the session's directory so opencode resolves project-scoped
+          // agents (.opencode/agent/*.md under the project) and applies them
+          // when the user picked a project agent from the picker.
+          ...(session?.directory ? { directory: session.directory } : {}),
+          ...(sendOpts?.agent ? { agent: sendOpts.agent } : {}),
+          ...(sendOpts?.model ? { model: formatPromptModel(sendOpts.model as ModelKey) } : {}),
+          ...(sendOpts?.variant ? { variant: sendOpts.variant } : {}),
+        } as any,
+        classify: classifySessionError,
+      });
+      if (!result.ok) {
+        setCommandError(result.error);
+        throw result.cause instanceof Error ? result.cause : new Error(result.error.message);
       }
 
       return messageID;
@@ -5059,8 +4926,6 @@ export function SessionChat({
       local.model.currentKey,
       local.model.sendKey,
       local.model.variant.current,
-      addOptimisticUserMessage,
-      removeOptimisticUserMessage,
       scrollToBottom,
       replyTo,
       messages,
@@ -5086,32 +4951,13 @@ export function SessionChat({
       return;
     }
     console.log(`[handleStop] Stopping session ${sessionId}`);
-    // Optimistically mark the session idle so the UI updates immediately
-    // (stop button hides, input re-enables) without waiting for the SSE
-    // round-trip. Also clear the busy debounce timer to bypass the 2s delay.
-    useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+    // Optimistically mark the session idle + patch an abort error onto the
+    // last assistant message (so the "Interrupted" label appears instantly —
+    // no waiting for the SSE session.error round-trip). Also clear the busy
+    // debounce timer to bypass the 2s delay.
+    applyOptimisticAbort(sessionId);
     clearTimeout(busyTimerRef.current);
     setIsBusy(false);
-
-    // Optimistically patch an abort error onto the last assistant message
-    // so the "Interrupted" label appears instantly — no waiting for the SSE
-    // session.error round-trip.
-    const store = useSyncStore.getState();
-    const msgs = store.messages[sessionId];
-    if (msgs) {
-      for (let i = msgs.length - 1; i >= 0; i--) {
-        if (msgs[i].role === 'assistant' && !(msgs[i] as any).error) {
-          store.upsertMessage(sessionId, {
-            ...msgs[i],
-            error: {
-              name: 'AbortError',
-              data: { message: 'The operation was aborted.' },
-            },
-          } as any);
-          break;
-        }
-      }
-    }
 
     abortSession.mutate(sessionId);
   }, [sessionId, abortSession]);

@@ -12,6 +12,7 @@ import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { isBillingEnabled } from '@/lib/config';
 import { getProjectDetail } from '@kortix/sdk/projects-client';
+import { writeStartStash } from '@kortix/sdk/react';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { useQuery } from '@tanstack/react-query';
@@ -80,32 +81,21 @@ export default function ProjectIndexPage() {
       newSession({
         create: buildNewSessionCreateInput(options),
         onNavigate: (sessionId) => {
-          // NOT converted to the SDK's `writeStartStash` (kept on the legacy
-          // `project_pending_*` keys): `sessionId` here is the route/Kortix
-          // session id, not the OpenCode pin the session page resolves later
-          // (`useCanonicalOpenCodeSession`/`ensureOpencodeSessionPin` mint a
-          // separate id). `sessions/[sessionId]/page.tsx` migrates this exact
-          // raw string via `migrateLegacyStash` onto the resolved pin AND uses
-          // its raw presence (not `readStartStash`) to decide whether to show
-          // the instant shell as already-submitted on first mount; that file
-          // isn't owned by this change, and `migrateLegacyStash` only
-          // understands this legacy string shape at the source key (it does a
-          // raw `sessionStorage.getItem`, not a JSON-aware read) — writing the
-          // canonical stash under this id instead would go unread by both.
-          sessionStorage.setItem(`project_pending_prompt:${sessionId}`, text);
+          // `sessionId` here is the route/Kortix session id, not the OpenCode
+          // pin the session page resolves later (`useCanonicalOpenCodeSession`
+          // /`ensureOpencodeSessionPin` mint a separate id). Stash under the
+          // route id via the SDK's canonical `writeStartStash` — the session
+          // page's `migrateStash` hands this off onto the resolved pin once it
+          // exists, and `readStartStash` (instant shell, `useSession`) reads it
+          // uniformly either side of that migration.
+          writeStartStash(sessionId, {
+            prompt: text,
+            agent: options?.agent ?? null,
+            model: options?.model ?? null,
+            variant: options?.variant ?? null,
+          });
           if (files?.length) {
             usePendingFilesStore.getState().setPendingFiles(files);
-          }
-          const pendingOptions = {
-            ...(options?.agent ? { agent: options.agent } : {}),
-            ...(options?.model ? { model: options.model } : {}),
-            ...(options?.variant ? { variant: options.variant } : {}),
-          };
-          if (Object.keys(pendingOptions).length > 0) {
-            sessionStorage.setItem(
-              `project_pending_options:${sessionId}`,
-              JSON.stringify(pendingOptions),
-            );
           }
         },
       });

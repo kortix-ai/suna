@@ -38,3 +38,43 @@ export {
   readForkDraft,
   clearForkDraft,
 } from './session-start-stash';
+
+// The framework-free SSE event-stream primitive that `useOpenCodeEventStream`
+// (exported above via `./opencode`) wraps. Re-exported here too so a host
+// already importing from `@kortix/sdk/react` can build its own binding
+// (e.g. a non-QueryClient consumer) without a second import from
+// `@kortix/sdk/event-stream`.
+export {
+  openEventStream,
+  type EventStreamClient,
+  type EventStreamHandle,
+  type EventStreamTimers,
+  type OpenCodeEvent,
+  type OpenEventStreamOptions,
+} from '../state/event-stream';
+
+// The send / stash-replay / error-recovery core extracted from apps/web's
+// `session-chat.tsx` — see `use-session-send.ts` for the full contract. Not
+// (yet) re-exported by `./opencode`'s explicit barrel list, so re-exported
+// directly here (same reasoning as the other direct re-exports above).
+export {
+  useSessionSend,
+  beginOptimisticSend,
+  abandonOptimisticSend,
+  recoverFromSendFailure,
+  sendAndRecover,
+  applyOptimisticAbort,
+  replayStartStash,
+  type OpenCodeMessagesClient,
+  type SendRecoveryOptions,
+  type SendAndRecoverArgs,
+  type SendAndRecoverResult,
+  type StashReplayTimerHandle,
+  type StashReplayTimers,
+  type PreparedStashSend,
+  type StartStashReplayOptions,
+  type StartStashReplayHandle,
+  type UseSessionSendOptions,
+  type SendCallOptions,
+  type UseSessionSendResult,
+} from './use-session-send';

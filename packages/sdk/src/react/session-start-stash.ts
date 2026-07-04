@@ -108,13 +108,38 @@ export function clearStartStash(sessionId: string): void {
 }
 
 /**
+ * Migrate a stash — canonical or legacy shape — from one session-id namespace
+ * to another. Producers sometimes stash under an id that isn't the eventual
+ * OpenCode session id (e.g. a project's route id, before the canonical
+ * session exists); once a later render resolves the real id, this hands the
+ * stash off. Reads the source via {@link readStartStash} (so it understands
+ * both the canonical JSON shape and the bare-prompt legacy shape at
+ * `fromSessionId`), writes the canonical shape at `toSessionId` — skipping the
+ * write if `toSessionId` already has a stash — and always clears the source
+ * (both its canonical and legacy keys), whether or not there was anything to
+ * migrate.
+ */
+export function migrateStash(fromSessionId: string, toSessionId: string): void {
+  if (fromSessionId === toSessionId) return;
+  try {
+    if (!readStartStash(toSessionId)) {
+      const stash = readStartStash(fromSessionId);
+      if (stash) writeStartStash(toSessionId, stash);
+    }
+  } finally {
+    clearStartStash(fromSessionId);
+  }
+}
+
+/**
  * Migrate a differently-keyed legacy hand-off (bare prompt string + optional
  * `{agent,model,variant}` JSON options, each under their own arbitrary key)
- * onto the canonical stash for `toSessionId`. Used when a producer stashes
- * under one id namespace (e.g. a project's route id, before the canonical
- * OpenCode session exists) and a later render resolves the real session id —
- * the source keys are always cleared, whether or not there was anything to
- * migrate.
+ * onto the canonical stash for `toSessionId`. Used by producers that predate
+ * this module and stash under arbitrary raw keys rather than a session-id
+ * namespace `readStartStash` can resolve on its own — prefer {@link
+ * migrateStash} for any producer that already writes under a session id via
+ * `writeStartStash`. The source keys are always cleared, whether or not there
+ * was anything to migrate.
  */
 export function migrateLegacyStash(
   fromPromptKey: string,

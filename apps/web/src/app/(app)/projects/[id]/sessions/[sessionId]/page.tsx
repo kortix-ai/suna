@@ -34,7 +34,7 @@ import {
   restartProjectSession,
   sessionStartKey,
 } from '@kortix/sdk/projects-client';
-import { migrateLegacyStash, useSession } from '@kortix/sdk/react';
+import { migrateStash, readStartStash, useSession } from '@kortix/sdk/react';
 
 /**
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.
@@ -127,9 +127,13 @@ export default function ProjectSessionPage() {
     let fresh = false;
     let pending = false;
     if (typeof window !== 'undefined') {
-      pending =
-        !!sessionStorage.getItem(`opencode_pending_prompt:${sessionId}`) ||
-        !!sessionStorage.getItem(`project_pending_prompt:${sessionId}`);
+      // Was two raw legacy-key checks (`opencode_pending_prompt:<id>` /
+      // `project_pending_prompt:<id>`) — now that every producer stashes
+      // canonically under the route id (see the `migrateStash` call below),
+      // `readStartStash` is the one check that still sees a stash from any of
+      // them (canonical or legacy shape) without knowing which key it lives
+      // under.
+      pending = !!readStartStash(sessionId)?.prompt;
       fresh = pending || isSessionFresh(sessionId);
     }
     freshRef.current = fresh;
@@ -364,10 +368,13 @@ function ActiveSessionChat({
   const chatSessionId = selectedSession?.id ?? pinRef.current.id ?? rootSessionId ?? null;
 
   // Migrate the home-composer prompt onto the canonical SDK start-stash DURING
-  // RENDER — the project-home composer stashes under the ROUTE session id
-  // (before the canonical OpenCode session exists); once it resolves, hand the
-  // prompt off to `chatSessionId`'s stash, which `readStartStash` (SessionChat's
+  // RENDER — every producer (project-home composer, `useConfigureThread`, the
+  // instant shell) stashes under the ROUTE session id (before the canonical
+  // OpenCode session exists); once it resolves, hand the stash off to
+  // `chatSessionId`'s stash, which `readStartStash` (SessionChat's
   // pending-prompt effect, or `useSession`'s own replay) reads uniformly.
+  // `migrateStash` understands both the canonical shape and any producer that
+  // still writes the older bare-prompt legacy shape at the route id.
   const promptMigratedForRef = useRef<string | null>(null);
   if (
     typeof window !== 'undefined' &&
@@ -375,11 +382,7 @@ function ActiveSessionChat({
     promptMigratedForRef.current !== chatSessionId
   ) {
     promptMigratedForRef.current = chatSessionId;
-    migrateLegacyStash(
-      `project_pending_prompt:${sessionId}`,
-      `project_pending_options:${sessionId}`,
-      chatSessionId,
-    );
+    migrateStash(sessionId, chatSessionId);
   }
 
   // ── Readiness benchmarking marks ───────────────────────────────────────

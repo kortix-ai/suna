@@ -16,6 +16,7 @@
 import { useCallback, useState } from 'react';
 
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
+import { writeStartStash } from '@kortix/sdk/react';
 import { useCustomizeStore } from '@/stores/customize-store';
 
 export type ConfigureKind = 'agent' | 'skill' | 'command';
@@ -76,17 +77,13 @@ export function useConfigureThread(projectId: string): ConfigureThread {
       // so flipping it back would only flash the idle button.
       newSession({
         onNavigate: (sessionId) => {
-          // NOT converted to the SDK's `writeStartStash` (kept on the legacy
-          // `project_pending_prompt` key): `sessionId` is the route/Kortix
-          // session id here, not the OpenCode pin the session page resolves
-          // later. `sessions/[sessionId]/page.tsx` forwards this exact raw
-          // string onto the resolved pin via `migrateLegacyStash`, which only
-          // understands this legacy shape at the source key — writing the
-          // canonical stash under this id instead would go unread once the
-          // pin resolves to a different id. Same situation as the
-          // project-home composer's producer (see its onNavigate for the full
-          // trace).
-          sessionStorage.setItem(`project_pending_prompt:${sessionId}`, prompt);
+          // `sessionId` is the route/Kortix session id here, not the OpenCode
+          // pin the session page resolves later. Stash under the route id via
+          // the SDK's canonical `writeStartStash` — the session page's
+          // `migrateStash` hands this off onto the resolved pin once it
+          // exists. Same situation as the project-home composer's producer
+          // (see its onNavigate for the full trace).
+          writeStartStash(sessionId, { prompt, agent: null, model: null, variant: null });
           closeCustomize();
         },
       });

@@ -20,7 +20,7 @@ import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-l
 import { SessionWelcome } from '@/features/session/session-welcome';
 import type { Command } from '@/hooks/opencode/use-opencode-sessions';
 import type { SessionStartStage } from '@kortix/sdk/projects-client';
-import { readStartStash } from '@kortix/sdk/react';
+import { readStartStash, writeStartStash } from '@kortix/sdk/react';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
@@ -42,11 +42,12 @@ function bootLabel(stage: SessionStartStage): string {
  * input you can type into immediately (the input needs no runtime — the home
  * composer proves it). Provisioning runs silently in the background.
  *
- * On the FIRST send we stash the message on the `project_pending_*` keys (which
- * the session page migrates onto the OpenCode pin) so the real {@link SessionChat}
- * auto-sends it the instant the runtime is healthy — and the thread shows an
- * inline "starting your computer" status under the assistant logo until the real
- * chat crossfades in. The boot checklist also lives in the side panel, but only
+ * On the FIRST send we stash the message on the SDK's canonical start-stash
+ * (keyed by the route session id; the session page migrates it onto the
+ * OpenCode pin) so the real {@link SessionChat} auto-sends it the instant the
+ * runtime is healthy — and the thread shows an inline "starting your computer"
+ * status under the assistant logo until the real chat crossfades in. The boot
+ * checklist also lives in the side panel, but only
  * if the user opens it (never auto-opened); once the runtime is ready the panel
  * gracefully falls back to the real (empty) Actions view.
  */
@@ -81,17 +82,12 @@ export function InstantSessionShell({
     files: AttachedFile[];
   } | null>(() => {
     if (typeof window === 'undefined') return null;
-    // `readStartStash` covers the canonical SDK stash plus its
-    // `opencode_pending_prompt` legacy fallback. `project_pending_prompt` is a
-    // SEPARATE legacy key still written by the project-home composer and
-    // `useConfigureThread` — their producer can't move onto the canonical
-    // stash yet (it's keyed by the route session id, which `migrateLegacyStash`
-    // later forwards onto the real OpenCode pin; that forward only understands
-    // the raw legacy string, not canonical JSON), so it's still checked here
-    // directly alongside readStartStash.
-    const text =
-      readStartStash(sessionId)?.prompt ??
-      sessionStorage.getItem(`project_pending_prompt:${sessionId}`);
+    // `readStartStash` covers the canonical SDK stash (written under the route
+    // session id by this shell, the project-home composer, and
+    // `useConfigureThread` — all three producers now share the one canonical
+    // shape) plus its `opencode_pending_prompt` legacy fallback for any other
+    // as-yet-unconverted producer.
+    const text = readStartStash(sessionId)?.prompt;
     if (!text) return null;
     return {
       text,
@@ -111,21 +107,19 @@ export function InstantSessionShell({
       if ((!text.trim() && !files?.length) || submitted) return;
       playSound('send');
 
-      // Hand the message to the real chat: it auto-sends from these keys once the
-      // runtime is healthy (the session page migrates project_* → the real
-      // OpenCode pin via `migrateLegacyStash`). NOT converted to
-      // `writeStartStash` here: `sessionId` is the route/Kortix-session id,
-      // not the eventual OpenCode pin (`useCanonicalOpenCodeSession` resolves
-      // those independently — see `ensureOpencodeSessionPin` in
-      // apps/api/src/projects/routes/shared.ts), and `migrateLegacyStash`
-      // (owned by session-start-stash.ts) only understands this raw legacy
-      // string shape at the source key, not canonical JSON. Writing the
-      // canonical stash here instead would go unread once the pin resolves to
-      // a different id — see API-MAP / task report for the full trace.
-      sessionStorage.setItem(`project_pending_prompt:${sessionId}`, text);
-      if (Object.keys(options).length > 0) {
-        sessionStorage.setItem(`project_pending_options:${sessionId}`, JSON.stringify(options));
-      }
+      // Hand the message to the real chat: it auto-sends from this stash once
+      // the runtime is healthy. `sessionId` here is the route/Kortix-session
+      // id, not the eventual OpenCode pin (`useCanonicalOpenCodeSession`
+      // resolves those independently — see `ensureOpencodeSessionPin` in
+      // apps/api/src/projects/routes/shared.ts); the session page's
+      // `migrateStash` hands this canonical stash off onto the resolved pin
+      // once it exists.
+      writeStartStash(sessionId, {
+        prompt: text,
+        agent: options.agent ?? null,
+        model: options.model ?? null,
+        variant: options.variant ?? null,
+      });
       // File objects can't survive sessionStorage — stash them in the store the
       // real chat consumes (same path the home composer uses).
       if (files?.length) {
