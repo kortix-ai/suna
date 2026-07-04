@@ -13,6 +13,7 @@ import { isSecretUsableBy, loadGrants, type ShareSubject } from '../executor/sha
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
 const ENVELOPE_VERSION = 'v1';
+const GCM_AUTH_TAG_LENGTH = 16;
 
 function b64url(input: Buffer): string {
   return input.toString('base64url');
@@ -42,7 +43,9 @@ function projectSecretKey(projectId: string): Buffer {
 
 export function encryptProjectSecret(projectId: string, value: string): string {
   const iv = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', projectSecretKey(projectId), iv);
+  const cipher = createCipheriv('aes-256-gcm', projectSecretKey(projectId), iv, {
+    authTagLength: GCM_AUTH_TAG_LENGTH,
+  });
   const ciphertext = Buffer.concat([
     cipher.update(value, 'utf8'),
     cipher.final(),
@@ -56,8 +59,14 @@ export function decryptProjectSecret(projectId: string, valueEnc: string): strin
   if (version !== ENVELOPE_VERSION || !ivB64 || !tagB64 || !ciphertextB64) {
     throw new Error('Unsupported project secret envelope');
   }
-  const decipher = createDecipheriv('aes-256-gcm', projectSecretKey(projectId), fromB64url(ivB64));
-  decipher.setAuthTag(fromB64url(tagB64));
+  const tag = fromB64url(tagB64);
+  if (tag.length !== GCM_AUTH_TAG_LENGTH) {
+    throw new Error('Unsupported project secret auth tag length');
+  }
+  const decipher = createDecipheriv('aes-256-gcm', projectSecretKey(projectId), fromB64url(ivB64), {
+    authTagLength: GCM_AUTH_TAG_LENGTH,
+  });
+  decipher.setAuthTag(tag);
   return Buffer.concat([
     decipher.update(fromB64url(ciphertextB64)),
     decipher.final(),
