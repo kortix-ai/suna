@@ -1751,16 +1751,11 @@ export function SessionChatInput({
     // server queues it. (No client-side message queue.)
     try {
       await onSend(trimmed, filesToSend, mentionsToSend);
-    } catch (err) {
-      // Restore the text so the user can retry — AND surface why. Previously
-      // this catch was silent, so a failed send looked like the message simply
-      // "bounced back" into the box with no explanation.
+    } catch {
+      // Restore the text so the user can retry. The failure itself is surfaced
+      // by the persistent typed banner (commandError → TurnErrorDisplay) set in
+      // handleSend's catch — a toast here would double-display it.
       setText(trimmed);
-      toast.error(
-        err instanceof Error && err.message
-          ? err.message
-          : 'Couldn’t send your message. Please try again.',
-      );
     }
   }, [
     text,

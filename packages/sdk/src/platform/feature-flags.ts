@@ -24,6 +24,23 @@ function safeEnv(name: string): string | undefined {
 }
 
 /**
+ * Parse a raw env string into a flag override: recognized truthy/falsy values
+ * map to true/false, anything else (including unset) is `undefined` = "no
+ * opinion, fall through". Exported for hosts that wire literal
+ * `process.env.NEXT_PUBLIC_*` reads into `configureKortix({ featureFlags })` —
+ * required on Next.js, whose client bundles only inline LITERAL dotted
+ * `process.env.NEXT_PUBLIC_X` expressions; the dynamic `safeEnv(name)` lookup
+ * here can never be inlined and always yields undefined in the browser.
+ */
+export function parseFlagOverride(value: string | undefined): boolean | undefined {
+  if (value == null) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+  return undefined;
+}
+
+/**
  * Resolve one flag: an explicit `configureKortix({ featureFlags })` override
  * wins (the portable path — works on any host); otherwise fall back to the
  * legacy `NEXT_PUBLIC_*` build-time env var (so web keeps working unchanged

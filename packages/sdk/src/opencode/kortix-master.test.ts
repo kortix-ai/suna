@@ -88,6 +88,11 @@ describe('request core (via listTickets)', () => {
     await expect(KM.listTickets(BASE)).rejects.toThrow('Request failed with 500');
   });
 
+  test('surfaces a details-only error body (services routes reply this shape)', async () => {
+    nextResponse = () => jsonResponse({ details: 'npm install failed: ENOSPC' }, 500);
+    await expect(KM.listServices(BASE)).rejects.toThrow('npm install failed: ENOSPC');
+  });
+
   test('tolerates an empty/non-JSON success body instead of throwing a parse error', async () => {
     nextResponse = () => new Response('', { status: 200 });
     await expect(KM.deleteTicket(BASE, 't-1')).resolves.toEqual({} as unknown as { deleted: true });

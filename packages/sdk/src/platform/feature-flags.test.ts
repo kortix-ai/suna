@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
 import { configureKortix } from './config';
-import { featureFlags } from './feature-flags';
+import { featureFlags, parseFlagOverride } from './feature-flags';
 
 const ENV_KEYS = [
   'NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING',
@@ -76,6 +76,27 @@ describe('featureFlags configureKortix override', () => {
     });
 
     expect(featureFlags.enableDinoGame).toBe(true);
+    expect(featureFlags.enableProjects).toBe(true);
+  });
+
+  test('parseFlagOverride maps recognized values and yields undefined otherwise', () => {
+    expect(parseFlagOverride('true')).toBe(true);
+    expect(parseFlagOverride('1')).toBe(true);
+    expect(parseFlagOverride(' ON ')).toBe(true);
+    expect(parseFlagOverride('false')).toBe(false);
+    expect(parseFlagOverride('0')).toBe(false);
+    expect(parseFlagOverride(undefined)).toBeUndefined();
+    expect(parseFlagOverride('')).toBeUndefined();
+    expect(parseFlagOverride('banana')).toBeUndefined();
+  });
+
+  test('a parseFlagOverride undefined override falls through to env/default', () => {
+    process.env.NEXT_PUBLIC_ENABLE_PROJECTS = 'true';
+    configureKortix({
+      backendUrl: '',
+      getToken: async () => null,
+      featureFlags: { enableProjects: parseFlagOverride(undefined) },
+    });
     expect(featureFlags.enableProjects).toBe(true);
   });
 

@@ -63,7 +63,9 @@ async function kortixMasterRequest<T>(
   }
 
   if (!response.ok) {
-    throw new Error(body?.error || body?.message || text.slice(0, 200) || `Request failed with ${response.status}`);
+    throw new Error(
+      body?.error || body?.message || body?.details || text.slice(0, 200) || `Request failed with ${response.status}`,
+    );
   }
   return body as T;
 }
