@@ -48,10 +48,6 @@ import {
   ProjectSandboxAlert,
   ProjectSandboxAlertRailItem,
 } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
-import {
-  ProjectFilesNavItem,
-  ProjectFilesRailItem,
-} from '@/features/workspace/project-sidebar/project-files-nav';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-switcher';
 import { useAdminRole } from '@/hooks/admin';
@@ -260,7 +256,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 <Plus />
               </Button>
             </Hint>
-            <ProjectFilesRailItem />
           </div>
 
           <div className="mt-auto flex w-full flex-col items-center gap-1">
@@ -295,12 +290,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   </KbdGroup>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroup>
-
-          <SidebarGroup className="py-0">
-            <SidebarMenu>
-              <ProjectFilesNavItem />
             </SidebarMenu>
           </SidebarGroup>
 
