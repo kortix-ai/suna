@@ -9,7 +9,7 @@ import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboar
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import Hint from '@/components/ui/hint';
 import { useSidebar } from '@/components/ui/sidebar';
-import { desktopPlatform, isDesktop } from '@/lib/desktop';
+import { desktopShellPlatform } from '@/lib/desktop';
 import { PanelLeft } from 'lucide-react';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -164,9 +164,7 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
   // up in the title-bar band next to the OS window controls. Client-only
   // tree (ProjectShell gates on auth), so reading the UA at first render is
   // safe.
-  const [desktopShell] = useState<'macos' | 'other' | null>(() =>
-    isDesktop() ? (desktopPlatform() === 'macos' ? 'macos' : 'other') : null,
-  );
+  const [desktopShell] = useState(() => desktopShellPlatform());
   const hideSeam = desktopShell !== null && !isExpanded;
   return (
     <div

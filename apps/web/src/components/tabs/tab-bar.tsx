@@ -60,7 +60,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useRightSidebarSafe } from '@/components/ui/sidebar-right-provider';
-import { isDesktop, desktopPlatform } from '@/lib/desktop';
+import { isDesktop, desktopShellPlatform, type DesktopShellPlatform } from '@/lib/desktop';
 
 const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
 
@@ -578,9 +578,9 @@ export function TabBar() {
   // so the tab bar reaches the window's left edge and the macOS traffic lights
   // sit on top of it. Indent past the lights and show the sidebar toggle there.
   // SSR-safe via useEffect (window only exists client-side under the shell).
-  const [desktopShell, setDesktopShell] = useState<'macos' | 'other' | null>(null);
+  const [desktopShell, setDesktopShell] = useState<DesktopShellPlatform | null>(null);
   useEffect(() => {
-    setDesktopShell(isDesktop() ? (desktopPlatform() === 'macos' ? 'macos' : 'other') : null);
+    setDesktopShell(desktopShellPlatform());
   }, []);
   const sidebarHidden = desktopShell !== null && sidebar.state === 'collapsed';
   const needsTrafficLightSpace = desktopShell === 'macos' && sidebar.state === 'collapsed';
