@@ -982,3 +982,271 @@ flow(
     });
   },
 );
+
+// ─── Custom roles, permission catalog, and policy bindings ───────────────
+
+flow(
+  "IAM-25",
+  {
+    domain: "iam",
+    routes: [
+      "GET /v1/accounts/:accountId/iam/actions",
+      "GET /v1/accounts/:accountId/iam/roles",
+      "POST /v1/accounts/:accountId/iam/roles",
+      "GET /v1/accounts/:accountId/iam/roles/:roleId/permissions",
+      "PUT /v1/accounts/:accountId/iam/roles/:roleId/permissions",
+      "GET /v1/accounts/:accountId/iam/roles/:roleId/usage",
+      "PATCH /v1/accounts/:accountId/iam/roles/:roleId",
+      "DELETE /v1/accounts/:accountId/iam/roles/:roleId",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const roleKey = `review_${team.id.replace(/-/g, "").slice(0, 10)}`;
+    let roleId = "";
+
+    await ctx.step("OWNER reads the action catalog → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/accounts/:accountId/iam/actions", { params: { accountId: team.id } });
+      r.status(200).body().exists("$.actions");
+    });
+
+    await ctx.step("OWNER lists built-in + custom roles → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/accounts/:accountId/iam/roles", { params: { accountId: team.id } });
+      r.status(200).body().exists("$.roles");
+    });
+
+    await ctx.step("OWNER creates a project-scoped custom review role → 201", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/accounts/:accountId/iam/roles",
+        {
+          key: roleKey,
+          name: "Review triager",
+          description: "Can read and submit review items in one project.",
+          resourceType: "project",
+          actions: ["project.review.read"],
+        },
+        { params: { accountId: team.id } },
+      );
+      r.status(201).body().exists("$.role_id").has("$.key", roleKey);
+      roleId = r.json<any>().role_id;
+    });
+
+    await ctx.step("invalid custom-role key → 400", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/accounts/:accountId/iam/roles",
+        { key: "bad key", name: "Bad", resourceType: "project", actions: [] },
+        { params: { accountId: team.id } },
+      );
+      r.status(400);
+    });
+
+    await ctx.step("role permissions can be read and replaced", async () => {
+      const before = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/accounts/:accountId/iam/roles/:roleId/permissions", {
+          params: { accountId: team.id, roleId },
+        });
+      before.status(200).body().has("$.role_id", roleId).exists("$.actions");
+
+      const updated = await ctx.client.as(ctx.P.OWNER).put(
+        "/v1/accounts/:accountId/iam/roles/:roleId/permissions",
+        { actions: ["project.review.read", "project.review.submit"] },
+        { params: { accountId: team.id, roleId } },
+      );
+      updated.status(200).body().has("$.role_id", roleId).exists("$.actions");
+    });
+
+    await ctx.step("built-in role permissions are immutable → 400", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).put(
+        "/v1/accounts/:accountId/iam/roles/:roleId/permissions",
+        { actions: ["project.review.read"] },
+        { params: { accountId: team.id, roleId: "builtin:manager" } },
+      );
+      r.status(400);
+    });
+
+    await ctx.step("role usage starts at zero → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/accounts/:accountId/iam/roles/:roleId/usage", {
+          params: { accountId: team.id, roleId },
+        });
+      r.status(200).body().has("$.role_id", roleId).has("$.policy_count", 0);
+    });
+
+    await ctx.step("role can be renamed then deleted", async () => {
+      const patched = await ctx.client.as(ctx.P.OWNER).patch(
+        "/v1/accounts/:accountId/iam/roles/:roleId",
+        { name: "Review intake triager" },
+        { params: { accountId: team.id, roleId } },
+      );
+      patched.status(200).body().has("$.role_id", roleId);
+
+      const deleted = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/accounts/:accountId/iam/roles/:roleId", {
+          params: { accountId: team.id, roleId },
+        });
+      deleted.status(200).body().has("$.deleted", true);
+    });
+
+    await ctx.step("deleting an unknown role → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/accounts/:accountId/iam/roles/:roleId", {
+          params: { accountId: team.id, roleId },
+        });
+      r.status(404);
+    });
+  },
+);
+
+flow(
+  "IAM-26",
+  {
+    domain: "iam",
+    routes: [
+      "GET /v1/accounts/:accountId/iam/policies",
+      "GET /v1/accounts/:accountId/iam/agent-identities",
+      "POST /v1/accounts/:accountId/iam/policies",
+      "PATCH /v1/accounts/:accountId/iam/policies/:policyId",
+      "DELETE /v1/accounts/:accountId/iam/policies/:policyId",
+      "POST /v1/accounts/:accountId/iam/policies:bulk-delete",
+      "POST /v1/accounts/:accountId/iam/policies:bulk-import",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember("member");
+    const project = await team.project();
+    const roleKey = `triage_${team.id.replace(/-/g, "").slice(0, 10)}`;
+    let roleId = "";
+    let policyId = "";
+
+    await ctx.step("create a project custom role for policies", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/accounts/:accountId/iam/roles",
+        {
+          key: roleKey,
+          name: "Project review submitter",
+          resourceType: "project",
+          actions: ["project.review.read", "project.review.submit"],
+        },
+        { params: { accountId: team.id } },
+      );
+      r.status(201);
+      roleId = r.json<any>().role_id;
+    });
+
+    await ctx.step("OWNER lists policies and agent identities → 200", async () => {
+      const policies = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/accounts/:accountId/iam/policies", { params: { accountId: team.id } });
+      policies.status(200).body().exists("$.policies");
+
+      const agents = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/accounts/:accountId/iam/agent-identities", { params: { accountId: team.id } });
+      agents.status(200).body().exists("$.agents");
+    });
+
+    await ctx.step("OWNER binds a member to the custom role on one project → 201", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/accounts/:accountId/iam/policies",
+        {
+          principalType: "member",
+          principalId: member.userId,
+          roleId,
+          scopeType: "project",
+          scopeId: project.id,
+        },
+        { params: { accountId: team.id } },
+      );
+      r.status(201).body().exists("$.policy_id").has("$.role_id", roleId);
+      policyId = r.json<any>().policy_id;
+    });
+
+    await ctx.step("built-in role policies are rejected → 400", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/accounts/:accountId/iam/policies",
+        {
+          principalType: "member",
+          principalId: member.userId,
+          roleId: "builtin:manager",
+          scopeType: "project",
+          scopeId: project.id,
+        },
+        { params: { accountId: team.id } },
+      );
+      r.status(400);
+    });
+
+    await ctx.step("policy can be patched then deleted", async () => {
+      const patched = await ctx.client.as(ctx.P.OWNER).patch(
+        "/v1/accounts/:accountId/iam/policies/:policyId",
+        { roleId, scopeType: "project", scopeId: project.id },
+        { params: { accountId: team.id, policyId } },
+      );
+      patched.status(200).body().has("$.policy_id", policyId);
+
+      const deleted = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/accounts/:accountId/iam/policies/:policyId", {
+          params: { accountId: team.id, policyId },
+        });
+      deleted.status(200).body().has("$.deleted", true);
+    });
+
+    await ctx.step("bulk-delete removes matching policy ids", async () => {
+      const created = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/accounts/:accountId/iam/policies",
+        {
+          principalType: "member",
+          principalId: member.userId,
+          roleId,
+          scopeType: "project",
+          scopeId: project.id,
+        },
+        { params: { accountId: team.id } },
+      );
+      created.status(201);
+      const bulk = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/accounts/:accountId/iam/policies:bulk-delete",
+        { policy_ids: [created.json<any>().policy_id] },
+        { params: { accountId: team.id } },
+      );
+      bulk.status(200).body().has("$.deleted", 1);
+    });
+
+    await ctx.step("bulk-import creates portable role-key policy rows", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/accounts/:accountId/iam/policies:bulk-import",
+        {
+          policies: [
+            {
+              role_key: roleKey,
+              principal_type: "member",
+              principal_id: member.userId,
+              scope_type: "project",
+              scope_id: project.id,
+              effect: "allow",
+            },
+          ],
+        },
+        { params: { accountId: team.id } },
+      );
+      r.status(200).body().has("$.attempted", 1).has("$.created", 1);
+    });
+
+    await ctx.step("NONMEMBER cannot read policies → 403", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/accounts/:accountId/iam/policies", { params: { accountId: team.id } });
+      r.status(403);
+    });
+  },
+);

@@ -117,6 +117,35 @@ export interface BuildLayeredDockerfileOpts {
    * instead of the daemon's minimal fallback. Optional; omit to skip.
    */
   catalogPath?: string;
+  /**
+   * Per-project COLD warm: bake the project's repo checkout into /workspace at
+   * build time so a session booted from this (capture:'none') image skips the
+   * boot-time git clone entirely — the daemon's git.ts fast-paths a baked
+   * `${target}/.git` whose HEAD matches the session base. Requires NO memory
+   * snapshot: the checkout is plain rootfs bytes that BOTH Daytona and Platinum
+   * boot cold. When set, the layer clones the repo into /workspace BEFORE the
+   * opencode instance warm-up (so opencode indexes the REAL project) and does
+   * NOT wipe /workspace afterward. Omit for the shared, project-independent
+   * default image (workspace stays empty; the daemon clones at boot).
+   */
+  warmRepo?: {
+    /** Upstream URL to clone from at BUILD time (real git host or proxy). */
+    cloneUrl: string;
+    /**
+     * Auth headers for the build-time clone, passed via `git -c
+     * http.extraHeader` inside a RUN that deletes the script in the same
+     * invocation — nothing credential-shaped survives into the image layer.
+     */
+    cloneHeaders: Record<string, string>;
+    /** Branch to check out (the default branch tip is baked). */
+    branch: string;
+    /**
+     * The Kortix git-proxy origin the baked checkout's `origin` is reset to, so
+     * the daemon's per-session credential helper re-auths pushes/fetches at
+     * runtime (the build credential is never persisted).
+     */
+    originUrl: string;
+  };
 }
 
 export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string {
@@ -131,8 +160,40 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     executorSdkPath,
     opencodeConfigPath,
     catalogPath,
+    warmRepo,
   } = opts;
   const trimmed = normalizeUserDockerfileForSnapshot(userDockerfile).trimEnd();
+
+  // Single-quote a value for safe embedding in a build-time bash RUN.
+  const shq = (v: string) => `'${String(v).replace(/'/g, `'\\''`)}'`;
+  // Per-project COLD warm: clone the repo into /workspace at BUILD time. The auth
+  // header goes through `git -c http.extraHeader` (never written to git config)
+  // and the whole step is one RUN, so no credential-shaped bytes persist. origin
+  // is reset to the Kortix proxy so the daemon re-auths per session at runtime.
+  const warmRepoClone = warmRepo
+    ? [
+        '',
+        '# ─── Per-project COLD warm: bake repo checkout into /workspace ──────',
+        // Clone the default-branch tip into /workspace. --depth 1 keeps the layer
+        // small; the daemon fast-paths the baked .git and deepens on demand.
+        // NOTE: an earlier base layer sets `WORKDIR /workspace`, so the build
+        // shell's CWD IS /workspace. We must NOT `rm -rf /workspace` (that orphans
+        // the CWD inode → git dies with "Unable to read current working
+        // directory"). Instead `cd /`, clone into a scratch dir, then move the
+        // contents into the (emptied) /workspace so the CWD inode stays valid.
+        `RUN cd / \\`,
+        `    && rm -rf /tmp/kortix-warm-repo && mkdir -p /tmp/kortix-warm-repo /workspace \\`,
+        `    && git ${Object.entries(warmRepo.cloneHeaders)
+          .map(([k, v]) => `-c http.extraHeader=${shq(`${k}: ${v}`)}`)
+          .join(' ')} clone --depth 1 --branch ${shq(warmRepo.branch)} ${shq(warmRepo.cloneUrl)} /tmp/kortix-warm-repo \\`,
+        `    && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} + \\`,
+        `    && (shopt -s dotglob 2>/dev/null || true) && cp -a /tmp/kortix-warm-repo/. /workspace/ \\`,
+        `    && rm -rf /tmp/kortix-warm-repo \\`,
+        `    && git -C /workspace remote set-url origin ${shq(warmRepo.originUrl)} \\`,
+        `    && echo "warm-repo: baked $(git -C /workspace rev-parse HEAD) on ${warmRepo.branch}"`,
+        '',
+      ]
+    : [];
 
   const kortixLayer = [
     '',
@@ -289,6 +350,12 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '    && rm -rf /tmp/opencode-deps-bundle-check \\',
     '    && echo "opencode-config-deps: baked tree bundles cleanly"',
     '',
+    // Per-project COLD warm: bake the repo checkout into /workspace BEFORE the
+    // opencode instance warm-up below, so opencode indexes the REAL project (its
+    // config, file tree, sqlite rows) — all baked into the cold rootfs. git is
+    // installed by the first apt RUN above, so this is safe here. For the shared
+    // default image warmRepo is absent → /workspace stays empty (unchanged).
+    ...warmRepoClone,
     // Warm a real opencode PROJECT INSTANCE at build time. The first time opencode
     // creates an instance for a project dir it loads that dir's .kortix/opencode
     // surface — importing the pty plugin + tools — which makes Bun auto-install /
@@ -297,9 +364,12 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // GitHub are contended) that gates runtimeReady right on the session hot path.
     // We pay it ONCE here, against the canonical starter config staged at the SAME
     // runtime path (/workspace) so Bun's content-addressed transpile cache hits at
-    // boot, then wipe /workspace (the session clones into it) while the warmed
-    // caches under /opt/kortix/home persist in the image layer. Measured: cold
-    // first-instance 6–60s → ~2–4s after this bake. Requires opencode + bun + the
+    // boot. For the SHARED default image we then wipe /workspace (the session
+    // clones into it). For a PER-PROJECT COLD warm (warmRepo set) the repo is
+    // already baked at /workspace and we KEEP it — the daemon boots off the baked
+    // checkout with NO clone. Either way the warmed caches under /opt/kortix/home
+    // persist in the image layer. Measured: cold first-instance 6–60s → ~2–4s
+    // after this bake. Requires opencode + bun + the
     // baked config deps above, so it must come after them. Best effort: a build
     // without network (or a warm-up failure) just falls back to the runtime cost —
     // set +e + trailing `true` keep the image build green.
@@ -331,7 +401,12 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
           '        XDG_CACHE_HOME=/opt/kortix/home/.cache \\',
           '        BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache; \\',
           '    mkdir -p /workspace/.kortix; \\',
-          '    cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode; \\',
+          // Stage the canonical starter opencode config so the instance warm-up
+          // has the pty plugin + tools to load. For a per-project warm the baked
+          // repo may already ship its own .kortix/opencode — keep it (its config
+          // is what the session actually resolves at runtime) and only fall back
+          // to the staged starter when the repo has none.
+          '    [ -d /workspace/.kortix/opencode ] || cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode; \\',
           '    rm -rf /workspace/.kortix/opencode/node_modules; \\',
           '    ln -s /opt/kortix/opencode-config-deps/node_modules /workspace/.kortix/opencode/node_modules; \\',
           '    export OPENCODE_CONFIG_DIR=/workspace/.kortix/opencode; \\',
@@ -346,7 +421,12 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
           '    done; \\',
           '    echo "=== instance-warm: ready=$ready ==="; \\',
           '    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\',
-          '    find /workspace -mindepth 1 -delete 2>/dev/null; \\',
+          // Shared default: wipe /workspace (the session clones into it at boot).
+          // Per-project COLD warm (warmRepo): KEEP the baked repo checkout so the
+          // daemon boots off it with no clone.
+          warmRepo
+            ? '    echo "warm-repo: keeping baked /workspace checkout"; \\'
+            : '    find /workspace -mindepth 1 -delete 2>/dev/null; \\',
           '    rm -rf /opt/kortix/warm-config; \\',
           '    echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\',
           '    rm -f /tmp/oc-warm.log; true',

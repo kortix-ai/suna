@@ -248,6 +248,10 @@ export interface SessionAuditAction {
 export interface SessionAudit {
   session_id: string;
   agent: string | null;
+  /** False when the account lacks the Enterprise `auditAccess` entitlement —
+   *  `actions` then contains only unresolved pending approvals, not the full
+   *  historical trail. Absent on older backends (treat as true). */
+  audit_access?: boolean;
   count: number;
   actions: SessionAuditAction[];
 }
