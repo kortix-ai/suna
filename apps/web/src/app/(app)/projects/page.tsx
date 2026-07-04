@@ -32,14 +32,14 @@ import {
   hasFirstProjectBootstrapSignal,
   shouldAutoCreateFirstProject,
 } from '@/lib/onboarding/ensure-first-project';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { type ProjectsViewMode, useProjectsViewStore } from '@/stores/projects-view-store';
 import {
   type KortixProject,
   archiveProject,
   listAccounts,
   listProjectsForAccount,
 } from '@kortix/sdk/projects-client';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { type ProjectsViewMode, useProjectsViewStore } from '@/stores/projects-view-store';
 import { Search } from '@mynaui/icons-react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, FolderPlus } from 'lucide-react';
@@ -315,13 +315,15 @@ export default function ProjectsPage() {
   };
 
   return (
-    <div className="bg-foreground/5 flex min-h-screen flex-col">
-      <AppHeader
-        user={user}
-        breadcrumb="Projects"
-        actions={<UpgradeButton accountId={activeAccountId ?? undefined} />}
-      />
-      <main className="ring-input bg-background px-mobile flex-1 rounded-t-xl py-10 ring sm:py-12">
+    <div className="flex min-h-screen flex-col">
+      <div className="w-full border-b">
+        <AppHeader
+          user={user}
+          breadcrumb="Projects"
+          actions={<UpgradeButton accountId={activeAccountId ?? undefined} />}
+        />
+      </div>
+      <main className="bg-background px-mobile flex-1 py-10 sm:py-12">
         <div className="mx-auto w-full max-w-6xl space-y-8">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0 space-y-1">
