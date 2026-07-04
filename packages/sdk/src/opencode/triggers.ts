@@ -20,7 +20,9 @@ export async function triggersRequest<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const response = await authenticatedFetch(`${baseUrl.replace(/\/+$/, '')}/kortix/triggers${path}`, {
+  let base = baseUrl;
+  while (base.endsWith('/')) base = base.slice(0, -1);
+  const response = await authenticatedFetch(`${base}/kortix/triggers${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
