@@ -31,6 +31,11 @@ export interface ExecutorCallResult<T = unknown> {
   risk?: ExecutorRisk;
   status?: string;
   reason?: string;
+  /** For a `pending_approval` result: the execution awaiting a human decision.
+   *  Re-issue `call()` with this id to keep waiting (indefinite pause). */
+  execution_id?: string | null;
+  /** true = still unresolved after the server's hold; poll again to keep pausing. */
+  retryable?: boolean;
 }
 
 export interface ExecutorClientOptions {
@@ -93,7 +98,9 @@ export class ExecutorClient {
   }
 
   async connectors(): Promise<ExecutorConnector[]> {
-    const body = await this.request<{ connectors?: ExecutorConnector[] } | null>(this.catalogPath());
+    const body = await this.request<{ connectors?: ExecutorConnector[] } | null>(
+      this.catalogPath(),
+    );
     return body?.connectors ?? [];
   }
 
@@ -121,10 +128,17 @@ export class ExecutorClient {
     connector: string,
     action: string,
     args: Record<string, unknown> = {},
+    opts: { approvalExecutionId?: string | null } = {},
   ): Promise<ExecutorCallResult<T>> {
     return this.request<ExecutorCallResult<T>>(this.callPath(), {
       method: 'POST',
-      body: { connector, action, args },
+      body: {
+        connector,
+        action,
+        args,
+        // Present only on a poll-loop retry of a call awaiting approval.
+        ...(opts.approvalExecutionId ? { approval_execution_id: opts.approvalExecutionId } : {}),
+      },
     });
   }
 
@@ -138,12 +152,15 @@ export class ExecutorClient {
     const text = await res.text();
     const body = parseBody(text);
     if (!res.ok) {
-      const message = body && typeof body === 'object'
-        ? String((body as { reason?: unknown; error?: unknown; message?: unknown }).reason
-          ?? (body as { error?: unknown }).error
-          ?? (body as { message?: unknown }).message
-          ?? `HTTP ${res.status}`)
-        : `HTTP ${res.status}`;
+      const message =
+        body && typeof body === 'object'
+          ? String(
+              (body as { reason?: unknown; error?: unknown; message?: unknown }).reason ??
+                (body as { error?: unknown }).error ??
+                (body as { message?: unknown }).message ??
+                `HTTP ${res.status}`,
+            )
+          : `HTTP ${res.status}`;
       throw new ExecutorError(message, res.status, body);
     }
     return body as T;
@@ -178,11 +195,7 @@ function normalizeApiUrl(input: string): string {
 }
 
 function buildUrl(apiUrl: string, path: string): string {
-  const suffix = path.startsWith('/v1/')
-    ? path.slice(3)
-    : path.startsWith('/')
-      ? path
-      : `/${path}`;
+  const suffix = path.startsWith('/v1/') ? path.slice(3) : path.startsWith('/') ? path : `/${path}`;
   return `${apiUrl}${suffix}`;
 }
 

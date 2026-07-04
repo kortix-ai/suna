@@ -21,6 +21,15 @@ const mobileNodeModules = path.resolve(projectRoot, 'node_modules');
 // This prevents duplicate React instances when bundling shared packages
 const forcedModules = ['react', 'react-native', 'react/jsx-runtime', 'react/jsx-dev-runtime'];
 
+// Node.js built-ins that leak into the bundle graph via third-party packages
+// but have no React Native equivalent and are never exercised at runtime.
+// `readline` is pulled in by expensify-common's CLI helper (referenced through
+// @expensify/react-native-live-markdown). Metro cannot resolve it, so we stub
+// it to an empty module. Without this the EAS "Bundle JavaScript" phase fails
+// with "Unable to resolve module readline".
+const emptyModulePath = path.resolve(projectRoot, 'metro-empty-module.js');
+const stubbedNodeBuiltins = new Set(['readline']);
+
 config.resolver = {
   ...config.resolver,
   assetExts: config.resolver.assetExts.filter((ext) => ext !== 'svg'),
@@ -39,6 +48,13 @@ config.resolver = {
   // Custom resolver to force React resolution from mobile's node_modules
   // This is critical for monorepo setups where shared packages use React hooks
   resolveRequest: (context, moduleName, platform) => {
+    // Stub Node.js built-ins that have no React Native equivalent.
+    if (stubbedNodeBuiltins.has(moduleName)) {
+      return {
+        filePath: emptyModulePath,
+        type: 'sourceFile',
+      };
+    }
     // Check if this module should be forced to resolve from mobile's node_modules
     if (forcedModules.includes(moduleName)) {
       return {

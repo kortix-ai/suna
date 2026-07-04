@@ -246,6 +246,7 @@ export function createKortix(config: KortixPlatformConfig) {
       start: (...a: DropFirst2<Parameters<typeof P.startProjectSession>>) =>
         P.startProjectSession(projectId, sessionId, ...a),
       restart: () => P.restartProjectSession(projectId, sessionId),
+      stop: () => P.stopProjectSession(projectId, sessionId),
       setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) =>
         P.setProjectSessionSharing(projectId, sessionId, intent),
       previews: () => P.getSessionPreviewCandidates(projectId, sessionId),

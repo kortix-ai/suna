@@ -40,6 +40,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       agentmail_email: false,
       meet: false,
       llm_gateway: true,
+      review_center: false,
     },
     experimental_features: [
       {
@@ -123,7 +124,6 @@ function triggerFixture(overrides: Record<string, unknown> = {}) {
     secret_env: null,
     prompt_template: 'Summarize yesterday.',
     session_mode: 'fresh',
-    owner_user_id: null,
     last_fired_at: NOW,
     last_status: 'queued',
     last_error: null,
@@ -349,6 +349,7 @@ describe('envelopes', () => {
       'agentmail_email',
       'meet',
       'llm_gateway',
+      'review_center',
     ]);
   });
 

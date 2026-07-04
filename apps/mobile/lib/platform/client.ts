@@ -330,11 +330,18 @@ export async function restartSandbox(sandboxId?: string): Promise<void> {
 }
 
 /**
- * Stop the active sandbox.
- * POST /platform/sandbox/stop
+ * Stop the active sandbox in place (disk kept, resumable via restart/start).
+ * POST /projects/:projectId/sessions/:sessionId/stop
  */
-export async function stopSandbox(): Promise<void> {
-  throw new Error('Stopping project-session sandboxes is not supported by the current API');
+export async function stopSandbox(sandboxId?: string): Promise<void> {
+  const row = await findProjectSessionSandbox(sandboxId);
+  if (!row) throw new Error('No project session sandbox found');
+  await apiFetch<void>(
+    `/projects/${encodeURIComponent(row.project.project_id)}/sessions/${encodeURIComponent(row.session.session_id)}/stop`,
+    {
+      method: 'POST',
+    }
+  );
 }
 
 /**

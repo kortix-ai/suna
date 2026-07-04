@@ -12,7 +12,6 @@ import {
 } from '../secrets';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
 import { daytonaPreviewHeaders, waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
-import { filterAccessibleProjectResources } from '../../iam';
 
 const SANDBOX_SERVICE_PORT = 8000;
 const FANOUT_CONCURRENCY = 6;
@@ -30,26 +29,17 @@ async function resolveOwnerRawEnv(
 ): Promise<Record<string, string> | null> {
   if (!sessionId) return null;
   const [row] = await db
-    .select({ createdBy: projectSessions.createdBy, accountId: projects.accountId })
+    .select({ createdBy: projectSessions.createdBy })
     .from(projectSessions)
-    .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   if (!row?.createdBy) return null;
   const subject = await resolveShareSubject(row.createdBy);
-  const env = await listProjectSecretsForUser(projectId, subject);
-  // Per-member/department secret scoping: a scoped-out secret must not reach a
-  // running sandbox via live secret-sync either (mirrors the session-start gate
-  // in buildSessionSandboxEnvVars). Filter by the session's launching user;
-  // owner/admin (implicit Manager) + service accounts bypass.
-  const names = Object.keys(env);
-  if (names.length > 0) {
-    const accessible = new Set(
-      await filterAccessibleProjectResources(row.createdBy, row.accountId, projectId, 'secret', names),
-    );
-    for (const n of names) if (!accessible.has(n)) delete env[n];
-  }
-  return env;
+  // Resolved AS the launching user, so per-member/department secret scoping is
+  // already applied here (the share model, isSecretUsableBy) — a secret shared
+  // only with specific members/depts never enters the live-sync env for a user
+  // outside its allow-list. Same single source of truth as session start.
+  return listProjectSecretsForUser(projectId, subject);
 }
 
 export async function resolveSandboxEnvSnapshot(

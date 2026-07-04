@@ -52,13 +52,13 @@ function baseConfig(over: Partial<Config> = {}): Config {
 
 function fakeOpencode(
   state: 'ok' | 'starting' | 'down' = 'starting',
-  hooks: { restart?: () => void } = {},
+  hooks: { restart?: () => void; internalUrl?: string } = {},
 ): Opencode {
   // Loose cast — buildOpencodeApp only touches these three methods.
   return {
     getState: () => state,
     getPid: () => null,
-    getInternalUrl: () => 'http://127.0.0.1:1', // unreachable on purpose
+    getInternalUrl: () => hooks.internalUrl ?? 'http://127.0.0.1:1', // unreachable by default
     restart: async () => hooks.restart?.(),
   } as unknown as Opencode
 }
@@ -493,6 +493,43 @@ describe('daemon proxy auth gate', () => {
     const body = (await res.json()) as { error: string }
     expect(body.error).toBe('upstream unreachable')
   })
+
+  it(
+    'fails fast with 502 instead of hanging forever when opencode accepts the connection but never responds',
+    async () => {
+      // Simulates a wedged opencode: the TCP connection is accepted (unlike the
+      // "connect refused" case above) but the handler never resolves — the
+      // failure mode that left real sessions stuck at "Starting the agent" with
+      // no error surfaced until this fix.
+      const hungUpstream = Bun.serve({
+        port: 0,
+        fetch: () => new Promise<Response>(() => {}),
+      })
+      try {
+        const app = buildOpencodeApp(
+          baseConfig(),
+          fakeOpencode('ok', { internalUrl: `http://127.0.0.1:${hungUpstream.port}` }),
+          Date.now(),
+        )
+        const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
+        const startedAt = Date.now()
+        const res = await app.request('/global/event', {
+          headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
+        })
+        const elapsedMs = Date.now() - startedAt
+
+        expect(res.status).toBe(502)
+        // Well under the old unbounded hang (and under the ALB's 60s idle cap) —
+        // proves the internal fetch actually aborts instead of waiting forever.
+        expect(elapsedMs).toBeLessThan(15_000)
+        const body = (await res.json()) as { error: string }
+        expect(body.error).toBe('upstream unreachable')
+      } finally {
+        hungUpstream.stop(true)
+      }
+    },
+    20_000,
+  )
 
   it('rejects /kortix/refresh without a signed user context', async () => {
     const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())

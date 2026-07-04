@@ -136,9 +136,9 @@ All under `/accounts/:id/iam/*`, each route gated by its named action. Run every
 `IAM-1` `GET …/iam/groups` (`GROUP_READ`) · `POST` (`GROUP_CREATE`) → 201.
 `IAM-2` `GET/PATCH/DELETE …/iam/groups/:gid` (`GROUP_READ`/`UPDATE`/`DELETE`).
 `IAM-3` `GET …/iam/groups/:gid/members` (`GROUP_READ`); `POST`/`DELETE …/members/:userId` (`GROUP_MEMBERS_MANAGE`).
-`IAM-4` No policy-CRUD surface exists in V2 (the V1 `…/iam/policies` routes were removed in PR5; access is decided purely from the six fixed roles via account/project membership + group grants). The closest black-box surface is the read-only effective probe `GET …/iam/members/:userId/effective?action=…[&resourceType=&resourceId=]` (`MEMBER_READ`; self-probe always allowed) → `{allowed, reason, action, resource_type}`. A member's account-scoped action set is determined by `account_role` (member: account-reads only; admin/owner: write surface) — there is no per-policy allow/deny row to create.
-`IAM-5` No role/permission-catalog read surface exists in V2 (the V1 `…/iam/roles`, `…/roles/:rid/permissions`, `…/roles/:rid/usage`, `…/iam/actions` routes were removed in PR5). Roles are six fixed code-defined sets (account: owner>admin>member; project: manager>editor>viewer). What a role grants is observable only indirectly via the effective probe `GET …/iam/members/:userId/effective?action=…` returning `{allowed, reason}` (e.g. `account.write` allowed for admin/owner, denied for member).
-`IAM-6` No role-CRUD surface exists in V2 (the V1 `POST/PATCH/DELETE …/iam/roles` + `PUT …/:rid/permissions` routes were removed in PR5; roles are immutable, code-defined, not stored per-account). There is nothing to create/rename/delete and no system-role 403 to assert. The fixed role→action mapping is verified through the effective probe (`GET …/iam/members/:userId/effective?action=…`): a project role allows its action set on its own project only.
+`IAM-4` Effective probe: `GET …/iam/members/:userId/effective?action=…[&resourceType=&resourceId=]` (`MEMBER_READ`; self-probe always allowed) → `{allowed, reason, action, resource_type}`. Built-in account/project membership remains the default decision source; custom policies are additive and covered in `IAM-25/26`.
+`IAM-5` Built-in role behavior is observable via the effective probe (`account.write` allowed for admin/owner, denied for member); the explicit action/role catalog read surface is covered in `IAM-25`.
+`IAM-6` Built-in roles are immutable code-defined presets; custom role CRUD/permissions are covered in `IAM-25`.
 `IAM-7` `PATCH …/iam/members/:userId/super-admin {isSuperAdmin:bool}` (`MEMBER_SUPER_ADMIN_GRANT`, OWNER only) → grant/revoke super-admin; ADMIN → 403.
 `IAM-8` `GET …/iam/members/:userId/groups` · `…/effective` (`MEMBER_READ`) → effective permission set.
 
@@ -148,6 +148,8 @@ All under `/accounts/:id/iam/*`, each route gated by its named action. Run every
 `IAM-11` **PATs inherit the minter (no token-only policy eval)** — V2 has no per-token policies; a PAT carries no narrowing policy set, it only optionally binds to one project (`account_tokens.project_id`). An unscoped account PAT's effective access equals its minter's (owner → super-admin set). Asserted by exercising the same `…/effective` reads as the JWT owner. NOTE: per-token policy evaluation is unverifiable black-box because the feature does not exist; project-bound-PAT scope narrowing is covered indirectly by the token/scope flows, not here.
 `IAM-12` **legacy role bridge** — `account_role` maps to the V2 action set: a plain `member` gets account-reads only — `account.read` allowed but `account.write`/`project.create` denied (`reason:account_role_insufficient`), and a project action on a project they're not on is denied (`reason:no_project_membership`), so they cannot reach all projects. owner/admin → Administrator-level set (`account.write` allowed; implicit Manager on every project). Asserted via the effective endpoint.
 `IAM-13` **scope match** — a project group-grant matches only its own project. Grant a group Manager on project A; a member of that group probed with `resourceType=project&resourceId=A` → `project.delete` allowed (`reason:project_role`); the same probe against project B (no grant) → denied (`reason:no_project_membership`). Asserted via the effective endpoint with/without the matching `resourceId`.
+`IAM-25` Custom roles/action catalog: `GET …/iam/actions`, `GET/POST/PATCH/DELETE …/iam/roles`, `GET/PUT …/iam/roles/:roleId/permissions`, `GET …/usage`. Invalid role key → 400; built-in role permission edit/delete → 400.
+`IAM-26` Custom policies: `GET/POST/PATCH/DELETE …/iam/policies`, `POST …/iam/policies:bulk-delete`, `POST …/iam/policies:bulk-import`, plus `GET …/iam/agent-identities`. Built-in role policy → 400; non-member read → 403.
 
 ---
 
@@ -169,6 +171,7 @@ DB `projects` (`status active|archived`, unique `(account_id, repo_url)`). Soft 
 `PACC-2` `POST /projects/:id/access/invite {email,role}` → `manage`. **Existing Kortix user → 200** — `ensureOrgMembership` auto-adds them to the org as `member` then grants the project role (account-manager target → implicit access, `project_role:null`). **Email with no Kortix account yet → 201 `{status:"invited", invite_id, invite_url, project_role}`** — an account invitation with a `bootstrap_grant` is created/merged idempotently so they land on the project at signup. Missing email / bad role → 400; non-account-member caller → 403 (`loadProjectForUser` — 404 only when the project row is missing/archived).
 `PACC-3` `PUT /projects/:id/access/:userId {role}` → `manage`.
 `PACC-4` `DELETE /projects/:id/access/:userId` → `manage`.
+`PACC-7` `GET/POST/DELETE /projects/:id/resource-grants[/:grantId]` → manager-only per-agent/skill/secret scoping. Invalid resource/principal → 400/404; deleting unknown grant → 404.
 
 ---
 
@@ -186,6 +189,7 @@ DB `project_sessions` (`status queued|branching|provisioning|running|stopped|fai
 `SESS-8` `GET /projects/:id/sessions/:sid/sandbox` → `read` → `session_sandboxes` row; **404 while row not yet inserted** (frontend polls); then status `provisioning`→`active` with `base_url`/`external_id`.
 `SESS-9` `POST /projects/:id/sessions/:sid/restart` → `session` (then **owner or project manager** only) → **202**; tears down container, revokes sandbox keys, re-provisions with rotated git/LLM/CLI tokens (status→`provisioning`); branch preserved.
 `SESS-10` OpenCode title/tree mirror is server-owned: `GET /projects/:id/sessions` and `GET /projects/:id/sessions/:sid` read the sandbox's OpenCode sessions server-side and mirror `metadata.name`/`metadata.opencode_sessions`; there is no browser-write sync endpoint.
+`SESS-12` `POST /projects/:id/sessions/:sid/stop` → `session` (then **owner or project manager** only) → **200** status `stopped`, sandbox paused in place (disk kept, no re-provision — same contract as an idle auto-stop); resumable via `/start`/`SESS-9`. Sandbox not `active` → 409; unsupported provider → 400.
 
 ---
 
@@ -194,7 +198,7 @@ DB `project_sessions` (`status queued|branching|provisioning|running|stopped|fai
 `SNAP-1` `GET /projects/:id/snapshots` → `read` → list `kortix-snap-…` images per baseRef. **Session boot requires a `ready` snapshot of baseRef** (no shared fallback → session `failed` if none).
 `SNAP-2` `POST /projects/:id/snapshots/rebuild` → **`manage` AND account `ACCOUNT_WRITE` (owner/admin)** → rebuild image. A project `manager` who is not owner/admin → 403; M_EDITOR → 403.
 `SBX-1` sandbox create/start = implicit on session create (`provisionSessionSandbox`); no standalone endpoint.
-`SBX-2` sandbox stop = session `DELETE`; restart = `SESS-9`; status read = `SESS-8`.
+`SBX-2` sandbox manual stop = `SESS-12` (pauses in place, resumable); destructive teardown = session `DELETE` (`SESS-7`); restart = `SESS-9`; status read = `SESS-8`.
 
 ---
 
@@ -243,8 +247,22 @@ DB `change_requests` (per-project `number`, `status open|merged|closed`).
 `CR-6` `GET …/:crId/merge-preview` → `read` → mergeable / fast-forward / conflicts.
 `CR-7` `POST …/:crId/merge {message?}` → **`write` required** → 200 status `merged` + sha; not-open → 409.
 `CR-8` `POST …/:crId/close` · `POST …/:crId/reopen` → `write`.
+`CR-8b` `POST …/:crId/request-changes {feedback}` → **`write` required** → 200 `{change_request, delivering}` — persists the note under CR metadata `requested_changes` + delivers it to the origin session's agent (Review Center "request changes"). Missing `feedback` → 400; not-open → 409.
 `CR-9` CLI mirror: `kortix cr ls|show|diff|open|merge|close|reopen` (reads `KORTIX_PROJECT_ID` inside sandbox).
 `CR-10` response envelopes (assert shape): list → `{change_requests:[…]}`, get → `{change_request:{…}}`, merge → `{change_request, merge}`. (Project DELETE returns `{ok:true}`, not an echoed status.)
+
+---
+
+## 11b. Review Center (per-project human-in-the-loop inbox)
+
+DB `review_items` (per-project; `kind change|approval|output|decision|batch`, `status needs_you|waiting|approved|changes_requested|rejected|done|dismissed`, polymorphic `detail` jsonb). This pass: native items only (`output|decision|batch` via submit); `change`/`approval` are folded in by adapters later.
+
+`RV-1` `GET /projects/:id/review/items?segment=needs_you|waiting|done&kind=…` → `read` → `{review_items:[…]}`. Invalid `segment` → 400; invalid `kind` → 400.
+`RV-2` `GET …/review/items/:reviewItemId` → `read` → `{review_item:{…}}`; unknown id → 404.
+`RV-3` `POST …/review/items {kind(output|decision|batch),title,summary?,risk?,detail?,agent?,session_id?}` → `read` + agent scope `project.review.submit` → 201. Missing `title` → 400; non-submittable `kind` (e.g. `change`) → 400; invalid `risk` → 400.
+`RV-4` `POST …/review/items/:reviewItemId/act {verdict(approve|reject|changes|answer|dismiss),feedback?}` → `write` + `project.review.act` → 200 updated item; invalid `verdict` → 400; unknown id → 404; adapted (`cr:…`) id → 409 (act from the source view). The list read-model also folds in Change Requests as `kind:change` items (id `cr:<crId>`).
+`RV-5` `POST …/review/bulk {ids:[…],verdict}` → `write` + `project.review.act` → 200 `{updated,review_items}`; empty/missing `ids` → 400.
+`RV-6` access: NONMEMBER list → 403/404; ANON list → 401.
 
 ---
 

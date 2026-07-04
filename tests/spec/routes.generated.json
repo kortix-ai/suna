@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 432,
+  "count": 454,
   "routes": [
     {
       "method": "GET",
@@ -172,6 +172,22 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/actions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/agent-identities"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/enterprise-demo"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/iam/enterprise-demo"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/iam/groups"
     },
     {
@@ -248,6 +264,58 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/policies"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/policies"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/policies:bulk-delete"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/policies:bulk-import"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/iam/policies/:policyId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/iam/policies/:policyId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/roles"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/roles"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/iam/roles/:roleId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/iam/roles/:roleId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/roles/:roleId/permissions"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/iam/roles/:roleId/permissions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/roles/:roleId/usage"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/iam/scim/tokens"
     },
     {
@@ -315,6 +383,10 @@
       "path": "/v1/accounts/:accountId/iam/sso/provider"
     },
     {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/sso/provider/from-metadata"
+    },
+    {
       "method": "GET",
       "path": "/v1/accounts/:accountId/invites"
     },
@@ -379,6 +451,10 @@
       "path": "/v1/admin/api/accounts/:id/ledger"
     },
     {
+      "method": "GET",
+      "path": "/v1/admin/api/accounts/:id/projects"
+    },
+    {
       "method": "POST",
       "path": "/v1/admin/api/accounts/:id/tier"
     },
@@ -413,14 +489,6 @@
     {
       "method": "POST",
       "path": "/v1/admin/api/sandboxes/:sessionId/migrate"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/admin/api/warm-snapshot-config"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/admin/api/warm-snapshot-config"
     },
     {
       "method": "POST",
@@ -812,26 +880,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/platform/api-keys"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/platform/api-keys"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/platform/api-keys/:keyId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/platform/api-keys/:keyId/regenerate"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/platform/api-keys/:keyId/revoke"
-    },
-    {
-      "method": "GET",
       "path": "/v1/platform/sandbox/version"
     },
     {
@@ -915,6 +963,22 @@
       "path": "/v1/projects/:projectId/access/pending-invites/:inviteId/resend"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/agents/:agentName/scope"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/approvals"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/approvals/:executionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/approvals/needs-input"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/apps"
     },
@@ -985,6 +1049,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/change-requests/:crId/reopen"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/change-requests/:crId/request-changes"
     },
     {
       "method": "POST",
@@ -1284,7 +1352,43 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/resource-grants"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/resource-grants"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/resource-grants/:grantId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/review/bulk"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/review/items"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/review/items"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/review/items/:reviewItemId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/review/items/:reviewItemId/act"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/sandbox-health"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/sandbox-provider"
     },
     {
       "method": "GET",
@@ -1355,6 +1459,10 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/audit"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/commit-push"
     },
@@ -1385,6 +1493,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/start"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/stop"
     },
     {
       "method": "GET",
@@ -1533,30 +1645,6 @@
     {
       "method": "POST",
       "path": "/v1/router/web-search"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/servers"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/servers"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/servers/:id"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/servers/:id"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/servers/:id"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/servers/sync"
     },
     {
       "method": "GET",

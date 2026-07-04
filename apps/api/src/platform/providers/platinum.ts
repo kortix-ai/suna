@@ -90,10 +90,15 @@ export class PlatinumProvider implements SandboxProvider {
     const autoStop = opts.autoStopInterval ?? config.KORTIX_SANDBOX_AUTOSTOP_MINUTES;
 
     const _t0 = Date.now();
+    // This asks Platinum to long-poll server-side for up to 60s
+    // (wait_timeout_ms) — platinumJson's default 20s client-side abort budget
+    // would cut that off early, so pass an explicit signal comfortably longer
+    // than the server-side wait instead of relying on the default.
     const sandbox = await platinumJson<PlatinumSandbox>(
       '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000',
       {
         method: 'POST',
+        signal: AbortSignal.timeout(70_000),
         body: JSON.stringify({
           template,
           envVars,

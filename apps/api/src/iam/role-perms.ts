@@ -114,6 +114,10 @@ const EDITOR_EXTRAS: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
   PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
   PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+
+  // Acting on a review item (approve / reject / answer) is a decision on agent
+  // work — editor-tier, alongside gitops.
+  PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
 ];
 
 /** Baseline for the floor project role. `user` is the base *usable* role:
@@ -148,6 +152,11 @@ const USER_BASELINE: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_GITOPS_READ,
   PROJECT_ACTIONS.PROJECT_SECRET_READ,
   PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+
+  // Review Center: the floor role can see the inbox and (via its agent) submit
+  // outputs/decisions for review. Acting on them is editor-tier (EDITOR_EXTRAS).
+  PROJECT_ACTIONS.PROJECT_REVIEW_READ,
+  PROJECT_ACTIONS.PROJECT_REVIEW_SUBMIT,
 ];
 
 /** What the floor `user` role gets on top of the read+run baseline: manually
