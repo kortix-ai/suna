@@ -115,9 +115,12 @@ import { useAutoScroll } from '@/hooks/use-auto-scroll';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { getClient } from '@/lib/opencode-sdk';
 import {
+  classifySendError,
   clearStartStash,
+  type KortixSendError,
   readStartStash,
   useQuestionSelfHeal,
+  writeForkDraft,
   writeStartStash,
 } from '@kortix/sdk/react';
 import {
@@ -205,10 +208,6 @@ export interface ReplyToContext {
 
 // SubSessionBar removed — subsessions now use SessionSiteHeader + chat input indicator
 
-function forkDraftKey(sessionId: string) {
-  return `opencode_fork_prompt:${sessionId}`;
-}
-
 function buildForkPrompt(parts: Part[], text?: string): PromptPart[] {
   const next: PromptPart[] = [];
   const value =
@@ -227,11 +226,6 @@ function buildForkPrompt(parts: Part[], text?: string): PromptPart[] {
     });
   }
   return next;
-}
-
-function stashForkPrompt(sessionId: string, prompt: PromptPart[]) {
-  if (typeof window === 'undefined' || prompt.length === 0) return;
-  sessionStorage.setItem(forkDraftKey(sessionId), JSON.stringify(prompt));
 }
 
 // ============================================================================
@@ -333,6 +327,18 @@ function formatCommandError(errorLike: unknown): string {
   }
 
   return 'Command failed';
+}
+
+/**
+ * Classify a send/command failure onto the SDK's typed `KortixSendError`
+ * layer (billing vs runtime-not-ready vs runtime-error) so the banner can key
+ * off `.kind` instead of regexing the message — while keeping this file's
+ * richer message formatting (`formatCommandError` special-cases things like
+ * `ProviderModelNotFoundError` that the SDK's generic formatter doesn't know
+ * about).
+ */
+function classifySessionError(err: unknown): KortixSendError {
+  return { ...classifySendError(err), message: formatCommandError(err) };
 }
 
 // ============================================================================
@@ -3853,15 +3859,13 @@ export function SessionChat({
     name: string;
     description?: string;
   } | null>(null);
-  const [commandError, setCommandError] = useState<string | null>(null);
+  const [commandError, setCommandError] = useState<KortixSendError | null>(null);
   // Map of user message IDs → command info, so UserMessageRow can render
   // a compact command pill instead of the raw expanded template text.
   const commandMessagesRef = useRef<Map<string, { name: string; args?: string }>>(new Map());
   // Stash the pending command info so we can associate it with the user message
   // even if the busy signal arrives before the message list updates.
   const pendingCommandStashRef = useRef<{ name: string; args?: string } | null>(null);
-  // Track whether we're retrying a failed send (keeps loader visible)
-  const [isRetrying, setIsRetrying] = useState(false);
   // Track whether a pending prompt send is in flight (dashboard→session flow).
   // Keeps isBusy true until the server acknowledges with a busy status.
   const [pendingSendInFlight, setPendingSendInFlight] = useState(false);
@@ -3978,7 +3982,7 @@ export function SessionChat({
           retryTimer = setTimeout(() => attemptSend(attempt + 1), 250);
           return;
         }
-        setCommandError(NO_MODEL_AVAILABLE_MESSAGE);
+        setCommandError({ kind: 'runtime-error', message: NO_MODEL_AVAILABLE_MESSAGE, cause: null });
         return;
       }
 
@@ -4004,13 +4008,12 @@ export function SessionChat({
       lastSendTimeRef.current = Date.now();
 
       const handlePromptError = (err?: unknown) => {
-        setIsRetrying(false);
         setPendingSendInFlight(false);
         setPendingSendMessageId(null);
         setOptimisticPrompt(null);
         setPollingActive(false);
         useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-        if (err) setCommandError(formatCommandError(err));
+        if (err) setCommandError(classifySessionError(err));
         // Fetch real messages from the server. Some error paths
         // (e.g. missing API key) return the error directly in the
         // HTTP response without ever emitting a session.error SSE
@@ -4709,7 +4712,6 @@ export function SessionChat({
     setPendingCommand(null);
     setPendingSendInFlight(false);
     setPendingSendMessageId(null);
-    setIsRetrying(false);
     lastSendTimeRef.current = 0;
   }, [sessionId]);
 
@@ -4734,7 +4736,7 @@ export function SessionChat({
         directory: session?.directory,
         workspace: session?.workspaceID,
       });
-      if (msg) stashForkPrompt(forkedSession.id, buildForkPrompt(msg.parts));
+      if (msg) writeForkDraft(forkedSession.id, buildForkPrompt(msg.parts));
 
       const title = forkedSession.title || 'Forked session';
       openTabAndNavigate({
@@ -4756,7 +4758,7 @@ export function SessionChat({
         directory: session?.directory,
         workspace: session?.workspaceID,
       });
-      if (msg) stashForkPrompt(forkedSession.id, buildForkPrompt(msg.parts, newText));
+      if (msg) writeForkDraft(forkedSession.id, buildForkPrompt(msg.parts, newText));
 
       const title = forkedSession.title || 'Forked session';
       openTabAndNavigate({
@@ -4913,9 +4915,9 @@ export function SessionChat({
       } catch (err) {
         useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
         removeOptimisticUserMessage(messageID);
-        const message = formatCommandError(err);
-        setCommandError(message);
-        throw err instanceof Error ? err : new Error(message);
+        const classified = classifySessionError(err);
+        setCommandError(classified);
+        throw err instanceof Error ? err : new Error(classified.message);
       }
       textPrompt.text = built.text;
       parts.push(...built.remoteParts);
@@ -4986,8 +4988,9 @@ export function SessionChat({
         return { type: 'text' as const, text: p.text };
       });
       const sendOpts = Object.keys(options).length > 0 ? options : undefined;
-      const handleSendError = () => {
+      const handleSendError = (err: unknown) => {
         useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+        setCommandError(classifySessionError(err));
         // Fetch real messages from the server. Some error paths
         // (e.g. missing API key) return the error directly in the
         // HTTP response without emitting a session.error SSE event.
@@ -5042,7 +5045,7 @@ export function SessionChat({
           } as any,
         });
       } catch (err) {
-        handleSendError();
+        handleSendError(err);
         throw err instanceof Error ? err : new Error(formatCommandError(err));
       }
 
@@ -5230,7 +5233,7 @@ export function SessionChat({
         setPollingActive(false);
         pendingCommandStashRef.current = null;
         useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-        setCommandError(formatCommandError(err));
+        setCommandError(classifySessionError(err));
       };
 
       setPendingCommand({
@@ -5530,18 +5533,7 @@ export function SessionChat({
                         })()}
                       </div>
                     </div>
-                    <AssistantPendingRow
-                      className="mt-6"
-                      status={
-                        isRetrying ? (
-                          <span className={cn('text-xs', STATUS_TEXT.warning)}>
-                            {tHardcodedUi.raw(
-                              'componentsSessionSessionChat.line5927JsxTextRetryingConnection',
-                            )}
-                          </span>
-                        ) : undefined
-                      }
-                    />
+                    <AssistantPendingRow className="mt-6" />
                   </div>
                 )}
 
@@ -5636,7 +5628,7 @@ export function SessionChat({
                 </ToolActivateContext.Provider>
 
                 {/* Busy indicator when no turns yet but session is busy */}
-                {commandError && <TurnErrorDisplay errorText={commandError} className="mt-2" />}
+                {commandError && <TurnErrorDisplay error={commandError} className="mt-2" />}
                 {!showOptimistic && isBusy && turns.length === 0 && <AssistantPendingRow />}
               </div>
               {/* Spacer — ensures the last message can scroll to the top of

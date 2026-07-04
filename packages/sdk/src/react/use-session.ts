@@ -22,6 +22,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { RuntimeNotReadyError } from '../opencode/client';
 import { useOpenCodePendingStore } from '../state/opencode-pending-store';
 import {
   setOpenCodeHealth,
@@ -80,14 +81,20 @@ export interface KortixSendError {
   cause: unknown;
 }
 
-// `getClient()` (packages/sdk/src/opencode/client.ts) throws this exact message
-// when the sandbox url hasn't been resolved yet (session still starting).
+// `getClient()` (packages/sdk/src/opencode/client.ts) throws a
+// `RuntimeNotReadyError` with this exact message when the sandbox url hasn't
+// been resolved yet (session still starting). The string match is kept as a
+// fallback for callers that re-wrap the original error (losing the
+// `instanceof` chain) but still preserve its message.
 const RUNTIME_NOT_READY_MARKER = 'Server URL not ready';
 
 /** Classify a thrown/rejected error from a send or a permission/question reply
  * into a `KortixSendError`. Pure — safe to unit test without a runtime. */
 export function classifySendError(error: unknown): KortixSendError {
-  if (error instanceof Error && error.message.includes(RUNTIME_NOT_READY_MARKER)) {
+  if (
+    error instanceof RuntimeNotReadyError ||
+    (error instanceof Error && error.message.includes(RUNTIME_NOT_READY_MARKER))
+  ) {
     return {
       kind: 'runtime-not-ready',
       message: 'The session runtime is still starting — try again in a moment.',

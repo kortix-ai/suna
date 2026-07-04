@@ -3,15 +3,17 @@
 /**
  * Renders a pending agent QUESTION (possibly several at once) and sends the
  * answer. Without this, a session that asks a clarifying question blocks forever.
- * `replyToQuestion(requestId, answers)` unblocks the run; answers is a 2D array
- * of selected option labels (or freetext) per question. `onResolved` drops it
- * from the pending store; `onCancel` aborts the run instead of answering.
+ * `answerQuestion(requestId, answers)` replies through the session's runtime and
+ * only drops the question from the pending store once the server has actually
+ * accepted the reply — so a failed submit leaves the question visible (and
+ * retryable) instead of vanishing while the agent never got an answer. `onCancel`
+ * aborts the run instead of answering.
  */
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { replyToQuestion } from '@kortix/sdk/react';
+import { answerQuestion, type KortixSendError } from '@kortix/sdk/react';
 import { MessageCircleQuestion, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -52,11 +54,17 @@ export function QuestionPrompt({
   async function submit(answers: string[][]) {
     if (sending) return;
     setSending(true);
-    onResolved(); // hide immediately; SSE will also drop it
     try {
-      await replyToQuestion(request.id, answers);
-    } catch {
-      toast.error('Could not send your answer');
+      // Only removed from the pending store once the server has confirmed the
+      // reply — so a failed send leaves the question visible for a retry
+      // instead of quietly hanging the run.
+      await answerQuestion(request.id, answers);
+      onResolved();
+    } catch (err) {
+      // `answerQuestion` already classifies its own failure via
+      // `classifySendError` and throws the typed `KortixSendError`.
+      toast.error((err as KortixSendError)?.message || 'Could not send your answer');
+      setSending(false);
     }
   }
 

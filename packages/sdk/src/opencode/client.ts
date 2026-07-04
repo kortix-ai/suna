@@ -31,11 +31,14 @@ import { authenticatedFetch } from "../platform/auth";
 import { isConfigured } from "../platform/config";
 import { getActiveOpenCodeUrl } from "../state/server-store/active";
 
-// Sandbox env/secrets client (`GET/PUT/DELETE /env`) and the `/kortix/triggers`
-// wrapper both live in sibling modules, re-exported here so hosts only ever
-// import daemon operations from this one subpath.
+// Sandbox env/secrets client (`GET/PUT/DELETE /env`), the `/kortix/triggers`
+// wrapper, and the kortix-master project-management client (`/kortix/tasks`,
+// `/kortix/tickets`, `/kortix/projects`, `/kortix/services`, ...) all live in
+// sibling modules, re-exported here so hosts only ever import daemon
+// operations from this one subpath.
 export { listEnv, setEnv, deleteEnv, env } from "./env";
 export { triggersRequest } from "./triggers";
+export * from "./kortix-master";
 
 
 /**
@@ -47,6 +50,21 @@ export { triggersRequest } from "./triggers";
 const clientsByUrl = new Map<string, OpencodeClient>();
 
 /**
+ * Thrown when the active runtime's sandbox URL hasn't resolved yet (e.g. a
+ * cloud sandbox is still provisioning). Distinct from a plain `Error` so
+ * callers (`classifySendError` in `../react/use-session`) can classify this
+ * specific "try again in a moment" condition with `instanceof` instead of
+ * string-matching the message. The message text is unchanged for any
+ * remaining string-match fallback.
+ */
+export class RuntimeNotReadyError extends Error {
+	constructor(message = '[opencode-sdk] Server URL not ready — sandbox is still loading') {
+		super(message);
+		this.name = 'RuntimeNotReadyError';
+	}
+}
+
+/**
  * Get (or create) the SDK client for the current active server.
  * Safe to call from non-React contexts (API modules, etc.).
  *
@@ -56,7 +74,7 @@ const clientsByUrl = new Map<string, OpencodeClient>();
 export function getClient(): OpencodeClient {
 	const url = getActiveOpenCodeUrl();
 	if (!url) {
-		throw new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
+		throw new RuntimeNotReadyError();
 	}
 	// One factory. "The active runtime" is just the current session's URL, and
 	// getClientForUrl caches per URL — so there is no separate global singleton to

@@ -25,6 +25,7 @@ import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
+import { clearForkDraft, readForkDraft } from '@kortix/sdk/react';
 import {
   ArrowUp,
   ArrowUpLeft,
@@ -1172,10 +1173,6 @@ export interface SessionChatInputProps {
   escCount?: number;
 }
 
-function forkDraftKey(sessionId: string) {
-  return `opencode_fork_prompt:${sessionId}`;
-}
-
 function parseForkDraft(parts: PromptPart[] | null | undefined) {
   if (!parts?.length) return { text: '', files: [] as AttachedFile[] };
   const files: AttachedFile[] = [];
@@ -1341,10 +1338,8 @@ export function SessionChatInput({
 
   useEffect(() => {
     if (!sessionId || typeof window === 'undefined') return;
-    const raw = sessionStorage.getItem(forkDraftKey(sessionId));
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as PromptPart[];
+    const parsed = readForkDraft(sessionId);
+    if (parsed) {
       const next = parseForkDraft(parsed);
       setText(next.text);
       setAttachedFiles((prev) => {
@@ -1357,10 +1352,8 @@ export function SessionChatInput({
       setMentionQuery(null);
       setMentions([]);
       requestAnimationFrame(() => textareaRef.current?.focus());
-    } catch {
-      // ignore malformed stored draft
     }
-    sessionStorage.removeItem(forkDraftKey(sessionId));
+    clearForkDraft(sessionId);
   }, [sessionId]);
 
   // ChatGPT-like behavior: if the user starts typing while the textarea is not
@@ -1758,16 +1751,11 @@ export function SessionChatInput({
     // server queues it. (No client-side message queue.)
     try {
       await onSend(trimmed, filesToSend, mentionsToSend);
-    } catch (err) {
-      // Restore the text so the user can retry — AND surface why. Previously
-      // this catch was silent, so a failed send looked like the message simply
-      // "bounced back" into the box with no explanation.
+    } catch {
+      // Restore the text so the user can retry. The failure itself is surfaced
+      // by the persistent typed banner (commandError → TurnErrorDisplay) set in
+      // handleSend's catch — a toast here would double-display it.
       setText(trimmed);
-      toast.error(
-        err instanceof Error && err.message
-          ? err.message
-          : 'Couldn’t send your message. Please try again.',
-      );
     }
   }, [
     text,

@@ -95,6 +95,48 @@ function getSandboxUrl(sandboxId: string): string {
   return `${base}/p/${sandboxId}/8000`;
 }
 
+// ─── Shared OpenCode `/global/health` probe ─────────────────────────────────
+//
+// This is OpenCode's OWN liveness endpoint — NOT the sandbox daemon's
+// `/kortix/health` that `@kortix/sdk/session`'s `getSessionHealth` probes (see
+// that module's header comment). The two report different things:
+// `/kortix/health` is the daemon wrapper's always-200 liveness probe with a
+// computed `runtimeReady` (folds in repo/branch materialization state);
+// `/global/health` requires the OpenCode process itself to answer and is the
+// only place an OpenCode `version` comes from (see
+// packages/sdk/src/state/sandbox-connection-store.ts, which tracks both
+// versions separately). Callers here (this poller's cold-boot wait, and
+// `update-dialog`'s post-update reconnect probe) want OpenCode's own signal,
+// so they deliberately do NOT route through `getSessionHealth` — but they
+// used to each hand-roll the `{healthy: data?.healthy === true}` parsing
+// independently. This helper standardizes just that contract; callers still
+// own their own auth (bearer vs cookie) and retry/timeout policy via
+// `fetchImpl`/`init`.
+export interface SandboxGlobalHealth {
+  healthy: boolean;
+  version?: string;
+}
+
+export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+export async function fetchSandboxGlobalHealth(
+  sandboxBaseUrl: string,
+  init?: RequestInit,
+  fetchImpl: FetchLike = fetch,
+): Promise<SandboxGlobalHealth> {
+  try {
+    const res = await fetchImpl(`${sandboxBaseUrl}/global/health`, init);
+    if (!res.ok) return { healthy: false };
+    const data = await res.json().catch(() => null);
+    return {
+      healthy: data?.healthy === true,
+      version: typeof data?.version === 'string' ? data.version : undefined,
+    };
+  } catch {
+    return { healthy: false };
+  }
+}
+
 async function waitForOpenCodeHealthy(
   sandboxId: string,
   signal: AbortSignal,
@@ -111,30 +153,22 @@ async function waitForOpenCodeHealthy(
 
   while (Date.now() < deadline) {
     if (signal.aborted) return false;
-    let res: Response;
+    // Per-request 2s timeout so a slow proxy doesn't stall a poll slot for
+    // the OS default (~30s). We combine with the outer abort signal so a
+    // hook unmount cancels everything.
+    const reqAbort = new AbortController();
+    const reqTimer = setTimeout(() => reqAbort.abort(), 2_000);
+    const onOuterAbort = () => reqAbort.abort();
+    signal.addEventListener('abort', onOuterAbort, { once: true });
     try {
-      // Per-request 2s timeout so a slow proxy doesn't stall a poll slot for
-      // the OS default (~30s). We combine with the outer abort signal so a
-      // hook unmount cancels everything.
-      const reqAbort = new AbortController();
-      const reqTimer = setTimeout(() => reqAbort.abort(), 2_000);
-      const onOuterAbort = () => reqAbort.abort();
-      signal.addEventListener('abort', onOuterAbort, { once: true });
-      try {
-        res = await fetch(`${url}/global/health`, {
-          signal: reqAbort.signal,
-          credentials: 'include',
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.healthy === true) return true;
-        }
-      } finally {
-        clearTimeout(reqTimer);
-        signal.removeEventListener('abort', onOuterAbort);
-      }
-    } catch {
-      // network blip or per-request timeout — fall through to the sleep + retry
+      const health = await fetchSandboxGlobalHealth(url, {
+        signal: reqAbort.signal,
+        credentials: 'include',
+      });
+      if (health.healthy) return true;
+    } finally {
+      clearTimeout(reqTimer);
+      signal.removeEventListener('abort', onOuterAbort);
     }
     const delay = POLL_RAMP_MS[Math.min(attempt, POLL_RAMP_MS.length - 1)];
     attempt += 1;

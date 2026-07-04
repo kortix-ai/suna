@@ -1,11 +1,12 @@
 /**
  * Session transcript formatter — converts session messages into Markdown.
+ * Pure (no DOM deps) so any host — web, mobile, CLI — can export a transcript.
  *
  * Ported from the OpenCode TUI:
  * packages/opencode/src/cli/cmd/tui/util/transcript.ts
  */
 
-import type { Part, Message } from '@kortix/sdk/opencode-client';
+import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 
 // ============================================================================
 // Types

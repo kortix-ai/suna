@@ -23,7 +23,7 @@ import {
   STAGE_LABELS,
   type ProvisioningStageInfo,
 } from '@/lib/provisioning-stages';
-import { type SandboxRecoveryPhase, useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
+import { type SandboxRecoveryPhase, useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 
 /**
  * ConnectingScreen — canonical lightweight loader for auth, project routing,

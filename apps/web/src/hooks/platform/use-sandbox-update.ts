@@ -29,7 +29,7 @@ import {
   type UpdatePhase,
   type VersionChannel,
 } from '@kortix/sdk/platform-client';
-import { setSandboxVersion } from '@/stores/sandbox-connection-store';
+import { setSandboxVersion } from '@kortix/sdk/sandbox-connection-store';
 import { type SandboxInfo } from '@kortix/sdk/platform-client';
 
 export type { UpdatePhase, SandboxUpdateStatus };
