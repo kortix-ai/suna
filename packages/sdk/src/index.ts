@@ -14,6 +14,7 @@
  *   @kortix/sdk/projects-client  — project/session REST surface
  *   @kortix/sdk/server-store     — active sandbox/server state
  *   @kortix/sdk/sync-store       — live message/part/status store
+ *   @kortix/sdk/event-stream     — framework-free SSE connect/reconnect/coalesce primitive
  */
 export {
   configureKortix,
@@ -75,3 +76,19 @@ export type { SessionHealthResponse, SessionHealthResult } from './session/healt
  * `ensureReady()` return type without reaching into an internal module path).
  */
 export type { SessionRuntimeEntry } from './state/session-runtime-registry';
+
+/**
+ * The framework-free SSE event-stream primitive — connect/reconnect/backoff,
+ * heartbeat watchdog, and event coalescing, with ZERO react/react-query
+ * imports. `@kortix/sdk/react`'s `useOpenCodeEventStream` is a thin wrapper
+ * around this for the React host; any other host (worker, CLI, non-React UI)
+ * can call it directly.
+ */
+export {
+  openEventStream,
+  type EventStreamClient,
+  type EventStreamHandle,
+  type EventStreamTimers,
+  type OpenCodeEvent,
+  type OpenEventStreamOptions,
+} from './state/event-stream';

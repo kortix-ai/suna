@@ -38,3 +38,17 @@ export {
   readForkDraft,
   clearForkDraft,
 } from './session-start-stash';
+
+// The framework-free SSE event-stream primitive that `useOpenCodeEventStream`
+// (exported above via `./opencode`) wraps. Re-exported here too so a host
+// already importing from `@kortix/sdk/react` can build its own binding
+// (e.g. a non-QueryClient consumer) without a second import from
+// `@kortix/sdk/event-stream`.
+export {
+  openEventStream,
+  type EventStreamClient,
+  type EventStreamHandle,
+  type EventStreamTimers,
+  type OpenCodeEvent,
+  type OpenEventStreamOptions,
+} from '../state/event-stream';

@@ -43,6 +43,7 @@
     "./platform-client": "./src/platform/platform-client/index.ts",
     "./server-store": "./src/state/server-store.ts",
     "./sync-store": "./src/state/sync-store.ts",
+    "./event-stream": "./src/state/event-stream.ts",
     "./sandbox-connection-store": "./src/state/sandbox-connection-store.ts",
     "./opencode-pending-store": "./src/state/opencode-pending-store.ts",
     "./files": "./src/files/client.ts",
@@ -102,6 +103,10 @@
       "./sync-store": {
         "types": "./dist/state/sync-store.d.ts",
         "import": "./dist/state/sync-store.js"
+      },
+      "./event-stream": {
+        "types": "./dist/state/event-stream.d.ts",
+        "import": "./dist/state/event-stream.js"
       },
       "./sandbox-connection-store": {
         "types": "./dist/state/sandbox-connection-store.d.ts",
