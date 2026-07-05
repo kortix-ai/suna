@@ -1336,6 +1336,26 @@ export function XlsxWorkbookSurface({
 }) {
   const { error } = useXlsxViewer()
   const viewportRef = React.useRef<HTMLDivElement | null>(null)
+
+  // The grid's first canvas paint can run before the worker-backed sheet
+  // extent settles; the library only resyncs its painted viewport from the
+  // DOM on scroll events, so a workbook that finishes parsing after that
+  // first paint stays blank (or paints a phantom offset) until the user
+  // scrolls. Dispatching a zero-delta scroll whenever the viewport or its
+  // content sizer resizes forces that resync at every settle point
+  // (initial parse, sheet switch, hidden-card reveal) with no visible
+  // side effect — the library short-circuits when nothing changed.
+  React.useLayoutEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport || typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(() => {
+      viewport.dispatchEvent(new Event("scroll"))
+    })
+    observer.observe(viewport)
+    if (viewport.firstElementChild) observer.observe(viewport.firstElementChild)
+    return () => observer.disconnect()
+  }, [workbookIdentity])
+
   const renderSearchableScroller = React.useCallback(
     ({ children, viewportProps }: XlsxScrollerRenderProps) => (
       <ScrollArea

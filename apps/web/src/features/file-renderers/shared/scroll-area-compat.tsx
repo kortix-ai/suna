@@ -33,6 +33,25 @@ type ScrollAreaCompatProps = Omit<
   viewportRef?: React.Ref<HTMLDivElement>;
 };
 
+/**
+ * Both ref channels must reach the viewport node: extend's viewers pass their
+ * own `ref` inside `viewportProps` (the xlsx grid's scroll/paint pipeline
+ * dead-locks at 0×0 if it never attaches) while callers also pass a separate
+ * `viewportRef` for toolbar scroll actions. A plain `ref={viewportRef}` after
+ * the spread silently discards the former.
+ */
+export function mergeRefs<T>(
+  ...refs: Array<React.Ref<T> | null | undefined>
+): React.RefCallback<T> {
+  return (node) => {
+    for (const ref of refs) {
+      if (!ref) continue;
+      if (typeof ref === 'function') ref(node);
+      else (ref as React.MutableRefObject<T | null>).current = node;
+    }
+  };
+}
+
 export function ScrollArea({
   className,
   children,
@@ -44,7 +63,16 @@ export function ScrollArea({
   viewportRef,
   ...props
 }: ScrollAreaCompatProps) {
-  const { className: viewportPropsClassName, ...restViewportProps } = viewportProps ?? {};
+  const {
+    className: viewportPropsClassName,
+    ref: viewportPropsRef,
+    ...restViewportProps
+  } = viewportProps ?? {};
+
+  const mergedViewportRef = React.useMemo(
+    () => mergeRefs<HTMLDivElement>(viewportPropsRef, viewportRef),
+    [viewportPropsRef, viewportRef],
+  );
 
   return (
     <ScrollAreaPrimitive.Root
@@ -54,7 +82,7 @@ export function ScrollArea({
     >
       <ScrollAreaPrimitive.Viewport
         {...restViewportProps}
-        ref={viewportRef}
+        ref={mergedViewportRef}
         data-slot="scroll-area-viewport"
         className={cn(
           'focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1 [&>div]:!block',
