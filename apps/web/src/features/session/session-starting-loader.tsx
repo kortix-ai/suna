@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { restartProjectSession, sessionStartKey, type SessionStartStage } from '@kortix/sdk/projects-client';
+import { formatDuration } from '@kortix/sdk/turns';
 import { Button } from '@/components/ui/button';
 import { errorToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
@@ -59,6 +60,77 @@ function activeStep(stage: SessionStartStage, msInStage: number): number {
   return 3; // ready → the FE active-server switch + health poll ("connecting")
 }
 
+/**
+ * The shared boot clock: a 1s tick that resolves the CURRENT active step from
+ * the backend stage plus time-in-stage (so the `starting` soft-advance fires),
+ * and exposes `now` for any caller-side elapsed/slow/stuck math. Both the side
+ * panel loader and the inline thread checklist consume this, so the two always
+ * report the same step.
+ */
+function useBootProgress(stage: SessionStartStage): { active: number; now: number } {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Reset the per-stage clock whenever the backend stage changes, so the
+  // soft-advance measures time spent in the CURRENT stage (not since mount).
+  const stageEnteredAt = useRef(now);
+  const prevStage = useRef(stage);
+  if (prevStage.current !== stage) {
+    prevStage.current = stage;
+    stageEnteredAt.current = now;
+  }
+
+  return { active: activeStep(stage, now - stageEnteredAt.current), now };
+}
+
+/**
+ * The stepped checklist itself — one render, shared by the centered panel loader
+ * and the inline thread checklist so they can never visually drift. Pure: the
+ * caller owns the clock (see {@link useBootProgress}) and passes the active index.
+ */
+function BootStepList({ active }: { active: number }) {
+  return (
+    <ol className="flex flex-col gap-3.5" aria-live="polite">
+      {STEPS.map((step, i) => {
+        const done = i < active;
+        const current = i === active;
+        return (
+          <li
+            key={step.label}
+            className="flex items-center gap-2.5"
+            aria-current={current ? 'step' : undefined}
+          >
+            <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+              {done ? (
+                <Check className="text-kortix-green h-3.5 w-3.5" strokeWidth={2.5} />
+              ) : current ? (
+                <Loader2 className="text-kortix-green h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <span className="bg-muted-foreground/25 h-1 w-1 rounded-full" />
+              )}
+            </span>
+            <span
+              className={cn(
+                'text-[13px] leading-none tracking-tight transition-colors duration-500',
+                current
+                  ? 'text-foreground font-medium'
+                  : done
+                    ? 'text-muted-foreground'
+                    : 'text-muted-foreground/40',
+              )}
+            >
+              {step.label}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export function SessionStartingLoader({
   stage = 'provisioning',
   /** Delay before the content fades in. The full-screen resume loader keeps the
@@ -88,27 +160,12 @@ export function SessionStartingLoader({
     return () => clearTimeout(t);
   }, [delayMs]);
 
-  // A 1s tick drives both the in-stage soft-advance and the footer copy.
-  const [now, setNow] = useState(() => Date.now());
-  const mountedAt = useRef(now);
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1_000);
-    return () => clearInterval(id);
-  }, []);
-
-  // Reset the per-stage clock whenever the backend stage changes, so the
-  // soft-advance measures time spent in the CURRENT stage (not since mount).
-  const stageEnteredAt = useRef(now);
-  const prevStage = useRef(stage);
-  if (prevStage.current !== stage) {
-    prevStage.current = stage;
-    stageEnteredAt.current = now;
-  }
-
-  const active = activeStep(stage, now - stageEnteredAt.current);
+  // The shared boot clock owns the 1s tick + per-stage soft-advance; `now` also
+  // drives the footer copy below (and the inline checklist reuses the same hook).
+  const { active, now } = useBootProgress(stage);
   // A manual restart pushes the "stuck" clock back out so the button doesn't
   // reappear immediately while the fresh boot is still in progress.
-  const clockStart = useRef(mountedAt.current);
+  const clockStart = useRef(now);
   const slow = now - clockStart.current >= SLOW_AFTER_MS;
   const stuck = now - clockStart.current >= STUCK_AFTER_MS;
   const canRestart = !!projectId && !!sessionId;
@@ -149,41 +206,7 @@ export function SessionStartingLoader({
         </div>
 
         {/* Auto-width so the checklist is a centered block under the heading. */}
-        <ol className="flex flex-col gap-3.5" aria-live="polite">
-          {STEPS.map((step, i) => {
-            const done = i < active;
-            const current = i === active;
-            return (
-              <li
-                key={step.label}
-                className="flex items-center gap-2.5"
-                aria-current={current ? 'step' : undefined}
-              >
-                <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-                  {done ? (
-                    <Check className="text-kortix-green h-3.5 w-3.5" strokeWidth={2.5} />
-                  ) : current ? (
-                    <Loader2 className="text-kortix-green h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <span className="bg-muted-foreground/25 h-1 w-1 rounded-full" />
-                  )}
-                </span>
-                <span
-                  className={cn(
-                    'text-[13px] leading-none tracking-tight transition-colors duration-500',
-                    current
-                      ? 'text-foreground font-medium'
-                      : done
-                        ? 'text-muted-foreground'
-                        : 'text-muted-foreground/40',
-                  )}
-                >
-                  {step.label}
-                </span>
-              </li>
-            );
-          })}
-        </ol>
+        <BootStepList active={active} />
 
         <p className="text-muted-foreground/40 text-center text-[11px] leading-relaxed">
           {slow ? 'A cold start can take a little longer.' : 'This usually takes a few seconds.'}
@@ -207,6 +230,41 @@ export function SessionStartingLoader({
           </Button>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The boot checklist rendered INLINE in the thread (under the assistant
+ * logomark) while a freshly-created session's Kortix Computer comes up — the
+ * SAME stepped progress as the side panel's {@link SessionStartingLoader}, via
+ * the shared {@link BootStepList} + {@link useBootProgress}, so a user who never
+ * opens the computer panel still watches the real provisioning state advance
+ * instead of one static "Provisioning…" line. Left-aligned to sit under the
+ * Kortix logomark; carries its own elapsed timer to match the thread's regular
+ * waiting indicator.
+ */
+export function SessionBootChecklistInline({
+  stage = 'provisioning',
+  className,
+}: {
+  stage?: SessionStartStage;
+  className?: string;
+}) {
+  const { active, now } = useBootProgress(stage);
+  const startRef = useRef(now);
+  const elapsed = formatDuration(now - startRef.current);
+  return (
+    <div className={cn('flex flex-col items-start gap-2', className)}>
+      <div
+        className="bg-popover w-full rounded-2xl border px-4.5 py-4"
+        aria-label="Starting your Kortix Computer"
+      >
+        <BootStepList active={active} />
+      </div>
+      {elapsed ? (
+        <span className="text-muted-foreground/50 pl-1 text-xs tabular-nums">· {elapsed}</span>
+      ) : null}
     </div>
   );
 }
