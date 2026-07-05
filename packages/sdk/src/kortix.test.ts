@@ -260,6 +260,12 @@ test('project(id).secrets covers provider OAuth start/poll', async () => {
 });
 
 test('project(id).connectors covers sharing/credential-mode/sensitive/agent-scope/policies/pipedream', async () => {
+  await kortix.project('PID123').connectors.setName('slack-1', 'My Slack');
+  expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/name');
+
+  await kortix.project('PID123').connectors.setCredential('slack-1', 'secret-value');
+  expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/credential');
+
   await kortix.project('PID123').connectors.setSharing('slack-1', { mode: 'project' } as never);
   expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/sharing');
   expect(last().method).toBe('PUT');

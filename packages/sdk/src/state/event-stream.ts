@@ -215,9 +215,18 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
       let streamHadEvents = false;
       let stableConnection = false;
       let heartbeatTimer: EventStreamTimerHandle | undefined;
+      // Per-attempt controller passed to the SSE client. Aborting it is what
+      // actually cancels the underlying network reader — the vendor client
+      // only cancels on the signal IT was handed. It aborts when EITHER the
+      // heartbeat fires OR the outer controller aborts (linked below), so a
+      // heartbeat-forced reconnect tears the old connection down instead of
+      // leaving it parked/leaking while a new one opens.
+      const attemptAbort = new AbortController();
+      const outerLink = onceAborted(abortController.signal);
+      outerLink.promise.then(() => attemptAbort.abort());
       try {
         const result = await client.global.event({
-          signal: abortController.signal,
+          signal: attemptAbort.signal,
           sseDefaultRetryDelay: SSE_DEFAULT_RETRY_DELAY_MS,
           sseMaxRetryDelay: SSE_MAX_RETRY_DELAY_MS,
         });
@@ -229,12 +238,11 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
         // 15s, abort and reconnect. This is the ONLY recovery mechanism we
         // need — replaces the stall watchdog, reconciler, and visibility
         // handler.
-        const heartbeatAbort = new AbortController();
         const resetHeartbeat = () => {
           t.clearTimeout(heartbeatTimer);
           heartbeatTimer = t.setTimeout(() => {
             logger.warn('SSE heartbeat timeout, forcing reconnect');
-            heartbeatAbort.abort();
+            attemptAbort.abort();
           }, HEARTBEAT_MS);
         };
         resetHeartbeat();
@@ -249,20 +257,17 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
         // heartbeat/abort signals instead — whichever settles first wins.
         let yieldedAt = t.now();
         const iterator = stream[Symbol.asyncIterator]();
-        while (!abortController.signal.aborted && !heartbeatAbort.signal.aborted) {
+        while (!attemptAbort.signal.aborted) {
           const nextOutcome = iterator.next().then(
             (result) => ({ kind: 'next' as const, result }),
             (error) => ({ kind: 'error' as const, error }),
           );
-          const abortWatch = onceAborted(abortController.signal);
-          const heartbeatWatch = onceAborted(heartbeatAbort.signal);
+          const abortWatch = onceAborted(attemptAbort.signal);
           const outcome = await Promise.race([
             nextOutcome,
             abortWatch.promise.then(() => ({ kind: 'aborted' as const })),
-            heartbeatWatch.promise.then(() => ({ kind: 'aborted' as const })),
           ]);
           abortWatch.cleanup();
-          heartbeatWatch.cleanup();
 
           if (outcome.kind === 'aborted') break;
           if (outcome.kind === 'error') throw outcome.error;
@@ -324,6 +329,12 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
         }
       } finally {
         t.clearTimeout(heartbeatTimer);
+        // Release the reader/connection if we left the loop for any reason
+        // other than an already-fired abort (e.g. stream `done`, or a thrown
+        // error), and detach the outer-abort listener so it can't accumulate
+        // across reconnects.
+        attemptAbort.abort();
+        outerLink.cleanup();
         flush();
       }
 
