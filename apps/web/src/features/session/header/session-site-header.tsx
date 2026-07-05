@@ -13,7 +13,7 @@ import {
 import Hint from '@/components/ui/hint';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import Loading from '@/components/ui/loading';
-import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
+import { useSidebar } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
@@ -67,6 +67,10 @@ export function SessionSiteHeader({
     isDesktop() ? (desktopPlatform() === 'macos' ? 'macos' : 'other') : null,
   );
   const sidebarHidden = desktopShell !== null && sidebarState === 'collapsed';
+  // Web with the sidebar hidden: the shell drops a sidebar toggle onto this
+  // row's left end (see ProjectSheelLayout), so indent the leading buttons
+  // past it. Below md the shell's opener is always there instead.
+  const webSidebarHidden = desktopShell === null && sidebarState === 'collapsed';
 
   const [exportOpen, setExportOpen] = useState(false);
   const [compactOpen, setCompactOpen] = useState(false);
@@ -123,32 +127,25 @@ export function SessionSiteHeader({
             OS-positioned; rem sizes drift with the root font. Both groups stay
             in flow so justify-between keeps the trailing cluster on the right. */}
         <div
-          className={cn(
-            'flex items-center justify-between p-2',
-            sidebarHidden && 'pt-[12px]',
-          )}
+          className={cn('flex items-center justify-between p-2', sidebarHidden && 'pt-[12px]')}
         >
           <div
             className={cn(
-              'pointer-events-auto flex items-center gap-0.5',
+              'pointer-events-auto flex items-center gap-0.5 transition-[margin] duration-200 ease-linear',
+              // Below md the shell floats an always-on sheet opener at this
+              // row's left end (see ProjectSheelLayout) — indent past it.
+              'max-md:ml-[34px]',
               sidebarHidden && 'h-[28px]',
               sidebarHidden && (desktopShell === 'macos' ? 'ml-[96px]' : 'ml-[32px]'),
+              webSidebarHidden && 'md:ml-[34px]',
             )}
           >
             {isProjectSession && (
-              <>
-                <SidebarTrigger
-                  className="size-8 md:hidden"
-                  aria-label={tI18nHardcoded.raw(
-                    'autoFeaturesCoWorkerProjectHeaderProjectTopBarJsxAttr9a2fb75f',
-                  )}
-                />
-                <Button type="button" variant="ghost" size="icon" className="shrink-0" asChild>
-                  <Link href={`/projects/${projectId}`}>
-                    <HomeSolid className="size-4.5" />
-                  </Link>
-                </Button>
-              </>
+              <Button type="button" variant="ghost" size="icon" className="shrink-0" asChild>
+                <Link href={`/projects/${projectId}`}>
+                  <HomeSolid className="size-4.5" />
+                </Link>
+              </Button>
             )}
             {leadingAction}
           </div>
