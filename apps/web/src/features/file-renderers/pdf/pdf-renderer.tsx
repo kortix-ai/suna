@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { AlertTriangle } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
+import { PDFViewer } from './pdf-viewer';
 
 export function base64PdfContentToBlob(fileContent: string): Blob {
   const binaryString = atob(fileContent);
@@ -42,7 +43,6 @@ export function PdfRenderer({ fileContent, url, className, compact = false }: Pd
         const nextUrl = URL.createObjectURL(blob);
         setPdfUrl(nextUrl);
         setStatus('ready');
-
         return () => {
           URL.revokeObjectURL(nextUrl);
         };
@@ -87,12 +87,11 @@ export function PdfRenderer({ fileContent, url, className, compact = false }: Pd
   }
 
   return (
-    <div className={cn('h-full w-full overflow-hidden bg-muted/20', compact && 'bg-muted/10 p-2', className)}>
-      <iframe
-        src={pdfUrl}
-        title="PDF preview"
-        className={cn('h-full w-full border-0 bg-white', compact && 'rounded-lg shadow-sm')}
-      />
-    </div>
+    <PDFViewer
+      src={pdfUrl}
+      showToolbar={!compact}
+      showUpload={false}
+      className={cn('h-full w-full', className)}
+    />
   );
 }

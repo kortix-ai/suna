@@ -1,7 +1,7 @@
 'use client';
 
 // Re-export binary/non-editable renderers
-export { PdfRenderer } from './pdf-renderer';
+export { PdfRenderer } from './pdf/pdf-renderer';
 export { ImageRenderer } from './image-renderer';
 export { VideoRenderer, InlineVideoPlayer } from './video-renderer';
 export { CsvRenderer } from './csv/csv-renderer';

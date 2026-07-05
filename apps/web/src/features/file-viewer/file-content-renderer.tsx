@@ -47,7 +47,7 @@ import { useFileSource } from './file-source';
 // ---------------------------------------------------------------------------
 
 const PdfRenderer = lazy(() =>
-  import('@/features/file-renderers/pdf-renderer').then((m) => ({ default: m.PdfRenderer })),
+  import('@/features/file-renderers/pdf/pdf-renderer').then((m) => ({ default: m.PdfRenderer })),
 );
 const DocxRenderer = lazy(() =>
   import('@/features/file-renderers/docx-renderer').then((m) => ({ default: m.DocxRenderer })),

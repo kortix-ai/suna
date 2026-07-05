@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { MarkdownEditor, type MarkdownEditorControls } from './markdown-editor';
 import { UnifiedMarkdown } from '@/components/markdown';
 import { CodeEditor } from './code-editor';
-import { PdfRenderer } from '@/features/file-renderers/pdf-renderer';
+import { PdfRenderer } from '@/features/file-renderers/pdf/pdf-renderer';
 import { ImageRenderer } from '@/features/file-renderers/image-renderer';
 import { VideoRenderer } from '@/features/file-renderers/video-renderer';
 import { BinaryRenderer } from '@/features/file-renderers/binary-renderer';
