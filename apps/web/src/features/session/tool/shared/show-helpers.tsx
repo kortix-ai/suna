@@ -1,12 +1,12 @@
 'use client';
 
-import type { ShowCarouselItem } from '@/components/file-renderers/show-content-renderer';
+import type { ShowCarouselItem } from '@/features/file-renderers/show-content-renderer';
 import {
   SHOW_HTML_EXT_RE,
   ShowCarousel,
   ShowContentRenderer,
   showDomain,
-} from '@/components/file-renderers/show-content-renderer';
+} from '@/features/file-renderers/show-content-renderer';
 import { toSandboxAbsolutePath } from '@/features/files/api/opencode-files';
 import {
   ServicePreviewViewport,

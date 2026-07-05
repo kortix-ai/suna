@@ -47,28 +47,28 @@ import { useFileSource } from './file-source';
 // ---------------------------------------------------------------------------
 
 const PdfRenderer = lazy(() =>
-  import('@/components/file-renderers/pdf-renderer').then((m) => ({ default: m.PdfRenderer })),
+  import('@/features/file-renderers/pdf-renderer').then((m) => ({ default: m.PdfRenderer })),
 );
 const DocxRenderer = lazy(() =>
-  import('@/components/file-renderers/docx-renderer').then((m) => ({ default: m.DocxRenderer })),
+  import('@/features/file-renderers/docx-renderer').then((m) => ({ default: m.DocxRenderer })),
 );
 const VideoRenderer = lazy(() =>
-  import('@/components/file-renderers/video-renderer').then((m) => ({ default: m.VideoRenderer })),
+  import('@/features/file-renderers/video-renderer').then((m) => ({ default: m.VideoRenderer })),
 );
 const CsvRenderer = lazy(() =>
-  import('@/components/file-renderers/csv-renderer').then((m) => ({ default: m.CsvRenderer })),
+  import('@/features/file-renderers/csv-renderer').then((m) => ({ default: m.CsvRenderer })),
 );
 const XlsxRenderer = lazy(() =>
-  import('@/components/file-renderers/xlsx-renderer').then((m) => ({ default: m.XlsxRenderer })),
+  import('@/features/file-renderers/xlsx-renderer').then((m) => ({ default: m.XlsxRenderer })),
 );
 const PptxRenderer = lazy(() =>
-  import('@/components/file-renderers/pptx-renderer').then((m) => ({ default: m.PptxRenderer })),
+  import('@/features/file-renderers/pptx-renderer').then((m) => ({ default: m.PptxRenderer })),
 );
 const ImageRenderer = lazy(() =>
-  import('@/components/file-renderers/image-renderer').then((m) => ({ default: m.ImageRenderer })),
+  import('@/features/file-renderers/image-renderer').then((m) => ({ default: m.ImageRenderer })),
 );
 const SqliteRenderer = lazy(() =>
-  import('@/components/file-renderers/sqlite-renderer').then((m) => ({
+  import('@/features/file-renderers/sqlite-renderer').then((m) => ({
     default: m.SqliteRenderer,
   })),
 );

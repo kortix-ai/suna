@@ -376,13 +376,13 @@ export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: To
 }
 ToolRegistry.register('presentation-gen', PresentationGenTool);
 
-import type { ShowCarouselItem } from '@/components/file-renderers/show-content-renderer';
+import type { ShowCarouselItem } from '@/features/file-renderers/show-content-renderer';
 import {
   SHOW_HTML_EXT_RE,
   ShowCarousel,
   ShowContentRenderer,
   showDomain,
-} from '@/components/file-renderers/show-content-renderer';
+} from '@/features/file-renderers/show-content-renderer';
 import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 
 const SHOW_BORDER_STYLES: Record<string, string> = {

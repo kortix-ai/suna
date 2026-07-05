@@ -7,14 +7,14 @@ import { cn } from '@/lib/utils';
 import { MarkdownEditor, type MarkdownEditorControls } from './markdown-editor';
 import { UnifiedMarkdown } from '@/components/markdown';
 import { CodeEditor } from './code-editor';
-import { PdfRenderer } from '@/components/file-renderers/pdf-renderer';
-import { ImageRenderer } from '@/components/file-renderers/image-renderer';
-import { VideoRenderer } from '@/components/file-renderers/video-renderer';
-import { BinaryRenderer } from '@/components/file-renderers/binary-renderer';
-import { PptxRenderer } from '@/components/file-renderers/pptx-renderer';
-import { DocxRenderer } from '@/components/file-renderers/docx-renderer';
-import { HtmlRenderer } from '@/components/file-renderers/html-renderer';
-import { CanvasRenderer } from '@/components/file-renderers/canvas-renderer';
+import { PdfRenderer } from '@/features/file-renderers/pdf-renderer';
+import { ImageRenderer } from '@/features/file-renderers/image-renderer';
+import { VideoRenderer } from '@/features/file-renderers/video-renderer';
+import { BinaryRenderer } from '@/features/file-renderers/binary-renderer';
+import { PptxRenderer } from '@/features/file-renderers/pptx-renderer';
+import { DocxRenderer } from '@/features/file-renderers/docx-renderer';
+import { HtmlRenderer } from '@/features/file-renderers/html-renderer';
+import { CanvasRenderer } from '@/features/file-renderers/canvas-renderer';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { processUnicodeContent, getFileTypeFromExtension, getLanguageFromExtension } from './utils';
@@ -31,7 +31,7 @@ function SpreadsheetLoading() {
 
 // Lazy load SpreadsheetViewer as it imports Syncfusion (~1-2 MB)
 const SpreadsheetViewer = dynamic(
-  () => import('@/components/file-renderers/spreadsheet/SpreadsheetViewer').then((mod) => mod.SpreadsheetViewer),
+  () => import('@/features/file-renderers/spreadsheet/SpreadsheetViewer').then((mod) => mod.SpreadsheetViewer),
   { ssr: false, loading: () => <SpreadsheetLoading /> }
 );
 

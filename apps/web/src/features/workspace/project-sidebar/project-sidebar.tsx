@@ -52,7 +52,6 @@ import {
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-switcher';
 import { useAdminRole } from '@/hooks/admin';
-import { isDesktop } from '@/lib/desktop';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
 import { isDesktop } from '@/lib/desktop';
@@ -213,20 +212,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 <div className="w-full min-w-0">
                   <ProjectSwitcher variant="sidebar" />
                 </div>
-<<<<<<< HEAD
-                {isDesktop() && (
-                  <Hint label="Collapse sidebar">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Collapse sidebar"
-                      onClick={toggleSidebar}
-                      className="text-muted-foreground hover:text-sidebar-foreground shrink-0"
-                    >
-                      <PanelLeft className="cn-rtl-flip size-4" />
-                    </Button>
-=======
                 {isDesktopApp && (
                   <Hint label="Collapse sidebar" side="right">
                     <button
@@ -237,7 +222,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                     >
                       <PanelLeft className="cn-rtl-flip size-4" />
                     </button>
->>>>>>> main
                   </Hint>
                 )}
               </motion.div>
@@ -324,7 +308,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 <SidebarMenuButton
                   onClick={handleNewSession}
                   size="md"
-                  className="group/menu-button text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 relative flex items-center justify-start gap-2 border-[1.2px] font-medium !text-sm [&_svg]:!size-4"
+                  className="group/menu-button text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 relative flex items-center justify-start gap-2 border-[1.2px] !text-sm font-medium [&_svg]:!size-4"
                 >
                   <Plus className="text-muted-foreground" />
                   <span>
@@ -417,15 +401,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
         <UserMenu user={user} variant="sidebar" />
       </SidebarFooter>
 
-<<<<<<< HEAD
-      {/* Desktop app: the collapsed rail has nothing to resize against, so
-          hide the drag handle there (data-desktop is set on <html>). */}
-      <SidebarRail className={cn(!isExpanded && '[[data-desktop]_&]:hidden')} />
-=======
       {/* Desktop: no resize rail while collapsed — the icon rail is fixed-width
           and the handle reads as clutter next to the traffic lights. */}
       {(isExpanded || !isDesktopApp) && <SidebarRail />}
->>>>>>> main
     </Sidebar>
   );
 }
