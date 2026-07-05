@@ -163,10 +163,30 @@ export function BashTool({ part, sessionId, defaultOpen, forceOpen, locked }: To
       trigger={
         isStalePending ? (
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="text-muted-foreground/60 font-mono text-xs select-none">$</span>
+            <span className="text-muted-foreground/60 shrink-0 font-mono text-xs select-none">
+              $
+            </span>
             <TextShimmer duration={1} spread={2} className="text-xs italic">
               Working...
             </TextShimmer>
+          </div>
+        ) : commandPreview ? (
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+            <span className="text-muted-foreground/60 shrink-0 font-mono text-xs select-none">
+              $
+            </span>
+            {running && status !== 'completed' && status !== 'error' ? (
+              <TextShimmer duration={1} spread={2} className="min-w-0 truncate font-mono text-xs">
+                {commandPreview}
+              </TextShimmer>
+            ) : (
+              <span
+                className="text-muted-foreground min-w-0 truncate font-mono text-xs"
+                title={command}
+              >
+                {commandPreview}
+              </span>
+            )}
           </div>
         ) : null
       }
