@@ -11,7 +11,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
 import { Message } from '@/components/ui/message';
 import type { MessageWithParts } from '@kortix/sdk/react';
-import { Brain, ChevronRight, Paperclip } from 'lucide-react';
+import { Brain, ChevronRight, Paperclip, TriangleAlert } from 'lucide-react';
 import { Markdown } from './markdown';
 import { ToolCall } from './tool-call';
 
@@ -56,6 +56,26 @@ function PartView({ part }: { part: AnyPart }) {
   }
 }
 
+/**
+ * A failed assistant turn — the runtime attaches a typed `error` to the
+ * message (provider auth, model unavailable, abort, context overflow, …) and
+ * often produces ZERO parts. Without this block such a turn renders as
+ * complete silence, which reads as "the app is broken" when it's really
+ * "the model call failed" — surface the reason instead.
+ */
+function TurnError({ error }: { error: NonNullable<Extract<MessageWithParts['info'], { role: 'assistant' }>['error']> }) {
+  const data = 'data' in error ? (error.data as { message?: string } | undefined) : undefined;
+  const text = data?.message?.trim() || error.name || 'The agent run failed.';
+  return (
+    <Marker className="w-fit text-destructive" role="alert">
+      <MarkerIcon>
+        <TriangleAlert />
+      </MarkerIcon>
+      <MarkerContent>{text}</MarkerContent>
+    </Marker>
+  );
+}
+
 export function MessageView({ message }: { message: MessageWithParts }) {
   const isUser = message.info.role === 'user';
   const parts = (message.parts as AnyPart[]).filter(
@@ -80,12 +100,14 @@ export function MessageView({ message }: { message: MessageWithParts }) {
     );
   }
 
-  if (parts.length === 0) return null;
+  const error = message.info.role === 'assistant' ? message.info.error : undefined;
+  if (parts.length === 0 && !error) return null;
   return (
     <div className="space-y-2.5 text-sm leading-relaxed">
       {parts.map((p, i) => (
         <PartView key={p.id ?? i} part={p} />
       ))}
+      {error ? <TurnError error={error} /> : null}
     </div>
   );
 }

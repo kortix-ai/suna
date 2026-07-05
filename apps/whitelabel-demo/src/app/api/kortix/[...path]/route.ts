@@ -74,12 +74,20 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
   headers.delete('cookie'); // the app session cookie is ours, never upstream's
   headers.set('authorization', `Bearer ${apiKey}`);
 
+  // Buffer the request body instead of streaming it (`body: req.body,
+  // duplex: 'half'`): a streamed body has no Content-Length, so undici sends
+  // it with `Transfer-Encoding: chunked` — and the sandbox proxy's inner load
+  // balancer (AWS ALB fronting the Daytona runtime) rejects chunked request
+  // bodies with a bare HTML 400. Every request body on this surface is small
+  // JSON (or a modest FormData upload), so buffering is safe; RESPONSE bodies
+  // below still stream untouched, which is what SSE and long-lived runtime
+  // GETs actually need.
   const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
-  const init: RequestInit & { duplex?: 'half' } = {
+  const init: RequestInit = {
     method: req.method,
     headers,
     redirect: 'manual',
-    ...(hasBody ? { body: req.body, duplex: 'half' } : {}),
+    ...(hasBody ? { body: await req.arrayBuffer() } : {}),
   };
 
   let upstreamRes: Response;
