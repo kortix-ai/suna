@@ -82,7 +82,7 @@ export function DocumentViewerThumbnailSidebar({
         "absolute inset-y-0 left-0 z-30 shrink-0 overflow-hidden border-r bg-sidebar shadow-lg",
         widthClassName,
         shouldAnimateSidebar
-          ? "transition-[translate,margin-left,border-color] duration-200 ease-out"
+          ? "transition-[translate,margin-left,border-color] duration-200 ease-out motion-reduce:transition-none"
           : "transition-none",
         inline && "relative z-auto translate-x-0 shadow-none",
         open

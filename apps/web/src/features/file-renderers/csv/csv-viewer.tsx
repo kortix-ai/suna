@@ -279,6 +279,7 @@ function CsvFileActionsMenu({
           type="button"
           variant="ghost"
           size="icon-sm"
+          className="active:scale-[0.96] transition-transform"
           aria-label="Open CSV actions"
         >
           <HugeiconsIcon icon={MoreHorizontalIcon} className="size-4" />
@@ -467,6 +468,7 @@ function CsvSearchPopover({
             type="button"
             variant="ghost"
             size="icon-sm"
+            className="active:scale-[0.96] transition-transform"
             aria-label="Search CSV"
             disabled={controlsDisabled}
           >
@@ -494,7 +496,7 @@ function CsvSearchPopover({
             }}
           />
           <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0 text-xs text-muted-foreground">
+            <div className="min-w-0 text-xs text-muted-foreground tabular-nums">
               <div className="truncate">
                 {searchResults.length ? (
                   <>
@@ -519,6 +521,7 @@ function CsvSearchPopover({
                 type="button"
                 variant="outline"
                 size="icon-sm"
+                className="active:scale-[0.96] transition-transform"
                 aria-label="Previous result"
                 disabled={isSearching || searchResults.length === 0}
                 onClick={() => goToRelativeResult(-1)}
@@ -529,6 +532,7 @@ function CsvSearchPopover({
                 type="button"
                 variant="outline"
                 size="icon-sm"
+                className="active:scale-[0.96] transition-transform"
                 aria-label="Next result"
                 disabled={isSearching || searchResults.length === 0}
                 onClick={() => goToRelativeResult(1)}
@@ -736,6 +740,7 @@ export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
                 <Button
                   variant="ghost"
                   size="icon-sm"
+                  className="active:scale-[0.96] transition-transform"
                   aria-label="Zoom out"
                   disabled={zoom <= ZOOM_OPTIONS[0]}
                   onClick={() => stepZoom(-1)}
@@ -754,7 +759,7 @@ export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
               >
                 <SelectTrigger
                   size="sm"
-                  className="w-[84px] min-w-[84px]"
+                  className="w-[84px] min-w-[84px] tabular-nums"
                   aria-label="Zoom level"
                 >
                   <SelectValue>{Math.round(zoom * 100)}%</SelectValue>
@@ -771,6 +776,7 @@ export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
                 <Button
                   variant="ghost"
                   size="icon-sm"
+                  className="active:scale-[0.96] transition-transform"
                   aria-label="Zoom in"
                   disabled={zoom >= ZOOM_OPTIONS[ZOOM_OPTIONS.length - 1]}
                   onClick={() => stepZoom(1)}

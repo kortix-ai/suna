@@ -492,6 +492,7 @@ function WorkbookFileActionsMenu({
           type="button"
           variant="ghost"
           size="icon-sm"
+          className="active:scale-[0.96] transition-transform"
           aria-label="Open workbook actions"
         >
           <HugeiconsIcon icon={MoreHorizontalIcon} className="size-4" />
@@ -744,6 +745,7 @@ function WorkbookSearchPopover({
             type="button"
             variant="ghost"
             size="icon-sm"
+            className="active:scale-[0.96] transition-transform"
             aria-label="Search workbook"
             disabled={controlsDisabled}
           >
@@ -771,7 +773,7 @@ function WorkbookSearchPopover({
             }}
           />
           <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0 text-xs text-muted-foreground">
+            <div className="min-w-0 text-xs text-muted-foreground tabular-nums">
               <div className="truncate">
                 {searchResults.length ? (
                   <>
@@ -795,6 +797,7 @@ function WorkbookSearchPopover({
                 type="button"
                 variant="outline"
                 size="icon-sm"
+                className="active:scale-[0.96] transition-transform"
                 aria-label="Previous result"
                 disabled={isSearching || searchResults.length === 0}
                 onClick={() => goToRelativeResult(-1)}
@@ -805,6 +808,7 @@ function WorkbookSearchPopover({
                 type="button"
                 variant="outline"
                 size="icon-sm"
+                className="active:scale-[0.96] transition-transform"
                 aria-label="Next result"
                 disabled={isSearching || searchResults.length === 0}
                 onClick={() => goToRelativeResult(1)}
@@ -870,6 +874,7 @@ function WorkbookToolbar({
                 type="button"
                 variant="ghost"
                 size="icon-sm"
+                className="active:scale-[0.96] transition-transform"
                 disabled={!canZoomOut}
                 aria-label="Zoom out"
                 onClick={zoomOut}
@@ -884,7 +889,7 @@ function WorkbookToolbar({
             >
               <SelectTrigger
                 size="sm"
-                className="w-[84px] min-w-[84px]"
+                className="w-[84px] min-w-[84px] tabular-nums"
                 aria-label="Zoom level"
               >
                 <SelectValue>{currentZoom}%</SelectValue>
@@ -906,6 +911,7 @@ function WorkbookToolbar({
                 type="button"
                 variant="ghost"
                 size="icon-sm"
+                className="active:scale-[0.96] transition-transform"
                 disabled={!canZoomIn}
                 aria-label="Zoom in"
                 onClick={zoomIn}

@@ -361,6 +361,7 @@ function DocxFileActionsMenu({
           type="button"
           variant="ghost"
           size="icon-sm"
+          className="active:scale-[0.96] transition-transform"
           aria-label="Open DOCX actions"
         >
           <HugeiconsIcon icon={MoreHorizontalIcon} className="size-4" />
@@ -457,7 +458,7 @@ function DocxPageNumberControl({
   )
 
   return (
-    <div className="flex items-center text-sm whitespace-nowrap text-primary">
+    <div className="flex items-center text-sm whitespace-nowrap text-primary tabular-nums">
       <span>Page</span>
       {isEditing ? (
         <Input
@@ -557,6 +558,7 @@ function DocxToolbar({
               type="button"
               variant="ghost"
               size="icon-sm"
+              className="active:scale-[0.96] transition-transform"
               aria-label="Toggle thumbnails"
               disabled={controlsDisabled}
               onClick={onToggleSidebar}
@@ -578,6 +580,7 @@ function DocxToolbar({
                 type="button"
                 variant="ghost"
                 size="icon-sm"
+                className="active:scale-[0.96] transition-transform"
                 disabled={controlsDisabled || !canZoomOut}
                 aria-label="Zoom out"
                 onClick={() =>
@@ -597,7 +600,7 @@ function DocxToolbar({
             >
               <SelectTrigger
                 size="sm"
-                className="w-[84px] min-w-[84px]"
+                className="w-[84px] min-w-[84px] tabular-nums"
                 aria-label="Zoom level"
               >
                 <SelectValue>{Math.round(zoomScale)}%</SelectValue>
@@ -615,6 +618,7 @@ function DocxToolbar({
                 type="button"
                 variant="ghost"
                 size="icon-sm"
+                className="active:scale-[0.96] transition-transform"
                 disabled={controlsDisabled || !canZoomIn}
                 aria-label="Zoom in"
                 onClick={() =>

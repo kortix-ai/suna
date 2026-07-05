@@ -582,6 +582,7 @@ function PDFViewerFileActionsMenu({
             type="button"
             variant="ghost"
             size="icon-sm"
+            className="active:scale-[0.96] transition-transform"
             aria-label="Open PDF actions"
           >
             <HugeiconsIcon icon={MoreHorizontalIcon} className="size-4" />
@@ -649,7 +650,7 @@ function PDFViewerPageNumberControl({
   )
 
   return (
-    <div className="flex items-center text-sm whitespace-nowrap text-primary">
+    <div className="flex items-center text-sm whitespace-nowrap text-primary tabular-nums">
       <span>Page</span>
       {isEditing ? (
         <Input
@@ -860,6 +861,7 @@ function PDFViewerSearchControl({
             type="button"
             variant="ghost"
             size="icon-sm"
+            className="active:scale-[0.96] transition-transform"
             aria-label="Search text"
             disabled={controlsDisabled}
           >
@@ -887,7 +889,7 @@ function PDFViewerSearchControl({
             }}
           />
           <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0 text-xs text-muted-foreground">
+            <div className="min-w-0 text-xs text-muted-foreground tabular-nums">
               <div className="truncate">
                 {state.total ? (
                   <>
@@ -906,6 +908,7 @@ function PDFViewerSearchControl({
                 type="button"
                 variant="outline"
                 size="icon-sm"
+                className="active:scale-[0.96] transition-transform"
                 aria-label="Previous result"
                 disabled={isSearching || state.total === 0}
                 onClick={() => navigate(-1)}
@@ -916,6 +919,7 @@ function PDFViewerSearchControl({
                 type="button"
                 variant="outline"
                 size="icon-sm"
+                className="active:scale-[0.96] transition-transform"
                 aria-label="Next result"
                 disabled={isSearching || state.total === 0}
                 onClick={() => navigate(1)}
@@ -2245,6 +2249,7 @@ function PDFViewerInner({
                   type="button"
                   variant="ghost"
                   size="icon-sm"
+                  className="active:scale-[0.96] transition-transform"
                   aria-label="Toggle thumbnails"
                   disabled={controlsDisabled}
                   onClick={() => setSidebarOpen((open) => !open)}
@@ -2270,6 +2275,7 @@ function PDFViewerInner({
                         type="button"
                         variant="ghost"
                         size="icon-sm"
+                        className="active:scale-[0.96] transition-transform"
                         aria-label="Rotate counterclockwise"
                         disabled={controlsDisabled}
                         onClick={() => rotateSelectedPages(-1)}
@@ -2285,6 +2291,7 @@ function PDFViewerInner({
                         type="button"
                         variant="ghost"
                         size="icon-sm"
+                        className="active:scale-[0.96] transition-transform"
                         aria-label="Rotate clockwise"
                         disabled={controlsDisabled}
                         onClick={() => rotateSelectedPages(1)}
@@ -2308,6 +2315,7 @@ function PDFViewerInner({
                     type="button"
                     variant="ghost"
                     size="icon-sm"
+                    className="active:scale-[0.96] transition-transform"
                     aria-label="Zoom out"
                     disabled={
                       controlsDisabled || currentZoomLevel <= ZOOM_OPTIONS[0]
@@ -2332,7 +2340,10 @@ function PDFViewerInner({
                   disabled={controlsDisabled}
                   modal={false}
                 >
-                  <SelectTrigger size="sm" className="w-[84px] min-w-[84px]">
+                  <SelectTrigger
+                    size="sm"
+                    className="w-[84px] min-w-[84px] tabular-nums"
+                  >
                     <SelectValue placeholder="Zoom">
                       {Math.round(currentZoomLevel * 100)}%
                     </SelectValue>
@@ -2350,6 +2361,7 @@ function PDFViewerInner({
                     type="button"
                     variant="ghost"
                     size="icon-sm"
+                    className="active:scale-[0.96] transition-transform"
                     aria-label="Zoom in"
                     disabled={
                       controlsDisabled ||
