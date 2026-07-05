@@ -1,7 +1,7 @@
 // Accounts — account CRUD, members, and account-level invitations.
 
 import { backendApi } from '../api-client';
-import { unwrap, type AccountRole } from './shared';
+import { serverTokenGet, unwrap, type AccountRole, type ServerTokenOptions } from './shared';
 
 export interface KortixAccount {
   account_id: string;
@@ -232,4 +232,17 @@ export async function leaveAccount(accountId: string) {
   return unwrap(
     await backendApi.post<{ ok: boolean }>(`/accounts/${accountId}/leave`, {}),
   );
+}
+
+/**
+ * Server-side / explicit-token variant of {@link listAccounts}. Next.js
+ * server actions and route handlers (e.g. the post-signup first-project
+ * bootstrap) run per-request and already hold the caller's access token —
+ * they must not rely on the SDK's process-wide `configureKortix()` seam.
+ * Returns `null` on any failure.
+ */
+export async function fetchAccountsWithToken(
+  opts: ServerTokenOptions,
+): Promise<KortixAccount[] | null> {
+  return serverTokenGet<KortixAccount[]>(opts, '/v1/accounts');
 }

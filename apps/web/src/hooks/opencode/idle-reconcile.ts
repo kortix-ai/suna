@@ -1,4 +1,4 @@
-import type { Part } from '@opencode-ai/sdk/v2/client';
+import type { Part } from '@kortix/sdk/opencode-client';
 
 /** Debounce window before the run-complete reconcile fires (ms). */
 export const IDLE_RECONCILE_DELAY_MS = 400;

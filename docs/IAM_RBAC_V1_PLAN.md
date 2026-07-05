@@ -290,6 +290,15 @@ The deferred "can't even SEE the file" gap is now closed at the HTTP layer (the 
 - **Slack `/kortix agents` picker** filters to the linked caller's accessible agents; an unlinked caller sees only unscoped agents.
 - **Still the next step (airtight tier):** stamp resource caps into the session token at mint + have `authorizeGitProxy` honor them so the files never reach a scoped user's *sandbox* (git-pull). The HTTP/dashboard/Slack read surfaces are closed; the sandbox git boundary is the remaining one.
 
+### ⚠️ Known limitation (deferred): sandbox git-clone boundary — Marko, 2026-07-05
+
+`authorizeGitProxy` ([git.ts:582](apps/api/src/projects/lib/git.ts)) takes a `_scope: GitScope` param that is **unused**. A session's sandbox can `git clone`/`git pull` the **entire** project repo regardless of the launching user's or agent's resource-scoped grants (`iam_resource_grants`) — the visibility-isolation tier above only closed the HTTP-facing reads (dashboard/API/Slack), not the sandbox's own git access.
+
+- **IS enforced:** account/project ownership of the credential — a sandbox runtime token must be scoped to an active sandbox of *this* project, and a PAT/API-key must belong to the account that owns the project. This is a real tenant boundary, not a no-op.
+- **Is NOT enforced:** per-resource scoping. A member scoped out of Agent B or Skill C (via `iam_resource_grants`) still has a sandbox that can read B's/C's config/skill/memory files once it clones the repo. Secrets are unaffected either way — they're injected into the sandbox at runtime and are never committed to the repo.
+- **Planned fix shape:** stamp the resource caps into the session token at mint (mirrors how `agentGrant` is already stamped, `session-sandbox.ts`), then have `authorizeGitProxy` honor them (`_scope` → actually filter/deny the clone) instead of ignoring the param.
+- **Decision (2026-07-05):** deferred out of the v1 prod release; tracked as a follow-up, not a blocker. Scope of the gap is config/skill/memory file visibility only — no credential-theft or cross-tenant path.
+
 **⚠️ Before deploy:** review the migration's collision-guard `DROP TABLE IF EXISTS iam_roles/iam_policies CASCADE` — it assumes any same-named tables are the dead V1 ones (per `accounts/iam.ts`). Confirm no live data depends on them in dev/prod (expected: none).
 
 **Note:** the leaves are inert for built-in roles (everyone holds them) — the first user-visible deactivation comes from a **custom role** (buildable now via the API) that omits a leaf. Capabilities a custom role can deactivate **today** (all route-gated): deploy, customize-config (+`[[apps]]`), git-ops push + merge, schedules/webhooks (config via `project.trigger.*`, manual fire via `trigger.fire`), secrets write, connector disconnect, members.manage, gateway.*. File-based agent/skill/command edits remain under the shared `gitops.push`/CR gate until Phase 4's per-type grants.

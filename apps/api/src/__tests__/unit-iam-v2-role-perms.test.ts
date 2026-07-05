@@ -60,12 +60,16 @@ describe('IAM V2 — project role table', () => {
   });
 
   test('member is the floor role: reads + runs sessions + fires triggers, no customization', () => {
-    // Every member action is a read, a session-lifecycle action, or trigger.fire —
-    // the floor role can use the agent/chat and operate automations, but never
-    // edit, deploy, create/delete triggers, or manage. (The old `viewer` tier
-    // folded into `member`, which adds trigger.fire on top of read+run.)
+    // Every member action is a read, a session-lifecycle action, trigger.fire,
+    // or review.submit — the floor role can use the agent/chat, operate
+    // automations, and have its agent put work up for human review, but never
+    // edit, deploy, create/delete triggers, act on a review item, or manage.
+    // (The old `viewer` tier folded into `member`, which adds trigger.fire on
+    // top of read+run. review.submit is not a "write": it's the agent
+    // producing output for a human to decide on, not a project customization —
+    // see PROJECT_REVIEW_SUBMIT vs PROJECT_REVIEW_ACT in actions.ts.)
     for (const a of PROJECT_ROLE_PERMS.member) {
-      expect(a).toMatch(/\.(read|start|exec|stop|fire)$/);
+      expect(a).toMatch(/\.(read|start|exec|stop|fire|submit)$/);
     }
     // Can start / run / stop sessions (the floor role must be able to USE Kortix).
     expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_SESSION_START)).toBe(true);

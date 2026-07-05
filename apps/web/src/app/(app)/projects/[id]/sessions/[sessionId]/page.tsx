@@ -24,7 +24,7 @@ import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { isBillingEnabled } from '@/lib/config';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
-import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
+import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
@@ -34,7 +34,7 @@ import {
   restartProjectSession,
   sessionStartKey,
 } from '@kortix/sdk/projects-client';
-import { useSession } from '@kortix/sdk/react';
+import { migrateStash, readStartStash, useSession } from '@kortix/sdk/react';
 
 /**
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.
@@ -82,9 +82,14 @@ export default function ProjectSessionPage() {
   // seeding (no client health poll), and the canonical id. Gated on the billing
   // check so a no-plan account never spins on a sandbox that won't provision.
   // replayStartStash:false — the web has its own pending-prompt hand-off (below).
+  // chatEngine:false — this page only reads boot/lifecycle fields (switched,
+  // stage, sandbox, opencodeSessionId); `SessionChat` below mounts its own
+  // useSessionSync + useQuestionSelfHeal. Leaving the default `true` here would
+  // double-mount both against the same session for no reason.
   const session = useSession(projectId, sessionId, {
     enabled: !!user && !billingGatePending && !noPlan,
     replayStartStash: false,
+    chatEngine: false,
   });
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';
@@ -122,9 +127,13 @@ export default function ProjectSessionPage() {
     let fresh = false;
     let pending = false;
     if (typeof window !== 'undefined') {
-      pending =
-        !!sessionStorage.getItem(`opencode_pending_prompt:${sessionId}`) ||
-        !!sessionStorage.getItem(`project_pending_prompt:${sessionId}`);
+      // Was two raw legacy-key checks (`opencode_pending_prompt:<id>` /
+      // `project_pending_prompt:<id>`) — now that every producer stashes
+      // canonically under the route id (see the `migrateStash` call below),
+      // `readStartStash` is the one check that still sees a stash from any of
+      // them (canonical or legacy shape) without knowing which key it lives
+      // under.
+      pending = !!readStartStash(sessionId)?.prompt;
       fresh = pending || isSessionFresh(sessionId);
     }
     freshRef.current = fresh;
@@ -358,7 +367,14 @@ function ActiveSessionChat({
   if (!pinRef.current.id && rootSessionId) pinRef.current.id = rootSessionId;
   const chatSessionId = selectedSession?.id ?? pinRef.current.id ?? rootSessionId ?? null;
 
-  // Migrate the home-composer prompt onto SessionChat's consumer key DURING RENDER.
+  // Migrate the home-composer prompt onto the canonical SDK start-stash DURING
+  // RENDER — every producer (project-home composer, `useConfigureThread`, the
+  // instant shell) stashes under the ROUTE session id (before the canonical
+  // OpenCode session exists); once it resolves, hand the stash off to
+  // `chatSessionId`'s stash, which `readStartStash` (SessionChat's
+  // pending-prompt effect, or `useSession`'s own replay) reads uniformly.
+  // `migrateStash` understands both the canonical shape and any producer that
+  // still writes the older bare-prompt legacy shape at the route id.
   const promptMigratedForRef = useRef<string | null>(null);
   if (
     typeof window !== 'undefined' &&
@@ -366,21 +382,7 @@ function ActiveSessionChat({
     promptMigratedForRef.current !== chatSessionId
   ) {
     promptMigratedForRef.current = chatSessionId;
-    const fromKey = `project_pending_prompt:${sessionId}`;
-    const pending = sessionStorage.getItem(fromKey);
-    if (pending) {
-      const toKey = `opencode_pending_prompt:${chatSessionId}`;
-      if (sessionStorage.getItem(toKey) === null) sessionStorage.setItem(toKey, pending);
-      sessionStorage.removeItem(fromKey);
-    }
-    const fromOptKey = `project_pending_options:${sessionId}`;
-    const pendingOptions = sessionStorage.getItem(fromOptKey);
-    if (pendingOptions) {
-      const toOptKey = `opencode_pending_options:${chatSessionId}`;
-      if (sessionStorage.getItem(toOptKey) === null)
-        sessionStorage.setItem(toOptKey, pendingOptions);
-      sessionStorage.removeItem(fromOptKey);
-    }
+    migrateStash(sessionId, chatSessionId);
   }
 
   // ── Readiness benchmarking marks ───────────────────────────────────────

@@ -1,0 +1,344 @@
+# Agent-First Configuration & Authorization Unification
+
+**Status:** Draft for review — Marko + Fable, 2026-07-05
+**Depends on:** IAM/RBAC v1 (shipped, `feat/iam-rbac-v1`), `docs/AUTHZ_MODEL_FINAL_PLAN.md`, `docs/specs/2026-06-28-token-session-agent-identity.md`
+**Supersedes in part:** `docs/specs/2026-06-28-project-authorization-runtime-governance.md` (the config-compilation direction; the ACL model it sketched was replaced by IAM v1)
+
+---
+
+## 0. The one-sentence thesis
+
+**The agent is the unit of identity, authorization, and configuration.** Everything a
+project can do is declared on an agent in one manifest; humans get access *through*
+agents (the pyramid); the platform compiles that declaration into whatever runtime
+executes it (OpenCode today; Codex/Claude later). Every concern in this spec is a
+consequence of taking that sentence seriously.
+
+## 1. Where we actually are (verified 2026-07-05)
+
+Facts established by direct code inspection — each of these shapes a decision below:
+
+1. **`[[agents]]` is a governance overlay, not an agent definition.** It carries
+   `connectors`/`kortix_cli`/`env` grants. All *behavior* (prompt, mode, tools,
+   permission tree, temperature, steps…) lives in hand-authored
+   `.kortix/opencode/agents/*.md` files that Kortix passes through blind.
+2. **Two `[[agents]]` fields are dead**: `model` parses and round-trips but never
+   reaches the running OpenCode process (effective model comes from
+   `KORTIX_OPENCODE_MODEL` ← session/model-preferences DB); `file` is carried but
+   unused in materialization.
+3. **Agents are optional, and absence means unrestricted.** No `[[agents]]` → grant
+   resolves to `null` → session capped only by the launching human's role. Once a
+   project adopts `[[agents]]`, unlisted agents are default-denied. This
+   adopt-to-govern posture is deliberate back-compat.
+4. **YAML already works.** `packages/manifest-schema/src/format.ts` is dual-format;
+   `kortix.yaml` is *preferred* over `kortix.toml` in candidate-path resolution.
+   Blockers are narrow: `apps/cli/src/manifest-edit.ts` (comment-preserving TOML
+   text surgery) guard-throws on YAML projects, and
+   `POST /projects/:id/manifest/validate` assumes TOML.
+5. **`[[channels]]` is validated but dead at runtime.** The live channel→agent
+   mapping is the `chat_channel_bindings` DB table, manageable only from inside
+   Slack; no web UI exists.
+6. **There are two unrelated trigger systems.** The git `[[triggers]]` manifest is
+   what the scheduler fires (agent-first, correct); the web "Triggers" UI talks to
+   the in-sandbox daemon's ephemeral `/kortix/triggers` endpoint and never touches
+   the manifest.
+7. **Trigger identity is agent-first with two seams**: (a) a trigger with no
+   `agent` in an ungoverned project resolves to full owner-equivalent access;
+   (b) run attribution (`created_by`, billing, audit) is "an arbitrary account
+   owner," not the agent's service account (tracked TODO in `triggers.ts`).
+8. **Secrets are single-valued.** One shared value per (project, name);
+   `agent_scope` only narrows *who may see that one value*. No display name — the
+   name *is* the env key. Same-key-different-value-per-agent does not exist.
+9. **Connector "profile" is informal.** It means "one `executor_connectors` row."
+   Unscoped (`agent_scope` empty) = usable by ALL agents; same two-axis model as
+   secrets (agent-side self-narrow ∩ resource-side gate). `per_user` credential
+   mode composes with, and is orthogonal to, agent scoping — and it resolves the
+   *launching human's* credential, which is the main obstacle to fully
+   agent-based sessions (AUTHZ plan §3b/§4b).
+10. **CLI permissions and connector policies are different systems for good
+    reason.** `kortix_cli` grants are role-anchored (`userRole ∩ agentGrant` — the
+    agent can never exceed its launching human); the executor policy engine is
+    risk-tiered per-call approval for discovered external actions. Folding CLI
+    into connectors would forfeit the role ceiling. What CLI *lacks* is the
+    approval tier: `project.gitops.merge` and `project.deploy` are pure
+    allow/deny today.
+11. **The Members-page grant flow is already agent-only** (picker hardcoded to
+    agents; pyramid comment in code), but the backend still accepts
+    `skill`-type grants via raw API and secrets live in a separate share model.
+12. **Enterprise gating asymmetry**: SSO/SCIM are visually gated on entitlement;
+    Groups/Roles/Policies were functionally gated (402) but visually open —
+    fixed in the IAM-finalisation branch this spec ships with.
+13. **Known limitation carried forward**: the sandbox git-clone boundary
+    (`authorizeGitProxy` ignores scope) — deferred 2026-07-05, documented in
+    `IAM_RBAC_V1_PLAN.md`. This spec's Phase 4 is where it gets closed.
+
+## 2. Target model
+
+### 2.1 The manifest is the agent registry — and agents become mandatory
+
+- `kortix.yaml` becomes the canonical manifest (see §2.7 for the TOML story).
+- Every project **must declare its agents** in the manifest. Enforcement:
+  - New projects: the starter template ships with agents declared and
+    `agents.required = true` implied by `kortix_version: 2`. Creation flows
+    (starter, `kortix init`) always scaffold at least one agent.
+  - Existing projects: a platform flag (`KORTIX_REQUIRE_DECLARED_AGENTS`,
+    default **on for new projects, off for pre-existing**) controls whether an
+    undeclared agent name may boot a session. Pre-existing projects keep the
+    v1 adopt-to-govern behavior until migrated (§2.8).
+  - End state: the `null`-grant ("no agents declared → unrestricted") path is
+    deleted once migration completes. Unrestricted becomes impossible to express.
+- The `default` sentinel survives only as "the manifest's `default_agent`" — it
+  must always resolve to a *declared* agent under v2. A trigger or channel that
+  names no agent gets the project default agent, never owner-equivalent power.
+  This closes trigger seam 7(a) structurally rather than with a patch.
+
+### 2.2 One agent block: identity + governance + behavior
+
+The v2 agent entry unifies what today is split across `[[agents]]` (TOML) and
+`.kortix/opencode/agents/*.md` (frontmatter + prompt). Kortix-native fields and
+runtime-behavioral fields live in one place, namespaced by what compiles where:
+
+```yaml
+kortix_version: 2
+default_agent: support
+
+agents:
+  support:
+    description: "Handles customer support triage"   # required for subagents
+    mode: primary            # primary | subagent | all
+    model: anthropic/claude-sonnet-5   # declarative default; DB prefs override at runtime
+    temperature: 0.2
+    steps: 200
+    color: "#7C5CFF"
+    hidden: false
+    prompt: agents/support.md          # file ref; body = system prompt (unchanged authoring UX)
+    permission:                        # full OpenCode PermissionConfig tree, passed through
+      edit: ask
+      bash: { "git push": deny, "*": allow }
+      webfetch: allow
+    # ---- Kortix governance (enforced platform-side, never by the runtime) ----
+    connectors: [github, slack]        # profile slugs | all | none
+    secrets: [STRIPE_KEY, GH_TOKEN]    # renamed from `env`; names | all | none
+    kortix_cli: [project.session.start, project.cr.open]
+    workspace: runtime                 # runtime | read | branch  (Phase 4, git boundary)
+  pr-bot:
+    mode: subagent
+    description: "Reviews and lands PRs"
+    prompt: agents/pr-bot.md
+    connectors: [github]
+    kortix_cli: [project.cr.open, project.cr.merge, project.review.submit]
+```
+
+Rules:
+
+- **Full OpenCode `AgentConfig` parity.** Every schema field (`model`, `variant`,
+  `temperature`, `top_p`, `prompt`, `disable`, `description`, `mode`, `hidden`,
+  `options`, `color`, `steps`, `permission` incl. glob rules and the
+  `skill`/`task`/`bash` rule types) is representable. Deprecated upstream fields
+  (`tools`, `maxSteps`) are rejected with a pointer to `permission`/`steps`.
+- **The `.md` files remain** as prompt bodies (referenced via `prompt:`), because
+  that authoring UX is good. Frontmatter in those files becomes **illegal in v2**
+  — one source of truth. The compiler errors if a referenced `.md` still carries
+  frontmatter keys that belong in the manifest.
+- **`secrets` replaces `env`** as the grant-set name (accurate: they're project
+  secrets, not arbitrary env). v2 default when omitted: **`none`** — v2 is
+  deny-by-default across all three grant sets, killing the `env: 'all'`
+  back-compat special case. (Migration writes an explicit `secrets: all` into
+  converted manifests so nothing silently breaks — the default changes, not the
+  migrated behavior.)
+- **Runtime attribution**: every session/trigger run is attributed to the agent's
+  service account (auto-provisioned per agent, already exists as
+  `ensureAgentServiceAccount`), closing trigger seam 7(b). The human launcher
+  remains recorded as the *initiator* — attribution and authorization stop
+  sharing one field.
+
+### 2.3 Runtime-agnostic by construction: the compiler
+
+```
+kortix.yaml ──► manifest-schema (validate) ──► runtime compiler ──► OpenCode config
+                                             (per runtime:       (agent map + permission
+                                              opencode | codex    + mcp + model overlays,
+                                              | claude — later)   written by the daemon)
+```
+
+- New field: `runtime: opencode` (project-level, default `opencode`, the only
+  accepted value for now). The schema reserves the enum; the compiler interface
+  (`compileAgentConfig(manifest, runtime) → runtime-native config`) is what makes
+  a future `runtime: claude` a one-line project change instead of a migration.
+- Implementation home: extend the existing merge point —
+  `buildOpencodeConfigContent()` in `apps/kortix-sandbox-agent-server` already
+  overlays MCP/provider/permission onto the repo's config. The compiler moves
+  that composition server-side (apps/api) so the sandbox receives a **sealed,
+  already-compiled config** rather than composing trust-relevant config inside
+  the sandbox. The daemon keeps only session-local overlays (Slack
+  `question: deny`).
+- This revives the "runtime generated from policy" idea from the 2026-06-28
+  governance spec in a narrower, buildable form: we compile *agent config*, not
+  the whole workspace materialization (that's Phase 4).
+- Kills dead fields as a side effect: `[[agents]].model` becomes live (compiled
+  into the agent map, still overridable by DB model-preferences at the
+  session/trigger layer — precedence: explicit session > trigger > DB prefs >
+  manifest agent > account > platform).
+
+### 2.4 Secrets v2: named secrets with per-agent values
+
+Today's model (one value per key, allowlist scoping) can't express "same
+`STRIPE_KEY`, test value for the support agent, live value for the billing
+agent." Target:
+
+- **Secret = display name + env key + one or more values.** Schema: keep
+  `project_secrets` as the secret identity row (add `display_name varchar(120)`),
+  add `project_secret_values (secret_id, agent_scope text[] | NULL, value_enc, …)`
+  with `NULL` scope = the default value. Resolution at sandbox boot: most
+  specific value wins (agent-scoped > default); ambiguity (two values matching
+  one agent) is a validation error at write time, not boot time.
+- Existing `agent_scope` on the secret row is reinterpreted as it is today
+  (visibility narrowing) and continues to compose: first "may this agent see
+  this secret at all," then "which value does it get."
+- UI: secrets manager gets display name + a per-value "applies to" agent picker.
+  CLI: `kortix secrets set STRIPE_KEY --agent billing`.
+- **Starter hygiene** (do immediately, independent of the rest):
+  remove `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` from `[env] optional` in
+  `kortix.toml`, `packages/starter/templates/base/kortix.toml`, and the doc
+  prose that showcases them. They confuse BYOK with platform credentials; the
+  platform already hard-forbids its own keys of those names from sandboxes.
+
+### 2.5 Connector profiles, channels, and the meaning of "ALL"
+
+- **Formalize the profile.** "Connector profile" = named `executor_connectors`
+  row (slug + display name + provider + credential mode + policies + agent
+  scope). No new entity needed — the spec's contribution is making the term
+  precise and using it consistently in UI/docs/CLI.
+- **ALL semantics, stated once and enforced twice:** a profile with empty
+  `agent_scope` is usable by **all declared agents**; a profile with a scope is
+  usable only by those agents. Symmetrically, an agent's `connectors: all` means
+  "all profiles not scoped away from me." Effective access is always the
+  intersection (agent-side self-narrow ∩ profile-side gate) — this is already
+  how `connectorUsable` + `agentMayUseConnector` behave; v2 documents it and the
+  UI displays the *effective* matrix (per agent: which profiles, and why).
+- **Under v2's deny-by-default**, `connectors: none` (the omitted default) means
+  a new agent sees nothing until granted — "ALL" stops being an accident of
+  omission and becomes an explicit choice on either side.
+- **Channels become manageable**: a web Channels surface listing
+  `chat_channel_bindings` (workspace, channel, bound agent, model override,
+  conversation policy) with edit = the same `setChannelAgent`/`setChannelModel`
+  the Slack commands use. The dead `[[channels]]` manifest block is **removed
+  from the schema** (v2) rather than wired up: channel↔agent routing is live
+  operational state (like OAuth installs), not declarative config — same
+  boundary rule that keeps credentials out of git. The channel *integration*
+  itself remains a connector profile (`provider: channel`), which is the
+  declarative part.
+- **`per_user` credential mode is retained** in v2 (removal was investigated and
+  is a founder-gated breaking change — it's the default for the whole Pipedream
+  provider). The agent-first end-state (§4b of the AUTHZ plan: sessions resolve
+  credentials as the agent SA, not the launcher) supersedes it *eventually*;
+  sizing SQL is drafted and should be run against prod before any decision.
+
+### 2.6 Kortix CLI permissions: role-anchored, approval-capable
+
+Decision: **do not fold `kortix_cli` into connector profiles.** The role ceiling
+(`userRole ∩ agentGrant`) is the system's core invariant and lives in the IAM
+engine; connectors' access model has no role awareness, and faking it inside the
+executor gateway would duplicate the engine. What we take from the executor
+instead is its approval UX:
+
+- Add an optional risk tier to CLI leaf actions: `project.gitops.merge`,
+  `project.deploy`, `project.members.manage` (initial set) can be marked
+  `require_approval` per project (manifest: `approvals.kortix_cli: [project.gitops.merge]`).
+  Enforcement reuses `sessionToolApprovals` + the Review Center / Slack card
+  machinery the executor already has — additive layer *after* the allow/deny
+  gate, never a substitute for it.
+- Prerequisite (found during research, cheap to do first): an **enforcement
+  audit** proving every grantable `PROJECT_ACTIONS` leaf is actually asserted on
+  a route with the token threaded (`project.gateway.*`, `project.webhook.*`,
+  `project.schedule.*` unverified today).
+
+### 2.7 TOML → YAML
+
+- v2 manifests are YAML (`kortix.yaml`). TOML remains fully supported **for v1
+  manifests only** — `kortix_version: 2` in a `.toml` file is a validation error
+  pointing at the migration command. This gives TOML a clean sunset without a
+  hard break: v1 projects keep working untouched.
+- Work items (small, verified): make `manifest-edit.ts` format-aware (or switch
+  CLI edits to `serializeManifestObject` for YAML, where comment preservation is
+  a native YAML-lib feature), pass `format` into the `/manifest/validate`
+  endpoint (derive from `manifestPath`), fix the two cosmetic
+  `MANIFEST_FILENAME` constants in error strings, and add the missing
+  `[[agents]]`/`[[channels]]`→`agents:` sections to `manifest.mdx`.
+- Why YAML at all: the v2 agent block (nested permission trees, per-value secret
+  scoping, approval lists) is genuinely awkward in TOML; YAML also matches the
+  OpenCode/Claude/Codex config ecosystems users already know.
+
+### 2.8 Migrating existing projects
+
+- `kortix migrate` (CLI) + a one-click dashboard banner, both driving the same
+  server-side transform: read v1 TOML + all `.md` frontmatter → emit
+  `kortix.yaml` (v2) with frontmatter hoisted into agent blocks, `env` renamed
+  `secrets` (written explicitly as `all` where v1 defaulted), dead fields
+  dropped, `[[channels]]` dropped — delivered as a **change request** on the
+  project repo, reviewed and merged like any other change. Nothing migrates
+  silently.
+- The platform reads both versions indefinitely (validator already
+  version-gates); the *feature* incentive to migrate is that everything in this
+  spec (per-agent model/permissions, secret values, approvals) is v2-only.
+- Rollout order: starter template + new projects first (v2 native), migration
+  tooling second, nag banner third, v1-write-path freeze (API manifest CRUD
+  refuses to *add new* sections to v1 manifests) last.
+
+### 2.9 The permission map — one mental model
+
+The complexity Marko flagged collapses under one rule:
+
+> **Every capability is either a git write (goes through a change request) or a
+> platform action (goes through an IAM leaf). Nothing is both.**
+
+| Capability | Class | Gated by |
+|---|---|---|
+| Edit agents, skills, commands, manifest, memory | git write | `project.gitops.push` / CR review; agent needs `workspace`/`git` powers (Phase 4) |
+| Merge a change request | platform action on git | `project.cr.merge` (+ optional approval tier) |
+| CRUD connectors, secrets, channels bindings, model prefs | platform action | `project.connector.write`, `project.secret.write`, … |
+| Fire/create triggers & webhooks | split: definition is git write, firing is platform | definition via CR; `project.trigger.fire` for manual fires |
+| Start/stop sessions, deploy | platform action | `project.session.*`, `project.deploy` |
+| Member/group/role admin | platform action (account/project) | IAM roles + Enterprise entitlement for custom RBAC |
+
+- "Can he edit the agent's skills?" = "can he land a CR touching `.kortix/`" —
+  one question, not two systems. The *session* path to the same edit (ask an
+  agent to edit the repo) goes through the **same** gate because the agent's
+  write lands as a CR under the agent's `kortix_cli`/workspace powers.
+- Auto-clone on project creation, "can he clone at all," and per-agent repo
+  visibility are all the **Phase 4 git boundary** (workspace/git powers stamped
+  into the session token; `authorizeGitProxy` honoring them) — the one
+  already-documented deferral. This spec sequences it, it does not re-defer it.
+- Member-facing resource scoping stays **agent-only** (the pyramid): you assign
+  people to agents; agents carry the resources. Backend follow-through: stop
+  accepting new `skill`-type rows in `iam_resource_grants` POST (UI already
+  can't create them), keep legacy rows readable/revocable.
+
+## 3. Phased plan
+
+Each phase is independently shippable; order minimizes rework.
+
+| Phase | Scope | Size |
+|---|---|---|
+| **0. Hygiene** (now, with IAM finalisation) | Starter key examples removed; Members copy fix; Groups/Roles visual gating; manifest.mdx agents/channels docs; CLI-leaf enforcement audit | S |
+| **1. Schema v2 + compiler skeleton** | `kortix_version: 2` YAML schema (unified agent block, `secrets` rename, deny-by-default, `runtime` enum, `[[channels]]` removal); server-side `compileAgentConfig` for opencode; frontmatter-illegal rule; dead-field removal; `manifest-edit`/validate-endpoint format fixes | L |
+| **2. Mandatory agents + trigger identity** | `KORTIX_REQUIRE_DECLARED_AGENTS` flag (on for new projects); default-sentinel-must-resolve rule; trigger/channel sessions attributed to agent SA; web Channels management surface | M |
+| **3. Secrets v2 + approvals** | display name + per-agent values (schema + resolution + UI/CLI); CLI-action approval tier via Review Center | M-L |
+| **4. Git boundary** | `workspace`/`git` powers per agent; resource caps stamped into session token; `authorizeGitProxy` enforces; auto-clone policy per agent | L |
+| **5. Migration & sunset** | `kortix migrate` CR generator; dashboard banner; v1 write-freeze; eventually flip remaining projects | M |
+
+Phase 0 ships in the IAM-finalisation PR this spec accompanies. Phases 1–2 are
+the "agent-first identity is real everywhere" milestone; 3–5 are quality and
+consolidation.
+
+## 4. Open decisions (Marko)
+
+1. **`per_user` connector credentials**: run the sizing SQL on prod, then decide
+   sunset vs. keep-under-v2. (Blocked on data, not on design.)
+2. **Approval-tier default set**: which CLI actions ship `require_approval` by
+   default in new projects — proposal: `project.gitops.merge` only.
+3. **v2 deny-by-default for `secrets`**: confirmed as specified? (Migration
+   writes explicit `all`, so only *newly declared* v2 agents feel it.)
+4. **Timing of Phase 4** relative to bringing Codex/Claude runtimes — the
+   compiler (Phase 1) is the prerequisite for both; they can proceed in parallel
+   after it.

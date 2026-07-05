@@ -1,5 +1,4 @@
 import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
-import { getClient } from './opencode/client';
 /**
  * createKortix — the single opinionated entry point to the Kortix data layer.
  *
@@ -17,12 +16,17 @@ import { getClient } from './opencode/client';
  * exact types with zero re-typing. The `project()`/`session()` handles bind ids
  * for ergonomics. Reactive data still comes from `@kortix/sdk/react` hooks.
  */
+import { getClient, getClientForUrl } from './opencode/client';
 import { type KortixPlatformConfig, configureKortix } from './platform/config';
 import * as P from './platform/projects-client';
 import { getSessionHealth } from './session/health';
 import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from './session/url';
 import { setCurrentRuntime } from './state/current-runtime';
-import { getActiveSandboxId } from './state/server-store/active';
+import {
+  clearSessionRuntime,
+  getSessionRuntime,
+  type SessionRuntimeEntry,
+} from './state/session-runtime-registry';
 import { getSandboxUrlForExternalId } from './state/server-store/url-helpers';
 
 /** A model the agent can run, as the opencode runtime identifies it. */
@@ -33,23 +37,41 @@ function runtime(): OpencodeClient {
   return getClient();
 }
 
+/**
+ * Thrown by a session handle's runtime-scoped operations (`.runtime`,
+ * `.health()`, `.previewUrl()`, `.proxyUrl()`) when called before the handle
+ * has resolved its own sandbox runtime. These never fall back to whatever
+ * sandbox happens to be globally active (a different session's runtime) —
+ * the caller must resolve THIS handle's runtime first.
+ */
+export class SessionNotReadyError extends Error {
+  constructor(action: string) {
+    super(
+      `Session runtime not ready — call \`await session.ensureReady()\` (it drives \`start()\` to completion and resolves this session's own sandbox runtime) before calling \`${action}\`.`,
+    );
+    this.name = 'SessionNotReadyError';
+  }
+}
+
 export function createKortix(config: KortixPlatformConfig) {
   // Wire the platform seam once. All wrapped functions read it.
   configureKortix(config);
 
   /**
    * Resolve the proxy/preview URL context (sandboxId + api base) from config +
-   * the active runtime, so a session's `previewUrl`/`proxyUrl` never make the
-   * host name a sandbox.
+   * a THIS-handle's own resolved sandbox id, so a session's `previewUrl`/
+   * `proxyUrl` never make the host name a sandbox — and never reads whichever
+   * sandbox happens to be globally active (which may belong to a different
+   * session handle).
    */
-  function resolvePreviewOpts(): SubdomainUrlOptions {
+  function resolvePreviewOptsForSandbox(sandboxId: string): SubdomainUrlOptions {
     const apiBaseUrl = config.backendUrl;
     let backendPort = 80;
     try {
       const u = new URL(apiBaseUrl);
       backendPort = u.port ? Number(u.port) : u.protocol === 'https:' ? 443 : 80;
     } catch {}
-    return { sandboxId: getActiveSandboxId() ?? '', backendPort, apiBaseUrl };
+    return { sandboxId, backendPort, apiBaseUrl };
   }
 
   /** Account-scoped operations. */
@@ -64,6 +86,22 @@ export function createKortix(config: KortixPlatformConfig) {
     removeMember: P.removeAccountMember,
     updateMemberRole: P.updateAccountMemberRole,
     invites: P.listAccountInvites,
+    /** Cancel a pending account invite (accountId still known/scoped). */
+    cancelInvite: P.cancelAccountInvite,
+    /** Resend a pending account invite (accountId still known/scoped). */
+    resendInvite: P.resendAccountInvite,
+  };
+
+  /**
+   * Account-invite lifecycle reached by invite token alone — accept/decline/
+   * describe are called by the invitee (who may not be an account member, or
+   * even signed into this account, yet), so they take only `inviteId` and
+   * genuinely don't fit account- or project-scoping.
+   */
+  const accountInvites = {
+    describe: P.describeAccountInvite,
+    accept: P.acceptAccountInvite,
+    decline: P.declineAccountInvite,
   };
 
   /** Top-level project operations (not bound to an id). */
@@ -73,6 +111,8 @@ export function createKortix(config: KortixPlatformConfig) {
     get: P.getProject,
     detail: P.getProjectDetail,
     create: P.createProject,
+    /** Create a project backed by a brand-new Kortix-managed GitHub repo. */
+    createRepo: P.createProjectRepo,
     provision: P.provisionProject,
     update: P.updateProject,
     archive: P.archiveProject,
@@ -82,6 +122,26 @@ export function createKortix(config: KortixPlatformConfig) {
     sessions: P.listProjectSessions,
     createSession: P.createProjectSession,
   };
+
+  /** GitHub App installation + repository linking — account-scoped, not project-scoped. */
+  const github = {
+    linkRepository: P.linkRepository,
+    getInstallation: P.getGitHubInstallation,
+    listInstallations: P.listGitHubInstallations,
+    listRepositories: P.listGitHubRepositories,
+    saveInstallation: P.saveGitHubInstallation,
+    deleteInstallation: P.deleteGitHubInstallation,
+  };
+
+  /** Public share links for a sandbox port (`/v1/p/share`) — sandbox-scoped, not project-scoped. */
+  const sandboxShares = {
+    list: P.listSandboxShares,
+    create: P.createSandboxShare,
+    revoke: P.revokeSandboxShare,
+  };
+
+  /** Deployment-wide flag: is the easy-connect (Pipedream) provider configured? Not project-scoped. */
+  const connectStatus = P.getConnectStatus;
 
   /** Id-bound handle for a single project: every sub-resource, projectId pre-applied. */
   function project(projectId: string) {
@@ -105,6 +165,11 @@ export function createKortix(config: KortixPlatformConfig) {
         removePersonal: (name: string) => P.deletePersonalProjectSecret(projectId, name),
         setGitCredential: (input: Parameters<typeof P.upsertProjectGitCredential>[1]) =>
           P.upsertProjectGitCredential(projectId, input),
+        /** Device-code OAuth flow to connect a subscription-backed provider (e.g. ChatGPT). */
+        startProviderOAuth: (...a: DropFirst<Parameters<typeof P.startProjectProviderOAuth>>) =>
+          P.startProjectProviderOAuth(projectId, ...a),
+        pollProviderOAuth: (...a: DropFirst<Parameters<typeof P.pollProjectProviderOAuth>>) =>
+          P.pollProjectProviderOAuth(projectId, ...a),
       },
 
       access: {
@@ -125,6 +190,18 @@ export function createKortix(config: KortixPlatformConfig) {
         rejectRequest: (...a: DropFirst<Parameters<typeof P.rejectProjectAccessRequest>>) =>
           P.rejectProjectAccessRequest(projectId, ...a),
         groupGrants: () => P.listProjectGroupGrants(projectId),
+        attachGroupGrant: (...a: DropFirst<Parameters<typeof P.attachGroupToProject>>) =>
+          P.attachGroupToProject(projectId, ...a),
+        updateGroupGrant: (...a: DropFirst<Parameters<typeof P.updateProjectGroupGrant>>) =>
+          P.updateProjectGroupGrant(projectId, ...a),
+        detachGroupGrant: (groupId: string) => P.detachGroupFromProject(projectId, groupId),
+        /** Per-resource (agent/skill/secret) grants to a member or a group. */
+        resourceGrants: {
+          list: () => P.listProjectResourceGrants(projectId),
+          create: (input: Parameters<typeof P.createProjectResourceGrant>[1]) =>
+            P.createProjectResourceGrant(projectId, input),
+          remove: (grantId: string) => P.deleteProjectResourceGrant(projectId, grantId),
+        },
       },
 
       connectors: {
@@ -136,6 +213,34 @@ export function createKortix(config: KortixPlatformConfig) {
         remove: (...a: DropFirst<Parameters<typeof P.deleteConnector>>) =>
           P.deleteConnector(projectId, ...a),
         sync: () => P.syncConnectors(projectId),
+        setName: (...a: DropFirst<Parameters<typeof P.setConnectorName>>) =>
+          P.setConnectorName(projectId, ...a),
+        setSharing: (...a: DropFirst<Parameters<typeof P.setConnectorSharing>>) =>
+          P.setConnectorSharing(projectId, ...a),
+        setCredentialMode: (...a: DropFirst<Parameters<typeof P.setConnectorCredentialMode>>) =>
+          P.setConnectorCredentialMode(projectId, ...a),
+        setCredential: (...a: DropFirst<Parameters<typeof P.setConnectorCredential>>) =>
+          P.setConnectorCredential(projectId, ...a),
+        setSensitive: (...a: DropFirst<Parameters<typeof P.setConnectorSensitive>>) =>
+          P.setConnectorSensitive(projectId, ...a),
+        /** The connector-side agent gate (mirror of a secret's agent_scope) — distinct from `setAgentScope`, which binds an agent's secret/connector allowlist. */
+        setAgentScope: (...a: DropFirst<Parameters<typeof P.setConnectorAgentScope>>) =>
+          P.setConnectorAgentScope(projectId, ...a),
+        policies: {
+          get: (...a: DropFirst<Parameters<typeof P.getConnectorPolicies>>) =>
+            P.getConnectorPolicies(projectId, ...a),
+          set: (...a: DropFirst<Parameters<typeof P.setConnectorPolicies>>) =>
+            P.setConnectorPolicies(projectId, ...a),
+        },
+        /** Easy-connect (Pipedream): app catalog + connect/finalize handshake. */
+        pipedream: {
+          listApps: (...a: DropFirst<Parameters<typeof P.listPipedreamApps>>) =>
+            P.listPipedreamApps(projectId, ...a),
+          connect: (...a: DropFirst<Parameters<typeof P.pipedreamConnect>>) =>
+            P.pipedreamConnect(projectId, ...a),
+          finalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalize>>) =>
+            P.pipedreamFinalize(projectId, ...a),
+        },
       },
 
       policies: {
@@ -177,6 +282,9 @@ export function createKortix(config: KortixPlatformConfig) {
         branches: () => P.listProjectBranches(projectId),
         versionDiff: (...a: DropFirst<Parameters<typeof P.getVersionDiff>>) =>
           P.getVersionDiff(projectId, ...a),
+        /** Invite a GitHub user as a collaborator on a Kortix-managed repo. */
+        inviteCollaborator: (...a: DropFirst<Parameters<typeof P.inviteRepoCollaborator>>) =>
+          P.inviteRepoCollaborator(projectId, ...a),
       },
 
       changeRequests: {
@@ -200,6 +308,118 @@ export function createKortix(config: KortixPlatformConfig) {
           P.createProjectSession(projectId, input),
       },
 
+      /** Review Center — the per-project human-in-the-loop inbox (change requests, tool approvals, agent outputs/decisions). */
+      review: {
+        list: (params?: Parameters<typeof P.listReviewItems>[1]) => P.listReviewItems(projectId, params),
+        get: (reviewItemId: string) => P.getReviewItem(projectId, reviewItemId),
+        submit: (input: Parameters<typeof P.submitReviewItem>[1]) =>
+          P.submitReviewItem(projectId, input),
+        act: (...a: DropFirst<Parameters<typeof P.actReviewItem>>) => P.actReviewItem(projectId, ...a),
+        bulkAct: (input: Parameters<typeof P.bulkActReviewItems>[1]) =>
+          P.bulkActReviewItems(projectId, input),
+      },
+
+      /** The manager inbox of executor-gated actions awaiting approve/deny (APPROVE / ASK / BLOCK). */
+      approvals: {
+        list: (options?: Parameters<typeof P.listPendingApprovals>[1]) =>
+          P.listPendingApprovals(projectId, options),
+        resolve: (...a: DropFirst<Parameters<typeof P.resolveApproval>>) =>
+          P.resolveApproval(projectId, ...a),
+        sessionsNeedingInput: (options?: Parameters<typeof P.listSessionsNeedingInput>[1]) =>
+          P.listSessionsNeedingInput(projectId, options),
+      },
+
+      /** Gateway observability — LLM request logs, cost/latency rollups, budgets, gateway API keys. */
+      gateway: {
+        logs: (opts?: Parameters<typeof P.listGatewayLogs>[1]) => P.listGatewayLogs(projectId, opts),
+        log: (logId: string) => P.getGatewayLog(projectId, logId),
+        overview: (days?: number) => P.getGatewayOverview(projectId, days),
+        series: (days?: number) => P.getGatewaySeries(projectId, days),
+        breakdown: (days?: number) => P.getGatewayBreakdown(projectId, days),
+        sessions: (days?: number) => P.getGatewaySessions(projectId, days),
+        errors: (days?: number) => P.getGatewayErrors(projectId, days),
+        budgets: () => P.getGatewayBudgets(projectId),
+        setBudget: (input: Parameters<typeof P.setGatewayBudget>[1]) =>
+          P.setGatewayBudget(projectId, input),
+        deleteBudget: (budgetId: string) => P.deleteGatewayBudget(projectId, budgetId),
+        keys: () => P.getGatewayKeys(projectId),
+        createKey: (name: string) => P.createGatewayKey(projectId, name),
+        revokeKey: (keyId: string) => P.revokeGatewayKey(projectId, keyId),
+      },
+
+      /** Slack + email + Meet channel integrations. */
+      channels: {
+        slack: {
+          installation: () => P.getSlackInstallation(projectId),
+          connect: (input: Parameters<typeof P.connectSlack>[1]) => P.connectSlack(projectId, input),
+          mode: () => P.getSlackMode(projectId),
+          manifest: () => P.getSlackManifest(projectId),
+          disconnect: () => P.disconnectSlack(projectId),
+        },
+        email: {
+          installation: (connectorSlug?: string | null) =>
+            P.getEmailInstallation(projectId, connectorSlug),
+          mode: () => P.getEmailMode(projectId),
+          connect: (input: Parameters<typeof P.connectEmail>[1]) => P.connectEmail(projectId, input),
+          disconnect: (connectorSlug?: string | null) => P.disconnectEmail(projectId, connectorSlug),
+          updatePolicy: (...a: DropFirst<Parameters<typeof P.updateEmailPolicy>>) =>
+            P.updateEmailPolicy(projectId, ...a),
+        },
+        meet: {
+          voices: () => P.getMeetVoices(projectId),
+          setVoice: (voice: string) => P.setMeetVoice(projectId, voice),
+          setBotName: (name: string) => P.setMeetBotName(projectId, name),
+          previewVoice: (voiceId: string) => P.previewMeetVoice(projectId, voiceId),
+        },
+      },
+
+      /** Project apps/deployments — the `/projects/:id/apps/*` family. */
+      apps: {
+        list: () => P.listProjectApps(projectId),
+        create: (input: Parameters<typeof P.createProjectApp>[1]) => P.createProjectApp(projectId, input),
+        update: (...a: DropFirst<Parameters<typeof P.updateProjectApp>>) =>
+          P.updateProjectApp(projectId, ...a),
+        remove: (slug: string) => P.deleteProjectApp(projectId, slug),
+        deploy: (slug: string) => P.deployProjectApp(projectId, slug),
+        stop: (slug: string) => P.stopProjectApp(projectId, slug),
+        logs: (slug: string) => P.getProjectAppLogs(projectId, slug),
+        /** @deprecated Use `updateExperimentalFeature('apps', enabled)` — kept for parity with the underlying client. */
+        updateConfig: (input: Parameters<typeof P.updateAppsConfig>[1]) =>
+          P.updateAppsConfig(projectId, input),
+      },
+
+      /** Toggle an experimental feature (Customize → Settings → Experimental). Pass `enabled: null` to clear the override. */
+      updateExperimentalFeature: (...a: DropFirst<Parameters<typeof P.updateExperimentalFeature>>) =>
+        P.updateExperimentalFeature(projectId, ...a),
+
+      /** Default model preferences (account/agent/project scope, gateway-resolved). */
+      modelDefaults: {
+        get: () => P.getModelDefaults(projectId),
+        set: (input: Parameters<typeof P.setModelDefault>[1]) => P.setModelDefault(projectId, input),
+        clear: (params: Parameters<typeof P.clearModelDefault>[1]) =>
+          P.clearModelDefault(projectId, params),
+      },
+
+      /** Sandbox templates + snapshot builds — Dockerfile/image/warm-pool config, beyond `sandboxHealth`/`sandboxTemplates`. */
+      sandbox: {
+        list: () => P.listProjectSandboxes(projectId),
+        snapshots: () => P.listProjectSnapshots(projectId),
+        rebuildSnapshot: (slug?: string) => P.rebuildProjectSnapshot(projectId, slug),
+        fixWithAgent: () => P.fixSandboxWithAgent(projectId),
+        createTemplate: (input: Parameters<typeof P.createSandboxTemplate>[1]) =>
+          P.createSandboxTemplate(projectId, input),
+        updateTemplate: (...a: DropFirst<Parameters<typeof P.updateSandboxTemplate>>) =>
+          P.updateSandboxTemplate(projectId, ...a),
+        removeTemplate: (templateId: string) => P.deleteSandboxTemplate(projectId, templateId),
+        buildTemplate: (templateId: string) => P.buildSandboxTemplate(projectId, templateId),
+        /** Pin/clear the per-project sandbox provider (null = follow the platform default). */
+        setProvider: (provider: string | null) => P.updateProjectSandboxProvider(projectId, provider),
+      },
+
+      /** Bind specific secrets + connectors to an agent (the inheritance pyramid's declaration step). */
+      setAgentScope: (...a: DropFirst<Parameters<typeof P.setAgentScope>>) =>
+        P.setAgentScope(projectId, ...a),
+
       session: (sessionId: string) => session(projectId, sessionId),
     };
   }
@@ -208,19 +428,43 @@ export function createKortix(config: KortixPlatformConfig) {
   function session(projectId: string, sessionId: string) {
     // Opinionated-action state, scoped to THIS handle. The opencode runtime is
     // keyed by the OpenCode session id (resolved server-side at /start), NOT the
-    // Kortix `sessionId` — they differ. We resolve+cache it once, and remember a
-    // chosen model so `send` carries it.
-    let _ready: { opencodeSessionId: string } | null = null;
+    // Kortix `sessionId` — they differ. We resolve+cache it once (including the
+    // resolved runtime URL + sandbox id), and remember a chosen model so `send`
+    // carries it. Every runtime-scoped operation below reads ONLY this cached
+    // record — never the module-global "currently active" runtime — so two
+    // session handles pointed at two different sandboxes never cross wires.
+    let _ready: SessionRuntimeEntry | null = null;
     let _model: SessionModel | undefined;
     let _agent: string | undefined;
 
     /**
-     * Make this session's runtime reachable and return its OpenCode session id.
-     * Idempotent: `start` provisions/resumes the sandbox (long-poll until ready),
-     * we point the active runtime at it, and cache the resolved id for reuse.
+     * Adopt an already-resolved runtime for THIS (projectId, sessionId) from
+     * the shared session-runtime registry, if this handle hasn't resolved one
+     * itself yet. This is what lets a brand-new `kortix.session(pid, sid)`
+     * handle — e.g. a one-off poll tick, or a handle created independently of
+     * the one that actually drove `/start` — use a session another handle (or
+     * the React `useSession` hook) already brought up, instead of throwing
+     * `SessionNotReadyError` or re-provisioning.
      */
-    async function ensureReady(): Promise<{ opencodeSessionId: string }> {
+    function tryResolveReady(): SessionRuntimeEntry | null {
       if (_ready) return _ready;
+      const cached = getSessionRuntime(projectId, sessionId);
+      if (cached) _ready = cached;
+      return _ready;
+    }
+
+    /**
+     * Make this session's runtime reachable and return its OpenCode session id
+     * (plus this handle's own resolved runtime URL + sandbox id). Idempotent:
+     * adopts the registry entry if another handle already resolved this
+     * session; otherwise `start` provisions/resumes the sandbox (long-poll
+     * until ready) — which itself populates the registry on success — and we
+     * cache the resolved runtime for THIS handle. Also points the app's shared
+     * "current runtime" store there, for React hosts that still read it.
+     */
+    async function ensureReady(): Promise<SessionRuntimeEntry> {
+      const cached = tryResolveReady();
+      if (cached) return cached;
       const started = await P.startProjectSession(projectId, sessionId, 30_000);
       if (
         !started ||
@@ -230,11 +474,30 @@ export function createKortix(config: KortixPlatformConfig) {
       ) {
         throw new Error(`Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`);
       }
-      // Point the app's runtime at this session's box — no global "switch".
       const externalId = (started.sandbox as { external_id?: string | null }).external_id;
-      if (externalId) setCurrentRuntime(getSandboxUrlForExternalId(externalId), externalId);
-      _ready = { opencodeSessionId: started.opencode_session_id };
+      if (!externalId) {
+        throw new Error('Session sandbox has no external_id — cannot resolve its runtime URL');
+      }
+      const runtimeUrl = getSandboxUrlForExternalId(externalId);
+      // Point the app's shared runtime store at this session too, so React
+      // hosts (which read the global current-runtime) keep working — but this
+      // handle's own operations never read it back, only `_ready` below.
+      setCurrentRuntime(runtimeUrl, externalId);
+      _ready = { opencodeSessionId: started.opencode_session_id, runtimeUrl, sandboxId: externalId };
       return _ready;
+    }
+
+    /** Throw `SessionNotReadyError` if neither this handle nor the registry has resolved a runtime yet. */
+    function requireReady(action: string): SessionRuntimeEntry {
+      const ready = tryResolveReady();
+      if (!ready) throw new SessionNotReadyError(action);
+      return ready;
+    }
+
+    /** Clear this handle's cached runtime + the shared registry entry (restart/delete). */
+    function forgetReady(): void {
+      _ready = null;
+      clearSessionRuntime(projectId, sessionId);
     }
 
     return {
@@ -242,11 +505,24 @@ export function createKortix(config: KortixPlatformConfig) {
       get: (opts?: { showErrors?: boolean }) => P.getProjectSession(projectId, sessionId, opts),
       update: (input: Parameters<typeof P.updateProjectSession>[2]) =>
         P.updateProjectSession(projectId, sessionId, input),
-      delete: () => P.deleteProjectSession(projectId, sessionId),
+      delete: () => {
+        // A deleted session's sandbox is gone — never let a later handle for
+        // this (projectId, sessionId) resolve a runtime that no longer exists.
+        forgetReady();
+        return P.deleteProjectSession(projectId, sessionId);
+      },
       start: (...a: DropFirst2<Parameters<typeof P.startProjectSession>>) =>
         P.startProjectSession(projectId, sessionId, ...a),
-      restart: () => P.restartProjectSession(projectId, sessionId),
-      stop: () => P.stopProjectSession(projectId, sessionId),
+      restart: () => {
+        // Restart may re-provision a DIFFERENT sandbox — a stale cached/
+        // registered runtime would route subsequent calls at a dead box.
+        forgetReady();
+        return P.restartProjectSession(projectId, sessionId);
+      },
+      stop: () => {
+        forgetReady();
+        return P.stopProjectSession(projectId, sessionId);
+      },
       setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) =>
         P.setProjectSessionSharing(projectId, sessionId, intent),
       previews: () => P.getSessionPreviewCandidates(projectId, sessionId),
@@ -259,20 +535,45 @@ export function createKortix(config: KortixPlatformConfig) {
         revoke: (...a: DropFirst2<Parameters<typeof P.revokeSessionPublicShare>>) =>
           P.revokeSessionPublicShare(projectId, sessionId, ...a),
       },
+      /** Per-session audit trail of executor-gated agent actions. */
+      audit: (limit?: number, options?: { showErrors?: boolean }) =>
+        P.getSessionAudit(projectId, sessionId, limit, options),
+
+      /**
+       * Resolve THIS handle's own runtime (idempotent): provisions/resumes the
+       * sandbox (long-poll until ready) and caches the resolved OpenCode session
+       * id + runtime URL + sandbox id for every other call on this handle. Call
+       * this (or `send`/`abort`, which call it internally) before `.runtime`,
+       * `.health()`, `.previewUrl()`, or `.proxyUrl()` — those throw
+       * `SessionNotReadyError` instead of falling back to whatever sandbox
+       * happens to be globally active.
+       */
+      ensureReady,
 
       // ── runtime health + preview (the session owns its runtime) ──────────
-      /** Liveness/readiness of this session's runtime (`GET /kortix/health`). */
-      health: (init?: RequestInit) => getSessionHealth(undefined, init),
-      /** Proxy/preview URL for a port this session's runtime exposes. */
+      /**
+       * Liveness/readiness of THIS session's runtime (`GET /kortix/health`).
+       * Unlike `.previewUrl()`/`.proxyUrl()`/`.runtime`, this never throws
+       * `SessionNotReadyError` — a health poller (e.g. a header dot ticking
+       * every 15s on a fresh inline handle) needs to be callable BEFORE the
+       * session has ever resolved a runtime. It degrades to the same graceful
+       * `{ status: 0, ok: false }` shape `getSessionHealth` already returns for
+       * "no URL yet", instead of forcing every caller to guard with `ensureReady()`.
+       */
+      health: (init?: RequestInit) => getSessionHealth(tryResolveReady()?.runtimeUrl ?? null, init),
+      /** Proxy/preview URL for a port THIS session's runtime exposes. */
       previewUrl: (port: number, path = '/') =>
-        rewriteLocalhostUrl(port, path, resolvePreviewOpts()),
+        rewriteLocalhostUrl(port, path, resolvePreviewOptsForSandbox(requireReady('previewUrl').sandboxId)),
       /** Rewrite a localhost URL the agent printed into a reachable proxy URL. */
-      proxyUrl: (url?: string) => proxyLocalhostUrl(url, resolvePreviewOpts()),
+      proxyUrl: (url?: string) =>
+        proxyLocalhostUrl(url, resolvePreviewOptsForSandbox(requireReady('proxyUrl').sandboxId)),
 
       // ── agent actions (opinionated wrappers over the runtime) ────────────
       // These do the right thing end-to-end for scripts/non-React hosts: ensure
-      // the runtime is up, point the SDK at it, resolve the OpenCode session id,
-      // and act. React hosts use `@kortix/sdk/react` hooks instead, which bind to
+      // the runtime is up, resolve the OpenCode session id, and act through a
+      // client bound to THIS handle's own runtime URL (never the module-global
+      // "active" one, so parallel handles on different sandboxes never cross
+      // wires). React hosts use `@kortix/sdk/react` hooks instead, which bind to
       // the same resolved id reactively (see the white-label reference app).
       /** Pick the model `send` will use for subsequent prompts (until changed). */
       setModel: (model: SessionModel | undefined) => {
@@ -288,10 +589,10 @@ export function createKortix(config: KortixPlatformConfig) {
        * choices for this message only.
        */
       send: async (text: string, opts?: { model?: SessionModel; agent?: string }) => {
-        const { opencodeSessionId } = await ensureReady();
+        const { opencodeSessionId, runtimeUrl } = await ensureReady();
         const model = opts?.model ?? _model;
         const agent = opts?.agent ?? _agent;
-        return runtime().session.prompt({
+        return getClientForUrl(runtimeUrl).session.prompt({
           sessionID: opencodeSessionId,
           parts: [{ type: 'text', text }],
           ...(model ? { model } : {}),
@@ -300,16 +601,16 @@ export function createKortix(config: KortixPlatformConfig) {
       },
       /** Abort the agent's current run in this session. */
       abort: async () => {
-        const { opencodeSessionId } = await ensureReady();
-        return runtime().session.abort({ sessionID: opencodeSessionId });
+        const { opencodeSessionId, runtimeUrl } = await ensureReady();
+        return getClientForUrl(runtimeUrl).session.abort({ sessionID: opencodeSessionId });
       },
 
-      // ── runtime (opencode v2, active sandbox) ────────────────────────────
+      // ── runtime (opencode v2, THIS session's own sandbox) ────────────────
       // The typed opencode client, reached ONLY through the SDK. The host never
       // imports `@opencode-ai/sdk`. Opinionated wrappers (prompt/abort/setModel
       // with server-owned side-effects) layer on top of this as they land.
       get runtime(): OpencodeClient {
-        return runtime();
+        return getClientForUrl(requireReady('runtime').runtimeUrl);
       },
     };
   }
@@ -318,9 +619,19 @@ export function createKortix(config: KortixPlatformConfig) {
     /** The platform config in effect (for diagnostics). */
     config,
     accounts,
+    /** Account-invite lifecycle reached by invite token alone (accept/decline/describe). */
+    accountInvites,
     projects,
     project,
     session,
+    /** GitHub App installation + repository linking (account-scoped). */
+    github,
+    /** Public share links for a sandbox port (`/v1/p/share`, sandbox-scoped). */
+    sandboxShares,
+    /** Speech-to-text transcription (`/transcription` — not project-scoped). */
+    transcribe: P.transcribeAudio,
+    /** Deployment-wide Pipedream/easy-connect availability flag (not project-scoped). */
+    connectStatus,
     /** Escape hatch: the typed opencode client for the active sandbox. */
     runtime,
   };

@@ -14,12 +14,14 @@
  *   @kortix/sdk/projects-client  — project/session REST surface
  *   @kortix/sdk/server-store     — active sandbox/server state
  *   @kortix/sdk/sync-store       — live message/part/status store
+ *   @kortix/sdk/event-stream     — framework-free SSE connect/reconnect/coalesce primitive
  */
 export {
   configureKortix,
   platformConfig,
   isConfigured,
   type KortixPlatformConfig,
+  type KortixFeatureFlagOverrides,
 } from './platform/config';
 
 /**
@@ -29,6 +31,7 @@ export {
  */
 export {
   createKortix,
+  SessionNotReadyError,
   type Kortix,
   type ProjectHandle,
   type SessionHandle,
@@ -43,6 +46,20 @@ export type * from './files/types';
 export { generateSessionId } from './platform/session-id';
 
 /**
+ * Session transcript formatting — pure `SessionInfo`/`MessageWithParts` →
+ * Markdown, zero DOM deps, so any host (web, mobile, CLI) exports a transcript
+ * the same way.
+ */
+export {
+  DEFAULT_TRANSCRIPT_OPTIONS,
+  formatTranscript,
+  getTranscriptFilename,
+  type MessageWithParts,
+  type SessionInfo,
+  type TranscriptOptions,
+} from './transcript';
+
+/**
  * A session's runtime surface — proxy/preview/web-proxy URL building + the
  * `/kortix/health` liveness probe. The host reaches these through the session
  * handle (`createKortix(...).session(pid, sid).health()/.previewUrl()/.proxyUrl()`);
@@ -50,3 +67,28 @@ export { generateSessionId } from './platform/session-id';
  * public surface — a session owns its runtime.
  */
 export type { SessionHealthResponse, SessionHealthResult } from './session/health';
+
+/**
+ * A session's resolved runtime (opencode session id + runtime URL + sandbox
+ * id) — the shape `ensureReady()` resolves to and the shared session-runtime
+ * registry stores. Re-exported so it's nameable from the package's public
+ * surface (TS's declaration emit needs this to describe `SessionHandle`'s
+ * `ensureReady()` return type without reaching into an internal module path).
+ */
+export type { SessionRuntimeEntry } from './state/session-runtime-registry';
+
+/**
+ * The framework-free SSE event-stream primitive — connect/reconnect/backoff,
+ * heartbeat watchdog, and event coalescing, with ZERO react/react-query
+ * imports. `@kortix/sdk/react`'s `useOpenCodeEventStream` is a thin wrapper
+ * around this for the React host; any other host (worker, CLI, non-React UI)
+ * can call it directly.
+ */
+export {
+  openEventStream,
+  type EventStreamClient,
+  type EventStreamHandle,
+  type EventStreamTimers,
+  type OpenCodeEvent,
+  type OpenEventStreamOptions,
+} from './state/event-stream';

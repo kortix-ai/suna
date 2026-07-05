@@ -127,11 +127,17 @@ function stripMarkdownArtifacts(url: string): string {
   return url.slice(0, markerIndex);
 }
 
+const LEADING_WRAPPERS = new Set(["'", '"', '`', '<', '(', '[']);
+const TRAILING_WRAPPERS = new Set(['>', "'", '"', '`', ')', ']', ',', ';', '.', '!', '?']);
+
 function stripUrlWrappers(url: string): string {
-  let out = url.trim();
-  out = out.replace(/^['"`<\(\[]+/, '');
-  out = out.replace(/[>'"`\)\],;.!?]+$/, '');
-  return out;
+  let start = 0;
+  let end = url.length;
+  while (start < end && (url[start] === ' ' || url[start] === '\t')) start++;
+  while (end > start && (url[end - 1] === ' ' || url[end - 1] === '\t')) end--;
+  while (start < end && LEADING_WRAPPERS.has(url[start] as string)) start++;
+  while (end > start && TRAILING_WRAPPERS.has(url[end - 1] as string)) end--;
+  return url.slice(start, end);
 }
 
 function extractLocalhostCandidate(text: string): string | null {

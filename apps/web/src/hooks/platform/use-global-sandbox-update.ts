@@ -11,7 +11,7 @@
  * sidebar indicator).
  */
 
-import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
+import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { useSandboxUpdate, PHASE_LABELS, PHASE_PROGRESS, detectChannel } from './use-sandbox-update';
 
 export { PHASE_LABELS, PHASE_PROGRESS, detectChannel };

@@ -19,7 +19,7 @@ export type {
   GitCommit,
   FileHistoryResult,
   FileCommitDiff,
-} from './types';
+} from '@/features/file-browser/types';
 
 // API — read
 export {
@@ -45,9 +45,6 @@ export {
 
 // Pure path heuristics
 export { hasFileExtension } from './path-utils';
-
-// API — semantic search (LSS)
-export { searchLss } from './api/lss-search';
 
 // API — git history
 export { getFileHistory, getFileCommitDiff, getFileAtCommit } from './api/git-history';
@@ -93,7 +90,7 @@ export {
   type ClipboardItem,
   type FilesStore,
   type FilesStoreApi,
-} from './store/files-store';
+} from '@/features/file-browser/store/files-store';
 
 // Components
 export {

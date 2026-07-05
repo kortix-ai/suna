@@ -7,6 +7,7 @@
  * for side-effect by the root provider so it runs before any SDK call.
  */
 import { configureKortix } from '@kortix/sdk';
+import { parseFlagOverride } from '@kortix/sdk/feature-flags';
 import { getSupabaseAccessToken } from '@/lib/auth-token';
 import { isBillingEnabled } from '@/lib/config';
 import { getEnv } from '@/lib/env-config';
@@ -41,6 +42,15 @@ export function ensureKortixConfigured(): void {
     },
     sandboxId: getEnv().SANDBOX_ID ?? null,
     billingEnabled: isBillingEnabled(),
+    // Literal dotted process.env.NEXT_PUBLIC_* reads are the ONLY form Next's
+    // client-bundle compiler inlines — the SDK's own dynamic env lookup yields
+    // undefined in the browser, so the flags must be wired here.
+    featureFlags: {
+      disableMobileAdvertising: parseFlagOverride(process.env.NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING),
+      enableDinoGame: parseFlagOverride(process.env.NEXT_PUBLIC_ENABLE_DINO_GAME),
+      enableProjects: parseFlagOverride(process.env.NEXT_PUBLIC_ENABLE_PROJECTS),
+      enableAutoModel: parseFlagOverride(process.env.NEXT_PUBLIC_ENABLE_AUTO_MODEL),
+    },
     onToast: (level, message, options) => {
       const opts = options as Parameters<typeof infoToast>[1];
       if (level === 'success') successToast(message, opts);

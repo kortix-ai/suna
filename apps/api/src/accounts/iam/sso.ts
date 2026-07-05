@@ -268,15 +268,15 @@ iamRouter.openapi(
     request: { params: AccountIdParam },
     responses: {
       200: json(z.object({ deleted: z.boolean() }), 'Deletion result'),
-      ...errors(401, 402, 403, 404),
+      ...errors(401, 403, 404),
     },
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-  const denied = await requireEntitlement(c, accountId, 'sso');
-  if (denied) return denied;
+  // Disconnecting SSO must never 402 — an account that lost its entitlement
+  // still needs to be able to turn the IdP integration off.
 
   const before = await getSsoProvider(accountId);
   const ok = await deleteSsoProvider(accountId);
@@ -417,7 +417,7 @@ iamRouter.openapi(
     request: { params: z.object({ accountId: z.string(), mappingId: z.string() }) },
     responses: {
       200: json(z.object({ deleted: z.boolean() }), 'Deletion result'),
-      ...errors(401, 402, 403, 404),
+      ...errors(401, 403, 404),
     },
   }),
   async (c: any) => {
@@ -425,8 +425,7 @@ iamRouter.openapi(
   const accountId = c.req.param('accountId');
   const mappingId = c.req.param('mappingId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-  const denied = await requireEntitlement(c, accountId, 'sso');
-  if (denied) return denied;
+  // Reduction-only action (removes a group mapping) — must never 402.
 
   const ok = await deleteSsoGroupMapping(accountId, mappingId);
   if (!ok) return c.json({ error: 'mapping not found' }, 404);

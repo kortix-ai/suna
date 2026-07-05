@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 454,
+  "count": 458,
   "routes": [
     {
       "method": "GET",
@@ -695,6 +695,10 @@
       "path": "/v1/executor/projects/:projectId/connectors/:slug"
     },
     {
+      "method": "PUT",
+      "path": "/v1/executor/projects/:projectId/connectors/:slug/agent-scope"
+    },
+    {
       "method": "GET",
       "path": "/v1/executor/projects/:projectId/connectors/:slug/config"
     },
@@ -729,6 +733,10 @@
     {
       "method": "PUT",
       "path": "/v1/executor/projects/:projectId/connectors/:slug/policies"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/executor/projects/:projectId/connectors/:slug/sensitive"
     },
     {
       "method": "PUT",
@@ -1609,6 +1617,14 @@
     {
       "method": "GET",
       "path": "/v1/projects/suna-migration/status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/public/session-shares/:shareId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/public/session-shares/:shareId/messages"
     },
     {
       "method": "POST",

@@ -3,6 +3,7 @@ import { resolveFirstProjectPathForNewUser } from '@/lib/auth/bootstrap-first-pr
 import { buildDesktopBounceHtml, buildMobileBounceHtml } from '@/lib/auth/desktop-bounce';
 import { isInviteReturnUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { ACTIVE_INSTANCE_COOKIE } from '@kortix/sdk/instance-routes';
+import { fetchAccountStateWithToken } from '@kortix/sdk/projects-client';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import type { NextRequest } from 'next/server';
@@ -193,16 +194,13 @@ export async function GET(request: NextRequest) {
         // the invite unaccepted).
         if (billingEnabled && backendUrl && accessToken && !isInviteReturnUrl(next)) {
           try {
-            const accountStateRes = await fetch(`${backendUrl}/v1/billing/account-state`, {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-              },
-              signal: AbortSignal.timeout(5000),
+            const accountState = await fetchAccountStateWithToken({
+              backendUrl,
+              accessToken,
+              timeoutMs: 5000,
             });
 
-            if (accountStateRes.ok) {
-              const accountState = await accountStateRes.json();
+            if (accountState) {
               if (!accountHasAppAccess(accountState)) {
                 finalDestination = '/accounts';
               } else if (isNewUser) {

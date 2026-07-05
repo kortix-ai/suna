@@ -7,7 +7,7 @@ import Hint from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
 import { ListSolid } from '@mynaui/icons-react';
 import { FileDiff, History, LayoutGrid } from 'lucide-react';
-import { useFilesStore } from '../store/files-store';
+import { useFilesStore } from '@/features/file-browser/store/files-store';
 
 interface DriveHeaderProps {
   historyToggle: { open: boolean; onToggle: () => void };

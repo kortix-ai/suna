@@ -11,6 +11,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { accountMembers, accounts } from '@kortix/db';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { invalidateIamCacheForAccount } from '../../iam/cache-invalidation';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam, readBody } from './helpers';
 
@@ -213,6 +214,12 @@ iamRouter.openapi(
     .update(accounts)
     .set({ mfaRequired: enabled, updatedAt: new Date() })
     .where(eq(accounts.accountId, accountId));
+
+  // resolveActorV2 memoizes accountMfaRequired per member for IAM_CACHE_TTL_MS
+  // — without this, a flip stays invisible to every cached actor (denying an
+  // admin who just disabled it, or admitting non-aal2 sessions who should now
+  // be locked out) until the memo expires.
+  await invalidateIamCacheForAccount(accountId);
 
   await auditIam(c, {
     accountId,

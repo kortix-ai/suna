@@ -49,7 +49,7 @@ export function isResourceType(v: string): v is ResourceType {
 
 export type PrincipalType = 'member' | 'group';
 
-export interface ResourceGrantPrincipal {
+interface ResourceGrantPrincipal {
   principalType: PrincipalType;
   principalId: string;
 }
@@ -214,7 +214,7 @@ export async function filterAccessibleResourceIds(
 
 // ─── Repository (CRUD) ──────────────────────────────────────────────────────
 
-export interface ResourceGrantRow {
+interface ResourceGrantRow {
   grantId: string;
   resourceType: string;
   resourceId: string;

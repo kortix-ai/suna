@@ -1,8 +1,15 @@
 // `member` is the floor project role (renamed from `user`). The retired `user`
-// and `viewer` tiers fold into it (see parseProjectRole, which still accepts
-// both as legacy aliases).
-export type ProjectRole = 'manager' | 'editor' | 'member';
-export type AccountRole = 'owner' | 'admin' | 'member';
+// and `viewer` tiers fold into it — see normalizeProjectRole in iam/role-perms.ts,
+// the canonical parser (this module no longer keeps its own copy).
+import {
+  maxProjectRole,
+  PROJECT_ROLE_RANK,
+  type AccountRole,
+  type ProjectRole,
+} from '../iam/role-perms';
+
+export type { AccountRole, ProjectRole };
+
 // 'session' sits between 'read' and 'write': any project member (a plain
 // `member` included) may start and run sessions, but not customize the project.
 export type ProjectAccessAction = 'read' | 'session' | 'write' | 'manage';
@@ -26,18 +33,6 @@ export function effectiveProjectRole(
 ): ProjectRole | null {
   if (isAccountManager(accountRole)) return 'manager';
   return projectRole;
-}
-
-export function parseProjectRole(value: unknown): ProjectRole | null {
-  if (typeof value !== 'string') return null;
-  const normalized = value.trim().toLowerCase();
-  // `user` and `viewer` are deprecated aliases — fold both into `member` so
-  // legacy clients and old rows keep working, but no new `user`/`viewer` ever
-  // enters the system.
-  if (normalized === 'viewer' || normalized === 'user') return 'member';
-  return normalized === 'manager' || normalized === 'editor' || normalized === 'member'
-    ? normalized
-    : null;
 }
 
 // ─── Effective access fold ───────────────────────────────────────────────
@@ -67,16 +62,6 @@ export interface EffectiveAccessFold {
   effective_project_role: ProjectRole | null;
   effective_source: AccessSourceTag | null;
   group_sources: GroupSource[];
-}
-
-const PROJECT_ROLE_RANK: Record<ProjectRole, number> = {
-  member: 1,
-  editor: 2,
-  manager: 3,
-};
-
-export function maxProjectRole(a: ProjectRole, b: ProjectRole): ProjectRole {
-  return PROJECT_ROLE_RANK[a] >= PROJECT_ROLE_RANK[b] ? a : b;
 }
 
 export function foldEffectiveProjectAccess(input: {

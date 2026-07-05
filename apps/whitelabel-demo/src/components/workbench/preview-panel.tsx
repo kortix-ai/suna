@@ -49,6 +49,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { cn } from '@/lib/utils';
+import { SessionNotReadyError } from '@kortix/sdk';
 
 // Session sharing intent — a subset of the SDK's ConnectorSharing union that
 // needs no extra ids (private requires an ownerId, so it's omitted here).
@@ -149,8 +150,21 @@ export function PreviewPanel({
 
   const selected = candidates.find((c) => c.id === selectedId) ?? null;
 
-  // SYNC — call directly in render, never awaited.
-  const previewSrc = selected ? session.previewUrl(selected.port, selected.path) : null;
+  // SYNC — call directly in render, never awaited. This handle never itself
+  // calls ensureReady() (the chat surface elsewhere on the page does, via the
+  // shared session-runtime registry) — before that resolves, previewUrl()
+  // throws SessionNotReadyError; render the "no preview yet" state instead of
+  // crashing the page.
+  const previewSrc = selected
+    ? (() => {
+        try {
+          return session.previewUrl(selected.port, selected.path);
+        } catch (err) {
+          if (err instanceof SessionNotReadyError) return null;
+          throw err;
+        }
+      })()
+    : null;
 
   const setSharingMut = useMutation({
     mutationFn: (value: string) => {

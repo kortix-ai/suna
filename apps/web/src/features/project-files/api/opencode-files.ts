@@ -19,7 +19,7 @@ import type {
   GitFileStatus,
   OpenCodeProjectInfo,
   ServerHealth,
-} from '../types';
+} from '@/features/file-browser/types';
 
 const READ_ONLY = 'Read-only — project files come from Git';
 
