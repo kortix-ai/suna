@@ -9,6 +9,7 @@ mock.module('../platform/auth', () => ({
   authenticatedFetch: async () => respond(),
 }));
 
+import { setCurrentRuntime } from '../state/current-runtime';
 import { getSessionHealth, isRuntimeReady } from './health';
 import {
   rewriteLocalhostUrl,
@@ -54,6 +55,22 @@ describe('session/health', () => {
     const r = await getSessionHealth('');
     expect(r.status).toBe(0);
     expect(r.ok).toBe(false);
+  });
+
+  // Regression: a per-session handle's health() must never silently probe
+  // whichever DIFFERENT session's sandbox is globally "active" — `null`
+  // explicitly means "this session has no runtime yet", unlike omitting the
+  // argument entirely (which intentionally still falls back, for callers that
+  // aren't session-scoped).
+  it('getSessionHealth never falls back to the active runtime when null is passed explicitly', async () => {
+    setCurrentRuntime('http://some-other-sessions-sandbox.test', 'sb-other');
+    respond = () => new Response(JSON.stringify({ status: 'ready' }), { status: 200 });
+
+    const r = await getSessionHealth(null);
+    expect(r.status).toBe(0);
+    expect(r.ok).toBe(false);
+
+    setCurrentRuntime(null);
   });
 });
 

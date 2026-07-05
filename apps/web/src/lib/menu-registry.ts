@@ -401,7 +401,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-changes',
-    label: 'Customize · Checkpoints',
+    label: 'Customize · Changes',
     icon: GitPullRequest,
     group: 'navigation',
     showIn: ['commandPalette'],
@@ -409,7 +409,7 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/customize/changes',
     requiresProject: true,
     keywords:
-      'checkpoint checkpoints changes change requests review merge pull request diff commits git history timeline versions branches project customize',
+      'checkpoint checkpoints changes change requests proposed review merge pull request diff commits git history timeline versions branches project customize',
   },
   {
     id: 'proj-marketplace',

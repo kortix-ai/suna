@@ -31,9 +31,9 @@ import {
   Code,
   Download,
   Eye,
+  FileDiff,
   FileWarning,
   FileX,
-  GitBranch,
   Globe,
   Loader2,
   RotateCcw,
@@ -1060,7 +1060,7 @@ export function FileContentRenderer({
                 {fileContent.patch && fileContent.patch.hunks.length > 0 && (
                   <InfoBanner
                     tone="warning"
-                    icon={GitBranch}
+                    icon={FileDiff}
                     className="shrink-0 items-center gap-1.5 rounded-none border-x-0 border-t-0 px-3 py-1.5"
                   >
                     {tHardcodedUi.raw(

@@ -2,12 +2,15 @@
 
 /**
  * Renders a pending PERMISSION request (e.g. "run this command?") and sends the
- * decision. `replyToPermission(requestId, 'once'|'always'|'reject')` unblocks the
- * run; `onResolved` drops it from the pending store.
+ * decision. `answerPermission(requestId, 'once'|'always'|'reject')` replies
+ * through the session's runtime and only drops it from the pending store once
+ * the server has actually accepted the decision — a failed reply leaves the
+ * request visible for a retry instead of vanishing while the agent never got
+ * an answer.
  */
 
 import { Button } from '@/components/ui/button';
-import { replyToPermission } from '@kortix/sdk/react';
+import { answerPermission, type KortixSendError } from '@kortix/sdk/react';
 import { ShieldQuestion } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -25,11 +28,14 @@ export function PermissionPrompt({
   async function reply(decision: 'once' | 'always' | 'reject') {
     if (sending) return;
     setSending(true);
-    onResolved();
     try {
-      await replyToPermission(request.id, decision);
-    } catch {
-      toast.error('Could not send your decision');
+      await answerPermission(request.id, decision);
+      onResolved();
+    } catch (err) {
+      // `answerPermission` already classifies its own failure via
+      // `classifySendError` and throws the typed `KortixSendError`.
+      toast.error((err as KortixSendError)?.message || 'Could not send your decision');
+      setSending(false);
     }
   }
 

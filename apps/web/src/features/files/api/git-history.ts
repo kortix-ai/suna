@@ -7,7 +7,7 @@
  */
 
 import { getClient } from '@/lib/opencode-sdk';
-import { getActiveOpenCodeUrl } from '@/stores/server-store';
+import { getPtyWebSocketUrl } from '@/hooks/opencode/use-opencode-pty';
 import type { GitCommit, FileHistoryResult, FileCommitDiff } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -52,9 +52,7 @@ async function runGitCommand(command: string): Promise<string> {
   }
 
   // Connect via WebSocket to read output
-  const baseUrl = getActiveOpenCodeUrl();
-  const wsUrl = baseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
-  const connectUrl = `${wsUrl}/pty/${ptyId}/connect`;
+  const connectUrl = await getPtyWebSocketUrl(ptyId);
 
   const output = await new Promise<string>((resolve, reject) => {
     const chunks: string[] = [];

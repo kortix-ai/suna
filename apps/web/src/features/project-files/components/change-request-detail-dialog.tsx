@@ -30,18 +30,17 @@ import { formatDistanceToNowStrict } from 'date-fns';
 import {
   AlertTriangle,
   Check,
+  CheckCircle2,
   ChevronDown,
   Columns2,
+  FileDiff,
   FileEdit,
   FilePlus2,
   FileX2,
-  GitBranch,
-  GitMerge,
-  GitPullRequest,
-  GitPullRequestClosed,
   RefreshCcw,
   RotateCcw,
   Rows3,
+  XCircle,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
@@ -102,18 +101,18 @@ function StatusBadge({ status }: { status: ChangeRequestStatus }) {
     { icon: React.ReactNode; label: string; variant: React.ComponentProps<typeof Badge>['variant'] }
   > = {
     open: {
-      icon: <GitPullRequest />,
-      label: 'Open',
+      icon: <FileDiff />,
+      label: 'Awaiting review',
       variant: 'badgeSuccess',
     },
     merged: {
-      icon: <GitMerge />,
-      label: 'Merged',
+      icon: <CheckCircle2 />,
+      label: 'Applied',
       variant: 'info',
     },
     closed: {
-      icon: <GitPullRequestClosed />,
-      label: 'Closed',
+      icon: <XCircle />,
+      label: 'Dismissed',
       variant: 'secondary',
     },
   };
@@ -241,12 +240,8 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
   const handleMerge = () => {
     if (!crId) return;
     mergeMutation.mutate(crId, {
-      onSuccess: (res) => {
-        successToast(
-          res.merge.fast_forward
-            ? 'Merged (fast-forward)'
-            : `Merged ${res.merge.merge_commit_sha.slice(0, 7)}`,
-        );
+      onSuccess: () => {
+        successToast('Changes applied');
       },
       // Manifest blocks render in the banner below; everything else stays a toast.
       onError: (err) => {
@@ -272,7 +267,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
       // Branch the fix session off the CR head so it opens on the broken
       // manifest, with the whole change in view.
       base_ref: cr.head_ref,
-      name: `Fix CR #${cr.number} manifest`,
+      name: `Fix proposed change #${cr.number}`,
     })
       .catch((err) => {
         errorToast(err instanceof Error ? err.message : 'Failed to start the fix session');
@@ -284,7 +279,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
   const handleClose = () => {
     if (!crId) return;
     closeMutation.mutate(crId, {
-      onSuccess: () => successToast('Change request closed'),
+      onSuccess: () => successToast('Proposed change dismissed'),
       onError: (err) => errorToast(err.message),
     });
   };
@@ -292,7 +287,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
   const handleReopen = () => {
     if (!crId) return;
     reopenMutation.mutate(crId, {
-      onSuccess: () => successToast('Change request reopened'),
+      onSuccess: () => successToast('Proposed change reopened'),
       onError: (err) => errorToast(err.message),
     });
   };
@@ -326,8 +321,8 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
             onClick={handleMerge}
             className={cn(isFooter ? 'h-10 flex-[1.15]' : 'min-w-24')}
           >
-            {mergeMutation.isPending ? <Loading /> : <GitMerge />}
-            {mergeMutation.isPending ? 'Merging...' : 'Merge'}
+            {mergeMutation.isPending ? <Loading /> : <Check />}
+            {mergeMutation.isPending ? 'Applying...' : 'Apply'}
           </Button>
         </div>
       );
@@ -365,7 +360,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
         : preview.can_merge
           ? {
               icon: Check,
-              label: preview.can_fast_forward ? 'Fast-forward' : 'Mergeable',
+              label: 'Ready to apply',
               variant: 'badgeSuccess' as const,
             }
           : null
@@ -402,32 +397,17 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                   <StatusBadge status={cr.status} />
                 </div>
                 <div className="text-muted-foreground mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5 text-xs">
-                  <GitBranch className="size-3 shrink-0" />
-                  <span className="max-w-[10rem] truncate font-mono sm:max-w-none">
-                    {cr.head_ref}
+                  <span>
+                    proposed{' '}
+                    {formatDistanceToNowStrict(new Date(cr.created_at), { addSuffix: true })}
                   </span>
-                  <span className="text-muted-foreground/60">→</span>
-                  {cr.base_ref === 'main' ? (
-                    <Badge variant="kortix" size="xs">
-                      {cr.base_ref.slice(0, 7)}
-                    </Badge>
-                  ) : (
-                    <span className="font-mono">{cr.base_ref}</span>
-                  )}
                   <span className="text-muted-foreground/40" aria-hidden>
                     {'·'}
                   </span>
-                  <span>
-                    opened {formatDistanceToNowStrict(new Date(cr.created_at), { addSuffix: true })}
-                  </span>
-                  {cr.head_commit_sha && (
-                    <>
-                      <span className="text-muted-foreground/40" aria-hidden>
-                        {'·'}
-                      </span>
-                      <span className="font-mono">{cr.head_commit_sha.slice(0, 7)}</span>
-                    </>
-                  )}
+                  <span className="shrink-0">into</span>
+                  <Badge variant="kortix" size="xs" className="max-w-[10rem] truncate">
+                    {cr.base_ref}
+                  </Badge>
                 </div>
               </>
             )}
@@ -442,7 +422,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
             <InfoBanner
               tone="destructive"
               icon={AlertTriangle}
-              title="Manifest validation failed — merge blocked"
+              title="Project config check failed, so this change can't be applied yet"
               action={
                 <Button size="sm" variant="blue" disabled={fixing} onClick={handleFixWithAgent}>
                   {fixing ? <Loading /> : <SparklesSolid />}
@@ -461,8 +441,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                 </ul>
               ) : (
                 <span>
-                  kortix.toml on this branch doesn’t validate against the schema. Start a session to
-                  fix it.
+                  kortix.toml in this change doesn't pass validation. Start a session to fix it.
                 </span>
               )}
             </InfoBanner>
@@ -489,7 +468,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                       )}
                     </h3>
                     <p className="text-muted-foreground mt-0.5 truncate text-xs">
-                      {diff.head_ref.slice(0, 7)} into {diff.base_ref}
+                      into {diff.base_ref}
                     </p>
                   </div>
                   <span className="bg-muted text-muted-foreground shrink-0 rounded-md px-2 py-1 text-xs font-medium tabular-nums">
@@ -665,19 +644,13 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                       {cr?.status === 'merged' && (
                         <InfoBanner
                           tone="neutral"
-                          icon={GitMerge}
+                          icon={CheckCircle2}
                           className="items-center px-3 py-2"
                         >
-                          Merged
-                          {cr.merge_commit_sha && (
-                            <>
-                              {' as '}
-                              <span className="font-mono">{cr.merge_commit_sha.slice(0, 7)}</span>
-                            </>
-                          )}
+                          Applied
                           {cr.merged_at && (
                             <>
-                              {' · '}
+                              {' '}
                               {formatDistanceToNowStrict(new Date(cr.merged_at), {
                                 addSuffix: true,
                               })}

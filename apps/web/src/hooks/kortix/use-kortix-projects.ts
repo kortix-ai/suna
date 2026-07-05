@@ -9,41 +9,22 @@
 
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useServerStore } from '@/stores/server-store';
-import { authenticatedFetch } from '@/lib/auth-token';
 import { useAuth } from '@/features/providers/auth-provider';
+import {
+  listKortixProjects,
+  getKortixProject,
+  getKortixProjectBySession,
+  listKortixProjectSessions,
+  deleteKortixProject,
+  patchKortixProject,
+} from '@kortix/sdk/opencode-client';
+import type { KortixProject } from '@kortix/sdk/opencode-client';
 
 // ── Types ────────────────────────────────────────────────────────────────────
+// The request/response shape lives in the SDK now (`@kortix/sdk/opencode-client`);
+// re-exported here for existing importers.
 
-export interface KortixProject {
-  id: string;
-  name: string;
-  path: string;
-  description: string;
-  created_at: string;
-  opencode_id: string | null;
-  /** 1 = legacy tasks layout, 2 = new tickets/board. */
-  structure_version?: number;
-  sessionCount?: number;
-  // Extended properties from OpenCode Project (optional for compatibility)
-  worktree?: string;
-  time?: {
-    created: number;
-    updated: number;
-    initialized?: number;
-  };
-}
-
-// ── Fetch helper ─────────────────────────────────────────────────────────────
-
-async function kortixFetch<T>(serverUrl: string, apiPath: string, init?: RequestInit): Promise<T> {
-  const url = `${serverUrl.replace(/\/+$/, '')}/kortix/projects${apiPath}`;
-  const res = await authenticatedFetch(url, init);
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Kortix API ${res.status}: ${text.slice(0, 100)}`);
-  }
-  return res.json();
-}
+export type { KortixProject };
 
 // ── Query keys ───────────────────────────────────────────────────────────────
 
@@ -63,7 +44,7 @@ export function useKortixProjects(_args?: undefined, options: KortixProjectQuery
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<KortixProject[]>({
     queryKey: [...kortixKeys.projects(), user?.id ?? 'anonymous', serverUrl],
-    queryFn: () => kortixFetch<KortixProject[]>(serverUrl, ''),
+    queryFn: () => listKortixProjects(serverUrl),
     enabled: !isAuthLoading && !!user && !!serverUrl && (options.enabled ?? true),
     staleTime: 30_000,
     gcTime: 5 * 60 * 1000,
@@ -78,7 +59,7 @@ export function useKortixProject(id: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<KortixProject>({
     queryKey: [...kortixKeys.project(id), user?.id ?? 'anonymous', serverUrl],
-    queryFn: () => kortixFetch<KortixProject>(serverUrl, `/${encodeURIComponent(id)}`),
+    queryFn: () => getKortixProject(serverUrl, id),
     enabled: !isAuthLoading && !!user && !!serverUrl && !!id,
     staleTime: 15_000,
     gcTime: 5 * 60 * 1000,
@@ -96,7 +77,7 @@ export function useKortixProjectForSession(sessionId: string, options: KortixPro
     queryKey: ['kortix', 'projects', 'by-session', sessionId, user?.id ?? 'anonymous', serverUrl],
     queryFn: async () => {
       try {
-        return await kortixFetch<KortixProject>(serverUrl, `/by-session/${encodeURIComponent(sessionId)}`);
+        return await getKortixProjectBySession(serverUrl, sessionId);
       } catch {
         return null;
       }
@@ -120,7 +101,7 @@ export function useKortixProjectSessions(
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<any[]>({
     queryKey: ['kortix', 'projects', projectId, 'sessions', user?.id ?? 'anonymous', serverUrl],
-    queryFn: () => kortixFetch<any[]>(serverUrl, `/${encodeURIComponent(projectId)}/sessions`),
+    queryFn: () => listKortixProjectSessions(serverUrl, projectId),
     enabled: !isAuthLoading && !!user && !!serverUrl && !!projectId && (options.enabled ?? true),
     staleTime: 15_000,
     gcTime: 5 * 60 * 1000,
@@ -134,10 +115,7 @@ export function useDeleteProject() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useMutation({
-    mutationFn: (id: string) =>
-      kortixFetch<{ deleted: boolean; name: string; path: string }>(serverUrl, `/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-      }),
+    mutationFn: (id: string) => deleteKortixProject(serverUrl, id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: kortixKeys.projects() });
     },
@@ -149,11 +127,7 @@ export function usePatchProject() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useMutation({
     mutationFn: ({ id, ...body }: { id: string; name?: string; description?: string; user_handle?: string | null }) =>
-      kortixFetch<KortixProject>(serverUrl, `/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }),
+      patchKortixProject(serverUrl, id, body),
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: kortixKeys.project(vars.id) });
       qc.invalidateQueries({ queryKey: kortixKeys.projects() });

@@ -25,8 +25,8 @@ import { SidebarContext } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useOpenCodeAgents, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { authenticatedFetch } from '@/lib/auth-token';
 import { parseCustomizeSection } from '@/lib/customize-sections';
+import { systemReload } from '@kortix/sdk/opencode-client';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { getItemsForSurface, type MenuItemDef, type SettingsTabId } from '@/lib/menu-registry';
@@ -44,7 +44,6 @@ import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
-import { useServerStore } from '@/stores/server-store';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowDown,
@@ -1078,31 +1077,15 @@ export function CommandPalette() {
 
   const handleRestartConfig = useCallback(() => {
     close();
-    const serverUrl = useServerStore.getState().getActiveServerUrl();
-    authenticatedFetch(`${serverUrl}/kortix/services/system/reload`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'dispose-only' }),
-    })
-      .then((res) => {
-        if (res.ok) successToast('Config reloaded');
-        else errorToast('Restart failed');
-      })
+    systemReload('dispose-only')
+      .then(() => successToast('Config reloaded'))
       .catch(() => errorToast('Restart failed'));
   }, [close]);
 
   const handleRestartFull = useCallback(() => {
     close();
-    const serverUrl = useServerStore.getState().getActiveServerUrl();
-    authenticatedFetch(`${serverUrl}/kortix/services/system/reload`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'full' }),
-    })
-      .then((res) => {
-        if (res.ok) successToast('Full restart initiated');
-        else errorToast('Restart failed');
-      })
+    systemReload('full')
+      .then(() => successToast('Full restart initiated'))
       .catch(() => errorToast('Restart failed'));
   }, [close]);
 

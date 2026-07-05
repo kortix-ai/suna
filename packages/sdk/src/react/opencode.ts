@@ -43,11 +43,28 @@ export * from './use-opencode-pty';
 export * from './use-opencode-config';
 export * from './use-model-store';
 export * from './use-session-sync';
-// The client health poller (useSandboxConnection) was REMOVED — readiness is now
-// server-truth via `useSession` (/start `stage==='ready'`, seeded into the
-// connection store), so there is no poll loop to halt (the old first-load
-// 503-halt bug is structurally impossible). The connection STORE is still
-// exported below for hosts that drive readiness themselves.
+// Runtime health has three independent layers, each covering a failure mode
+// the others can't see — do not collapse them:
+//   1. Boot readiness is server-truth: `useSession`'s /start resolves
+//      `stage==='ready'` only once the backend reached the daemon and OpenCode
+//      answered, and seeds that straight into the connection store. No client
+//      poll is needed (or trustworthy) to *establish* the first connection.
+//   2. In-stream stalls are covered by the SSE heartbeat in
+//      `state/event-stream.ts` (`openEventStream`) — a 15s watchdog that
+//      forces a reconnect if no event arrives, so a stream that goes quiet
+//      recovers on its own.
+//   3. Neither of those promptly detects the runtime dying *mid-session* or a
+//      network partition: a dead sandbox's SSE connection can hang rather than
+//      error, and the heartbeat only fires once its own timeout elapses. That
+//      gap is what `useRuntimeReconnect` (`./use-runtime-reconnect`) closes —
+//      an independent liveness probe (`getSessionHealth`/`isRuntimeReady`)
+//      polled on its own cadence and written into the same connection store,
+//      so the reconnect/offline UI reacts even when the SSE stream itself
+//      never surfaces an error. The tradeoff: while healthy it only polls
+//      every 30s (`POLL_CONNECTED`), so a mid-session death can take up to
+//      ~30s to surface — traded against not hammering a healthy sandbox with a
+//      tight poll forever.
+export * from './use-runtime-reconnect';
 // The live pending-request store. The SSE event stream writes agent QUESTIONS
 // and PERMISSION requests here (keyed by request id, each carrying sessionID);
 // `useSessionSync` does NOT surface them, so a host that renders interactive
@@ -90,9 +107,16 @@ export {
 export { useSessionPicks, type SessionPicks } from './use-session-picks';
 export { useRuntimePhase, type RuntimePhase } from './use-runtime-phase';
 export {
+  useQuestionSelfHeal,
+  hasRunningQuestionTool,
+  type UseQuestionSelfHealOptions,
+} from './use-question-self-heal';
+export {
   startStashKey,
   writeStartStash,
   readStartStash,
   clearStartStash,
+  migrateStash,
+  migrateLegacyStash,
   type StartStash,
 } from './session-start-stash';

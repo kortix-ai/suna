@@ -53,7 +53,7 @@ import { useSyncStore } from '@/stores/opencode-sync-store';
 import {
   markRecoveryRequested,
   useSandboxConnectionStore,
-} from '@/stores/sandbox-connection-store';
+} from '@kortix/sdk/sandbox-connection-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { allDescendantIds, childMapByParent, sortSessions } from '@/ui';
 import {

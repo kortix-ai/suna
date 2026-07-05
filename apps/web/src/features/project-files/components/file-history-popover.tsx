@@ -4,9 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { useState, useMemo, useCallback } from 'react';
 import {
-  GitCommitHorizontal,
   History,
-  Loader2,
   ChevronDown,
   ChevronRight,
   User,
@@ -76,10 +74,10 @@ function CompactCommitDiff({ filePath, commitHash }: { filePath: string; commitH
   if (error || !diff) return <div className="p-2 text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line72JsxTextFailedToLoadDiff')}</div>;
 
   const statusIcon = {
-    added: <FilePlus2 className="size-3 text-emerald-500" />,
-    modified: <FileEdit className="size-3 text-blue-500" />,
-    deleted: <FileX2 className="size-3 text-red-500" />,
-    renamed: <FileSymlink className="size-3 text-orange-500" />,
+    added: <FilePlus2 className="text-kortix-green size-3" />,
+    modified: <FileEdit className="text-kortix-blue size-3" />,
+    deleted: <FileX2 className="text-kortix-red size-3" />,
+    renamed: <FileSymlink className="text-kortix-orange size-3" />,
   }[diff.status];
 
   const patchContent = diff.patch || (
@@ -93,9 +91,9 @@ function CompactCommitDiff({ filePath, commitHash }: { filePath: string; commitH
       <div className="flex items-center gap-1.5 px-2 py-1 border-b border-border/20">
         {statusIcon}
         <span className="text-xs font-medium capitalize text-muted-foreground">{diff.status}</span>
-        <div className="flex items-center gap-1 ml-auto text-xs">
-          {diff.additions > 0 && <span className="text-emerald-500">+{diff.additions}</span>}
-          {diff.deletions > 0 && <span className="text-red-500">-{diff.deletions}</span>}
+        <div className="flex items-center gap-1 ml-auto text-xs tabular-nums">
+          {diff.additions > 0 && <span className="text-kortix-green">+{diff.additions}</span>}
+          {diff.deletions > 0 && <span className="text-kortix-red">-{diff.deletions}</span>}
         </div>
       </div>
       {patchContent ? (
@@ -127,7 +125,7 @@ function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: s
 
   const toggle = () => setExpanded((v) => !v);
   return (
-    <div className={cn('rounded-2xl border overflow-hidden transition-colors', expanded ? 'border-primary/30 bg-primary/5' : 'border-border/40 hover:border-border/60')}>
+    <div className={cn('rounded-md border overflow-hidden transition-colors', expanded ? 'border-primary/30 bg-primary/5' : 'border-border/40 hover:border-border/60')}>
       <div
         role="button"
         tabIndex={0}
@@ -142,7 +140,7 @@ function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: s
       >
         <div className="flex items-center gap-1 mt-0.5 shrink-0">
           {expanded ? <ChevronDown className="size-3 text-muted-foreground/50" /> : <ChevronRight className="size-3 text-muted-foreground/50" />}
-          <GitCommitHorizontal className="size-3.5 text-primary/70" />
+          <History className="size-3.5 text-primary/70" />
         </div>
         <div className="flex-1 min-w-0 space-y-0.5">
           <p className="text-xs font-medium text-foreground leading-snug line-clamp-1">{commit.subject}</p>
@@ -164,7 +162,7 @@ function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: s
           className="font-mono shrink-0"
           title={tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line160JsxAttrTitleCopyCheckpointId')}
         >
-          {copied ? <Check className="size-2.5 text-emerald-500" /> : <Copy className="size-2.5" />}
+          {copied ? <Check className="text-kortix-green size-2.5" /> : <Copy className="size-2.5" />}
           {commit.shortHash}
         </Button>
       </div>
@@ -198,7 +196,7 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
         <span className="font-medium text-sm truncate flex-1">{fileName}</span>
         {totalCheckpoints > 0 && (
           <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-            {totalCheckpoints} checkpoint{totalCheckpoints !== 1 ? 's' : ''}
+            {totalCheckpoints} version{totalCheckpoints !== 1 ? 's' : ''}
           </span>
         )}
         <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={onClose}>
@@ -229,7 +227,7 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
 
         {!isLoading && !error && totalCheckpoints === 0 && (
           <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
-            <GitCommitHorizontal className="h-6 w-6 text-muted-foreground/20" />
+            <History className="h-6 w-6 text-muted-foreground/20" />
             <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line224JsxTextNoCheckpointsYet')}</p>
           </div>
         )}
@@ -245,7 +243,7 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
             ))}
             {history?.hasMore && (
               <div className="text-center py-1">
-                <span className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line240JsxTextShowingTheMostRecent')}{' '}{totalCheckpoints} checkpoints
+                <span className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line240JsxTextShowingTheMostRecent')}{' '}{totalCheckpoints} versions
                 </span>
               </div>
             )}

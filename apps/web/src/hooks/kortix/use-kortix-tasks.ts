@@ -2,65 +2,25 @@
 
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useServerStore } from '@/stores/server-store';
-import { authenticatedFetch } from '@/lib/auth-token';
+import {
+  listTasks,
+  getTask,
+  listTaskEvents,
+  getTaskStatus,
+  createTask,
+  updateTask,
+  startTask,
+  approveTask,
+  deleteTask,
+} from '@kortix/sdk/opencode-client';
+import type { KortixTaskStatus, KortixTask, KortixTaskEvent, KortixTaskLiveStatus } from '@kortix/sdk/opencode-client';
 
 // ---------------------------------------------------------------------------
-// Types — mirror the live /kortix/tasks API contract
+// Types — the request/response shapes live in the SDK now
+// (`@kortix/sdk/opencode-client`); re-exported here for existing importers.
 // ---------------------------------------------------------------------------
 
-export type KortixTaskStatus =
-  | 'todo'
-  | 'in_progress'
-  | 'input_needed'
-  | 'awaiting_review'
-  | 'completed'
-  | 'cancelled';
-
-export interface KortixTask {
-  id: string;
-  project_id: string;
-  title: string;
-  description: string;
-  verification_condition: string;
-  status: KortixTaskStatus;
-  result: string | null;
-  verification_summary: string | null;
-  blocking_question: string | null;
-  owner_session_id: string | null;
-  owner_agent: string | null;
-  requested_by_session_id: string | null;
-  started_at: string | null;
-  completed_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface KortixTaskEvent {
-  id: string;
-  task_id: string;
-  project_id: string;
-  session_id: string | null;
-  type:
-    | 'progress'
-    | 'blocker'
-    | 'evidence'
-    | 'verification_started'
-    | 'verification_passed'
-    | 'verification_failed'
-    | 'delivered';
-  message: string | null;
-  payload_json: string | null;
-  created_at: string;
-}
-
-export interface KortixTaskLiveStatus {
-  task_id: string;
-  status: KortixTaskStatus;
-  latest_run_id: string | null;
-  run_status: 'running' | 'input_needed' | 'awaiting_review' | 'completed' | 'cancelled' | 'failed' | null;
-  owner_session_id: string | null;
-  detail: string;
-}
+export type { KortixTaskStatus, KortixTask, KortixTaskEvent, KortixTaskLiveStatus };
 
 interface KortixTaskQueryOptions {
   enabled?: boolean;
@@ -78,17 +38,6 @@ const taskKeys = {
   events: (id: string) => ['kortix', 'tasks', 'events', id] as const,
   status: (id: string) => ['kortix', 'tasks', 'status', id] as const,
 };
-
-// ---------------------------------------------------------------------------
-// Fetch helper
-// ---------------------------------------------------------------------------
-
-async function kortixTaskFetch<T>(serverUrl: string, path: string, init?: RequestInit): Promise<T> {
-  const url = `${serverUrl.replace(/\/+$/, '')}/kortix/tasks${path}`;
-  const res = await authenticatedFetch(url, init);
-  if (!res.ok) throw new Error(`Tasks API ${res.status}`);
-  return res.json();
-}
 
 const VALID_STATUSES: KortixTaskStatus[] = [
   'todo', 'in_progress', 'input_needed', 'awaiting_review',
@@ -127,14 +76,10 @@ export function useKortixTasks(
   options: KortixTaskQueryOptions = {},
 ) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
-  const params = new URLSearchParams();
-  if (projectId) params.set('project_id', projectId);
-  if (status) params.set('status', status);
-  const qs = params.toString() ? `?${params}` : '';
   return useQuery({
     queryKey: [...taskKeys.all, projectId, status],
     queryFn: async () => {
-      const rows = await kortixTaskFetch<any[]>(serverUrl, qs);
+      const rows = await listTasks(serverUrl, { projectId, status });
       return Array.isArray(rows) ? rows.map(normalizeTask) : [];
     },
     enabled: !!projectId && (options.enabled ?? true),
@@ -149,7 +94,7 @@ export function useKortixTask(id: string, options: KortixTaskQueryOptions = {}) 
   return useQuery({
     queryKey: taskKeys.single(id),
     queryFn: async () => {
-      const raw = await kortixTaskFetch<any>(serverUrl, `/${encodeURIComponent(id)}`);
+      const raw = await getTask(serverUrl, id);
       return normalizeTask(raw);
     },
     enabled: !!id && (options.enabled ?? true),
@@ -164,7 +109,7 @@ export function useKortixTaskEvents(id: string, options: KortixTaskQueryOptions 
   return useQuery({
     queryKey: taskKeys.events(id),
     queryFn: async () => {
-      const rows = await kortixTaskFetch<KortixTaskEvent[]>(serverUrl, `/${encodeURIComponent(id)}/events`);
+      const rows = await listTaskEvents(serverUrl, id);
       return Array.isArray(rows) ? rows : [];
     },
     enabled: !!id && (options.enabled ?? true),
@@ -179,7 +124,7 @@ export function useKortixTaskStatus(id: string, options: KortixTaskQueryOptions 
   return useQuery({
     queryKey: taskKeys.status(id),
     queryFn: async () => {
-      return kortixTaskFetch<KortixTaskLiveStatus>(serverUrl, `/${encodeURIComponent(id)}/status`);
+      return getTaskStatus(serverUrl, id);
     },
     enabled: !!id && (options.enabled ?? true),
     refetchInterval: options.pollingEnabled === false ? false : 3000,
@@ -198,12 +143,7 @@ export function useCreateKortixTask() {
       description?: string;
       verification_condition?: string;
       status?: KortixTaskStatus;
-    }) =>
-      kortixTaskFetch<KortixTask>(serverUrl, '', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      }),
+    }) => createTask(serverUrl, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: taskKeys.all });
     },
@@ -214,12 +154,7 @@ export function useUpdateKortixTask() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useMutation({
-    mutationFn: ({ id, ...data }: { id: string } & Partial<KortixTask>) =>
-      kortixTaskFetch<KortixTask>(serverUrl, `/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      }),
+    mutationFn: ({ id, ...data }: { id: string } & Partial<KortixTask>) => updateTask(serverUrl, id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: taskKeys.all });
     },
@@ -230,11 +165,7 @@ export function useStartKortixTask() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useMutation({
-    mutationFn: ({ id }: { id: string }) =>
-      kortixTaskFetch<KortixTask>(serverUrl, `/${encodeURIComponent(id)}/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      }),
+    mutationFn: ({ id }: { id: string }) => startTask(serverUrl, id),
     onSuccess: (task) => {
       qc.invalidateQueries({ queryKey: taskKeys.all });
       qc.invalidateQueries({ queryKey: ['kortix', 'projects'] });
@@ -250,10 +181,7 @@ export function useApproveKortixTask() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useMutation({
-    mutationFn: (id: string) =>
-      kortixTaskFetch<KortixTask>(serverUrl, `/${encodeURIComponent(id)}/approve`, {
-        method: 'POST',
-      }),
+    mutationFn: (id: string) => approveTask(serverUrl, id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: taskKeys.all });
     },
@@ -264,10 +192,7 @@ export function useDeleteKortixTask() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useMutation({
-    mutationFn: (id: string) =>
-      kortixTaskFetch<{ deleted: boolean }>(serverUrl, `/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-      }),
+    mutationFn: (id: string) => deleteTask(serverUrl, id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: taskKeys.all });
     },

@@ -2,12 +2,15 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, lazy, useCallback, useEffect, useLayoutEffect } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useState } from 'react';
 
 import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
+import Hint from '@/components/ui/hint';
 import { useSidebar } from '@/components/ui/sidebar';
+import { desktopShellPlatform } from '@/lib/desktop';
+import { PanelLeft } from 'lucide-react';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
 import { CustomizPanel } from '@/features/workspace/customize/customize-panel';
@@ -154,18 +157,49 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
 }
 
 const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
-  const { state } = useSidebar();
+  const { state, toggleSidebar } = useSidebar();
   const isExpanded = state === 'expanded';
+  // Desktop shell: the sidebar hides fully (offcanvas, no icon rail), so a
+  // hidden sidebar means no seam border/nudge, and the reopen control lives
+  // up in the title-bar band next to the OS window controls. Client-only
+  // tree (ProjectShell gates on auth), so reading the UA at first render is
+  // safe.
+  const [desktopShell] = useState(() => desktopShellPlatform());
+  const hideSeam = desktopShell !== null && !isExpanded;
   return (
     <div
       className={cn(
-        'bg-background border-border relative flex min-h-0 flex-1 flex-col overflow-hidden border-l',
+        'bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden',
+        !hideSeam && 'border-border border-l',
         // Desktop app, collapsed sidebar: the icon rail already separates the
         // panes, so drop the divider and the nudge (data-desktop is set on
         // <html> pre-hydration by DESKTOP_INIT_SCRIPT).
-        !isExpanded && 'ml-0.5 [[data-desktop]_&]:ml-0 [[data-desktop]_&]:border-l-0',
+        !isExpanded && desktopShell === null && 'ml-0.5 [[data-desktop]_&]:ml-0 [[data-desktop]_&]:border-l-0',
       )}
     >
+      {desktopShell && !isExpanded && (
+        <Hint label="Open sidebar" side="bottom">
+          <button
+            type="button"
+            aria-label="Open sidebar"
+            onClick={toggleSidebar}
+            className={cn(
+              // top-[12px] + 28px box centers the button on the traffic
+              // lights' midline (y=26 — the app draws its own lights there;
+              // see DesktopChrome → MacTrafficLights). px values on purpose:
+              // the lights are positioned in window px, while rem sizes
+              // drift with the root font size.
+              'kx-fade-up hover:bg-accent/60 text-muted-foreground hover:text-foreground fixed top-[12px] z-50 flex h-[28px] w-[28px] [-webkit-app-region:no-drag] cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96] [app-region:no-drag]',
+              // macOS: sit just past the traffic lights (they end at x≈62),
+              // mirroring their own 10px inset. Win/Linux: controls live
+              // top-right, so hug the left edge instead.
+              desktopShell === 'macos' ? 'left-[4.5rem]' : 'left-2',
+            )}
+          >
+            <PanelLeft className="cn-rtl-flip size-4" />
+          </button>
+        </Hint>
+      )}
       {children}
     </div>
   );
