@@ -12,8 +12,10 @@
  * granted the permissive null grant or silently default-denied-to-running.
  */
 import { describe, expect, test } from 'bun:test';
+import { getStarterFiles } from '@kortix/starter';
 import { extractAgents, projectRequiresDeclaredAgents, resolveGovernedAgentGrant } from '../projects/agents';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
+import { compileAgentConfig } from '../projects/lib/compile-agent-config';
 
 function loadAgents(body: string) {
   return extractAgents(parseManifestString(`kortix_version = ${KNOWN_SCHEMA_VERSION}\n[project]\nname="t"\n${body}`));
@@ -247,5 +249,73 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('AGENT_NOT_DECLARED');
+  });
+});
+
+// P0 REGRESSION GUARD: POST /projects/provision (r1.ts) stamps
+// `metadata.require_declared_agents = true` on every new project — so a fresh
+// project is ALWAYS subject to this gate from birth, with no DB-side
+// `metadata.default_agent` mirror set (sessions.ts's `projectDefaultAgent` is
+// `undefined`/null the very first time). The starter it seeds
+// (@kortix/starter, packages/starter/templates/base) MUST therefore ship a
+// kortix_version 2 manifest with a `default_agent` that resolves — otherwise
+// EVERY brand-new project's first session (agent 'default', the UI's
+// no-explicit-agent path) is rejected with AGENT_NOT_DECLARED before a sandbox
+// is ever provisioned. This exercises the REAL shipped starter (not a
+// synthetic fixture) through the exact resolution rule sessions.ts calls.
+describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its own require_declared_agents stamp', () => {
+  const starterFiles = getStarterFiles({ projectName: 'Acme Co', template: 'minimal' });
+  const manifestFile = starterFiles.find((f) => f.path === 'kortix.yaml');
+
+  test('the starter ships kortix.yaml (kortix_version 2), not a v1 kortix.toml', () => {
+    expect(manifestFile).toBeDefined();
+    expect(starterFiles.some((f) => f.path === 'kortix.toml')).toBe(false);
+  });
+
+  test('a first session with no explicit agent ("default") RESOLVES — ok:true, not AGENT_NOT_DECLARED', () => {
+    const manifest = parseManifestString(manifestFile!.content, 'yaml', 'kortix.yaml');
+    expect(manifest.schemaVersion).toBe(2);
+    const loaded = extractAgents(manifest);
+
+    // Mirrors r1.ts /projects/provision exactly: subject=true (the metadata
+    // stamp), and no project.metadata.default_agent mirror set yet.
+    const governed = resolveGovernedAgentGrant('default', loaded, {
+      subject: true,
+      projectDefaultAgent: null,
+    });
+
+    expect(governed.ok).toBe(true);
+    if (!governed.ok) return;
+    expect(governed.grant).toEqual({
+      agent: 'kortix',
+      connectors: 'all',
+      kortixCli: 'all',
+      env: 'all',
+    });
+  });
+
+  test('the starter\'s declared "kortix" agent also resolves when named explicitly', () => {
+    const manifest = parseManifestString(manifestFile!.content, 'yaml', 'kortix.yaml');
+    const loaded = extractAgents(manifest);
+    const governed = resolveGovernedAgentGrant('kortix', loaded, {
+      subject: true,
+      projectDefaultAgent: null,
+    });
+    expect(governed.ok).toBe(true);
+  });
+
+  test('the compiled v2 agent config reaches the session — no illegal-frontmatter compile error', () => {
+    const manifest = parseManifestString(manifestFile!.content, 'yaml', 'kortix.yaml');
+    const promptFiles: Record<string, string> = {};
+    for (const f of starterFiles) {
+      if (f.path === '.kortix/opencode/agents/kortix.md' || f.path === '.kortix/opencode/agents/memory-reflector.md') {
+        promptFiles[f.path] = f.content;
+      }
+    }
+    const compiled = compileAgentConfig(manifest.raw, 'opencode', promptFiles);
+    expect(compiled).not.toBeNull();
+    expect(compiled?.agent?.kortix?.mode).toBe('primary');
+    expect(compiled?.agent?.kortix?.prompt).toContain('Kortix general knowledge worker');
+    expect(compiled?.agent?.kortix?.prompt).not.toContain('---');
   });
 });

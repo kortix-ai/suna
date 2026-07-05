@@ -575,10 +575,19 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
   }
   const row = block as Record<string, unknown>;
 
-  // v2's `disable` is OpenCode's own passthrough boolean (validated as a
-  // boolean upstream by manifest-schema); only a literal `true` disables.
-  const enabled = row.disable !== true;
-  const file = typeof row.prompt === 'string' && row.prompt.trim() ? row.prompt.trim() : null;
+  // v2's `enabled` is a top-level Kortix-governance boolean (validated
+  // upstream by manifest-schema); only a literal `false` disables. `prompt`
+  // is nested under `opencode:` (runtime-behavior layer) — see spec §2.2
+  // "STRUCTURAL REFACTOR".
+  const enabled = row.enabled !== false;
+  const opencodeRow =
+    row.opencode && typeof row.opencode === 'object' && !Array.isArray(row.opencode)
+      ? (row.opencode as Record<string, unknown>)
+      : {};
+  const file =
+    typeof opencodeRow.prompt === 'string' && opencodeRow.prompt.trim()
+      ? opencodeRow.prompt.trim()
+      : null;
   const model = typeof row.model === 'string' && row.model.trim() ? row.model.trim() : null;
 
   const connectorsResolved = resolveGrantSet(row.connectors, 'none');

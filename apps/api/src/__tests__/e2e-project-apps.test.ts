@@ -136,7 +136,13 @@ mock.module('../projects/git', () => ({
     if (content === undefined) throw new Error(`Not found: ${path}`);
     return content;
   },
-  readManifestFromRepo: async () => null,
+  readManifestFromRepo: async (_p: any, candidatePaths: string[]) => {
+    for (const path of candidatePaths) {
+      const content = repoFiles.get(path);
+      if (content !== undefined) return { path, content };
+    }
+    return null;
+  },
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),

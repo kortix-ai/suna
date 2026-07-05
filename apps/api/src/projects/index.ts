@@ -33,6 +33,7 @@ import './routes/r10';
 import './routes/r11';
 import './routes/model-defaults';
 import './routes/agent-scope';
+import './routes/agent-config';
 import './routes/gateway';
 import './routes/channel-bindings';
 

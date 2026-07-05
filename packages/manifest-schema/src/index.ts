@@ -1330,29 +1330,67 @@ export type PermissionConfigV2 = PermissionActionV2 | PermissionConfigObjectV2;
 export type GrantSetV2 = 'all' | 'none' | string[];
 
 /**
- * One entry of the v2 `agents:` map — identity + governance + full OpenCode
- * `AgentConfig` parity in one place (spec §2.2). Deprecated upstream fields
- * (`tools`, `maxSteps`) and the v1 `env` grant-set name are validated as
- * errors, not represented here.
+ * The `opencode:` sub-object of a v2 agent block — every runtime-BEHAVIORAL
+ * field, namespaced by runtime so a future `runtime: claude`/`codex` project
+ * has somewhere else for its own behavior block to live (spec §2.2/§2.3).
+ * Full OpenCode `AgentConfig` parity for everything that isn't identity or
+ * Kortix governance. Deprecated upstream fields (`tools`, `maxSteps`) are
+ * validated as errors, not represented here.
  */
-export interface AgentBlockV2 {
-  description?: string;
+export interface OpencodeAgentConfigV2 {
   mode?: AgentModeV2;
-  model?: string;
   variant?: string;
   temperature?: number;
   top_p?: number;
-  prompt?: string;
-  disable?: boolean;
-  hidden?: boolean;
   options?: Record<string, unknown>;
   color?: string;
   steps?: number;
+  hidden?: boolean;
+  /** File ref; body = system prompt (unchanged authoring UX). */
+  prompt?: string;
   permission?: PermissionConfigV2;
+}
+
+/**
+ * One entry of the v2 `agents:` map. Two layers, structurally distinct
+ * (spec §2.2, "STRUCTURAL REFACTOR"):
+ *
+ *   - Top level: the Kortix layer — identity + governance, runtime-agnostic.
+ *     `model` lives here (not under `opencode`) because it's a Kortix
+ *     concern: the gateway resolves it, and it's universal across whatever
+ *     runtime executes the agent.
+ *   - `opencode`: the OpenCode layer — runtime-specific behavior. Optional;
+ *     an agent may declare only governance + model and inherit default
+ *     OpenCode behavior.
+ */
+export interface AgentBlockV2 {
+  description?: string;
+  /** Kortix governance: can this agent start a session at all? Default true
+   *  when omitted. Compiles to the runtime's `disable` field (inverted) —
+   *  see compile-agent-config.ts. */
+  enabled?: boolean;
+  /** Declarative default; DB model-preferences can override at runtime.
+   *  "provider/model" form. Kortix concern (the gateway resolves it),
+   *  universal across runtimes — stays top-level, never under `opencode`. */
+  model?: string;
   connectors?: GrantSetV2;
   secrets?: GrantSetV2;
+  /** Which of the project's `.kortix/opencode/skills/*` this agent may invoke —
+   *  same grant-set shape as connectors/secrets (names | "all" | "none"), v2
+   *  deny-by-default when omitted. Unlike connectors/secrets/kortix_cli (pure
+   *  Kortix governance with no runtime representation), `skills` DOES compile
+   *  to something OpenCode understands: the runtime compiler
+   *  (compile-agent-config.ts) maps it onto `opencode.permission.skill`, so
+   *  it's a first-class, cleanly-named governance control instead of
+   *  something the author has to express by hand-writing glob rules under
+   *  `opencode.permission`. */
+  skills?: GrantSetV2;
   kortix_cli?: GrantSetV2;
   workspace?: WorkspaceModeV2;
+  /** Runtime-specific behavior, namespaced so it's structurally distinct from
+   *  the Kortix layer above (spec §2.2/§2.3). Optional — omit to inherit
+   *  default OpenCode behavior. */
+  opencode?: OpencodeAgentConfigV2;
 }
 
 /** The v2 manifest shape (YAML-only). Other sections keep their v1 shape. */
@@ -1484,7 +1522,121 @@ function validatePermissionConfig(node: unknown, path: string, issues: ManifestI
   }
 }
 
-/** One entry of the v2 `agents:` map — runtime-behavioral + governance fields. */
+/**
+ * OpenCode-behavioral fields that moved under `opencode:` in this schema
+ * version (spec §2.2, "STRUCTURAL REFACTOR"). Authoring one of these flat on
+ * the agent block (the pre-refactor shape) is a clear, pointed error rather
+ * than a silent no-op.
+ */
+const MOVED_TO_OPENCODE_KEYS = [
+  'mode',
+  'variant',
+  'temperature',
+  'top_p',
+  'options',
+  'color',
+  'steps',
+  'hidden',
+  'prompt',
+  'permission',
+] as const;
+
+/** The `opencode:` sub-object — runtime-specific behavior (spec §2.2). Returns
+ *  the validated `mode`, if any, so the caller can cross-check the
+ *  subagent-requires-description rule. */
+function validateOpencodeBlockV2(
+  node: unknown,
+  where: string,
+  issues: ManifestIssue[],
+): string | undefined {
+  if (node === undefined || node === null) return undefined;
+  if (!isTable(node)) {
+    issues.push({ path: where, message: 'must be a table/object.', severity: 'error' });
+    return undefined;
+  }
+
+  let mode: string | undefined;
+  if (node.mode !== undefined) {
+    const m = typeof node.mode === 'string' ? node.mode.trim() : '';
+    if (!(AGENT_MODES_V2 as readonly string[]).includes(m)) {
+      issues.push({
+        path: `${where}.mode`,
+        message: `mode must be one of: ${AGENT_MODES_V2.join(', ')} (got "${m || 'unset'}").`,
+        severity: 'error',
+      });
+    } else {
+      mode = m;
+    }
+  }
+
+  expectStringOrAbsent(node.variant, `${where}.variant`, issues);
+
+  if (node.temperature !== undefined && !isFiniteNumber(node.temperature)) {
+    issues.push({ path: `${where}.temperature`, message: 'must be a number.', severity: 'error' });
+  }
+  if (node.top_p !== undefined && !isFiniteNumber(node.top_p)) {
+    issues.push({ path: `${where}.top_p`, message: 'must be a number.', severity: 'error' });
+  }
+
+  expectRelativePathOrAbsent(node.prompt, `${where}.prompt`, issues);
+
+  if (node.hidden !== undefined && typeof node.hidden !== 'boolean') {
+    issues.push({ path: `${where}.hidden`, message: 'must be a boolean.', severity: 'error' });
+  }
+  if (node.options !== undefined && !isTable(node.options)) {
+    issues.push({ path: `${where}.options`, message: 'must be an object.', severity: 'error' });
+  }
+
+  if (node.color !== undefined) {
+    const ok =
+      typeof node.color === 'string' &&
+      (HEX_COLOR_RE_V2.test(node.color) ||
+        (AGENT_THEME_COLORS_V2 as readonly string[]).includes(node.color));
+    if (!ok) {
+      issues.push({
+        path: `${where}.color`,
+        message: `color must be a hex color (e.g. "#7C5CFF") or one of: ${AGENT_THEME_COLORS_V2.join(', ')} (got ${JSON.stringify(node.color)}).`,
+        severity: 'error',
+      });
+    }
+  }
+
+  if (node.steps !== undefined) {
+    const n = node.steps;
+    if (typeof n !== 'number' || !Number.isInteger(n) || n <= 0) {
+      issues.push({
+        path: `${where}.steps`,
+        message: 'must be a positive integer.',
+        severity: 'error',
+      });
+    }
+  }
+
+  if (node.permission !== undefined) {
+    validatePermissionConfig(node.permission, `${where}.permission`, issues);
+  }
+
+  // Deprecated upstream fields — pointer errors, not silent pass-through.
+  if (node.tools !== undefined) {
+    issues.push({
+      path: `${where}.tools`,
+      message: '`tools` is deprecated upstream — use `permission` instead.',
+      severity: 'error',
+    });
+  }
+  if (node.maxSteps !== undefined) {
+    issues.push({
+      path: `${where}.maxSteps`,
+      message: '`maxSteps` is deprecated upstream — use `steps` instead.',
+      severity: 'error',
+    });
+  }
+
+  return mode;
+}
+
+/** One entry of the v2 `agents:` map — Kortix layer (top-level, identity +
+ *  governance) plus the nested `opencode:` runtime-behavior block. */
 function validateAgentBlockV2(
   entry: unknown,
   where: string,
@@ -1498,25 +1650,8 @@ function validateAgentBlockV2(
 
   expectStringOrAbsent(entry.description, `${where}.description`, issues);
 
-  if (entry.mode !== undefined) {
-    const mode = typeof entry.mode === 'string' ? entry.mode.trim() : '';
-    if (!(AGENT_MODES_V2 as readonly string[]).includes(mode)) {
-      issues.push({
-        path: `${where}.mode`,
-        message: `mode must be one of: ${AGENT_MODES_V2.join(', ')} (got "${mode || 'unset'}").`,
-        severity: 'error',
-      });
-    }
-  }
-  if (entry.mode === 'subagent') {
-    const desc = typeof entry.description === 'string' ? entry.description.trim() : '';
-    if (!desc) {
-      issues.push({
-        path: `${where}.description`,
-        message: `agent "${agentName}" has mode "subagent", which requires a non-empty description.`,
-        severity: 'error',
-      });
-    }
+  if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') {
+    issues.push({ path: `${where}.enabled`, message: 'must be a boolean.', severity: 'error' });
   }
 
   expectStringOrAbsent(entry.model, `${where}.model`, issues);
@@ -1527,71 +1662,7 @@ function validateAgentBlockV2(
       severity: 'warning',
     });
   }
-  expectStringOrAbsent(entry.variant, `${where}.variant`, issues);
 
-  if (entry.temperature !== undefined && !isFiniteNumber(entry.temperature)) {
-    issues.push({ path: `${where}.temperature`, message: 'must be a number.', severity: 'error' });
-  }
-  if (entry.top_p !== undefined && !isFiniteNumber(entry.top_p)) {
-    issues.push({ path: `${where}.top_p`, message: 'must be a number.', severity: 'error' });
-  }
-
-  expectRelativePathOrAbsent(entry.prompt, `${where}.prompt`, issues);
-
-  if (entry.disable !== undefined && typeof entry.disable !== 'boolean') {
-    issues.push({ path: `${where}.disable`, message: 'must be a boolean.', severity: 'error' });
-  }
-  if (entry.hidden !== undefined && typeof entry.hidden !== 'boolean') {
-    issues.push({ path: `${where}.hidden`, message: 'must be a boolean.', severity: 'error' });
-  }
-  if (entry.options !== undefined && !isTable(entry.options)) {
-    issues.push({ path: `${where}.options`, message: 'must be an object.', severity: 'error' });
-  }
-
-  if (entry.color !== undefined) {
-    const ok =
-      typeof entry.color === 'string' &&
-      (HEX_COLOR_RE_V2.test(entry.color) ||
-        (AGENT_THEME_COLORS_V2 as readonly string[]).includes(entry.color));
-    if (!ok) {
-      issues.push({
-        path: `${where}.color`,
-        message: `color must be a hex color (e.g. "#7C5CFF") or one of: ${AGENT_THEME_COLORS_V2.join(', ')} (got ${JSON.stringify(entry.color)}).`,
-        severity: 'error',
-      });
-    }
-  }
-
-  if (entry.steps !== undefined) {
-    const n = entry.steps;
-    if (typeof n !== 'number' || !Number.isInteger(n) || n <= 0) {
-      issues.push({
-        path: `${where}.steps`,
-        message: 'must be a positive integer.',
-        severity: 'error',
-      });
-    }
-  }
-
-  if (entry.permission !== undefined) {
-    validatePermissionConfig(entry.permission, `${where}.permission`, issues);
-  }
-
-  // Deprecated upstream fields — pointer errors, not silent pass-through.
-  if (entry.tools !== undefined) {
-    issues.push({
-      path: `${where}.tools`,
-      message: '`tools` is deprecated upstream — use `permission` instead.',
-      severity: 'error',
-    });
-  }
-  if (entry.maxSteps !== undefined) {
-    issues.push({
-      path: `${where}.maxSteps`,
-      message: '`maxSteps` is deprecated upstream — use `steps` instead.',
-      severity: 'error',
-    });
-  }
   // v1's grant-set name — renamed to `secrets` in v2 (spec §2.2/§2.4).
   if (entry.env !== undefined) {
     issues.push({
@@ -1600,10 +1671,32 @@ function validateAgentBlockV2(
       severity: 'error',
     });
   }
+  // Pre-refactor shape: `disable` flat on the agent — now `enabled` (inverted),
+  // top-level under the Kortix layer.
+  if (entry.disable !== undefined) {
+    issues.push({
+      path: `${where}.disable`,
+      message: '`disable` is renamed `enabled` (inverted) in this schema version — set `enabled: false` instead.',
+      severity: 'error',
+    });
+  }
+  // Pre-refactor shape: behavioral fields authored flat instead of under `opencode:`.
+  for (const key of MOVED_TO_OPENCODE_KEYS) {
+    if ((entry as Record<string, unknown>)[key] !== undefined) {
+      issues.push({
+        path: `${where}.${key}`,
+        message: `"${key}" moved under \`opencode\` in this schema version — set it at ${where}.opencode.${key}.`,
+        severity: 'error',
+      });
+    }
+  }
 
   // Kortix governance — same grant-set shape/action rules as v1, reused as-is.
   validateGrantList(entry.connectors, `${where}.connectors`, 'connectors', issues, false);
   validateGrantList(entry.secrets, `${where}.secrets`, 'secrets', issues, false);
+  // No fixed catalog to check entries against (skill names are project-defined,
+  // like connectors) — same shape/validation, no `checkAction`.
+  validateGrantList(entry.skills, `${where}.skills`, 'skills', issues, false);
   validateGrantList(entry.kortix_cli, `${where}.kortix_cli`, 'kortix_cli', issues, true);
 
   if (entry.workspace !== undefined) {
@@ -1612,6 +1705,18 @@ function validateAgentBlockV2(
       issues.push({
         path: `${where}.workspace`,
         message: `workspace must be one of: ${WORKSPACE_MODES_V2.join(', ')} (got "${w || 'unset'}").`,
+        severity: 'error',
+      });
+    }
+  }
+
+  const mode = validateOpencodeBlockV2(entry.opencode, `${where}.opencode`, issues);
+  if (mode === 'subagent') {
+    const desc = typeof entry.description === 'string' ? entry.description.trim() : '';
+    if (!desc) {
+      issues.push({
+        path: `${where}.description`,
+        message: `agent "${agentName}" has mode "subagent", which requires a non-empty description.`,
         severity: 'error',
       });
     }
@@ -1662,7 +1767,7 @@ function validateAgentsV2(node: unknown, path: string, issues: ManifestIssue[]):
       });
     } else {
       names.push(name);
-      if (isTable(entry) && entry.disable === true) {
+      if (isTable(entry) && entry.enabled === false) {
         disabledNames.push(name);
       }
     }
@@ -1701,7 +1806,7 @@ function validateDefaultAgentV2(
   } else if (disabledNames.includes(name)) {
     issues.push({
       path,
-      message: `default_agent "${name}" is declared with \`disable: true\` — a disabled agent can never resolve as the default; the runtime will reject this at session start.`,
+      message: `default_agent "${name}" is declared with \`enabled: false\` — a disabled agent can never resolve as the default; the runtime will reject this at session start.`,
       severity: 'error',
     });
   }

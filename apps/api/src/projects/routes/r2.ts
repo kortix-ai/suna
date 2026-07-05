@@ -264,7 +264,9 @@ projectsApp.openapi(
     installation: githubAuth.installation,
     name: projectName,
     defaultBranch,
-    manifestPath: 'kortix.toml',
+    // The starter just committed above (buildStarterFiles) ships kortix.yaml
+    // (kortix_version 2) — record that path so it's never stale from birth.
+    manifestPath: 'kortix.yaml',
   });
 
   kickProjectTemplatePrebuilds(

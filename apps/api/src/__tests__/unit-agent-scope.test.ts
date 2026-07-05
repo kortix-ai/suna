@@ -168,7 +168,7 @@ describe('grantFromLoadedAgents — v2 `default_agent` sentinel resolution', () 
     const loaded = loadAgentsV2(
       `
   support:
-    disable: true
+    enabled: false
 `,
       { defaultAgent: 'support' },
     );

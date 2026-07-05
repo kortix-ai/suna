@@ -92,11 +92,16 @@ Facts established by direct code inspection — each of these shapes a decision 
   names no agent gets the project default agent, never owner-equivalent power.
   This closes trigger seam 7(a) structurally rather than with a patch.
 
-### 2.2 One agent block: identity + governance + behavior
+### 2.2 One agent block, two structurally distinct layers
 
 The v2 agent entry unifies what today is split across `[[agents]]` (TOML) and
-`.kortix/opencode/agents/*.md` (frontmatter + prompt). Kortix-native fields and
-runtime-behavioral fields live in one place, namespaced by what compiles where:
+`.kortix/opencode/agents/*.md` (frontmatter + prompt) — but it does not flatten
+them into one undifferentiated bag of fields. Kortix concerns (identity,
+governance, the declarative model) and OpenCode concerns (runtime behavior)
+are 100% structurally distinct: the former live top-level; the latter live
+nested under `opencode:`, namespaced by runtime so a future `runtime:
+codex`/`claude` project gets its own behavior block instead of colliding with
+this one:
 
 ```yaml
 kortix_version: 2
@@ -104,48 +109,65 @@ default_agent: support
 
 agents:
   support:
+    # ---- Kortix layer: identity + governance, runtime-agnostic ----
     description: "Handles customer support triage"   # required for subagents
-    mode: primary            # primary | subagent | all
-    model: anthropic/claude-sonnet-5   # declarative default; DB prefs override at runtime
-    temperature: 0.2
-    steps: 200
-    color: "#7C5CFF"
-    hidden: false
-    prompt: agents/support.md          # file ref; body = system prompt (unchanged authoring UX)
-    permission:                        # full OpenCode PermissionConfig tree, passed through
-      edit: ask
-      bash: { "git push": deny, "*": allow }
-      webfetch: allow
-    # ---- Kortix governance (enforced platform-side, never by the runtime) ----
-    connectors: [github, slack]        # profile slugs | all | none
-    secrets: [STRIPE_KEY, GH_TOKEN]    # renamed from `env`; names | all | none
+    enabled: true                       # default true; false = can't start sessions
+    model: anthropic/claude-sonnet-5    # declarative default; DB prefs override at runtime
+    connectors: [github, slack]         # profile slugs | all | none
+    secrets: [STRIPE_KEY, GH_TOKEN]     # renamed from `env`; names | all | none
     kortix_cli: [project.session.start, project.cr.open]
-    workspace: runtime                 # runtime | read | branch  (Phase 4, git boundary)
+    workspace: runtime                  # runtime | read | branch  (Phase 4, git boundary)
+    # ---- OpenCode layer: nested, runtime-specific behavior ----
+    opencode:
+      mode: primary            # primary | subagent | all
+      temperature: 0.2
+      steps: 200
+      color: "#7C5CFF"
+      hidden: false
+      prompt: agents/support.md          # file ref; body = system prompt (unchanged authoring UX)
+      permission:                        # full OpenCode PermissionConfig tree, passed through
+        edit: ask
+        bash: { "git push": deny, "*": allow }
+        webfetch: allow
   pr-bot:
-    mode: subagent
     description: "Reviews and lands PRs"
-    prompt: agents/pr-bot.md
     connectors: [github]
     kortix_cli: [project.cr.open, project.cr.merge, project.review.submit]
+    opencode:
+      mode: subagent
+      prompt: agents/pr-bot.md
 ```
 
 Rules:
 
-- **Full OpenCode `AgentConfig` parity.** Every schema field (`model`, `variant`,
-  `temperature`, `top_p`, `prompt`, `disable`, `description`, `mode`, `hidden`,
-  `options`, `color`, `steps`, `permission` incl. glob rules and the
-  `skill`/`task`/`bash` rule types) is representable. Deprecated upstream fields
-  (`tools`, `maxSteps`) are rejected with a pointer to `permission`/`steps`.
-- **The `.md` files remain** as prompt bodies (referenced via `prompt:`), because
-  that authoring UX is good. Frontmatter in those files becomes **illegal in v2**
-  — one source of truth. The compiler errors if a referenced `.md` still carries
-  frontmatter keys that belong in the manifest.
+- **`model` stays in the Kortix layer** (top-level, never under `opencode`) —
+  the gateway resolves it and it's universal across whatever runtime executes
+  the agent, unlike everything else in the OpenCode block. `description` and
+  `enabled` are Kortix layer too (identity + "can this agent even start a
+  session," both runtime-agnostic).
+- **Full OpenCode `AgentConfig` parity, nested under `opencode:`.** Every
+  behavioral schema field (`variant`, `temperature`, `top_p`, `prompt`,
+  `mode`, `hidden`, `options`, `color`, `steps`, `permission` incl. glob rules
+  and the `skill`/`task`/`bash` rule types) is representable there. Deprecated
+  upstream fields (`tools`, `maxSteps`) are rejected with a pointer to
+  `permission`/`steps`. `opencode:` is optional — an agent may declare only
+  governance + model and inherit default OpenCode behavior. Authoring any of
+  these fields flat on the agent block (the pre-refactor shape) is a hard
+  validation error pointing at `agents.<name>.opencode.<field>`.
+- **The `.md` files remain** as prompt bodies (referenced via
+  `opencode.prompt:`), because that authoring UX is good. Frontmatter in those
+  files becomes **illegal in v2** — one source of truth. The compiler errors
+  if a referenced `.md` still carries frontmatter keys that belong in the
+  manifest.
 - **`secrets` replaces `env`** as the grant-set name (accurate: they're project
   secrets, not arbitrary env). v2 default when omitted: **`none`** — v2 is
   deny-by-default across all three grant sets, killing the `env: 'all'`
   back-compat special case. (Migration writes an explicit `secrets: all` into
   converted manifests so nothing silently breaks — the default changes, not the
   migrated behavior.)
+- **`skills` is the one governance field with a runtime representation**: the
+  compiler folds it into `opencode.permission.skill` — users never author
+  `permission.skill` directly when using the governance grant.
 - **Runtime attribution**: every session/trigger run is attributed to the agent's
   service account (auto-provisioned per agent, already exists as
   `ensureAgentServiceAccount`), closing trigger seam 7(b). The human launcher

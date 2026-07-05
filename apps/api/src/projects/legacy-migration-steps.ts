@@ -350,7 +350,9 @@ export async function dbStep(ctx: MigrationContext): Promise<void> {
       name: plan.project_name,
       repoUrl: gitUrl,
       defaultBranch,
-      manifestPath: 'kortix.toml',
+      // shipStarterToVm (buildStarterTarB64, above) seeds this repo with
+      // @kortix/starter, which ships kortix.yaml (kortix_version 2).
+      manifestPath: 'kortix.yaml',
       status: 'active',
       metadata: {
         git: {

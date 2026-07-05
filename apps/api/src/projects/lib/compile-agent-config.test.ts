@@ -33,27 +33,29 @@ default_agent: support
 agents:
   support:
     description: "Handles customer support triage"
-    mode: primary
     model: anthropic/claude-sonnet-5
-    temperature: 0.2
-    steps: 200
-    color: "#7C5CFF"
-    hidden: false
-    prompt: agents/support.md
-    permission:
-      edit: ask
-      bash: { "git push": deny, "*": allow }
-      webfetch: allow
     connectors: [github, slack]
     secrets: [STRIPE_KEY, GH_TOKEN]
     kortix_cli: [project.session.start, project.cr.open]
     workspace: runtime
+    opencode:
+      mode: primary
+      temperature: 0.2
+      steps: 200
+      color: "#7C5CFF"
+      hidden: false
+      prompt: agents/support.md
+      permission:
+        edit: ask
+        bash: { "git push": deny, "*": allow }
+        webfetch: allow
   pr-bot:
-    mode: subagent
     description: "Reviews and lands PRs"
-    prompt: agents/pr-bot.md
     connectors: [github]
     kortix_cli: [project.cr.open, project.cr.merge, project.review.submit]
+    opencode:
+      mode: subagent
+      prompt: agents/pr-bot.md
 `;
 
 const V1_FIXTURE_TOML = `
@@ -141,8 +143,9 @@ kortix_version: 2
 default_agent: pr-bot
 agents:
   pr-bot:
-    mode: subagent
     description: "Reviews PRs"
+    opencode:
+      mode: subagent
 `);
     const compiled = compileAgentConfig(noModelManifest) as OpencodeConfig;
     expect(compiled.model).toBeUndefined();
@@ -156,21 +159,22 @@ default_agent: full
 agents:
   full:
     description: "Full field coverage"
-    mode: all
     model: anthropic/claude-opus-4.8
-    variant: thinking
-    temperature: 0.7
-    top_p: 0.9
-    disable: true
-    hidden: true
-    options:
-      foo: bar
-    color: "#123456"
-    steps: 42
-    permission: allow
+    enabled: false
+    opencode:
+      mode: all
+      variant: thinking
+      temperature: 0.7
+      top_p: 0.9
+      hidden: true
+      options:
+        foo: bar
+      color: "#123456"
+      steps: 42
+      permission: allow
 `);
 
-  test('maps every optional field through unchanged', () => {
+  test('maps every optional field through unchanged (Kortix `enabled: false` inverts onto the runtime `disable`)', () => {
     const compiled = compileAgentConfig(manifest) as OpencodeConfig;
     expect(compiled.agent.full).toEqual({
       description: 'Full field coverage',
@@ -207,7 +211,8 @@ kortix_version: 2
 default_agent: a
 agents:
   a:
-    prompt: agents/a.md
+    opencode:
+      prompt: agents/a.md
 `);
     const compiled = compileAgentConfig(manifest, 'opencode', {
       'agents/a.md': 'Just the body, no frontmatter.',
@@ -221,7 +226,8 @@ kortix_version: 2
 default_agent: a
 agents:
   a:
-    prompt: agents/a.md
+    opencode:
+      prompt: agents/a.md
 `);
     const content = ['---', 'title: Support Agent', '---', '', 'Body text follows.'].join('\n');
     const compiled = compileAgentConfig(manifest, 'opencode', {
@@ -236,7 +242,8 @@ kortix_version: 2
 default_agent: a
 agents:
   a:
-    prompt: agents/a.md
+    opencode:
+      prompt: agents/a.md
 `);
     const compiled = compileAgentConfig(manifest) as OpencodeConfig;
     expect(compiled.agent.a.prompt).toBe('{file:agents/a.md}');
@@ -248,7 +255,8 @@ kortix_version: 2
 default_agent: a
 agents:
   a:
-    mode: primary
+    opencode:
+      mode: primary
 `);
     const compiled = compileAgentConfig(manifest) as OpencodeConfig;
     expect(compiled.agent.a).not.toHaveProperty('prompt');
@@ -261,8 +269,9 @@ kortix_version: 2
 default_agent: support
 agents:
   support:
-    mode: primary
-    prompt: agents/support.md
+    opencode:
+      mode: primary
+      prompt: agents/support.md
 `);
 
   test('throws a clear CompileAgentConfigError when the .md still carries a manifest-owned key', () => {
@@ -298,6 +307,121 @@ agents:
     expect(() =>
       compileAgentConfig(manifest, 'opencode', { 'agents/support.md': content }),
     ).not.toThrow();
+  });
+});
+
+describe('compileAgentConfig — `skills` governance maps to permission.skill', () => {
+  test('"all" compiles to a bare allow', () => {
+    const manifest = parseYaml(`
+kortix_version: 2
+default_agent: a
+agents:
+  a:
+    skills: all
+`);
+    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    expect(compiled.agent.a.permission).toEqual({ skill: 'allow' });
+  });
+
+  test('"none" compiles to a bare deny', () => {
+    const manifest = parseYaml(`
+kortix_version: 2
+default_agent: a
+agents:
+  a:
+    skills: none
+`);
+    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    expect(compiled.agent.a.permission).toEqual({ skill: 'deny' });
+  });
+
+  test('an empty list behaves like "none" (safe default)', () => {
+    const manifest = parseYaml(`
+kortix_version: 2
+default_agent: a
+agents:
+  a:
+    skills: []
+`);
+    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    expect(compiled.agent.a.permission).toEqual({ skill: 'deny' });
+  });
+
+  test('a specific list compiles to a glob map — named skills allow, `*` denies the rest', () => {
+    const manifest = parseYaml(`
+kortix_version: 2
+default_agent: a
+agents:
+  a:
+    skills: [pdf-export, web-research]
+`);
+    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    expect(compiled.agent.a.permission).toEqual({
+      skill: { 'pdf-export': 'allow', 'web-research': 'allow', '*': 'deny' },
+    });
+  });
+
+  test('governance `skills` overrides a hand-authored permission.skill rule', () => {
+    const manifest = parseYaml(`
+kortix_version: 2
+default_agent: a
+agents:
+  a:
+    skills: all
+    opencode:
+      permission:
+        skill: deny
+        edit: ask
+`);
+    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    expect(compiled.agent.a.permission).toEqual({ edit: 'ask', skill: 'allow' });
+  });
+
+  test('a bare whole-agent permission action is expanded so `skills` can own just `skill`', () => {
+    const manifest = parseYaml(`
+kortix_version: 2
+default_agent: a
+agents:
+  a:
+    skills: none
+    opencode:
+      permission: allow
+`);
+    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    const permission = compiled.agent.a.permission as Record<string, unknown>;
+    expect(permission.skill).toBe('deny');
+    expect(permission.edit).toBe('allow');
+    expect(permission.bash).toBe('allow');
+  });
+
+  test('omitting `skills` leaves a hand-authored permission.skill untouched', () => {
+    const manifest = parseYaml(`
+kortix_version: 2
+default_agent: a
+agents:
+  a:
+    opencode:
+      permission:
+        skill:
+          "trusted-*": allow
+          "*": deny
+`);
+    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    expect(compiled.agent.a.permission).toEqual({
+      skill: { 'trusted-*': 'allow', '*': 'deny' },
+    });
+  });
+
+  test('never surfaces as a `skills` key on the compiled agent config (no runtime representation of its own)', () => {
+    const manifest = parseYaml(`
+kortix_version: 2
+default_agent: a
+agents:
+  a:
+    skills: [github-tools]
+`);
+    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    expect(compiled.agent.a).not.toHaveProperty('skills');
   });
 });
 
@@ -368,8 +492,9 @@ kortix_version: 2
 default_agent: support
 agents:
   support:
-    mode: primary
-    prompt: agents/support.md
+    opencode:
+      mode: primary
+      prompt: agents/support.md
 `,
     };
     promptFileContent = {

@@ -409,7 +409,8 @@ describe('kortix_version 2 — `agents:` map', () => {
     const { specs, errors } = parseV2(`
   support:
     description: "Handles support"
-    mode: primary
+    opencode:
+      mode: primary
 `);
     expect(errors).toEqual([]);
     expect(specs).toHaveLength(1);
@@ -448,10 +449,10 @@ describe('kortix_version 2 — `agents:` map', () => {
     expect(specs[0].env).toBe('all');
   });
 
-  test('`disable: true` maps to enabled=false; omitted/false stays enabled', () => {
+  test('`enabled: false` maps to enabled=false; omitted/true stays enabled', () => {
     const { specs } = parseV2(`
   support:
-    disable: true
+    enabled: false
   other:
     description: "another agent"
 `, { defaultAgent: 'other' });
@@ -459,10 +460,11 @@ describe('kortix_version 2 — `agents:` map', () => {
     expect(specs.find((s) => s.name === 'other')!.enabled).toBe(true);
   });
 
-  test('`prompt` maps onto AgentSpec.file', () => {
+  test('`opencode.prompt` maps onto AgentSpec.file', () => {
     const { specs } = parseV2(`
   support:
-    prompt: agents/support.md
+    opencode:
+      prompt: agents/support.md
 `);
     expect(specs[0].file).toBe('agents/support.md');
   });

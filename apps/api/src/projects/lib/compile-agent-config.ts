@@ -27,8 +27,13 @@ import {
   manifestFormatForPath,
   parseManifestText,
   type AgentBlockV2,
+  type GrantSetV2,
   type ManifestV2,
+  type OpencodeAgentConfigV2,
+  type PermissionActionV2,
+  type PermissionConfigObjectV2,
   type PermissionConfigV2,
+  type PermissionRuleV2,
   type RuntimeV2,
 } from '@kortix/manifest-schema';
 import { parseFrontmatter } from '@kortix/registry';
@@ -93,9 +98,14 @@ function manifestSchemaVersion(manifest: Record<string, unknown>): number {
 }
 
 /** AgentBlockV2 keys the manifest owns — illegal in a v2 agent's prompt `.md`
- *  frontmatter (spec §2.2: "one source of truth"). Lowercased for comparison. */
+ *  frontmatter (spec §2.2: "one source of truth"). Flat, OpenCode-native
+ *  names regardless of whether the manifest itself nests them under
+ *  `opencode:` — a hand-authored `.md`'s frontmatter is OpenCode's own file
+ *  format, not manifest YAML, so it never has the Kortix/OpenCode split.
+ *  Lowercased for comparison. */
 const ILLEGAL_FRONTMATTER_KEYS = new Set([
   'description',
+  'enabled',
   'mode',
   'model',
   'variant',
@@ -110,6 +120,7 @@ const ILLEGAL_FRONTMATTER_KEYS = new Set([
   'permission',
   'connectors',
   'secrets',
+  'skills',
   'kortix_cli',
   'workspace',
   // Deprecated upstream fields the manifest schema already rejects — calling
@@ -175,8 +186,14 @@ export function compileAgentConfig(
 }
 
 /** Map one `AgentBlockV2` onto its OpenCode `AgentConfig` equivalent — full
- *  parity, 1:1 by design (spec §2.2). Governance fields (connectors/secrets/
- *  kortix_cli/workspace) are never copied: they have no runtime representation. */
+ *  parity, 1:1 by design (spec §2.2). The Kortix layer (top-level
+ *  description/model/enabled) and the OpenCode layer (nested under
+ *  `opencode:`) are two different INPUT shapes that compile to the SAME flat
+ *  OUTPUT shape the runtime has always understood — the compiler is exactly
+ *  where that translation happens. Pure Kortix governance fields
+ *  (connectors/secrets/kortix_cli/workspace) are never copied: they have no
+ *  runtime representation. `skills` is the one governance field that DOES
+ *  compile to something OpenCode understands — see `applySkillsGovernance`. */
 function compileAgentBlock(
   name: string,
   block: AgentBlockV2,
@@ -184,23 +201,105 @@ function compileAgentBlock(
 ): OpencodeAgentConfig {
   const out: OpencodeAgentConfig = {};
   if (block.description !== undefined) out.description = block.description;
-  if (block.mode !== undefined) out.mode = block.mode;
   if (block.model !== undefined) out.model = block.model;
-  if (block.variant !== undefined) out.variant = block.variant;
-  if (block.temperature !== undefined) out.temperature = block.temperature;
-  if (block.top_p !== undefined) out.top_p = block.top_p;
-  if (block.disable !== undefined) out.disable = block.disable;
-  if (block.hidden !== undefined) out.hidden = block.hidden;
-  if (block.options !== undefined) out.options = block.options;
-  if (block.color !== undefined) out.color = block.color;
-  if (block.steps !== undefined) out.steps = block.steps;
-  if (block.permission !== undefined) out.permission = block.permission;
+  // Kortix `enabled` (default true) inverts onto the runtime's `disable` —
+  // only emit `disable` when the agent is actually turned off, matching the
+  // prior byte-for-byte output for every agent that doesn't set it.
+  if (block.enabled === false) out.disable = true;
 
-  if (block.prompt !== undefined) {
-    out.prompt = compilePrompt(name, block.prompt, promptFiles);
+  const oc: OpencodeAgentConfigV2 = block.opencode ?? {};
+  if (oc.mode !== undefined) out.mode = oc.mode;
+  if (oc.variant !== undefined) out.variant = oc.variant;
+  if (oc.temperature !== undefined) out.temperature = oc.temperature;
+  if (oc.top_p !== undefined) out.top_p = oc.top_p;
+  if (oc.hidden !== undefined) out.hidden = oc.hidden;
+  if (oc.options !== undefined) out.options = oc.options;
+  if (oc.color !== undefined) out.color = oc.color;
+  if (oc.steps !== undefined) out.steps = oc.steps;
+  if (oc.permission !== undefined) out.permission = oc.permission;
+
+  if (oc.prompt !== undefined) {
+    out.prompt = compilePrompt(name, oc.prompt, promptFiles);
+  }
+
+  if (block.skills !== undefined) {
+    out.permission = applySkillsGovernance(out.permission, block.skills);
   }
 
   return out;
+}
+
+/**
+ * Keys `PermissionConfigObjectV2` recognizes besides `skill`. Used only to
+ * expand a bare whole-agent `permission` action into an explicit object when
+ * `skills` governance needs to set just the `skill` key — see
+ * `applySkillsGovernance`. Kept local (not re-exported) since it's an
+ * implementation detail of that expansion, not a schema fact callers need.
+ */
+const OTHER_PERMISSION_KEYS: readonly string[] = [
+  'read',
+  'edit',
+  'glob',
+  'grep',
+  'list',
+  'bash',
+  'task',
+  'external_directory',
+  'lsp',
+  'todowrite',
+  'question',
+  'webfetch',
+  'websearch',
+  'doom_loop',
+];
+
+/**
+ * Turn a `skills` grant set (names | "all" | "none") into the `permission.skill`
+ * rule OpenCode actually enforces: a bare action when uniform (all-allow /
+ * all-deny), or a glob-pattern map (each named skill → allow, `"*"` → deny)
+ * when it's a specific allowlist. Empty list behaves like "none" (deny
+ * everything) — an author who picked "specific skills" and selected nothing
+ * gets the safe (deny) reading, not an accidental "all".
+ */
+function skillsGrantToPermissionRule(skills: GrantSetV2): PermissionRuleV2 {
+  if (skills === 'all') return 'allow';
+  if (skills === 'none' || skills.length === 0) return 'deny';
+  const rule: Record<string, PermissionActionV2> = {};
+  for (const name of skills) rule[name] = 'allow';
+  rule['*'] = 'deny';
+  return rule;
+}
+
+/**
+ * Merge the `skills` governance grant's computed `permission.skill` rule into
+ * whatever `permission` the agent block already compiled to.
+ *
+ * PRECEDENCE (documented, deliberate): when `skills` is set on the manifest
+ * block, it OWNS the `skill` key outright — it overrides any hand-authored
+ * `permission.skill` rule, the same "governance wins" posture the other
+ * Kortix-enforced fields (connectors/secrets/kortix_cli) already have. An
+ * author who omits `skills` entirely keeps full manual control over
+ * `permission.skill` (this function is never called in that case — see
+ * `compileAgentBlock`), so hand-rolled per-skill glob rules remain a
+ * supported escape hatch for anyone not using the governance picker.
+ */
+function applySkillsGovernance(
+  base: PermissionConfigV2 | undefined,
+  skills: GrantSetV2,
+): PermissionConfigV2 {
+  const skillRule = skillsGrantToPermissionRule(skills);
+  if (base === undefined) return { skill: skillRule };
+  if (typeof base === 'string') {
+    // A bare whole-agent action (e.g. `permission: allow`) applies to every
+    // capability including `skill` — expand it into an explicit object so
+    // overriding `skill` doesn't silently drop the author's intent for
+    // everything else.
+    const expanded: PermissionConfigObjectV2 = {};
+    for (const key of OTHER_PERMISSION_KEYS) expanded[key] = base as PermissionActionV2;
+    expanded.skill = skillRule;
+    return expanded;
+  }
+  return { ...base, skill: skillRule };
 }
 
 function compilePrompt(
@@ -276,8 +375,9 @@ export async function resolveCompiledAgentConfigForSession(
     const promptFiles: Record<string, string> = {};
     await Promise.all(
       Object.values(agents).map(async (block) => {
-        if (typeof block?.prompt !== 'string' || !block.prompt.trim()) return;
-        const path = block.prompt.trim();
+        const promptPath = block?.opencode?.prompt;
+        if (typeof promptPath !== 'string' || !promptPath.trim()) return;
+        const path = promptPath.trim();
         if (path in promptFiles) return;
         try {
           promptFiles[path] = await readRepoFile(project, path, project.defaultBranch);

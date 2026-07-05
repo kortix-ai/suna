@@ -332,7 +332,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
       name: 'My Agent',
       repoUrl: expectedRepoUrl,
       defaultBranch: 'main',
-      manifestPath: 'kortix.toml',
+      manifestPath: 'kortix.yaml',
       status: 'active',
       metadata: {
         git: {

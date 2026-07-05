@@ -13,29 +13,31 @@ project:
 agents:
   support:
     description: Handles customer support triage
-    mode: primary
     model: anthropic/claude-sonnet-5
-    temperature: 0.2
-    steps: 200
-    color: "#7C5CFF"
-    hidden: false
-    prompt: agents/support.md
-    permission:
-      edit: ask
-      bash:
-        "git push": deny
-        "*": allow
-      webfetch: allow
     connectors: [github, slack]
     secrets: [STRIPE_KEY, GH_TOKEN]
     kortix_cli: [project.session.start, project.cr.open]
     workspace: runtime
+    opencode:
+      mode: primary
+      temperature: 0.2
+      steps: 200
+      color: "#7C5CFF"
+      hidden: false
+      prompt: agents/support.md
+      permission:
+        edit: ask
+        bash:
+          "git push": deny
+          "*": allow
+        webfetch: allow
   pr-bot:
-    mode: subagent
     description: Reviews and lands PRs
-    prompt: agents/pr-bot.md
     connectors: [github]
     kortix_cli: [project.cr.open, project.cr.merge, project.review.submit]
+    opencode:
+      mode: subagent
+      prompt: agents/pr-bot.md
 
 triggers:
   - slug: nightly-digest
@@ -230,11 +232,12 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    tools:
-      bash: true
+    opencode:
+      tools:
+        bash: true
 `);
-    expect(errorPaths).toContain('agents.w.tools');
-    expect(issues.find((i) => i.path === 'agents.w.tools')?.message).toContain('permission');
+    expect(errorPaths).toContain('agents.w.opencode.tools');
+    expect(issues.find((i) => i.path === 'agents.w.opencode.tools')?.message).toContain('permission');
   });
 
   test('`maxSteps` is rejected with a pointer to `steps`', () => {
@@ -243,10 +246,35 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    maxSteps: 50
+    opencode:
+      maxSteps: 50
 `);
-    expect(errorPaths).toContain('agents.w.maxSteps');
-    expect(issues.find((i) => i.path === 'agents.w.maxSteps')?.message).toContain('steps');
+    expect(errorPaths).toContain('agents.w.opencode.maxSteps');
+    expect(issues.find((i) => i.path === 'agents.w.opencode.maxSteps')?.message).toContain('steps');
+  });
+
+  test('a flat (pre-refactor) behavioral field is rejected with a pointer to `opencode`', () => {
+    const { errorPaths, issues } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    mode: primary
+`);
+    expect(errorPaths).toContain('agents.w.mode');
+    expect(issues.find((i) => i.path === 'agents.w.mode')?.message).toContain('opencode');
+  });
+
+  test('a flat (pre-refactor) `disable` is rejected with a pointer to `enabled`', () => {
+    const { errorPaths, issues } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    disable: true
+`);
+    expect(errorPaths).toContain('agents.w.disable');
+    expect(issues.find((i) => i.path === 'agents.w.disable')?.message).toContain('enabled');
   });
 });
 
@@ -369,7 +397,8 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    mode: subagent
+    opencode:
+      mode: subagent
 `);
     expect(errorPaths).toContain('agents.w.description');
   });
@@ -380,8 +409,9 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    mode: subagent
     description: "   "
+    opencode:
+      mode: subagent
 `);
     expect(errorPaths).toContain('agents.w.description');
   });
@@ -392,8 +422,9 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    mode: subagent
     description: reviews PRs
+    opencode:
+      mode: subagent
 `);
     expect(valid).toBe(true);
   });
@@ -404,7 +435,8 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    mode: primary
+    opencode:
+      mode: primary
 `);
     expect(valid).toBe(true);
   });
@@ -501,9 +533,10 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    mode: bogus
+    opencode:
+      mode: bogus
 `);
-    expect(errorPaths).toContain('agents.w.mode');
+    expect(errorPaths).toContain('agents.w.opencode.mode');
   });
 
   test('non-numeric temperature is rejected', () => {
@@ -512,9 +545,10 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    temperature: "hot"
+    opencode:
+      temperature: "hot"
 `);
-    expect(errorPaths).toContain('agents.w.temperature');
+    expect(errorPaths).toContain('agents.w.opencode.temperature');
   });
 
   test('non-numeric top_p is rejected', () => {
@@ -523,9 +557,10 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    top_p: "high"
+    opencode:
+      top_p: "high"
 `);
-    expect(errorPaths).toContain('agents.w.top_p');
+    expect(errorPaths).toContain('agents.w.opencode.top_p');
   });
 
   test('a zero steps value is rejected', () => {
@@ -534,9 +569,10 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    steps: 0
+    opencode:
+      steps: 0
 `);
-    expect(errorPaths).toContain('agents.w.steps');
+    expect(errorPaths).toContain('agents.w.opencode.steps');
   });
 
   test('a non-integer steps value is rejected', () => {
@@ -545,9 +581,10 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    steps: 1.5
+    opencode:
+      steps: 1.5
 `);
-    expect(errorPaths).toContain('agents.w.steps');
+    expect(errorPaths).toContain('agents.w.opencode.steps');
   });
 
   test('a hex color passes', () => {
@@ -556,7 +593,8 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    color: "#ABCDEF"
+    opencode:
+      color: "#ABCDEF"
 `);
     expect(valid).toBe(true);
   });
@@ -567,7 +605,8 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    color: warning
+    opencode:
+      color: warning
 `);
     expect(valid).toBe(true);
   });
@@ -578,20 +617,21 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    color: chartreuse
+    opencode:
+      color: chartreuse
 `);
-    expect(errorPaths).toContain('agents.w.color');
+    expect(errorPaths).toContain('agents.w.opencode.color');
   });
 
-  test('a non-boolean disable is rejected', () => {
+  test('a non-boolean enabled is rejected', () => {
     const { errorPaths } = summarize(`
 kortix_version: 2
 default_agent: w
 agents:
   w:
-    disable: "yes"
+    enabled: "yes"
 `);
-    expect(errorPaths).toContain('agents.w.disable');
+    expect(errorPaths).toContain('agents.w.enabled');
   });
 
   test('a non-boolean hidden is rejected', () => {
@@ -600,9 +640,10 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    hidden: "yes"
+    opencode:
+      hidden: "yes"
 `);
-    expect(errorPaths).toContain('agents.w.hidden');
+    expect(errorPaths).toContain('agents.w.opencode.hidden');
   });
 
   test('an absolute prompt path is rejected', () => {
@@ -611,9 +652,10 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    prompt: /etc/passwd
+    opencode:
+      prompt: /etc/passwd
 `);
-    expect(errorPaths).toContain('agents.w.prompt');
+    expect(errorPaths).toContain('agents.w.opencode.prompt');
   });
 
   test('a non-object options value is rejected', () => {
@@ -622,9 +664,10 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    options: "x"
+    opencode:
+      options: "x"
 `);
-    expect(errorPaths).toContain('agents.w.options');
+    expect(errorPaths).toContain('agents.w.opencode.options');
   });
 
   test('a free-form options object passes through', () => {
@@ -633,9 +676,10 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    options:
-      reasoningEffort: high
-      anything: [1, 2, 3]
+    opencode:
+      options:
+        reasoningEffort: high
+        anything: [1, 2, 3]
 `);
     expect(valid).toBe(true);
   });
@@ -672,7 +716,8 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    permission: allow
+    opencode:
+      permission: allow
 `);
     expect(valid).toBe(true);
   });
@@ -683,9 +728,10 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    permission: sometimes
+    opencode:
+      permission: sometimes
 `);
-    expect(errorPaths).toContain('agents.w.permission');
+    expect(errorPaths).toContain('agents.w.opencode.permission');
   });
 
   test('a nested glob-map permission rule is accepted', () => {
@@ -694,10 +740,11 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    permission:
-      bash:
-        "git push": deny
-        "*": allow
+    opencode:
+      permission:
+        bash:
+          "git push": deny
+          "*": allow
 `);
     expect(valid).toBe(true);
   });
@@ -708,11 +755,12 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    permission:
-      bash:
-        "*": maybe
+    opencode:
+      permission:
+        bash:
+          "*": maybe
 `);
-    expect(errorPaths).toContain('agents.w.permission.bash.*');
+    expect(errorPaths).toContain('agents.w.opencode.permission.bash.*');
   });
 
   test('action-only keys reject a glob-map form', () => {
@@ -721,11 +769,12 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    permission:
-      webfetch:
-        "*": allow
+    opencode:
+      permission:
+        webfetch:
+          "*": allow
 `);
-    expect(errorPaths).toContain('agents.w.permission.webfetch');
+    expect(errorPaths).toContain('agents.w.opencode.permission.webfetch');
   });
 
   test('an arbitrary passthrough tool-name key accepts the rule form', () => {
@@ -734,9 +783,10 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    permission:
-      my_custom_tool:
-        "*": ask
+    opencode:
+      permission:
+        my_custom_tool:
+          "*": ask
 `);
     expect(valid).toBe(true);
   });
@@ -747,8 +797,9 @@ kortix_version: 2
 default_agent: w
 agents:
   w:
-    permission:
-      doom_loop: deny
+    opencode:
+      permission:
+        doom_loop: deny
 `);
     expect(valid).toBe(true);
     expect(errorPaths).toEqual([]);
@@ -799,6 +850,65 @@ agents:
     workspace: everywhere
 `);
     expect(errorPaths).toContain('agents.w.workspace');
+  });
+});
+
+describe('validateManifest — kortix_version 2 `skills` governance grant', () => {
+  test('an explicit skill-name list is accepted', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    skills: [pdf-export, web-research]
+`);
+    expect(valid).toBe(true);
+    expect(errorPaths).toEqual([]);
+  });
+
+  test('"all" and "none" string sentinels are accepted', () => {
+    for (const v of ['all', 'none']) {
+      const { valid } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    skills: ${v}
+`);
+      expect(valid).toBe(true);
+    }
+  });
+
+  test('omitting `skills` is still valid shape (v2 deny-by-default applies at resolution time)', () => {
+    const { valid } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w: {}
+`);
+    expect(valid).toBe(true);
+  });
+
+  test('a non-string entry is rejected, same shape rule as connectors', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    skills: [42]
+`);
+    expect(errorPaths).toContain('agents.w.skills[0]');
+  });
+
+  test('an invalid sentinel string is rejected', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    skills: everything
+`);
+    expect(errorPaths).toContain('agents.w.skills');
   });
 });
 

@@ -959,6 +959,14 @@
       "path": "/v1/projects/:projectId/access/pending-invites/:inviteId/resend"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/agents/:agentName/config"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/agents/:agentName/config"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/agents/:agentName/scope"
     },

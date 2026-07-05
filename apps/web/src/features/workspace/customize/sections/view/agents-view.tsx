@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
+import { AgentConfigEditor } from '@/features/workspace/customize/sections/view/agent-editor';
 import { ConfigEntityView } from '@/features/workspace/customize/sections/component/config-entity-view';
 import { formatMode } from '@/features/workspace/customize/shared/utils';
 import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
@@ -82,11 +83,20 @@ export function AgentsView({ projectId }: { projectId: string }) {
           ) : null}
         </>
       )}
-      renderDetailExtra={(agent) => (
+      renderDetailExtra={(agent, config) => (
         <div className="space-y-3">
           <AgentAssignments projectId={projectId} agentName={agent.name} />
-          <AgentModel projectId={projectId} agentName={agent.name} />
-          <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
+          <AgentConfigEditor
+            projectId={projectId}
+            agent={agent}
+            skillsOptions={config.skills.map((s) => ({ id: s.name, label: s.name }))}
+            fallback={
+              <>
+                <AgentModel projectId={projectId} agentName={agent.name} />
+                <AgentScope projectId={projectId} agentName={agent.name} scope={agent.scope} />
+              </>
+            }
+          />
         </div>
       )}
     />

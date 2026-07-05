@@ -50,6 +50,7 @@ import {
   type ProjectDetail,
 } from '@kortix/sdk/projects-client';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
+import { MigrateToV2Card } from '@/features/workspace/customize/migrate-to-v2';
 import { TrashSolid } from '@mynaui/icons-react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 
@@ -105,6 +106,7 @@ export function SettingsView({ projectId }: { projectId: string }) {
         <div className="space-y-8">
           <GeneralProjectCard project={project} canManage={!!canManage} />
           <RepositoryCard project={project} canManage={!!canManage} />
+          {canManage && <MigrateToV2Card projectId={project.project_id} />}
           {canManage && (
             <section className="space-y-4">
               <Label>Automation</Label>
