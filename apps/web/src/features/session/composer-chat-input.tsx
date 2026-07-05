@@ -2,10 +2,7 @@
 
 import type { ReactNode } from 'react';
 
-import {
-  type AttachedFile,
-  SessionChatInput,
-} from '@/features/session/session-chat-input';
+import { type AttachedFile, SessionChatInput } from '@/features/session/session-chat-input';
 import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
 import { type ModelKey, useOpenCodeLocal } from '@/hooks/opencode/use-opencode-local';
 import {
@@ -43,6 +40,7 @@ export function ComposerChatInput({
   prefill,
   inputSlot,
   toolbarSlot,
+  cardClassName,
   boundAgentName,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
@@ -58,6 +56,8 @@ export function ComposerChatInput({
   prefill?: { text: string; id: number } | null;
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
+  /** Extra classes for the input card (e.g. the project-home radius override). */
+  cardClassName?: string;
   /** Immutable project-session agent. When set, sends are locked to this agent. */
   boundAgentName?: string | null;
 }) {
@@ -93,6 +93,7 @@ export function ComposerChatInput({
       prefill={prefill}
       inputSlot={inputSlot}
       toolbarSlot={toolbarSlot}
+      cardClassName={cardClassName}
       sessionId={sessionId}
       providers={providers}
       agents={local.agent.list}
