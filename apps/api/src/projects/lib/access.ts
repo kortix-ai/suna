@@ -65,6 +65,22 @@ export async function enforceProjectQuota(
   return null;
 }
 
+async function loadProjectSessionRow(
+  loaded: { row: ProjectRow },
+  sessionId: string,
+): Promise<ProjectSessionRow | null> {
+  const [row] = await db
+    .select()
+    .from(projectSessions)
+    .where(and(
+      eq(projectSessions.sessionId, sessionId),
+      eq(projectSessions.projectId, loaded.row.projectId),
+      eq(projectSessions.accountId, loaded.row.accountId),
+    ))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function loadVisibleSession(
   loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole; adminBypass?: boolean },
   sessionId: string,
@@ -76,15 +92,7 @@ export async function loadVisibleSession(
   canManageProject: boolean;
   canManageSharing: boolean;
 } | null> {
-  const [row] = await db
-    .select()
-    .from(projectSessions)
-    .where(and(
-      eq(projectSessions.sessionId, sessionId),
-      eq(projectSessions.projectId, loaded.row.projectId),
-      eq(projectSessions.accountId, loaded.row.accountId),
-    ))
-    .limit(1);
+  const row = await loadProjectSessionRow(loaded, sessionId);
   if (!row) return null;
   const subject = await resolveShareSubject(loaded.userId);
   const grants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
@@ -106,6 +114,40 @@ export async function loadVisibleSession(
   const isOwner = row.createdBy === loaded.userId;
   const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   return { row, subject, grants, isOwner, canManageProject, canManageSharing: isOwner || canManageProject };
+}
+
+/**
+ * Load a session for SHARING-MANAGEMENT purposes (the public-shares CRUD
+ * routes) — a narrower, distinct question from `loadVisibleSession`'s "can
+ * this user read the session's content/transcript".
+ *
+ * Managing a session's public share links is a project-management action:
+ * the session's creator always can, and a project manager/owner/admin can
+ * too, REGARDLESS of the session's private-content `visibility`. Reusing
+ * `loadVisibleSession` here was a bug — a private session (the default)
+ * is invisible to everyone but its creator under `isSessionVisibleTo`, so
+ * the `canManageProject` half of `canManageSharing` could never be reached:
+ * the route always 404'd on the visibility gate first, even for a real
+ * project manager. A project member with no manage rights (e.g. an editor
+ * who didn't create the session) still gets a truthful 403 (permission
+ * denied) here, not a 404 (resource hidden) — they're a legitimate member of
+ * the project the session lives in, not a stranger, so there's nothing to
+ * hide about the session's mere existence.
+ */
+export async function loadSessionForSharing(
+  loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole },
+  sessionId: string,
+): Promise<{
+  row: ProjectSessionRow;
+  isOwner: boolean;
+  canManageProject: boolean;
+  canManageSharing: boolean;
+} | null> {
+  const row = await loadProjectSessionRow(loaded, sessionId);
+  if (!row) return null;
+  const isOwner = row.createdBy === loaded.userId;
+  const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
+  return { row, isOwner, canManageProject, canManageSharing: isOwner || canManageProject };
 }
 
 

@@ -677,6 +677,14 @@ app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/acce
 import { setupLinksPublicApp } from './setup-links/public-app';
 app.route('/v1/setup-links', setupLinksPublicApp); // /v1/setup-links/{secret,connector}/:token
 
+// Public session shares — PUBLIC, share-id-gated. Anonymous, read-only
+// session title + sanitized transcript for a valid session public-share
+// (any resource type SESS-13's CRUD creates); backs the logged-out
+// `/share/[shareId]` viewer (apps/web). No auth, no client-side sandbox
+// access — the API reads the sandbox's OpenCode daemon server-side.
+import { publicSessionSharesApp } from './public-session-shares';
+app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
+
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {

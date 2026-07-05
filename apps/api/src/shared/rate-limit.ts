@@ -138,6 +138,7 @@ export async function enforceRateLimit(
 
 const inviteAcceptLimiter = new TokenBucketRateLimiter('invite_accept');
 const sandboxProxyLimiter = new TokenBucketRateLimiter('sandbox_proxy');
+const publicSessionShareLimiter = new TokenBucketRateLimiter('public_session_share');
 export const sessionLlmLimiter = new TokenBucketRateLimiter('session_llm');
 
 export function createInviteAcceptRateLimitMiddleware() {
@@ -187,8 +188,42 @@ export function createSandboxProxyRateLimitMiddleware() {
   };
 }
 
+/**
+ * Guards the anonymous `/v1/public/session-shares/:shareId*` family — same
+ * shape as `createInviteAcceptRateLimitMiddleware` (no authenticated identity
+ * to key on), but keyed on the share id path param rather than client IP:
+ * every visitor to one shared link is legitimately behind the same bucket,
+ * while a single caller trying many share ids from behind a shared NAT/VPN
+ * doesn't starve everyone else's shares. Every call also fetches from the
+ * sandbox daemon (list sessions + read messages), so this is deliberately
+ * tighter than the plain metadata-only invite-accept limiter.
+ */
+export function createPublicSessionShareRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    const shareId = c.req.param('shareId') || clientIp(c);
+    const denied = await enforceRateLimit(
+      c,
+      publicSessionShareLimiter,
+      shareId,
+      {
+        limit: positiveInt((config as any).KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN, 60),
+        windowMs: 60_000,
+      },
+      {
+        action: `RATE_LIMIT ${c.req.method} ${c.req.path}`,
+        resourceType: 'public_session_share',
+        resourceId: shareId,
+        metadata: { limiter: 'public_session_share' },
+      },
+    );
+    if (denied) return denied;
+    await next();
+  };
+}
+
 export function resetRateLimiters() {
   inviteAcceptLimiter.reset();
   sandboxProxyLimiter.reset();
+  publicSessionShareLimiter.reset();
   sessionLlmLimiter.reset();
 }
