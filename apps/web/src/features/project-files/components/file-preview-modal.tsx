@@ -1,12 +1,12 @@
 'use client';
 
-import { useMemo } from 'react';
 import { STATUS_TEXT } from '@/components/ui/status';
+import { useFilesStore } from '@/features/file-browser/store/files-store';
 import { FilePreviewModal as BaseFilePreviewModal } from '@/features/file-viewer';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
+import { useMemo } from 'react';
 import { useFileExplorerSource } from '../explorer-source';
-import { useFilesStore } from '../store/files-store';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { getFileIcon } from './file-icon';
 

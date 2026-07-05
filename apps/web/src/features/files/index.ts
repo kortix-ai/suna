@@ -19,7 +19,7 @@ export type {
   GitCommit,
   FileHistoryResult,
   FileCommitDiff,
-} from './types';
+} from '@/features/file-browser/types';
 
 // API — read
 export {
@@ -90,7 +90,7 @@ export {
   type ClipboardItem,
   type FilesStore,
   type FilesStoreApi,
-} from './store/files-store';
+} from '@/features/file-browser/store/files-store';
 
 // Explorer source (the shared Drive explorer UI lives in features/project-files)
 export { sandboxExplorerSource } from './sandbox-explorer-source';

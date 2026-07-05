@@ -7,7 +7,7 @@ import type {
   FileHistoryResult,
   FileNode,
   GitFileStatus,
-} from './types';
+} from '@/features/file-browser/types';
 
 /**
  * Data-access contract for the shared Drive-style file explorer

@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { FileNode } from '../types';
-import { getFileIcon } from './file-icon';
+import { getFileIcon } from '@/features/project-files/components/file-icon';
 import {
   ContextMenu,
   ContextMenuContent,

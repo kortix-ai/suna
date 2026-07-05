@@ -86,6 +86,22 @@ export function createKortix(config: KortixPlatformConfig) {
     removeMember: P.removeAccountMember,
     updateMemberRole: P.updateAccountMemberRole,
     invites: P.listAccountInvites,
+    /** Cancel a pending account invite (accountId still known/scoped). */
+    cancelInvite: P.cancelAccountInvite,
+    /** Resend a pending account invite (accountId still known/scoped). */
+    resendInvite: P.resendAccountInvite,
+  };
+
+  /**
+   * Account-invite lifecycle reached by invite token alone — accept/decline/
+   * describe are called by the invitee (who may not be an account member, or
+   * even signed into this account, yet), so they take only `inviteId` and
+   * genuinely don't fit account- or project-scoping.
+   */
+  const accountInvites = {
+    describe: P.describeAccountInvite,
+    accept: P.acceptAccountInvite,
+    decline: P.declineAccountInvite,
   };
 
   /** Top-level project operations (not bound to an id). */
@@ -95,6 +111,8 @@ export function createKortix(config: KortixPlatformConfig) {
     get: P.getProject,
     detail: P.getProjectDetail,
     create: P.createProject,
+    /** Create a project backed by a brand-new Kortix-managed GitHub repo. */
+    createRepo: P.createProjectRepo,
     provision: P.provisionProject,
     update: P.updateProject,
     archive: P.archiveProject,
@@ -122,6 +140,9 @@ export function createKortix(config: KortixPlatformConfig) {
     revoke: P.revokeSandboxShare,
   };
 
+  /** Deployment-wide flag: is the easy-connect (Pipedream) provider configured? Not project-scoped. */
+  const connectStatus = P.getConnectStatus;
+
   /** Id-bound handle for a single project: every sub-resource, projectId pre-applied. */
   function project(projectId: string) {
     return {
@@ -144,6 +165,11 @@ export function createKortix(config: KortixPlatformConfig) {
         removePersonal: (name: string) => P.deletePersonalProjectSecret(projectId, name),
         setGitCredential: (input: Parameters<typeof P.upsertProjectGitCredential>[1]) =>
           P.upsertProjectGitCredential(projectId, input),
+        /** Device-code OAuth flow to connect a subscription-backed provider (e.g. ChatGPT). */
+        startProviderOAuth: (...a: DropFirst<Parameters<typeof P.startProjectProviderOAuth>>) =>
+          P.startProjectProviderOAuth(projectId, ...a),
+        pollProviderOAuth: (...a: DropFirst<Parameters<typeof P.pollProjectProviderOAuth>>) =>
+          P.pollProjectProviderOAuth(projectId, ...a),
       },
 
       access: {
@@ -164,6 +190,18 @@ export function createKortix(config: KortixPlatformConfig) {
         rejectRequest: (...a: DropFirst<Parameters<typeof P.rejectProjectAccessRequest>>) =>
           P.rejectProjectAccessRequest(projectId, ...a),
         groupGrants: () => P.listProjectGroupGrants(projectId),
+        attachGroupGrant: (...a: DropFirst<Parameters<typeof P.attachGroupToProject>>) =>
+          P.attachGroupToProject(projectId, ...a),
+        updateGroupGrant: (...a: DropFirst<Parameters<typeof P.updateProjectGroupGrant>>) =>
+          P.updateProjectGroupGrant(projectId, ...a),
+        detachGroupGrant: (groupId: string) => P.detachGroupFromProject(projectId, groupId),
+        /** Per-resource (agent/skill/secret) grants to a member or a group. */
+        resourceGrants: {
+          list: () => P.listProjectResourceGrants(projectId),
+          create: (input: Parameters<typeof P.createProjectResourceGrant>[1]) =>
+            P.createProjectResourceGrant(projectId, input),
+          remove: (grantId: string) => P.deleteProjectResourceGrant(projectId, grantId),
+        },
       },
 
       connectors: {
@@ -175,6 +213,34 @@ export function createKortix(config: KortixPlatformConfig) {
         remove: (...a: DropFirst<Parameters<typeof P.deleteConnector>>) =>
           P.deleteConnector(projectId, ...a),
         sync: () => P.syncConnectors(projectId),
+        setName: (...a: DropFirst<Parameters<typeof P.setConnectorName>>) =>
+          P.setConnectorName(projectId, ...a),
+        setSharing: (...a: DropFirst<Parameters<typeof P.setConnectorSharing>>) =>
+          P.setConnectorSharing(projectId, ...a),
+        setCredentialMode: (...a: DropFirst<Parameters<typeof P.setConnectorCredentialMode>>) =>
+          P.setConnectorCredentialMode(projectId, ...a),
+        setCredential: (...a: DropFirst<Parameters<typeof P.setConnectorCredential>>) =>
+          P.setConnectorCredential(projectId, ...a),
+        setSensitive: (...a: DropFirst<Parameters<typeof P.setConnectorSensitive>>) =>
+          P.setConnectorSensitive(projectId, ...a),
+        /** The connector-side agent gate (mirror of a secret's agent_scope) — distinct from `setAgentScope`, which binds an agent's secret/connector allowlist. */
+        setAgentScope: (...a: DropFirst<Parameters<typeof P.setConnectorAgentScope>>) =>
+          P.setConnectorAgentScope(projectId, ...a),
+        policies: {
+          get: (...a: DropFirst<Parameters<typeof P.getConnectorPolicies>>) =>
+            P.getConnectorPolicies(projectId, ...a),
+          set: (...a: DropFirst<Parameters<typeof P.setConnectorPolicies>>) =>
+            P.setConnectorPolicies(projectId, ...a),
+        },
+        /** Easy-connect (Pipedream): app catalog + connect/finalize handshake. */
+        pipedream: {
+          listApps: (...a: DropFirst<Parameters<typeof P.listPipedreamApps>>) =>
+            P.listPipedreamApps(projectId, ...a),
+          connect: (...a: DropFirst<Parameters<typeof P.pipedreamConnect>>) =>
+            P.pipedreamConnect(projectId, ...a),
+          finalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalize>>) =>
+            P.pipedreamFinalize(projectId, ...a),
+        },
       },
 
       policies: {
@@ -216,6 +282,9 @@ export function createKortix(config: KortixPlatformConfig) {
         branches: () => P.listProjectBranches(projectId),
         versionDiff: (...a: DropFirst<Parameters<typeof P.getVersionDiff>>) =>
           P.getVersionDiff(projectId, ...a),
+        /** Invite a GitHub user as a collaborator on a Kortix-managed repo. */
+        inviteCollaborator: (...a: DropFirst<Parameters<typeof P.inviteRepoCollaborator>>) =>
+          P.inviteRepoCollaborator(projectId, ...a),
       },
 
       changeRequests: {
@@ -314,7 +383,14 @@ export function createKortix(config: KortixPlatformConfig) {
         deploy: (slug: string) => P.deployProjectApp(projectId, slug),
         stop: (slug: string) => P.stopProjectApp(projectId, slug),
         logs: (slug: string) => P.getProjectAppLogs(projectId, slug),
+        /** @deprecated Use `updateExperimentalFeature('apps', enabled)` — kept for parity with the underlying client. */
+        updateConfig: (input: Parameters<typeof P.updateAppsConfig>[1]) =>
+          P.updateAppsConfig(projectId, input),
       },
+
+      /** Toggle an experimental feature (Customize → Settings → Experimental). Pass `enabled: null` to clear the override. */
+      updateExperimentalFeature: (...a: DropFirst<Parameters<typeof P.updateExperimentalFeature>>) =>
+        P.updateExperimentalFeature(projectId, ...a),
 
       /** Default model preferences (account/agent/project scope, gateway-resolved). */
       modelDefaults: {
@@ -336,6 +412,8 @@ export function createKortix(config: KortixPlatformConfig) {
           P.updateSandboxTemplate(projectId, ...a),
         removeTemplate: (templateId: string) => P.deleteSandboxTemplate(projectId, templateId),
         buildTemplate: (templateId: string) => P.buildSandboxTemplate(projectId, templateId),
+        /** Pin/clear the per-project sandbox provider (null = follow the platform default). */
+        setProvider: (provider: string | null) => P.updateProjectSandboxProvider(projectId, provider),
       },
 
       /** Bind specific secrets + connectors to an agent (the inheritance pyramid's declaration step). */
@@ -541,6 +619,8 @@ export function createKortix(config: KortixPlatformConfig) {
     /** The platform config in effect (for diagnostics). */
     config,
     accounts,
+    /** Account-invite lifecycle reached by invite token alone (accept/decline/describe). */
+    accountInvites,
     projects,
     project,
     session,
@@ -550,6 +630,8 @@ export function createKortix(config: KortixPlatformConfig) {
     sandboxShares,
     /** Speech-to-text transcription (`/transcription` — not project-scoped). */
     transcribe: P.transcribeAudio,
+    /** Deployment-wide Pipedream/easy-connect availability flag (not project-scoped). */
+    connectStatus,
     /** Escape hatch: the typed opencode client for the active sandbox. */
     runtime,
   };

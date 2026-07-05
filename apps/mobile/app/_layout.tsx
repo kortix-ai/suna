@@ -43,6 +43,8 @@ import { log } from '@/lib/logger';
 import { useAppearanceStore } from '@/stores/appearance-store';
 import { useThemeStore } from '@/stores/theme-store';
 import { installHapticsGate } from '@/lib/haptics';
+import { configureKortix } from '@kortix/sdk';
+import { API_URL, getAuthToken } from '@/api/config';
 import {
   clearWebRegistrationHandoff,
   consumeAuthCallbackState,
@@ -56,6 +58,19 @@ import {
 // Patch expo-haptics globally so every Haptics.* call across the app respects
 // the user's "Haptic Feedback" toggle in Settings → Sounds.
 installHapticsGate();
+
+// Wire the SDK's single app-specific seam once at startup, before any screen
+// mounts. `backendUrl`/`getToken` reuse mobile's own env resolution and
+// Supabase token source (api/config.ts) unchanged — this just injects them
+// into @kortix/sdk so `lib/projects/projects-client.ts` and friends can call
+// through to `backendApi`/`projects-client` instead of hand-rolling fetch.
+configureKortix({
+  backendUrl: API_URL,
+  getToken: getAuthToken,
+  onError: (error, context) => {
+    log.error('❌ [kortix-sdk] request failed:', error, context);
+  },
+});
 
 const THEME_PREFERENCE_KEY = '@theme_preference';
 

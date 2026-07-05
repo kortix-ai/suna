@@ -14,27 +14,13 @@ import {
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Loading from '@/components/ui/loading';
 import { Separator } from '@/components/ui/separator';
+import type { SortField } from '@/features/file-browser/store/files-store';
+import { isWithinRoot, useFilesStore } from '@/features/file-browser/store/files-store';
 import { cn } from '@/lib/utils';
-import { HomeSolid, ListSolid } from '@mynaui/icons-react';
-import {
-  ArrowUpDown,
-  ChevronRight,
-  Download,
-  Eye,
-  EyeOff,
-  FilePlus,
-  FolderPlus,
-  GitCommitHorizontal,
-  GitPullRequest,
-  LayoutGrid,
-  RefreshCw,
-  Search,
-  Upload,
-} from 'lucide-react';
+import { HomeSolid } from '@mynaui/icons-react';
+import { ArrowUpDown, ChevronRight, Download, Eye, EyeOff, RefreshCw, Search } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { SortField } from '../store/files-store';
-import { isWithinRoot, useFilesStore } from '../store/files-store';
 import { VersionSelector } from './version-selector';
 
 interface DriveToolbarProps {
@@ -227,7 +213,9 @@ export function DriveToolbar({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
               <DropdownMenuLabel>
-                {tHardcodedUi.raw('featuresProjectFilesComponentsDriveToolbar.line262JsxTextSortBy')}
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsDriveToolbar.line262JsxTextSortBy',
+                )}
               </DropdownMenuLabel>
               <DropdownMenuRadioGroup
                 value={sortBy}
@@ -244,42 +232,42 @@ export function DriveToolbar({
             </DropdownMenuContent>
           </DropdownMenu>
 
-            {showHiddenToggle && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className={cn(!showHidden && 'text-muted-foreground')}
-                onClick={toggleHidden}
-                title={showHidden ? 'Hide dotfiles' : 'Show dotfiles'}
-              >
-                {showHidden ? <Eye /> : <EyeOff />}
-              </Button>
-            )}
-
-            {showSearch && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={toggleSearch}
-                title={tHardcodedUi.raw(
-                  'featuresFilesComponentsDriveToolbar.line270JsxAttrTitleSearchFilesCtrlP',
-                )}
-              >
-                <Search />
-              </Button>
-            )}
-
-          <Separator orientation="vertical" className="data-[orientation=vertical]:h-[70%]" />
-
+          {showHiddenToggle && (
             <Button
               variant="ghost"
               size="icon-sm"
-              onClick={onRefresh}
-              disabled={isRefreshing}
-              title="Refresh"
+              className={cn(!showHidden && 'text-muted-foreground')}
+              onClick={toggleHidden}
+              title={showHidden ? 'Hide dotfiles' : 'Show dotfiles'}
             >
-              <RefreshCw className={cn(isRefreshing && 'animate-spin')} />
+              {showHidden ? <Eye /> : <EyeOff />}
             </Button>
+          )}
+
+          {showSearch && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={toggleSearch}
+              title={tHardcodedUi.raw(
+                'featuresFilesComponentsDriveToolbar.line270JsxAttrTitleSearchFilesCtrlP',
+              )}
+            >
+              <Search />
+            </Button>
+          )}
+
+          <Separator orientation="vertical" className="data-[orientation=vertical]:h-[70%]" />
+
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            title="Refresh"
+          >
+            <RefreshCw className={cn(isRefreshing && 'animate-spin')} />
+          </Button>
 
           <Button
             variant="ghost"

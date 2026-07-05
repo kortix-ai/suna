@@ -13,29 +13,22 @@ import {
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
+import { useFilesStore } from '@/features/file-browser/store/files-store';
+import type { FileNode } from '@/features/file-browser/types';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { Clipboard, FilePlus, FolderOpen, FolderPlus, Upload } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useFileExplorerSource } from '../explorer-source';
 import { buildGitStatusMap } from '../hooks';
-import { useFilesStore } from '../store/files-store';
-import type { FileNode } from '../types';
 import { DriveGridView } from './drive-grid-view';
 import { DriveListView } from './drive-list-view';
 import { DriveToolbar } from './drive-toolbar';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
 import { FileSearch } from './file-search';
-import { DRAG_MIME } from './file-tree-item';
 
 /** System directories always pinned at the top of the listing. */
 const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
@@ -605,24 +598,11 @@ export function DriveExplorer({
       onDrop={handlePageDrop}
     >
       <DriveToolbar
-        readOnly={!canWrite}
         showSearch={capabilities.search}
         showHiddenToggle={capabilities.hiddenToggle}
         showVersionSelector={toolbar?.showVersionSelector}
-        checkpointsToggle={toolbar?.checkpointsToggle}
-        changeRequestsToggle={toolbar?.changeRequestsToggle}
-        openChangeRequestAction={toolbar?.openChangeRequestAction}
         onRefresh={() => refetchFiles()}
         isRefreshing={isFetching}
-        onUpload={handleUpload}
-        onNewFolder={() => {
-          setNewFolderName('New Folder');
-          setIsCreatingFolder(true);
-        }}
-        onNewFile={() => {
-          setNewFileName('untitled.txt');
-          setIsCreatingFile(true);
-        }}
         onDownloadDir={() => {
           const dirName = isRootPath
             ? 'workspace'
@@ -909,7 +889,9 @@ export function DriveExplorer({
                 'featuresProjectFilesComponentsFileExplorerPage.line806JsxTextAreYouSureYouWantToDelete',
               )}{' '}
               <span className="text-foreground font-semibold">
-                {tHardcodedUi.raw('featuresProjectFilesComponentsFileExplorerPage.line807JsxTextQuot')}
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsFileExplorerPage.line807JsxTextQuot',
+                )}
                 {deleteTarget?.name}
                 {tHardcodedUi.raw(
                   'featuresProjectFilesComponentsFileExplorerPage.line807JsxTextQuot32c14d98',

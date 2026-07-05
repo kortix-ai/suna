@@ -53,6 +53,13 @@ export {
   type OpenEventStreamOptions,
 } from '../state/event-stream';
 
+// The kortix-master React Query layer (tasks/tickets/projects/milestones/
+// credentials/sandbox-services) relocated from apps/web's six
+// `apps/web/src/hooks/{kortix/*,use-sandbox-services}.ts` files — see
+// `use-kortix-master.ts` for the full contract, including the injectable
+// `KortixMasterIdentity` seam that replaces web's direct `useAuth()` calls.
+export * from './use-kortix-master';
+
 // The send / stash-replay / error-recovery core extracted from apps/web's
 // `session-chat.tsx` — see `use-session-send.ts` for the full contract. Not
 // (yet) re-exported by `./opencode`'s explicit barrel list, so re-exported

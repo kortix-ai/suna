@@ -334,6 +334,12 @@ function validateAgents(node: unknown, path: string, issues: ManifestIssue[]): v
     }
     validateGrantList(entry.connectors, `${where}.connectors`, 'connectors', issues, false);
     validateGrantList(entry.kortix_cli, `${where}.kortix_cli`, 'kortix_cli', issues, true);
+    // `env` (project-secret allowlist) shares the same array | "all" | "none"
+    // shape as connectors/kortix_cli (runtime parseGrantSet, no per-entry
+    // action check). Omitted defaults to "all" at runtime (back-compat — a
+    // NEW dimension must not starve existing agents), so absence is not an
+    // error here either; validateGrantList already no-ops on undefined/null.
+    validateGrantList(entry.env, `${where}.env`, 'env', issues, false);
   });
 }
 

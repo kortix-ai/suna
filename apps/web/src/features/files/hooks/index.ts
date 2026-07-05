@@ -46,7 +46,7 @@ export {
 export { useBinaryBlob, binaryBlobKeys } from './use-binary-blob';
 
 // SSE-based real-time invalidation
-export { useFileEventInvalidation } from './use-file-events';
+export { useFileEventInvalidation } from '@/features/file-browser/hooks/use-file-events';
 
 // Git history
 export {

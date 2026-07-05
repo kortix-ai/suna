@@ -97,12 +97,14 @@ flow(
  *    checks `revokedAt` BEFORE it ever looks at the sandbox) — NOT 404.
  *  - an unknown token → 404 "Share link not found".
  *  - a real, not-yet-revoked token whose sandbox has no `externalId` yet → 503
- *    "Sandbox is not ready". The `session_sandboxes` row itself is guaranteed
- *    to already exist by the time POST /sessions returns 201
- *    (`provisionSessionSandbox` awaits its own row insert before the handler
- *    responds — projects/lib/sessions.ts), so the join never misses and the
- *    404-while-row-not-inserted race (SESS-8) does not apply here — only
- *    [200, 503] are legal for a fresh, unrevoked token.
+ *    "Sandbox is not ready". `resolvePublicShare` LEFT (not INNER) JOINs
+ *    `session_sandboxes` for exactly this reason: a freshly-created session
+ *    frequently has no `session_sandboxes` row at all yet (provisioning is
+ *    kicked off in the background, not awaited before POST /sessions
+ *    responds), and an INNER JOIN made that case fall into `!row` → a false
+ *    404 ("not found") for a share token that is perfectly valid. `session_id`
+ *    is unique on `session_sandboxes` (one row per session), so the LEFT JOIN
+ *    never fans out — only [200, 503] are legal for a fresh, unrevoked token.
  *  - `listPublicSharesForSession` does NOT filter out revoked shares —
  *    revoking sets `revoked_at`, it does not remove the row from the list.
  *  - revoke has no idempotency guard (the UPDATE...WHERE matches on
@@ -225,12 +227,25 @@ flow(
 /**
  * SESS-14 — public share access boundary. `canManageSharing = isOwner (the
  * session creator) || canManageProject (manage role: manager/owner/admin)` —
- * projects/lib/access.ts `loadVisibleSession()`. So a project EDITOR who did
- * NOT create the session is denied (403, the sharing-specific message), while
- * a project MANAGER who did NOT create it is allowed (200) via the OR.
+ * projects/lib/access.ts `loadSessionForSharing()`. So a project EDITOR who
+ * did NOT create the session is denied (403, the sharing-specific message),
+ * while a project MANAGER who did NOT create it is allowed (200) via the OR.
  * NONMEMBER is denied earlier, by the account-membership gate in
  * `loadProjectForUser` (throws 403 before the sharing check is ever reached).
  * ANON never reaches the handler (401, `supabaseAuth`).
+ *
+ * `loadSessionForSharing` is deliberately NOT `loadVisibleSession` (the
+ * content-visibility gate used for reading a session's transcript): the
+ * public-shares routes used to call `loadVisibleSession`, whose
+ * `isSessionVisibleTo` check hides a default-`private` session from everyone
+ * but its creator — including a project manager with no adminBypass. That
+ * made the `canManageProject` half of the OR unreachable: the route 404'd on
+ * the visibility gate before ever computing `canManageSharing`, and a plain
+ * editor got the same 404 instead of the informative 403 this spec expects.
+ * `loadSessionForSharing` loads the same row but only computes
+ * isOwner/canManageProject — no content-visibility check — since managing
+ * share links is a project-management action, not a "can you read this
+ * conversation" one.
  */
 flow(
   "SESS-14",
@@ -374,6 +389,132 @@ flow(
         .as(ctx.P.ANON)
         .get("/v1/projects/:projectId/sessions/:sessionId/audit", { params: { projectId: p.id, sessionId: s.id } });
       r.status(401);
+    });
+  },
+);
+
+/**
+ * SESS-16 — anonymous session-share VIEWING: `GET /v1/public/session-shares/:shareId`
+ * and `.../messages`, mounted at `apps/api/src/public-session-shares/index.ts`
+ * (public/session-shares/index.ts, no auth middleware). Closes the backend
+ * gap `(public)/share/[shareId]` (apps/web `ShareViewer.tsx`) had flagged
+ * in-code since #4124: that page has no public-share token in its route and
+ * the sandbox-proxy's own public-share family deliberately blocks port 8000
+ * (`PUBLIC_SHARE_BLOCKED_PORTS` in shared/session-public-shares.ts), so it
+ * could never serve a session's title/transcript to a logged-out visitor.
+ *
+ * `:shareId` here is the SESS-13 share's raw `share_id` (the uuid — the SAME
+ * value the CRUD responses call `share.share_id`), NOT the `kps_...` public
+ * token `/v1/p/public-share/:token` uses. The route derives the token
+ * server-side (`publicShareToken(shareId)`) and resolves through the exact
+ * same `resolvePublicShare()` SESS-13 covers, so it inherits identical
+ * 404 (unknown) / 410 (revoked or expired) / 503 (sandbox not provisioned
+ * yet) semantics — and ANY existing share for the session (created as a
+ * `preview` or a `file`, the only kinds the CRUD supports today) unlocks the
+ * transcript view too: a share token already proves the owner handed this
+ * link to someone outside the account, and the read-only conversation is not
+ * more sensitive than the live preview or workspace file that SAME token
+ * already exposes.
+ *
+ * The metadata route (`GET /:shareId`) is DB-only (title/status/timestamps),
+ * so it does not itself 503 on an inactive sandbox — only `resolvePublicShare`'s
+ * own missing-`externalId` check can. The messages route additionally 503s
+ * when the sandbox row exists but isn't `active`, and otherwise degrades to a
+ * 200 `{available:false, reason}` digest (mirroring the authenticated
+ * `/transcript` debug endpoint's behavior) for transient OpenCode-not-ready
+ * states — a polling frontend should retry those, not treat them as fatal.
+ */
+flow(
+  "SESS-16",
+  {
+    domain: "sessions",
+    requires: ["daytona", "funded"],
+    timeoutMs: 90_000,
+    routes: [
+      "POST /v1/projects/:projectId/sessions/:sessionId/public-shares",
+      "DELETE /v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId",
+      "GET /v1/public/session-shares/:shareId",
+      "GET /v1/public/session-shares/:shareId/messages",
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const session = await ctx.fixtures.session(project);
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const anon = ctx.client.as(ctx.P.ANON);
+
+    let shareId = "";
+    await ctx.step("create a preview public share → 201", async () => {
+      const r = await owner.post(
+        "/v1/projects/:projectId/sessions/:sessionId/public-shares",
+        { preview: { port: 5173, path: "/", label: "ke2e session-share" } },
+        { params: { projectId: project.id, sessionId: session.id } },
+      );
+      r.status(201);
+      shareId = r.json<any>()?.share?.share_id;
+    });
+
+    await ctx.step("anon: unknown share id → 404 on metadata", async () => {
+      const r = await anon.get("/v1/public/session-shares/:shareId", {
+        params: { shareId: crypto.randomUUID() },
+      });
+      r.status(404);
+    });
+
+    await ctx.step("anon: unknown share id → 404 on messages", async () => {
+      const r = await anon.get("/v1/public/session-shares/:shareId/messages", {
+        params: { shareId: crypto.randomUUID() },
+      });
+      r.status(404);
+    });
+
+    await ctx.step("anon: malformed (non-uuid) share id → 400", async () => {
+      const r = await anon.get("/v1/public/session-shares/:shareId", { params: { shareId: "not-a-uuid" } });
+      r.status(400);
+    });
+
+    await ctx.step(
+      "anon: view metadata for the real share → 200 (sandbox ready) or 503 (not yet) — never an auth error",
+      async () => {
+        const r = await anon.get("/v1/public/session-shares/:shareId", { params: { shareId } });
+        r.status([200, 503]);
+        if (r.statusCode === 200) {
+          r.body()
+            .has("$.share.share_id", shareId)
+            .has("$.share.session_id", session.id)
+            .has("$.session.session_id", session.id)
+            .exists("$.session.status")
+            .exists("$.session.created_at");
+        }
+      },
+    );
+
+    await ctx.step(
+      "anon: read the sanitized transcript for the real share → 200 (digest) or 503 (sandbox not up)",
+      async () => {
+        const r = await anon.get("/v1/public/session-shares/:shareId/messages", { params: { shareId } });
+        r.status([200, 503]);
+        if (r.statusCode === 200) {
+          r.body().exists("$.available").exists("$.messages").exists("$.message_count");
+        }
+      },
+    );
+
+    await ctx.step("revoke the share → 200", async () => {
+      const r = await owner.del("/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId", {
+        params: { projectId: project.id, sessionId: session.id, shareId },
+      });
+      r.status(200);
+    });
+
+    await ctx.step("anon: revoked share's metadata → 410 Gone (not 404)", async () => {
+      const r = await anon.get("/v1/public/session-shares/:shareId", { params: { shareId } });
+      r.status(410);
+    });
+
+    await ctx.step("anon: revoked share's messages → 410 Gone (not 404)", async () => {
+      const r = await anon.get("/v1/public/session-shares/:shareId/messages", { params: { shareId } });
+      r.status(410);
     });
   },
 );

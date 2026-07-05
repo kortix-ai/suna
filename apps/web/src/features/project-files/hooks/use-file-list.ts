@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { listFiles } from '../api/opencode-files';
 import { useProjectContext } from '../context';
-import type { FileNode } from '../types';
+import type { FileNode } from '@/features/file-browser/types';
 
 export const fileListKeys = {
   all: ['project-files', 'list'] as const,

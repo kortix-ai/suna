@@ -1,6 +1,6 @@
 'use client';
 
-import type { GitFileStatus } from '../types';
+import type { GitFileStatus } from '@/features/file-browser/types';
 
 /**
  * Project-files view: no "uncommitted changes" concept — files are already

@@ -2,30 +2,30 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useState, useMemo, useCallback } from 'react';
-import {
-  History,
-  ChevronDown,
-  ChevronRight,
-  User,
-  Clock,
-  FilePlus2,
-  FileEdit,
-  FileX2,
-  FileSymlink,
-  Copy,
-  Check,
-  AlertCircle,
-  X,
-} from 'lucide-react';
+import { DiffView } from '@/components/diff/diff-view';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { GitCommit } from '@/features/file-browser/types';
 import { cn } from '@/lib/utils';
-import { useFileExplorerSource } from '../explorer-source';
-import type { GitCommit } from '../types';
 import { createTwoFilesPatch } from 'diff';
-import { DiffView } from '@/components/diff/diff-view';
+import {
+  AlertCircle,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  Copy,
+  FileEdit,
+  FilePlus2,
+  FileSymlink,
+  FileX2,
+  History,
+  User,
+  X,
+} from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { useFileExplorerSource } from '../explorer-source';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -60,7 +60,6 @@ function formatFullDate(timestamp: number): string {
   });
 }
 
-
 // ---------------------------------------------------------------------------
 // Compact Commit Diff
 // ---------------------------------------------------------------------------
@@ -70,8 +69,20 @@ function CompactCommitDiff({ filePath, commitHash }: { filePath: string; commitH
   const { useFileCommitDiff } = useFileExplorerSource();
   const { data: diff, isLoading, error } = useFileCommitDiff(filePath, commitHash);
 
-  if (isLoading) return <div className="p-2"><Skeleton className="h-16 w-full" /></div>;
-  if (error || !diff) return <div className="p-2 text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line72JsxTextFailedToLoadDiff')}</div>;
+  if (isLoading)
+    return (
+      <div className="p-2">
+        <Skeleton className="h-16 w-full" />
+      </div>
+    );
+  if (error || !diff)
+    return (
+      <div className="text-muted-foreground p-2 text-xs">
+        {tHardcodedUi.raw(
+          'featuresProjectFilesComponentsFileHistoryPopover.line72JsxTextFailedToLoadDiff',
+        )}
+      </div>
+    );
 
   const statusIcon = {
     added: <FilePlus2 className="text-kortix-green size-3" />,
@@ -80,18 +91,18 @@ function CompactCommitDiff({ filePath, commitHash }: { filePath: string; commitH
     renamed: <FileSymlink className="text-kortix-orange size-3" />,
   }[diff.status];
 
-  const patchContent = diff.patch || (
-    diff.before !== undefined && diff.after !== undefined
+  const patchContent =
+    diff.patch ||
+    (diff.before !== undefined && diff.after !== undefined
       ? createTwoFilesPatch(filePath, filePath, diff.before, diff.after, '', '')
-      : ''
-  );
+      : '');
 
   return (
-    <div className="border-t border-border/30 bg-muted/20">
-      <div className="flex items-center gap-1.5 px-2 py-1 border-b border-border/20">
+    <div className="border-border/30 bg-muted/20 border-t">
+      <div className="border-border/20 flex items-center gap-1.5 border-b px-2 py-1">
         {statusIcon}
-        <span className="text-xs font-medium capitalize text-muted-foreground">{diff.status}</span>
-        <div className="flex items-center gap-1 ml-auto text-xs tabular-nums">
+        <span className="text-muted-foreground text-xs font-medium capitalize">{diff.status}</span>
+        <div className="ml-auto flex items-center gap-1 text-xs tabular-nums">
           {diff.additions > 0 && <span className="text-kortix-green">+{diff.additions}</span>}
           {diff.deletions > 0 && <span className="text-kortix-red">-{diff.deletions}</span>}
         </div>
@@ -101,7 +112,11 @@ function CompactCommitDiff({ filePath, commitHash }: { filePath: string; commitH
           <DiffView patch={patchContent} layout="unified" hideFileHeader />
         </div>
       ) : (
-        <div className="p-2 text-xs text-muted-foreground text-center">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line102JsxTextNoDiff')}</div>
+        <div className="text-muted-foreground p-2 text-center text-xs">
+          {tHardcodedUi.raw(
+            'featuresProjectFilesComponentsFileHistoryPopover.line102JsxTextNoDiff',
+          )}
+        </div>
       )}
     </div>
   );
@@ -116,16 +131,24 @@ function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: s
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const handleCopyHash = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    navigator.clipboard.writeText(commit.hash);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [commit.hash]);
+  const handleCopyHash = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(commit.hash);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    },
+    [commit.hash],
+  );
 
   const toggle = () => setExpanded((v) => !v);
   return (
-    <div className={cn('rounded-md border overflow-hidden transition-colors', expanded ? 'border-primary/30 bg-primary/5' : 'border-border/40 hover:border-border/60')}>
+    <div
+      className={cn(
+        'overflow-hidden rounded-md border transition-colors',
+        expanded ? 'border-primary/30 bg-primary/5' : 'border-border/40 hover:border-border/60',
+      )}
+    >
       <div
         role="button"
         tabIndex={0}
@@ -136,15 +159,21 @@ function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: s
             toggle();
           }
         }}
-        className="flex items-start gap-2 w-full px-2.5 py-2 text-left cursor-pointer hover:bg-muted/20 outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="hover:bg-muted/20 focus-visible:ring-ring flex w-full cursor-pointer items-start gap-2 px-2.5 py-2 text-left outline-none focus-visible:ring-1"
       >
-        <div className="flex items-center gap-1 mt-0.5 shrink-0">
-          {expanded ? <ChevronDown className="size-3 text-muted-foreground/50" /> : <ChevronRight className="size-3 text-muted-foreground/50" />}
-          <History className="size-3.5 text-primary/70" />
+        <div className="mt-0.5 flex shrink-0 items-center gap-1">
+          {expanded ? (
+            <ChevronDown className="text-muted-foreground/50 size-3" />
+          ) : (
+            <ChevronRight className="text-muted-foreground/50 size-3" />
+          )}
+          <History className="text-primary/70 size-3.5" />
         </div>
-        <div className="flex-1 min-w-0 space-y-0.5">
-          <p className="text-xs font-medium text-foreground leading-snug line-clamp-1">{commit.subject}</p>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <p className="text-foreground line-clamp-1 text-xs leading-snug font-medium">
+            {commit.subject}
+          </p>
+          <div className="text-muted-foreground flex items-center gap-2 text-xs">
             <span className="flex items-center gap-0.5">
               <User className="size-2.5" />
               {commit.author}
@@ -159,10 +188,16 @@ function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: s
           onClick={handleCopyHash}
           variant="muted"
           size="xs"
-          className="font-mono shrink-0"
-          title={tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line160JsxAttrTitleCopyCheckpointId')}
+          className="shrink-0 font-mono"
+          title={tHardcodedUi.raw(
+            'featuresProjectFilesComponentsFileHistoryPopover.line160JsxAttrTitleCopyCheckpointId',
+          )}
         >
-          {copied ? <Check className="text-kortix-green size-2.5" /> : <Copy className="size-2.5" />}
+          {copied ? (
+            <Check className="text-kortix-green size-2.5" />
+          ) : (
+            <Copy className="size-2.5" />
+          )}
           {commit.shortHash}
         </Button>
       </div>
@@ -189,13 +224,13 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
   const totalCheckpoints = history?.commits.length ?? 0;
 
   return (
-    <div className="flex flex-col w-[420px] max-h-[500px]">
+    <div className="flex max-h-[500px] w-[420px] flex-col">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b shrink-0">
-        <History className="h-4 w-4 text-muted-foreground shrink-0" />
-        <span className="font-medium text-sm truncate flex-1">{fileName}</span>
+      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2.5">
+        <History className="text-muted-foreground h-4 w-4 shrink-0" />
+        <span className="flex-1 truncate text-sm font-medium">{fileName}</span>
         {totalCheckpoints > 0 && (
-          <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
             {totalCheckpoints} version{totalCheckpoints !== 1 ? 's' : ''}
           </span>
         )}
@@ -207,7 +242,7 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
       {/* Content */}
       <ScrollArea className="flex-1 overflow-hidden">
         {isLoading && (
-          <div className="p-3 space-y-2">
+          <div className="space-y-2 p-3">
             {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-12 w-full rounded-lg" />
             ))}
@@ -216,34 +251,40 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
 
         {!!error && !isLoading && (
           <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
-            <AlertCircle className="h-6 w-6 text-muted-foreground/30" />
-            <p className="text-xs text-muted-foreground">
+            <AlertCircle className="text-muted-foreground/30 h-6 w-6" />
+            <p className="text-muted-foreground text-xs">
               {error instanceof Error && error.message.includes('not a git repository')
                 ? 'Not a git repository'
-                : tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line216JsxTextFailedToLoadHistory')}
+                : tHardcodedUi.raw(
+                    'featuresProjectFilesComponentsFileHistoryPopover.line216JsxTextFailedToLoadHistory',
+                  )}
             </p>
           </div>
         )}
 
         {!isLoading && !error && totalCheckpoints === 0 && (
           <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
-            <History className="h-6 w-6 text-muted-foreground/20" />
-            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line224JsxTextNoCheckpointsYet')}</p>
+            <History className="text-muted-foreground/20 h-6 w-6" />
+            <p className="text-muted-foreground text-xs">
+              {tHardcodedUi.raw(
+                'featuresProjectFilesComponentsFileHistoryPopover.line224JsxTextNoCheckpointsYet',
+              )}
+            </p>
           </div>
         )}
 
         {!isLoading && !error && totalCheckpoints > 0 && (
-          <div className="p-2 space-y-1.5">
+          <div className="space-y-1.5 p-2">
             {history!.commits.map((commit) => (
-              <CompactCommitRow
-                key={commit.hash}
-                commit={commit}
-                filePath={filePath}
-              />
+              <CompactCommitRow key={commit.hash} commit={commit} filePath={filePath} />
             ))}
             {history?.hasMore && (
-              <div className="text-center py-1">
-                <span className="text-xs text-muted-foreground/50">{tHardcodedUi.raw('featuresProjectFilesComponentsFileHistoryPopover.line240JsxTextShowingTheMostRecent')}{' '}{totalCheckpoints} versions
+              <div className="py-1 text-center">
+                <span className="text-muted-foreground/50 text-xs">
+                  {tHardcodedUi.raw(
+                    'featuresProjectFilesComponentsFileHistoryPopover.line240JsxTextShowingTheMostRecent',
+                  )}{' '}
+                  {totalCheckpoints} versions
                 </span>
               </div>
             )}

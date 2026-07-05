@@ -33,6 +33,15 @@ Verified against the code on `feat/iam-rbac-v1` (merged with `main`). Do **not**
 | Snapshot **bake/sync** (baked binaries vs cloned repo/secrets; content-addressed rebuild) | ✅ | `snapshots/builder`, `shared.ts` version pins |
 | **SSO + Azure AD SCIM** directory-sync, tested + runbook | ✅ | `iam/sso-sync.ts`, `scim/*`, `docs/ENTRA_SSO_SCIM_SETUP.md` |
 
+**⚠️ Known limitation (deferred, 2026-07-05):** per-resource visibility (`iam_resource_grants`) is
+enforced for every HTTP-facing read (dashboard, API, Slack) but **not** inside a session's sandbox —
+`authorizeGitProxy` (`projects/lib/git.ts:582`) authorizes git access on account/project ownership
+only, ignoring its `_scope` param, so a sandbox can still `git clone`/`pull` the whole repo. Secrets
+are unaffected (runtime-injected, never in the repo); the gap is config/skill/memory file visibility
+only. Planned fix: stamp resource caps into the session token at mint and have `authorizeGitProxy`
+honor them. See `docs/IAM_RBAC_V1_PLAN.md` §10 ("Known limitation (deferred): sandbox git-clone
+boundary") for detail. Marko-acknowledged, deferred out of v1, tracked as follow-up.
+
 The remaining work is the **enforcement/UX loop around** this foundation, plus a few
 architectural decoupling epics.
 
@@ -160,15 +169,16 @@ give access to the appropriate allowed Kortix scopes."
 
 **Current state.** The session token is already agent-scoped (§0). Remaining sprawl is mostly
 **legacy aliases** injected for back-compat: `KORTIX_TOKEN` (alias of `KORTIX_SANDBOX_TOKEN`),
-`KORTIX_EXECUTOR_TOKEN` (alias of `KORTIX_CLI_TOKEN`), `KORTIX_YOLO_*` (redundant with
-`KORTIX_LLM_*`). The deeper "one token, resolve all downstream creds (connectors/secrets/git)
-server-side at call time, inject nothing" is architectural.
+`KORTIX_EXECUTOR_TOKEN` (alias of `KORTIX_CLI_TOKEN`), `KORTIX_YOLO_*` (was redundant with
+`KORTIX_LLM_*` — **done**, see 5a). The deeper "one token, resolve all downstream creds
+(connectors/secrets/git) server-side at call time, inject nothing" is architectural.
 
 **Plan:**
-- **5a — Drop legacy aliases (S, coordinated).** Remove `KORTIX_TOKEN`/`KORTIX_EXECUTOR_TOKEN`/
-  `KORTIX_YOLO_*` **after the sandbox image cycles** (daemons currently read them) — this is the
-  documented "Phase 2" in `docs/specs/2026-06-28-token-session-agent-identity.md`. Must not be
-  done standalone (would break running daemons).
+- **5a — Drop legacy aliases (S, coordinated).** ~~Remove `KORTIX_TOKEN`/`KORTIX_EXECUTOR_TOKEN`/
+  `KORTIX_YOLO_*` after the sandbox image cycles (daemons currently read them)~~ — **done for
+  `KORTIX_YOLO_*`**: injection, the env allowlist, and the config default all removed in this pass.
+  `KORTIX_TOKEN`/`KORTIX_EXECUTOR_TOKEN` remain, still gated on the sandbox-image-cycle coordination
+  documented as "Phase 2" in `docs/specs/2026-06-28-token-session-agent-identity.md`.
 - **5b — Server-side credential resolution (L).** Stop injecting project runtime secrets at boot;
   have the executor resolve connectors/secrets/git per-call against the session token's scope, so
   the sandbox holds exactly one opaque, agent-scoped token and no raw credentials. Big, but it's

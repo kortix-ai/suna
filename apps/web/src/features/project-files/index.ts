@@ -37,7 +37,7 @@ export type {
   GitCommit,
   FileHistoryResult,
   FileCommitDiff,
-} from './types';
+} from '@/features/file-browser/types';
 
 // API — read
 export {
@@ -114,7 +114,7 @@ export {
   type ClipboardItem,
   type FilesStore,
   type FilesStoreApi,
-} from './store/files-store';
+} from '@/features/file-browser/store/files-store';
 
 // Per-project Version selection
 export { useVersionStore, useSelectedVersion } from './store/version-store';

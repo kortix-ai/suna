@@ -14,7 +14,7 @@ import {
   useFileUpload,
 } from './hooks/use-file-mutations';
 import { useDirectoryDownload } from './hooks/use-directory-download';
-import { useFileEventInvalidation } from './hooks/use-file-events';
+import { useFileEventInvalidation } from '@/features/file-browser/hooks/use-file-events';
 import { useFileCommitDiff, useFileHistory } from './hooks/use-file-history';
 import { useFileList } from './hooks/use-file-list';
 import { useFileSearch } from './hooks/use-file-search';
