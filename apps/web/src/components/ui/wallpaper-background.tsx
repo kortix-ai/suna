@@ -44,19 +44,41 @@ export const WallpaperBackground = memo(function WallpaperBackground({
   }
 
   if (wallpaper.type === 'svg') {
+    // The brandmark renders as ambient light rather than a hard wireframe:
+    // a heavily-blurred bloom layer underneath a gently softened outline,
+    // both dissolved by a radial mask so the mark's sharp arm tips fade out
+    // long before the viewport crops them.
+    const brandMarkMask =
+      '[mask-image:radial-gradient(ellipse_58%_52%_at_50%_50%,black_32%,transparent_78%)]';
+    const brandMarkLayout = cn(
+      'absolute left-1/2 h-auto w-[120%] -translate-x-1/2 -translate-y-1/2 object-contain select-none sm:w-[135%] lg:w-[138%]',
+      centerTopClass,
+      brandMarkMask,
+    );
     return (
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         {showBrandMark && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={wallpaper.svgUrl}
-            alt=""
-            className={cn(
-              'absolute left-1/2 h-auto w-[140%] -translate-x-1/2 -translate-y-1/2 object-contain invert select-none sm:w-[160%] lg:w-[162%] dark:invert-0',
-              centerTopClass,
-            )}
-            draggable={false}
-          />
+          <>
+            {/* Bloom — the mark as a soft glow behind the line work. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={wallpaper.svgUrl}
+              alt=""
+              className={cn(brandMarkLayout, 'opacity-60 blur-lg invert dark:invert-0')}
+              draggable={false}
+            />
+            {/* Line work — softened so the 1px stroke reads as light, not bone. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={wallpaper.svgUrl}
+              alt=""
+              className={cn(
+                brandMarkLayout,
+                'opacity-90 blur-[1px] invert dark:opacity-100 dark:invert-0',
+              )}
+              draggable={false}
+            />
+          </>
         )}
       </div>
     );
