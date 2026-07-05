@@ -56,6 +56,7 @@ import {
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ImageRenderer } from './image-renderer';
 import { VideoRenderer } from './video-renderer';
+import { getShowFileCategory, resolveShowType } from './show-type-utils';
 
 // ── Lazy-load heavy renderers ──────────────────────────────────────────────
 
@@ -73,17 +74,21 @@ const PptxRenderer = lazy(() =>
   import('./pptx-renderer').then((m) => ({ default: m.PptxRenderer })),
 );
 
-// ── Extension regexes ──────────────────────────────────────────────────────
+// ── Extension regexes + type resolution (pure, unit-tested sibling module) ──
 
-export const SHOW_IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif|tiff?|heic|heif)$/i;
-export const SHOW_VIDEO_EXT_RE = /\.(mp4|webm|mov|avi|mkv|m4v|ogv)$/i;
-export const SHOW_AUDIO_EXT_RE = /\.(mp3|wav|ogg|aac|flac|m4a|opus|wma)$/i;
-export const SHOW_PDF_EXT_RE = /\.pdf$/i;
-export const SHOW_CSV_EXT_RE = /\.(csv|tsv)$/i;
-export const SHOW_XLSX_EXT_RE = /\.xlsx?$/i;
-export const SHOW_DOCX_EXT_RE = /\.docx$/i;
-export const SHOW_PPTX_EXT_RE = /\.(pptx|ppt)$/i;
-export const SHOW_HTML_EXT_RE = /\.(html?|htm)$/i;
+export {
+  SHOW_IMAGE_EXT_RE,
+  SHOW_VIDEO_EXT_RE,
+  SHOW_AUDIO_EXT_RE,
+  SHOW_PDF_EXT_RE,
+  SHOW_CSV_EXT_RE,
+  SHOW_XLSX_EXT_RE,
+  SHOW_DOCX_EXT_RE,
+  SHOW_PPTX_EXT_RE,
+  SHOW_HTML_EXT_RE,
+  getShowFileCategory,
+  resolveShowType,
+} from './show-type-utils';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -114,20 +119,6 @@ function isLocalSandboxFilePath(value: string): boolean {
   if (!value) return false;
   if (/^(https?:|data:|blob:)/i.test(value)) return false;
   return value.startsWith('/');
-}
-
-/** Auto-detect file category from extension — used when type='file' */
-function getShowFileCategory(filePath: string): string {
-  if (SHOW_IMAGE_EXT_RE.test(filePath)) return 'image';
-  if (SHOW_VIDEO_EXT_RE.test(filePath)) return 'video';
-  if (SHOW_AUDIO_EXT_RE.test(filePath)) return 'audio';
-  if (SHOW_PDF_EXT_RE.test(filePath)) return 'pdf';
-  if (SHOW_CSV_EXT_RE.test(filePath)) return 'csv';
-  if (SHOW_XLSX_EXT_RE.test(filePath)) return 'xlsx';
-  if (SHOW_DOCX_EXT_RE.test(filePath)) return 'docx';
-  if (SHOW_PPTX_EXT_RE.test(filePath)) return 'pptx';
-  if (SHOW_HTML_EXT_RE.test(filePath)) return 'html-file';
-  return 'file';
 }
 
 /** Types loaded via useBinaryBlob (/file/raw, direct binary fetch) */
@@ -219,11 +210,12 @@ export function ShowContentRenderer({
   // panel body would scroll the whole card instead of the content within it).
   const scrollableAttr = fill ? undefined : true;
 
-  // ── Resolve effective type: 'file' auto-detects from extension ──
-  const effectiveType = useMemo(() => {
-    if (type === 'file' && path) return getShowFileCategory(path);
-    return type;
-  }, [type, path]);
+  // ── Resolve effective type ──
+  // `type: 'file'` auto-detects from extension; a textish declaration
+  // (text/markdown/code) is upgraded when the path points at a rich file type
+  // (csv/xlsx/docx/pdf/…), since agents often mislabel binary/data files as
+  // markdown or text. See `resolveShowType`.
+  const effectiveType = useMemo(() => resolveShowType(type, path), [type, path]);
 
   // ── Category flags ──
   const isImage = effectiveType === 'image';
@@ -529,13 +521,16 @@ export function ShowContentRenderer({
   // ═════════════════════════════════════════════════════════════════════════
   // CSV / TSV — loaded via useFileContent → text → CsvRenderer
   // ═════════════════════════════════════════════════════════════════════════
-  if (isCsv && path) {
-    if (csvLoading) return <RendererFallback className={mediaH} />;
-    if (csvData?.content) {
+  if (isCsv && (path || content)) {
+    // Prefer inline content when the show tool already provided it — no refetch
+    // needed, and it also covers content-only shows (no sandbox path).
+    const inlineOrLoadedCsv = content || csvData?.content;
+    if (!content && csvLoading) return <RendererFallback className={mediaH} />;
+    if (inlineOrLoadedCsv) {
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={cn(mediaH, 'overflow-hidden')}>
-            <CsvRenderer content={csvData.content} className="h-full" />
+            <CsvRenderer content={inlineOrLoadedCsv} className="h-full" />
           </div>
         </Suspense>
       );
@@ -566,7 +561,7 @@ export function ShowContentRenderer({
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={cn(mediaH, 'overflow-hidden')}>
-            <DocxRenderer blob={rawBlob} className="h-full" />
+            <DocxRenderer blob={rawBlob} fileName={fileName} className="h-full" />
           </div>
         </Suspense>
       );

@@ -1820,6 +1820,7 @@ function PDFViewerInner({
   const { registry } = useRegistry()
   const { state: scrollState, provides: scroll } = useScroll(documentId)
   const { state: zoomState, provides: zoom } = useZoom(documentId)
+  const { provides: viewportCapability } = useViewportCapability()
   const { provides: thumbnails } = useThumbnailCapability()
   const { plugin: thumbnailPlugin } = useThumbnailPlugin()
   const [sidebarOpen, setSidebarOpen] = React.useState(false)
@@ -1924,17 +1925,36 @@ function PDFViewerInner({
     return () => window.cancelAnimationFrame(frame)
   }, [activePage, documentId, thumbnailSidebarVisible, thumbnails])
 
-  // The zoom plugin only releases its viewport gate for mode-based zoom
-  // levels (automatic/fit); with a numeric default the gate would never
-  // lift, so apply the initial zoom explicitly once the document loads.
+  // The zoom plugin only releases its viewport gate for mode-based zoom levels
+  // (automatic/fit); with a numeric default the gate would never lift on its
+  // own, so apply the initial zoom explicitly once the document loads.
+  //
+  // If the viewport is zero-sized at that moment — e.g. the card mounts
+  // collapsed / `display:none` and only expands later (a streaming tool card) —
+  // the zoom request bails on the plugin's zero-metrics guard *without*
+  // releasing the gate, and for a numeric zoom nothing ever retries, leaving the
+  // page area blank while the toolbar still reports the page count. Re-request
+  // the zoom when the viewport later reports a non-zero size, guarded by
+  // `isGated` so an ordinary resize never clobbers a user's chosen zoom.
   const initialZoomDocumentRef = React.useRef<string | null>(null)
   React.useEffect(() => {
-    if (!pdfDocument || !zoom) return
-    if (initialZoomDocumentRef.current === documentId) return
+    if (!pdfDocument || !zoom || !viewportCapability) return
 
-    initialZoomDocumentRef.current = documentId
-    zoom.requestZoom(defaultZoom)
-  }, [defaultZoom, documentId, pdfDocument, zoom])
+    if (initialZoomDocumentRef.current !== documentId) {
+      initialZoomDocumentRef.current = documentId
+      zoom.requestZoom(defaultZoom)
+    }
+
+    if (!viewportCapability.isGated(documentId)) return
+
+    return viewportCapability.onViewportResize((event) => {
+      if (event.documentId !== documentId) return
+      const { clientWidth, clientHeight } = event.metrics
+      if (clientWidth > 0 && clientHeight > 0 && viewportCapability.isGated(documentId)) {
+        zoom.requestZoom(defaultZoom)
+      }
+    })
+  }, [defaultZoom, documentId, pdfDocument, zoom, viewportCapability])
 
   const scrollToPage = React.useCallback(
     (pageNumber: number, options?: ScrollIntoViewOptions) => {

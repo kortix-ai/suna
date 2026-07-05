@@ -236,6 +236,7 @@ export function EditableFileRenderer({
       ) : fileType === 'docx' && binaryUrl ? (
         <DocxRenderer
           url={binaryUrl}
+          fileName={fileName}
           className="h-full w-full"
         />
       ) : fileType === 'pptx' ? (

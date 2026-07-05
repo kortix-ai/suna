@@ -1,6 +1,28 @@
 import { describe, expect, test } from 'bun:test';
 
-import { resolveDocxSource } from './docx-renderer';
+import { ensureDocxFileName, resolveDocxSource } from './docx-renderer';
+
+describe('ensureDocxFileName', () => {
+  test('returns a default name when the file name is missing', () => {
+    expect(ensureDocxFileName(undefined)).toBe('document.docx');
+  });
+
+  test('passes through a name that already ends in .docx', () => {
+    expect(ensureDocxFileName('Report.docx')).toBe('Report.docx');
+  });
+
+  test('passes through a legacy .doc name (case-insensitive)', () => {
+    expect(ensureDocxFileName('Report.DOC')).toBe('Report.DOC');
+  });
+
+  test('appends .docx to a bare name', () => {
+    expect(ensureDocxFileName('notes')).toBe('notes.docx');
+  });
+
+  test('returns a default name for a blank/whitespace name', () => {
+    expect(ensureDocxFileName('  ')).toBe('document.docx');
+  });
+});
 
 describe('resolveDocxSource', () => {
   test('prefers blob over url and returns a revocable object URL', () => {
