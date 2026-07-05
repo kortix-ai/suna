@@ -11,7 +11,7 @@ description = "A Kortix project."
 # Secrets Manager before a session can start.
 [env]
 required = []
-optional = ["STRIPE_API_KEY"]
+optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
 
 # ─── Sandbox templates ───────────────────────────────────────────────────
 # Sessions boot from a sandbox image. The platform's default image (Ubuntu +

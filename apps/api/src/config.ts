@@ -150,19 +150,6 @@ const envSchema = z.object({
   // the executor token is re-minted per requested agent before tool execution.
   KORTIX_ENFORCE_SESSION_AGENT_LOCK: optBoolFalse,
 
-  // Mandatory declared agents (docs/specs/2026-07-05-agent-first-config-unification.md
-  // §2.1/§3 Phase 2). GATED OFF platform-wide by default — flipping it on would
-  // immediately reject every session/trigger on a pre-existing, agent-less project.
-  // The intent is ON for NEW projects: since there's no per-project flag store yet,
-  // a project is "subject" to enforcement when EITHER this is true OR its own
-  // `project.metadata.require_declared_agents === true` (stamped at creation —
-  // see POST /projects/provision). When subject: an agent name not declared in
-  // `[[agents]]`/`agents:` is rejected outright (never silently resolved to the
-  // permissive null grant), and the `default` sentinel must resolve to a
-  // *declared* default_agent. Non-subject projects keep the v1 adopt-to-govern
-  // behavior (absence of `[[agents]]` → unrestricted) untouched.
-  KORTIX_REQUIRE_DECLARED_AGENTS: optBoolFalse,
-
   // ── Legacy migration — reaching legacy JustAVPS VMs + backup storage ──────
   // The new backend has no JustAVPS provider, but it must reach legacy VMs to
   // back them up. VMs are reachable via the CF proxy at {slug}.{proxy domain};
@@ -590,7 +577,6 @@ export const config = {
   KORTIX_PRERESUME_ENABLED: env.KORTIX_PRERESUME_ENABLED,
   KORTIX_PRERESUME_MAX_PER_PROJECT: env.KORTIX_PRERESUME_MAX_PER_PROJECT,
   KORTIX_ENFORCE_SESSION_AGENT_LOCK: env.KORTIX_ENFORCE_SESSION_AGENT_LOCK,
-  KORTIX_REQUIRE_DECLARED_AGENTS: env.KORTIX_REQUIRE_DECLARED_AGENTS,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────
   JUSTAVPS_PROXY_DOMAIN: env.JUSTAVPS_PROXY_DOMAIN,

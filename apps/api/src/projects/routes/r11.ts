@@ -53,7 +53,6 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_REVIEW_READ);
 
     const segment = normalizeString(c.req.query('segment'))?.toLowerCase();
     if (segment && !SEGMENTS.includes(segment as (typeof SEGMENTS)[number])) {
@@ -92,7 +91,6 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_REVIEW_READ);
 
     const item = await getReviewItemById(c.req.param('reviewItemId'), projectId);
     if (!item) return c.json({ error: 'Review item not found' }, 404);

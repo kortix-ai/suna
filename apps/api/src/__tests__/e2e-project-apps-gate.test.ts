@@ -62,7 +62,6 @@ mock.module('../projects/git', () => ({
   archiveRepoSubtree: async () => undefined,
   listRepoFiles: async () => [],
   readRepoFile: async () => 'kortix_version = 1\n[project]\nname = "x"\n',
-  readManifestFromRepo: async () => null,
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
@@ -151,9 +150,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   getCreditBalance: async () => ({ balance: 0, granted: 0, used: 0 }),
   updateCreditAccount: async () => {},
 }));
-const realProjectSecrets = await import('../projects/secrets');
 mock.module('../projects/secrets', () => ({
-  ...realProjectSecrets,
   encryptProjectSecret: (_p: string, v: string) => v,
   decryptProjectSecret: (_p: string, v: string) => v,
   isValidSecretName: () => true,

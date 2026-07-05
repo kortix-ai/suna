@@ -35,26 +35,6 @@ describe('kortix.toml — schema versioning', () => {
     expect(() => parseManifestString(`kortix_version = 99\n${MIN_PROJECT}`)).toThrow(/Unsupported kortix\.toml schema version 99/);
   });
 
-  // kortix_version 2 (the `agents:` map manifest — spec §2.1/§2.2) must NOT
-  // throw here: this reader (readManifest → parseManifestString) is what the
-  // whole session/trigger grant pipeline reads through (extractAgents in
-  // ../projects/agents.ts is the v2-aware consumer). Rejecting v2 at THIS
-  // layer was the runtime-wiring bug the fix closes — every v2 project would
-  // otherwise resolve to either fully-unrestricted (a swallowed read error) or
-  // every-session-rejected, instead of the agent's declared grant.
-  test('kortix_version 2 no longer throws — the reader every consumer (agents/triggers) reads through', () => {
-    const parsed = parseManifestString(
-      'kortix_version: 2\ndefault_agent: support\nproject:\n  name: test\nagents:\n  support:\n    description: x\n',
-      'yaml',
-      'kortix.yaml',
-    );
-    expect(parsed.schemaVersion).toBe(2);
-  });
-
-  test('a version above the v2 ceiling is still rejected', () => {
-    expect(() => parseManifestString(`kortix_version = 3\n${MIN_PROJECT}`)).toThrow(/Unsupported kortix\.toml schema version 3/);
-  });
-
   test('serialize always emits kortix_version as the first key', () => {
     const parsed = parseManifestString(`kortix_version = 1\n${MIN_PROJECT}`);
     const out = serializeManifest(parsed);
@@ -556,39 +536,4 @@ describe('[[triggers]] — runtime parser ⇄ schema gate agreement', () => {
       expect(schemaOk).toBe(accept);
     });
   }
-});
-
-// Regression guard: trigger `path` / error `path` breadcrumbs used to
-// hard-code `kortix.toml` regardless of which file the manifest actually came
-// from. They now derive the filename from the parsed manifest's own `path`
-// (set by `parseManifestString`), so a `kortix.yaml` project's spec/error
-// paths say `kortix.yaml`, not a lie about a file that doesn't exist there.
-describe('[[triggers]] — spec/error `path` derives from the manifest\'s own filename', () => {
-  test('a yaml manifest\'s trigger spec path says kortix.yaml', () => {
-    const manifest = parseManifestString(
-      `kortix_version: ${KNOWN_SCHEMA_VERSION}\nproject:\n  name: test\ntriggers:\n  - slug: nightly\n    type: cron\n    cron: "0 9 * * *"\n    prompt: go\n`,
-      'yaml',
-      'kortix.yaml',
-    );
-    const { specs, errors } = extractTriggers(manifest);
-    expect(errors).toEqual([]);
-    expect(specs[0]?.path).toBe('kortix.yaml#triggers.nightly');
-  });
-
-  test('a yaml manifest\'s `[triggers]` (non-array) error path says kortix.yaml', () => {
-    const manifest = parseManifestString(
-      `kortix_version: ${KNOWN_SCHEMA_VERSION}\nproject:\n  name: test\ntriggers:\n  slug: nightly\n`,
-      'yaml',
-      'kortix.yaml',
-    );
-    const { errors } = extractTriggers(manifest);
-    expect(errors[0]?.path).toBe('kortix.yaml');
-  });
-
-  test('a toml manifest still says kortix.toml (default, unchanged)', () => {
-    const { specs } = extractTriggers(parseManifestString(manifestWith(
-      `[[triggers]]\nslug = "nightly"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"`,
-    )));
-    expect(specs[0]?.path).toBe('kortix.toml#triggers.nightly');
-  });
 });

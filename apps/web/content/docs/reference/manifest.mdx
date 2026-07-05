@@ -21,7 +21,7 @@ description = "What this project is."
 
 [env]
 required = ["DATABASE_URL"]
-optional = ["STRIPE_API_KEY", "WEBHOOK_SLACK_SECRET"]
+optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "WEBHOOK_SLACK_SECRET"]
 
 [[sandbox.templates]]
 slug = "ml"                         # unique per project
@@ -76,10 +76,8 @@ kortix_version = 1
 | Sandbox runtime   | `[opencode]` (where to launch opencode with its config) |
 | Session bootstrap | `[env]` (advisory — surfaced to dashboard, not enforced)|
 | Connector sync    | `[[connectors]]`                                        |
-| Agent governance  | `[[agents]]` (server-side launch roster + connector/`kortix_cli`/secret grants) |
 | Apps deploy sweep | `[[apps]]` (when `KORTIX_APPS_EXPERIMENTAL=true`)        |
 | Dashboard UI      | All of the above + the raw manifest                     |
-| *(none — validated only)* | `[[channels]]` parses and round-trips but no runtime path reads it — see below |
 
 ## `[project]`
 
@@ -94,7 +92,7 @@ Declares the env vars your sessions need. Values live in the Kortix Secrets Mana
 ```toml
 [env]
 required = ["DATABASE_URL"]
-optional = ["STRIPE_API_KEY"]
+optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
 ```
 
 | Field      | Type       | Notes                                                                  |
@@ -225,34 +223,6 @@ Cron-only: `cron` (6-field croner `second minute hour day month weekday`) and `t
 
 The parser accepts only canonical trigger field names. Slug uniqueness is per-section — a trigger and an app may share a slug; two triggers may not.
 
-## `[[channels]]`
-
-Array of tables. Each entry documents a chat platform (Slack today) connected to the project. **Validated but not wired to any runtime behavior** in this schema version — declaring one, or editing `enabled`/`agent`/`events`/`prompt_prefix`, changes nothing about how the platform actually routes messages. The live channel→agent binding is the `chat_channel_bindings` database row, set from inside Slack (its slash commands) or the dashboard's Channels page, not from this file.
-
-```toml
-[[channels]]
-platform = "slack"
-enabled = true                  # optional, default true
-agent = "kortix"                 # optional — parsed, not consumed
-events = ["mention", "dm"]        # optional, array of strings — parsed, not consumed
-prompt_prefix = """
-You're working on {{ project.name }}.
-{{ message.text }}
-"""
-```
-
-| Field           | Required | Type       | Default | Notes                                                                 |
-| --------------- | -------- | ---------- | ------- | ---------------------------------------------------------------------- |
-| `platform`      | yes      | string     | —       | e.g. `"slack"`. One entry per platform per project — a duplicate `platform` is a validation error. |
-| `enabled`       | no       | bool       | `true`  | Validated as a boolean. Not read by any runtime path.                  |
-| `agent`         | no       | string     | —       | Parsed, not validated, not consumed.                                    |
-| `events`        | no       | `string[]` | —       | Parsed as an array of strings. Not consumed.                            |
-| `prompt_prefix` | no       | string     | —       | Parsed. Not consumed.                                                   |
-
-<Callout type="warn" title="Declared but inert">
-Connecting Slack from the dashboard writes the install (bot token, signing secret) into the project's secrets and creates the live `chat_channel_bindings` row — that row, not this manifest block, decides which agent answers in which channel. A hand-written `[[channels]]` entry documents intent for readers of the repo but has no effect on running behavior. Manage channel routing from Slack or the dashboard's Channels page.
-</Callout>
-
 ## `[[connectors]]`
 
 Array of tables. Each entry connects an external tool the agent can call. The
@@ -308,43 +278,6 @@ store, not in `kortix.toml`. Auth is not allowed with `provider = "pipedream"`.
 
 Optional per-tool gates. `match` (glob over tool names, required) + `action` =
 `always_run | require_approval | block` (required).
-
-## `[[agents]]`
-
-Array of tables. Optional — with no `[[agents]]` section, every session is capped only by the launching human's role (the project hasn't adopted per-agent governance). Adding **any** `[[agents]]` entry opts the whole project into declarative, server-side agent governance: any agent name not listed here is then default-denied — it still runs its OpenCode `.md` behavior, but with no connectors, no `kortix_cli` powers, and no project secrets.
-
-An agent's *behavior* (prompt, mode, tools, permission tree) still lives entirely in its OpenCode `.md` file under `.kortix/opencode/agents/`. `[[agents]]` is a governance overlay on top of that: which agent names the platform will launch, and what each one may touch.
-
-```toml
-[[agents]]
-name       = "kortix"            # your default general-purpose agent
-kortix_cli = "all"                # full Kortix CLI/API powers (∩ the launching user's role)
-connectors = "all"                # every connector profile
-
-[[agents]]
-name       = "release-bot"       # a scoped specialist
-connectors = ["github"]
-kortix_cli = ["project.cr.open"]  # may open a CR, but not merge it
-env        = ["GITHUB_AGENT_TOKEN"]  # only this secret, instead of every project secret
-```
-
-| Field        | Required | Type                          | Default        | Notes                                                                 |
-| ------------ | -------- | ------------------------------ | --------------- | ---------------------------------------------------------------------- |
-| `name`       | yes      | string                          | —                | `[a-z0-9][a-z0-9_-]{0,127}`, unique per project. Matches the OpenCode `.md` filename it governs. |
-| `enabled`    | no       | bool                            | `true`           | `false` treats the name as undeclared — default-deny once the project has adopted `[[agents]]`. |
-| `connectors` | no       | `string[] \| "all" \| "none"`   | none (`[]`)      | Which `[[connectors]]` slugs this agent may call. `"all"` = every connector profile not scoped away from it. |
-| `kortix_cli` | no       | `string[] \| "all" \| "none"`   | none (`[]`)      | Which Kortix CLI/API actions (open/merge CRs, deploy, manage triggers, spawn sessions, …) this agent may perform. `"all"` = everything the *launching user* can do. Effective grant is always `userRole ∩ agentGrant` — an agent can never exceed its launcher. Run `kortix validate --scopes` for the full grantable-action list. |
-| `env`        | no       | `string[] \| "all" \| "none"`   | **`"all"`**      | Project secret names this agent receives as sandbox env vars and may read via the secrets API. Unlike `connectors`/`kortix_cli`, omitting `env` defaults to **all** project secrets — `env` is a newer dimension than the other two grants, so an omitted key must not silently starve agents declared before it existed. Narrow it with an explicit list or `"none"`. |
-| `model`      | no       | string                          | —                | Wire form `provider/model` (e.g. `anthropic/claude-sonnet-5`). **Parsed and round-tripped, but not yet applied at runtime** — the effective model today comes from session/trigger model preferences, not this field. |
-| `file`       | no       | string                          | conventional `.md` by name | Override path to the agent's OpenCode behavior file. **Parsed but not currently used** during materialization — the agent's `.md` is still resolved by its conventional filename. |
-
-<Callout type="info" title="The `default` sentinel">
-A trigger, channel, or session that names no agent (or names the literal `"default"`) does **not** resolve to a declared `[[agents]]` entry — no agent is ever named `default`. It resolves to OpenCode's own configured default agent (conventionally `kortix`) and is treated as non-binding: full access, capped only by the launching user's role, exactly as if the project had no `[[agents]]` at all.
-</Callout>
-
-<Callout type="warn" title="Two fields don't do anything yet">
-`model` and `file` round-trip through the manifest (dashboard edits preserve them) but neither is consulted by the runtime today. Don't rely on them to change what a session actually does.
-</Callout>
 
 ## `[[apps]]` (experimental)
 

@@ -228,37 +228,11 @@ agent." Target:
   boundary rule that keeps credentials out of git. The channel *integration*
   itself remains a connector profile (`provider: channel`), which is the
   declarative part.
-- **`per_user` credential mode is removed now, and redesigned later as an
-  explicit "connect your own account" feature** (decided 2026-07-05, after prod
-  sizing: 248 per_user connectors across 138 accounts but only **69** stored
-  per-member credential rows; shared already dominates Pipedream 592 vs 247).
-
-  *Why the concept is real (the driving use case):* a single shared agent
-  definition — e.g. a sales-outreach agent needing LinkedIn/email/X — that must
-  act as **whichever team member is running it**, so you don't duplicate the
-  agent once per employee. That is legitimate and important. But it is
-  fundamentally *delegated identity*: "resolve credentials as the human who
-  launched this session." It has a coherent answer only for **interactive,
-  human-in-the-loop** sessions. The same agent on a **trigger or channel** (no
-  human) has no answer to "whose account?" — there it must use an agent-owned
-  (shared) credential. Today's `per_user` conflates these, is the ambient
-  default for all of Pipedream, and leaks launcher identity into the credential
-  path for every session type, which is the specific coupling blocking clean
-  agent-first identity.
-
-  *What ships now (removal):* Pipedream's default flips to `shared`; existing
-  per_user connectors flip to `shared` with **no silent credential promotion**
-  — a per-member OAuth is a personal identity, so affected connectors clear
-  their credential and surface "reconnect required" for someone with
-  connector-write authority; the per-member credential rows are deleted by the
-  migration. Affected accounts get comms before the carrying release.
-
-  *What comes back later (the redesign, tracked, not built now):* a deliberate
-  **per-member connected-accounts** feature — each member links their own
-  LinkedIn/email/X to a shared agent, scoped to **interactive sessions only**,
-  with autonomous runs of the same agent falling back to an agent-owned
-  credential or being explicitly disallowed. The sales-outreach scenario above
-  is the acceptance test for that feature.
+- **`per_user` credential mode is retained** in v2 (removal was investigated and
+  is a founder-gated breaking change — it's the default for the whole Pipedream
+  provider). The agent-first end-state (§4b of the AUTHZ plan: sessions resolve
+  credentials as the agent SA, not the launcher) supersedes it *eventually*;
+  sizing SQL is drafted and should be run against prod before any decision.
 
 ### 2.6 Kortix CLI permissions: role-anchored, approval-capable
 
@@ -349,7 +323,7 @@ Each phase is independently shippable; order minimizes rework.
 | **0. Hygiene** (now, with IAM finalisation) | Starter key examples removed; Members copy fix; Groups/Roles visual gating; manifest.mdx agents/channels docs; CLI-leaf enforcement audit | S |
 | **1. Schema v2 + compiler skeleton** | `kortix_version: 2` YAML schema (unified agent block, `secrets` rename, deny-by-default, `runtime` enum, `[[channels]]` removal); server-side `compileAgentConfig` for opencode; frontmatter-illegal rule; dead-field removal; `manifest-edit`/validate-endpoint format fixes | L |
 | **2. Mandatory agents + trigger identity** | `KORTIX_REQUIRE_DECLARED_AGENTS` flag (on for new projects); default-sentinel-must-resolve rule; trigger/channel sessions attributed to agent SA; web Channels management surface | M |
-| **3. Secrets v2 + approvals + per_user removal** | display name + per-agent values (schema + resolution + UI/CLI); CLI-action approval tier via Review Center (default set: `project.gitops.merge`); remove `per_user` credential mode per §2.5 (migration + reconnect-required UX + account comms) | L |
+| **3. Secrets v2 + approvals** | display name + per-agent values (schema + resolution + UI/CLI); CLI-action approval tier via Review Center | M-L |
 | **4. Git boundary** | `workspace`/`git` powers per agent; resource caps stamped into session token; `authorizeGitProxy` enforces; auto-clone policy per agent | L |
 | **5. Migration & sunset** | `kortix migrate` CR generator; dashboard banner; v1 write-freeze; eventually flip remaining projects | M |
 
@@ -357,19 +331,14 @@ Phase 0 ships in the IAM-finalisation PR this spec accompanies. Phases 1–2 are
 the "agent-first identity is real everywhere" milestone; 3–5 are quality and
 consolidation.
 
-## 4. Decisions (resolved 2026-07-05 unless noted)
+## 4. Open decisions (Marko)
 
-1. **`per_user` connector credentials**: **REMOVE now, REDESIGN later** —
-   confirmed 2026-07-05. Prod sizing (69 credential rows, 138 accounts, shared
-   already dominant) makes the migration tractable. The delegated-identity use
-   case (one shared agent acting as each member — e.g. sales outreach) is real
-   and becomes the spec for a future explicit "connect your own account"
-   feature scoped to interactive sessions; it is NOT preserved by keeping
-   today's launcher-coupled ambient default. Removal + safe migration lands in
-   Phase 3; the redesign is tracked separately.
-2. **Approval-tier default set**: `project.gitops.merge` only in new projects.
-3. **v2 deny-by-default for `secrets`**: confirmed. Migration writes explicit
-   `all` into converted manifests; only newly declared v2 agents feel it.
-4. **Timing of Phase 4** relative to bringing Codex/Claude runtimes — still
-   open; the compiler (Phase 1) is the prerequisite for both; they can proceed
-   in parallel after it.
+1. **`per_user` connector credentials**: run the sizing SQL on prod, then decide
+   sunset vs. keep-under-v2. (Blocked on data, not on design.)
+2. **Approval-tier default set**: which CLI actions ship `require_approval` by
+   default in new projects — proposal: `project.gitops.merge` only.
+3. **v2 deny-by-default for `secrets`**: confirmed as specified? (Migration
+   writes explicit `all`, so only *newly declared* v2 agents feel it.)
+4. **Timing of Phase 4** relative to bringing Codex/Claude runtimes — the
+   compiler (Phase 1) is the prerequisite for both; they can proceed in parallel
+   after it.

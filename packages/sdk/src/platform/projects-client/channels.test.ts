@@ -11,11 +11,9 @@ import {
   getSlackInstallation,
   getSlackManifest,
   getSlackMode,
-  listChannelBindings,
   previewMeetVoice,
   setMeetBotName,
   setMeetVoice,
-  updateChannelBinding,
   updateEmailPolicy,
 } from './channels';
 
@@ -172,61 +170,4 @@ test('updateEmailPolicy defaults connector_slug to kortix_email', async () => {
     allowedRegex: null,
   });
   expect(last().body).toMatchObject({ connector_slug: 'kortix_email' });
-});
-
-test('listChannelBindings hits the bindings collection', async () => {
-  nextResponse = {
-    status: 200,
-    body: {
-      projectDefaultAgent: 'support',
-      bindings: [
-        {
-          bindingId: 'b1',
-          platform: 'slack',
-          workspaceId: 'W1',
-          channelId: 'C1',
-          channelName: null,
-          channelType: null,
-          agentName: null,
-          opencodeModel: null,
-          conversationPolicy: 'project_open',
-          installedAt: '2026-01-01',
-          effectiveAgent: { agent: 'support', source: 'project' },
-        },
-      ],
-    },
-  };
-  const result = await listChannelBindings('P1');
-  expect(last().url).toContain('/projects/P1/channels/bindings');
-  expect(last().method).toBe('GET');
-  expect(result.projectDefaultAgent).toBe('support');
-  expect(result.bindings).toHaveLength(1);
-  expect(result.bindings[0]?.effectiveAgent).toEqual({ agent: 'support', source: 'project' });
-});
-
-test('updateChannelBinding PATCHes the binding by id', async () => {
-  nextResponse = {
-    status: 200,
-    body: {
-      bindingId: 'b1',
-      platform: 'slack',
-      workspaceId: 'W1',
-      channelId: 'C1',
-      channelName: null,
-      channelType: null,
-      agentName: 'billing',
-      opencodeModel: null,
-      conversationPolicy: 'owner_only',
-      installedAt: '2026-01-01',
-      effectiveAgent: { agent: 'billing', source: 'explicit' },
-    },
-  };
-  const result = await updateChannelBinding('P1', 'b1', { agentName: 'billing', conversationPolicy: 'owner_only' });
-  expect(last().url).toContain('/projects/P1/channels/bindings/b1');
-  expect(last().method).toBe('PATCH');
-  expect(last().body).toEqual({ agentName: 'billing', conversationPolicy: 'owner_only' });
-  expect(result.agentName).toBe('billing');
-
-  nextResponse = { status: 404, body: { message: 'not found' } };
-  await expect(updateChannelBinding('P1', 'unknown', { agentName: null })).rejects.toThrow('not found');
 });

@@ -492,12 +492,10 @@ describe('exported constants', () => {
     expect(ENV_NAME_RE.test('lower')).toBe(false);
   });
 
-  test('GRANTABLE_KORTIX_CLI_ACTIONS includes project actions but not billing or channel.*', () => {
+  test('GRANTABLE_KORTIX_CLI_ACTIONS includes project and channel actions but not billing', () => {
     expect(GRANTABLE_KORTIX_CLI_ACTIONS).toContain('project.read');
-    expect(GRANTABLE_KORTIX_CLI_ACTIONS).toContain('project.connector.write');
+    expect(GRANTABLE_KORTIX_CLI_ACTIONS).toContain('channel.send');
     expect(GRANTABLE_KORTIX_CLI_ACTIONS).not.toContain('billing.read');
-    // channel.* was removed from the catalog — never wired to any route.
-    expect(GRANTABLE_KORTIX_CLI_ACTIONS).not.toContain('channel.send');
   });
 });
 

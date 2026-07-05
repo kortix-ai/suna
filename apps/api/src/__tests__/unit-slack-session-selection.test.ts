@@ -59,7 +59,7 @@ mock.module('../channels/slack/selection', () => ({
   currentChannelSelection: async () => selection,
   // session.ts only uses currentChannelSelection; the rest are here so the
   // module shape stays complete for any other importer in the graph.
-  setChannelAgent: async () => ({ ok: true }),
+  setChannelAgent: async () => true,
   setChannelConversationPolicy: async () => true,
   setChannelModel: async () => true,
   listProjectAgents: async () => [],
@@ -68,21 +68,6 @@ mock.module('../channels/slack/selection', () => ({
   ],
   isValidModelId: (id: string) => id.includes('/'),
   modelLabel: (id: string) => id,
-}));
-
-const realIam = await import('../iam');
-mock.module('../iam', () => ({
-  ...realIam,
-  authorize: async () => ({ allowed: true }),
-  assertAuthorized: async () => {},
-  filterAccessibleProjectResources: async (
-    _userId: string,
-    _accountId: string,
-    _projectId: string,
-    _resourceType: string,
-    resourceIds: readonly string[],
-  ) => [...resourceIds],
-  unscopedResourceIds: async (_projectId: string, _resourceType: string, resourceIds: readonly string[]) => [...resourceIds],
 }));
 
 mock.module('../channels/slack/turn', () => ({

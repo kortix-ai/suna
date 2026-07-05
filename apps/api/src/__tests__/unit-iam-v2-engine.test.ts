@@ -42,9 +42,10 @@ describe('scopeForActionV2', () => {
     expect(scopeForActionV2(PROJECT_ACTIONS.PROJECT_SESSION_START)).toBe('project');
   });
 
-  test('sandbox.* / trigger.* collapse into project scope', () => {
+  test('sandbox.* / trigger.* / channel.* collapse into project scope', () => {
     expect(scopeForActionV2('sandbox.start')).toBe('project');
     expect(scopeForActionV2('trigger.fire')).toBe('project');
+    expect(scopeForActionV2('channel.send')).toBe('project');
   });
 });
 

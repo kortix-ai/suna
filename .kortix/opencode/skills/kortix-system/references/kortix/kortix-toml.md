@@ -24,7 +24,7 @@ description = "What this project is."
 # session start.
 [env]
 required = ["DATABASE_URL"]
-optional = ["STRIPE_API_KEY", "WEBHOOK_SLACK_SECRET"]
+optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "WEBHOOK_SLACK_SECRET"]
 
 # Sandbox base image. Sessions run from a snapshot built off this
 # Dockerfile. Both paths default to ".kortix/Dockerfile" / "." when
@@ -123,9 +123,8 @@ kortix_cli = ["project.deploy", "project.cr.open"]   # may OPEN a CR, but not me
 **Grantable `kortix_cli` actions** (project-scoped only — account-level admin
 actions can never be granted to an agent; run `kortix validate --scopes`):
 `project.read|write|delete|deploy`, `project.cr.open|merge`,
-`project.session.read|start|stop`, `project.members.read|manage`,
-`project.trigger.read|create|update|delete|fire`, `project.connector.read|write`
-(channels — Slack/meet/email send + connect — are gated on `project.connector.write`).
+`project.session.read|start|exec|stop`, `project.members.read|manage`,
+`project.trigger.read|create|update|delete|fire`, `channel.read|connect|send|disconnect`.
 
 **Resolution at session start:** no `[[agents]]` section → legacy mode: no
 agent-grant restriction and older paths may discover agents directly from
@@ -450,7 +449,7 @@ inline in the repo**.
    ```toml
    [env]
    required = ["DATABASE_URL"]
-   optional = ["STRIPE_API_KEY", "WEBHOOK_SLACK_SECRET"]
+   optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "WEBHOOK_SLACK_SECRET"]
    ```
 2. Set the value in the Kortix Secrets Manager (dashboard).
 3. When a session boots, the platform decrypts every secret on the

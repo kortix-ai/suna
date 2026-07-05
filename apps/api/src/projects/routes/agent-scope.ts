@@ -68,7 +68,7 @@ projectsApp.openapi(
     const current = Array.isArray(manifest.raw.agents)
       ? (manifest.raw.agents as Record<string, unknown>[])
       : [];
-    const applied = applyAgentScope(current, agentName, { env, connectors }, manifest.path);
+    const applied = applyAgentScope(current, agentName, { env, connectors });
     if (!applied.ok) return c.json({ error: applied.error, code: 'agent_not_found' }, 404);
     manifest.raw.agents = applied.agents;
 
