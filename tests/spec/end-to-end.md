@@ -133,7 +133,9 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 
 All under `/accounts/:id/iam/*`, each route gated by its named action. Run every one as the gating role (2xx) and as `MEMBER` (403).
 
-`IAM-1` `GET …/iam/groups` (`GROUP_READ`) · `POST` (`GROUP_CREATE`) → 201.
+Group/role/policy-writing and SSO/SCIM-writing routes are ALSO gated behind `requireEntitlement` (`rbac`/`sso`/`scim` — see `IAM-32/33`): a fresh account with no billing row resolves to tier `none` (`NO_ENTERPRISE`), so `IAM-1/2/3/14/21/23/24/25/26` first `PUT …/iam/enterprise-demo {enabled:true}` on their `team()` fixture account to unlock the surface before exercising it — a real Enterprise tier would work identically, the demo toggle is just the self-serve stand-in used in-suite.
+
+`IAM-1` `GET …/iam/groups` (`GROUP_READ`) · `POST` (`GROUP_CREATE`, `rbac`-gated) → 201.
 `IAM-2` `GET/PATCH/DELETE …/iam/groups/:gid` (`GROUP_READ`/`UPDATE`/`DELETE`).
 `IAM-3` `GET …/iam/groups/:gid/members` (`GROUP_READ`); `POST`/`DELETE …/members/:userId` (`GROUP_MEMBERS_MANAGE`).
 `IAM-4` Effective probe: `GET …/iam/members/:userId/effective?action=…[&resourceType=&resourceId=]` (`MEMBER_READ`; self-probe always allowed) → `{allowed, reason, action, resource_type}`. Built-in account/project membership remains the default decision source; custom policies are additive and covered in `IAM-25/26`.
@@ -150,6 +152,17 @@ All under `/accounts/:id/iam/*`, each route gated by its named action. Run every
 `IAM-13` **scope match** — a project group-grant matches only its own project. Grant a group Manager on project A; a member of that group probed with `resourceType=project&resourceId=A` → `project.delete` allowed (`reason:project_role`); the same probe against project B (no grant) → denied (`reason:no_project_membership`). Asserted via the effective endpoint with/without the matching `resourceId`.
 `IAM-25` Custom roles/action catalog: `GET …/iam/actions`, `GET/POST/PATCH/DELETE …/iam/roles`, `GET/PUT …/iam/roles/:roleId/permissions`, `GET …/usage`. Invalid role key → 400; built-in role permission edit/delete → 400.
 `IAM-26` Custom policies: `GET/POST/PATCH/DELETE …/iam/policies`, `POST …/iam/policies:bulk-delete`, `POST …/iam/policies:bulk-import`, plus `GET …/iam/agent-identities`. Built-in role policy → 400; non-member read → 403.
+
+### Approval control-plane (project access-requests, approvals, agent/connector scoping)
+The human-in-the-loop surface an agent's write/destructive tool calls gate on, plus its adjacent per-agent scoping and the Enterprise preview/import surfaces. `GET /projects/:id/approvals[/needs-input]` and `POST /projects/:id/approvals/:id` gate on plain IAM capability (`project.members.manage`/`project.read`), never a billing tier — see PR #4117 (a prior 402 regression on the per-session audit poll); these must never start 402ing.
+
+`IAM-27` `POST /projects/:id/access-requests {message?}` (any signed-in caller; already-has-access short-circuits `{status:"already_has_access"}`) → 201 `{status:"created",request}`; re-request while pending → 200 `{status:"pending",request}`. `GET /projects/:id/access-requests` (`project.members.manage`) → 200 `{requests:[...]}` pending only; caller with no project grant → 404 (project existence hidden, not 403); unknown project → 404.
+`IAM-28` `POST /projects/:id/access-requests/:rid/approve {role?}` / `.../reject` (`project.members.manage` — stricter than plain `manage`/`project.write`, so an editor without members-manage → 403) → 200 grants the project role (`ensureOrgMembership` + `grantProjectRole`) and marks the request `approved`/`rejected`; invalid `role` → 400; already-reviewed → 409; unknown request id → 404.
+`IAM-29` `GET /projects/:id/approvals` (manager-only inbox of unresolved `pending_approval` executor actions) → 200 `{count,approvals}`; out-of-range `limit` → 400; non-manager with no grant → 404. `GET /projects/:id/approvals/needs-input` (`read` — any project member) → 200 `{total,sessions}`; a manager sees every session's pending count, a non-manager only their own launched sessions; non-member → 404.
+`IAM-30` `POST /projects/:id/approvals/:executionId {decision:"approve"|"deny",scope?}` (manager OR the session launcher) → resolves a pending executor action atomically (TOCTOU-safe); malformed execution id → 400; invalid `decision` → 400 (validated before the row lookup); unknown execution id → 404; already-resolved → 409 (happy-path resolve of a REAL pending row needs a live governed connector call from an agent session — not black-box reproducible here, same constraint as `SESS-11`).
+`IAM-31` `PUT /projects/:id/agents/:agentName/scope {env?,connectors?}` (`manage`) — writes the `[[agents]].env`/`.connectors` allowlists into `kortix.toml`; empty body (`nothing_to_update`) → 400; malformed grant set → 400; unknown agent name → 404 (`agent_not_found`); caller with no project grant → 404.
+`IAM-32` `GET/PUT /accounts/:id/iam/enterprise-demo {enabled}` (`account.read`/`account.write`; deliberately NOT behind `requireEntitlement` — self-serve preview of the Enterprise surface, fail-closed/default-off) → 200 `{enabled}`; non-boolean → 400; NONMEMBER → 403.
+`IAM-33` `POST /accounts/:id/iam/sso/provider/from-metadata {metadata_xml|metadata_url,name,primary_domain,domains?}` (`account.write` + `sso` entitlement) — self-serve SAML IdP registration via the Supabase auth admin API; non-Enterprise account → 402 `{code:"entitlement_required",entitlement:"sso"}` (enabling `enterprise-demo` above unlocks it for the same account); missing name/invalid domain → 400; neither `metadata_xml` nor `metadata_url` → 400 (or 501 if the deployment has no `SUPABASE_SERVICE_ROLE_KEY`); existing provider → 409; NONMEMBER → 403.
 
 ---
 
@@ -538,6 +551,7 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `CONN-7` `PUT /executor/projects/:id/connectors/:slug/credential` → missing value → 400.
 `CONN-8` `POST /executor/projects/:id/connectors` → admin; invalid json → 400. `DELETE …/:slug` → admin → ok/404.
 `CONN-9` `GET /executor/projects/:id/pipedream/apps` → admin → 200 or 501 (pipedream not configured).
+`CONN-13` `PUT /executor/projects/:id/connectors/:slug/credential-mode|name|policies` → admin (`project.connector.write`); body validated before the connector lookup (bad mode/empty name/invalid policy action → 400 even against an unknown slug); well-formed body + unknown connector → 404; NONMEMBER → 403.
 
 ---
 

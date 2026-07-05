@@ -97,11 +97,15 @@ export interface AccountState {
     display_name: string;
     monthly_credits: number;
     can_purchase_credits: boolean;
-    /** Enterprise feature gates for this tier (SSO / SCIM). Drives whether the
-     *  account-settings "Identity & directory" cards render. */
+    /** Enterprise feature gates for this tier (SSO / SCIM / custom RBAC /
+     *  audit log access). Drives whether the account-settings "Identity &
+     *  directory" cards render and whether the Groups/Roles/Policies tabs'
+     *  create actions are enabled. */
     entitlements?: {
       sso: boolean;
       scim: boolean;
+      rbac: boolean;
+      auditAccess: boolean;
     };
   };
   auto_topup?: {

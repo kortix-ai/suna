@@ -73,8 +73,8 @@ export class PlatinumProvider implements SandboxProvider {
       KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
       ...opts.envVars,
     };
-    if (!envVars.KORTIX_TOKEN) {
-      throw new Error('[platinum] create() called without KORTIX_TOKEN — sandbox cannot authenticate to the Kortix router.');
+    if (!envVars.KORTIX_SANDBOX_TOKEN) {
+      throw new Error('[platinum] create() called without KORTIX_SANDBOX_TOKEN — sandbox cannot authenticate to the Kortix router.');
     }
 
     // autoStopInterval maps to Platinum's auto_stop_minutes. 0 → persistent

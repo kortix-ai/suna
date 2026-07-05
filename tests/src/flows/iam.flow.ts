@@ -25,6 +25,16 @@ flow(
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
+    await ctx.step("enable enterprise-demo (entitles this fresh account for rbac-gated group creation)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/accounts/:accountId/iam/enterprise-demo",
+          { enabled: true },
+          { params: { accountId: team.id } },
+        );
+      r.status(200).body().has("$.enabled", true);
+    });
     await ctx.step("OWNER lists groups → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -73,6 +83,16 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     let groupId = "";
+    await ctx.step("enable enterprise-demo (entitles this fresh account for rbac-gated group creation)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/accounts/:accountId/iam/enterprise-demo",
+          { enabled: true },
+          { params: { accountId: team.id } },
+        );
+      r.status(200).body().has("$.enabled", true);
+    });
     await ctx.step("create a group to operate on", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -143,6 +163,16 @@ flow(
     const team = await ctx.fixtures.team();
     const member = await team.addMember("member");
     let groupId = "";
+    await ctx.step("enable enterprise-demo (entitles this fresh account for rbac-gated group/member management)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/accounts/:accountId/iam/enterprise-demo",
+          { enabled: true },
+          { params: { accountId: team.id } },
+        );
+      r.status(200).body().has("$.enabled", true);
+    });
     await ctx.step("create a group", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -220,6 +250,16 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     let groupId = "";
+    await ctx.step("enable enterprise-demo (entitles this fresh account for rbac-gated group creation)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/accounts/:accountId/iam/enterprise-demo",
+          { enabled: true },
+          { params: { accountId: team.id } },
+        );
+      r.status(200).body().has("$.enabled", true);
+    });
     await ctx.step("create a group", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -662,6 +702,16 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     let tokenId = "";
+    await ctx.step("enable enterprise-demo (entitles this fresh account for scim-gated token minting)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/accounts/:accountId/iam/enterprise-demo",
+          { enabled: true },
+          { params: { accountId: team.id } },
+        );
+      r.status(200).body().has("$.enabled", true);
+    });
     await ctx.step("mint SCIM token → 201 secret once", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -814,6 +864,16 @@ flow(
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
+    await ctx.step("enable enterprise-demo (entitles this fresh account for sso-gated provider writes)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/accounts/:accountId/iam/enterprise-demo",
+          { enabled: true },
+          { params: { accountId: team.id } },
+        );
+      r.status(200).body().has("$.enabled", true);
+    });
     await ctx.step("GET provider (none configured) → 200 null", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -893,6 +953,16 @@ flow(
     const team = await ctx.fixtures.team();
     let groupId = "";
     let mappingId = "";
+    await ctx.step("enable enterprise-demo (entitles this fresh account for sso-gated mapping writes)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/accounts/:accountId/iam/enterprise-demo",
+          { enabled: true },
+          { params: { accountId: team.id } },
+        );
+      r.status(200).body().has("$.enabled", true);
+    });
     await ctx.step("list mappings (empty) → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -1004,6 +1074,17 @@ flow(
     const team = await ctx.fixtures.team();
     const roleKey = `review_${team.id.replace(/-/g, "").slice(0, 10)}`;
     let roleId = "";
+
+    await ctx.step("enable enterprise-demo (entitles this fresh account for rbac-gated custom-role writes)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/accounts/:accountId/iam/enterprise-demo",
+          { enabled: true },
+          { params: { accountId: team.id } },
+        );
+      r.status(200).body().has("$.enabled", true);
+    });
 
     await ctx.step("OWNER reads the action catalog → 200", async () => {
       const r = await ctx.client
@@ -1126,6 +1207,17 @@ flow(
     const roleKey = `triage_${team.id.replace(/-/g, "").slice(0, 10)}`;
     let roleId = "";
     let policyId = "";
+
+    await ctx.step("enable enterprise-demo (entitles this fresh account for rbac-gated role/policy writes)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/accounts/:accountId/iam/enterprise-demo",
+          { enabled: true },
+          { params: { accountId: team.id } },
+        );
+      r.status(200).body().has("$.enabled", true);
+    });
 
     await ctx.step("create a project custom role for policies", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(

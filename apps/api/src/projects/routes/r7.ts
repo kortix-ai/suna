@@ -9,10 +9,11 @@ import {
 } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
+import { normalizeProjectRole } from '../../iam/role-perms';
 import { projectHasResource, projectResourcesFromConfig, loadConfigWithFiles } from '../lib/project-resources';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
-import { roleAllows, parseProjectRole } from '../access';
+import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, executorExecutions, projectGroupGrants, projectSecrets, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
@@ -179,9 +180,9 @@ projectsApp.openapi(
 
   const body = await readBody(c);
   const groupId = normalizeString(body.group_id ?? body.groupId);
-  // parseProjectRole folds the legacy `viewer`/`user` aliases into `member`, so
-  // a grant is never persisted with a retired role.
-  const role = parseProjectRole(body.role);
+  // normalizeProjectRole folds the legacy `viewer`/`user` aliases into `member`,
+  // so a grant is never persisted with a retired role.
+  const role = normalizeProjectRole(body.role);
   if (!groupId) return c.json({ error: 'group_id is required' }, 400);
   if (!role) {
     return c.json({ error: 'role must be manager, editor, or member' }, 400);
@@ -265,7 +266,7 @@ projectsApp.openapi(
   }
 
   const body = await readBody(c);
-  const role = parseProjectRole(body.role);
+  const role = normalizeProjectRole(body.role);
   if (!role) {
     return c.json({ error: 'role must be manager, editor, or member' }, 400);
   }

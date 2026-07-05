@@ -3,12 +3,12 @@ import { describe, expect, test } from 'bun:test';
 import {
   effectiveProjectRole,
   isAccountManager,
-  parseProjectRole,
   roleAllows,
   type AccountRole,
   type ProjectAccessAction,
   type ProjectRole,
 } from '../projects/access';
+import { normalizeProjectRole as parseProjectRole } from '../iam/role-perms';
 import { iamActionForProjectAccess, isUuid } from '../projects/lib/access';
 
 describe('isUuid project-id guard', () => {
