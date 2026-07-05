@@ -6,8 +6,8 @@ const sidebarSource = readFileSync(join(import.meta.dir, 'project-sidebar.tsx'),
 const filesNavSource = readFileSync(join(import.meta.dir, 'project-files-nav.tsx'), 'utf8');
 
 describe('sidebar Files entry', () => {
-  test('sidebar renders the Files rail item in collapsed state', () => {
-    expect(sidebarSource).toContain('<ProjectFilesRailItem />');
+  test('sidebar renders a docked Files entry', () => {
+    expect(sidebarSource).toContain('<ProjectFilesNavItem />');
   });
 
   test('Files item jumps straight to the customize Files section', () => {
