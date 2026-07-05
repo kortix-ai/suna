@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node scripts/copy-pdfium.mjs && NODE_OPTIONS='--max-http-header-size=32768' dotenvx run --ignore=MISSING_ENV_FILE -f .env.local -f .env -- next dev --turbopack --port ${WEB_PORT:-3000}",
+    "dev": "node scripts/copy-viewer-wasm.mjs && NODE_OPTIONS='--max-http-header-size=32768' dotenvx run --ignore=MISSING_ENV_FILE -f .env.local -f .env -- next dev --turbopack --port ${WEB_PORT:-3000}",
     "dev:staging-env": "NODE_OPTIONS='--max-http-header-size=32768' dotenvx run --overload -f .env.staging -- next dev --turbopack --port ${WEB_PORT:-3000}",
-    "build": "node scripts/copy-pdfium.mjs && next build",
+    "build": "node scripts/copy-viewer-wasm.mjs && next build",
     "start": "next start",
     "lint": "next lint",
     "i18n:audit": "node scripts/audit-i18n.mjs",

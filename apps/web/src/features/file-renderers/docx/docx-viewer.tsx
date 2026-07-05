@@ -3,6 +3,7 @@
 import * as React from "react"
 import {
   DocxEditorViewer,
+  setWasmSource,
   useDocxComments,
   useDocxEditor,
   useDocxPageLayout,
@@ -62,6 +63,22 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+
+// react-docx loads its wasm inside a `blob:`-URL Web Worker, where a
+// root-relative path (`/_next/static/media/docx_wasm_bg.*.wasm`) fails to parse
+// on `fetch`. Point it at an absolute, origin-qualified copy served from
+// `public/` (populated by `scripts/copy-viewer-wasm.mjs`) before the first
+// document import initializes the engine.
+if (typeof window !== "undefined") {
+  try {
+    setWasmSource(
+      new URL("/react-docx/docx_wasm_bg.wasm", window.location.origin).href
+    )
+  } catch {
+    // WASM was already initialized in this realm (e.g. after HMR); the source
+    // is fixed and cannot be reconfigured. Safe to ignore.
+  }
+}
 
 const DOCX_MIME_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document"

@@ -69,6 +69,7 @@ type CsvViewerProps = {
   className?: string
   data?: string
   search?: boolean
+  showToolbar?: boolean
 }
 
 type CsvSearchResult = {
@@ -588,7 +589,12 @@ function useIsDarkTheme() {
   return isDark
 }
 
-export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
+export function CsvViewer({
+  className,
+  data,
+  search = false,
+  showToolbar = true,
+}: CsvViewerProps) {
   const gridRef = React.useRef<DataEditorRef | null>(null)
   const isDark = useIsDarkTheme()
   const [glide, setGlide] = React.useState<GlideDataGridModule | null>(null)
@@ -732,6 +738,7 @@ export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
         className
       )}
     >
+      {showToolbar ? (
       <div className="flex min-h-12 flex-wrap items-center justify-end gap-2 border-b bg-background px-3 py-2">
         <TooltipProvider>
           <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
@@ -815,6 +822,7 @@ export function CsvViewer({ className, data, search = false }: CsvViewerProps) {
           </div>
         </TooltipProvider>
       </div>
+      ) : null}
       <div className="min-h-0 flex-1">
         {parsed.error ? (
           <div className="flex h-full items-center justify-center px-4 text-center text-sm text-destructive">

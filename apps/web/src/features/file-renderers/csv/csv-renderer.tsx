@@ -53,7 +53,12 @@ export function CsvRenderer({ content, className, compact = false, containerHeig
           </div>
         }
       >
-        <CsvViewer data={content} search={!compact} className="h-full" />
+        <CsvViewer
+          data={content}
+          search={!compact}
+          showToolbar={!compact}
+          className="h-full"
+        />
       </Suspense>
     </div>
   );

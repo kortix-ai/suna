@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import {
+  setWasmSource,
   useXlsxViewer,
   useXlsxViewerController,
   useXlsxViewerThumbnails,
@@ -60,6 +61,18 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+
+// react-xlsx loads its wasm inside a `blob:`-URL Web Worker, where a
+// root-relative path (`/_next/static/media/duke_sheets_wasm_bg.*.wasm`) fails to
+// parse on `fetch`. Point it at an absolute, origin-qualified copy served from
+// `public/` (populated by `scripts/copy-viewer-wasm.mjs`); the resolved string
+// is forwarded to the worker so it fetches correctly while worker parsing stays
+// enabled.
+if (typeof window !== "undefined") {
+  setWasmSource(
+    new URL("/react-xlsx/duke_sheets_wasm_bg.wasm", window.location.origin).href
+  )
+}
 
 const XLSX_LOADING_INDICATOR_DELAY_MS = 300
 const XLSX_DROPDOWN_Z_INDEX_CLASS = "z-40"
