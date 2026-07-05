@@ -15,17 +15,7 @@ import {
   type XlsxTableHeaderMenuRenderProps,
   type XlsxViewerController,
 } from "@extend-ai/react-xlsx"
-import {
-  ArrowLeft01Icon,
-  ArrowRight01Icon,
-  Download01Icon,
-  HugeiconsIcon,
-  MinusSignCircleIcon,
-  MoreHorizontalIcon,
-  PlusSignCircleIcon,
-  Search01Icon,
-  Upload01Icon,
-} from "@/features/file-renderers/shared/hugeicons-compat"
+import { ChevronLeft, ChevronRight, CircleMinus, CirclePlus, Download, Ellipsis, Search, Upload } from "lucide-react"
 import { createPortal } from "react-dom"
 
 import { cn } from "@/lib/utils"
@@ -513,7 +503,7 @@ function WorkbookFileActionsMenu({
           className="active:scale-[0.96] transition-transform"
           aria-label="Open workbook actions"
         >
-          <HugeiconsIcon icon={MoreHorizontalIcon} className="size-4" />
+          <Ellipsis className="size-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -522,13 +512,13 @@ function WorkbookFileActionsMenu({
       >
         {showDownloadButton && onDownload ? (
           <DropdownMenuItem onClick={onDownload}>
-            <HugeiconsIcon icon={Download01Icon} className="size-4" />
+            <Download className="size-4" />
             Download
           </DropdownMenuItem>
         ) : null}
         {showUploadButton ? (
           <DropdownMenuItem onClick={onUploadClick}>
-            <HugeiconsIcon icon={Upload01Icon} className="size-4" />
+            <Upload className="size-4" />
             Upload
           </DropdownMenuItem>
         ) : null}
@@ -574,7 +564,7 @@ export function WorkbookTableHeaderMenu({
           {triggerIcon ? (
             triggerIcon
           ) : (
-            <HugeiconsIcon icon={MoreHorizontalIcon} className="size-3.5" />
+            <Ellipsis className="size-3.5" />
           )}
         </Button>
       </DropdownMenuTrigger>
@@ -767,7 +757,7 @@ function WorkbookSearchPopover({
             aria-label="Search workbook"
             disabled={controlsDisabled}
           >
-            <HugeiconsIcon icon={Search01Icon} className="size-4" />
+            <Search className="size-4" />
           </Button>
         </PopoverTrigger>
       </ToolbarTooltip>
@@ -820,7 +810,7 @@ function WorkbookSearchPopover({
                 disabled={isSearching || searchResults.length === 0}
                 onClick={() => goToRelativeResult(-1)}
               >
-                <HugeiconsIcon icon={ArrowLeft01Icon} className="size-4" />
+                <ChevronLeft className="size-4" />
               </Button>
               <Button
                 type="button"
@@ -831,7 +821,7 @@ function WorkbookSearchPopover({
                 disabled={isSearching || searchResults.length === 0}
                 onClick={() => goToRelativeResult(1)}
               >
-                <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
+                <ChevronRight className="size-4" />
               </Button>
             </div>
           </div>
@@ -897,7 +887,7 @@ function WorkbookToolbar({
                 aria-label="Zoom out"
                 onClick={zoomOut}
               >
-                <HugeiconsIcon icon={MinusSignCircleIcon} className="size-4" />
+                <CircleMinus className="size-4" />
               </Button>
             </ToolbarTooltip>
             <Select
@@ -934,7 +924,7 @@ function WorkbookToolbar({
                 aria-label="Zoom in"
                 onClick={zoomIn}
               >
-                <HugeiconsIcon icon={PlusSignCircleIcon} className="size-4" />
+                <CirclePlus className="size-4" />
               </Button>
             </ToolbarTooltip>
           </div>
@@ -1257,7 +1247,7 @@ const WorkbookSheetTabsInner = React.memo(function WorkbookSheetTabsInner({
           viewportRef={scrollRef}
         >
           <div className="flex h-full items-center">
-            <TabsList className="shrink-0">
+            <TabsList className="shrink-0" size="xs">
               {sheets.map((sheet, index) => (
                 <TabsTrigger
                   key={`${sheet.workbookSheetIndex}-${sheet.name}`}
@@ -1265,6 +1255,7 @@ const WorkbookSheetTabsInner = React.memo(function WorkbookSheetTabsInner({
                     itemRefs.current[index] = node
                   }}
                   value={String(index)}
+                  size="xs"
                   className="max-w-48 flex-none"
                   onMouseEnter={() => handleItemEnter(index)}
                 >
@@ -1607,7 +1598,7 @@ function XlsxViewerContent({
               className="mt-4"
               onClick={() => fileInputRef.current?.click()}
             >
-              <HugeiconsIcon icon={Upload01Icon} className="size-4" />
+              <Upload className="size-4" />
               Upload XLSX
             </Button>
           </div>
@@ -1647,7 +1638,7 @@ function XlsxViewerContent({
               className="mt-4"
               onClick={() => fileInputRef.current?.click()}
             >
-              <HugeiconsIcon icon={Upload01Icon} className="size-4" />
+              <Upload className="size-4" />
               Upload XLSX
             </Button>
           </div>

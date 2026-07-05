@@ -18,16 +18,7 @@ import {
 
 import "@glideapps/glide-data-grid/dist/index.css"
 
-import {
-  ArrowLeft01Icon,
-  ArrowRight01Icon,
-  Download01Icon,
-  HugeiconsIcon,
-  MinusSignCircleIcon,
-  MoreHorizontalIcon,
-  PlusSignCircleIcon,
-  Search01Icon,
-} from "@/features/file-renderers/shared/hugeicons-compat"
+import { ChevronLeft, ChevronRight, CircleMinus, CirclePlus, Download, Ellipsis, Search } from "lucide-react"
 import Papa from "papaparse"
 
 import { cn } from "@/lib/utils"
@@ -283,12 +274,12 @@ function CsvFileActionsMenu({
           className="active:scale-[0.96] transition-transform"
           aria-label="Open CSV actions"
         >
-          <HugeiconsIcon icon={MoreHorizontalIcon} className="size-4" />
+          <Ellipsis className="size-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">
         <DropdownMenuItem disabled={downloadDisabled} onClick={onDownload}>
-          <HugeiconsIcon icon={Download01Icon} className="size-4" />
+          <Download className="size-4" />
           Download
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -473,7 +464,7 @@ function CsvSearchPopover({
             aria-label="Search CSV"
             disabled={controlsDisabled}
           >
-            <HugeiconsIcon icon={Search01Icon} className="size-4" />
+            <Search className="size-4" />
           </Button>
         </PopoverTrigger>
       </ToolbarTooltip>
@@ -527,7 +518,7 @@ function CsvSearchPopover({
                 disabled={isSearching || searchResults.length === 0}
                 onClick={() => goToRelativeResult(-1)}
               >
-                <HugeiconsIcon icon={ArrowLeft01Icon} className="size-4" />
+                <ChevronLeft className="size-4" />
               </Button>
               <Button
                 type="button"
@@ -538,7 +529,7 @@ function CsvSearchPopover({
                 disabled={isSearching || searchResults.length === 0}
                 onClick={() => goToRelativeResult(1)}
               >
-                <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" />
+                <ChevronRight className="size-4" />
               </Button>
             </div>
           </div>
@@ -752,8 +743,7 @@ export function CsvViewer({
                   disabled={zoom <= ZOOM_OPTIONS[0]}
                   onClick={() => stepZoom(-1)}
                 >
-                  <HugeiconsIcon
-                    icon={MinusSignCircleIcon}
+                  <CircleMinus
                     className="size-4"
                   />
                 </Button>
@@ -788,7 +778,7 @@ export function CsvViewer({
                   disabled={zoom >= ZOOM_OPTIONS[ZOOM_OPTIONS.length - 1]}
                   onClick={() => stepZoom(1)}
                 >
-                  <HugeiconsIcon icon={PlusSignCircleIcon} className="size-4" />
+                  <CirclePlus className="size-4" />
                 </Button>
               </ToolbarTooltip>
             </div>
