@@ -5,7 +5,6 @@ import { useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { GridFileCard } from './grid-file-card';
-import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import {
   ProjectHomeWelcomeBody,
@@ -16,6 +15,7 @@ import { SessionSiteHeader } from '@/features/session/header/session-site-header
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { optimisticUploadedFileRef } from '@/features/session/uploaded-file-refs';
 import { SessionLayout } from '@/features/session/session-layout';
+import { SessionBootChecklistInline } from '@/features/session/session-starting-loader';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import type { Command } from '@/hooks/opencode/use-opencode-sessions';
@@ -25,14 +25,6 @@ import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
-
-/** The inline status shown under the Kortix logo while the computer is still
- *  coming up after a first send — sleek + minimal, reflecting the live stage. */
-function bootLabel(stage: SessionStartStage): string {
-  if (stage === 'provisioning') return 'Provisioning your computer';
-  if (stage === 'ready') return 'Connecting';
-  return 'Starting your computer';
-}
 
 /**
  * The instant session shell — shown the moment a freshly-created session opens,
@@ -214,16 +206,13 @@ export function InstantSessionShell({
                       </p>
                     </div>
                   </div>
-                  {/* While the computer is still coming up the status reflects the
-                      boot stage ("Starting your computer"); once ready it's the
-                      regular thinking text. */}
+                  {/* While the computer is still coming up we show the SAME
+                      stepped boot checklist as the side panel, inline under the
+                      logomark — so the progress is visible without opening the
+                      panel. Once ready it falls back to the regular thinking text. */}
                   <AssistantPendingRow
                     className="mt-6"
-                    status={
-                      ready ? undefined : (
-                        <AnimatedThinkingText statusText={bootLabel(stage)} className="text-xs" />
-                      )
-                    }
+                    body={ready ? undefined : <SessionBootChecklistInline stage={stage} />}
                   />
                 </div>
               </div>
