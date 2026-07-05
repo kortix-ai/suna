@@ -1047,9 +1047,6 @@ importers:
       pdf-lib:
         specifier: ^1.17.1
         version: 1.17.1
-      pdfjs-dist:
-        specifier: 4.8.69
-        version: 4.8.69
       playwright:
         specifier: ^1.57.0
         version: 1.61.0
@@ -20911,13 +20908,6 @@ packages:
     engines: {node: '>=8'}
     dev: true
 
-  /path2d@0.2.2:
-    resolution: {integrity: sha512-+vnG6S4dYcYxZd+CZxzXCNKdELYZSKfohrk98yajCo1PtRoDgCTrrwOvK1GT0UoAdVszagDVllQc0U1vaX4NUQ==}
-    engines: {node: '>=6'}
-    requiresBuild: true
-    dev: false
-    optional: true
-
   /pathe@2.0.3:
     resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
     dev: false
@@ -20929,14 +20919,6 @@ packages:
       '@pdf-lib/upng': 1.0.1
       pako: 1.0.11
       tslib: 1.14.1
-    dev: false
-
-  /pdfjs-dist@4.8.69:
-    resolution: {integrity: sha512-IHZsA4T7YElCKNNXtiLgqScw4zPd3pG9do8UrznC757gMd7UPeHSL2qwNNMJo4r79fl8oj1Xx+1nh2YkzdMpLQ==}
-    engines: {node: '>=18'}
-    optionalDependencies:
-      canvas: 3.2.3
-      path2d: 0.2.2
     dev: false
 
   /pe-library@0.4.1:

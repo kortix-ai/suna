@@ -16,7 +16,6 @@
     "test:e2e:full": "bash ../../tests/e2e/scripts/run-full-self-hosted-e2e.sh",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "postinstall": "cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdf.worker.min.mjs 2>/dev/null || true",
     "test": "bun test"
   },
   "dependencies": {
@@ -160,7 +159,6 @@
     "next-themes": "^0.4.6",
     "papaparse": "^5.5.2",
     "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "4.8.69",
     "playwright": "^1.57.0",
     "postcss": "8.4.33",
     "posthog-js": "^1.258.6",
