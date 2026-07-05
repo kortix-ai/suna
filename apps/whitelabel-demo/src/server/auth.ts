@@ -121,7 +121,10 @@ export function getRequestSession(req: Request): SessionPayload | null {
  * set). There is no user directory — `userId` IS the email.
  */
 export function checkDemoCredentials(email: string, password: string): boolean {
-  if (!email || !/^\S+@\S+\.\S+$/.test(email)) return false;
+  // Length cap + non-overlapping character classes ([^\s@] can never match the
+  // literal @ or . delimiters) keep this linear — the naive \S+@\S+\.\S+ form
+  // backtracks polynomially on adversarial input (CodeQL js/polynomial-redos).
+  if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@.]+$/.test(email)) return false;
   if (!password) return false;
   const expected = process.env.DEMO_PASSWORD;
   if (!expected) return true;

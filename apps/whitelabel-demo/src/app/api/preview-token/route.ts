@@ -21,7 +21,7 @@
 
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
-import { isOwner } from '@/server/users';
+import { isOwner, isValidProjectId } from '@/server/users';
 import type { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -44,7 +44,9 @@ export async function GET(req: NextRequest) {
   if (!limited.ok) return Response.json({ error: 'Rate limit exceeded' }, { status: 429 });
 
   const projectId = new URL(req.url).searchParams.get('projectId');
-  if (!projectId) return Response.json({ error: 'projectId is required' }, { status: 400 });
+  if (!projectId || !isValidProjectId(projectId)) {
+    return Response.json({ error: 'projectId is required' }, { status: 400 });
+  }
   if (!isOwner(session.userId, projectId)) {
     return Response.json({ error: "You don't have access to this project." }, { status: 403 });
   }

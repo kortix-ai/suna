@@ -82,7 +82,11 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
 
   function makeProject(overrides: Partial<MockProject> = {}): MockProject {
     projectCounter += 1;
-    const id = overrides.project_id ?? `proj_mock_${projectCounter}`;
+    // UUID-shaped like real Kortix project ids — the app validates ids with
+    // isValidProjectId before recording ownership or building upstream URLs,
+    // so a non-UUID mock id would be (correctly) rejected.
+    const id =
+      overrides.project_id ?? `00000000-0000-4000-8000-${String(projectCounter).padStart(12, '0')}`;
     const now = new Date().toISOString();
     return {
       project_id: id,

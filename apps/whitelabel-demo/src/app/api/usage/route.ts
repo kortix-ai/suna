@@ -8,7 +8,7 @@
 
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
-import { listOwnedProjects } from '@/server/users';
+import { isValidProjectId, listOwnedProjects } from '@/server/users';
 import type { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -51,7 +51,9 @@ export async function GET(req: NextRequest) {
 
   const markup = markupMultiplier();
   const upstream = upstreamBase();
-  const projectIds = listOwnedProjects(session.userId);
+  // listOwnedProjects already UUID-filters, but re-assert at the fetch site:
+  // these ids come from a file and are interpolated into upstream URLs.
+  const projectIds = listOwnedProjects(session.userId).filter(isValidProjectId);
 
   const projects = await Promise.all(
     projectIds.map(async (projectId) => {

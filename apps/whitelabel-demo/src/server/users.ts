@@ -36,14 +36,24 @@ function writeData(data: UsersData): void {
   writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
 }
 
+// Kortix project ids are UUIDs. Enforced on WRITE (only record what upstream
+// actually minted) and on READ (ids from this file end up inside upstream
+// request URLs — see /api/usage — so a hand-edited or corrupted store must
+// never be able to steer a request anywhere unexpected).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isValidProjectId(projectId: string): boolean {
+  return UUID_RE.test(projectId);
+}
+
 /** Every project id `userId` owns (created through the wrapper). */
 export function listOwnedProjects(userId: string): string[] {
-  return readData()[userId] ?? [];
+  return (readData()[userId] ?? []).filter(isValidProjectId);
 }
 
 /** Record that `userId` owns `projectId` — called right after a successful `/projects/provision`. */
 export function addOwnedProject(userId: string, projectId: string): void {
-  if (!userId || !projectId) return;
+  if (!userId || !isValidProjectId(projectId)) return;
   const data = readData();
   const existing = data[userId] ?? [];
   if (!existing.includes(projectId)) {
