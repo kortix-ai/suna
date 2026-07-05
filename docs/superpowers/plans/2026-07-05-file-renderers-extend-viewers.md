@@ -28,6 +28,8 @@
 
 ---
 
+
+
 ### Task 0: Worktree setup
 
 **Files:** none (environment only)
@@ -61,9 +63,12 @@ All subsequent tasks run inside the worktree.
 
 ---
 
+
+
 ### Task 1: Vendor tooling + shared shims + portal div
 
 **Files:**
+
 - Create: `apps/web/scripts/vendor-extend-viewer.mjs`
 - Create: `apps/web/src/features/file-renderers/shared/hugeicons-compat.tsx`
 - Create: `apps/web/src/features/file-renderers/shared/spinner.tsx`
@@ -71,6 +76,7 @@ All subsequent tasks run inside the worktree.
 - Modify: `apps/web/src/app/layout.tsx` (portal div before `</body>`, ~line 415)
 
 **Interfaces:**
+
 - Produces: `node scripts/vendor-extend-viewer.mjs <registry-name> <out-dir>` — writes each registry file into `<out-dir>`.
 - Produces: `hugeicons-compat.tsx` exports `HugeiconsIcon` (props `{ icon, className?, size?, strokeWidth? }`) and the aliases `ArrowLeft01Icon, ArrowRight01Icon, Comment01Icon, Download01Icon, FileDiffIcon, MinusSignCircleIcon, Moon02Icon, MoreHorizontalIcon, PlusSignCircleIcon, RotateClockwiseIcon, Search01Icon, SidebarLeftIcon, Upload01Icon` (all `LucideIcon`).
 - Produces: `spinner.tsx` exports `Spinner({ className })` — KortixLoader at 16px, drop-in for the vendored `<Spinner className="size-4" />`.
@@ -247,9 +253,12 @@ git commit -m "refactor(web): add extend viewer vendor tooling, icon/spinner shi
 
 ---
 
+
+
 ### Task 2: CSV/TSV viewer (Glide Data Grid)
 
 **Files:**
+
 - Create: `apps/web/src/features/file-renderers/csv/csv-viewer.tsx` (vendored)
 - Create: `apps/web/src/features/file-renderers/csv/csv-renderer.tsx` (adapter)
 - Create: `apps/web/src/features/file-renderers/csv/csv-renderer.test.tsx`
@@ -259,6 +268,7 @@ git commit -m "refactor(web): add extend viewer vendor tooling, icon/spinner shi
 - Delete: `apps/web/src/features/file-renderers/csv-renderer.tsx`, `apps/web/src/components/ui/data-grid.tsx`
 
 **Interfaces:**
+
 - Consumes: `HugeiconsIcon` + aliases and `Spinner` from Task 1.
 - Produces: `CsvRenderer({ content: string; className?: string; compact?: boolean; containerHeight?: number })` — same contract as today; exported from the barrel as `CsvRenderer`.
 - Vendored `CsvViewer({ className?, data?, search? })` stays internal to the folder.
@@ -284,7 +294,7 @@ Expected output: `src/features/file-renderers/csv/csv-viewer.tsx (26KB)`
 In `csv/csv-viewer.tsx`:
 
 1. Replace the two hugeicons import statements
-   (`import { HugeiconsIcon } from "@hugeicons/react"` and the multi-line
+  (`import { HugeiconsIcon } from "@hugeicons/react"` and the multi-line
    `import { ...Icons } from "@hugeicons/core-free-icons"`) with a single:
 
 ```tsx
@@ -301,9 +311,8 @@ import {
 } from "@/features/file-renderers/shared/hugeicons-compat"
 ```
 
-2. `import { Spinner } from "@/components/ui/spinner"` → `import { Spinner } from "@/features/file-renderers/shared/spinner"`
-
-3. Strip upload chrome: grep `Upload01Icon` inside the file (beyond the import) — delete the upload `<Button>`/menu-item JSX block(s) and any now-unused upload handler state (`onUpload`, file-input refs). After this, `Upload01Icon` appears only in the import line; remove it from the import too.
+1. `import { Spinner } from "@/components/ui/spinner"` → `import { Spinner } from "@/features/file-renderers/shared/spinner"`
+2. Strip upload chrome: grep `Upload01Icon` inside the file (beyond the import) — delete the upload `<Button>`/menu-item JSX block(s) and any now-unused upload handler state (`onUpload`, file-input refs). After this, `Upload01Icon` appears only in the import line; remove it from the import too.
 
 - [ ] **Step 4: Verify the vendored file compiles**
 
@@ -345,7 +354,7 @@ Expected: FAIL — Cannot find module './csv-renderer'
 // apps/web/src/features/file-renderers/csv/csv-renderer.tsx
 'use client';
 
-import { lazy, Suspense } from 'react';
+import React, { lazy, Suspense } from 'react';
 import { FileSpreadsheet } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
@@ -413,11 +422,11 @@ Expected: PASS (the lazy `import('./csv-viewer')` never executes in the test —
 - [ ] **Step 9: Update consumers and delete legacy files**
 
 1. `src/features/file-renderers/index.tsx:7`:
-   `export { CsvRenderer } from './csv-renderer';` → `export { CsvRenderer } from './csv/csv-renderer';`
+  `export { CsvRenderer } from './csv-renderer';` → `export { CsvRenderer } from './csv/csv-renderer';`
 2. `src/features/file-renderers/show-content-renderer.tsx:63`:
-   `import('./csv-renderer')` → `import('./csv/csv-renderer')`
+  `import('./csv-renderer')` → `import('./csv/csv-renderer')`
 3. `src/features/file-viewer/file-content-renderer.tsx:58-60`:
-   `import('@/features/file-renderers/csv-renderer')` → `import('@/features/file-renderers/csv/csv-renderer')`
+  `import('@/features/file-renderers/csv-renderer')` → `import('@/features/file-renderers/csv/csv-renderer')`
 4. Delete old files and the AG Grid deps:
 
 ```bash
@@ -425,7 +434,7 @@ git rm apps/web/src/features/file-renderers/csv-renderer.tsx apps/web/src/compon
 pnpm remove ag-grid-community ag-grid-react
 ```
 
-5. Verify nothing still references them:
+1. Verify nothing still references them:
 
 ```bash
 grep -rn "ag-grid\|ui/data-grid" src/ ; echo "exit: $?"
@@ -444,9 +453,12 @@ git commit -m "refactor(web): CSV/TSV viewer on Glide Data Grid, drop AG Grid"
 
 ---
 
+
+
 ### Task 3: PDF viewer (EmbedPDF / PDFium)
 
 **Files:**
+
 - Create: `apps/web/src/features/file-renderers/pdf/pdf-viewer.tsx` (vendored)
 - Create: `apps/web/src/features/file-renderers/pdf/pdf-thumbnail-utils.ts` (vendored)
 - Create: `apps/web/src/features/file-renderers/shared/document-viewer-sidebar.tsx` (vendored)
@@ -458,6 +470,7 @@ git commit -m "refactor(web): CSV/TSV viewer on Glide Data Grid, drop AG Grid"
 - Delete: `apps/web/src/features/file-renderers/pdf-renderer.tsx`
 
 **Interfaces:**
+
 - Consumes: `HugeiconsIcon` + aliases, `Spinner` (Task 1).
 - Produces: `PdfRenderer({ fileContent?: string | null; url?: string | null; className?: string; compact?: boolean })` and `base64PdfContentToBlob(fileContent: string): Blob` — same contract/export names as today.
 - Produces: `shared/document-viewer-sidebar.tsx` — consumed again by Task 4.
@@ -512,7 +525,7 @@ node scripts/vendor-extend-viewer.mjs document-viewer-sidebar src/features/file-
 
 Expected: `pdf/pdf-viewer.tsx (79KB)`, `pdf/pdf-thumbnail-utils.ts (2KB)`, `shared/document-viewer-sidebar.tsx (3KB)`.
 
-- [ ] **Step 4: Rewire vendored imports in `pdf/pdf-viewer.tsx`**
+- [ ] **Step 4: Rewire vendored imports in** `pdf/pdf-viewer.tsx`
 
 1. Replace both hugeicons imports with:
 
@@ -532,9 +545,9 @@ import {
 } from "@/features/file-renderers/shared/hugeicons-compat"
 ```
 
-2. `@/components/ui/spinner` → `@/features/file-renderers/shared/spinner`
-3. `@/components/ui/document-viewer-sidebar` → `@/features/file-renderers/shared/document-viewer-sidebar`
-4. `@/components/pdf-thumbnail-utils` → `./pdf-thumbnail-utils`
+1. `@/components/ui/spinner` → `@/features/file-renderers/shared/spinner`
+2. `@/components/ui/document-viewer-sidebar` → `@/features/file-renderers/shared/document-viewer-sidebar`
+3. `@/components/pdf-thumbnail-utils` → `./pdf-thumbnail-utils`
 
 In `pdf/pdf-thumbnail-utils.ts`, replace the CDN wasm URL (line ~4):
 
@@ -675,12 +688,14 @@ Expected: PASS.
 
 1. `src/features/file-renderers/index.tsx:4`: `'./pdf-renderer'` → `'./pdf/pdf-renderer'`
 2. `src/features/file-renderers/show-content-renderer.tsx:62`: `import('./pdf-renderer')` → `import('./pdf/pdf-renderer')`
-3. `src/features/file-viewer/file-content-renderer.tsx:49-51`: `'@/features/file-renderers/pdf-renderer'` → `'@/features/file-renderers/pdf/pdf-renderer'`
+3. `src/features/file-viewer/file-content-rendeiconrer.tsx:49-51`: `'@/features/file-renderers/pdf-renderer'` → `'@/features/file-renderers/pdf/pdf-renderer'`
 4. `src/components/file-editors/index.tsx:10`: same path swap.
 5. `git rm apps/web/src/features/file-renderers/pdf-renderer.tsx`
 6. `grep -rn "file-renderers/pdf-renderer" src/` — expected: no matches.
 
 - [ ] **Step 10: Typecheck + tests + commit**
+
+
 
 ```bash
 pnpm exec tsc --noEmit
@@ -691,9 +706,12 @@ git commit -m "refactor(web): PDF viewer on EmbedPDF/PDFium with self-hosted was
 
 ---
 
+
+
 ### Task 4: DOCX viewer (@extend-ai/react-docx)
 
 **Files:**
+
 - Create: `apps/web/src/features/file-renderers/docx/docx-viewer.tsx` (vendored)
 - Create: `apps/web/src/features/file-renderers/docx/docx-annotation-card.tsx` (vendored)
 - Create: `apps/web/src/features/file-renderers/shared/file-thumbnail.tsx` (vendored)
@@ -703,6 +721,7 @@ git commit -m "refactor(web): PDF viewer on EmbedPDF/PDFium with self-hosted was
 - Delete: `apps/web/src/features/file-renderers/docx-renderer.tsx`, `apps/web/src/types/docx-preview.d.ts`
 
 **Interfaces:**
+
 - Consumes: Task 1 shims, Task 3's `shared/document-viewer-sidebar.tsx`.
 - Produces: `DocxRenderer({ url?: string; blob?: Blob; className?: string; compact?: boolean })` — same contract as today (compact added, default false) — plus pure helper `resolveDocxSource({ url, blob, createObjectUrl })`.
 
@@ -721,7 +740,7 @@ node scripts/vendor-extend-viewer.mjs file-thumbnail src/features/file-renderers
 
 Expected: `docx/docx-viewer.tsx (46KB)`, `docx/docx-annotation-card.tsx (4KB)`, `shared/file-thumbnail.tsx (6KB)`.
 
-- [ ] **Step 3: Rewire vendored imports in `docx/docx-viewer.tsx`**
+- [ ] **Step 3: Rewire vendored imports in** `docx/docx-viewer.tsx`
 
 1. Replace both hugeicons imports with:
 
@@ -739,10 +758,10 @@ import {
 } from "@/features/file-renderers/shared/hugeicons-compat"
 ```
 
-2. `@/components/ui/spinner` → `@/features/file-renderers/shared/spinner`
-3. `@/components/ui/document-viewer-sidebar` → `@/features/file-renderers/shared/document-viewer-sidebar`
-4. `@/components/ui/file-thumbnail` → `@/features/file-renderers/shared/file-thumbnail`
-5. `@/components/ui/docx-annotation-card` → `./docx-annotation-card`
+1. `@/components/ui/spinner` → `@/features/file-renderers/shared/spinner`
+2. `@/components/ui/document-viewer-sidebar` → `@/features/file-renderers/shared/document-viewer-sidebar`
+3. `@/components/ui/file-thumbnail` → `@/features/file-renderers/shared/file-thumbnail`
+4. `@/components/ui/docx-annotation-card` → `./docx-annotation-card`
 
 - [ ] **Step 4: Strip the theme toggle**
 
@@ -901,9 +920,12 @@ git commit -m "refactor(web): DOCX viewer on @extend-ai/react-docx, drop docx-pr
 
 ---
 
+
+
 ### Task 5: XLSX viewer (@extend-ai/react-xlsx)
 
 **Files:**
+
 - Create: `apps/web/src/features/file-renderers/xlsx/xlsx-viewer.tsx` (vendored)
 - Create: `apps/web/src/features/file-renderers/xlsx/xlsx-renderer.tsx` (adapter)
 - Create: `apps/web/src/features/file-renderers/xlsx/xlsx-renderer.test.ts`
@@ -911,6 +933,7 @@ git commit -m "refactor(web): DOCX viewer on @extend-ai/react-docx, drop docx-pr
 - Delete: `apps/web/src/features/file-renderers/xlsx-renderer.tsx`
 
 **Interfaces:**
+
 - Consumes: Task 1 shims; `readFileAsBlob` from `@/features/files/api/opencode-files` (existing).
 - Produces: `XlsxRenderer({ content?, filePath?, fileName, className?, sandboxId?, project?, onDownload?, isDownloading? })` — identical signature to today (extra props accepted for call-site compatibility even where unused). Stays out of the barrel; lazy-imported only. Pure helper `isBlobUrl(path: string)` exported for tests.
 
@@ -923,7 +946,7 @@ node scripts/vendor-extend-viewer.mjs xlsx-viewer src/features/file-renderers/xl
 
 Expected: `xlsx/xlsx-viewer.tsx (50KB)`.
 
-- [ ] **Step 2: Rewire vendored imports in `xlsx/xlsx-viewer.tsx`**
+- [ ] **Step 2: Rewire vendored imports in** `xlsx/xlsx-viewer.tsx`
 
 1. Replace both hugeicons imports with:
 
@@ -941,7 +964,7 @@ import {
 } from "@/features/file-renderers/shared/hugeicons-compat"
 ```
 
-2. `@/components/ui/spinner` → `@/features/file-renderers/shared/spinner`
+1. `@/components/ui/spinner` → `@/features/file-renderers/shared/spinner`
 
 - [ ] **Step 3: Strip the theme toggle**
 
@@ -1119,9 +1142,12 @@ git commit -m "refactor(web): XLSX viewer on @extend-ai/react-xlsx, drop Univer 
 
 ---
 
+
+
 ### Task 6: Dead dependency sweep + full gates
 
 **Files:**
+
 - Modify: `apps/web/package.json` (remove `pdfjs-dist`)
 
 **Interfaces:** none new.
@@ -1165,9 +1191,12 @@ git commit -m "refactor(web): drop orphaned pdfjs-dist, finish legacy renderer s
 
 ---
 
+
+
 ### Task 7: Kortix polish pass + visual verification
 
 **Files:**
+
 - Modify: `pdf/pdf-viewer.tsx`, `docx/docx-viewer.tsx`, `xlsx/xlsx-viewer.tsx`, `csv/csv-viewer.tsx` (toolbar polish, in place)
 
 **Interfaces:** none new — class-level changes only.
@@ -1210,6 +1239,8 @@ git commit -m "polish(web): kortix polish pass on document viewer chrome"
 ```
 
 ---
+
+
 
 ## Post-plan
 

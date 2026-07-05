@@ -56,7 +56,7 @@ const VideoRenderer = lazy(() =>
   import('@/features/file-renderers/video-renderer').then((m) => ({ default: m.VideoRenderer })),
 );
 const CsvRenderer = lazy(() =>
-  import('@/features/file-renderers/csv-renderer').then((m) => ({ default: m.CsvRenderer })),
+  import('@/features/file-renderers/csv/csv-renderer').then((m) => ({ default: m.CsvRenderer })),
 );
 const XlsxRenderer = lazy(() =>
   import('@/features/file-renderers/xlsx-renderer').then((m) => ({ default: m.XlsxRenderer })),

@@ -61,3 +61,4 @@ infra/supabase/**/*.env
 
 # Generated i18n audit report (npm run i18n:audit)
 i18n-audit.json
+public/pdfium/

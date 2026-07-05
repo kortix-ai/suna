@@ -60,7 +60,9 @@ import { VideoRenderer } from './video-renderer';
 // ── Lazy-load heavy renderers ──────────────────────────────────────────────
 
 const PdfRenderer = lazy(() => import('./pdf-renderer').then((m) => ({ default: m.PdfRenderer })));
-const CsvRenderer = lazy(() => import('./csv-renderer').then((m) => ({ default: m.CsvRenderer })));
+const CsvRenderer = lazy(() =>
+  import('./csv/csv-renderer').then((m) => ({ default: m.CsvRenderer })),
+);
 const XlsxRenderer = lazy(() =>
   import('./xlsx-renderer').then((m) => ({ default: m.XlsxRenderer })),
 );
