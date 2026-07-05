@@ -17,7 +17,10 @@ const FlowingGradient = dynamic(
     ssr: false,
   },
 );
-const SimplexNoise = dynamic(() => import('@/lib/shaders-react').then((m) => m.SimplexNoise), {
+const LinearGradient = dynamic(() => import('@/lib/shaders-react').then((m) => m.LinearGradient), {
+  ssr: false,
+});
+const WaveDistortion = dynamic(() => import('@/lib/shaders-react').then((m) => m.WaveDistortion), {
   ssr: false,
 });
 
@@ -55,28 +58,57 @@ function ShaderRoot({ children, className }: { children: ReactNode; className?: 
   );
 }
 
-// Retro pixel clouds: slow simplex noise quantized through an ordered
-// bayer dither — the pixel motif of Pixel Beams without its intensity.
+// A dithered sky: a smooth vertical luminance ramp quantized through the
+// bayer matrix, so the top edge is a field of ordered pixels that thins
+// band by band and dissolves into clean page well before the center. A
+// fainter rise from the bottom edge frames the composer. The beauty of
+// ordered dithering is the stepped density bands of a smooth gradient —
+// no noise, no blobs, and the middle of the screen stays empty. Static.
+//
+// Dither math: a dot fires when luminance ≥ 1 − threshold + (bayer −
+// 0.5) · spread, so with threshold 0.47 / spread 1 the ramp maps ~1:1 to
+// density and pure black stays truly empty.
 export const DitherShader = memo(function DitherShader() {
   const { isDark, bg, reduceMotion } = useWallpaperTheme();
 
   return (
-    <ShaderRoot className="opacity-60">
+    <ShaderRoot className="opacity-10">
       <Dither
         colorA={bg}
-        colorB={isDark ? '#222327' : '#e3e3e7'}
+        colorB={isDark ? '#84858d' : '#55565d'}
         colorMode="custom"
         pattern="bayer8"
         pixelSize={6}
+        spread={1}
+        threshold={0.47}
       >
-        {/* Higher contrast pushes large regions to pure background so the
-            dither reads as drifting clouds, not full-screen texture. */}
-        <SimplexNoise
-          colorA="#ffffff"
+        {/* Sky: peaks at ~48% dot density on the top edge (never a full
+            checkerboard, which reads heavy), empty by 40% down. */}
+        <LinearGradient
+          colorA="#7c7c7c"
           colorB="#000000"
-          contrast={0.45}
-          scale={2.8}
-          speed={reduceMotion ? 0 : 0.09}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 0.4 }}
+        />
+        {/* Ground: a quieter rise from the bottom edge, gone by ~72% height.
+            `lighten` adds it onto the sky layer's black without darkening. */}
+        <LinearGradient
+          blendMode="lighten"
+          colorA="#4d4d4d"
+          colorB="#000000"
+          start={{ x: 0.5, y: 1 }}
+          end={{ x: 0.5, y: 0.72 }}
+        />
+        {/* A slow sine warp on the ramps makes the density bands undulate
+            like a tide — the sky breathes without ever crossing the empty
+            middle. */}
+        <WaveDistortion
+          angle={90}
+          edges="stretch"
+          frequency={1.3}
+          speed={reduceMotion ? 0 : 0.5}
+          strength={0.15}
+          waveType="sine"
         />
       </Dither>
     </ShaderRoot>
