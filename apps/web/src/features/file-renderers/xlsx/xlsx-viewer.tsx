@@ -69,9 +69,14 @@ import {
 // is forwarded to the worker so it fetches correctly while worker parsing stays
 // enabled.
 if (typeof window !== "undefined") {
-  setWasmSource(
-    new URL("/react-xlsx/duke_sheets_wasm_bg.wasm", window.location.origin).href
-  )
+  try {
+    setWasmSource(
+      new URL("/react-xlsx/duke_sheets_wasm_bg.wasm", window.location.origin).href
+    )
+  } catch {
+    // WASM was already initialized in this realm (e.g. after HMR); the source
+    // is fixed and cannot be reconfigured. Safe to ignore.
+  }
 }
 
 const XLSX_LOADING_INDICATOR_DELAY_MS = 300

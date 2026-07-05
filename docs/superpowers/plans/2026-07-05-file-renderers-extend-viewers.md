@@ -1245,3 +1245,12 @@ git commit -m "polish(web): kortix polish pass on document viewer chrome"
 ## Post-plan
 
 After all tasks: run the repo's finishing flow (superpowers:finishing-a-development-branch) — push the branch, open a PR against `main` referencing the spec, attach the light/dark screenshots from Task 7 to the PR description.
+
+## Follow-ups
+
+Items identified during final review that are out of scope for this plan but should be tracked:
+
+1. **PDF thumbnail cache eviction.** `pdf/pdf-thumbnail-utils.ts` keeps unbounded module-scope caches and never revokes the object URLs it creates for thumbnails. Add an LRU (or similar bounded) cache with eviction tied to adapter unmount so long sessions with many documents don't leak memory/blob URLs.
+2. **Migrate `sqlite-renderer.tsx` off ag-grid.** It's the last consumer of `components/ui/data-grid.tsx`. Once migrated to the glide-data-grid pattern used elsewhere, delete `ag-grid-community`/`ag-grid-react` from dependencies and remove `components/ui/data-grid.tsx`. Re-verify the `ag-grid-community`/`ag-grid-react` version resolution (currently pinned at 35.3.1) at that time in case it has moved.
+3. **Wire `compact` through inline previews.** `show-content-renderer.tsx`'s inline previews don't pass `compact` to the adapters even though the adapters already support chrome-less rendering. This is a pre-existing spec-vs-reality gap, not a regression — wire it up when product wants chrome-less inline previews.
+4. **Stale i18n key names in the PDF adapter.** The PDF adapter has translation keys literally named `line277`/`line278` (leftover from a mechanical extraction). Rename them to something descriptive next time that file is touched.
