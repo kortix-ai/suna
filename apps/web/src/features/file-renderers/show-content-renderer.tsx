@@ -67,7 +67,7 @@ const XlsxRenderer = lazy(() =>
   import('./xlsx-renderer').then((m) => ({ default: m.XlsxRenderer })),
 );
 const DocxRenderer = lazy(() =>
-  import('./docx-renderer').then((m) => ({ default: m.DocxRenderer })),
+  import('./docx/docx-renderer').then((m) => ({ default: m.DocxRenderer })),
 );
 const PptxRenderer = lazy(() =>
   import('./pptx-renderer').then((m) => ({ default: m.PptxRenderer })),

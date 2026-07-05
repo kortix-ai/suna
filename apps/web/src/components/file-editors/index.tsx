@@ -12,7 +12,7 @@ import { ImageRenderer } from '@/features/file-renderers/image-renderer';
 import { VideoRenderer } from '@/features/file-renderers/video-renderer';
 import { BinaryRenderer } from '@/features/file-renderers/binary-renderer';
 import { PptxRenderer } from '@/features/file-renderers/pptx-renderer';
-import { DocxRenderer } from '@/features/file-renderers/docx-renderer';
+import { DocxRenderer } from '@/features/file-renderers/docx/docx-renderer';
 import { HtmlRenderer } from '@/features/file-renderers/html-renderer';
 import { CanvasRenderer } from '@/features/file-renderers/canvas-renderer';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';

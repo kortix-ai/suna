@@ -11,7 +11,7 @@ export { CsvRenderer } from './csv/csv-renderer';
 // Import directly: import { SpreadsheetViewer } from '@/components/file-renderers/spreadsheet/SpreadsheetViewer'
 export { PptxRenderer } from './pptx-renderer';
 export { JsonRenderer } from './JsonRenderer';
-export { DocxRenderer } from './docx-renderer';
+export { DocxRenderer } from './docx/docx-renderer';
 export { ShowContentRenderer, ShowCarousel, showFavicon, showDomain, showAspectRatioToCSS, SHOW_IMAGE_EXT_RE, SHOW_VIDEO_EXT_RE, SHOW_AUDIO_EXT_RE, SHOW_PDF_EXT_RE, SHOW_CSV_EXT_RE, SHOW_XLSX_EXT_RE, SHOW_DOCX_EXT_RE, SHOW_PPTX_EXT_RE } from './show-content-renderer';
 export type { ShowContentProps, ShowCarouselItem, ShowCarouselProps } from './show-content-renderer';
 

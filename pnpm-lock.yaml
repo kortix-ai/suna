@@ -1002,9 +1002,6 @@ importers:
       diff:
         specifier: ^8.0.3
         version: 8.0.3
-      docx-preview:
-        specifier: ^0.3.7
-        version: 0.3.7
       exceljs:
         specifier: ^4.4.0
         version: 4.4.0
@@ -16580,12 +16577,6 @@ packages:
     dependencies:
       esutils: 2.0.3
     dev: true
-
-  /docx-preview@0.3.7:
-    resolution: {integrity: sha512-Lav69CTA/IYZPJTsKH7oYeoZjyg96N0wEJMNslGJnZJ+dMUZK85Lt5ASC79yUlD48ecWjuv+rkcmFt6EVPV0Xg==}
-    dependencies:
-      jszip: 3.10.1
-    dev: false
 
   /dom-helpers@5.2.1:
     resolution: {integrity: sha512-nRCa7CK3VTrM2NmGkIy4cbK7IZlgBE/PYMn55rrXefr5xXDP0LdtfPnblFDoVdcAfslJ7or6iqAUnx0CCGIWQA==}

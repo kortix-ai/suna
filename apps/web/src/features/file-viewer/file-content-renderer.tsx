@@ -50,7 +50,7 @@ const PdfRenderer = lazy(() =>
   import('@/features/file-renderers/pdf/pdf-renderer').then((m) => ({ default: m.PdfRenderer })),
 );
 const DocxRenderer = lazy(() =>
-  import('@/features/file-renderers/docx-renderer').then((m) => ({ default: m.DocxRenderer })),
+  import('@/features/file-renderers/docx/docx-renderer').then((m) => ({ default: m.DocxRenderer })),
 );
 const VideoRenderer = lazy(() =>
   import('@/features/file-renderers/video-renderer').then((m) => ({ default: m.VideoRenderer })),
