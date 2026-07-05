@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getClient } from '@/lib/opencode-sdk';
 import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
-import type { ServerHealth, OpenCodeProjectInfo } from '../types';
+import type { ServerHealth, OpenCodeProjectInfo } from '@/features/file-browser/types';
 
 /**
  * Check if the active OpenCode server is reachable and healthy.

@@ -4,19 +4,14 @@ import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { getEnv } from '@/lib/env-config';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { KortixLoader } from '@/components/ui/kortix-loader';
-import { partToText } from './share-message-text';
 import {
   AlertTriangle,
   Copy,
   Check,
   ThumbsUp,
   ThumbsDown,
-  PanelRightOpen,
-  PanelRightClose,
-  Menu,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -30,72 +25,48 @@ import { toast } from '@/lib/toast';
 import { motion, AnimatePresence } from 'motion/react';
 
 // ============================================================================
-// Types
+// Data fetching — GENUINELY anonymous, server-to-sandbox. `shareId` is the
+// public share's raw `share_id` (the same uuid the authenticated CRUD calls
+// `share.share_id` — see `apps/api/src/shared/session-public-shares.ts`), NOT
+// the `kps_...` public token every other public-share surface uses. The new
+// `GET /v1/public/session-shares/:shareId[/messages]` routes
+// (`apps/api/src/public-session-shares/index.ts`) derive the token
+// server-side and resolve through the same `resolvePublicShare()` gate the
+// authenticated CRUD and `/v1/p/public-share/:token` both use, so this page
+// inherits identical 404 (unknown) / 410 (revoked or expired) / 503
+// (sandbox not provisioned yet) semantics.
+//
+// Before this, this page had no way to reach a session's conversation at
+// all for a logged-out visitor: it read whatever `getActiveOpenCodeUrl()`
+// resolved to on the CLIENT (a self-hosted, single-runtime concept with no
+// access control), and the platform's own public-share proxy deliberately
+// blocks the OpenCode API port (`PUBLIC_SHARE_BLOCKED_PORTS` in
+// `shared/session-public-shares.ts`) — this route never carried a share
+// token in the first place. The API now does the sandbox round-trip
+// server-side and returns a sanitized, text-only transcript digest — no
+// client-side sandbox access here at all.
 // ============================================================================
 
-type SessionInfo = Session;
-type MessagePart = Part;
-
-interface MessageWithParts {
-  info: Message;
-  parts: MessagePart[];
-}
+import {
+  getPublicSessionShare,
+  getPublicSessionShareMessages,
+  type PublicSessionShareMeta,
+  type PublicSessionTranscript,
+  type PublicSessionTranscriptMessage,
+} from '@kortix/sdk/projects-client';
+import { describeShareError, toShareLoadError, transcriptUnavailableMessage, type ShareLoadError } from './share-load-error';
 
 interface ShareData {
-  session: SessionInfo;
-  messages: MessageWithParts[];
-}
-
-// ============================================================================
-// Data fetching — uses the standard OpenCode session & message APIs, via the
-// SDK client (so error normalization lives in one place).
-//
-// This page is unauthenticated (`(public)/share/[shareId]`) and — unlike
-// `/share/session/[token]` — has no share TOKEN in its route at all: `shareId`
-// is only ever matched against an opencode session id suffix
-// (`s.id.endsWith(shareId)`) on whatever the app's currently-active runtime
-// happens to be. There is no project/session id here to resolve a sandbox
-// through, so this can never be wired through the backend's public-share
-// proxy (`/v1/p/public-share/{token}/{port}` — see
-// `getPublicClientForUrl`/`getPublicShareUrlForToken`) — that proxy also
-// blocks the opencode API port (8000) outright (`PUBLIC_SHARE_BLOCKED_PORTS`
-// in `apps/api/src/shared/session-public-shares.ts`), so it could not serve
-// `session.list()`/`session.messages()` even if a token were threaded through.
-//
-// What we restore here is the actual pre-regression behavior: a bare,
-// UNAUTHENTICATED request against whatever `getActiveOpenCodeUrl()` resolves
-// to (the self-hosted single-sandbox default when there's no active Kortix
-// session pinned — see `state/server-store/active.ts`). Before this file was
-// migrated onto the SDK client, it used a hand-rolled `fetch()` with no auth
-// header for exactly this reason; `getClient()`/`authenticatedFetch` broke
-// that for logged-out visitors by synthesizing a 401 with no network call at
-// all (see `platform/auth.ts`). `getPublicClientForUrl` is the typed-client
-// equivalent of that original plain fetch.
-// ============================================================================
-
-import { getPublicClientForUrl } from '@kortix/sdk/opencode-client';
-import type { Message, Part, Session } from '@kortix/sdk/opencode-client';
-import { getActiveOpenCodeUrl } from '@kortix/sdk/server-store';
-
-function unwrap<T>(result: { data?: T; error?: unknown }): T {
-  if (result.error) {
-    const err = result.error as { data?: { message?: string }; message?: string };
-    throw new Error(err?.data?.message || err?.message || 'Failed to load share');
-  }
-  return result.data as T;
+  meta: PublicSessionShareMeta;
+  transcript: PublicSessionTranscript;
 }
 
 async function fetchShareData(shareId: string): Promise<ShareData> {
-  const baseUrl = getActiveOpenCodeUrl();
-  if (!baseUrl) throw new Error('Share not found');
-  const client = getPublicClientForUrl(baseUrl);
-
-  const sessions = unwrap(await client.session.list());
-  const session = sessions.find((s) => s.id.endsWith(shareId) && s.share?.url);
-  if (!session) throw new Error('Share not found');
-
-  const messages = unwrap(await client.session.messages({ sessionID: session.id }));
-  return { session, messages };
+  const [meta, transcript] = await Promise.all([
+    getPublicSessionShare(shareId),
+    getPublicSessionShareMessages(shareId),
+  ]);
+  return { meta, transcript };
 }
 
 // ============================================================================
@@ -105,7 +76,7 @@ async function fetchShareData(shareId: string): Promise<ShareData> {
 export function ShareViewer({ shareId }: { shareId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [data, setData] = useState<ShareData | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ShareLoadError | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -115,26 +86,17 @@ export function ShareViewer({ shareId }: { shareId: string }) {
 
     fetchShareData(shareId)
       .then((result) => { if (!cancelled) setData(result); })
-      .catch((err) => { if (!cancelled) setError(err.message || 'Failed to load share'); })
+      .catch((err) => { if (!cancelled) setError(toShareLoadError(err)); })
       .finally(() => { if (!cancelled) setLoading(false); });
 
     return () => { cancelled = true; };
   }, [shareId]);
 
-  const parsed = useMemo(() => {
-    if (!data) return null;
-    const { session, messages } = data;
-    const sortedMessages = [...messages].sort(
-      (a, b) => a.info.time.created - b.info.time.created,
-    );
-    const textPartsByMessage: Record<string, MessagePart[]> = {};
-    for (const msg of sortedMessages) {
-      const textParts = msg.parts.filter((p) => p.type === 'text');
-      if (textParts.length > 0) {
-        textPartsByMessage[msg.info.id] = textParts;
-      }
-    }
-    return { session, messages: sortedMessages, textPartsByMessage };
+  const messages = useMemo(() => {
+    if (!data) return [];
+    return [...data.transcript.messages]
+      .filter((m) => m.text.trim().length > 0)
+      .sort((a, b) => (a.created ?? '').localeCompare(b.created ?? ''));
   }, [data]);
 
   // ---------- Loading state ----------
@@ -150,48 +112,41 @@ export function ShareViewer({ shareId }: { shareId: string }) {
   }
 
   // ---------- Error state ----------
-  if (error || !parsed?.session) {
+  if (error || !data) {
+    const { title, description } = describeShareError(error);
     return (
       <div className="flex h-screen items-center justify-center bg-background p-4">
         <div className="flex flex-col items-center gap-4 max-w-md text-center">
           <div className="rounded-full bg-muted p-3">
             <AlertTriangle className="h-5 w-5 text-muted-foreground" />
           </div>
-          <h2 className="text-base font-medium">
-            {error === 'Share not found' ? 'Share Not Found' : 'Error Loading Share'}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {error === 'Share not found'
-              ? 'This shared session does not exist or has been removed.'
-              : error || 'The session data could not be loaded.'}
-          </p>
+          <h2 className="text-base font-medium">{title}</h2>
+          <p className="text-sm text-muted-foreground">{description}</p>
         </div>
       </div>
     );
   }
 
-  const { session, messages, textPartsByMessage } = parsed;
+  const { meta, transcript } = data;
+  const sessionTitle = meta.session.title || 'Shared session';
 
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* ── Header (matches Suna thread-site-header variant="shared") ── */}
-      <ShareHeader sessionTitle={session.title} />
+      <ShareHeader sessionTitle={sessionTitle} />
 
       {/* ── Message list ── */}
       <div className="flex-1 overflow-y-auto scrollbar-hide px-4 py-4 pb-0 bg-background min-h-0">
         <div className="mx-auto max-w-3xl min-w-0 w-full px-3 sm:px-6">
           <div className="space-y-6 min-w-0">
-            {messages.map((msg) => {
-              const parts = textPartsByMessage[msg.info.id];
-              if (!parts || parts.length === 0) return null;
-              return (
-                <ShareMessageView
-                  key={msg.info.id}
-                  role={msg.info.role}
-                  parts={parts}
-                />
-              );
-            })}
+            {!transcript.available && (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                {transcriptUnavailableMessage(transcript.reason)}
+              </p>
+            )}
+            {messages.map((msg, index) => (
+              <ShareMessageView key={`${msg.role}-${msg.created ?? index}`} message={msg} />
+            ))}
           </div>
           {/* Bottom spacer */}
           <div className="!h-8" />
@@ -263,21 +218,11 @@ function ShareHeader({ sessionTitle }: { sessionTitle: string }) {
 // Message views — matches Suna UserMessageRow + AssistantGroupRow
 // ============================================================================
 
-function ShareMessageView({
-  role,
-  parts,
-}: {
-  role: 'user' | 'assistant';
-  parts: MessagePart[];
-}) {
-  const text = parts.map((part) => partToText(part as unknown as { text?: string; content?: unknown })).join('\n').trim();
-  if (!text) return null;
-
-  if (role === 'user') {
-    return <UserBubble text={text} />;
+function ShareMessageView({ message }: { message: PublicSessionTranscriptMessage }) {
+  if (message.role === 'user') {
+    return <UserBubble text={message.text} />;
   }
-
-  return <AssistantBlock parts={parts} aggregatedText={text} />;
+  return <AssistantBlock text={message.text} />;
 }
 
 // ── User message bubble (matches Suna UserMessageRow) ──
@@ -296,13 +241,7 @@ function UserBubble({ text }: { text: string }) {
 
 // ── Assistant message block (matches Suna AssistantGroupRow) ──
 
-function AssistantBlock({
-  parts,
-  aggregatedText,
-}: {
-  parts: MessagePart[];
-  aggregatedText: string;
-}) {
+function AssistantBlock({ text }: { text: string }) {
   return (
     <div className="flex flex-col gap-2">
       {/* Agent header — Kortix logomark (matches Suna AgentHeader for name="Kortix") */}
@@ -319,18 +258,12 @@ function AssistantBlock({
       {/* Text content */}
       <div className="flex w-full break-words">
         <div className="space-y-1.5 min-w-0 flex-1">
-          {parts.map((part) => {
-            const partText = partToText(part as unknown as { text?: string; content?: unknown });
-            if (!partText.trim()) return null;
-            return (
-              <div key={part.id} className="break-words overflow-hidden">
-                <UnifiedMarkdown content={partText} />
-              </div>
-            );
-          })}
+          <div className="break-words overflow-hidden">
+            <UnifiedMarkdown content={text} />
+          </div>
 
           {/* Message actions — Copy + Thumbs (matches Suna MessageActions) */}
-          <MessageActions text={aggregatedText} />
+          <MessageActions text={text} />
         </div>
       </div>
     </div>

@@ -37,7 +37,7 @@ import { cn } from '@/lib/utils';
 import { useCreateDeployment, type Deployment, type DeploymentSource, type CreateDeploymentData } from '@/hooks/deployments/use-deployments';
 import { useFileList } from '@/features/files/hooks/use-file-list';
 import { listFiles, readFile } from '@/features/files/api/opencode-files';
-import type { FileNode } from '@/features/files/types';
+import type { FileNode } from '@/features/file-browser/types';
 import { toast } from '@/lib/toast';
 
 function generateSubdomain(): string {

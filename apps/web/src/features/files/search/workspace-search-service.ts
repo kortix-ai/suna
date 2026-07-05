@@ -1,6 +1,6 @@
 import { getActiveOpenCodeUrl } from '@/stores/server-store';
 import { findFiles, listFiles } from '../api/opencode-files';
-import type { FileNode } from '../types';
+import type { FileNode } from '@/features/file-browser/types';
 import {
   type WorkspaceSearchEntry,
   type WorkspaceSearchOptions,
@@ -12,7 +12,7 @@ import {
   searchIndexedWorkspaceEntries,
   toWorkspaceSearchEntry,
   workspaceQueryLooksPathLike,
-} from './workspace-search-core';
+} from '@/features/file-browser/search/workspace-search-core';
 
 interface WorkspaceSearchRuntimeOptions extends WorkspaceSearchOptions {
   apiLimit?: number;

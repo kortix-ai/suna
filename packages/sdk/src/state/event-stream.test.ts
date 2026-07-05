@@ -351,6 +351,26 @@ describe('openEventStream reconnect backoff', () => {
   });
 });
 
+function createParkingChannel(chunks: unknown[]): AsyncIterable<unknown> {
+  let index = 0;
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        next: (): Promise<IteratorResult<unknown>> => {
+          if (index < chunks.length) {
+            const value = chunks[index++];
+            return Promise.resolve({ value, done: false });
+          }
+          // Parks forever: no further value, no error, no `done`. Models a
+          // stalled socket that just sits there with nothing observable —
+          // the underlying fetch/read never settles on its own.
+          return new Promise<IteratorResult<unknown>>(() => {});
+        },
+      };
+    },
+  };
+}
+
 describe('openEventStream heartbeat watchdog', () => {
   test('forces a reconnect and drops the event that surfaces after the 15s deadline', async () => {
     const clock = createFakeClock();
@@ -374,6 +394,99 @@ describe('openEventStream heartbeat watchdog', () => {
     expect(channels.length).toBe(1);
 
     await clock.advance(250);
+    expect(channels.length).toBe(2);
+
+    handle.close();
+  });
+
+  test('reconnects off a permanently parked read that never resolves, errors, or closes', async () => {
+    const clock = createFakeClock();
+    const dispatched: OpenCodeEvent[] = [];
+    let attempts = 0;
+
+    const client: EventStreamClient = {
+      global: {
+        event: async () => {
+          attempts++;
+          return { stream: createParkingChannel([sessionStatus('s1', 'busy')]) };
+        },
+      },
+    };
+
+    const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
+    await tick();
+
+    await clock.advance(16);
+    expect(dispatched.length).toBe(1);
+    expect(attempts).toBe(1);
+
+    await clock.advance(HEARTBEAT_MS - 16);
+    expect(attempts).toBe(1);
+
+    await clock.advance(250);
+    expect(attempts).toBe(2);
+
+    handle.close();
+  });
+
+  test('aborts the previous connection signal on a heartbeat reconnect (no leaked stream)', async () => {
+    const clock = createFakeClock();
+    const abortedSignals: boolean[] = [];
+    const client: EventStreamClient = {
+      global: {
+        event: async (opts) => {
+          const idx = abortedSignals.length;
+          abortedSignals.push(false);
+          opts.signal.addEventListener('abort', () => {
+            abortedSignals[idx] = true;
+          });
+          // Park so only the heartbeat can end this attempt.
+          return { stream: createParkingChannel([]) };
+        },
+      },
+    };
+
+    const handle = openEventStream({ client, onEvent: () => {}, timers: clock });
+    await tick();
+    expect(abortedSignals.length).toBe(1);
+    expect(abortedSignals[0]).toBe(false);
+
+    // Cross the heartbeat deadline → the first attempt's own signal must fire
+    // (that's what cancels the vendor reader), then reconnect.
+    await clock.advance(HEARTBEAT_MS);
+    await tick();
+    expect(abortedSignals[0]).toBe(true);
+
+    await clock.advance(250);
+    await tick();
+    expect(abortedSignals.length).toBe(2);
+    expect(abortedSignals[1]).toBe(false);
+
+    handle.close();
+  });
+
+  test('a genuine mid-stream rejection reconnects with backoff', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const dispatched: OpenCodeEvent[] = [];
+
+    const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
+    await tick();
+
+    channels[0].push(sessionStatus('s1', 'busy'));
+    await tick();
+    await clock.advance(16);
+    expect(dispatched.length).toBe(1);
+
+    channels[0].fail(new Error('ERR_STREAM_ABORTED'));
+    await tick();
+    expect(channels.length).toBe(1);
+
+    // A thrown stream skips the stable-connection computation, so it reconnects
+    // on the exponential path (min 1s), not the 250ms fast-resume — the point
+    // is that the rejection is handled and retried, not swallowed.
+    await clock.advance(1000);
+    await tick();
     expect(channels.length).toBe(2);
 
     handle.close();

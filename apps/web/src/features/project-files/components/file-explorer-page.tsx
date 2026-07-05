@@ -25,8 +25,8 @@ import { buildGitStatusMap, useFileEventInvalidation, useFileList, useGitStatus 
 import { useChangeRequests } from '../hooks/use-change-requests';
 import { useDirectoryDownload } from '../hooks/use-directory-download';
 import { useFileCopy, useFileDelete, useFileMkdir, useFileRename } from '../hooks/use-file-mutations';
-import { useFilesStore } from '../store/files-store';
-import type { FileNode } from '../types';
+import { useFilesStore } from '@/features/file-browser/store/files-store';
+import type { FileNode } from '@/features/file-browser/types';
 import { ChangeRequestDetailDialog } from './change-request-detail-dialog';
 import { ChangeRequestsPanel } from './change-requests-panel';
 import { CheckpointsPanel } from './checkpoints-panel';

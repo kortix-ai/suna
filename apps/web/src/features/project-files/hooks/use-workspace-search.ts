@@ -11,12 +11,12 @@
  */
 
 import { useMemo } from 'react';
-import type { FindMatch } from '../types';
+import type { FindMatch } from '@/features/file-browser/types';
 import {
   type WorkspaceSearchEntry,
   parseWorkspacePaths,
   rankWorkspaceSearchEntry,
-} from '../search/workspace-search-core';
+} from '@/features/file-browser/search/workspace-search-core';
 
 export type FileSearchResult = WorkspaceSearchEntry;
 
