@@ -199,7 +199,10 @@ describe('getPublicSessionMessages', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.transcript.available).toBe(false);
-      expect(result.transcript.reason).toContain('ECONNRESET');
+      // Anonymous audience: the raw daemon error text must NOT leak — generic
+      // reason only (the detail is logged server-side).
+      expect(result.transcript.reason).not.toContain('ECONNRESET');
+      expect(result.transcript.reason).toBeTruthy();
     }
   });
 });

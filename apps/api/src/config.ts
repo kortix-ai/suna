@@ -349,6 +349,7 @@ const envSchema = z.object({
 
   // ── Abuse controls (optional, all have sane defaults) ────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN:      optInt(20),
+  KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: optInt(60),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE:    optInt(60),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID:    optInt(600),
   KORTIX_PROXY_REQS_PER_MIN:              optInt(600),

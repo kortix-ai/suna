@@ -243,10 +243,12 @@ export async function getPublicSessionMessages(
       },
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    // Anonymous audience — surface a generic reason, never the raw fetch/daemon
+    // error text (host shapes, internal paths). Log the detail server-side.
+    console.warn('[public-session-share-view] transcript read failed:', err);
     return {
       ok: true,
-      transcript: unavailable(`Could not read sandbox transcript: ${message}`, opencodeSessionId),
+      transcript: unavailable('Could not read the shared session right now.', opencodeSessionId),
     };
   }
 }

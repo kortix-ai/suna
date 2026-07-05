@@ -29,10 +29,31 @@ interface AuditContext {
   metadata?: Record<string, unknown>;
 }
 
+const UUID_V4_REGEX = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+
+// Hard cap on distinct live buckets per limiter. A limiter keyed on any
+// attacker-influenced value (e.g. the public-session-share id) would otherwise
+// grow this Map without bound under a flood of unique keys → process-wide OOM.
+// When exceeded we evict the oldest-inserted entries (idle ones first).
+const MAX_BUCKETS = 50_000;
+
 export class TokenBucketRateLimiter {
   private buckets = new Map<string, Bucket>();
 
   constructor(private readonly namespace: string) {}
+
+  private evictIfNeeded() {
+    if (this.buckets.size < MAX_BUCKETS) return;
+    // Map preserves insertion order and entries are refreshed in place (never
+    // re-inserted), so the head is the least-recently-created. Drop ~10% to
+    // amortize the sweep across many inserts.
+    const dropCount = Math.ceil(MAX_BUCKETS * 0.1);
+    let dropped = 0;
+    for (const key of this.buckets.keys()) {
+      this.buckets.delete(key);
+      if (++dropped >= dropCount) break;
+    }
+  }
 
   check(key: string, policy: RateLimitPolicy): RateLimitResult {
     const limit = Math.max(1, Math.floor(policy.limit));
@@ -42,6 +63,7 @@ export class TokenBucketRateLimiter {
     let bucket = this.buckets.get(bucketKey);
 
     if (!bucket) {
+      this.evictIfNeeded();
       bucket = { tokens: limit - 1, lastRefill: now };
       this.buckets.set(bucketKey, bucket);
       return { allowed: true, limit, remaining: bucket.tokens, resetMs: windowMs };
@@ -200,7 +222,14 @@ export function createSandboxProxyRateLimitMiddleware() {
  */
 export function createPublicSessionShareRateLimitMiddleware() {
   return async (c: Context, next: Next) => {
-    const shareId = c.req.param('shareId') || clientIp(c);
+    // Key on the share id when it's a well-formed uuid (every visitor to one
+    // shared link shares that bucket); otherwise fall back to client IP. This
+    // MUST run before the raw param can key the bucket Map — an attacker
+    // looping unique garbage ids would otherwise allocate an unbounded number
+    // of buckets (the id is never a real share, so it never reaches the
+    // handler's own validation) and OOM the process.
+    const rawShareId = c.req.param('shareId');
+    const shareId = rawShareId && UUID_V4_REGEX.test(rawShareId) ? rawShareId : `ip:${clientIp(c)}`;
     const denied = await enforceRateLimit(
       c,
       publicSessionShareLimiter,
