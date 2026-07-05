@@ -116,7 +116,9 @@ function resetState() {
   freestyleCalls = [];
 }
 
+const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
+  ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     if (c.req.header('Authorization') === `Bearer ${PROJECT_SANDBOX_TOKEN}`) {
       c.set('userId', ACCOUNT_ID);
@@ -156,6 +158,10 @@ mock.module('../projects/git', () => ({
   grepRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
   readRepoFile: async () => '',
+  // compile-agent-config.ts (the agent-first v2 compiler) reads the manifest
+  // straight from git — no manifest ⇒ null ⇒ the v1-shaped projects this suite
+  // exercises get no compiled agent config, matching their pre-compiler behavior.
+  readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),

@@ -29,8 +29,15 @@ export {
   serializeManifestObject,
 } from './format';
 
-/** Maximum manifest schema version this validator understands. */
-const KNOWN_SCHEMA_VERSION = 1;
+/**
+ * Maximum manifest schema version this validator understands.
+ *
+ * v1 = `[[agents]]` array overlay, TOML or YAML, `[[channels]]` allowed.
+ * v2 = `agents:` map (identity + governance + full OpenCode AgentConfig
+ * parity), YAML-only, `[[channels]]` removed, deny-by-default grant sets.
+ * See docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2/§2.7.
+ */
+const KNOWN_SCHEMA_VERSION = 2;
 
 /** The slug reserved for the platform-shared default sandbox template. */
 const RESERVED_SANDBOX_SLUG = 'default';
@@ -147,7 +154,27 @@ export function validateManifest(
     parsed = input;
   }
 
-  validateRoot(parsed, issues);
+  const version = validateRoot(parsed, format, issues);
+
+  if (version === 2) {
+    validateManifestBodyV2(parsed, issues);
+  } else {
+    validateManifestBodyV1(parsed, issues);
+  }
+
+  return {
+    valid: !issues.some((i) => i.severity === 'error'),
+    parsed,
+    issues,
+  };
+}
+
+/**
+ * kortix_version 1 section validators — UNCHANGED from before v2 existed.
+ * Byte-for-byte the same calls as always; v1 manifests must keep validating
+ * identically no matter what v2 support is added alongside it.
+ */
+function validateManifestBodyV1(parsed: Record<string, unknown>, issues: ManifestIssue[]): void {
   validateProject(parsed.project, 'project', issues);
   validateEnv(parsed.env, 'env', issues);
   validateOpenCode(parsed.opencode, 'opencode', issues);
@@ -158,12 +185,29 @@ export function validateManifest(
   validateAgents(parsed.agents, 'agents', issues);
   validateChannels(parsed.channels, 'channels', issues);
   validateApps(parsed.apps, 'apps', issues);
+}
 
-  return {
-    valid: !issues.some((i) => i.severity === 'error'),
-    parsed,
-    issues,
-  };
+/**
+ * kortix_version 2 section validators. Every v1 top-level section keeps its
+ * v1 shape/validation (project, env, opencode, sandbox, triggers, connectors,
+ * apps — spec §2.7/§5); `agents` becomes a name→block map (§2.2), `channels`
+ * is removed (§2.5), and `default_agent` + `runtime` are new top-level keys
+ * (§2.1/§2.3).
+ */
+function validateManifestBodyV2(parsed: Record<string, unknown>, issues: ManifestIssue[]): void {
+  validateProject(parsed.project, 'project', issues);
+  validateEnv(parsed.env, 'env', issues);
+  validateOpenCode(parsed.opencode, 'opencode', issues);
+  validateSandbox(parsed.sandbox, 'sandbox', issues);
+  rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
+  validateTriggers(parsed.triggers, 'triggers', issues);
+  validateConnectors(parsed.connectors, 'connectors', issues);
+  validateApps(parsed.apps, 'apps', issues);
+  rejectChannelsV2(parsed.channels, 'channels', issues);
+  validateRuntimeV2(parsed.runtime, 'runtime', issues);
+  const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
+  validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
+  validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
 }
 
 /** Format issues into a colored, console-friendly multi-line string. */
@@ -185,14 +229,18 @@ export function formatIssues(issues: ManifestIssue[], opts: { color?: boolean } 
 
 /**
  * The actions an agent's `[[agents]].kortix_cli` may grant — the project-scoped
- * surface. MUST stay in sync with apps/api/src/iam/actions.ts (PROJECT_ACTIONS +
- * CHANNEL_ACTIONS). Account-scoped admin actions (member.*, billing.*, token.*,
- * project.create, …) are deliberately excluded: they are the hard ceiling and
- * can never be granted to an agent.
+ * surface. MUST stay in sync with apps/api/src/iam/actions.ts PROJECT_ACTIONS.
+ * Account-scoped admin actions (member.*, billing.*, token.*, project.create, …)
+ * are deliberately excluded: they are the hard ceiling and can never be granted
+ * to an agent. The channel.* resource actions (channel.send, …) and the
+ * project.gateway.routing.edit / project.session.exec / project.schedule.* /
+ * project.webhook.* leaves were removed from the catalog (IAM enforcement
+ * audit, 2026-07): none of them were ever asserted on any route, so granting
+ * or omitting them was a silent no-op.
  */
 // MUST stay in sync with apps/api iam/actions.ts GRANTABLE_KORTIX_CLI (= all
-// PROJECT_ACTIONS + CHANNEL_ACTIONS). The unit-agents-parse drift-guard test
-// fails loudly if these diverge (this package can't import apps/api).
+// PROJECT_ACTIONS). The unit-agents-parse drift-guard test fails loudly if
+// these diverge (this package can't import apps/api).
 export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.read',
   'project.write',
@@ -202,7 +250,6 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.cr.merge',
   'project.session.read',
   'project.session.start',
-  'project.session.exec',
   'project.session.stop',
   'project.members.read',
   'project.members.manage',
@@ -213,7 +260,6 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.trigger.fire',
   'project.gateway.logs.read',
   'project.gateway.spend.read',
-  'project.gateway.routing.edit',
   'project.gateway.budget.set',
   'project.gateway.keys.manage',
   // IAM v1 per-capability leaves.
@@ -223,10 +269,6 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.skill.write',
   'project.command.read',
   'project.command.write',
-  'project.schedule.read',
-  'project.schedule.write',
-  'project.webhook.read',
-  'project.webhook.write',
   'project.file.read',
   'project.file.write',
   'project.customize.read',
@@ -241,6 +283,25 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.review.read',
   'project.review.submit',
   'project.review.act',
+];
+
+/**
+ * Actions removed from the enforcement catalog (IAM dead-catalog cleanup,
+ * 2026-07) but that older project manifests may still list under
+ * `kortix_cli`. None of them were ever asserted on any route, so granting or
+ * omitting them was always a no-op — but a manifest merge/ship must not start
+ * hard-failing for projects that happen to still mention one. Kept out of
+ * `GRANTABLE_KORTIX_CLI_ACTIONS` (they must never appear in the role editor
+ * or be recommended for new manifests) and instead surfaced as a
+ * deprecation warning by `validateGrantList`.
+ */
+export const LEGACY_TOLERATED_KORTIX_CLI_ACTIONS: readonly string[] = [
+  'project.session.exec',
+  'project.gateway.routing.edit',
+  'project.schedule.read',
+  'project.schedule.write',
+  'project.webhook.read',
+  'project.webhook.write',
   'channel.read',
   'channel.connect',
   'channel.send',
@@ -287,11 +348,19 @@ function validateGrantList(
     }
     const s = item.trim();
     if (checkAction && s !== '*' && !GRANTABLE_KORTIX_CLI_ACTIONS.includes(s)) {
-      issues.push({
-        path: `${where}[${k}]`,
-        message: `"${s}" is not a grantable kortix_cli action (allowed: project.* / channel.*; account-scoped actions can never be granted to an agent).`,
-        severity: 'error',
-      });
+      if (LEGACY_TOLERATED_KORTIX_CLI_ACTIONS.includes(s)) {
+        issues.push({
+          path: `${where}[${k}]`,
+          message: `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement — granting or omitting it has no effect). Remove it from the manifest.`,
+          severity: 'warning',
+        });
+      } else {
+        issues.push({
+          path: `${where}[${k}]`,
+          message: `"${s}" is not a grantable kortix_cli action (allowed: project.*; account-scoped actions can never be granted to an agent).`,
+          severity: 'error',
+        });
+      }
     }
   });
 }
@@ -343,7 +412,17 @@ function validateAgents(node: unknown, path: string, issues: ManifestIssue[]): v
   });
 }
 
-function validateRoot(raw: Record<string, unknown>, issues: ManifestIssue[]): void {
+/**
+ * Validate `kortix_version` and resolve which section-validator set applies.
+ * Returns the parsed version number so the caller can dispatch to the v1 or
+ * v2 body validators — `undefined` only when the field itself is missing or
+ * not a valid positive integer (nothing sensible to dispatch on).
+ */
+function validateRoot(
+  raw: Record<string, unknown>,
+  format: ManifestFormat,
+  issues: ManifestIssue[],
+): number | undefined {
   const versionRaw = raw.kortix_version;
   if (versionRaw == null) {
     issues.push({
@@ -351,7 +430,7 @@ function validateRoot(raw: Record<string, unknown>, issues: ManifestIssue[]): vo
       message: 'kortix_version is required — add `kortix_version = 1` at the top.',
       severity: 'error',
     });
-    return;
+    return undefined;
   }
   const version = typeof versionRaw === 'number' ? versionRaw : Number.NaN;
   if (!Number.isFinite(version) || version < 1 || Math.floor(version) !== version) {
@@ -360,7 +439,7 @@ function validateRoot(raw: Record<string, unknown>, issues: ManifestIssue[]): vo
       message: `kortix_version must be a positive integer (got ${JSON.stringify(versionRaw)}).`,
       severity: 'error',
     });
-    return;
+    return undefined;
   }
   if (version > KNOWN_SCHEMA_VERSION) {
     issues.push({
@@ -368,7 +447,21 @@ function validateRoot(raw: Record<string, unknown>, issues: ManifestIssue[]): vo
       message: `Unsupported schema version ${version}. This tool understands up to v${KNOWN_SCHEMA_VERSION}; upgrade the CLI or pin the manifest.`,
       severity: 'error',
     });
+    return version;
   }
+  // v2's nested permission trees, per-value secret scoping, and approval lists
+  // are genuinely awkward in TOML (spec §2.7) — TOML sunsets at v1. Point at
+  // the migration path rather than silently misparsing.
+  if (version === 2 && format === 'toml') {
+    issues.push({
+      path: 'kortix_version',
+      message:
+        'kortix_version 2 manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml or run `kortix migrate`.',
+      severity: 'error',
+    });
+    return version;
+  }
+  return version;
 }
 
 function validateProject(node: unknown, path: string, issues: ManifestIssue[]): void {
@@ -1178,6 +1271,490 @@ function validateApps(node: unknown, path: string, issues: ManifestIssue[]): voi
       }
     }
   });
+}
+
+// ─── kortix_version 2 types ───────────────────────────────────────────────
+//
+// v2 unifies identity + governance + runtime behavior into one `agents:` map
+// (spec §2.2). These types have no compiler/consumer yet (that's a later PR
+// — see AGENT-FIRST spec §2.3) but are exported now so that PR can build on a
+// clean, already-reviewed shape instead of re-deriving it from the validator.
+
+/** Full OpenCode `AgentConfig.mode` parity — https://opencode.ai/config.json `$defs.AgentConfig`. */
+export type AgentModeV2 = 'primary' | 'subagent' | 'all';
+
+/** Kortix governance field — validated only in this phase; enforcement is Phase 4. */
+export type WorkspaceModeV2 = 'runtime' | 'read' | 'branch';
+
+/** The only legal `runtime` today; reserved so `runtime: claude` is a one-line project change later. */
+export type RuntimeV2 = 'opencode';
+
+/** `$defs.PermissionActionConfig` in the OpenCode config schema. */
+export type PermissionActionV2 = 'ask' | 'allow' | 'deny';
+
+/** `$defs.PermissionRuleConfig`: a bare action, or a glob-pattern → action map. */
+export type PermissionRuleV2 = PermissionActionV2 | Record<string, PermissionActionV2>;
+
+/**
+ * `$defs.PermissionConfig`: either a bare action applied to everything, or an
+ * object keyed by tool/capability. `todowrite`/`question`/`webfetch`/
+ * `websearch`/`doom_loop` are action-only (no glob-map form upstream); the
+ * rest (including arbitrary passthrough tool names) accept the full rule form.
+ */
+export interface PermissionConfigObjectV2 {
+  read?: PermissionRuleV2;
+  edit?: PermissionRuleV2;
+  glob?: PermissionRuleV2;
+  grep?: PermissionRuleV2;
+  list?: PermissionRuleV2;
+  bash?: PermissionRuleV2;
+  task?: PermissionRuleV2;
+  external_directory?: PermissionRuleV2;
+  lsp?: PermissionRuleV2;
+  skill?: PermissionRuleV2;
+  todowrite?: PermissionActionV2;
+  question?: PermissionActionV2;
+  webfetch?: PermissionActionV2;
+  websearch?: PermissionActionV2;
+  doom_loop?: PermissionActionV2;
+  [tool: string]: PermissionRuleV2 | PermissionActionV2 | undefined;
+}
+
+export type PermissionConfigV2 = PermissionActionV2 | PermissionConfigObjectV2;
+
+/**
+ * A Kortix grant set as it appears on the wire: an allowlist, or the "all"/
+ * "none" sentinels. Distinct from the *resolved default* when the key is
+ * omitted entirely — see `resolveGrantSet`.
+ */
+export type GrantSetV2 = 'all' | 'none' | string[];
+
+/**
+ * One entry of the v2 `agents:` map — identity + governance + full OpenCode
+ * `AgentConfig` parity in one place (spec §2.2). Deprecated upstream fields
+ * (`tools`, `maxSteps`) and the v1 `env` grant-set name are validated as
+ * errors, not represented here.
+ */
+export interface AgentBlockV2 {
+  description?: string;
+  mode?: AgentModeV2;
+  model?: string;
+  variant?: string;
+  temperature?: number;
+  top_p?: number;
+  prompt?: string;
+  disable?: boolean;
+  hidden?: boolean;
+  options?: Record<string, unknown>;
+  color?: string;
+  steps?: number;
+  permission?: PermissionConfigV2;
+  connectors?: GrantSetV2;
+  secrets?: GrantSetV2;
+  kortix_cli?: GrantSetV2;
+  workspace?: WorkspaceModeV2;
+}
+
+/** The v2 manifest shape (YAML-only). Other sections keep their v1 shape. */
+export interface ManifestV2 {
+  kortix_version: 2;
+  default_agent: string;
+  runtime?: RuntimeV2;
+  agents: Record<string, AgentBlockV2>;
+  project?: Record<string, unknown>;
+  env?: Record<string, unknown>;
+  opencode?: Record<string, unknown>;
+  sandbox?: Record<string, unknown>;
+  triggers?: Array<Record<string, unknown>>;
+  connectors?: Array<Record<string, unknown>>;
+  apps?: Array<Record<string, unknown>>;
+}
+
+/**
+ * Resolve a grant-set field to its effective value given the version-specific
+ * default for an OMITTED key. v1 defaults an absent grant to `'all'` (adopt-
+ * to-govern back-compat); v2 defaults to `'none'` (deny-by-default, spec
+ * §2.2/§2.5) — same shape, opposite default. Shape errors (e.g. a garbage
+ * string) resolve to `'none'`; `validateGrantList` is what surfaces those as
+ * validation errors.
+ */
+export function resolveGrantSet(value: unknown, defaultWhenOmitted: 'all' | 'none'): GrantSetV2 {
+  if (value === undefined || value === null) return defaultWhenOmitted;
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    if (v === '' || v === 'none') return 'none';
+    if (v === 'all') return 'all';
+    return 'none';
+  }
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === 'string' && item.trim() !== '')
+      .map((item) => item.trim());
+  }
+  return defaultWhenOmitted;
+}
+
+const V2_RUNTIME_VALUES = ['opencode'] as const;
+const AGENT_MODES_V2 = ['primary', 'subagent', 'all'] as const;
+const WORKSPACE_MODES_V2 = ['runtime', 'read', 'branch'] as const;
+const PERMISSION_ACTIONS_V2 = ['ask', 'allow', 'deny'] as const;
+/** Keys that only ever take a bare action (no glob-map form) — mirrors upstream. */
+const PERMISSION_ACTION_ONLY_KEYS_V2 = [
+  'todowrite',
+  'question',
+  'webfetch',
+  'websearch',
+  'doom_loop',
+] as const;
+const AGENT_THEME_COLORS_V2 = [
+  'primary',
+  'secondary',
+  'accent',
+  'success',
+  'warning',
+  'error',
+  'info',
+] as const;
+const HEX_COLOR_RE_V2 = /^#[0-9a-fA-F]{6}$/;
+
+function validateRuntimeV2(node: unknown, path: string, issues: ManifestIssue[]): void {
+  if (node === undefined || node === null) return;
+  const v = typeof node === 'string' ? node.trim() : '';
+  if (!(V2_RUNTIME_VALUES as readonly string[]).includes(v)) {
+    issues.push({
+      path,
+      message: `runtime must be one of: ${V2_RUNTIME_VALUES.join(', ')} (got ${JSON.stringify(node)}).`,
+      severity: 'error',
+    });
+  }
+}
+
+function validatePermissionAction(value: unknown, where: string, issues: ManifestIssue[]): void {
+  if (typeof value !== 'string' || !(PERMISSION_ACTIONS_V2 as readonly string[]).includes(value)) {
+    issues.push({
+      path: where,
+      message: `must be one of: ${PERMISSION_ACTIONS_V2.join(', ')} (got ${JSON.stringify(value)}).`,
+      severity: 'error',
+    });
+  }
+}
+
+/** `PermissionRuleConfig`: a bare action, or a map of glob-pattern → action. */
+function validatePermissionRule(value: unknown, where: string, issues: ManifestIssue[]): void {
+  if (typeof value === 'string') {
+    validatePermissionAction(value, where, issues);
+    return;
+  }
+  if (isTable(value)) {
+    for (const [glob, action] of Object.entries(value)) {
+      validatePermissionAction(action, `${where}.${glob}`, issues);
+    }
+    return;
+  }
+  issues.push({
+    path: where,
+    message: 'must be an action ("ask" | "allow" | "deny") or a map of glob-pattern to action.',
+    severity: 'error',
+  });
+}
+
+/** The recursive `permission` tree — full OpenCode `PermissionConfig` parity. */
+function validatePermissionConfig(node: unknown, path: string, issues: ManifestIssue[]): void {
+  if (node === undefined || node === null) return;
+  if (typeof node === 'string') {
+    validatePermissionAction(node, path, issues);
+    return;
+  }
+  if (!isTable(node)) {
+    issues.push({
+      path,
+      message:
+        'permission must be an action ("ask" | "allow" | "deny") or a permission object (read, edit, bash, …).',
+      severity: 'error',
+    });
+    return;
+  }
+  for (const [key, value] of Object.entries(node)) {
+    const where = `${path}.${key}`;
+    if ((PERMISSION_ACTION_ONLY_KEYS_V2 as readonly string[]).includes(key)) {
+      validatePermissionAction(value, where, issues);
+    } else {
+      validatePermissionRule(value, where, issues);
+    }
+  }
+}
+
+/** One entry of the v2 `agents:` map — runtime-behavioral + governance fields. */
+function validateAgentBlockV2(
+  entry: unknown,
+  where: string,
+  agentName: string,
+  issues: ManifestIssue[],
+): void {
+  if (!isTable(entry)) {
+    issues.push({ path: where, message: 'must be a table/object.', severity: 'error' });
+    return;
+  }
+
+  expectStringOrAbsent(entry.description, `${where}.description`, issues);
+
+  if (entry.mode !== undefined) {
+    const mode = typeof entry.mode === 'string' ? entry.mode.trim() : '';
+    if (!(AGENT_MODES_V2 as readonly string[]).includes(mode)) {
+      issues.push({
+        path: `${where}.mode`,
+        message: `mode must be one of: ${AGENT_MODES_V2.join(', ')} (got "${mode || 'unset'}").`,
+        severity: 'error',
+      });
+    }
+  }
+  if (entry.mode === 'subagent') {
+    const desc = typeof entry.description === 'string' ? entry.description.trim() : '';
+    if (!desc) {
+      issues.push({
+        path: `${where}.description`,
+        message: `agent "${agentName}" has mode "subagent", which requires a non-empty description.`,
+        severity: 'error',
+      });
+    }
+  }
+
+  expectStringOrAbsent(entry.model, `${where}.model`, issues);
+  if (typeof entry.model === 'string' && entry.model.trim() && !entry.model.includes('/')) {
+    issues.push({
+      path: `${where}.model`,
+      message: `model should be in "provider/model" form (e.g. "anthropic/claude-sonnet-5"), got "${entry.model}".`,
+      severity: 'warning',
+    });
+  }
+  expectStringOrAbsent(entry.variant, `${where}.variant`, issues);
+
+  if (entry.temperature !== undefined && !isFiniteNumber(entry.temperature)) {
+    issues.push({ path: `${where}.temperature`, message: 'must be a number.', severity: 'error' });
+  }
+  if (entry.top_p !== undefined && !isFiniteNumber(entry.top_p)) {
+    issues.push({ path: `${where}.top_p`, message: 'must be a number.', severity: 'error' });
+  }
+
+  expectRelativePathOrAbsent(entry.prompt, `${where}.prompt`, issues);
+
+  if (entry.disable !== undefined && typeof entry.disable !== 'boolean') {
+    issues.push({ path: `${where}.disable`, message: 'must be a boolean.', severity: 'error' });
+  }
+  if (entry.hidden !== undefined && typeof entry.hidden !== 'boolean') {
+    issues.push({ path: `${where}.hidden`, message: 'must be a boolean.', severity: 'error' });
+  }
+  if (entry.options !== undefined && !isTable(entry.options)) {
+    issues.push({ path: `${where}.options`, message: 'must be an object.', severity: 'error' });
+  }
+
+  if (entry.color !== undefined) {
+    const ok =
+      typeof entry.color === 'string' &&
+      (HEX_COLOR_RE_V2.test(entry.color) ||
+        (AGENT_THEME_COLORS_V2 as readonly string[]).includes(entry.color));
+    if (!ok) {
+      issues.push({
+        path: `${where}.color`,
+        message: `color must be a hex color (e.g. "#7C5CFF") or one of: ${AGENT_THEME_COLORS_V2.join(', ')} (got ${JSON.stringify(entry.color)}).`,
+        severity: 'error',
+      });
+    }
+  }
+
+  if (entry.steps !== undefined) {
+    const n = entry.steps;
+    if (typeof n !== 'number' || !Number.isInteger(n) || n <= 0) {
+      issues.push({
+        path: `${where}.steps`,
+        message: 'must be a positive integer.',
+        severity: 'error',
+      });
+    }
+  }
+
+  if (entry.permission !== undefined) {
+    validatePermissionConfig(entry.permission, `${where}.permission`, issues);
+  }
+
+  // Deprecated upstream fields — pointer errors, not silent pass-through.
+  if (entry.tools !== undefined) {
+    issues.push({
+      path: `${where}.tools`,
+      message: '`tools` is deprecated upstream — use `permission` instead.',
+      severity: 'error',
+    });
+  }
+  if (entry.maxSteps !== undefined) {
+    issues.push({
+      path: `${where}.maxSteps`,
+      message: '`maxSteps` is deprecated upstream — use `steps` instead.',
+      severity: 'error',
+    });
+  }
+  // v1's grant-set name — renamed to `secrets` in v2 (spec §2.2/§2.4).
+  if (entry.env !== undefined) {
+    issues.push({
+      path: `${where}.env`,
+      message: 'use `secrets` instead of `env` in kortix_version 2 manifests.',
+      severity: 'error',
+    });
+  }
+
+  // Kortix governance — same grant-set shape/action rules as v1, reused as-is.
+  validateGrantList(entry.connectors, `${where}.connectors`, 'connectors', issues, false);
+  validateGrantList(entry.secrets, `${where}.secrets`, 'secrets', issues, false);
+  validateGrantList(entry.kortix_cli, `${where}.kortix_cli`, 'kortix_cli', issues, true);
+
+  if (entry.workspace !== undefined) {
+    const w = typeof entry.workspace === 'string' ? entry.workspace.trim() : '';
+    if (!(WORKSPACE_MODES_V2 as readonly string[]).includes(w)) {
+      issues.push({
+        path: `${where}.workspace`,
+        message: `workspace must be one of: ${WORKSPACE_MODES_V2.join(', ')} (got "${w || 'unset'}").`,
+        severity: 'error',
+      });
+    }
+  }
+}
+
+/** Result of scanning the v2 `agents:` map, for cross-validation by callers. */
+interface AgentsV2Scan {
+  /** Every validly-named declared agent (disabled or not). */
+  names: string[];
+  /** The subset of `names` whose block sets `disable: true`. */
+  disabledNames: string[];
+}
+
+/**
+ * `agents:` — the v2 replacement for v1's `[[agents]]` array (spec §2.1/§2.2).
+ * Returns the declared agent names (and which of them are disabled) so
+ * callers can cross-validate `default_agent` and `triggers[].agent` against
+ * them.
+ */
+function validateAgentsV2(node: unknown, path: string, issues: ManifestIssue[]): AgentsV2Scan {
+  const names: string[] = [];
+  const disabledNames: string[] = [];
+  if (node == null || (isTable(node) && Object.keys(node).length === 0)) {
+    issues.push({
+      path,
+      message: 'kortix_version 2 manifests must declare at least one agent under `agents`.',
+      severity: 'error',
+    });
+    return { names, disabledNames };
+  }
+  if (Array.isArray(node) || !isTable(node)) {
+    issues.push({
+      path,
+      message:
+        '`agents` must be a map of agent name → agent block in kortix_version 2 (the v1 `[[agents]]` array becomes a map).',
+      severity: 'error',
+    });
+    return { names, disabledNames };
+  }
+  for (const [name, entry] of Object.entries(node)) {
+    const where = `${path}.${name}`;
+    if (!SLUG_RE.test(name)) {
+      issues.push({
+        path: where,
+        message: `"${name}" is not a valid agent name (lowercase letters, digits, dashes, underscores).`,
+        severity: 'error',
+      });
+    } else {
+      names.push(name);
+      if (isTable(entry) && entry.disable === true) {
+        disabledNames.push(name);
+      }
+    }
+    validateAgentBlockV2(entry, where, name, issues);
+  }
+  return { names, disabledNames };
+}
+
+function validateDefaultAgentV2(
+  node: unknown,
+  path: string,
+  agentNames: string[],
+  disabledNames: string[],
+  issues: ManifestIssue[],
+): void {
+  if (node === undefined || node === null) {
+    issues.push({
+      path,
+      message:
+        'kortix_version 2 manifests must set `default_agent` — it must always resolve to a declared agent.',
+      severity: 'error',
+    });
+    return;
+  }
+  if (typeof node !== 'string' || !node.trim()) {
+    issues.push({ path, message: 'default_agent must be a non-empty string.', severity: 'error' });
+    return;
+  }
+  const name = node.trim();
+  if (!agentNames.includes(name)) {
+    issues.push({
+      path,
+      message: `default_agent "${name}" does not match any declared agent in \`agents\`.`,
+      severity: 'error',
+    });
+  } else if (disabledNames.includes(name)) {
+    issues.push({
+      path,
+      message: `default_agent "${name}" is declared with \`disable: true\` — a disabled agent can never resolve as the default; the runtime will reject this at session start.`,
+      severity: 'error',
+    });
+  }
+}
+
+/** v2 removes `[[channels]]` entirely — channel↔agent routing is live operational state, not git config (spec §2.5). */
+function rejectChannelsV2(node: unknown, path: string, issues: ManifestIssue[]): void {
+  if (node === undefined) return;
+  issues.push({
+    path,
+    message:
+      '`channels` is not supported in kortix_version 2 manifests — channel↔agent routing is managed in the dashboard, and the channel integration itself is expressed as a connector (provider="channel").',
+    severity: 'error',
+  });
+}
+
+/**
+ * v2 cross-validation: a trigger's `agent` (if set) must name a declared
+ * agent, or be omitted to fall back to `default_agent` (spec §2.1, closing
+ * trigger seam 7(a)). Layered on top of `validateTriggers`' structural checks,
+ * which stay identical between v1 and v2.
+ */
+function validateTriggerAgentRefsV2(
+  node: unknown,
+  path: string,
+  agentNames: string[],
+  issues: ManifestIssue[],
+): void {
+  if (!Array.isArray(node)) return;
+  node.forEach((entry, i) => {
+    if (!isTable(entry) || entry.agent === undefined || entry.agent === null) return;
+    const where = `${path}[${i}].agent`;
+    if (typeof entry.agent !== 'string' || !entry.agent.trim()) {
+      issues.push({
+        path: where,
+        message: 'agent must be a non-empty string naming a declared agent.',
+        severity: 'error',
+      });
+      return;
+    }
+    const name = entry.agent.trim();
+    if (!agentNames.includes(name)) {
+      issues.push({
+        path: where,
+        message: `agent "${name}" does not match any declared agent in \`agents\`; omit it to fall back to \`default_agent\`.`,
+        severity: 'error',
+      });
+    }
+  });
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
 // ─── Primitive helpers ────────────────────────────────────────────────────

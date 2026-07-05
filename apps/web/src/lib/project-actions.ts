@@ -35,10 +35,8 @@ export const PROJECT_ACTIONS = {
   PROJECT_SKILL_WRITE: 'project.skill.write',
   PROJECT_COMMAND_READ: 'project.command.read',
   PROJECT_COMMAND_WRITE: 'project.command.write',
-  PROJECT_SCHEDULE_READ: 'project.schedule.read',
-  PROJECT_SCHEDULE_WRITE: 'project.schedule.write',
-  PROJECT_WEBHOOK_READ: 'project.webhook.read',
-  PROJECT_WEBHOOK_WRITE: 'project.webhook.write',
+  PROJECT_TRIGGER_READ: 'project.trigger.read',
+  PROJECT_TRIGGER_CREATE: 'project.trigger.create',
   PROJECT_FILE_READ: 'project.file.read',
   PROJECT_FILE_WRITE: 'project.file.write',
   PROJECT_CUSTOMIZE_READ: 'project.customize.read',
@@ -98,13 +96,19 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
     read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
     write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
   },
+  // `schedules` and `webhooks` are two views over the SAME backend resource
+  // (project triggers, filtered client-side by `type`) — there is no
+  // dedicated schedule.*/webhook.* leaf server-side (those were removed from
+  // the catalog as dead/unwired; see iam/actions.ts). Gate both on the real
+  // enforcement point: project.trigger.read/create. Update/delete stay gated
+  // on their own leaves inside the view, same precedent as `changes` below.
   schedules: {
-    read: PROJECT_ACTIONS.PROJECT_SCHEDULE_READ,
-    write: PROJECT_ACTIONS.PROJECT_SCHEDULE_WRITE,
+    read: PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+    write: PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
   },
   webhooks: {
-    read: PROJECT_ACTIONS.PROJECT_WEBHOOK_READ,
-    write: PROJECT_ACTIONS.PROJECT_WEBHOOK_WRITE,
+    read: PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+    write: PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
   },
   changes: { read: PROJECT_ACTIONS.PROJECT_GITOPS_READ, write: PROJECT_ACTIONS.PROJECT_CR_OPEN },
   review: { read: PROJECT_ACTIONS.PROJECT_REVIEW_READ, write: PROJECT_ACTIONS.PROJECT_REVIEW_ACT },
@@ -115,8 +119,8 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   },
   marketplace: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_GITOPS_PUSH },
   // LLM gateway sections — visible to any project member; the backend enforces
-  // the specific gateway capability (logs/spend.read, routing.edit, budget.set,
-  // keys.manage) on each mutation route, so visibility gates on project.read.
+  // the specific gateway capability (logs/spend.read, budget.set, keys.manage)
+  // on each mutation route, so visibility gates on project.read.
   'llm-management': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   'llm-overview': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   'llm-providers': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
