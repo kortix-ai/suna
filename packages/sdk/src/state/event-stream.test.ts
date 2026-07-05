@@ -351,6 +351,26 @@ describe('openEventStream reconnect backoff', () => {
   });
 });
 
+function createParkingChannel(chunks: unknown[]): AsyncIterable<unknown> {
+  let index = 0;
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        next: (): Promise<IteratorResult<unknown>> => {
+          if (index < chunks.length) {
+            const value = chunks[index++];
+            return Promise.resolve({ value, done: false });
+          }
+          // Parks forever: no further value, no error, no `done`. Models a
+          // stalled socket that just sits there with nothing observable —
+          // the underlying fetch/read never settles on its own.
+          return new Promise<IteratorResult<unknown>>(() => {});
+        },
+      };
+    },
+  };
+}
+
 describe('openEventStream heartbeat watchdog', () => {
   test('forces a reconnect and drops the event that surfaces after the 15s deadline', async () => {
     const clock = createFakeClock();
@@ -375,6 +395,36 @@ describe('openEventStream heartbeat watchdog', () => {
 
     await clock.advance(250);
     expect(channels.length).toBe(2);
+
+    handle.close();
+  });
+
+  test('reconnects off a permanently parked read that never resolves, errors, or closes', async () => {
+    const clock = createFakeClock();
+    const dispatched: OpenCodeEvent[] = [];
+    let attempts = 0;
+
+    const client: EventStreamClient = {
+      global: {
+        event: async () => {
+          attempts++;
+          return { stream: createParkingChannel([sessionStatus('s1', 'busy')]) };
+        },
+      },
+    };
+
+    const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
+    await tick();
+
+    await clock.advance(16);
+    expect(dispatched.length).toBe(1);
+    expect(attempts).toBe(1);
+
+    await clock.advance(HEARTBEAT_MS - 16);
+    expect(attempts).toBe(1);
+
+    await clock.advance(250);
+    expect(attempts).toBe(2);
 
     handle.close();
   });

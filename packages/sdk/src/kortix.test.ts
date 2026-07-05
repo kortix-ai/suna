@@ -188,6 +188,139 @@ test('kortix.sandboxShares hits /p/share (sandbox-scoped, not project-scoped)', 
   expect(last().method).toBe('DELETE');
 });
 
+// ── wave 4: account-invite lifecycle, resource-grants CRUD, group-grant
+// attach/detach, connector extras (pipedream/policies/oauth), and the
+// remaining project-level admin toggles ────────────────────────────────────
+
+test('kortix.accounts covers cancel/resend invite (account-scoped)', async () => {
+  await kortix.accounts.cancelInvite('ACC1', 'INV1');
+  expect(last().url).toContain('/accounts/ACC1/invites/INV1');
+  expect(last().method).toBe('DELETE');
+
+  await kortix.accounts.resendInvite('ACC1', 'INV1');
+  expect(last().url).toContain('/accounts/ACC1/invites/INV1/resend');
+  expect(last().method).toBe('POST');
+});
+
+test('kortix.accountInvites covers describe/accept/decline (invite-token scoped, no account id)', async () => {
+  await kortix.accountInvites.describe('INV1');
+  expect(last().url).toContain('/account-invites/INV1');
+  expect(last().method).toBe('GET');
+
+  await kortix.accountInvites.accept('INV1');
+  expect(last().url).toContain('/account-invites/INV1/accept');
+  expect(last().method).toBe('POST');
+
+  await kortix.accountInvites.decline('INV1');
+  expect(last().url).toContain('/account-invites/INV1/decline');
+  expect(last().method).toBe('POST');
+});
+
+test('project(id).access covers group-grant attach/update/detach', async () => {
+  await kortix.project('PID123').access.attachGroupGrant('GRP1', 'member');
+  expect(last().url).toContain('/projects/PID123/group-grants');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').access.updateGroupGrant('GRP1', 'manager');
+  expect(last().url).toContain('/projects/PID123/group-grants/GRP1');
+  expect(last().method).toBe('PATCH');
+
+  await kortix.project('PID123').access.detachGroupGrant('GRP1');
+  expect(last().url).toContain('/projects/PID123/group-grants/GRP1');
+  expect(last().method).toBe('DELETE');
+});
+
+test('project(id).access.resourceGrants covers list/create/remove', async () => {
+  await kortix.project('PID123').access.resourceGrants.list();
+  expect(last().url).toContain('/projects/PID123/resource-grants');
+  expect(last().method).toBe('GET');
+
+  await kortix.project('PID123').access.resourceGrants.create({
+    resourceType: 'secret',
+    resourceId: 'MY_SECRET',
+    principalType: 'member',
+    principalId: 'user-1',
+  });
+  expect(last().url).toContain('/projects/PID123/resource-grants');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').access.resourceGrants.remove('G9');
+  expect(last().url).toContain('/projects/PID123/resource-grants/G9');
+  expect(last().method).toBe('DELETE');
+});
+
+test('project(id).secrets covers provider OAuth start/poll', async () => {
+  await kortix.project('PID123').secrets.startProviderOAuth('chatgpt');
+  expect(last().url).toContain('/projects/PID123/oauth/chatgpt/start');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').secrets.pollProviderOAuth('chatgpt', 'FLOW1');
+  expect(last().url).toContain('/projects/PID123/oauth/chatgpt/poll');
+  expect(last().method).toBe('POST');
+});
+
+test('project(id).connectors covers sharing/credential-mode/sensitive/agent-scope/policies/pipedream', async () => {
+  await kortix.project('PID123').connectors.setSharing('slack-1', { mode: 'project' } as never);
+  expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/sharing');
+  expect(last().method).toBe('PUT');
+
+  await kortix.project('PID123').connectors.setCredentialMode('slack-1', 'shared');
+  expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/credential-mode');
+
+  await kortix.project('PID123').connectors.setSensitive('slack-1', true);
+  expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/sensitive');
+
+  await kortix.project('PID123').connectors.setAgentScope('slack-1', ['researcher']);
+  expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/agent-scope');
+
+  await kortix.project('PID123').connectors.policies.get('slack-1');
+  expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/policies');
+  expect(last().method).toBe('GET');
+
+  await kortix.project('PID123').connectors.policies.set('slack-1', [{ match: '*', action: 'block' }]);
+  expect(last().url).toContain('/executor/projects/PID123/connectors/slack-1/policies');
+  expect(last().method).toBe('PUT');
+
+  await kortix.project('PID123').connectors.pipedream.listApps('gmail');
+  expect(last().url).toContain('/executor/projects/PID123/pipedream/apps?q=gmail');
+
+  await kortix.project('PID123').connectors.pipedream.connect('gmail-1');
+  expect(last().url).toContain('/executor/projects/PID123/connectors/gmail-1/connect');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').connectors.pipedream.finalize('gmail-1');
+  expect(last().url).toContain('/executor/projects/PID123/connectors/gmail-1/connect/finalize');
+  expect(last().method).toBe('POST');
+});
+
+test('kortix.connectStatus hits the top-level connect-status endpoint (not project-scoped)', async () => {
+  await kortix.connectStatus();
+  expect(last().url).toContain('/executor/connect-status');
+});
+
+test('project(id) covers experimental-feature toggle, sandbox provider pin, apps config, and repo-collaborator invite', async () => {
+  await kortix.project('PID123').updateExperimentalFeature('marketplace', true);
+  expect(last().url).toContain('/projects/PID123/experimental');
+  expect(last().method).toBe('PATCH');
+
+  await kortix.project('PID123').sandbox.setProvider('daytona');
+  expect(last().url).toContain('/projects/PID123/sandbox-provider');
+  expect(last().method).toBe('PATCH');
+
+  await kortix.project('PID123').apps.updateConfig({ enabled: true });
+  expect(last().url).toContain('/projects/PID123/experimental');
+
+  await kortix.project('PID123').git.inviteCollaborator('octocat');
+  expect(last().url).toContain('/projects/PID123/git/collaborators');
+  expect(last().method).toBe('POST');
+});
+
+test('kortix.projects.createRepo hits the create-repo endpoint (not bound to an existing project id)', async () => {
+  await kortix.projects.createRepo({ name: 'new-repo' });
+  expect(last().url).toContain('/projects/create-repo');
+  expect(last().method).toBe('POST');
+});
+
 test('kortix.transcribe hits the top-level /transcription endpoint (not project-scoped)', async () => {
   const file = new File(['audio'], 'clip.webm', { type: 'audio/webm' });
   await kortix.transcribe(file);

@@ -124,6 +124,24 @@ function getCoalesceKey(event: OpenCodeEvent): string | undefined {
 }
 
 /**
+ * A promise that resolves the moment `signal` fires 'abort' (or immediately,
+ * if it's already aborted), plus a `cleanup` to remove the listener when it
+ * loses a race. Used to make an in-flight `iterator.next()` read abortable:
+ * without this, a parked read (server stops sending, no error, no close)
+ * would never let a fired heartbeat/abort be observed, since nothing wakes
+ * the pending read.
+ */
+function onceAborted(signal: AbortSignal): { promise: Promise<void>; cleanup: () => void } {
+  if (signal.aborted) return { promise: Promise.resolve(), cleanup: () => {} };
+  let handler: () => void = () => {};
+  const promise = new Promise<void>((resolve) => {
+    handler = () => resolve();
+    signal.addEventListener('abort', handler, { once: true });
+  });
+  return { promise, cleanup: () => signal.removeEventListener('abort', handler) };
+}
+
+/**
  * Connects to the opencode SSE event stream and keeps it alive: heartbeat
  * watchdog, event coalescing + batched flush, gap-triggered rehydrate signal,
  * and exponential-backoff reconnect. Framework-free — safe to call from any
@@ -221,13 +239,38 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
         };
         resetHeartbeat();
 
-        // Consume stream: queue + coalesce + 16ms flush + yield every 8ms
+        // Consume stream: queue + coalesce + 16ms flush + yield every 8ms.
+        //
+        // The read itself has to be abortable, not just checked between
+        // reads. If the underlying `.next()` parks (server stops sending, no
+        // error, no close), a plain `for await` never yields control back to
+        // this loop body, so a heartbeat/abort that fires while parked would
+        // never actually be observed. Race each read against the
+        // heartbeat/abort signals instead — whichever settles first wins.
         let yieldedAt = t.now();
-        for await (const event of stream) {
-          if (abortController.signal.aborted || heartbeatAbort.signal.aborted) break;
+        const iterator = stream[Symbol.asyncIterator]();
+        while (!abortController.signal.aborted && !heartbeatAbort.signal.aborted) {
+          const nextOutcome = iterator.next().then(
+            (result) => ({ kind: 'next' as const, result }),
+            (error) => ({ kind: 'error' as const, error }),
+          );
+          const abortWatch = onceAborted(abortController.signal);
+          const heartbeatWatch = onceAborted(heartbeatAbort.signal);
+          const outcome = await Promise.race([
+            nextOutcome,
+            abortWatch.promise.then(() => ({ kind: 'aborted' as const })),
+            heartbeatWatch.promise.then(() => ({ kind: 'aborted' as const })),
+          ]);
+          abortWatch.cleanup();
+          heartbeatWatch.cleanup();
+
+          if (outcome.kind === 'aborted') break;
+          if (outcome.kind === 'error') throw outcome.error;
+          if (outcome.result.done) break;
+
           streamHadEvents = true;
           resetHeartbeat();
-          const raw = event as any;
+          const raw = outcome.result.value as any;
           const e = (
             raw && typeof raw === 'object' && 'payload' in raw ? raw.payload : raw
           ) as OpenCodeEvent;
