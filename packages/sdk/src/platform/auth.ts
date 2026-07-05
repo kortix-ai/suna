@@ -1,44 +1,45 @@
 /**
  * Shared auth token helpers.
  *
- * Provides Supabase JWT authentication for all requests.
+ * Every function below is a thin delegate to `platformConfig().getToken()` —
+ * the SDK holds no token state of its own. Token acquisition (Supabase
+ * getSession/refreshSession or any other provider), caching, deduplicating
+ * concurrent callers (SSE, health check, session fetch, etc. all racing for a
+ * token on page load), and the install/bootstrap seam are entirely the host
+ * app's responsibility, implemented inside the `getToken` it passes to
+ * `configureKortix`/`createKortix`. A host that wants the old 30s-TTL +
+ * inflight-dedup behavior re-implements it in its own `getToken`; the SDK
+ * itself does not cache, dedupe, or retry beyond calling `getToken()` again.
  *
- * `getAuthToken()` is the unified getter: returns the Supabase JWT.
- * Use it anywhere you need to authenticate against the sandbox proxy.
+ * `getAuthToken()` is the unified getter: returns whatever token the host's
+ * `getToken()` resolves. `getSupabaseAccessToken()` is kept as an alias for
+ * callers that historically asked for "the Supabase token" specifically —
+ * same delegate, same value.
  *
- * `getSupabaseAccessToken()` is kept for callers that specifically need the
- * Supabase JWT (e.g. platform API calls that go through Supabase auth).
- *
- * **Deduplication**: Multiple callers (SSE, health check, session fetch, etc.)
- * all call getSupabaseAccessToken() on page load simultaneously. Without
- * deduplication, each triggers its own getSession() → refreshSession() chain,
- * causing 5+ parallel Supabase auth roundtrips that take seconds. The inflight
- * promise ensures only ONE auth call runs at a time; all others piggyback.
- *
- * **Caching**: The resolved token is cached for TOKEN_CACHE_TTL (30s). Within
- * that window, subsequent calls return instantly. After TTL, the next call
- * refreshes from Supabase.
- *
- * SDK port: token acquisition (Supabase getSession/refreshSession), the 30s
- * token cache, the inflight dedup, and the install/bootstrap seam are all owned
- * by the host app and injected via `platformConfig().getToken()`. The exported
- * function names below are preserved verbatim so callers don't break.
+ * `invalidateTokenCache()` / `setCachedAuthToken()` / `setBootstrapAuthToken()`
+ * are no-ops here (there is no SDK-side cache to invalidate or seed); they're
+ * kept as exported names so existing call sites compile unchanged, and a host
+ * that layers its own caching on top of `getToken()` can wire these to that
+ * cache if it wants the "invalidate on 401" / "seed before hydration" hooks to
+ * do something.
  */
 
 import { platformConfig } from './config';
 
 /**
- * Get the current Supabase access token with caching + deduplication.
- *
- * Fast path: returns cached token if within TTL.
- * Slow path: deduplicates concurrent calls into a single auth roundtrip.
+ * Get the current auth token. Delegates directly to `platformConfig().getToken()`
+ * — any caching/deduplication the host wants happens inside that function.
  */
 export async function getSupabaseAccessToken(): Promise<string | null> {
 	return platformConfig().getToken();
 }
 
 /**
- * Retry token acquisition for initial auth hydration / stale cache recovery.
+ * Retry variant, kept for call-site compatibility. `options` (attempts/
+ * backoff/cache-invalidation) are accepted but unused — there is no SDK-side
+ * retry loop or cache here to apply them to; this just delegates to
+ * `platformConfig().getToken()` like every other getter in this file. A host
+ * that needs retry/backoff semantics implements them inside its `getToken`.
  */
 export async function getSupabaseAccessTokenWithRetry(options?: {
 	attempts?: number;

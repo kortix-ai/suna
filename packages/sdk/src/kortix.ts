@@ -17,7 +17,8 @@ import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
  * for ergonomics. Reactive data still comes from `@kortix/sdk/react` hooks.
  */
 import { getClient, getClientForUrl } from './opencode/client';
-import { type KortixPlatformConfig, configureKortix } from './platform/config';
+import { ApiError } from './platform/api/errors';
+import { type KortixPlatformConfig, configureKortix, platformConfig } from './platform/config';
 import * as P from './platform/projects-client';
 import { getSessionHealth } from './session/health';
 import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from './session/url';
@@ -28,6 +29,11 @@ import {
   type SessionRuntimeEntry,
 } from './state/session-runtime-registry';
 import { getSandboxUrlForExternalId } from './state/server-store/url-helpers';
+import {
+  openEventStream,
+  type EventStreamHandle,
+  type OpenCodeEvent,
+} from './state/event-stream';
 
 /** A model the agent can run, as the opencode runtime identifies it. */
 export type SessionModel = { providerID: string; modelID: string };
@@ -58,6 +64,34 @@ export function createKortix(config: KortixPlatformConfig) {
   configureKortix(config);
 
   /**
+   * Parse `backendUrl` for its port (used by the subdomain preview scheme).
+   * `backendUrl` is normally absolute, but the BFF pattern — a Next.js API
+   * route (or any same-origin proxy) fronting the real Kortix API — legitimately
+   * configures it as a relative path like `/api/kortix`. `new URL()` throws on
+   * a bare relative string (no base to resolve against). In a browser that's
+   * recoverable: resolve it against the page's own origin. Server-side there
+   * is no implicit origin, so a relative `backendUrl` is a real misconfiguration
+   * — fail loudly instead of silently defaulting to port 80.
+   */
+  function parseBackendUrlForPort(apiBaseUrl: string): URL | null {
+    try {
+      return new URL(apiBaseUrl);
+    } catch {
+      if (typeof window !== 'undefined' && window.location?.origin) {
+        try {
+          return new URL(apiBaseUrl, window.location.origin);
+        } catch {
+          return null;
+        }
+      }
+      throw new ApiError(
+        `Kortix SDK: backendUrl must be an absolute URL outside the browser (got ${JSON.stringify(apiBaseUrl)}). Relative paths like "/api/kortix" only resolve against a page origin — configure an absolute backendUrl for server-side hosts.`,
+        { code: 'INVALID_BACKEND_URL' },
+      );
+    }
+  }
+
+  /**
    * Resolve the proxy/preview URL context (sandboxId + api base) from config +
    * a THIS-handle's own resolved sandbox id, so a session's `previewUrl`/
    * `proxyUrl` never make the host name a sandbox — and never reads whichever
@@ -65,12 +99,18 @@ export function createKortix(config: KortixPlatformConfig) {
    * session handle).
    */
   function resolvePreviewOptsForSandbox(sandboxId: string): SubdomainUrlOptions {
-    const apiBaseUrl = config.backendUrl;
+    // Read the LIVE platform config, not the `config` captured at
+    // `createKortix()` time: a host may re-point the seam after creation
+    // (calling `configureKortix()` again — e.g. the whitelabel app switching
+    // its `backendUrl` to a same-origin BFF proxy once it learns wrapper mode
+    // is on), and preview/proxy URLs must follow the reconfigured base like
+    // every other call path already does.
+    const apiBaseUrl = platformConfig().backendUrl ?? config.backendUrl;
     let backendPort = 80;
-    try {
-      const u = new URL(apiBaseUrl);
+    const u = parseBackendUrlForPort(apiBaseUrl);
+    if (u) {
       backendPort = u.port ? Number(u.port) : u.protocol === 'https:' ? 443 : 80;
-    } catch {}
+    }
     return { sandboxId, backendPort, apiBaseUrl };
   }
 
@@ -603,6 +643,38 @@ export function createKortix(config: KortixPlatformConfig) {
       abort: async () => {
         const { opencodeSessionId, runtimeUrl } = await ensureReady();
         return getClientForUrl(runtimeUrl).session.abort({ sessionID: opencodeSessionId });
+      },
+      /**
+       * Live SSE stream of THIS session's runtime events (message/part
+       * updates, session status, permissions/questions, lsp diagnostics, …).
+       * A thin facade over the framework-free `openEventStream` primitive
+       * (`@kortix/sdk`'s `openEventStream`, also used verbatim by
+       * `@kortix/sdk/react`'s `useOpenCodeEventStream`): resolves THIS
+       * handle's own runtime first (`ensureReady()`), then connects a client
+       * bound to that runtime URL — never the module-global "active" one, so
+       * two session handles on two different sandboxes never cross wires.
+       * Framework-free — safe to call from a server-side "Kortix as a
+       * Backend" wrapper (Node/Bun), a worker, a CLI, or any non-React host.
+       *
+       * Handles connect/reconnect/backoff, a 15s heartbeat watchdog, and
+       * event coalescing internally. Call `handle.close()` to stop.
+       *
+       *   const handle = await session.stream({ onEvent: (e) => console.log(e) });
+       *   // later
+       *   handle.close();
+       */
+      stream: async (opts: {
+        onEvent: (event: OpenCodeEvent) => void;
+        onGapRehydrate?: (gapMs: number) => void;
+        signal?: AbortSignal;
+      }): Promise<EventStreamHandle> => {
+        const { runtimeUrl } = await ensureReady();
+        return openEventStream({
+          client: getClientForUrl(runtimeUrl),
+          onEvent: opts.onEvent,
+          onGapRehydrate: opts.onGapRehydrate,
+          signal: opts.signal,
+        });
       },
 
       // ── runtime (opencode v2, THIS session's own sandbox) ────────────────

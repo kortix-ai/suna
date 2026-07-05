@@ -156,7 +156,7 @@ Map exists, but these belong to the platform app, not the agent SDK:
 ### To make the SDK the whole data layer
 1. ~~Add a `files` client to the SDK~~ — **done**: `@kortix/sdk/files` wraps the daemon `/file` + `/find` endpoints (12 ops). Remaining: move `features/files` hooks in; **collapse the `features/project-files` twin** into it (backend-parameterized).
 2. **Wrap the existing client fns as hooks** in the SDK: git/versions/change-requests, triggers, gateway-observability, sandbox-admin, billing/account-state.
-3. **Framework-free event stream** — the SSE surface (`client.global.event()`) is only consumed today through React hooks (`use-session-sync`, `use-opencode-events`); a non-React host has no way to subscribe.
+3. ~~Framework-free event stream~~ — **done**: `openEventStream` (`@kortix/sdk` root barrel / `@kortix/sdk/event-stream`) is a framework-free connect/reconnect/heartbeat/coalescing primitive with zero React deps, and `session.stream()` is a thin facade over it (`ensureReady()` + the session's own runtime client). `@kortix/sdk/react`'s `useOpenCodeEventStream` is now just a React wrapper around the same primitive — a non-React host (server wrapper, worker, CLI) subscribes directly via `session.stream()` or `openEventStream()`.
 4. **Land + export the kortix-master daemon client** (tasks/tickets/projects/milestones/credentials/services) from the SDK barrel once its hooks move down.
 5. **Mobile adoption** — the SDK is the shared implementation in principle, but the mobile app hasn't migrated its data layer onto it yet.
 6. Everything else (the agent loop) is already SDK — that's the verified path.

@@ -92,3 +92,24 @@ export {
   type OpenCodeEvent,
   type OpenEventStreamOptions,
 } from './state/event-stream';
+
+/**
+ * Typed error classes for the REST surface — isomorphic (no DOM/React deps),
+ * so a server-side "Kortix as a Backend" wrapper can `catch` a call into
+ * `backendApi`/`createKortix(...)`, `instanceof BillingError` a 402 and pass
+ * the cost/upgrade payload straight through to its own client, or
+ * `instanceof ApiError` to branch on `.status`/`.code`. Same classes the
+ * React host uses (`@kortix/sdk/react` re-exports from this same module) —
+ * one error hierarchy across every host.
+ */
+export {
+  ApiError,
+  AuthError,
+  BillingError,
+  RequestTooLargeError,
+  parseBillingError,
+  isBillingError,
+  formatBillingErrorForUI,
+  type ApiErrorFields,
+  type BillingErrorUI,
+} from './platform/api/errors';

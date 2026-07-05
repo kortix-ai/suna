@@ -54,13 +54,27 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
 | `kortix.accounts` | list · get · create · members · invites (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
 | `kortix.project(id)` | id-bound handle: `.secrets` · `.access` · `.connectors` · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` · `.sessions` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway`, `.channels`, `.apps`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · `send`/`abort`/`setModel`/`setAgent` (opinionated prompt wrappers, already shipped) · **its own runtime** (`health`/`previewUrl`/`proxyUrl` — sandbox resolved for you) + `.runtime` (the typed opencode client) |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · `send`/`abort`/`setModel`/`setAgent` (opinionated prompt wrappers) · `stream()` (live SSE, framework-free) · **its own runtime** (`health`/`previewUrl`/`proxyUrl` — sandbox resolved for you) + `.runtime` (the typed opencode client) |
 | `kortix.runtime()` | the opencode v2 client for the active sandbox (escape hatch) |
 
-> `session.stream()` (server-owned restart/refresh per the gateway resource API)
-> is the one piece still pending the §11 server contract — `send()`/`abort()`
-> above are already live. Until `stream()` lands, reactive data comes from the
-> `@kortix/sdk/react` hooks.
+`session.stream()` is a thin facade over the framework-free `openEventStream`
+primitive (also exported directly, for hosts that want to manage the client
+themselves): it resolves THIS handle's own runtime (`ensureReady()`), connects
+to that runtime's SSE endpoint, and hands you a `close()`-able handle. No React
+required — safe to call from a server-side "Kortix as a Backend" wrapper
+(Node/Bun), a worker, or a CLI:
+
+```ts
+const handle = await kortix.session(pid, sid).stream({
+  onEvent: (event) => console.log(event.type, event),
+  onGapRehydrate: (gapMs) => console.warn(`reconnected after a ${gapMs}ms gap`),
+});
+// later, to stop:
+handle.close();
+```
+
+`@kortix/sdk/react`'s `useOpenCodeEventStream` uses the exact same primitive
+under the hood — it just also writes into the React Query cache.
 
 ## Subpath modules
 
