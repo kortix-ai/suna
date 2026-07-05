@@ -9,10 +9,8 @@
 // the max (used by the UI to render "via X group" or "Account admin").
 
 import { describe, expect, test } from 'bun:test';
-import {
-  foldEffectiveProjectAccess,
-  maxProjectRole,
-} from '../projects/access';
+import { foldEffectiveProjectAccess } from '../projects/access';
+import { maxProjectRole } from '../iam/role-perms';
 
 describe('maxProjectRole', () => {
   test('manager beats editor', () => {

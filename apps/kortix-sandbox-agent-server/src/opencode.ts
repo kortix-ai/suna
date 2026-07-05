@@ -38,7 +38,7 @@ const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
 // If NONE apply there's nothing to inject, so we return undefined and opencode
 // just uses the repo config as-is.
 export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promise<string | undefined> {
-  const executorToken = env.KORTIX_EXECUTOR_TOKEN
+  const executorToken = env.KORTIX_CLI_TOKEN || env.KORTIX_EXECUTOR_TOKEN
   const apiUrl = env.KORTIX_API_URL
   const llmBaseUrl = env.KORTIX_LLM_BASE_URL
   const llmApiKey = env.KORTIX_LLM_API_KEY

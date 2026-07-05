@@ -176,19 +176,20 @@ export const PROJECT_ROLE_PERMS: Record<ProjectRole, ReadonlySet<string>> = {
 
 // ─── Role ranking helpers ──────────────────────────────────────────────────
 
-const PROJECT_ROLE_RANK: Record<ProjectRole, number> = {
+export const PROJECT_ROLE_RANK: Record<ProjectRole, number> = {
   member: 1,
   editor: 2,
   manager: 3,
 };
 
 /**
- * Coerce any raw role string (DB column, request body, legacy token) into a
+ * Coerce any raw role value (DB column, request body, legacy token) into a
  * canonical ProjectRole. The retired `user` and `viewer` tiers fold into
  * `member` — they can still arrive from old rows, tokens, or clients, so we
- * normalize rather than reject. Returns null for anything unrecognized.
+ * normalize rather than reject. Returns null for anything unrecognized,
+ * including non-string input (untyped request bodies included).
  */
-export function normalizeProjectRole(raw: string | null | undefined): ProjectRole | null {
+export function normalizeProjectRole(raw: unknown): ProjectRole | null {
   if (typeof raw !== 'string') return null;
   const v = raw.trim().toLowerCase();
   if (v === 'viewer' || v === 'user') return 'member';

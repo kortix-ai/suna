@@ -1887,7 +1887,7 @@ function ResourceAccessCard({
     <SectionCard
       flush
       title="Resource access"
-      description="Scope specific agents, skills & secrets to a member or department. A resource with no grants stays open to everyone with project access; granting one restricts it to just the people or departments you pick."
+      description="Assign agents to a member or department. An agent with no assignments stays open to everyone with project access; assigning one restricts it to the people or departments you choose, who inherit the secrets and connectors that agent declares."
       count={grants.length}
       action={
         canManage && hasResources ? (

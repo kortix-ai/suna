@@ -1,12 +1,25 @@
 import { describe, expect, it, mock } from 'bun:test';
 
-// The registry's group helper imports db; stub it so this stays a pure unit test
-// (the user/registry paths under test never touch the DB).
-mock.module('../shared/db', () => ({ db: {}, hasDatabase: () => false }));
+// The registry's group/account helpers query the DB for member ids; stub a
+// minimal select().from().where() chain so this stays a pure unit test.
+let nextMemberRows: Array<{ userId: string }> = [];
+mock.module('../shared/db', () => ({
+  db: {
+    select: () => ({
+      from: () => ({
+        where: async () => nextMemberRows,
+      }),
+    }),
+  },
+  hasDatabase: () => false,
+}));
 
-const { registerPrincipalScopedMemo, invalidateIamCacheForUser, invalidateIamCacheForUsers } = await import(
-  '../iam/cache-invalidation'
-);
+const {
+  registerPrincipalScopedMemo,
+  invalidateIamCacheForUser,
+  invalidateIamCacheForUsers,
+  invalidateIamCacheForAccount,
+} = await import('../iam/cache-invalidation');
 
 describe('iam cache-invalidation registry', () => {
   it('busts every registered memo with the `${userId}|` prefix', () => {
@@ -35,5 +48,27 @@ describe('iam cache-invalidation registry', () => {
     expect(seen).toContain('y|');
     // the null is skipped — only two prefixes from this memo
     expect(seen.filter((p) => p === 'x|' || p === 'y|')).toHaveLength(2);
+  });
+
+  it('invalidateIamCacheForAccount busts every member of the account (e.g. after an mfa-required flip)', async () => {
+    const seen: string[] = [];
+    registerPrincipalScopedMemo({ invalidateByPrefix: (p) => seen.push(p) });
+    nextMemberRows = [{ userId: 'acct-member-1' }, { userId: 'acct-member-2' }];
+
+    await invalidateIamCacheForAccount('acct-1');
+
+    expect(seen).toContain('acct-member-1|');
+    expect(seen).toContain('acct-member-2|');
+  });
+
+  it('invalidateIamCacheForAccount is a no-op for a null/undefined accountId', async () => {
+    const seen: string[] = [];
+    registerPrincipalScopedMemo({ invalidateByPrefix: (p) => seen.push(p) });
+    nextMemberRows = [{ userId: 'should-not-be-seen' }];
+
+    await invalidateIamCacheForAccount(null);
+    await invalidateIamCacheForAccount(undefined);
+
+    expect(seen).toEqual([]);
   });
 });

@@ -137,7 +137,7 @@ export const PROJECT_ACTIONS = {
 
 // ─── Trigger-scoped actions (when scoped to an individual trigger) ─────────
 
-export const TRIGGER_ACTIONS = {
+const TRIGGER_ACTIONS = {
   TRIGGER_READ: 'trigger.read',
   TRIGGER_UPDATE: 'trigger.update',
   TRIGGER_DELETE: 'trigger.delete',
@@ -155,7 +155,7 @@ export const CHANNEL_ACTIONS = {
 
 // ─── Aggregate type for all valid action strings ───────────────────────────
 
-export const ALL_ACTIONS = {
+const ALL_ACTIONS = {
   ...ACCOUNT_ACTIONS,
   ...PROJECT_ACTIONS,
   ...TRIGGER_ACTIONS,

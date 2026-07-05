@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "Canonical reference for a Kortix project: the platform model (repo-native projects, sessions on ephemeral branches, the strict boundary between `kortix.toml` and OpenCode config under `.kortix/opencode/`); the full `kortix.toml` manifest (keys, trigger fields, secrets contract, `[[apps]]` deploy surface); the complete `kortix` CLI (commands, flags, the project-scoped token model, the in-sandbox `KORTIX_TOKEN`); the change-request (CR) system for landing session work on `main` (an agent MUST open a CR to merge); the session sandbox runtime (which supports Docker and Docker-in-Docker); and the OpenCode runtime (agents, skills, commands, tools, plugins, MCP servers, permissions, AGENTS.md rules, models). Load whenever the user asks how Kortix works, about `kortix.toml`, the `kortix` CLI, anything under `.kortix/opencode/`, how to merge/ship/land work on `main`, change requests/CRs/PRs, or to author/edit any OpenCode primitive."
+description: "Canonical reference for a Kortix project: the platform model (repo-native projects, sessions on ephemeral branches, the strict boundary between `kortix.toml` and OpenCode config under `.kortix/opencode/`); the full `kortix.toml` manifest (keys, trigger fields, secrets contract, `[[apps]]` deploy surface); the complete `kortix` CLI (commands, flags, the project-scoped token model, the in-sandbox `KORTIX_SANDBOX_TOKEN`); the change-request (CR) system for landing session work on `main` (an agent MUST open a CR to merge); the session sandbox runtime (which supports Docker and Docker-in-Docker); and the OpenCode runtime (agents, skills, commands, tools, plugins, MCP servers, permissions, AGENTS.md rules, models). Load whenever the user asks how Kortix works, about `kortix.toml`, the `kortix` CLI, anything under `.kortix/opencode/`, how to merge/ship/land work on `main`, change requests/CRs/PRs, or to author/edit any OpenCode primitive."
 ---
 
 <skill name="kortix-system">
@@ -87,7 +87,8 @@ is on `$PATH` (`/usr/local/bin/kortix`) and pre-authenticated against
 this exact project — a project-scoped token is already injected as
 `$KORTIX_CLI_TOKEN`, with `$KORTIX_API_URL` pointed at the right host.
 You can run `kortix …` from any shell with zero setup. (Don't reach for
-`$KORTIX_TOKEN`: that's the sandbox *service key* for the runtime/LLM/git
+`$KORTIX_SANDBOX_TOKEN` (the deprecated `$KORTIX_TOKEN` alias still works too):
+that's the sandbox *service key* for the runtime/LLM/git
 layer, and the project APIs reject it — just use the CLI, which already
 holds the right token.)
 
@@ -180,8 +181,8 @@ When you, as an agent, have changes you believe should persist:
    git push origin HEAD
    ```
 3. **Open a CR.** From inside the sandbox the CLI reads
-   `$KORTIX_BRANCH_NAME`, `$KORTIX_SESSION_ID`, and `$KORTIX_TOKEN`
-   automatically:
+   `$KORTIX_BRANCH_NAME`, `$KORTIX_SESSION_ID`, and `$KORTIX_SANDBOX_TOKEN`
+   (deprecated alias: `$KORTIX_TOKEN`) automatically:
    ```sh
    kortix cr open \
      --title  "Short, imperative summary" \
@@ -209,7 +210,7 @@ When you, as an agent, have changes you believe should persist:
 
 | Surface       | How it interacts with the CR                                                              |
 | ------------- | ----------------------------------------------------------------------------------------- |
-| Sandbox       | CR is opened from inside the sandbox via `$KORTIX_TOKEN`. Branch tip is the session HEAD. |
+| Sandbox       | CR is opened from inside the sandbox via `$KORTIX_SANDBOX_TOKEN` (deprecated alias: `$KORTIX_TOKEN`). Branch tip is the session HEAD. |
 | Dashboard     | Renders the CR — title, description, diff, merge preview, conflict markers.               |
 | CLI           | `kortix cr ls / show / diff / open / merge / close / reopen` — full life-cycle locally.   |
 | `kortix.toml` | Edits to triggers / env / apps land via CR like any other file.                           |
@@ -317,7 +318,7 @@ prints each agent's resolved scope. Use `kortix validate --scopes` to see the fu
   projects, secrets, env, sessions, triggers, cr, init, update,
   uninstall), every flag, every env var the CLI reads. Includes the
   project-scoped token model and what the CLI can do **from inside a
-  session sandbox** (where `KORTIX_TOKEN` + `KORTIX_API_URL` are
+  session sandbox** (where `KORTIX_SANDBOX_TOKEN` + `KORTIX_API_URL` are
   pre-injected so `kortix sessions ls`, `kortix secrets set FOO=bar`,
   `kortix cr ls` all work out of the box). Load this when you want to
   drive the Kortix cloud from a terminal or agent.

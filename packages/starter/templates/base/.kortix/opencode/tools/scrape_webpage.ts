@@ -83,14 +83,15 @@ export default tool({
   },
   async execute(args, _context) {
     // Route through the Kortix router (derived from KORTIX_API_URL) and auth with
-    // KORTIX_TOKEN; the router injects the real upstream key. Fall back to a raw
-    // FIRECRAWL_API_KEY only when KORTIX_API_URL is unset (self-host/direct).
+    // KORTIX_SANDBOX_TOKEN (KORTIX_TOKEN kept as a legacy fallback); the router
+    // injects the real upstream key. Fall back to a raw FIRECRAWL_API_KEY only
+    // when KORTIX_API_URL is unset (self-host/direct).
     const apiBaseURL = getKortixRouterBase("firecrawl") ?? undefined;
     const apiKey = apiBaseURL
-      ? getEnv("KORTIX_TOKEN")
+      ? getEnv("KORTIX_SANDBOX_TOKEN") || getEnv("KORTIX_TOKEN")
       : getEnv("FIRECRAWL_API_KEY");
     if (!apiKey) return apiBaseURL
-      ? "Error: KORTIX_TOKEN not set."
+      ? "Error: KORTIX_SANDBOX_TOKEN not set."
       : "Error: FIRECRAWL_API_KEY not set.";
 
     const FirecrawlApp = (await import("@mendable/firecrawl-js")).default;

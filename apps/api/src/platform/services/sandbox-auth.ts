@@ -24,14 +24,6 @@ export async function getSandboxServiceKeyByExternalId(externalId: string): Prom
 
 /**
  * Generate the s6/bootstrap auth script that runs inside a sandbox at boot.
- *
- * Billing v2 — `yoloApiKey` is the per-member YOLO token resolved by
- * services/yolo-tokens.ts at provision time. When provided, it's used as
- * KORTIX_YOLO_API_KEY so the kortix-agent-sandbox-server / opencode demon
- * authenticates against api-yolo.kortix.com as that specific member. When
- * absent (legacy accounts, non-cloud env, or token resolution failure), we
- * fall back to the legacy behaviour: cloud sandboxes get the account-wide
- * service key as their YOLO key.
  */
 export function buildCanonicalSandboxAuthCommand(
   token: string,
@@ -68,8 +60,6 @@ values = {
 if billing_enabled:
     values["KORTIX_LLM_API_KEY"] = llm_key
     values["KORTIX_LLM_BASE_URL"] = llm_base_url
-    values["KORTIX_YOLO_API_KEY"] = llm_key
-    values["KORTIX_YOLO_URL"] = llm_base_url
 for key, value in values.items():
     (s6_dir / key).write_text(value)
 
@@ -92,8 +82,6 @@ data.update({
 if billing_enabled:
     data["KORTIX_LLM_API_KEY"] = llm_key
     data["KORTIX_LLM_BASE_URL"] = llm_base_url
-    data["KORTIX_YOLO_API_KEY"] = llm_key
-    data["KORTIX_YOLO_URL"] = llm_base_url
 bootstrap.write_text(json.dumps(data))
 PY`
 }

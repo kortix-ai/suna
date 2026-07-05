@@ -3020,47 +3020,6 @@ export const serviceAccounts = kortixSchema.table(
   ],
 );
 
-// ─── Resource groups: project groups ───────────────────────────────────────
-// Bundle multiple projects under one name so a single policy can target
-// the whole bundle ("Mobile editors: editor role on group=mobile-prod").
-// Cloudflare-style. Group membership is many-to-many; one project can
-// belong to multiple groups. The IAM engine treats project_group as a
-// scope type and resolves "is target project in this group?" at match
-// time.
-
-
-// ─── Permission usage analytics ("Access Analyzer") ────────────────────────
-// Counters of every (user, action) the IAM engine has allowed in this
-// account. Updated lazily (throttled in-memory) to keep write pressure
-// bounded. Lets admins right-size roles based on actual usage and spot
-// unused privileges. Denies are NOT tracked here — that's a separate
-// "denied attempts" feature.
-
-
-// ─── Break-glass emergency access ──────────────────────────────────────────
-// Time-bounded super-admin grant a privileged member can self-activate
-// in an emergency. The grant carries a mandatory reason, auto-expires
-// (1h default, configurable per activation), and the IAM engine treats
-// the holder as super-admin during the active window. Activation +
-// revocation + expiry all hit the audit log so SOC reviews can show
-// "who broke glass, when, why".
-//
-// Gating: only members who already hold member.super_admin.grant can
-// activate. That keeps the same admin trust boundary — break-glass
-// formalises emergency promotion without inventing a new privilege.
-
-
-// ─── Approval requests for sensitive IAM actions ───────────────────────────
-// Two-phase pattern: the sensitive endpoint stores the requested action
-// + payload here and returns 202; a second admin POSTs /approve to
-// execute it. Requester can't approve their own request.
-//
-// v1 covers a curated set of high-blast-radius actions:
-//   - member.super_admin.grant
-//   - iam.mfa_required.disable
-//   - account.delete
-
-
 // ─── Session activity (per account × user × session) ──────────────────────
 // Tracks idle time + active sessions per account. One row per
 // (account, user, session_id) the first time we see that session hit the

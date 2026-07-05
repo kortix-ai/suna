@@ -355,8 +355,6 @@ export async function provisionSessionSandbox(opts: {
         ? {
             KORTIX_LLM_API_KEY: gatewayLlmKey,
             KORTIX_LLM_BASE_URL: llmBaseUrl,
-            KORTIX_YOLO_API_KEY: gatewayLlmKey,
-            KORTIX_YOLO_URL: llmBaseUrl,
           }
         : {}),
     },

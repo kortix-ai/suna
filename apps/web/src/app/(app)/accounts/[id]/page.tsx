@@ -203,6 +203,13 @@ export default function AccountSettingsPage() {
   const accountStateQuery = useAccountState({ accountId, enabled: !!user && !!accountId });
   const entitlements = accountStateQuery.data?.tier?.entitlements;
   const enterpriseIdentityEnabled = !!(entitlements?.sso || entitlements?.scim);
+  // Groups/Roles/Policies stay visible for discoverability (unlike SSO/SCIM,
+  // which are hidden outright) but their create/grow actions are gated on
+  // this flag — mirrors the server's 402 (see requireEntitlement, 'rbac') so
+  // an admin never submits a create that the backend will reject. Reads,
+  // revokes, and deletes are deliberately left ungated server-side and stay
+  // fully functional regardless of this flag.
+  const rbacEnabled = !!entitlements?.rbac;
 
   // Granular capabilities sourced from the IAM engine. MUST be called
   // before any conditional return — moving these below the auth-loading
@@ -366,12 +373,20 @@ export default function AccountSettingsPage() {
             </TabsContent>
 
             <TabsContent value="groups" className="space-y-6">
-              <GroupsTab accountId={account.account_id} canCreate={canCreateGroup} />
+              <GroupsTab
+                accountId={account.account_id}
+                canCreate={canCreateGroup}
+                rbacEnabled={rbacEnabled}
+              />
             </TabsContent>
 
             {canManageRoles && (
               <TabsContent value="roles" className="space-y-6">
-                <RolesTab accountId={account.account_id} canManage={canManageRoles} />
+                <RolesTab
+                  accountId={account.account_id}
+                  canManage={canManageRoles}
+                  rbacEnabled={rbacEnabled}
+                />
               </TabsContent>
             )}
 
