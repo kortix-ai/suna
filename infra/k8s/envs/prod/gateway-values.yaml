@@ -5,7 +5,7 @@
 
 # Immutable release tag (promote bumps this). NOT :latest in GitOps.
 image:
-  tag: "0.9.94"
+  tag: "0.9.95"
 # Prod HA: 3-replica floor, burst to 12 (matches the API's envelope).
 replicas: 3
 autoscaling:

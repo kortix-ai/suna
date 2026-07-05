@@ -1,7 +1,3 @@
-Fix GLM stream failures: pin Z.AI host + trace in-stream upstream errors
+Turn auto-resume for transient provider errors
 
-Fixes the production "Upstream idle timeout exceeded" turn failures on GLM 5.2.
-
-- Managed `glm-5.2` requests now carry OpenRouter provider routing preferences (`order: [z-ai]`, fallbacks allowed) so they land on Z.AI's first-party endpoint (99.9% uptime, native fp8) instead of being load-balanced across ~20 hosts including low-uptime fp4 requantizations that stall mid-generation until OpenRouter kills the stream.
-- The LLM gateway now detects in-stream upstream error frames (a 200 stream carrying `{"error": ...}`) and settles the request as `upstream_stream_error` with a warn log, instead of tracing a dead turn as a success — this failure class is now visible and alertable.
-- Pre-content error frames keep flowing into the existing empty-completion retry/failover path (now regression-tested).
+Agent sessions now automatically resume a turn killed by a transient provider failure (e.g. a model host stall ending in "Upstream idle timeout exceeded", connection resets, 5xx after retries) instead of surfacing a dead error turn. Root sessions only, max 3 resumes per 15 minutes with backoff, never for user aborts or auth/credit errors, kill switch KORTIX_TURN_AUTO_RESUME=0. Completes the v0.9.94 GLM routing fix.

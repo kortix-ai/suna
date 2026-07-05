@@ -32,6 +32,7 @@ import {
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
+import { createTurnAutoResumer } from './turn-auto-resume'
 
 // Pin file for the opencode session created from KORTIX_INITIAL_PROMPT.
 // Webhook follow-ups (e.g. Slack thread replies) read this to deliver new
@@ -335,8 +336,20 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
+  // Transient provider/stream failures (a host stall killed mid-stream, a 5xx
+  // after opencode's own retries) get auto-resumed instead of ending the turn —
+  // the error only reaches the user when it's permanent, when the resume can't
+  // be delivered, or when the rolling retry budget is exhausted.
+  const autoResumer = createTurnAutoResumer({
+    opencode,
+    cfg,
+    isRoot: (sid) => isRootOpencodeSession(sid, opencode, cfg),
+  })
   const onSessionError = (opencodeSessionId: string, error?: OpencodeTurnError) => {
-    void relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg, error).catch((err) =>
+    void (async () => {
+      if (await autoResumer.maybeResume(opencodeSessionId, error)) return
+      await relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg, error)
+    })().catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
