@@ -18,9 +18,10 @@ interface CsvRendererProps {
   className?: string;
   compact?: boolean;
   containerHeight?: number;
+  fileName?: string;
 }
 
-export function CsvRenderer({ content, className, compact = false, containerHeight }: CsvRendererProps) {
+export function CsvRenderer({ content, className, compact = false, containerHeight, fileName }: CsvRendererProps) {
   if (!hasCsvContent(content)) {
     return (
       <div className={cn('flex h-full w-full items-center justify-center', className)}>
@@ -55,6 +56,7 @@ export function CsvRenderer({ content, className, compact = false, containerHeig
       >
         <CsvViewer
           data={content}
+          fileName={fileName}
           search={!compact}
           showToolbar={!compact}
           className="h-full"

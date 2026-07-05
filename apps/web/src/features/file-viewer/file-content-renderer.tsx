@@ -888,7 +888,7 @@ export function FileContentRenderer({
           {/* PDF preview */}
           {isContentReady && fileCategory === 'pdf' && fileContent?.content && (
             <Suspense fallback={<RendererFallback />}>
-              <PdfRenderer fileContent={fileContent.content} className="h-full" />
+              <PdfRenderer fileContent={fileContent.content} fileName={fileName} className="h-full" />
             </Suspense>
           )}
 
@@ -921,7 +921,7 @@ export function FileContentRenderer({
           {/* CSV / TSV preview */}
           {!isLoading && !error && fileCategory === 'csv' && fileContent && (
             <Suspense fallback={<RendererFallback />}>
-              <CsvRenderer content={fileContent.content} className="h-full" />
+              <CsvRenderer content={fileContent.content} fileName={fileName} className="h-full" />
             </Suspense>
           )}
 

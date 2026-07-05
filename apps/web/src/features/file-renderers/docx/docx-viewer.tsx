@@ -47,6 +47,7 @@ import {
 } from "@/features/file-renderers/shared/select-compat"
 import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/features/file-renderers/shared/spinner"
+import { ViewerFileName } from "@/features/file-renderers/shared/viewer-file-name"
 import {
   Tooltip,
   TooltipContent,
@@ -513,6 +514,7 @@ function DocxPageNumberControl({
 function DocxToolbar({
   activePageStore,
   controlsDisabled,
+  fileName,
   isDark,
   isPreparingDownload,
   onDownload,
@@ -534,6 +536,7 @@ function DocxToolbar({
 }: {
   activePageStore: DocxActivePageStore
   controlsDisabled: boolean
+  fileName?: string
   isDark: boolean
   isPreparingDownload: boolean
   onDownload: () => void
@@ -573,6 +576,7 @@ function DocxToolbar({
               <PanelLeft className="size-4" />
             </Button>
           </ToolbarTooltip>
+          <ViewerFileName fileName={fileName} fallback="Word" />
           <DocxPageNumberControl
             activePageStore={activePageStore}
             controlsDisabled={controlsDisabled}
@@ -1436,6 +1440,7 @@ function DocxViewerContent({
         <DocxToolbar
           activePageStore={activePageStore}
           controlsDisabled={controlsDisabled}
+          fileName={displayFileName}
           isDark={effectiveIsDark}
           isPreparingDownload={isPreparingDownload}
           onDownload={handleDownload}

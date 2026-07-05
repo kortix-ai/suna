@@ -23,9 +23,10 @@ interface PdfRendererProps {
   url?: string | null;
   className?: string;
   compact?: boolean;
+  fileName?: string;
 }
 
-export function PdfRenderer({ fileContent, url, className, compact = false }: PdfRendererProps) {
+export function PdfRenderer({ fileContent, url, className, compact = false, fileName }: PdfRendererProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -89,6 +90,7 @@ export function PdfRenderer({ fileContent, url, className, compact = false }: Pd
   return (
     <PDFViewer
       src={pdfUrl}
+      fileName={fileName}
       showToolbar={!compact}
       showUpload={false}
       className={cn('h-full w-full', className)}

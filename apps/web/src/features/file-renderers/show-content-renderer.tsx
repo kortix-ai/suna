@@ -510,7 +510,7 @@ export function ShowContentRenderer({
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={mediaH}>
-            <PdfRenderer fileContent={pdfData.content} className="h-full" />
+            <PdfRenderer fileContent={pdfData.content} fileName={fileName} className="h-full" />
           </div>
         </Suspense>
       );
@@ -530,7 +530,7 @@ export function ShowContentRenderer({
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={cn(mediaH, 'overflow-hidden')}>
-            <CsvRenderer content={inlineOrLoadedCsv} className="h-full" />
+            <CsvRenderer content={inlineOrLoadedCsv} fileName={fileName} className="h-full" />
           </div>
         </Suspense>
       );

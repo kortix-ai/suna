@@ -44,6 +44,7 @@ import {
 } from "@/features/file-renderers/shared/select-compat"
 import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/features/file-renderers/shared/spinner"
+import { ViewerFileName } from "@/features/file-renderers/shared/viewer-file-name"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Tooltip,
@@ -842,6 +843,7 @@ function WorkbookSearchPopover({
 }
 
 function WorkbookToolbar({
+  fileName,
   isDark,
   onDownload,
   onIsDarkChange,
@@ -853,6 +855,7 @@ function WorkbookToolbar({
   viewportRef,
   workbookIdentity,
 }: {
+  fileName?: string
   isDark: boolean
   onDownload?: () => void
   onIsDarkChange: (checked: boolean) => void
@@ -873,7 +876,8 @@ function WorkbookToolbar({
   }, [setZoomScale, workbookIdentity])
 
   return (
-    <div className="flex min-h-12 flex-wrap items-center justify-end gap-2 border-b bg-background px-3 py-2">
+    <div className="flex min-h-12 flex-wrap items-center justify-between gap-2 border-b bg-background px-3 py-2">
+      <ViewerFileName fileName={fileName} fallback="Excel" />
       <TooltipProvider>
         <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
           <div className="flex flex-none items-center gap-1">
@@ -1242,12 +1246,12 @@ const WorkbookSheetTabsInner = React.memo(function WorkbookSheetTabsInner({
         <ScrollArea
           orientation="horizontal"
           scrollbarGutter
-          className="h-10 w-full has-[[data-slot=scroll-area-viewport][data-has-overflow-x]]:h-[50px]"
+          className="h-fit w-full has-[[data-slot=scroll-area-viewport][data-has-overflow-x]]:h-[50px]"
           viewportClassName="overflow-y-hidden"
           viewportRef={scrollRef}
         >
           <div className="flex h-full items-center">
-            <TabsList className="shrink-0" size="xs">
+            <TabsList className="shrink-0" size="xs" animate="none">
               {sheets.map((sheet, index) => (
                 <TabsTrigger
                   key={`${sheet.workbookSheetIndex}-${sheet.name}`}
@@ -1256,7 +1260,7 @@ const WorkbookSheetTabsInner = React.memo(function WorkbookSheetTabsInner({
                   }}
                   value={String(index)}
                   size="xs"
-                  className="max-w-48 flex-none"
+                  className="max-w-48 flex-none rounded-md"
                   onMouseEnter={() => handleItemEnter(index)}
                 >
                   <span className="truncate">{sheet.name}</span>
@@ -1298,6 +1302,7 @@ const WorkbookSheetTabsInner = React.memo(function WorkbookSheetTabsInner({
 
 export function XlsxWorkbookSurface({
   className,
+  fileName,
   isDark,
   onDownload,
   onIsDarkChange,
@@ -1311,6 +1316,7 @@ export function XlsxWorkbookSurface({
   workbookIdentity,
 }: {
   className?: string
+  fileName?: string
   isDark: boolean
   onDownload?: () => void
   onIsDarkChange: (checked: boolean) => void
@@ -1369,6 +1375,7 @@ export function XlsxWorkbookSurface({
     >
       {showToolbar ? (
         <WorkbookToolbar
+          fileName={fileName}
           isDark={isDark}
           onDownload={onDownload}
           onIsDarkChange={onIsDarkChange}
@@ -1754,6 +1761,7 @@ function XlsxWorkbookLoadedViewer({
     <XlsxViewerProvider controller={controller} isDark={isDark}>
       <XlsxWorkbookSurface
         className={className}
+        fileName={fileName}
         isDark={isDark}
         onDownload={onDownload}
         onIsDarkChange={onIsDarkChange}

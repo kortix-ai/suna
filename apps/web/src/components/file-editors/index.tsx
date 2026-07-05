@@ -224,7 +224,7 @@ export function EditableFileRenderer({
       ) : fileType === 'video' && binaryUrl ? (
         <VideoRenderer url={binaryUrl} />
       ) : fileType === 'pdf' && (content || binaryUrl) ? (
-        <PdfRenderer fileContent={content} url={binaryUrl} className="h-full w-full" />
+        <PdfRenderer fileContent={content} url={binaryUrl} fileName={fileName} className="h-full w-full" />
       ) : fileType === 'csv' || fileType === 'xlsx' ? (
         <SpreadsheetViewer
           filePath={filePath}

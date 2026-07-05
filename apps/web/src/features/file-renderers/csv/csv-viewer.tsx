@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/features/file-renderers/shared/spinner"
+import { ViewerFileName } from "@/features/file-renderers/shared/viewer-file-name"
 import {
   Tooltip,
   TooltipContent,
@@ -59,6 +60,7 @@ type GlideDataGridModule = typeof GlideDataGrid
 type CsvViewerProps = {
   className?: string
   data?: string
+  fileName?: string
   search?: boolean
   showToolbar?: boolean
 }
@@ -583,6 +585,7 @@ function useIsDarkTheme() {
 export function CsvViewer({
   className,
   data,
+  fileName,
   search = false,
   showToolbar = true,
 }: CsvViewerProps) {
@@ -730,7 +733,8 @@ export function CsvViewer({
       )}
     >
       {showToolbar ? (
-      <div className="flex min-h-12 flex-wrap items-center justify-end gap-2 border-b bg-background px-3 py-2">
+      <div className="flex min-h-12 flex-wrap items-center justify-between gap-2 border-b bg-background px-3 py-2">
+        <ViewerFileName fileName={fileName} fallback="CSV" />
         <TooltipProvider>
           <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
             <div className="flex flex-none items-center gap-1">
