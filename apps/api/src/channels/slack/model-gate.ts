@@ -3,7 +3,7 @@ import { accountMembers, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { getAccountTier } from '../../billing/services/entitlements';
-import { tierGrantsAllModels } from '../../billing/services/tiers';
+import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import { type ChannelCtx, currentChannelSelection } from './selection';
 
 // The account/tier context a channel's model setting resolves against. Kept out
@@ -40,7 +40,7 @@ export async function channelModelContext(ctx: ChannelCtx): Promise<ChannelModel
     .where(and(eq(accountMembers.accountId, project.accountId), eq(accountMembers.accountRole, 'owner')))
     .limit(1);
   const tier = await getAccountTier(project.accountId);
-  const freeManagedOnly = config.KORTIX_BILLING_INTERNAL_ENABLED && !tierGrantsAllModels(tier);
+  const freeManagedOnly = config.KORTIX_BILLING_INTERNAL_ENABLED && accountIsFreeTierForModels(tier);
   return {
     projectId: selection.projectId,
     accountId: project.accountId,
