@@ -193,6 +193,7 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
             onClick={toggleSidebar}
             onPointerEnter={peekEnter}
             onPointerLeave={peekLeave}
+            variant="ghost"
             className={cn(
               // top-[12px] + 28px box centers the button on the traffic
               // lights' midline (y=26 — the app draws its own lights there;

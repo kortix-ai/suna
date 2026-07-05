@@ -203,9 +203,8 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 <SidebarMenuButton
                   onClick={handleNewSession}
                   size="md"
-                  className="group/menu-button text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 relative flex items-center justify-start gap-2 border-[1.2px] !text-sm font-medium [&_svg]:!size-4"
+                  className="group/menu-button text-sidebar-foreground text-center border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 relative flex items-center justify-center gap-2 border-[1.2px] !text-sm font-medium [&_svg]:!size-4"
                 >
-                  <Plus className="text-muted-foreground" />
                   <span>
                     {tI18nHardcoded.raw(
                       'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextNew55d0b491',
