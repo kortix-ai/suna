@@ -98,7 +98,10 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
         />
       </div>
 
-      <TabsContent value="providers">
+      {/* Each pane is a min-h-0 flex column so the tab's own scroller
+          (`flex-1 overflow-y-auto` in every gateway view) gets a bounded
+          height — without it nothing scrolls and content clips. */}
+      <TabsContent value="providers" className="flex min-h-0 flex-col overflow-hidden">
         <ProjectProviderModal
           asPanel
           projectId={projectId}
@@ -107,16 +110,16 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
           defaultTab={llmProvidersTab}
         />
       </TabsContent>
-      <TabsContent value="overview">
+      <TabsContent value="overview" className="flex min-h-0 flex-col overflow-hidden">
         <GatewayOverview projectId={projectId} />
       </TabsContent>
-      <TabsContent value="logs">
+      <TabsContent value="logs" className="flex min-h-0 flex-col overflow-hidden">
         <GatewayLogs projectId={projectId} />
       </TabsContent>
-      <TabsContent value="budgets">
+      <TabsContent value="budgets" className="flex min-h-0 flex-col overflow-hidden">
         <GatewayBudgets projectId={projectId} />
       </TabsContent>
-      <TabsContent value="keys">
+      <TabsContent value="keys" className="flex min-h-0 flex-col overflow-hidden">
         <GatewayKeys projectId={projectId} />
       </TabsContent>
     </Tabs>
