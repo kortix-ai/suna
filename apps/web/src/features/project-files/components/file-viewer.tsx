@@ -2,7 +2,7 @@
 
 import { History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useFilesStore } from '../store/files-store';
+import { useFilesStore } from '@/features/file-browser/store/files-store';
 import { FileContentRenderer } from './file-content-renderer';
 
 /**

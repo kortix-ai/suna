@@ -23,7 +23,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useFileHistory, useFileCommitDiff } from '../hooks/use-file-history';
-import type { GitCommit } from '../types';
+import type { GitCommit } from '@/features/file-browser/types';
 import { createTwoFilesPatch } from 'diff';
 import { DiffView } from '@/components/diff/diff-view';
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import type { ServerHealth, OpenCodeProjectInfo } from '../types';
+import type { ServerHealth, OpenCodeProjectInfo } from '@/features/file-browser/types';
 
 /**
  * In the project-files view, "the server" is always the backend API — there

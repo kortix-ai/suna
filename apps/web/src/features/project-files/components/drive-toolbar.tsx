@@ -20,8 +20,8 @@ import { ArrowUpDown, ChevronRight, Download, RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileList } from '../hooks/use-file-list';
-import type { SortField } from '../store/files-store';
-import { useFilesStore } from '../store/files-store';
+import type { SortField } from '@/features/file-browser/store/files-store';
+import { useFilesStore } from '@/features/file-browser/store/files-store';
 import { VersionSelector } from './version-selector';
 
 interface DriveToolbarProps {
