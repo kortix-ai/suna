@@ -40,6 +40,7 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
     appReferer: config.KORTIX_URL,
     resolvedModel: managed.upstreamModelId,
     pricing: managedPricing(managed),
+    ...(managed.openrouterProvider ? { bodyExtras: { provider: managed.openrouterProvider } } : {}),
   };
 }
 
