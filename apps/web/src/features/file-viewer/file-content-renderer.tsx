@@ -59,7 +59,7 @@ const CsvRenderer = lazy(() =>
   import('@/features/file-renderers/csv/csv-renderer').then((m) => ({ default: m.CsvRenderer })),
 );
 const XlsxRenderer = lazy(() =>
-  import('@/features/file-renderers/xlsx-renderer').then((m) => ({ default: m.XlsxRenderer })),
+  import('@/features/file-renderers/xlsx/xlsx-renderer').then((m) => ({ default: m.XlsxRenderer })),
 );
 const PptxRenderer = lazy(() =>
   import('@/features/file-renderers/pptx-renderer').then((m) => ({ default: m.PptxRenderer })),

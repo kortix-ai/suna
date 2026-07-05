@@ -22,6 +22,12 @@ type ScrollAreaCompatProps = Omit<
   orientation?: 'vertical' | 'horizontal' | 'both';
   /** Cosmetic-only in this shim (no CSS mask fade); accepted for API parity. */
   scrollFade?: boolean;
+  /**
+   * Cosmetic-only in this shim: Radix's custom overlay scrollbar doesn't
+   * reflow layout the way a native scrollbar does, so there's no gutter to
+   * reserve. Accepted for API parity with extend.ai's base-ui ScrollArea.
+   */
+  scrollbarGutter?: boolean;
   viewportClassName?: string;
   viewportProps?: React.ComponentProps<typeof ScrollAreaPrimitive.Viewport>;
   viewportRef?: React.Ref<HTMLDivElement>;
@@ -32,6 +38,7 @@ export function ScrollArea({
   children,
   orientation = 'both',
   scrollFade: _scrollFade,
+  scrollbarGutter: _scrollbarGutter,
   viewportClassName,
   viewportProps,
   viewportRef,
