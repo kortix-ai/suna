@@ -42,3 +42,33 @@ describe('openai-compat transport', () => {
     expect(req.headers.authorization).toBeUndefined();
   });
 });
+
+describe('openai-compat bodyExtras', () => {
+  test('merges descriptor bodyExtras into the payload, overriding client fields', () => {
+    const req = buildUpstreamRequest(
+      { model: 'kortix/glm-5.2', messages: [], provider: { order: ['evil'] } },
+      {
+        ...descriptor,
+        provider: 'openrouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        resolvedModel: 'z-ai/glm-5.2',
+        bodyExtras: { provider: { order: ['z-ai'], allow_fallbacks: true } },
+      },
+    );
+    expect(req.payload.provider).toEqual({ order: ['z-ai'], allow_fallbacks: true });
+    expect(req.payload.model).toBe('z-ai/glm-5.2');
+  });
+
+  test('bodyExtras cannot clobber the resolved model', () => {
+    const req = buildUpstreamRequest(
+      { model: 'kortix/glm-5.2', messages: [] },
+      { ...descriptor, resolvedModel: 'z-ai/glm-5.2', bodyExtras: { model: 'other' } },
+    );
+    expect(req.payload.model).toBe('z-ai/glm-5.2');
+  });
+
+  test('payload untouched without bodyExtras', () => {
+    const req = buildUpstreamRequest({ model: 'xai/grok-4.3', messages: [] }, descriptor);
+    expect('provider' in req.payload).toBe(false);
+  });
+});
