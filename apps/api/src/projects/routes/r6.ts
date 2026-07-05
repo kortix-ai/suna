@@ -242,7 +242,7 @@ projectsApp.openapi(
         effective_project_role: fold.effective_project_role,
         has_implicit_access: isAccountManager(accountRole),
         /** What ultimately decided the effective role. UI labels with
-         *  it: "Manager (account admin)" vs "Editor (via Engineering)". */
+         *  it: "Editor (account admin)" vs "Editor (via Engineering)". */
         effective_source: fold.effective_source,
         /** Every group attachment that includes this user. Lets the UI
          *  list multi-source access ("Editor via Engineering + Viewer
@@ -275,7 +275,8 @@ projectsApp.openapi(
 );
 
 // POST /v1/projects/:projectId/access-requests
-// Lets a signed-in user with a project link ask the project's managers for
+// Lets a signed-in user with a project link ask the project's account
+// owners/admins for
 // access without mounting the normal project shell (which would otherwise fan
 // out into many 403s). Mirrors the Figma-style "Request access" affordance.
 
@@ -372,7 +373,7 @@ projectsApp.openapi(
 );
 
 // GET /v1/projects/:projectId/access-requests
-// Managers review pending "request access" asks from the Members screen.
+// Account owners/admins review pending "request access" asks from the Members screen.
 
 projectsApp.openapi(
   createRoute({
@@ -432,13 +433,14 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Approving an access request grants a project role to the requester —
   // membership management, NOT plain write. loadProjectForUser('manage') only
-  // maps to project.write (editor), so without this an editor could approve
-  // requests and even hand out the 'manager' role. Gate on members.manage.
+  // maps to project.write (editor tier); project.members.manage is ACCOUNT
+  // owner/admin authority only (see role-perms.ts's ACCOUNT_ONLY_PROJECT_ACTIONS),
+  // so without this an editor could approve requests. Gate on members.manage.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
   const role = body.role === undefined ? 'member' : normalizeProjectRole(body.role);
-  if (!role) return c.json({ error: 'role must be one of manager|editor|member' }, 400);
+  if (!role) return c.json({ error: 'role must be one of editor|member' }, 400);
 
   const [request] = await db
     .select()
@@ -486,7 +488,7 @@ projectsApp.openapi(
       email: request.requesterEmail,
       account_role: targetAccountRole,
       project_role: isAccountManager(targetAccountRole) ? null : role,
-      effective_project_role: isAccountManager(targetAccountRole) ? 'manager' : role,
+      effective_project_role: isAccountManager(targetAccountRole) ? 'editor' : role,
       has_implicit_access: isAccountManager(targetAccountRole),
     },
   });
@@ -551,7 +553,7 @@ projectsApp.openapi(
 // POST /v1/projects/:projectId/access/invite
 // Invite a person to a project by email: looks up their Kortix account, ensures
 // they're an org member (creating a 'member' org row if needed), then grants the
-// project role. Account managers get implicit project access (no explicit grant).
+// project role. Account owners/admins get implicit project access (no explicit grant).
 
 projectsApp.openapi(
   createRoute({
@@ -580,7 +582,7 @@ projectsApp.openapi(
   const email = (typeof body.email === 'string' ? body.email : '').trim().toLowerCase();
   const role = normalizeProjectRole(body.role);
   if (!email) return c.json({ error: 'email is required' }, 400);
-  if (!role) return c.json({ error: 'role must be one of manager|editor|member' }, 400);
+  if (!role) return c.json({ error: 'role must be one of editor|member' }, 400);
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
 
@@ -698,7 +700,7 @@ projectsApp.openapi(
       email,
       account_role: targetAccountRole,
       project_role: null,
-      effective_project_role: 'manager',
+      effective_project_role: 'editor',
       has_implicit_access: true,
     });
   }
@@ -730,7 +732,7 @@ projectsApp.openapi(
 // the same before and after a successful invite, leaving the inviter
 // to wonder if anything happened.
 //
-// Restricted to project managers — viewers don't need to see who's
+// Restricted to account owners/admins — everyone else doesn't need to see who's
 // queued up for membership.
 
 projectsApp.openapi(
@@ -989,14 +991,15 @@ projectsApp.openapi(
   const targetUserId = c.req.param('userId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Member management is admin-only; loadProjectForUser('manage') now
-  // resolves to project.write (editor-tier), so we add an explicit
+  // Member management is ACCOUNT owner/admin authority only (see
+  // role-perms.ts's ACCOUNT_ONLY_PROJECT_ACTIONS); loadProjectForUser('manage')
+  // only resolves to project.write (editor tier), so we add an explicit
   // stricter gate here.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
   const role = normalizeProjectRole(body.role);
-  if (!role) return c.json({ error: 'role must be one of manager|editor|member' }, 400);
+  if (!role) return c.json({ error: 'role must be one of editor|member' }, 400);
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
 
@@ -1019,7 +1022,7 @@ projectsApp.openapi(
       user_id: targetUserId,
       account_role: targetAccountRole,
       project_role: null,
-      effective_project_role: 'manager',
+      effective_project_role: 'editor',
       has_implicit_access: true,
     });
   }

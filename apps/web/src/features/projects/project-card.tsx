@@ -10,6 +10,7 @@ import {
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import Loading from '@/components/ui/loading';
 import { useIsMobile } from '@/hooks/utils';
+import { useProjectCan } from '@/lib/use-project-can';
 import { relativeTime } from '@/lib/kortix/task-meta';
 import { KortixProject } from '@kortix/sdk/projects-client';
 import { ArrowUpRight, Pencil, TrashSolid } from '@mynaui/icons-react';
@@ -32,8 +33,17 @@ const ProjectCard = ({
   const isMobile = useIsMobile();
   const tHardcodedUi = useTranslations('hardcodedUi');
   const updatedLabel = relativeTime(project.updated_at);
-  const canManageProject =
-    project.effective_project_role === 'manager' || !project.effective_project_role;
+  // Rename is editor-tier (project.write) — `editor` is the top project role
+  // now that `manager` was retired; an unresolved role (null) defaults open,
+  // matching the prior behavior.
+  const canRename = project.effective_project_role === 'editor' || !project.effective_project_role;
+  // Archive = project.delete, which the project-role collapse moved to
+  // ACCOUNT owner/admin authority only — no project role (not even editor)
+  // grants it anymore. Probe the live capability instead of the role label so
+  // the button isn't shown to someone who'd just get 403'd.
+  const canArchive = useProjectCan(project.project_id, 'project.delete', {
+    accountId: project.account_id,
+  }).allowed;
 
   return (
     <Card className="group bg-secondary/80 hover:bg-secondary relative p-0 transition-[background-color,transform] duration-150 ease-out has-[[data-card-press]:active]:scale-[0.98]">
@@ -71,7 +81,7 @@ const ProjectCard = ({
               <ArrowUpRight className="size-4" />
               {tHardcodedUi.raw('appProjectsPage.line109JsxTextOpenProject')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={onRename} disabled={!canManageProject}>
+            <DropdownMenuItem onSelect={onRename} disabled={!canRename}>
               <Pencil className="size-4" />
               Rename
             </DropdownMenuItem>
@@ -79,7 +89,7 @@ const ProjectCard = ({
             <DropdownMenuItem
               variant="destructive"
               onSelect={onArchive}
-              disabled={archiving || !canManageProject}
+              disabled={archiving || !canArchive}
             >
               {archiving ? <Loading /> : <TrashSolid className="size-4" />}
               Archive

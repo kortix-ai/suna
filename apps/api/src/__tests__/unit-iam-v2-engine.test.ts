@@ -34,10 +34,18 @@ describe('scopeForActionV2', () => {
     expect(scopeForActionV2(ACCOUNT_ACTIONS.PROJECT_CREATE)).toBe('account');
   });
 
+  // Project-role collapse: these three used to be project-scope (manager-only).
+  // They're promoted to account-scope now — no project role reaches them, only
+  // the actor's ACCOUNT role (owner/admin).
+  test('project.delete / project.members.manage / project.gateway.keys.manage → account', () => {
+    expect(scopeForActionV2(PROJECT_ACTIONS.PROJECT_DELETE)).toBe('account');
+    expect(scopeForActionV2(PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe('account');
+    expect(scopeForActionV2(PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE)).toBe('account');
+  });
+
   test('every other project.* → project', () => {
     expect(scopeForActionV2(PROJECT_ACTIONS.PROJECT_READ)).toBe('project');
     expect(scopeForActionV2(PROJECT_ACTIONS.PROJECT_WRITE)).toBe('project');
-    expect(scopeForActionV2(PROJECT_ACTIONS.PROJECT_DELETE)).toBe('project');
     expect(scopeForActionV2(PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE)).toBe('project');
     expect(scopeForActionV2(PROJECT_ACTIONS.PROJECT_SESSION_START)).toBe('project');
   });
@@ -48,13 +56,13 @@ describe('scopeForActionV2', () => {
   });
 });
 
-describe('deriveEffectiveProjectRole', () => {
-  test('owner gets implicit Manager even with no other path', () => {
-    expect(deriveEffectiveProjectRole('owner', null, [])).toBe('manager');
+describe('deriveEffectiveProjectRole (2-tier: manager was retired, editor is the top role)', () => {
+  test('owner gets implicit Editor even with no other path', () => {
+    expect(deriveEffectiveProjectRole('owner', null, [])).toBe('editor');
   });
 
-  test('admin gets implicit Manager even with no other path', () => {
-    expect(deriveEffectiveProjectRole('admin', null, [])).toBe('manager');
+  test('admin gets implicit Editor even with no other path', () => {
+    expect(deriveEffectiveProjectRole('admin', null, [])).toBe('editor');
   });
 
   test('member with no direct row and no groups → no role', () => {
@@ -75,16 +83,20 @@ describe('deriveEffectiveProjectRole', () => {
 
   test('member with multiple group grants → max of all', () => {
     expect(deriveEffectiveProjectRole('member', null, ['member', 'editor', 'member'])).toBe('editor');
-    expect(deriveEffectiveProjectRole('member', null, ['member', 'manager', 'editor'])).toBe('manager');
   });
 
-  test('owner stays Manager even when group says Member (no demotion)', () => {
-    expect(deriveEffectiveProjectRole('owner', 'member', ['member'])).toBe('manager');
+  test('owner stays Editor even when group says Member (no demotion)', () => {
+    expect(deriveEffectiveProjectRole('owner', 'member', ['member'])).toBe('editor');
   });
 
-  test('member with direct Manager → manager (no implicit needed)', () => {
-    expect(deriveEffectiveProjectRole('member', 'manager', [])).toBe('manager');
+  test('member with direct Editor → editor (no implicit needed)', () => {
+    expect(deriveEffectiveProjectRole('member', 'editor', [])).toBe('editor');
   });
+
+  // The three former manager-only leaves (delete/members.manage/gateway.keys.manage)
+  // are UNREACHABLE via this function's output — it only ever returns 'editor'
+  // or 'member', neither of which grants them (see role-perms.ts's
+  // ACCOUNT_ONLY_PROJECT_ACTIONS + unit-iam-v2-role-perms.test.ts).
 });
 
 describe('customPolicyAllows (DB custom-role union)', () => {

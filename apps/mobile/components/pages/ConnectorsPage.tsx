@@ -319,9 +319,6 @@ function ConnectorDetail({
             <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>{providerLabel(connector.provider)}</Text>
             <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: status.color }} />
             <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>{status.label}</Text>
-            {connector.credentialMode === 'per_user' && (
-              <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>· Per-user</Text>
-            )}
           </View>
         </View>
         <TouchableOpacity
@@ -353,9 +350,7 @@ function ConnectorDetail({
           </TouchableOpacity>
           <Text style={{ fontSize: 12.5, color: muted, marginTop: 8, textAlign: 'center' }}>
             {needsConnect
-              ? connector.credentialMode === 'per_user'
-                ? 'Connect your account to use this connector.'
-                : 'Connect an account before this connector can run.'
+              ? 'Connect an account before this connector can run.'
               : 'This connector needs a credential before it can run.'}
           </Text>
         </View>
@@ -493,7 +488,6 @@ function ConnectorRow({
         </View>
         <Text style={{ fontSize: 13, lineHeight: 16, color: muted }} numberOfLines={1}>
           {providerLabel(connector.provider)} · {connector.actions.length} {connector.actions.length === 1 ? 'tool' : 'tools'}
-          {connector.credentialMode === 'per_user' ? ' · Per-user' : ''}
         </Text>
       </View>
 
@@ -989,7 +983,6 @@ function CustomConnectorForm({
   const [baseUrl, setBaseUrl] = useState('');
   const [authType, setAuthType] = useState<'none' | 'bearer' | 'basic' | 'custom'>('none');
   const [authName, setAuthName] = useState('');
-  const [credential, setCredential] = useState<'shared' | 'per_user'>('shared');
   const [saving, setSaving] = useState(false);
 
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -1012,7 +1005,6 @@ function CustomConnectorForm({
       const draft: ConnectorDraftInput = {
         slug: slug.trim(),
         provider,
-        credential,
         sharing: { mode: 'project' },
         auth: { type: authType, ...(authType === 'custom' ? { name: authName.trim(), in: 'header' } : {}) },
         ...(provider === 'openapi' ? { spec: spec.trim() } : {}),
@@ -1120,12 +1112,6 @@ function CustomConnectorForm({
           </Text>
         )}
 
-        <FormField label="Credential" isDark={isDark}>
-          <Segmented isDark={isDark} value={credential} onChange={setCredential} options={[{ value: 'shared', label: 'Shared' }, { value: 'per_user', label: 'Per-user' }]} />
-        </FormField>
-        <Text style={{ fontSize: 12.5, color: muted, marginTop: -4 }}>
-          {credential === 'shared' ? 'One connection for the whole project.' : 'Each member links their own account.'}
-        </Text>
         <Text style={{ fontSize: 12.5, color: muted, marginTop: 14 }}>
           Access is project-wide by default — change it from the connector's Manage screen after adding.
         </Text>

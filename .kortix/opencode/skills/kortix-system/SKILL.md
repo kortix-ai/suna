@@ -116,7 +116,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | **"I need this app connected (Pipedream)"** | `connect` MCP tool / `kortix executor connect <slug>` / `kortix connectors link <slug>` — mint a 1-click link, **surface it**. No "go to the dashboard". |
 | "set a connector's credential directly" | `kortix connectors credential <slug>` *(admin/login only — prefer the link above)* |
 | "who can use a connector" | `kortix connectors share <slug> --mode project\|private\|members` |
-| "shared profile vs each-member-BYO" | `kortix connectors mode <slug> shared\|per_user` |
+| "check/reassert a connector's profile model" | `kortix connectors mode <slug> shared` (shared is the only mode — per-member BYO was removed 2026-07-05) |
 | "rename a connector" | `kortix connectors rename <slug> "Gmail (work)"` |
 | "control what a connector may do (per-tool / glob / regex)" | `kortix connectors policy <slug> set <match> allow\|ask\|block` · `policy <slug> ls\|rm\|clear` |
 | "project-wide execution rules" | `kortix connectors policy ls`, `policy set --default risk\|allow_all` |

@@ -485,7 +485,10 @@ export function SandboxView({ projectId }: { projectId: string }) {
     queryFn: () => getProject(projectId),
     staleTime: 20_000,
   });
-  const canManage = projectQuery.data?.effective_project_role === 'manager';
+  // Editor is the top project role now that `manager` was retired; sandbox
+  // rebuild/snapshot management is editor-tier (project.customize.write), not
+  // one of the three actions that moved to account owner/admin authority.
+  const canManage = projectQuery.data?.effective_project_role === 'editor';
 
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const snapshotsQuery = useQuery({

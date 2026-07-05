@@ -77,7 +77,7 @@ projectsApp.openapi(
       { accountId: scope.accountId, source: 'project-create' },
     );
     return c.json({
-      project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
+      project: serializeProject(row, { projectRole: 'editor', effectiveRole: 'editor' }),
       git_connection: serializeProjectGitConnection(await getProjectGitConnection(row.projectId)),
     }, 201);
   }
@@ -125,7 +125,7 @@ projectsApp.openapi(
   );
 
   return c.json({
-    project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
+    project: serializeProject(row, { projectRole: 'editor', effectiveRole: 'editor' }),
     git_connection: serializeProjectGitConnection(await getProjectGitConnection(row.projectId)),
   }, 201);
 },
@@ -281,7 +281,7 @@ projectsApp.openapi(
   );
 
 
-  return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
+  return c.json(serializeProject(row, { projectRole: 'editor', effectiveRole: 'editor' }), 201);
 },
 );
 

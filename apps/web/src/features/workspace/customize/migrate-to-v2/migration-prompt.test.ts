@@ -17,9 +17,22 @@ describe('MIGRATE_TO_V2_PROMPT — the core migration artifact', () => {
     expect(MIGRATE_TO_V2_PROMPT).toMatch(/`env`.{0,80}`secrets`/);
   });
 
-  test('instructs hoisting agent .md frontmatter into the manifest', () => {
+  test('instructs leaving agent .md frontmatter untouched — governance-only migration', () => {
     expect(MIGRATE_TO_V2_PROMPT.toLowerCase()).toContain('frontmatter');
     expect(MIGRATE_TO_V2_PROMPT).toContain('agents:');
+    expect(MIGRATE_TO_V2_PROMPT.toLowerCase()).toContain('leave every agent');
+    expect(MIGRATE_TO_V2_PROMPT).not.toMatch(/hoist/i);
+  });
+
+  test('the v2 agent block example (the fenced yaml sample) carries no behavioral fields', () => {
+    const start = MIGRATE_TO_V2_PROMPT.indexOf('agents:\n  <name>:');
+    expect(start).toBeGreaterThan(-1);
+    const end = MIGRATE_TO_V2_PROMPT.indexOf('```', start);
+    expect(end).toBeGreaterThan(start);
+    const sample = MIGRATE_TO_V2_PROMPT.slice(start, end);
+    for (const illegal of ['description:', 'model:', 'opencode:', 'permission:', 'mode:']) {
+      expect(sample).not.toContain(illegal);
+    }
   });
 
   test('requires validation before finishing', () => {

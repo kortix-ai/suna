@@ -602,7 +602,7 @@ export function registerMemberRoutes(): void {
         );
 
       if (newRole === 'owner' || newRole === 'admin') {
-        // Owners/admins get implicit Manager on every project; their direct
+        // Owners/admins get implicit Editor (top project role) on every project; their direct
         // project_members rows would shadow nothing useful, so clean them up.
         await db
           .delete(projectMembers)

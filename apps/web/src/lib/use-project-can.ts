@@ -3,9 +3,12 @@
 /**
  * useProjectCan — per-action capability gating for a PROJECT, for the current
  * user. The project analogue of `usePermission`: instead of branching on the
- * coarse `effective_project_role === 'manager'` label, it probes the IAM engine
- * for the exact leaf action a route asserts (e.g. project.gitops.push), so a
- * custom role that DEACTIVATES one capability is reflected in the UI precisely.
+ * coarse `effective_project_role === 'editor'` label (or the retired
+ * `'manager'` one), it probes the IAM engine for the exact leaf action a route
+ * asserts (e.g. project.gitops.push, or project.delete / project.members.manage
+ * / project.gateway.keys.manage — the three former manager-only actions now
+ * gated on ACCOUNT owner/admin authority, not any project role), so a custom
+ * role that DEACTIVATES one capability is reflected in the UI precisely.
  *
  * Rides the existing `usePermission`/`usePermissions` probe (no new endpoint):
  * a project-scoped probe `{ action, resourceType: 'project', resourceId }`.

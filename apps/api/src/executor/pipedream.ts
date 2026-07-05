@@ -47,9 +47,12 @@ export function pipedreamConfigured(): boolean {
 }
 
 /**
- * Stable external_user_id per connector. For per_user connectors it includes the
- * user so each member's connection is isolated; for shared it's connector-wide.
- * The webhook parses this back as `projectId:slug[:userId]`.
+ * Stable external_user_id per connector — connector-wide (`projectId:slug`),
+ * since every connector resolves the one shared credential (`per_user`, which
+ * scoped this per-member via a trailing `:userId`, was removed 2026-07-05).
+ * `userId` stays an optional param for call-site/back-compat stability, but
+ * every caller now passes `null`. The webhook still tolerates the legacy
+ * 3-part `projectId:slug:userId` shape on parse.
  */
 function externalUserId(projectId: string, slug: string, userId?: string | null): string {
   return userId ? `${projectId}:${slug}:${userId}` : `${projectId}:${slug}`;

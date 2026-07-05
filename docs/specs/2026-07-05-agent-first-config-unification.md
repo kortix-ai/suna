@@ -92,16 +92,23 @@ Facts established by direct code inspection — each of these shapes a decision 
   names no agent gets the project default agent, never owner-equivalent power.
   This closes trigger seam 7(a) structurally rather than with a patch.
 
-### 2.2 One agent block, two structurally distinct layers
+### 2.2 One agent, two files, one home each (redirected 2026-07-05)
 
-The v2 agent entry unifies what today is split across `[[agents]]` (TOML) and
-`.kortix/opencode/agents/*.md` (frontmatter + prompt) — but it does not flatten
-them into one undifferentiated bag of fields. Kortix concerns (identity,
-governance, the declarative model) and OpenCode concerns (runtime behavior)
-are 100% structurally distinct: the former live top-level; the latter live
-nested under `opencode:`, namespaced by runtime so a future `runtime:
-codex`/`claude` project gets its own behavior block instead of colliding with
-this one:
+> **Decision 2026-07-05 (Marko):** the design below (a nested `opencode:`
+> sub-object inside the manifest's agent block, with an "illegal frontmatter"
+> gate on the `.md`) shipped first, then was killed the same day for hedging
+> between two homes for one concern. **The replacement, in one sentence:
+> OpenCode behavior lives in the native `.md` (frontmatter + body); Kortix
+> governance lives in `kortix.yaml`. One home per concern.** Everything below
+> describes the *current*, redirected model. The nested-`opencode:`-block /
+> illegal-frontmatter design is dead — do not resurrect it.
+
+The v2 agent entry does NOT unify `[[agents]]` (TOML) and
+`.kortix/opencode/agents/*.md` into one manifest-side bag of fields. Instead
+it leaves behavior exactly where OpenCode itself already expects it — the
+agent's own `.md` frontmatter + body, a stock OpenCode agent file with no
+Kortix-specific split — and narrows the manifest's `agents:` map down to pure
+governance:
 
 ```yaml
 kortix_version: 2
@@ -109,56 +116,63 @@ default_agent: support
 
 agents:
   support:
-    # ---- Kortix layer: identity + governance, runtime-agnostic ----
-    description: "Handles customer support triage"   # required for subagents
     enabled: true                       # default true; false = can't start sessions
-    model: anthropic/claude-sonnet-5    # declarative default; DB prefs override at runtime
     connectors: [github, slack]         # profile slugs | all | none
     secrets: [STRIPE_KEY, GH_TOKEN]     # renamed from `env`; names | all | none
+    skills: [pdf-export]                # project skill names | all | none
     kortix_cli: [project.session.start, project.cr.open]
     workspace: runtime                  # runtime | read | branch  (Phase 4, git boundary)
-    # ---- OpenCode layer: nested, runtime-specific behavior ----
-    opencode:
-      mode: primary            # primary | subagent | all
-      temperature: 0.2
-      steps: 200
-      color: "#7C5CFF"
-      hidden: false
-      prompt: agents/support.md          # file ref; body = system prompt (unchanged authoring UX)
-      permission:                        # full OpenCode PermissionConfig tree, passed through
-        edit: ask
-        bash: { "git push": deny, "*": allow }
-        webfetch: allow
   pr-bot:
-    description: "Reviews and lands PRs"
     connectors: [github]
     kortix_cli: [project.cr.open, project.cr.merge, project.review.submit]
-    opencode:
-      mode: subagent
-      prompt: agents/pr-bot.md
+```
+
+That's the WHOLE agent block — no `description`, no `model`, no `opencode:`
+sub-object, no `mode`/`temperature`/`permission`/`prompt`. Every one of those
+now lives in the matching `.kortix/opencode/agents/<name>.md`:
+
+```markdown
+---
+description: "Handles customer support triage"   # required for subagents
+model: anthropic/claude-sonnet-5                  # declarative default; DB prefs override at runtime
+mode: primary                                     # primary | subagent | all
+temperature: 0.2
+steps: 200
+color: "#7C5CFF"
+hidden: false
+permission:                                       # full OpenCode PermissionConfig tree, passed through
+  edit: ask
+  bash: { "git push": deny, "*": allow }
+  webfetch: allow
+---
+
+You triage customer support tickets with empathy and precision.
 ```
 
 Rules:
 
-- **`model` stays in the Kortix layer** (top-level, never under `opencode`) —
-  the gateway resolves it and it's universal across whatever runtime executes
-  the agent, unlike everything else in the OpenCode block. `description` and
-  `enabled` are Kortix layer too (identity + "can this agent even start a
-  session," both runtime-agnostic).
-- **Full OpenCode `AgentConfig` parity, nested under `opencode:`.** Every
-  behavioral schema field (`variant`, `temperature`, `top_p`, `prompt`,
-  `mode`, `hidden`, `options`, `color`, `steps`, `permission` incl. glob rules
-  and the `skill`/`task`/`bash` rule types) is representable there. Deprecated
-  upstream fields (`tools`, `maxSteps`) are rejected with a pointer to
-  `permission`/`steps`. `opencode:` is optional — an agent may declare only
-  governance + model and inherit default OpenCode behavior. Authoring any of
-  these fields flat on the agent block (the pre-refactor shape) is a hard
-  validation error pointing at `agents.<name>.opencode.<field>`.
-- **The `.md` files remain** as prompt bodies (referenced via
-  `opencode.prompt:`), because that authoring UX is good. Frontmatter in those
-  files becomes **illegal in v2** — one source of truth. The compiler errors
-  if a referenced `.md` still carries frontmatter keys that belong in the
-  manifest.
+- **The agent's NAME is the join** between the manifest's `agents:` map key
+  and the `.md` filename: `agents.<name>` ↔
+  `.kortix/opencode/agents/<name>.md` (path derived from the project's
+  top-level `[opencode] config_dir`, default `.kortix/opencode` — unrelated to
+  the old per-agent nesting, this is the same project-wide setting v1 always
+  had). No manifest field ever spells this path out.
+- **`model` and `description` moved OFF the Kortix layer** — both are native
+  OpenCode `AgentConfig` fields (the gateway/session pipeline still resolves
+  `model` the same way; `description` is what OpenCode itself uses for
+  subagent-selection hints), so both live in the `.md` now, not in
+  `kortix.yaml`. `enabled` stays the one Kortix-governance field with no
+  OpenCode equivalent — "can this agent even start a session," a
+  platform-level gate, orthogonal to whatever the `.md`'s own native
+  `disable` field (if hand-authored) says.
+- **Frontmatter is EXPECTED, never illegal.** A stock OpenCode agent `.md` —
+  including ones with rich frontmatter nobody wrote with Kortix in mind — is
+  valid v2 input as-is. The "illegal frontmatter" gate and the nested
+  `opencode:` manifest sub-object are both **removed outright**, not renamed
+  again. Authoring any behavioral field (`description`/`model`/`mode`/
+  `temperature`/`top_p`/`steps`/`variant`/`color`/`hidden`/`permission`/
+  `prompt`, or a nested `opencode:` block) on the manifest agent block is a
+  hard validation error pointing at the `.md` instead.
 - **`secrets` replaces `env`** as the grant-set name (accurate: they're project
   secrets, not arbitrary env). v2 default when omitted: **`none`** — v2 is
   deny-by-default across all three grant sets, killing the `env: 'all'`
@@ -166,8 +180,16 @@ Rules:
   converted manifests so nothing silently breaks — the default changes, not the
   migrated behavior.)
 - **`skills` is the one governance field with a runtime representation**: the
-  compiler folds it into `opencode.permission.skill` — users never author
-  `permission.skill` directly when using the governance grant.
+  compiler folds it into the compiled agent's `permission.skill` — users never
+  author `permission.skill` directly when using the governance grant, and this
+  fold is the reason the compiler still exists even though behavior no longer
+  needs "compiling" out of the manifest.
+- **No precedence to document.** The pre-redirect design needed a rule for
+  "manifest `opencode:` block vs. `.md` frontmatter, which wins" — that
+  question is now moot because behavior only ever lives in one place. The
+  only overlay left is governance-onto-behavior: `enabled: false` always
+  forces the compiled `disable: true` (platform gate wins); `skills` always
+  owns the compiled `permission.skill` key.
 - **Runtime attribution**: every session/trigger run is attributed to the agent's
   service account (auto-provisioned per agent, already exists as
   `ensureAgentServiceAccount`), closing trigger seam 7(b). The human launcher
@@ -177,16 +199,26 @@ Rules:
 ### 2.3 Runtime-agnostic by construction: the compiler
 
 ```
-kortix.yaml ──► manifest-schema (validate) ──► runtime compiler ──► OpenCode config
-                                             (per runtime:       (agent map + permission
-                                              opencode | codex    + mcp + model overlays,
-                                              | claude — later)   written by the daemon)
+kortix.yaml (governance) ─┐
+                          ├─► runtime compiler ──► OpenCode config
+.md frontmatter+body ─────┘   (per runtime:       (agent map + permission
+ (OpenCode behavior)            opencode | codex    + mcp + model overlays,
+                                 | claude — later)   written by the daemon)
 ```
 
 - New field: `runtime: opencode` (project-level, default `opencode`, the only
   accepted value for now). The schema reserves the enum; the compiler interface
-  (`compileAgentConfig(manifest, runtime) → runtime-native config`) is what makes
-  a future `runtime: claude` a one-line project change instead of a migration.
+  (`compileAgentConfig(manifest, runtime, agentMdFiles) → runtime-native
+  config`) is what makes a future `runtime: claude` a one-line project change
+  instead of a migration.
+- **What moved with the redirect:** the compiler's INPUT source for behavior
+  moved from a manifest `opencode:` sub-block to each agent's native `.md`
+  frontmatter (read straight from git, same as the manifest itself); its
+  OUTPUT shape (the compiled `OpencodeAgentConfig`/`OpencodeConfig` the daemon
+  consumes) is byte-for-byte unchanged — every behavioral field still maps
+  1:1, `skills` still folds onto `permission.skill`, the top-level `model`
+  passthrough still mirrors the `default_agent`'s resolved model. Only where
+  the compiler reads FROM changed, not what it produces.
 - Implementation home: extend the existing merge point —
   `buildOpencodeConfigContent()` in `apps/kortix-sandbox-agent-server` already
   overlays MCP/provider/permission onto the repo's config. The compiler moves
@@ -198,9 +230,10 @@ kortix.yaml ──► manifest-schema (validate) ──► runtime compiler ─�
   governance spec in a narrower, buildable form: we compile *agent config*, not
   the whole workspace materialization (that's Phase 4).
 - Kills dead fields as a side effect: `[[agents]].model` becomes live (compiled
-  into the agent map, still overridable by DB model-preferences at the
-  session/trigger layer — precedence: explicit session > trigger > DB prefs >
-  manifest agent > account > platform).
+  into the agent map from the `.md`'s own `model:` frontmatter field, still
+  overridable by DB model-preferences at the session/trigger layer —
+  precedence: explicit session > trigger > DB prefs > compiled agent config >
+  account > platform).
 
 ### 2.4 Secrets v2: named secrets with per-agent values
 
@@ -320,12 +353,14 @@ instead is its approval UX:
 ### 2.8 Migrating existing projects
 
 - `kortix migrate` (CLI) + a one-click dashboard banner, both driving the same
-  server-side transform: read v1 TOML + all `.md` frontmatter → emit
-  `kortix.yaml` (v2) with frontmatter hoisted into agent blocks, `env` renamed
-  `secrets` (written explicitly as `all` where v1 defaulted), dead fields
-  dropped, `[[channels]]` dropped — delivered as a **change request** on the
-  project repo, reviewed and merged like any other change. Nothing migrates
-  silently.
+  server-side transform: read v1 TOML's `[[agents]]` governance → emit
+  `kortix.yaml` (v2) with an equivalent `agents:` map, `env` renamed `secrets`
+  (written explicitly as `all` where v1 defaulted), `[[channels]]` dropped —
+  delivered as a **change request** on the project repo, reviewed and merged
+  like any other change. Nothing migrates silently. **Redirected 2026-07-05:**
+  no `.md` frontmatter is touched at all — v1's frontmatter is already valid
+  v2 OpenCode behavior (nothing to hoist), which is what makes this a
+  governance-only, comparatively small migration.
 - The platform reads both versions indefinitely (validator already
   version-gates); the *feature* incentive to migrate is that everything in this
   spec (per-agent model/permissions, secret values, approvals) is v2-only.
@@ -369,7 +404,7 @@ Each phase is independently shippable; order minimizes rework.
 | Phase | Scope | Size |
 |---|---|---|
 | **0. Hygiene** (now, with IAM finalisation) | Starter key examples removed; Members copy fix; Groups/Roles visual gating; manifest.mdx agents/channels docs; CLI-leaf enforcement audit | S |
-| **1. Schema v2 + compiler skeleton** | `kortix_version: 2` YAML schema (unified agent block, `secrets` rename, deny-by-default, `runtime` enum, `[[channels]]` removal); server-side `compileAgentConfig` for opencode; frontmatter-illegal rule; dead-field removal; `manifest-edit`/validate-endpoint format fixes | L |
+| **1. Schema v2 + compiler skeleton** | `kortix_version: 2` YAML schema (governance-only agent block, `secrets` rename, deny-by-default, `runtime` enum, `[[channels]]` removal); server-side `compileAgentConfig` for opencode reading behavior from each agent's native `.md` frontmatter (redirected 2026-07-05 — no illegal-frontmatter gate, no nested `opencode:` block); dead-field removal; `manifest-edit`/validate-endpoint format fixes | L |
 | **2. Mandatory agents + trigger identity** | `KORTIX_REQUIRE_DECLARED_AGENTS` flag (on for new projects); default-sentinel-must-resolve rule; trigger/channel sessions attributed to agent SA; web Channels management surface | M |
 | **3. Secrets v2 + approvals + per_user removal** | display name + per-agent values (schema + resolution + UI/CLI); CLI-action approval tier via Review Center (default set: `project.gitops.merge`); remove `per_user` credential mode per §2.5 (migration + reconnect-required UX + account comms) | L |
 | **4. Git boundary** | `workspace`/`git` powers per agent; resource caps stamped into session token; `authorizeGitProxy` enforces; auto-clone policy per agent | L |

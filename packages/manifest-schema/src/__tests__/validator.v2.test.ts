@@ -1,6 +1,17 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveGrantSet, validateManifest } from '../index.ts';
+import {
+  type ManifestIssue,
+  resolveGrantSet,
+  validateAgentMdFrontmatter,
+  validateManifest,
+} from '../index.ts';
 
+// v2's `agents:` map is GOVERNANCE ONLY (decision 2026-07-05, "one home per
+// concern") — behavior (mode/model/temperature/permission/…) lives entirely
+// in the agent's own `.kortix/opencode/agents/<name>.md` frontmatter, which
+// this validator never reads. See the `validateAgentMdFrontmatter` describe
+// block below for the behavioral-field rules, now exercised against that
+// function directly instead of through `validateManifest`.
 const V2_FIXTURE = `
 kortix_version: 2
 default_agent: support
@@ -12,32 +23,13 @@ project:
 
 agents:
   support:
-    description: Handles customer support triage
-    model: anthropic/claude-sonnet-5
     connectors: [github, slack]
     secrets: [STRIPE_KEY, GH_TOKEN]
     kortix_cli: [project.session.start, project.cr.open]
     workspace: runtime
-    opencode:
-      mode: primary
-      temperature: 0.2
-      steps: 200
-      color: "#7C5CFF"
-      hidden: false
-      prompt: agents/support.md
-      permission:
-        edit: ask
-        bash:
-          "git push": deny
-          "*": allow
-        webfetch: allow
   pr-bot:
-    description: Reviews and lands PRs
     connectors: [github]
     kortix_cli: [project.cr.open, project.cr.merge, project.review.submit]
-    opencode:
-      mode: subagent
-      prompt: agents/pr-bot.md
 
 triggers:
   - slug: nightly-digest
@@ -60,6 +52,12 @@ function summarize(input: string | Record<string, unknown>, format: 'toml' | 'ya
   const errorPaths = result.issues.filter((i) => i.severity === 'error').map((i) => i.path);
   const warningPaths = result.issues.filter((i) => i.severity === 'warning').map((i) => i.path);
   return { ...result, errorPaths, warningPaths };
+}
+
+function frontmatterIssues(frontmatter: Record<string, unknown>): ManifestIssue[] {
+  const issues: ManifestIssue[] = [];
+  validateAgentMdFrontmatter(frontmatter, 'agents/w.md', issues);
+  return issues;
 }
 
 const V1_REGRESSION_FIXTURE = `
@@ -225,35 +223,8 @@ describe('validateManifest — kortix_version 2 format gate', () => {
   });
 });
 
-describe('validateManifest — kortix_version 2 deprecated upstream fields', () => {
-  test('`tools` is rejected with a pointer to `permission`', () => {
-    const { errorPaths, issues } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      tools:
-        bash: true
-`);
-    expect(errorPaths).toContain('agents.w.opencode.tools');
-    expect(issues.find((i) => i.path === 'agents.w.opencode.tools')?.message).toContain('permission');
-  });
-
-  test('`maxSteps` is rejected with a pointer to `steps`', () => {
-    const { errorPaths, issues } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      maxSteps: 50
-`);
-    expect(errorPaths).toContain('agents.w.opencode.maxSteps');
-    expect(issues.find((i) => i.path === 'agents.w.opencode.maxSteps')?.message).toContain('steps');
-  });
-
-  test('a flat (pre-refactor) behavioral field is rejected with a pointer to `opencode`', () => {
+describe('validateManifest — kortix_version 2 behavior fields moved to the agent .md', () => {
+  test('a flat behavioral field on the agent block is rejected with a pointer to the .md frontmatter', () => {
     const { errorPaths, issues } = summarize(`
 kortix_version: 2
 default_agent: w
@@ -262,10 +233,45 @@ agents:
     mode: primary
 `);
     expect(errorPaths).toContain('agents.w.mode');
-    expect(issues.find((i) => i.path === 'agents.w.mode')?.message).toContain('opencode');
+    expect(issues.find((i) => i.path === 'agents.w.mode')?.message).toContain('.md');
   });
 
-  test('a flat (pre-refactor) `disable` is rejected with a pointer to `enabled`', () => {
+  test('`model` on the agent block is rejected — model now lives in the .md frontmatter', () => {
+    const { errorPaths, issues } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    model: anthropic/claude-sonnet-5
+`);
+    expect(errorPaths).toContain('agents.w.model');
+    expect(issues.find((i) => i.path === 'agents.w.model')?.message).toContain('.md');
+  });
+
+  test('`description` on the agent block is rejected — description now lives in the .md frontmatter', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    description: "Handles support"
+`);
+    expect(errorPaths).toContain('agents.w.description');
+  });
+
+  test('a nested `opencode:` sub-object is rejected outright — the override concept is removed, not renamed', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    opencode:
+      mode: primary
+`);
+    expect(errorPaths).toContain('agents.w.opencode');
+  });
+
+  test('a flat `disable` is rejected with a pointer to `enabled` AND the .md', () => {
     const { errorPaths, issues } = summarize(`
 kortix_version: 2
 default_agent: w
@@ -274,7 +280,29 @@ agents:
     disable: true
 `);
     expect(errorPaths).toContain('agents.w.disable');
-    expect(issues.find((i) => i.path === 'agents.w.disable')?.message).toContain('enabled');
+    expect(issues.find((i) => i.path === 'agents.w.disable')?.message).toContain('.md');
+  });
+
+  test('`permission`/`temperature`/`steps`/`color`/`hidden`/`variant`/`top_p`/`prompt` are all rejected flat on the agent block', () => {
+    for (const key of [
+      'permission',
+      'temperature',
+      'steps',
+      'color',
+      'hidden',
+      'variant',
+      'top_p',
+      'prompt',
+    ]) {
+      const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    ${key}: x
+`);
+      expect(errorPaths).toContain(`agents.w.${key}`);
+    }
   });
 });
 
@@ -310,6 +338,54 @@ default_agent: w
 agents:
   w:
     secrets: [STRIPE_KEY]
+`);
+    expect(valid).toBe(true);
+  });
+});
+
+// `per_user` connector credential mode was removed 2026-07-05 (docs/specs/
+// 2026-07-05-agent-first-config-unification.md §2.5): v1 tolerates it as a
+// legacy value (warning; resolves to `shared` at runtime), v2 is a clean
+// break and rejects it outright — same pattern as the removed CLI actions.
+describe('validateManifest — connector `credential: per_user` removal', () => {
+  test('v1 tolerates "per_user" as a legacy value (warning, not an error)', () => {
+    const { valid, errorPaths, warningPaths } = summarize(
+      'kortix_version = 1\n[[connectors]]\nslug = "gmail"\nprovider = "pipedream"\napp = "gmail"\ncredential = "per_user"',
+      'toml',
+    );
+    expect(valid).toBe(true);
+    expect(errorPaths).not.toContain('connectors[0].credential');
+    expect(warningPaths).toContain('connectors[0].credential');
+  });
+
+  test('v2 rejects "per_user" outright', () => {
+    const { valid, errorPaths, issues } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w: {}
+connectors:
+  - slug: gmail
+    provider: pipedream
+    app: gmail
+    credential: per_user
+`);
+    expect(valid).toBe(false);
+    expect(errorPaths).toContain('connectors[0].credential');
+    expect(issues.find((i) => i.path === 'connectors[0].credential')?.message).toContain('kortix_version 2');
+  });
+
+  test('v2 accepts "shared" (the only mode) cleanly', () => {
+    const { valid } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w: {}
+connectors:
+  - slug: gmail
+    provider: pipedream
+    app: gmail
+    credential: shared
 `);
     expect(valid).toBe(true);
   });
@@ -359,6 +435,17 @@ agents:
 `);
     expect(valid).toBe(true);
   });
+
+  test('default_agent naming a disabled agent is rejected', () => {
+    const { errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    enabled: false
+`);
+    expect(errorPaths).toContain('default_agent');
+  });
 });
 
 describe('validateManifest — kortix_version 2 requires at least one agent', () => {
@@ -387,58 +474,6 @@ agents:
   - name: w
 `);
     expect(errorPaths).toContain('agents');
-  });
-});
-
-describe('validateManifest — kortix_version 2 subagent requires description', () => {
-  test('mode: subagent without a description is rejected', () => {
-    const { errorPaths } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      mode: subagent
-`);
-    expect(errorPaths).toContain('agents.w.description');
-  });
-
-  test('mode: subagent with an empty-string description is rejected', () => {
-    const { errorPaths } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    description: "   "
-    opencode:
-      mode: subagent
-`);
-    expect(errorPaths).toContain('agents.w.description');
-  });
-
-  test('mode: subagent with a description passes', () => {
-    const { valid } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    description: reviews PRs
-    opencode:
-      mode: subagent
-`);
-    expect(valid).toBe(true);
-  });
-
-  test('mode: primary does not require a description', () => {
-    const { valid } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      mode: primary
-`);
-    expect(valid).toBe(true);
   });
 });
 
@@ -526,103 +561,7 @@ agents:
   });
 });
 
-describe('validateManifest — kortix_version 2 agent field validation', () => {
-  test('an invalid mode is rejected', () => {
-    const { errorPaths } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      mode: bogus
-`);
-    expect(errorPaths).toContain('agents.w.opencode.mode');
-  });
-
-  test('non-numeric temperature is rejected', () => {
-    const { errorPaths } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      temperature: "hot"
-`);
-    expect(errorPaths).toContain('agents.w.opencode.temperature');
-  });
-
-  test('non-numeric top_p is rejected', () => {
-    const { errorPaths } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      top_p: "high"
-`);
-    expect(errorPaths).toContain('agents.w.opencode.top_p');
-  });
-
-  test('a zero steps value is rejected', () => {
-    const { errorPaths } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      steps: 0
-`);
-    expect(errorPaths).toContain('agents.w.opencode.steps');
-  });
-
-  test('a non-integer steps value is rejected', () => {
-    const { errorPaths } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      steps: 1.5
-`);
-    expect(errorPaths).toContain('agents.w.opencode.steps');
-  });
-
-  test('a hex color passes', () => {
-    const { valid } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      color: "#ABCDEF"
-`);
-    expect(valid).toBe(true);
-  });
-
-  test('a theme color name passes', () => {
-    const { valid } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      color: warning
-`);
-    expect(valid).toBe(true);
-  });
-
-  test('an invalid color is rejected', () => {
-    const { errorPaths } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      color: chartreuse
-`);
-    expect(errorPaths).toContain('agents.w.opencode.color');
-  });
-
+describe('validateManifest — kortix_version 2 agent block is governance-only', () => {
   test('a non-boolean enabled is rejected', () => {
     const { errorPaths } = summarize(`
 kortix_version: 2
@@ -634,66 +573,15 @@ agents:
     expect(errorPaths).toContain('agents.w.enabled');
   });
 
-  test('a non-boolean hidden is rejected', () => {
-    const { errorPaths } = summarize(`
+  test('a bare governance-only block (every field omitted) is valid', () => {
+    const { valid, issues } = summarize(`
 kortix_version: 2
 default_agent: w
 agents:
-  w:
-    opencode:
-      hidden: "yes"
-`);
-    expect(errorPaths).toContain('agents.w.opencode.hidden');
-  });
-
-  test('an absolute prompt path is rejected', () => {
-    const { errorPaths } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      prompt: /etc/passwd
-`);
-    expect(errorPaths).toContain('agents.w.opencode.prompt');
-  });
-
-  test('a non-object options value is rejected', () => {
-    const { errorPaths } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      options: "x"
-`);
-    expect(errorPaths).toContain('agents.w.opencode.options');
-  });
-
-  test('a free-form options object passes through', () => {
-    const { valid } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      options:
-        reasoningEffort: high
-        anything: [1, 2, 3]
+  w: {}
 `);
     expect(valid).toBe(true);
-  });
-
-  test('a model without a "/" warns but does not block', () => {
-    const { valid, warningPaths } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    model: sonnet
-`);
-    expect(valid).toBe(true);
-    expect(warningPaths).toContain('agents.w.model');
+    expect(issues).toEqual([]);
   });
 
   test('an invalid agent name key is rejected', () => {
@@ -702,107 +590,10 @@ kortix_version: 2
 default_agent: w
 agents:
   "Not Valid":
-    description: x
+    workspace: runtime
   w: {}
 `);
     expect(errorPaths).toContain('agents.Not Valid');
-  });
-});
-
-describe('validateManifest — kortix_version 2 permission tree', () => {
-  test('a bare action permission is accepted', () => {
-    const { valid } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      permission: allow
-`);
-    expect(valid).toBe(true);
-  });
-
-  test('an invalid bare action permission is rejected', () => {
-    const { errorPaths } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      permission: sometimes
-`);
-    expect(errorPaths).toContain('agents.w.opencode.permission');
-  });
-
-  test('a nested glob-map permission rule is accepted', () => {
-    const { valid } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      permission:
-        bash:
-          "git push": deny
-          "*": allow
-`);
-    expect(valid).toBe(true);
-  });
-
-  test('an invalid action inside a glob-map is rejected', () => {
-    const { errorPaths } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      permission:
-        bash:
-          "*": maybe
-`);
-    expect(errorPaths).toContain('agents.w.opencode.permission.bash.*');
-  });
-
-  test('action-only keys reject a glob-map form', () => {
-    const { errorPaths } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      permission:
-        webfetch:
-          "*": allow
-`);
-    expect(errorPaths).toContain('agents.w.opencode.permission.webfetch');
-  });
-
-  test('an arbitrary passthrough tool-name key accepts the rule form', () => {
-    const { valid } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      permission:
-        my_custom_tool:
-          "*": ask
-`);
-    expect(valid).toBe(true);
-  });
-
-  test('doom_loop only accepts a bare action', () => {
-    const { valid, errorPaths } = summarize(`
-kortix_version: 2
-default_agent: w
-agents:
-  w:
-    opencode:
-      permission:
-        doom_loop: deny
-`);
-    expect(valid).toBe(true);
-    expect(errorPaths).toEqual([]);
   });
 });
 
@@ -993,5 +784,118 @@ apps:
       type: ftp
 `);
     expect(errorPaths).toContain('apps[0].source.type');
+  });
+});
+
+// ─── validateAgentMdFrontmatter ─────────────────────────────────────────────
+//
+// The behavioral-field rules formerly enforced on the manifest's (removed)
+// `agents.<name>.opencode` block now apply to the agent's native `.md`
+// frontmatter instead — same rules, reused, exercised directly since this
+// validator has no manifest/git context of its own (the compiler is the one
+// caller that actually has the file content to validate).
+describe('validateAgentMdFrontmatter', () => {
+  test('an empty frontmatter object (a stock body-only .md) is valid', () => {
+    expect(frontmatterIssues({})).toEqual([]);
+  });
+
+  test('every recognized field passes when well-formed', () => {
+    const issues = frontmatterIssues({
+      description: 'Handles support',
+      model: 'anthropic/claude-sonnet-5',
+      mode: 'primary',
+      variant: 'thinking',
+      temperature: 0.2,
+      top_p: 0.9,
+      steps: 200,
+      color: '#7C5CFF',
+      hidden: false,
+      disable: false,
+      options: { reasoningEffort: 'high' },
+      permission: { edit: 'ask', bash: { 'git push': 'deny', '*': 'allow' } },
+    });
+    expect(issues).toEqual([]);
+  });
+
+  test('an invalid mode is rejected', () => {
+    const issues = frontmatterIssues({ mode: 'bogus' });
+    expect(issues.some((i) => i.path === 'agents/w.md.mode')).toBe(true);
+  });
+
+  test('non-numeric temperature is rejected', () => {
+    const issues = frontmatterIssues({ temperature: 'hot' });
+    expect(issues.some((i) => i.path === 'agents/w.md.temperature')).toBe(true);
+  });
+
+  test('non-numeric top_p is rejected', () => {
+    const issues = frontmatterIssues({ top_p: 'high' });
+    expect(issues.some((i) => i.path === 'agents/w.md.top_p')).toBe(true);
+  });
+
+  test('a zero steps value is rejected', () => {
+    const issues = frontmatterIssues({ steps: 0 });
+    expect(issues.some((i) => i.path === 'agents/w.md.steps')).toBe(true);
+  });
+
+  test('a non-integer steps value is rejected', () => {
+    const issues = frontmatterIssues({ steps: 1.5 });
+    expect(issues.some((i) => i.path === 'agents/w.md.steps')).toBe(true);
+  });
+
+  test('a hex color passes', () => {
+    expect(frontmatterIssues({ color: '#ABCDEF' })).toEqual([]);
+  });
+
+  test('a theme color name passes', () => {
+    expect(frontmatterIssues({ color: 'warning' })).toEqual([]);
+  });
+
+  test('an invalid color is rejected', () => {
+    const issues = frontmatterIssues({ color: 'chartreuse' });
+    expect(issues.some((i) => i.path === 'agents/w.md.color')).toBe(true);
+  });
+
+  test('a non-boolean hidden is rejected', () => {
+    const issues = frontmatterIssues({ hidden: 'yes' });
+    expect(issues.some((i) => i.path === 'agents/w.md.hidden')).toBe(true);
+  });
+
+  test('a non-boolean disable is rejected', () => {
+    const issues = frontmatterIssues({ disable: 'yes' });
+    expect(issues.some((i) => i.path === 'agents/w.md.disable')).toBe(true);
+  });
+
+  test('a non-object options value is rejected', () => {
+    const issues = frontmatterIssues({ options: 'x' });
+    expect(issues.some((i) => i.path === 'agents/w.md.options')).toBe(true);
+  });
+
+  test('a bare permission action is accepted', () => {
+    expect(frontmatterIssues({ permission: 'allow' })).toEqual([]);
+  });
+
+  test('an invalid bare permission action is rejected', () => {
+    const issues = frontmatterIssues({ permission: 'sometimes' });
+    expect(issues.some((i) => i.path === 'agents/w.md.permission')).toBe(true);
+  });
+
+  test('an invalid action inside a glob-map permission rule is rejected', () => {
+    const issues = frontmatterIssues({ permission: { bash: { '*': 'maybe' } } });
+    expect(issues.some((i) => i.path === 'agents/w.md.permission.bash.*')).toBe(true);
+  });
+
+  test('action-only keys reject a glob-map form', () => {
+    const issues = frontmatterIssues({ permission: { webfetch: { '*': 'allow' } } });
+    expect(issues.some((i) => i.path === 'agents/w.md.permission.webfetch')).toBe(true);
+  });
+
+  test('`tools` is rejected with a pointer to `permission`', () => {
+    const issues = frontmatterIssues({ tools: { bash: true } });
+    expect(issues.find((i) => i.path === 'agents/w.md.tools')?.message).toContain('permission');
+  });
+
+  test('`maxSteps` is rejected with a pointer to `steps`', () => {
+    const issues = frontmatterIssues({ maxSteps: 50 });
+    expect(issues.find((i) => i.path === 'agents/w.md.maxSteps')?.message).toContain('steps');
   });
 });

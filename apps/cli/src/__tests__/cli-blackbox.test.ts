@@ -422,7 +422,7 @@ describe('kortix CLI black-box behavior', () => {
     const init = await runCli(['init', 'full-e2e', '--yes', '--no-git']);
     expect(init.code).toBe(0);
     const root = join(tmp, 'full-e2e');
-    expect(existsSync(join(root, 'kortix.toml'))).toBe(true);
+    expect(existsSync(join(root, 'kortix.yaml'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'show.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);

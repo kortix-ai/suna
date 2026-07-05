@@ -65,12 +65,11 @@ import type {
 import { haptics } from '@/lib/haptics';
 
 const MONO = 'Menlo';
-const ROLES: ProjectRole[] = ['member', 'editor', 'manager'];
+const ROLES: ProjectRole[] = ['member', 'editor'];
 
 const ROLE_DESC: Record<ProjectRole, { label: string; blurb: string }> = {
   member: { label: 'Member', blurb: 'Read, run sessions and chat, and fire the project’s triggers.' },
-  editor: { label: 'Editor', blurb: 'Everything a member does, plus edit the project and run sessions.' },
-  manager: { label: 'Manager', blurb: 'Full control — edit the project, invite members, change settings.' },
+  editor: { label: 'Editor', blurb: 'Everything a member does, plus edit and customize the project.' },
 };
 
 interface PageTabLike { id: string; label: string; icon: string }
@@ -713,7 +712,7 @@ export function MembersNavPage({
   const grantsQuery = useProjectGroupGrants(projectId);
   const project = projectQuery.data;
   const accountId = project?.account_id ?? null;
-  const canManage = project?.effective_project_role === 'manager' || !!accessQuery.data?.can_manage;
+  const canManage = project?.effective_project_role === 'editor' || !!accessQuery.data?.can_manage;
 
   const [sheet, setSheet] = useState<SheetState>(null);
   const sheetRef = React.useRef<BottomSheetModal>(null);

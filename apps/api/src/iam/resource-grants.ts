@@ -16,15 +16,27 @@
  *     department out of everything else.
  *   - SCOPED resources are accessible ONLY to principals with a matching grant:
  *     a member grant for the user, or a group grant for any group the user is
- *     in. Account owners/admins keep implicit Manager and bypass scoping; the
- *     fold runs for human members only (service accounts are governed by their
- *     own policies + agentGrant).
+ *     in. Account owners/admins keep implicit Editor (top project role) and
+ *     bypass scoping; the fold runs for human members only (service accounts
+ *     are governed by their own policies + agentGrant).
  *
  * Cache: a project+type keyed memo (~15s TTL) holds the grant map; mutations
  * bust it synchronously on the writing replica (invalidateIamCacheForProject-
  * Resources), with the same <=TTL cross-replica lag the rest of the IAM cache
  * already accepts. The empty (unscoped) map IS cached — that's the common,
  * hot-path case — and every mutation busts it.
+ *
+ * AGENT-ONLY member-scoped resource (Marko, resource-model simplification):
+ * only `agent` is a member/department-scopable resource going forward. Skills
+ * and secrets are governed by the EDITOR role (edit) + agent inheritance (use)
+ * instead — assigning an agent to a member lets them USE what that agent
+ * declares (its skills/connectors/secrets), never edit it. `skill` and
+ * `secret` stay in RESOURCE_GRANT_TYPES / ResourceType purely for back-compat:
+ * pre-existing grant rows of those types must keep reading, listing, and
+ * revoking correctly. NEW grants of those types are rejected at the API layer
+ * (see CREATABLE_RESOURCE_GRANT_TYPES + the r7.ts POST /resource-grants gate)
+ * — this module stays permissive so it never has to know which caller is
+ * enforcing that; it's a write-time policy, not a storage-model change.
  *
  * Import direction: this module imports cache-invalidation (register/bust) but
  * NOT engine-v2; engine-v2 imports this. No cycle.
@@ -38,11 +50,24 @@ import {
   registerProjectScopedMemo,
 } from './cache-invalidation';
 
-/** The resource kinds that support per-resource scoping today. Extensible.
- *  agent/skill ids come from the git config; secret ids are the secret NAME
- *  (uppercased key) from the project_secrets table. */
+/** The resource kinds that support per-resource scoping today. `skill` and
+ *  `secret` are READ/REVOKE-only back-compat holdovers — see the module
+ *  doc comment above and CREATABLE_RESOURCE_GRANT_TYPES below. agent/skill ids
+ *  come from the git config; secret ids are the secret NAME (uppercased key)
+ *  from the project_secrets table. */
 export const RESOURCE_GRANT_TYPES = ['agent', 'skill', 'secret'] as const;
 export type ResourceType = (typeof RESOURCE_GRANT_TYPES)[number];
+
+/** The resource kinds a NEW member/department-scoped grant may be created
+ *  for. Only `agent` — skills and secrets are governed by the editor role
+ *  (edit) + agent inheritance (use), not a direct member-scoped grant. Existing
+ *  skill/secret grant rows (created before this restriction) still read,
+ *  list, and revoke normally; this only gates the CREATE path. */
+export const CREATABLE_RESOURCE_GRANT_TYPES = ['agent'] as const;
+export type CreatableResourceType = (typeof CREATABLE_RESOURCE_GRANT_TYPES)[number];
+export function isCreatableResourceType(v: string): v is CreatableResourceType {
+  return (CREATABLE_RESOURCE_GRANT_TYPES as readonly string[]).includes(v);
+}
 export function isResourceType(v: string): v is ResourceType {
   return (RESOURCE_GRANT_TYPES as readonly string[]).includes(v);
 }

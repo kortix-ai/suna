@@ -593,7 +593,7 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
       if (readVerdict.allowed) {
         const verb = action === 'manage' ? 'manage this project' : 'change this project';
         throw new HTTPException(403, {
-          message: `Your role on this project doesn't let you ${verb}. Ask a project Manager to grant you a higher role.`,
+          message: `Your role on this project doesn't let you ${verb}. Ask an account owner or admin to grant you a higher role.`,
         });
       }
     }

@@ -1,7 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { KORTIX_CLI_CATALOG, Segmented, grantSummary } from './agent-editor';
+import {
+  KORTIX_CLI_CATALOG,
+  PERMISSION_ACTION_ONLY_KEYS,
+  PERMISSION_KEY_HELP,
+  PERMISSION_RULE_GROUPS,
+  PERMISSION_RULE_KEYS,
+  Segmented,
+  grantSummary,
+} from './agent-editor';
 
 describe('grantSummary — governance grant card labels', () => {
   test('"all" → All / outline', () => {
@@ -84,5 +92,29 @@ describe('KORTIX_CLI_CATALOG — grantable action mirror', () => {
 
   test('has no duplicate actions across groups', () => {
     expect(new Set(all).size).toBe(all.length);
+  });
+});
+
+describe('PERMISSION_RULE_GROUPS — permission-tree grouping', () => {
+  test('every PERMISSION_RULE_KEYS entry appears in exactly one group', () => {
+    const grouped = PERMISSION_RULE_GROUPS.flatMap((g) => g.keys);
+    expect(new Set(grouped)).toEqual(new Set(PERMISSION_RULE_KEYS));
+    expect(new Set(grouped).size).toBe(grouped.length);
+  });
+
+  test('groups are non-empty and labeled', () => {
+    for (const group of PERMISSION_RULE_GROUPS) {
+      expect(group.label.length).toBeGreaterThan(0);
+      expect(group.keys.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('PERMISSION_KEY_HELP — inline help coverage', () => {
+  test('every rule key and action-only key has a non-empty help string', () => {
+    for (const key of [...PERMISSION_RULE_KEYS, ...PERMISSION_ACTION_ONLY_KEYS]) {
+      expect(typeof PERMISSION_KEY_HELP[key]).toBe('string');
+      expect(PERMISSION_KEY_HELP[key]?.length).toBeGreaterThan(0);
+    }
   });
 });

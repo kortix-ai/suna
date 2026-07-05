@@ -1,15 +1,19 @@
 import { backendApi } from '../api-client';
 import { unwrap } from './shared';
 
-// ── Full v2 agent-config editor (the "agent builder", agent-first spec §2.2) ──
-// Round-trips the WHOLE `agents.<name>` block in a kortix_version 2 manifest —
-// every OpenCode-parity behavioral field (mode/model/temperature/top_p/steps/
-// permission tree/…) plus every Kortix governance field (connectors/secrets/
-// skills/kortix_cli/workspace). Distinct from setAgentScope (agent-scope.ts),
-// which writes only the secrets/connectors grant subset into a v1 `[[agents]]`
-// entry. Manager-gated server-side (project.customize.write); writes commit to
-// kortix.yaml. v2-only: `editable:false` on the GET means a v1 project — the UI
-// degrades to the limited scope editor.
+// ── Full v2 agent-config editor (the "agent builder", agent-first spec §2.2,
+// redirected 2026-07-05 — "one home per concern") ──
+// Round-trips the agent's TWO homes as one wire shape: `block` (governance —
+// connectors/secrets/skills/kortix_cli/workspace/enabled, written to
+// kortix.yaml) and `block.opencode` (OpenCode BEHAVIOR — mode/model/
+// temperature/top_p/steps/variant/color/hidden/permission/prompt, written to
+// the agent's own native `.kortix/opencode/agents/<name>.md` frontmatter +
+// body). The backend route is what merges the two files into this one
+// response/request shape — see apps/api/src/projects/routes/agent-config.ts.
+// Distinct from setAgentScope (agent-scope.ts), which writes only the
+// secrets/connectors grant subset into a v1 `[[agents]]` entry. Manager-gated
+// server-side (project.customize.write). v2-only: `editable:false` on the GET
+// means a v1 project — the UI degrades to the limited scope editor.
 
 /** A Kortix governance grant on the wire: an allowlist, or the sentinels. */
 export type AgentGrantSetV2 = 'all' | 'none' | string[];
@@ -23,14 +27,17 @@ export type PermissionRule = PermissionAction | Record<string, PermissionAction>
 /** The OpenCode `permission` tree — a bare action, or a per-capability object. */
 export type PermissionConfig = PermissionAction | Record<string, PermissionRule | PermissionAction>;
 
-/** The nested `opencode:` behavior block — mirrors `OpencodeAgentConfigV2` in
- *  @kortix/manifest-schema. Runtime-specific; namespaced so a future
- *  `runtime: claude`/`codex` project has somewhere else for this to live. */
+/** The OpenCode BEHAVIOR half — everything that lives in the agent's own
+ *  `.md` frontmatter (+ `prompt`, the file's BODY text, not a path). */
 export interface OpencodeAgentConfig {
+  description?: string;
   mode?: 'primary' | 'subagent' | 'all';
+  model?: string;
   variant?: string;
   temperature?: number;
   top_p?: number;
+  /** The agent's system prompt — the `.md`'s BODY text (frontmatter stripped),
+   *  not a file path/reference. */
   prompt?: string;
   hidden?: boolean;
   options?: Record<string, unknown>;
@@ -39,13 +46,12 @@ export interface OpencodeAgentConfig {
   permission?: PermissionConfig;
 }
 
-/** The full v2 agent block — mirrors `AgentBlockV2` in @kortix/manifest-schema.
- *  Two layers: top-level Kortix (identity + governance + model, runtime-
- *  agnostic) and the nested `opencode` OpenCode-behavior block. */
+/** The full agent block on the wire — mirrors `AgentBlockV2` in
+ *  @kortix/manifest-schema PLUS the merged `opencode` behavior half (a wire-
+ *  only convenience; kortix.yaml itself never nests `opencode` — see the
+ *  module doc above). */
 export interface AgentConfigBlock {
-  description?: string;
   enabled?: boolean;
-  model?: string;
   connectors?: AgentGrantSetV2;
   secrets?: AgentGrantSetV2;
   skills?: AgentGrantSetV2;

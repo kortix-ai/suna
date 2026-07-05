@@ -191,8 +191,8 @@ const META_TOOLS = [
         spec: { type: 'string', description: 'OpenAPI/GraphQL/HTTP spec ref.' },
         credential: {
           type: 'string',
-          enum: ['shared', 'per_user'],
-          description: 'Credential storage mode.',
+          enum: ['shared'],
+          description: 'Credential storage mode (shared is the only mode).',
         },
       },
       required: ['slug', 'provider'],

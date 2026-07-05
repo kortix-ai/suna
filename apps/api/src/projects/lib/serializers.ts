@@ -47,7 +47,7 @@ export function serializeSession(
     grants?: SecretGrant[];
     /** The viewing user, to compute is_owner / can_manage_sharing. */
     viewerId?: string;
-    /** Viewer can manage the project (owner/admin/manager). */
+    /** Viewer can manage the project (account owner/admin, or a project editor). */
     canManageProject?: boolean;
     /** Resolved email of the session owner, for "shared by X" display. */
     ownerEmail?: string | null;
@@ -97,7 +97,7 @@ export function serializeSession(
  * Load a session and enforce that the viewer can SEE it (owner, project-wide,
  * or in the allow-list). Returns null for both not-found and not-visible so we
  * never reveal the existence of a private session. Also reports whether the
- * viewer may manage its sharing (owner or project manager).
+ * viewer may manage its sharing (account owner/admin, or a project editor).
  */
 
 function dashboardBaseUrl(): string {
@@ -225,7 +225,7 @@ export function requestAuditContext(c: Context): RequestAuditContext {
 export type SecretRow = typeof projectSecrets.$inferSelect;
 
 /**
- * The per-user view of one secret KEY: the shared/project row (what managers
+ * The per-user view of one secret KEY: the shared/project row (what editors
  * control + who it's shared with) merged with the requesting member's own
  * private override, plus which one actually wins for them at runtime. This is
  * what powers the "use shared / use mine" choice in the UI.
@@ -290,7 +290,7 @@ export function buildSecretView(input: {
     mine: personal ? { active: personal.active, updated_at: personal.updatedAt.toISOString() } : null,
     // What actually gets injected into my sessions for this key.
     effective_source: effectiveSource,
-    // Members manage only their own override; managers also manage the shared row.
+    // Members manage only their own override; editors also manage the shared row.
     can_manage_shared: canManageShared && !system,
   };
 }
@@ -534,7 +534,7 @@ export function serializeDeploymentRow(row: typeof deployments.$inferSelect) {
 }
 
 
-const PROJECT_ROLES = ['manager', 'editor', 'member'] as const;
+const PROJECT_ROLES = ['editor', 'member'] as const;
 
 export type ProjectGroupGrantRole = typeof PROJECT_ROLES[number];
 

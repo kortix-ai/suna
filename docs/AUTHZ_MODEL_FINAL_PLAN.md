@@ -125,11 +125,15 @@ model (share-scope + grants); triggers/skills/commands do not.
   column to the trigger runtime and gate `loadTriggersForResponse` + the fire endpoints on it.
   Default: creator-owned + optionally shared, mirroring secrets/connectors — "private by default,
   share explicitly."
-- **3b — Remove per-user connector profiles (M, BREAKING).** "Everyone brings their own to
-  profile" = `executor_connectors.credentialMode='per_user'` + `resolveCredentialValue` by userId.
-  Removing it means connectors are **shared/agent-owned only**. This is a breaking change
-  (connector lifecycle, the credential-mode UI toggle, existing per-user credential rows) and
-  needs a **migration + founder sign-off** on the replacement (agent-owned credentials).
+- **3b — Remove per-user connector profiles (M, BREAKING).** **DONE 2026-07-05** — see
+  docs/specs/2026-07-05-agent-first-config-unification.md §2.5. "Everyone brings their own
+  profile" (`executor_connectors.credentialMode='per_user'` + `resolveCredentialValue` by
+  userId) was removed: connectors are now **shared only**. Migration
+  `packages/db/migrations/20260705191549103_remove_per_user_credential_mode.sql` flipped every
+  `per_user` connector to `shared` and deleted its per-member credential rows (no silent
+  promotion — those connectors surface "reconnect required"). The delegated-identity use case
+  (one shared agent acting as each member) is tracked separately as a future "connect your own
+  account" feature, not preserved by this removal.
 
 **Risk:** 3b is breaking + touches live data. **Decision needed:** confirm the ownership model
 shape (reuse resource-grants vs new column) and greenlight the per-user removal + migration.

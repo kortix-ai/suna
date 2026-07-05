@@ -20,7 +20,11 @@ const NEW_PROJECT_ID = '00000000-0000-4000-a000-000000000203';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
 type AccountRole = 'owner' | 'admin' | 'member';
-type ProjectRole = 'manager' | 'editor' | 'member';
+// 'manager' was retired (project-role collapse) — 'editor' is the top
+// project role now. The three former manager-only actions (project.delete,
+// project.members.manage, project.gateway.keys.manage) are account
+// owner/admin authority only — see the `decide()` mock below.
+type ProjectRole = 'editor' | 'member';
 
 interface ProjectRow {
   projectId: string;
@@ -288,14 +292,21 @@ mock.module('../iam/dispatcher', () => {
   const decide = (userId: string, action: string): boolean => {
     const am = accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
     if (!am) return false;
+    // Account owner/admin: implicit Editor (top project role) on every
+    // project, PLUS — via their ACCOUNT role directly, not any project role —
+    // the three former manager-only actions (project.delete,
+    // project.members.manage, project.gateway.keys.manage). No project role,
+    // built-in or custom, ever reaches those three (see role-perms.ts's
+    // ACCOUNT_ONLY_PROJECT_ACTIONS), so the `return false` below covers them
+    // for every non-owner/admin actor.
     if (am.accountRole === 'owner' || am.accountRole === 'admin') return true;
     const pm = projectMemberRows.find((r) => r.userId === userId && r.projectId === PROJECT_ID);
     const pr = pm?.projectRole ?? null;
-    if (action === 'project.read') return pr === 'member' || pr === 'editor' || pr === 'manager';
+    if (action === 'project.read') return pr === 'member' || pr === 'editor';
     // Session lifecycle: any project member (a plain `member` included) may run sessions.
-    if (action.startsWith('project.session.')) return pr === 'member' || pr === 'editor' || pr === 'manager';
-    if (action === 'project.write') return pr === 'editor' || pr === 'manager';
-    return pr === 'manager';
+    if (action.startsWith('project.session.')) return pr === 'member' || pr === 'editor';
+    if (action === 'project.write') return pr === 'editor';
+    return false;
   };
   return {
     authorize: async (userId: string, _a: unknown, action: string) => ({ allowed: decide(userId, action) }),
@@ -603,7 +614,7 @@ function createApp() {
 describe('projects API contract', () => {
   beforeEach(() => resetState());
 
-  test('registers an existing repo without starter commits and grants manager access', async () => {
+  test('registers an existing repo without starter commits and grants editor access (the top project role, plus implicit account owner/admin authority)', async () => {
     const app = createApp();
     const missing = await app.request('/v1/projects', {
       method: 'POST',
@@ -633,8 +644,8 @@ describe('projects API contract', () => {
       default_branch: 'trunk',
       manifest_path: 'config/kortix.toml',
       status: 'active',
-      project_role: 'manager',
-      effective_project_role: 'manager',
+      project_role: 'editor',
+      effective_project_role: 'editor',
     });
     expect(commitCalls).toHaveLength(0);
     expect(gitConnectionRows).toContainEqual(expect.objectContaining({
@@ -652,17 +663,19 @@ describe('projects API contract', () => {
     expect(projectMemberRows).toContainEqual(expect.objectContaining({
       projectId: NEW_PROJECT_ID,
       userId: OWNER_ID,
-      projectRole: 'manager',
+      // 'manager' was retired — 'editor' is the top project role a direct
+      // grant can carry now.
+      projectRole: 'editor',
     }));
   });
 
-  test('lists all active projects for account managers and only explicit grants for members', async () => {
+  test('lists all active projects for account owners/admins and only explicit grants for members', async () => {
     const app = createApp();
     let res = await app.request(`/v1/projects?account_id=${ACCOUNT_ID}`);
     expect(res.status).toBe(200);
     let body = await res.json();
     expect(body.map((project: any) => project.project_id).sort()).toEqual([PROJECT_ID, OTHER_PROJECT_ID]);
-    expect(body.every((project: any) => project.effective_project_role === 'manager')).toBe(true);
+    expect(body.every((project: any) => project.effective_project_role === 'editor')).toBe(true);
 
     projectMemberRows.push({
       accountId: ACCOUNT_ID,
@@ -691,7 +704,7 @@ describe('projects API contract', () => {
     const detail = await app.request(`/v1/projects/${PROJECT_ID}/detail`);
     expect(detail.status).toBe(200);
     expect(await detail.json()).toMatchObject({
-      project: { project_id: PROJECT_ID, effective_project_role: 'manager' },
+      project: { project_id: PROJECT_ID, effective_project_role: 'editor' },
       config: {
         manifest: { project: { name: 'Existing Project' } },
         opencode: { agents: ['default'], skills: ['git-workflow'] },
@@ -822,7 +835,7 @@ describe('projects API contract', () => {
     expect(after.status).toBe(404);
   });
 
-  test('lists and manages explicit project access grants without overriding account managers', async () => {
+  test('lists and manages explicit project access grants without overriding account owners/admins', async () => {
     const app = createApp();
 
     let access = await app.request(`/v1/projects/${PROJECT_ID}/access`);
@@ -845,7 +858,7 @@ describe('projects API contract', () => {
         user_id: OWNER_ID,
         account_role: 'owner',
         project_role: null,
-        effective_project_role: 'manager',
+        effective_project_role: 'editor',
         has_implicit_access: true,
       },
       {
@@ -895,7 +908,7 @@ describe('projects API contract', () => {
       user_id: OWNER_ID,
       account_role: 'owner',
       project_role: null,
-      effective_project_role: 'manager',
+      effective_project_role: 'editor',
       has_implicit_access: true,
     });
 
@@ -932,7 +945,7 @@ describe('projects API contract', () => {
     expect(ids).toContain(MEMBER_ID); // real member kept
   });
 
-  test('denies non-members and plain project users from manager-only operations', async () => {
+  test('denies non-members and plain project members from editor-only operations', async () => {
     const app = createApp();
     setCurrentUser(OUTSIDER_ID, 'outsider@example.test');
     const outsider = await app.request(`/v1/projects/${PROJECT_ID}/files`);

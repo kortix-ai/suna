@@ -59,12 +59,18 @@ import {
 } from '@kortix/sdk/projects-client';
 import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
-import { Bot, Plus, ShieldCheck, Sliders, Sparkles, Trash2, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { Bot, Cpu, Gauge, Layers, Plus, ShieldCheck, Sliders, Trash2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 // ─── Field-space catalogs ──────────────────────────────────────────────────
 
 const AGENT_MODES = ['primary', 'subagent', 'all'] as const;
+const AGENT_MODE_HELP: Record<(typeof AGENT_MODES)[number], string> = {
+  primary: 'Selectable as the main agent for a session.',
+  subagent: 'Callable by other agents only — not selectable directly.',
+  all: 'Available both as primary and as a subagent.',
+};
 const THEME_COLORS = [
   'primary',
   'secondary',
@@ -75,13 +81,18 @@ const THEME_COLORS = [
   'info',
 ] as const;
 const WORKSPACE_MODES = ['runtime', 'read', 'branch'] as const;
+const WORKSPACE_MODE_HELP: Record<(typeof WORKSPACE_MODES)[number], string> = {
+  runtime: 'Works directly in the live project workspace.',
+  read: 'Can read files but cannot modify them.',
+  branch: 'Works on an isolated git branch, merged in later.',
+};
 const PERMISSION_ACTIONS = ['allow', 'ask', 'deny'] as const;
 
 // Permission keys that accept the full rule form (bare action OR glob-map).
 // `skill` is intentionally EXCLUDED — the Skills governance control below owns
 // `permission.skill` (the compiler maps `skills:` onto it), so exposing it here
 // too would give two controls fighting over one key.
-const PERMISSION_RULE_KEYS = [
+export const PERMISSION_RULE_KEYS = [
   'read',
   'edit',
   'glob',
@@ -93,13 +104,35 @@ const PERMISSION_RULE_KEYS = [
   'lsp',
 ] as const;
 // Permission keys that only ever take a bare action (no glob-map form upstream).
-const PERMISSION_ACTION_ONLY_KEYS = [
+export const PERMISSION_ACTION_ONLY_KEYS = [
   'todowrite',
   'question',
   'webfetch',
   'websearch',
   'doom_loop',
 ] as const;
+
+export const PERMISSION_RULE_GROUPS: { label: string; keys: (typeof PERMISSION_RULE_KEYS)[number][] }[] = [
+  { label: 'Files & search', keys: ['read', 'edit', 'glob', 'grep', 'list'] },
+  { label: 'Execution', keys: ['bash', 'task', 'external_directory', 'lsp'] },
+];
+
+export const PERMISSION_KEY_HELP: Record<string, string> = {
+  read: 'Read file contents.',
+  edit: 'Create or modify files.',
+  glob: 'Find files by name pattern.',
+  grep: 'Search file contents by pattern.',
+  list: 'List directory contents.',
+  bash: 'Run shell commands.',
+  task: 'Launch a subagent to run a task.',
+  external_directory: 'Access paths outside this project workspace.',
+  lsp: 'Use language-server tooling — go-to-definition, diagnostics.',
+  todowrite: "Maintain the session's todo list.",
+  question: 'Ask the user a clarifying question mid-run.',
+  webfetch: "Fetch a URL's contents.",
+  websearch: 'Run a web search.',
+  doom_loop: 'Auto-break a detected repeat-failure loop.',
+};
 
 /**
  * The grantable `kortix_cli` action catalog, grouped for the picker. MUST stay
@@ -188,7 +221,7 @@ export function Segmented<T extends string>({
             type="button"
             onClick={() => onChange(allowUnset && active ? undefined : o.value)}
             className={cn(
-              'px-2.5 py-1 text-xs capitalize transition-colors',
+              'px-2.5 py-1.5 text-xs capitalize transition-[color,background-color,transform] active:scale-[0.96]',
               active
                 ? 'bg-secondary text-foreground font-medium'
                 : 'text-muted-foreground hover:bg-muted/50',
@@ -207,7 +240,7 @@ function FieldRow({
   hint,
   children,
 }: {
-  label: string;
+  label: React.ReactNode;
   hint?: string;
   children: React.ReactNode;
 }) {
@@ -292,7 +325,7 @@ function GrantSetField({
                   aria-pressed={isSel}
                   onClick={() => toggle(o.id)}
                   className={cn(
-                    'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs transition-colors',
+                    'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-[color,background-color,transform] active:scale-[0.96]',
                     isSel ? 'bg-secondary' : 'hover:bg-muted/50',
                   )}
                 >
@@ -305,7 +338,7 @@ function GrantSetField({
                     {isSel ? '✓' : ''}
                   </span>
                   <span className="min-w-0 flex-1 truncate font-mono">{o.label}</span>
-                  {isOrphan && <span className="text-amber-600 dark:text-amber-400">missing</span>}
+                  {isOrphan && <span className="text-kortix-orange">missing</span>}
                 </button>
               );
             })}
@@ -379,7 +412,7 @@ function KortixCliField({
                       aria-pressed={isSel}
                       onClick={() => toggle(action)}
                       className={cn(
-                        'rounded px-1.5 py-0.5 font-mono text-[11px] transition-colors',
+                        'rounded px-1.5 py-1 font-mono text-[11px] transition-[color,background-color,transform] active:scale-[0.96]',
                         isSel
                           ? 'bg-foreground text-background'
                           : 'bg-muted/40 text-muted-foreground hover:bg-muted',
@@ -443,9 +476,11 @@ function PermissionRuleRow({
   };
 
   return (
-    <div className="border-border/50 space-y-2 rounded-md border px-2.5 py-2">
+    <div className="space-y-2 px-3 py-2.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-mono text-xs">{label}</span>
+        <Hint label={PERMISSION_KEY_HELP[label] ?? label} side="top">
+          <span className="font-mono text-xs cursor-default">{label}</span>
+        </Hint>
         <div className="flex items-center gap-1.5">
           <Segmented
             options={[
@@ -470,44 +505,61 @@ function PermissionRuleRow({
           </Hint>
         </div>
       </div>
-      {(showRules || isMap) && (
-        <div className="space-y-1.5">
-          {Object.entries(map).map(([pattern, action], i) => (
-            <div key={`${i}-${pattern}`} className="flex items-center gap-1.5">
-              <Input
-                value={pattern}
-                placeholder="glob e.g. git push"
-                variant="popover"
-                className="h-7 flex-1 font-mono text-xs"
-                onChange={(e) => renameRule(pattern, e.target.value)}
-              />
-              <Segmented
-                options={[
-                  { value: 'allow', label: 'Allow' },
-                  { value: 'ask', label: 'Ask' },
-                  { value: 'deny', label: 'Deny' },
-                ]}
-                value={action}
-                onChange={(v) => v && setRuleEntry(pattern, v)}
-              />
-              <Hint label="Remove rule">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-7"
-                  onClick={() => removeRuleEntry(pattern)}
-                >
-                  <Trash2 className="size-3.5 shrink-0" />
-                </Button>
-              </Hint>
+      <AnimatePresence initial={false}>
+        {(showRules || isMap) && (
+          <motion.div
+            key="rules"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="bg-muted/40 space-y-1.5 rounded-md p-2">
+              {Object.entries(map).map(([pattern, action], i) => (
+                <div key={`${i}-${pattern}`} className="flex items-center gap-1.5">
+                  <Input
+                    value={pattern}
+                    placeholder="glob e.g. git push"
+                    variant="popover"
+                    className="h-7 flex-1 font-mono text-xs"
+                    onChange={(e) => renameRule(pattern, e.target.value)}
+                  />
+                  <Segmented
+                    options={[
+                      { value: 'allow', label: 'Allow' },
+                      { value: 'ask', label: 'Ask' },
+                      { value: 'deny', label: 'Deny' },
+                    ]}
+                    value={action}
+                    onChange={(v) => v && setRuleEntry(pattern, v)}
+                  />
+                  <Hint label="Remove rule">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-7"
+                      onClick={() => removeRuleEntry(pattern)}
+                    >
+                      <Trash2 className="size-3.5 shrink-0" />
+                    </Button>
+                  </Hint>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 gap-1 px-2 text-xs"
+                onClick={addRule}
+              >
+                <Plus className="size-3 shrink-0" /> Add pattern rule
+              </Button>
             </div>
-          ))}
-          <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 px-2 text-xs" onClick={addRule}>
-            <Plus className="size-3 shrink-0" /> Add pattern rule
-          </Button>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -520,52 +572,91 @@ function PermissionEditor({
   onChange: (next: PermissionConfig | undefined) => void;
 }) {
   const obj = asPermObject(permission);
+  const bareDefault = typeof permission === 'string' ? (permission as PermissionAction) : undefined;
+  const allKeys = [...PERMISSION_RULE_KEYS, ...PERMISSION_ACTION_ONLY_KEYS];
+
+  const setDefault = (v: PermissionAction | undefined) => onChange(v);
   const setKey = (key: string, value: PermissionRule | PermissionAction | undefined) => {
-    const next = { ...obj };
+    const base: PermObject = bareDefault
+      ? (Object.fromEntries(allKeys.map((k) => [k, bareDefault])) as PermObject)
+      : obj;
+    const next: PermObject = { ...base };
     if (value === undefined) delete next[key];
     else next[key] = value;
     onChange(Object.keys(next).length ? (next as PermissionConfig) : undefined);
   };
 
   return (
-    <div className="space-y-3">
-      <p className="text-muted-foreground/70 text-[11px] leading-relaxed">
-        Leave a capability unset to inherit the runtime default. Use the sliders control for
+    <div className="space-y-4">
+      <p className="text-muted-foreground/70 text-[11px] leading-relaxed text-pretty">
+        Allow runs freely, Ask pauses for human approval, Deny blocks it outright. Set a default for
+        every capability below, or leave it unset and tune specific ones. The sliders control adds
         glob-pattern rules (e.g. <span className="font-mono">git push</span> → Deny while everything
-        else is allowed).
+        else stays Allow).
       </p>
-      <div className="space-y-1.5">
-        {PERMISSION_RULE_KEYS.map((key) => (
-          <PermissionRuleRow
-            key={key}
-            label={key}
-            rule={obj[key]}
-            onChange={(next) => setKey(key, next)}
-          />
-        ))}
+
+      <div className="bg-popover flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2.5">
+        <div className="min-w-0">
+          <p className="text-foreground/80 text-xs font-medium">Default for every capability</p>
+          <p className="text-muted-foreground/60 text-[11px]">
+            {bareDefault
+              ? 'Applies to every capability below until you override one.'
+              : 'Unset — each capability inherits the runtime default.'}
+          </p>
+        </div>
+        <Segmented
+          options={[
+            { value: 'allow', label: 'Allow' },
+            { value: 'ask', label: 'Ask' },
+            { value: 'deny', label: 'Deny' },
+          ]}
+          value={bareDefault}
+          onChange={setDefault}
+          allowUnset
+        />
       </div>
+
+      {PERMISSION_RULE_GROUPS.map((group) => (
+        <div key={group.label} className="space-y-1.5">
+          <p className="text-muted-foreground/70 text-[10px] font-medium tracking-wide uppercase">
+            {group.label}
+          </p>
+          <div className="bg-popover divide-border/60 divide-y rounded-md border">
+            {group.keys.map((key) => (
+              <PermissionRuleRow
+                key={key}
+                label={key}
+                rule={obj[key]}
+                onChange={(next) => setKey(key, next)}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+
       <div className="space-y-1.5">
         <p className="text-muted-foreground/70 text-[10px] font-medium tracking-wide uppercase">
           Action-only
         </p>
-        {PERMISSION_ACTION_ONLY_KEYS.map((key) => (
-          <div
-            key={key}
-            className="border-border/50 flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5"
-          >
-            <span className="font-mono text-xs">{key}</span>
-            <Segmented
-              options={[
-                { value: 'allow', label: 'Allow' },
-                { value: 'ask', label: 'Ask' },
-                { value: 'deny', label: 'Deny' },
-              ]}
-              value={typeof obj[key] === 'string' ? (obj[key] as PermissionAction) : undefined}
-              onChange={(v) => setKey(key, v)}
-              allowUnset
-            />
-          </div>
-        ))}
+        <div className="bg-popover divide-border/60 divide-y rounded-md border">
+          {PERMISSION_ACTION_ONLY_KEYS.map((key) => (
+            <div key={key} className="flex items-center justify-between gap-2 px-3 py-2.5">
+              <Hint label={PERMISSION_KEY_HELP[key] ?? key} side="top">
+                <span className="font-mono text-xs cursor-default">{key}</span>
+              </Hint>
+              <Segmented
+                options={[
+                  { value: 'allow', label: 'Allow' },
+                  { value: 'ask', label: 'Ask' },
+                  { value: 'deny', label: 'Deny' },
+                ]}
+                value={typeof obj[key] === 'string' ? (obj[key] as PermissionAction) : undefined}
+                onChange={(v) => setKey(key, v)}
+                allowUnset
+              />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -594,17 +685,29 @@ function LayerHeader({
   label,
   tone,
   description,
+  icon: Icon,
 }: {
   label: string;
   tone: 'kortix' | 'outline';
   description: string;
+  icon: typeof Bot;
 }) {
   return (
-    <div className="flex items-center gap-2.5 border-b border-border/60 pb-2">
-      <Badge variant={tone} size="sm" className="tracking-wide uppercase">
+    <div className="flex items-center gap-2.5 border-b border-border/60 pb-2.5">
+      <span
+        className={cn(
+          'flex size-6 shrink-0 items-center justify-center rounded-sm',
+          tone === 'kortix' ? 'bg-kortix-base/20' : 'bg-muted',
+        )}
+      >
+        <Icon className={cn('size-3.5', tone === 'kortix' ? 'text-foreground' : 'text-muted-foreground')} />
+      </span>
+      <Badge variant={tone} size="sm" className="shrink-0 tracking-wide uppercase">
         {label}
       </Badge>
-      <p className="text-muted-foreground/70 text-[11px] leading-relaxed">{description}</p>
+      <p className="text-muted-foreground/70 min-w-0 text-[11px] leading-relaxed text-pretty">
+        {description}
+      </p>
     </div>
   );
 }
@@ -625,6 +728,8 @@ function AgentEditorModal({
   onOpenChange: (v: boolean) => void;
 }) {
   const [draft, setDraft] = useState<AgentConfigBlock>(initial);
+  const [baseline] = useState<AgentConfigBlock>(initial);
+  const isDirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline]);
   const update = useUpdateAgentConfig(projectId, agentName);
   const { data: providers } = useOpenCodeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
@@ -654,10 +759,12 @@ function AgentEditorModal({
     [connectorsQuery.data],
   );
 
+  // No governance field is a plain string anymore (that was `description`/
+  // `model`, both moved to the OpenCode layer) — clearing is undefined-only.
   const set = <K extends keyof AgentConfigBlock>(key: K, value: AgentConfigBlock[K]) =>
     setDraft((d) => {
       const next = { ...d };
-      if (value === undefined || value === '') delete next[key];
+      if (value === undefined) delete next[key];
       else next[key] = value;
       return next;
     });
@@ -676,7 +783,9 @@ function AgentEditorModal({
     });
 
   const oc = draft.opencode ?? {};
-  const selectedModelKey = draft.model ? wireToModelKey(draft.model) : null;
+  const selectedModelKey = oc.model ? wireToModelKey(oc.model) : null;
+  const permCount =
+    typeof oc.permission === 'string' ? 1 : oc.permission ? Object.keys(oc.permission).length : 0;
 
   const onSave = async () => {
     try {
@@ -694,14 +803,16 @@ function AgentEditorModal({
         <ModalHeader>
           <ModalTitle>Configure {agentName}</ModalTitle>
           <ModalDescription>
-            The full agent definition — identity, behavior, governance, and permissions. Saved to{' '}
-            <span className="font-mono">kortix.yaml</span>.
+            The full agent definition. Governance saves to{' '}
+            <span className="font-mono">kortix.yaml</span>; behavior saves to this agent's{' '}
+            <span className="font-mono">.kortix/opencode/agents/{agentName}.md</span>.
           </ModalDescription>
         </ModalHeader>
         <ModalBody className="max-h-[70vh] space-y-8 overflow-y-auto">
           {/* ─── KORTIX LAYER — identity + governance, runtime-agnostic ─── */}
           <div className="space-y-6">
             <LayerHeader
+              icon={Layers}
               label="Kortix"
               tone="kortix"
               description="Identity, model, and platform-enforced governance. Works the same no matter what runtime executes this agent."
@@ -709,17 +820,6 @@ function AgentEditorModal({
 
             <section className="space-y-4">
               <SectionHeader icon={Bot} title="Identity" />
-              <FieldRow
-                label="Description"
-                hint={oc.mode === 'subagent' ? 'required for subagents' : undefined}
-              >
-                <Textarea
-                  value={draft.description ?? ''}
-                  placeholder="What this agent is for"
-                  minHeight={44}
-                  onChange={(e) => set('description', e.target.value)}
-                />
-              </FieldRow>
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-foreground/80 text-xs font-medium">Enabled</p>
@@ -735,33 +835,8 @@ function AgentEditorModal({
             </section>
 
             <section className="space-y-4">
-              <SectionHeader icon={Sparkles} title="Model" />
-              <FieldRow label="Model" hint="declarative default; runtime prefs can override">
-                <div className="flex items-center gap-2">
-                  <ModelSelector
-                    models={models}
-                    providers={providers}
-                    selectedModel={selectedModelKey}
-                    onSelect={(m) => set('model', m ? modelKeyToWire(m) : undefined)}
-                  />
-                  {draft.model ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-xs"
-                      onClick={() => set('model', undefined)}
-                    >
-                      Clear
-                    </Button>
-                  ) : null}
-                </div>
-              </FieldRow>
-            </section>
-
-            <section className="space-y-4">
               <SectionHeader icon={ShieldCheck} title="Governance" />
-              <p className="text-muted-foreground/60 text-[11px] leading-relaxed">
+              <p className="text-muted-foreground/60 text-[11px] leading-relaxed text-pretty">
                 Enforced platform-side. Deny-by-default: an empty grant means the agent gets nothing
                 until you grant it.
               </p>
@@ -796,12 +871,17 @@ function AgentEditorModal({
                 <KortixCliField value={draft.kortix_cli} onChange={(v) => set('kortix_cli', v)} />
               </FieldRow>
               <FieldRow label="Workspace" hint="git boundary (enforced in a later phase)">
-                <Segmented
-                  options={WORKSPACE_MODES.map((m) => ({ value: m, label: m }))}
-                  value={draft.workspace}
-                  onChange={(v) => set('workspace', v)}
-                  allowUnset
-                />
+                <div className="space-y-1.5">
+                  <Segmented
+                    options={WORKSPACE_MODES.map((m) => ({ value: m, label: m }))}
+                    value={draft.workspace}
+                    onChange={(v) => set('workspace', v)}
+                    allowUnset
+                  />
+                  <p className="text-muted-foreground/60 text-[11px]">
+                    {draft.workspace ? WORKSPACE_MODE_HELP[draft.workspace] : 'Inherits the project default.'}
+                  </p>
+                </div>
               </FieldRow>
             </section>
           </div>
@@ -809,19 +889,58 @@ function AgentEditorModal({
           {/* ─── OPENCODE LAYER — nested, runtime-specific behavior ─── */}
           <div className="space-y-6">
             <LayerHeader
+              icon={Cpu}
               label="OpenCode"
               tone="outline"
               description="Behavior this agent's runtime executes — mode, sampling, permission tree. Namespaced so a future runtime (Codex/Claude) gets its own block here."
             />
 
             <section className="space-y-4">
-              <FieldRow label="Mode">
-                <Segmented
-                  options={AGENT_MODES.map((m) => ({ value: m, label: m }))}
-                  value={oc.mode}
-                  onChange={(v) => setOc('mode', v)}
-                  allowUnset
+              <SectionHeader icon={Gauge} title="Behavior" />
+              <FieldRow
+                label="Description"
+                hint={oc.mode === 'subagent' ? 'required for subagents' : 'shown to other agents when picking a subagent'}
+              >
+                <Textarea
+                  value={oc.description ?? ''}
+                  placeholder="What this agent is for"
+                  minHeight={44}
+                  onChange={(e) => setOc('description', e.target.value)}
                 />
+              </FieldRow>
+              <FieldRow label="Model" hint="declarative default; runtime prefs can override">
+                <div className="flex items-center gap-2">
+                  <ModelSelector
+                    models={models}
+                    providers={providers}
+                    selectedModel={selectedModelKey}
+                    onSelect={(m) => setOc('model', m ? modelKeyToWire(m) : undefined)}
+                  />
+                  {oc.model ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setOc('model', undefined)}
+                    >
+                      Clear
+                    </Button>
+                  ) : null}
+                </div>
+              </FieldRow>
+              <FieldRow label="Mode">
+                <div className="space-y-1.5">
+                  <Segmented
+                    options={AGENT_MODES.map((m) => ({ value: m, label: m }))}
+                    value={oc.mode}
+                    onChange={(v) => setOc('mode', v)}
+                    allowUnset
+                  />
+                  <p className="text-muted-foreground/60 text-[11px]">
+                    {oc.mode ? AGENT_MODE_HELP[oc.mode] : 'Inherits the project default.'}
+                  </p>
+                </div>
               </FieldRow>
               <FieldRow label="Variant" hint="optional model variant">
                 <Input
@@ -832,7 +951,17 @@ function AgentEditorModal({
                   onChange={(e) => setOc('variant', e.target.value)}
                 />
               </FieldRow>
-              <FieldRow label={`Temperature${oc.temperature !== undefined ? ` — ${oc.temperature}` : ''}`}>
+              <FieldRow
+                label={
+                  <>
+                    Temperature
+                    {oc.temperature !== undefined ? (
+                      <span className="tabular-nums"> — {oc.temperature}</span>
+                    ) : null}
+                  </>
+                }
+                hint="0 = deterministic, 2 = most random"
+              >
                 <div className="flex items-center gap-3">
                   <Slider
                     value={[oc.temperature ?? 0]}
@@ -855,7 +984,15 @@ function AgentEditorModal({
                   ) : null}
                 </div>
               </FieldRow>
-              <FieldRow label={`Top-p${oc.top_p !== undefined ? ` — ${oc.top_p}` : ''}`}>
+              <FieldRow
+                label={
+                  <>
+                    Top-p
+                    {oc.top_p !== undefined ? <span className="tabular-nums"> — {oc.top_p}</span> : null}
+                  </>
+                }
+                hint="nucleus sampling cutoff; leave at 1 unless tuning"
+              >
                 <div className="flex items-center gap-3">
                   <Slider
                     value={[oc.top_p ?? 1]}
@@ -891,7 +1028,7 @@ function AgentEditorModal({
                   }
                 />
               </FieldRow>
-              <FieldRow label="Color">
+              <FieldRow label="Color" hint="tints this agent's badge across pickers and session UI">
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="flex flex-wrap gap-1">
                     {THEME_COLORS.map((c) => {
@@ -902,7 +1039,7 @@ function AgentEditorModal({
                           type="button"
                           onClick={() => setOc('color', active ? undefined : c)}
                           className={cn(
-                            'rounded-full border px-2 py-0.5 text-[11px] capitalize transition-colors',
+                            'rounded-full border px-2 py-1 text-[11px] capitalize transition-[color,background-color,transform] active:scale-[0.96]',
                             active
                               ? 'border-foreground bg-foreground text-background'
                               : 'border-border/70 text-muted-foreground hover:bg-muted/50',
@@ -913,13 +1050,15 @@ function AgentEditorModal({
                       );
                     })}
                   </div>
-                  <input
-                    type="color"
-                    value={/^#[0-9a-fA-F]{6}$/.test(oc.color ?? '') ? oc.color : '#7c5cff'}
-                    onChange={(e) => setOc('color', e.target.value)}
-                    className="border-border/70 size-7 shrink-0 cursor-pointer rounded-md border bg-transparent"
-                    aria-label="Custom hex color"
-                  />
+                  <Hint label="Custom hex color">
+                    <input
+                      type="color"
+                      value={/^#[0-9a-fA-F]{6}$/.test(oc.color ?? '') ? oc.color : '#7c5cff'}
+                      onChange={(e) => setOc('color', e.target.value)}
+                      className="border-border/70 size-7 shrink-0 cursor-pointer rounded-full border bg-transparent transition-transform active:scale-[0.96]"
+                      aria-label="Custom hex color"
+                    />
+                  </Hint>
                   {oc.color ? (
                     <Badge variant="outline" size="xs" className="font-mono">
                       {oc.color}
@@ -936,12 +1075,15 @@ function AgentEditorModal({
                 </div>
                 <Switch checked={!!oc.hidden} onCheckedChange={(v) => setOc('hidden', v || undefined)} />
               </div>
-              <FieldRow label="Prompt file" hint="the .md system-prompt body">
-                <Input
+              <FieldRow
+                label="System prompt"
+                hint={`saved to .kortix/opencode/agents/${agentName}.md`}
+              >
+                <Textarea
                   value={oc.prompt ?? ''}
-                  placeholder="agents/support.md"
-                  variant="popover"
-                  className="h-8 font-mono text-xs"
+                  placeholder="You are..."
+                  minHeight={160}
+                  className="font-mono text-xs"
                   onChange={(e) => setOc('prompt', e.target.value)}
                 />
               </FieldRow>
@@ -957,6 +1099,11 @@ function AgentEditorModal({
                   >
                     <Sliders className="text-muted-foreground/70 size-3.5 shrink-0" />
                     <span className="text-xs font-medium">Advanced — permission tree</span>
+                    {permCount > 0 ? (
+                      <Badge variant="muted" size="xs" className="ml-auto">
+                        {permCount} customized
+                      </Badge>
+                    ) : null}
                   </Button>
                 </DisclosureTrigger>
                 <DisclosureContent variant="outline" contentClassName="border-border border-t">
@@ -972,10 +1119,26 @@ function AgentEditorModal({
           </div>
         </ModalBody>
         <ModalFooter className="sm:justify-between">
-          <Button type="button" variant="outline-ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button type="button" onClick={onSave} disabled={update.isPending}>
+          <div className="flex items-center gap-2.5">
+            <Button type="button" variant="outline-ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <AnimatePresence initial={false}>
+              {isDirty ? (
+                <motion.span
+                  key="dirty"
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+                  className="text-muted-foreground/60 text-[11px]"
+                >
+                  Unsaved changes
+                </motion.span>
+              ) : null}
+            </AnimatePresence>
+          </div>
+          <Button type="button" onClick={onSave} disabled={update.isPending || !isDirty}>
             {update.isPending ? <Loading className="size-4 shrink-0" /> : null}
             Save configuration
           </Button>
@@ -1055,7 +1218,7 @@ export function AgentConfigEditor({
       <div className="flex items-center justify-between gap-2">
         <SectionHeader icon={Bot} title="Configuration" />
         <Badge variant="muted" size="xs" className="font-mono">
-          kortix.yaml
+          yaml + .md
         </Badge>
       </div>
 
@@ -1065,9 +1228,9 @@ export function AgentConfigEditor({
             {block.opencode.mode}
           </Badge>
         ) : null}
-        {block.model ? (
+        {block.opencode?.model ? (
           <Badge variant="outline" size="xs" className="font-mono">
-            {block.model}
+            {block.opencode.model}
           </Badge>
         ) : null}
         {block.opencode?.temperature !== undefined ? (

@@ -309,7 +309,11 @@ async function applyOne(
           accountId: plan.account_id,
           projectId: plan.project_id,
           userId,
-          projectRole: userId === plan.account_id ? 'manager' : 'editor',
+          // 'manager' was retired (project-role collapse) — every migrated
+          // member becomes 'editor' (the top project role now); a legacy
+          // owner's REAL authority over delete/members.manage/gateway.keys.manage
+          // comes from their account role, not this project_members row.
+          projectRole: 'editor',
           grantedBy: plan.account_id,
         }).onConflictDoNothing({
           target: [projectMembers.projectId, projectMembers.userId],

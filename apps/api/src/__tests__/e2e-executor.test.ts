@@ -114,8 +114,8 @@ function catalogFor(p: ExecutorPrincipal): CatalogConnector[] {
   for (const conn of world.connectors.values()) {
     if (!isSecretUsableBy(conn.shareScope, conn.grants, p.subject)) continue;
     if (conn.hasAuth) {
-      const uid = conn.credentialMode === 'per_user' ? p.userId : null;
-      if (!world.credentials.has(credKey(conn.connectorId, uid))) continue;
+      // Always the shared credential — `per_user` was removed 2026-07-05.
+      if (!world.credentials.has(credKey(conn.connectorId, null))) continue;
     }
     const connectorPolicies = world.policiesByConnector.get(conn.connectorId) ?? [];
     const actions = [...world.actions.entries()]
@@ -163,9 +163,8 @@ const deps: ExecutorRouterDeps = {
       actions: [],
       authSecret: conn.hasAuth ? 'credential' : null,
       sharing: scopeToIntent(conn.shareScope, conn.grants),
-      secretSet: conn.hasAuth
-        ? world.credentials.has(credKey(conn.connectorId, conn.credentialMode === 'per_user' ? viewerUserId : null))
-        : true,
+      // Always the shared credential — `per_user` was removed 2026-07-05.
+      secretSet: conn.hasAuth ? world.credentials.has(credKey(conn.connectorId, null)) : true,
     })),
   syncConnectors: async () => ({ synced: world.connectors.size, errors: [] }),
   setSharing: async (_projectId, slug, intent) => {
@@ -266,23 +265,6 @@ describe('POST /call', () => {
     const res = await req('/call', { method: 'POST', headers: { 'x-test-user': ALICE, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }) });
     expect(res.status).toBe(500);
     expect((await res.json()).reason).toBeTruthy();
-  });
-});
-
-describe('per_user credential mode', () => {
-  test('resolves the acting user\'s own credential', async () => {
-    const conn = world.connectors.get('stripe')!;
-    conn.credentialMode = 'per_user';
-    world.credentials.delete('conn-stripe|shared');
-    world.credentials.set('conn-stripe|user-alice', 'sk_alice');
-    // alice connected → can call
-    const a = await req('/call', { method: 'POST', headers: { 'x-test-user': ALICE, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }) });
-    expect(a.status).toBe(200);
-    expect(world.upstream[0]!.headers.Authorization).toBe('Bearer sk_alice');
-    // bob hasn't → needs_auth
-    const b = await req('/call', { method: 'POST', headers: { 'x-test-user': BOB, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }) });
-    expect(b.status).toBe(403);
-    expect((await b.json()).reason).toBe('needs_auth');
   });
 });
 

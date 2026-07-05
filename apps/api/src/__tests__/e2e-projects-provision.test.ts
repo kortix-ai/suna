@@ -348,7 +348,9 @@ describe('POST /v1/projects/provision (managed git)', () => {
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
       userId: USER_ID,
-      projectRole: 'manager',
+      // 'manager' was retired (project-role collapse) — 'editor' is the top
+      // project role a direct grant can carry now.
+      projectRole: 'editor',
     });
 
     // Provisioned the repo through the backend seam (no seeding without flag).

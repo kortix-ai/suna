@@ -71,8 +71,10 @@ export const ExperimentalFeatureViewSchema = z.object({
 });
 export type ExperimentalFeatureView = z.infer<typeof ExperimentalFeatureViewSchema>;
 
-/** Assignable project roles (`user`/`viewer` are deprecated and no longer emitted). */
-export const PROJECT_ROLES = ['manager', 'editor', 'member'] as const;
+/** Assignable project roles (`user`/`viewer`/`manager` are deprecated and no
+ *  longer emitted — `manager` was retired by the project-role collapse;
+ *  `editor` is now the top project role). */
+export const PROJECT_ROLES = ['editor', 'member'] as const;
 export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
 export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
 

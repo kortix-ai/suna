@@ -356,7 +356,7 @@ flow(
 // v2 manifest (loadManifestForEdit synthesizes a v1 TOML), so this pins the
 // achievable boundaries: GET degrades cleanly to schema_version 1 / editable
 // false; PUT on that v1 project is refused with a 400 upgrade pointer; the
-// manager-only gate holds. The v2 happy-path commit needs a project whose
+// editor-tier gate holds. The v2 happy-path commit needs a project whose
 // kortix.yaml is already v2 — out of reach for a bare repo here (same
 // limitation IAM-31's scope flow documents).
 flow(

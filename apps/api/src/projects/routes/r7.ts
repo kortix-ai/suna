@@ -3,7 +3,7 @@ import { isSessionVisibleTo, loadSessionGrants, parseSharingIntent, resolveShare
 import {
   PROJECT_ACTIONS,
   deleteResourceGrant,
-  isResourceType,
+  isCreatableResourceType,
   listResourceGrants,
   upsertResourceGrant,
 } from '../../iam';
@@ -21,7 +21,7 @@ import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExp
 import { AnyObject, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
-import { addSecretResourceGrant, listSecretResourceGrants, removeSecretResourceGrant } from '../secrets';
+import { listSecretResourceGrants, removeSecretResourceGrant } from '../secrets';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
 import { createSession, deleteSession } from '../session-lifecycle';
@@ -84,7 +84,7 @@ projectsApp.openapi(
 
   // Per-group member breakdown so the UI can flag attachments where the
   // grant role won't apply uniformly. When a group includes account
-  // owners/admins, those users have implicit Manager on every project,
+  // owners/admins, those users have implicit Editor (top project role) on every project,
   // so the group's grant role is moot for them. Surfacing
   // override_count = N lets the project admin see at a glance "this
   // Viewer attachment doesn't actually viewer-cap 3 of these 5 people".
@@ -134,7 +134,7 @@ projectsApp.openapi(
         expires_at: r.expiresAt?.toISOString() ?? null,
         member_count: stats.total,
         // How many of the group's members are account owners/admins —
-        // their implicit Manager access overrides this grant's role.
+        // their implicit Editor access overrides this grant's role.
         override_count: stats.overrideCount,
       };
     }),
@@ -185,7 +185,7 @@ projectsApp.openapi(
   const role = normalizeProjectRole(body.role);
   if (!groupId) return c.json({ error: 'group_id is required' }, 400);
   if (!role) {
-    return c.json({ error: 'role must be manager, editor, or member' }, 400);
+    return c.json({ error: 'role must be editor or member' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
@@ -268,7 +268,7 @@ projectsApp.openapi(
   const body = await readBody(c);
   const role = normalizeProjectRole(body.role);
   if (!role) {
-    return c.json({ error: 'role must be manager, editor, or member' }, 400);
+    return c.json({ error: 'role must be editor or member' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
@@ -690,7 +690,7 @@ projectsApp.openapi(
       .orderBy(desc(executorExecutions.createdAt))
       .limit(limit.value);
 
-    // Resolve actor + approver emails in one batched lookup (managers see who).
+    // Resolve actor + approver emails in one batched lookup (account owners/admins see who).
     const userIds = [
       ...new Set(rows.flatMap((r) => [r.actingUserId, r.approvedBy]).filter((v): v is string => !!v)),
     ];
@@ -729,7 +729,7 @@ projectsApp.openapi(
 // GET /v1/projects/:projectId/approvals
 // The approval inbox: executor actions a policy gated as `require_approval` that
 // are still awaiting a human decision (status=pending_approval, unresolved).
-// Manager-scoped — this is the project-wide oversight surface. A session's own
+// Account owner/admin-scoped (project.members.manage) — this is the project-wide oversight surface. A session's own
 // launcher also sees + resolves the pending items for their session via the
 // per-session audit view + the POST below.
 
@@ -823,7 +823,7 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-    // Managers see every session's pending items; others only their own launched
+    // Account owners/admins see every session's pending items; others only their own launched
     // sessions (same principal set the resolve endpoint accepts).
     let isManager = false;
     try {
@@ -864,7 +864,7 @@ projectsApp.openapi(
     const kortixIds = Object.keys(byKortix);
     if (kortixIds.length === 0) return c.json({ total: 0, sessions: {} });
 
-    // Look these sessions up to (a) gate non-managers to their own and (b) map to
+    // Look these sessions up to (a) gate non-account-owners/admins to their own and (b) map to
     // the OpenCode session id the sidebar list keys on. The response carries BOTH
     // id forms → the caller matches whichever it holds.
     const sess = await db
@@ -951,10 +951,11 @@ projectsApp.openapi(
 
     // Who may resolve: a project MANAGER (the same project.members.manage IAM
     // gate the inbox uses — capability-consistent, so a custom role holding the
-    // leaf without the "manager" label still qualifies), OR the human who
-    // launched the session the gated action belongs to. (Founder decision:
-    // managers + launcher.) assertProjectCapability throws on denial, so probe
-    // it — a non-manager launcher must still fall through.
+    // leaf without a "manager" label still qualifies — that project role no
+    // longer exists), OR the human who launched the session the gated action
+    // belongs to. (Founder decision: account owners/admins + launcher.)
+    // assertProjectCapability throws on denial, so probe it — a non-manager
+    // launcher must still fall through.
     let isManager = false;
     try {
       await assertProjectCapability(
@@ -980,7 +981,7 @@ projectsApp.openapi(
       isLauncher = Boolean(session && session.createdBy === loaded.userId);
     }
     if (!isManager && !isLauncher) {
-      return c.json({ error: 'Only a project manager or the session launcher can resolve this' }, 403);
+      return c.json({ error: 'Only an account owner/admin or the session launcher can resolve this' }, 403);
     }
 
     const detail = {
@@ -1042,7 +1043,7 @@ projectsApp.openapi(
 
 
 // PUT /v1/projects/:projectId/sessions/:sessionId/sharing
-// Owner or project manager sets who can see/open this session
+// Owner or account owner/admin sets who can see/open this session
 // (private | project | members). Mirrors connector/secret sharing.
 
 projectsApp.openapi(
@@ -1073,7 +1074,7 @@ projectsApp.openapi(
   const visible = await loadVisibleSession(loaded, sessionId);
   if (!visible) return c.json({ error: 'Not found' }, 404);
   if (!visible.canManageSharing) {
-    return c.json({ error: 'Only the session owner or a project manager can change sharing' }, 403);
+    return c.json({ error: 'Only the session owner or an account owner/admin can change sharing' }, 403);
   }
 
   const intent = parseSharingIntent(body, loaded.userId);
@@ -1215,11 +1216,11 @@ projectsApp.openapi(
   // project.session.stop (no-op for human/PAT tokens).
   assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
 
-  // Stopping a session is reserved for its owner or a project manager.
+  // Stopping a session is reserved for its owner or an account owner/admin.
   const visible = await loadVisibleSession(loaded, sessionId);
   if (!visible) return c.json({ error: 'Not found' }, 404);
   if (!visible.canManageSharing) {
-    return c.json({ error: 'Only the session owner or a project manager can stop this session' }, 403);
+    return c.json({ error: 'Only the session owner or an account owner/admin can stop this session' }, 403);
   }
 
   const result = await deleteSession({
@@ -1257,7 +1258,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Manager-only: this is the grant PICKER — it returns the FULL agent/skill
+    // Account owner/admin-only: this is the grant PICKER — it returns the FULL agent/skill
     // catalogue + granted-member emails, so it must NOT be readable by a scoped
     // member (who'd otherwise enumerate exactly what they were scoped away from).
     // Gate identical to the POST/DELETE siblings below.
@@ -1314,7 +1315,7 @@ projectsApp.openapi(
     // Grants key on the agent NAME / skill SLUG / secret NAME. A rename or delete
     // of the underlying resource leaves the grant ORPHANED — and since an
     // unscoped resource is project-wide, the restriction silently evaporates.
-    // Flag orphaned grants so the manager gets a SIGNAL to re-grant. Agent/skill
+    // Flag orphaned grants so the account owner/admin gets a SIGNAL to re-grant. Agent/skill
     // orphans only when the config actually loaded (a transient repo failure must
     // not mass-flag); secrets always load, so they're always checkable.
     const liveAgentIds = new Set(resources.agents.map((r) => r.id));
@@ -1405,8 +1406,13 @@ projectsApp.openapi(
     const resourceId = normalizeString(body.resource_id ?? body.resourceId);
     const principalType = normalizeString(body.principal_type ?? body.principalType);
     const principalId = normalizeString(body.principal_id ?? body.principalId);
-    if (!resourceType || !isResourceType(resourceType)) {
-      return c.json({ error: 'resource_type must be agent, skill, or secret' }, 400);
+    // AGENT-ONLY resource model: agent is the only member/department-scoped
+    // resource. Skills and secrets are governed by the editor role (edit) +
+    // agent inheritance (use) — no NEW skill/secret grant may be created here.
+    // Pre-existing skill/secret rows still read/list/revoke fine (see
+    // resource-grants.ts's RESOURCE_GRANT_TYPES doc comment).
+    if (!resourceType || !isCreatableResourceType(resourceType)) {
+      return c.json({ error: 'resource_type must be agent' }, 400);
     }
     if (!resourceId) return c.json({ error: 'resource_id is required' }, 400);
     if (principalType !== 'member' && principalType !== 'group') {
@@ -1437,19 +1443,11 @@ projectsApp.openapi(
       if (!g) return c.json({ error: 'group not found in this account' }, 404);
     }
 
-    // SECRETS are governed by the share model (project_secret_grants) — the SAME
-    // data the Secret "Who can access this" dialog writes — so a grant here shows
-    // there and vice-versa. Granting to a member/dept restricts the secret to its
-    // allow-list. (expires_at isn't part of the share model; the card doesn't set
-    // it for secrets.)
-    if (resourceType === 'secret') {
-      const added = await addSecretResourceGrant({ projectId, name: resourceId, principalType, principalId });
-      if (!added) return c.json({ error: `no secret '${resourceId}' in this project` }, 400);
-      return c.json({ grant_id: added.grantId, resource_type: 'secret', resource_id: resourceId, principal_type: principalType, principal_id: principalId }, 201);
-    }
-
-    // Agents/skills live in the git config → validate there, store in
-    // iam_resource_grants. A typo'd grant would be a silent dead row.
+    // Agents live in the git config → validate there, store in
+    // iam_resource_grants. A typo'd grant would be a silent dead row. (Skills
+    // and secrets used to be creatable here too — SECRETS routed to the share
+    // model, project_secret_grants — but the resourceType guard above now
+    // rejects both before we get here; only 'agent' reaches this point.)
     let config;
     try {
       config = await loadConfigWithFiles(loaded.row);

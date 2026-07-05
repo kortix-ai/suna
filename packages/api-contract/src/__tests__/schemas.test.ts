@@ -30,8 +30,8 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     last_opened_at: NOW,
     created_at: NOW,
     updated_at: NOW,
-    project_role: 'manager',
-    effective_project_role: 'manager',
+    project_role: 'editor',
+    effective_project_role: 'editor',
     dashboard_url: 'https://kortix.com/projects/11111111-2222-4333-8444-555555555555',
     experimental: {
       apps: false,

@@ -4,8 +4,13 @@
  * Proves the model an enterprise (essentia-inc) relies on, end to end against a
  * fully ISOLATED account + project seeded here and torn down after:
  *   - deny-by-default (a plain member with no grant is denied)
- *   - built-in project roles (member ⊂ editor ⊂ manager)
- *   - account owner/admin are implicit Managers on every project
+ *   - built-in project roles (member ⊂ editor — `manager` was retired, editor
+ *     is the top project role)
+ *   - account owner/admin get implicit Editor on every project, AND — via
+ *     their ACCOUNT role directly, NOT any project role — the three former
+ *     manager-only actions (project.delete, project.members.manage,
+ *     project.gateway.keys.manage); a project editor (even the top project
+ *     role) NEVER gets those three, built-in or custom
  *   - group → project role (the SCIM/SSO bulk-access channel), incl. max-rank
  *   - DB custom role → policy binding → enforcement, scoped to one project
  *   - revoke immediacy (mutation + cache invalidation → next check denies)
@@ -43,7 +48,7 @@ async function seedMember(role: 'owner' | 'admin' | 'member'): Promise<string> {
   await db.insert(accountMembers).values({ userId, accountId: ACCOUNT, accountRole: role });
   return userId;
 }
-async function grantProject(userId: string, role: 'member' | 'editor' | 'manager') {
+async function grantProject(userId: string, role: 'member' | 'editor') {
   await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId, projectRole: role });
 }
 async function seedGroup(name: string): Promise<string> {
@@ -84,18 +89,16 @@ describe('authorizeV2 — deny-by-default + built-in project roles', () => {
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, proj(PROJECT))).toBe(false);
   });
 
-  test("'editor' adds write + deploy but not member management", async () => {
+  test("'editor' (the top project role) adds write + deploy but NEVER member management, delete, or gateway keys", async () => {
     const u = await seedMember('member');
     await grantProject(u, 'editor');
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_WRITE, proj(PROJECT))).toBe(true);
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_DEPLOY, proj(PROJECT))).toBe(true);
+    // The three former manager-only leaves are account owner/admin authority
+    // ONLY now — editor being the top project role does not reach them.
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, proj(PROJECT))).toBe(false);
-  });
-
-  test("'manager' can manage members", async () => {
-    const u = await seedMember('member');
-    await grantProject(u, 'manager');
-    expect(await allow(u, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, proj(PROJECT))).toBe(true);
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_DELETE, proj(PROJECT))).toBe(false);
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE, proj(PROJECT))).toBe(false);
   });
 
   test('a grant on THIS project does not leak to another project', async () => {
@@ -106,14 +109,25 @@ describe('authorizeV2 — deny-by-default + built-in project roles', () => {
   });
 });
 
-describe('authorizeV2 — account owner/admin are implicit Managers', () => {
-  test('account owner manages any project with no explicit grant', async () => {
+describe('authorizeV2 — account owner/admin authority over the three former manager-only actions', () => {
+  test('account owner gets project.delete / members.manage / gateway.keys.manage on any project with no explicit grant', async () => {
     const u = await seedMember('owner');
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, proj(PROJECT))).toBe(true);
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_DELETE, proj(PROJECT))).toBe(true);
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE, proj(PROJECT))).toBe(true);
   });
   test('account admin likewise', async () => {
     const u = await seedMember('admin');
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, proj(OTHER_PROJECT))).toBe(true);
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_DELETE, proj(OTHER_PROJECT))).toBe(true);
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE, proj(OTHER_PROJECT))).toBe(true);
+  });
+  test('a plain account member, even if granted the top project role (editor) on the project, still does NOT get them', async () => {
+    const u = await seedMember('member');
+    await grantProject(u, 'editor');
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, proj(PROJECT))).toBe(false);
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_DELETE, proj(PROJECT))).toBe(false);
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE, proj(PROJECT))).toBe(false);
   });
 });
 
@@ -137,9 +151,12 @@ describe('authorizeV2 — group → project role (the SCIM/SSO bulk channel)', (
     ]);
     await db.insert(projectGroupGrants).values([
       { projectId: PROJECT, groupId: gLow, accountId: ACCOUNT, role: 'member' },
-      { projectId: PROJECT, groupId: gHigh, accountId: ACCOUNT, role: 'manager' },
+      { projectId: PROJECT, groupId: gHigh, accountId: ACCOUNT, role: 'editor' },
     ]);
-    expect(await allow(u, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, proj(PROJECT))).toBe(true);
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_WRITE, proj(PROJECT))).toBe(true);
+    // Editor (the top project role, even via a group) still never confers the
+    // three former manager-only actions — those are account owner/admin only.
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, proj(PROJECT))).toBe(false);
   });
 });
 

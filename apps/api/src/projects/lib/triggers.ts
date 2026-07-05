@@ -1292,21 +1292,17 @@ export function removeTriggerFromManifest(manifest: ParsedManifest, slug: string
 }
 
 /**
- * Commit a new revision of kortix.toml to the project's default branch.
- * All trigger CRUD funnels through this — one file, one commit per edit.
+ * Commit a single file to the project's default branch — the generic engine
+ * behind `commitManifest` (kortix.yaml/toml) and the agent-config route's
+ * `.md` behavior-file writes. One file, one commit per call.
  */
-
-export async function commitManifest(
+export async function commitRepoFile(
   project: ProjectRow,
-  manifest: ParsedManifest,
+  path: string,
+  content: string,
   message: string,
 ): Promise<{ ok: true } | { error: string; status: number }> {
-  const content = serializeManifest(manifest);
   const branch = project.defaultBranch;
-  // Write back to the SAME file we read (kortix.yaml or kortix.toml, or a custom
-  // path) in its own format — never a hardcoded name, or a yaml project's edits
-  // would silently land in a second kortix.toml the runtime doesn't read.
-  const manifestFile = manifest.path || project.manifestPath || MANIFEST_FILENAME;
 
   // GitHub repos: commit through the Contents API (App / PAT auth) — the
   // lightweight single-file path that doesn't need a full clone.
@@ -1324,7 +1320,7 @@ export async function commitManifest(
     const existingSha = await getFileSha({
       owner: repo.owner,
       repo: repo.repo,
-      path: manifestFile,
+      path,
       branch,
       auth,
     });
@@ -1332,7 +1328,7 @@ export async function commitManifest(
       await commitFile({
         owner: repo.owner,
         repo: repo.repo,
-        path: manifestFile,
+        path,
         content,
         message,
         branch,
@@ -1341,7 +1337,7 @@ export async function commitManifest(
       });
     } catch (err) {
       return {
-        error: `Failed to commit ${manifestFile}: ${(err as Error).message || String(err)}`,
+        error: `Failed to commit ${path}: ${(err as Error).message || String(err)}`,
         status: 502,
       };
     }
@@ -1366,7 +1362,7 @@ export async function commitManifest(
 
   try {
     await commitFileToBranch(gitProject, {
-      path: manifestFile,
+      path,
       content,
       message,
       branch,
@@ -1375,13 +1371,31 @@ export async function commitManifest(
     });
   } catch (err) {
     return {
-      error: `Failed to commit ${manifestFile}: ${(err as Error).message || String(err)}`,
+      error: `Failed to commit ${path}: ${(err as Error).message || String(err)}`,
       status: 502,
     };
   }
 
   invalidateProjectMirror(project.projectId);
   return { ok: true };
+}
+
+/**
+ * Commit a new revision of kortix.toml to the project's default branch.
+ * All trigger CRUD funnels through this — one file, one commit per edit.
+ */
+
+export async function commitManifest(
+  project: ProjectRow,
+  manifest: ParsedManifest,
+  message: string,
+): Promise<{ ok: true } | { error: string; status: number }> {
+  const content = serializeManifest(manifest);
+  // Write back to the SAME file we read (kortix.yaml or kortix.toml, or a custom
+  // path) in its own format — never a hardcoded name, or a yaml project's edits
+  // would silently land in a second kortix.toml the runtime doesn't read.
+  const manifestFile = manifest.path || project.manifestPath || MANIFEST_FILENAME;
+  return commitRepoFile(project, manifestFile, content, message);
 }
 
 // POST /v1/projects/:projectId/triggers

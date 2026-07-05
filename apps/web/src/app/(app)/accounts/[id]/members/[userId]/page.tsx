@@ -411,7 +411,9 @@ function MemberGroupsCard({
 
 // ─── V2: Projects this member can reach ───────────────────────────────────
 
-const PROJECT_ROLE_RANK = { manager: 3, editor: 2, member: 1 } as const;
+// 'manager' was retired (project-role collapse) — 'editor' is the top
+// project role now.
+const PROJECT_ROLE_RANK = { editor: 2, member: 1 } as const;
 const SOURCE_LABEL: Record<MemberProjectAccess['sources'][number], string> = {
   implicit: 'Account admin',
   direct: 'Direct',
@@ -442,7 +444,7 @@ function MemberProjectAccessCard({
       title={tI18nHardcoded.raw('autoAppAppAccountsIdMembersUserIdPageJsxAttrTitle1767c13f')}
       description={
         isAdminLike
-          ? `${accountRole === 'owner' ? 'Owners' : 'Admins'} are implicit Manager on every active project in the account.`
+          ? `${accountRole === 'owner' ? 'Owners' : 'Admins'} have implicit Editor access (the top project role) on every active project in the account.`
           : 'Projects this member can reach via direct grants or groups they belong to.'
       }
       count={items.length}

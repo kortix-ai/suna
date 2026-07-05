@@ -240,7 +240,9 @@ function toGatewayConnector(row: ConnectorRow, grants: Awaited<ReturnType<typeof
     hasAuth,
     shareScope: row.shareScope as 'project' | 'restricted',
     grants,
-    credentialMode: row.credentialMode as 'shared' | 'per_user',
+    // `per_user` was removed 2026-07-05; every row is `shared` (DB-enforced by
+    // a CHECK constraint), so this is a defensive cast, not a live branch.
+    credentialMode: 'shared',
     enabled: row.enabled,
     sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
     // Connector-side agent gate — a dedicated column (reconciled every sync from
@@ -406,17 +408,17 @@ async function loadDefaultModeFor(projectId: string): Promise<DefaultMode> {
   return (row?.defaultMode as DefaultMode) ?? 'allow_all';
 }
 
-/** Load a pipedream connector's app slug, id, mode (verifies provider). */
+/** Load a pipedream connector's app slug + id (verifies provider). */
 export async function loadPipedreamConnector(projectId: string, slug: string) {
   const [row] = await db
-    .select({ connectorId: executorConnectors.connectorId, providerType: executorConnectors.providerType, config: executorConnectors.config, credentialMode: executorConnectors.credentialMode })
+    .select({ connectorId: executorConnectors.connectorId, providerType: executorConnectors.providerType, config: executorConnectors.config })
     .from(executorConnectors)
     .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
     .limit(1);
   if (!row || row.providerType !== 'pipedream') return null;
   const app = (row.config as any)?.app;
   if (typeof app !== 'string' || !app) return null;
-  return { connectorId: row.connectorId, app, mode: row.credentialMode as 'shared' | 'per_user' };
+  return { connectorId: row.connectorId, app };
 }
 
 async function resolvePrincipal(c: Context): Promise<ExecutorPrincipal | null> {
@@ -534,8 +536,8 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
     }
     const { hasAuth } = authOf(row);
     if (hasAuth) {
-      const uid = row.credentialMode === 'per_user' ? p.userId : null;
-      if (!(await connectorConnected(row, uid))) continue; // not connected for this user
+      // Always the shared credential — `per_user` was removed 2026-07-05.
+      if (!(await connectorConnected(row, null))) continue;
     }
     const connectorPolicies = await loadConnectorPoliciesFor(row.connectorId);
     const actions = await db.select().from(executorConnectorActions).where(eq(executorConnectorActions.connectorId, row.connectorId));
@@ -583,7 +585,10 @@ async function resolveAdmin(c: Context, projectId: string): Promise<{ accountId:
   return { accountId: proj.accountId, userId };
 }
 
-/** Admin list — sharing + credential mode + whether the viewer's credential is set. */
+/** Admin list — sharing + credential mode + whether the shared credential is set.
+ *  `viewerUserId` is vestigial (kept for interface stability): it only mattered
+ *  for `per_user` connectors, removed 2026-07-05 — every connector now checks
+ *  the one shared credential regardless of who's viewing. */
 async function listConnectors(projectId: string, viewerUserId: string): Promise<AdminConnectorView[]> {
   let rows = await db.select().from(executorConnectors).where(eq(executorConnectors.projectId, projectId));
   if (rows.length === 0) {
@@ -603,10 +608,9 @@ async function listConnectors(projectId: string, viewerUserId: string): Promise<
   for (const row of conns) {
     const grants = grantsByConnector.get(row.connectorId) ?? [];
     const { hasAuth } = authOf(row);
-    const mode = row.credentialMode as 'shared' | 'per_user';
     let secretSet = !hasAuth;
     if (hasAuth) {
-      secretSet = await connectorConnected(row, mode === 'per_user' ? viewerUserId : null);
+      secretSet = await connectorConnected(row, null);
     }
     const actions = await db.select().from(executorConnectorActions).where(eq(executorConnectorActions.connectorId, row.connectorId));
     out.push({
@@ -615,7 +619,7 @@ async function listConnectors(projectId: string, viewerUserId: string): Promise<
       provider: row.providerType,
       platform: channelPlatform(row.config),
       status: row.status,
-      credentialMode: mode,
+      credentialMode: 'shared',
       sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
       agentScope: row.agentScope ?? null,
       actions: actions.map((a) => ({ path: a.path, name: a.name, description: a.description ?? '', risk: a.risk, inputSchema: a.inputSchema ?? null })),
@@ -688,7 +692,7 @@ async function getConnectorConfig(
     slug: row.slug,
     provider: row.providerType,
     platform: channelPlatform(row.config) as ChannelPlatform | null,
-    credentialMode: row.credentialMode as 'shared' | 'per_user',
+    credentialMode: 'shared',
     app: cfg.app ?? null,
     account: cfg.account ?? null,
     url: cfg.url ?? null,
@@ -715,15 +719,15 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
     upsertConnectorInManifest(projectId, accountId, draft as unknown as ConnectorDraft, (draft as any)?.sharing as SharingIntent | undefined),
   deleteConnector: (projectId, slug) => deleteConnectorFromManifest(projectId, slug),
   setConnectorCredential: (projectId, slug, value) => setConnectorCredentialShared(projectId, slug, value),
-  deleteConnectorCredential: async (projectId, slug, userId) => {
+  deleteConnectorCredential: async (projectId, slug) => {
     const [row] = await db
       .select()
       .from(executorConnectors)
       .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
       .limit(1);
     if (!row) return { ok: false as const, error: 'connector not found', status: 404 };
-    const mode = row.credentialMode as 'shared' | 'per_user';
-    await deleteCredential(row.connectorId, mode === 'per_user' ? userId : null);
+    // Always the shared credential — `per_user` was removed 2026-07-05.
+    await deleteCredential(row.connectorId, null);
     return { ok: true as const };
   },
   setCredentialMode: (projectId, accountId, slug, mode) => setConnectorCredentialModeInManifest(projectId, accountId, slug, mode),
@@ -734,21 +738,22 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   getConnectorConfig,
   setConnectorPolicies: (projectId, accountId, slug, policies) =>
     setConnectorPoliciesInManifest(projectId, accountId, slug, policies as Parameters<typeof setConnectorPoliciesInManifest>[3]),
+  // `userId` is accepted for interface stability but unused: every connector
+  // resolves the one shared Pipedream external-user binding since `per_user`
+  // (each member's own) was removed 2026-07-05.
   pipedreamConnect: pipedreamConfigured()
-    ? async (projectId, slug, userId, redirects) => {
+    ? async (projectId, slug, _userId, redirects) => {
         const conn = await loadPipedreamConnector(projectId, slug);
         if (!conn) return null;
-        const effectiveUser = conn.mode === 'per_user' ? userId : null;
-        const { connectUrl, token } = await pipedreamConnectUrl(projectId, slug, conn.app, effectiveUser, redirects);
+        const { connectUrl, token } = await pipedreamConnectUrl(projectId, slug, conn.app, null, redirects);
         return { token, app: conn.app, connectUrl };
       }
     : undefined,
   pipedreamFinalize: pipedreamConfigured()
-    ? async (projectId, slug, userId) => {
+    ? async (projectId, slug, _userId) => {
         const conn = await loadPipedreamConnector(projectId, slug);
         if (!conn) return null;
-        const effectiveUser = conn.mode === 'per_user' ? userId : null;
-        const r = await finalizePipedreamConnection({ projectId, slug, app: conn.app, connectorId: conn.connectorId, userId: effectiveUser });
+        const r = await finalizePipedreamConnection({ projectId, slug, app: conn.app, connectorId: conn.connectorId, userId: null });
         return { connected: r.connected, accountId: r.accountId };
       }
     : undefined,

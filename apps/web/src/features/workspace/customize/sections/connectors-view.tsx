@@ -70,7 +70,6 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import { RadioGroup } from '@/components/ui/radio-group';
 import { SectionCard } from '@/components/ui/section-card';
 import {
   Select,
@@ -86,7 +85,7 @@ import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { AgentAccessPicker } from '@/features/workspace/shared/agent-access-picker';
-import { ShareOption, SharingPicker } from '@/features/workspace/shared/sharing-picker';
+import { SharingPicker } from '@/features/workspace/shared/sharing-picker';
 import {
   type EmailInstallation,
   type EmailSenderPolicy,
@@ -125,7 +124,6 @@ import {
   pipedreamFinalize,
   setConnectorAgentScope,
   setConnectorCredential,
-  setConnectorCredentialMode,
   setConnectorName,
   setConnectorPolicies,
   setConnectorSensitive,
@@ -1916,7 +1914,6 @@ function ProfileSection({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const isChannel = connector.provider === 'channel' || connector.provider === 'computer';
-  const [credential, setCredential] = useState<'shared' | 'per_user'>(connector.credentialMode);
   // Which agents DECLARE this connector? Members assigned to them inherit access
   // regardless of the sharing below (the inheritance pyramid) — surfaced so the
   // admin sees the true blast radius, not just the direct share list. Manager-only
@@ -1954,7 +1951,6 @@ function ProfileSection({
   const [agentScope, setAgentScope] = useState<string[] | null>(connector.agentScope ?? null);
 
   useEffect(() => {
-    setCredential(connector.credentialMode);
     const a = sharingToAccess(connector.sharing);
     setAccess(a.mode);
     setMemberIds(a.memberIds);
@@ -1973,23 +1969,20 @@ function ProfileSection({
     onError: (e: Error) => errorToast(e.message || 'Failed to update sensitivity'),
   });
 
-  const modeChanged = credential !== connector.credentialMode;
   const saved = sharingToAccess(connector.sharing);
   const accessChanged =
-    credential === 'shared' &&
-    (access !== saved.mode ||
-      (access === 'members' &&
-        (memberIds.slice().sort().join() !== saved.memberIds.slice().sort().join() ||
-          groupIds.slice().sort().join() !== saved.groupIds.slice().sort().join())));
+    access !== saved.mode ||
+    (access === 'members' &&
+      (memberIds.slice().sort().join() !== saved.memberIds.slice().sort().join() ||
+        groupIds.slice().sort().join() !== saved.groupIds.slice().sort().join()));
   // null (all) and [] (specific-but-empty) both canonicalize to "all agents".
   const normScope = (s: string[] | null) => (s && s.length ? s.slice().sort().join(',') : '');
   const agentScopeChanged = normScope(agentScope) !== normScope(connector.agentScope ?? null);
   // "Specific agents" chosen but nothing picked — block save (never persist []).
   const specificButEmpty = Array.isArray(agentScope) && agentScope.length === 0;
-  const dirty = modeChanged || accessChanged || agentScopeChanged;
+  const dirty = accessChanged || agentScopeChanged;
 
   const reset = () => {
-    setCredential(connector.credentialMode);
     const a = sharingToAccess(connector.sharing);
     setAccess(a.mode);
     setMemberIds(a.memberIds);
@@ -1999,15 +1992,13 @@ function ProfileSection({
 
   const save = useMutation({
     mutationFn: async () => {
-      if (modeChanged) await setConnectorCredentialMode(projectId, connector.slug, credential);
       const intent: ConnectorSharing =
-        credential === 'per_user' || access === 'project'
+        access === 'project'
           ? { mode: 'project' }
           : access === 'private'
             ? { mode: 'private', ownerId: '' }
             : { mode: 'members', memberIds, groupIds };
-      if (modeChanged || accessChanged)
-        await setConnectorSharing(projectId, connector.slug, intent);
+      if (accessChanged) await setConnectorSharing(projectId, connector.slug, intent);
       if (agentScopeChanged) await setConnectorAgentScope(projectId, connector.slug, agentScope);
     },
     onSuccess: () => {
@@ -2025,48 +2016,7 @@ function ProfileSection({
       )}
     >
       {!isChannel && (
-        <RadioGroup
-          value={credential}
-          onValueChange={(v) => setCredential(v as 'shared' | 'per_user')}
-          className="space-y-2"
-        >
-          <ShareOption
-            value="shared"
-            label={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelOnec565aa8b',
-            )}
-            desc={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescConnect5c9357c5',
-            )}
-          />
-          <ShareOption
-            value="per_user"
-            label={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelEache6c3d706',
-            )}
-            desc={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescEvery9811ed05',
-            )}
-          />
-        </RadioGroup>
-      )}
-
-      {modeChanged && (
-        <InfoBanner
-          tone="warning"
-          title={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleThis580eabca',
-          )}
-          className="mt-3"
-        >
-          {credential === 'per_user'
-            ? 'The shared profile stops being used — each member will be asked to connect their own.'
-            : 'Each member’s personal profile stops being used — connect one shared profile after saving.'}
-        </InfoBanner>
-      )}
-
-      {credential === 'shared' && (
-        <div className="mt-4 space-y-1.5">
+        <div className="space-y-1.5">
           <Label className="text-muted-foreground text-xs">
             {tI18nHardcoded.raw(
               'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextWhoCana896d6c5',
@@ -2161,10 +2111,7 @@ function ProfileSection({
         dirty={dirty}
         saving={save.isPending}
         disabled={
-          (credential === 'shared' &&
-            access === 'members' &&
-            memberIds.length + groupIds.length === 0) ||
-          specificButEmpty
+          (access === 'members' && memberIds.length + groupIds.length === 0) || specificButEmpty
         }
         onSave={() => save.mutate()}
         onReset={reset}
@@ -2250,7 +2197,6 @@ function ConnectionSection({
       createConnector(projectId, {
         ...draft!,
         slug: connector.slug,
-        credential: connector.credentialMode,
       }),
     onSuccess: () => {
       successToast('Connection saved');
@@ -2888,15 +2834,16 @@ function GlobalRulesPanel({ projectId }: { projectId: string }) {
   );
 }
 
+// `credential` (shared vs per_user) was removed 2026-07-05 (docs/specs/2026-07-05-
+// agent-first-config-unification.md §2.5) — every connector uses one shared
+// profile now, so this setup only collects who-can-use-it sharing.
 interface ConnectorSetup {
-  credential: 'shared' | 'per_user';
   access: 'project' | 'private' | 'members';
   memberIds: string[];
   groupIds: string[];
 }
 
 const DEFAULT_CONNECTOR_SETUP: ConnectorSetup = {
-  credential: 'shared',
   access: 'project',
   memberIds: [],
   groupIds: [],
@@ -2918,70 +2865,40 @@ function ConnectorSetupFields({
   onChange: (s: ConnectorSetup) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const isShared = value.credential === 'shared';
   return (
     <FieldGroup className="gap-5">
       <Field>
-        <FieldTitle>Profile</FieldTitle>
-        <FieldDescription>How this connection is set up for the project.</FieldDescription>
-        <RadioGroup
-          value={value.credential}
-          onValueChange={(v) => {
-            const credential = v as ConnectorSetup['credential'];
-            onChange(
-              credential === 'shared'
-                ? { ...value, credential }
-                : { ...value, credential, access: 'project', memberIds: [], groupIds: [] },
-            );
+        <FieldTitle>
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextWhoCana896d6c5',
+          )}
+        </FieldTitle>
+        <FieldDescription>
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextMembersAllowede220ec02',
+          )}
+        </FieldDescription>
+        <SharingPicker
+          projectId={projectId}
+          showHeading={false}
+          hideMembers
+          value={{ mode: value.access, memberIds: value.memberIds, groupIds: value.groupIds }}
+          onChange={(s) =>
+            onChange({ ...value, access: s.mode, memberIds: s.memberIds, groupIds: s.groupIds })
+          }
+          copy={{
+            project: {
+              label: 'Everyone in the project',
+              desc: 'Any member can use the shared profile',
+            },
+            private: { label: 'Only me', desc: 'Just you' },
+            members: {
+              label: 'Specific members or departments',
+              desc: 'A chosen list of members and departments',
+            },
           }}
-          className="space-y-2"
-        >
-          <ShareOption
-            value="shared"
-            label="One shared profile across the whole project (recommended)"
-            desc="Connect it once. Everyone — and every trigger/cron — uses the same account. Best for almost all cases."
-          />
-          <ShareOption
-            value="per_user"
-            label="Each member brings their own profile"
-            desc="Every member connects their own account, and only ever uses their own. Pick this only when each person must act as themselves."
-          />
-        </RadioGroup>
+        />
       </Field>
-      {isShared && (
-        <Field>
-          <FieldTitle>
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextWhoCana896d6c5',
-            )}
-          </FieldTitle>
-          <FieldDescription>
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextMembersAllowede220ec02',
-            )}
-          </FieldDescription>
-          <SharingPicker
-            projectId={projectId}
-            showHeading={false}
-            hideMembers
-            value={{ mode: value.access, memberIds: value.memberIds, groupIds: value.groupIds }}
-            onChange={(s) =>
-              onChange({ ...value, access: s.mode, memberIds: s.memberIds, groupIds: s.groupIds })
-            }
-            copy={{
-              project: {
-                label: 'Everyone in the project',
-                desc: 'Any member can use the shared profile',
-              },
-              private: { label: 'Only me', desc: 'Just you' },
-              members: {
-                label: 'Specific members or departments',
-                desc: 'A chosen list of members and departments',
-              },
-            }}
-          />
-        </Field>
-      )}
     </FieldGroup>
   );
 }
@@ -3423,7 +3340,6 @@ function ConfigureAppModal({
         provider: 'pipedream',
         app: app!.slug,
         account: 'default',
-        credential: setup.credential,
         sharing: setupToSharing(setup),
       }),
     onSuccess: () => {
@@ -3758,7 +3674,6 @@ export function CustomConnectorForm({
     mutationFn: () =>
       createConnector(projectId, {
         ...draft,
-        credential: setup.credential,
         sharing: setupToSharing(setup),
       }),
     onSuccess: () => {

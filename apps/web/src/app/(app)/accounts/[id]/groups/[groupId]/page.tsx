@@ -207,9 +207,9 @@ function GroupMembersCard({
 
   // Combined index of account-level info per user_id. Lets the group
   // members list show emails AND surface the account role badge — owners
-  // and admins implicitly have Manager on every project, which overrides
-  // any group-level role on that project. Worth flagging here so an
-  // admin who adds another admin to a "Viewer" group understands the
+  // and admins implicitly have Editor (the top project role) on every project,
+  // which overrides any group-level role on that project. Worth flagging here
+  // so an admin who adds another admin to a "Viewer" group understands the
   // grant is mostly cosmetic for that user.
   const accountMetaByUserId = useMemo(() => {
     const map = new Map<string, AccountMeta>();
@@ -727,7 +727,7 @@ function GroupProjectGrantsCard({
       <SectionCard
         flush
         title={tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxAttrTitle82ea8920')}
-        description={`Projects "${groupName}" is attached to. Every group member inherits the chosen role on that project — except account owners and admins, who always have Manager.`}
+        description={`Projects "${groupName}" is attached to. Every group member inherits the chosen role on that project — except account owners and admins, who always have Editor (the top project role) and full account-level control.`}
         count={grants.length}
         action={
           <Button size="sm" className="gap-1.5" onClick={() => setAttachOpen(true)}>
@@ -877,11 +877,16 @@ function GroupProjectGrantsCard({
 
 // ─── V2: Attach group → project dialog ───────────────────────────────────
 //
-// Opens from the Project access card. Lists every project in the account
-// the caller can manage (effective_project_role === 'manager'), minus
-// projects this group is already attached to. POSTs to the canonical
-// per-project group-grants endpoint (server-side gate on
-// project.members.manage matches our client-side filter).
+// Opens from the Project access card. Lists every project in the account, minus
+// projects this group is already attached to. Attaching a group is
+// project.members.manage — the project-role collapse moved that action to
+// ACCOUNT owner/admin authority ONLY (no project role, not even the top one,
+// grants it anymore), so eligibility no longer varies per project: either the
+// caller is an account owner/admin (can attach to every project) or they
+// aren't (can attach to none). Probes that ONE account-level capability
+// instead of a per-project role label. POSTs to the canonical per-project
+// group-grants endpoint (server-side gate on project.members.manage matches
+// our client-side check).
 
 function AttachToProjectDialog({
   accountId,
@@ -910,8 +915,11 @@ function AttachToProjectDialog({
   // to ISO on submit so the server can parse it.
   const [expiresAtLocal, setExpiresAtLocal] = useState<string>('');
 
-  // Only fetch the project list when the dialog is open. Includes
-  // effective_project_role so we can filter to manageable projects.
+  // project.members.manage is account-scoped now (see role-perms.ts's
+  // ACCOUNT_ONLY_PROJECT_ACTIONS) — one probe, not per-project.
+  const canAttach = usePermission(accountId, 'project.members.manage').allowed;
+
+  // Only fetch the project list when the dialog is open.
   const projectsQuery = useQuery({
     queryKey: ['projects-for-account', accountId],
     queryFn: () => listProjectsForAccount(accountId),
@@ -920,13 +928,12 @@ function AttachToProjectDialog({
   });
 
   const candidates = useMemo(() => {
+    if (!canAttach) return [];
     const all = projectsQuery.data ?? [];
     return all
-      .filter(
-        (p) => p.effective_project_role === 'manager' && !attachedProjectIds.has(p.project_id),
-      )
+      .filter((p) => !attachedProjectIds.has(p.project_id))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [projectsQuery.data, attachedProjectIds]);
+  }, [projectsQuery.data, attachedProjectIds, canAttach]);
 
   // Reset picker state every time the dialog (re)opens so a stale
   // selection from a previous open doesn't pre-fill.
@@ -981,13 +988,9 @@ function AttachToProjectDialog({
               <p className="border-border/60 bg-muted/20 text-muted-foreground rounded-2xl border px-3 py-2.5 text-xs">
                 {(projectsQuery.data ?? []).length === 0
                   ? 'No projects in this account yet.'
-                  : attachedProjectIds.size > 0 &&
-                      attachedProjectIds.size ===
-                        (projectsQuery.data ?? []).filter(
-                          (p) => p.effective_project_role === 'manager',
-                        ).length
-                    ? 'This group is already attached to every project you can manage.'
-                    : 'You need Manager access on a project to attach a group to it.'}
+                  : canAttach && attachedProjectIds.size >= (projectsQuery.data ?? []).length
+                    ? 'This group is already attached to every project in this account.'
+                    : 'You need to be an account owner or admin to attach a group to a project.'}
               </p>
             ) : (
               <Select
@@ -1019,11 +1022,6 @@ function AttachToProjectDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="manager">
-                  {tI18nHardcoded.raw(
-                    'autoAppAppAccountsIdGroupsGroupIdPageJsxTextManager33f373a5',
-                  )}
-                </SelectItem>
                 <SelectItem value="editor">
                   {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextEditor415a1a4b')}
                 </SelectItem>

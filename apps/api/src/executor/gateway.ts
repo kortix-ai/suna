@@ -50,8 +50,9 @@ export interface GatewayConnector {
   /** Who can use it. */
   shareScope: ShareScope;
   grants: SecretGrant[];
-  /** shared = one project credential; per_user = each member's own. */
-  credentialMode: 'shared' | 'per_user';
+  /** Always `shared` (one project credential) — `per_user` (each member's
+   *  own) was removed 2026-07-05. Kept as a field for shape stability. */
+  credentialMode: 'shared';
   enabled: boolean;
   /** Marked sensitive (email/files/secrets-bearing): reads gate too — every
    *  action defaults to require_approval unless an explicit policy opens it.
@@ -324,11 +325,12 @@ async function connectorUsable(
       return { ok: false, reason: 'agent_not_scoped' };
     }
   }
-  // 2. Credential — none needed (public), shared, or this member's own (per_user).
+  // 2. Credential — none needed (public), or the one shared project credential.
+  // (`per_user` — each member's own — was removed 2026-07-05; every connector
+  // now resolves the shared, userId-null credential.)
   if (!connector.hasAuth) return { ok: true, secret: null };
   if (credentialOverride != null) return { ok: true, secret: credentialOverride };
-  const userId = connector.credentialMode === 'per_user' ? subject.userId : null;
-  const secret = await deps.resolveCredential(connector, userId);
+  const secret = await deps.resolveCredential(connector, null);
   if (secret == null) return { ok: false, reason: 'needs_auth' };
   return { ok: true, secret };
 }
@@ -570,7 +572,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
           'pipedream connector has no connected account (run `kortix connectors connect`)',
         );
       }
-      const userId = connector.credentialMode === 'per_user' ? input.subject.userId : null;
+      // Always the shared (project-wide) Pipedream external-user binding —
+      // `per_user` (each member's own) was removed 2026-07-05.
+      const userId = null;
       if (b.kind === 'pipedream') {
         if (!deps.executePipedream) throw new Error('pipedream action runner not wired');
         result = await deps.executePipedream({

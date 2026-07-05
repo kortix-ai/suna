@@ -240,7 +240,7 @@ function sampleStarterPrompt(): string {
   return (
     'I want to configure my Kortix project. Read the kortix skill, ' +
     'then propose an initial agent for my use case (e.g. a PR reviewer ' +
-    'or a daily digest worker), wire up the trigger in kortix.toml, ' +
+    'or a daily digest worker), wire up the trigger in kortix.yaml, ' +
     'and tell me what secrets I still need to set.'
   );
 }

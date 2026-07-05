@@ -8,7 +8,7 @@ import { getSupabase } from '../shared/supabase';
 import { createInviteAcceptRateLimitMiddleware } from '../shared/rate-limit';
 import { onMemberAdded } from '../billing/services/seat-management';
 import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
-import { normalizeProjectRole } from '../iam/role-perms';
+import { normalizeProjectRole, type ProjectRole } from '../iam/role-perms';
 
 export const accountInvitesRouter = makeOpenApiApp<AppEnv>();
 
@@ -73,7 +73,7 @@ async function lookupAuthEmail(userId: string | null): Promise<string | null> {
 // unrelated future code path can't break invite acceptance.
 type ValidatedGrant = {
   project_id: string;
-  role: 'manager' | 'editor' | 'member';
+  role: ProjectRole;
   expires_at: string | null;
 };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -103,7 +103,7 @@ function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
 // Apply the invite's bootstrap grants (the project_members rows the inviter
 // wanted this user to land on). Idempotent — onConflictDoUpdate means a
 // re-accept simply re-asserts the grant rather than erroring. Owners/admins
-// skip these: they already hold implicit Manager on every project, so a direct
+// skip these: they already hold implicit Editor (top project role) on every project, so a direct
 // grant is redundant. Errors are best-effort and logged; the account
 // membership itself is already committed and shouldn't roll back because a
 // project no longer exists. Each entry is validated first (see

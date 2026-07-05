@@ -104,8 +104,8 @@ function secretRow(
 describe('serializeProject ⇄ ProjectSchema', () => {
   test('output parses strictly and round-trips unchanged', () => {
     const out = serializeProject(projectRow(), {
-      projectRole: 'manager',
-      effectiveRole: 'manager',
+      projectRole: 'editor',
+      effectiveRole: 'editor',
     });
     expect(ProjectSchema.strict().parse(out)).toEqual(out);
   });

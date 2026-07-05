@@ -1,16 +1,24 @@
 /**
- * Read/write helpers for the FULL v2 `agents.<name>` block (spec
- * docs/specs/2026-07-05-agent-first-config-unification.md §2.2) — the
- * "unified agent block" the dashboard's agent editor round-trips against.
+ * Read/write helpers for the v2 `agents.<name>` GOVERNANCE block (spec
+ * docs/specs/2026-07-05-agent-first-config-unification.md §2.2, redirected
+ * 2026-07-05 — "one home per concern"). `AgentBlockV2` here is governance
+ * ONLY: connectors/secrets/skills/kortix_cli/workspace/enabled. OpenCode
+ * BEHAVIOR (mode/model/temperature/top_p/steps/variant/color/hidden/
+ * permission/prompt) lives entirely in the agent's own native
+ * `.kortix/opencode/agents/<name>.md` frontmatter + body — see
+ * `./agent-markdown.ts` (parse/serialize) and `./compile-agent-config.ts`
+ * (`agentMarkdownPath`, the conventional-path join). The dashboard's agent
+ * editor route (`../routes/agent-config.ts`) is what merges this governance
+ * half with the `.md` behavior half into one wire response/request — this
+ * module only ever touches kortix.yaml.
  *
  * Distinct from `../agents.ts` (`AgentSpec` / `extractAgents`): that module
  * resolves the platform GRANT the session token carries (a narrower view —
  * connectors/secrets/kortix_cli reduced to the wire `AgentGrant` shape).
- * This module instead reads/writes the agent's declared block verbatim —
- * every OpenCode-parity behavioral field plus every governance field — so
- * the editor can present (and persist) the complete field space, not just
- * the grant subset. Pure — no I/O; callers own load/commit (mirrors
- * `applyAgentScope` in `../agents.ts`).
+ * This module instead reads/writes the agent's declared governance block
+ * verbatim so the editor can present (and persist) the complete governance
+ * field space, not just the grant subset. Pure — no I/O; callers own
+ * load/commit (mirrors `applyAgentScope` in `../agents.ts`).
  */
 import {
   type AgentBlockV2,

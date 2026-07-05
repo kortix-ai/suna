@@ -112,8 +112,9 @@ export interface CatalogConnector {
 
 export interface AdminConnectorView extends CatalogConnector {
   authSecret: string | null;
-  /** Credential storage mode — shared project credential vs each member's own. */
-  credentialMode: 'shared' | 'per_user';
+  /** Credential storage mode. Always `shared` — `per_user` (each member's
+   *  own) was removed 2026-07-05. */
+  credentialMode: 'shared';
   /** Marked sensitive — its reads gate too (require_approval by default). */
   sensitive: boolean;
   /** Which agents may call it. null / [] = all agents; a list = restricted to
@@ -121,7 +122,7 @@ export interface AdminConnectorView extends CatalogConnector {
   agentScope: string[] | null;
   /** Current access (who can use), for the dashboard picker. */
   sharing: SharingIntent | null;
-  /** Whether the viewing user's credential is set (shared row, or their own for per_user). */
+  /** Whether the shared credential is set. */
   secretSet: boolean;
 }
 
@@ -178,13 +179,17 @@ export interface ExecutorRouterDeps {
   deleteConnector?(projectId: string, slug: string): Promise<CrudOutcome>;
   /** Set a connector's credential value (stored scope='connector', never injected). */
   setConnectorCredential?(projectId: string, slug: string, value: string): Promise<CrudOutcome>;
+  /** `userId` is accepted for back-compat but unused — a connector has exactly
+   *  one (shared) credential since `per_user` was removed 2026-07-05. */
   deleteConnectorCredential?(projectId: string, slug: string, userId: string): Promise<CrudOutcome>;
-  /** Change a connector's credential mode (shared ↔ per_user) in kortix.toml + re-sync. */
+  /** `shared` is the only credential mode (`per_user` removed 2026-07-05). This
+   *  route is kept as a restricted no-op for back-compat callers — the router
+   *  rejects any `mode` other than `shared` before calling this. */
   setCredentialMode?(
     projectId: string,
     accountId: string,
     slug: string,
-    mode: 'shared' | 'per_user',
+    mode: 'shared',
   ): Promise<CrudOutcome>;
   /** Toggle a connector's `sensitive` flag (gate reads too) in kortix.toml + re-sync. */
   setSensitive?(
@@ -222,7 +227,7 @@ export interface ExecutorRouterDeps {
     slug: string;
     provider: string;
     platform?: string | null;
-    credentialMode: 'shared' | 'per_user';
+    credentialMode: 'shared';
     app: string | null;
     account: string | null;
     url: string | null;
@@ -244,14 +249,17 @@ export interface ExecutorRouterDeps {
     slug: string,
     policies: Array<{ match: string; action: string }>,
   ): Promise<CrudOutcome>;
-  /** Pipedream 1-click: mint a connect token (for the frontend SDK overlay) + link. null = not pipedream. */
+  /** Pipedream 1-click: mint a connect token (for the frontend SDK overlay) + link.
+   *  null = not pipedream. `userId` is accepted for back-compat but unused —
+   *  the connection is always the shared project account (`per_user` removed
+   *  2026-07-05). */
   pipedreamConnect?(
     projectId: string,
     slug: string,
     userId: string,
     redirects?: { success?: string; error?: string },
   ): Promise<{ token?: string; app?: string; connectUrl?: string } | null>;
-  /** Pipedream 1-click: after the user finishes, persist the account binding (their own for per_user). */
+  /** Pipedream 1-click: after the user finishes, persist the shared account binding. */
   pipedreamFinalize?(
     projectId: string,
     slug: string,
@@ -772,13 +780,16 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     },
   );
 
-  // ── Admin: change a connector's credential mode (shared ↔ per_user) ───────
+  // ── Admin: connector credential mode — restricted to a `shared`-only no-op.
+  // `per_user` (each member brings their own) was removed 2026-07-05
+  // (docs/specs/2026-07-05-agent-first-config-unification.md §2.5). The route
+  // stays for back-compat callers but only ever accepts `shared` now.
   app.openapi(
     createRoute({
       method: 'put',
       path: '/projects/{projectId}/connectors/{slug}/credential-mode',
       tags: ['executor'],
-      summary: "Change a connector's credential mode (shared ↔ per_user)",
+      summary: "Set a connector's credential mode (shared only — per_user was removed)",
       ...auth,
       request: {
         params: ProjectSlugParam,
@@ -802,8 +813,13 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         return c.json({ error: 'invalid_json' }, 400);
       }
       const mode = body?.mode;
-      if (mode !== 'shared' && mode !== 'per_user') {
-        return c.json({ error: 'mode must be "shared" or "per_user"' }, 400);
+      if (mode !== 'shared') {
+        return c.json(
+          { error: mode === 'per_user'
+            ? 'per_user credential mode was removed — connectors are always shared now'
+            : 'mode must be "shared"' },
+          400,
+        );
       }
       const result = await deps.setCredentialMode(projectId, admin.accountId, slug, mode);
       return result.ok

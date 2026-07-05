@@ -29,24 +29,21 @@ export const PROJECT_ROLE_DESCRIPTORS: Record<ProjectRole, ProjectRoleDescriptor
     label: 'Member',
     blurb: 'Read + run sessions and chat, plus fire the project’s triggers.',
     summary:
-      'The floor role for using the project: read everything, run sessions, chat with the agent, and fire its triggers on demand. Can’t edit, deploy, change config, or manage members.',
+      'The floor role for using the project: read everything, run sessions, chat with the agent, and fire its triggers on demand. Can’t edit, deploy, or change config.',
   },
   editor: {
     label: 'Editor',
     blurb: 'Everything a member does, plus edit and customize the project.',
     summary:
-      'Everything a member can do, plus edit the project, deploy, and create or delete triggers. Cannot invite members, change member roles, or delete the project.',
-  },
-  manager: {
-    label: 'Manager',
-    blurb: 'Full control — edit the project, invite members, change settings.',
-    summary:
-      'Everything an editor can do, plus invite or remove project members, change member roles, and delete the project.',
+      'Everything a member can do, plus edit the project, deploy, and manage triggers. Inviting members, managing gateway keys, and deleting the project are account owner/admin actions, not a project role.',
   },
 };
 
-/** Ordered low → high. Useful for rendering dropdowns consistently. */
-export const PROJECT_ROLES_ASCENDING: ProjectRole[] = ['member', 'editor', 'manager'];
+/** Ordered low → high. Useful for rendering dropdowns consistently.
+ *  `manager` (the former top project role) was retired — `editor` is now the
+ *  top project role. Its former exclusive powers (delete / members.manage /
+ *  gateway.keys.manage) moved to account owner/admin authority. */
+export const PROJECT_ROLES_ASCENDING: ProjectRole[] = ['member', 'editor'];
 
 export interface AccountRoleDescriptor {
   label: string;

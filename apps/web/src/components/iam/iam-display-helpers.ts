@@ -16,8 +16,9 @@
 
 export type AccountRole = 'owner' | 'admin' | 'member';
 // `member` is the project floor role; `viewer` was folded into it and is no
-// longer emitted by the API.
-export type ProjectRole = 'manager' | 'editor' | 'member';
+// longer emitted by the API. `manager` (the former top project role) was
+// retired by the project-role collapse — `editor` is now the top project role.
+export type ProjectRole = 'editor' | 'member';
 
 export interface AccountMeta {
   email: string | null;
@@ -103,7 +104,6 @@ export function floatCurrentUserFirst<T extends { user_id: string }>(
 // ─── Project Members → inherited-via-group label ─────────────────────────
 
 const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
-  manager: 'Manager',
   editor: 'Editor',
   member: 'Member',
 };
@@ -117,7 +117,7 @@ export interface ProjectAccessRowInput {
 
 /**
  * True when the row's only access path is a group attachment (no
- * implicit Manager, no direct project_members row).
+ * implicit Editor (top project role), no direct project_members row).
  */
 export function isInheritedFromGroupOnly(row: ProjectAccessRowInput): boolean {
   return (
@@ -158,7 +158,10 @@ export function inheritedFromGroupSummary(row: ProjectAccessRowInput): string | 
   const sources = row.group_sources!;
   const head = sources[0];
   const rest = sources.length - 1;
-  // Fallback guards against a stale `viewer` value from cache — it folds to Member.
+  // Fallback guards against a stale `viewer`/`manager` value from cache — both
+  // retired roles fold to Member here (a cosmetic-only fallback; a stale
+  // `manager` cache entry never grants the retired role's authority, which
+  // moved to account owner/admin — see role-perms.ts).
   const label = PROJECT_ROLE_LABEL[row.effective_project_role!] ?? 'Member';
   return rest > 0
     ? `Inherited ${label} via ${head.group_name} + ${rest} more`

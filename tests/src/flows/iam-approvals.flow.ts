@@ -50,7 +50,7 @@ flow(
       r.status(200).body().has("$.status", "pending");
     });
 
-    await ctx.step("a project manager lists pending access requests → 200", async () => {
+    await ctx.step("an account owner/admin lists pending access requests → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/access-requests", { params: { projectId: project.id } });
@@ -194,7 +194,7 @@ flow(
   },
 );
 
-// ─── Approval inbox (project-manager oversight) + per-session indicator ────
+// ─── Approval inbox (account owner/admin oversight) + per-session indicator ────
 
 flow(
   "IAM-29",
@@ -211,7 +211,7 @@ flow(
     const viewer = await team.addMember("member");
     await team.grantProjectRole(project.id, viewer.userId!, "user");
 
-    await ctx.step("a project manager reads the (empty) approval inbox → 200", async () => {
+    await ctx.step("an account owner/admin reads the (empty) approval inbox → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/approvals", { params: { projectId: project.id } });
@@ -225,7 +225,7 @@ flow(
       r.status(400);
     });
 
-    await ctx.step("a plain member with no project grant cannot read the manager-only inbox → 404", async () => {
+    await ctx.step("a plain member with no project grant cannot read the account-owner/admin-only inbox → 404", async () => {
       const bare = await team.addMember("member");
       const r = await ctx.client
         .as(bare)
@@ -233,14 +233,14 @@ flow(
       r.status(404);
     });
 
-    await ctx.step("a granted (non-manager) project member sees their own needs-input → 200", async () => {
+    await ctx.step("a granted (non-account-owner/admin) project member sees their own needs-input → 200", async () => {
       const r = await ctx.client
         .as(viewer)
         .get("/v1/projects/:projectId/approvals/needs-input", { params: { projectId: project.id } });
       r.status(200).body().has("$.total", 0).exists("$.sessions");
     });
 
-    await ctx.step("a project manager sees needs-input project-wide → 200", async () => {
+    await ctx.step("an account owner/admin sees needs-input project-wide → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/approvals/needs-input", { params: { projectId: project.id } });
@@ -329,7 +329,7 @@ flow(
     // The happy path (scoping a REAL declared [[agents]] entry) needs a
     // project whose kortix.toml already declares an agent — out of reach for
     // a bare provisioned repo here. This flow pins the manifest-edit
-    // validation + manager-only gate, which is what regresses first.
+    // validation + account-owner/admin-only gate, which is what regresses first.
     const team = await ctx.fixtures.team();
     const project = await team.project();
 

@@ -766,7 +766,9 @@ describe('create-repo starter scaffold contract', () => {
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
       userId: USER_ID,
-      projectRole: 'manager',
+      // 'manager' was retired (project-role collapse) — 'editor' is the top
+      // project role a direct grant can carry now.
+      projectRole: 'editor',
       grantedBy: USER_ID,
     });
   });

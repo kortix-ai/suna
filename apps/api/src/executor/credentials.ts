@@ -2,9 +2,10 @@
  * Connector access + credentials — the split model. Access (who can use a
  * connector) lives on the connector (share_scope + executor_connector_grants).
  * Credentials are separate (executor_credentials), one row per (connector, user)
- * — user NULL = the shared project credential, a set user = that member's own
- * (per_user mode). Values are encrypted with the project key and resolved
- * server-side only. See docs/specs/executor.md §5–6.
+ * — user NULL is the shared project credential, the only mode written today
+ * (`per_user` — a set user, each member's own — was removed 2026-07-05; every
+ * caller here passes `userId: null`). Values are encrypted with the project
+ * key and resolved server-side only. See docs/specs/executor.md §5–6.
  */
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import {

@@ -8,54 +8,41 @@ import { parseManifestText } from '@kortix/manifest-schema';
 // both load safely, mirroring the mock-then-dynamic-import pattern used
 // throughout apps/api/src/projects/maintenance.test.ts and friends.
 let manifestFile: { path: string; content: string } | null = null;
-let promptFileContent: Record<string, string> = {};
+let mdFileContent: Record<string, string> = {};
 let readRepoFileCalls: string[] = [];
 
 mock.module('../git', () => ({
   readManifestFromRepo: async () => manifestFile,
   readRepoFile: async (_project: unknown, path: string) => {
     readRepoFileCalls.push(path);
-    if (!(path in promptFileContent)) throw new Error(`no such file: ${path}`);
-    return promptFileContent[path];
+    if (!(path in mdFileContent)) throw new Error(`no such file: ${path}`);
+    return mdFileContent[path];
   },
 }));
 
-const { CompileAgentConfigError, compileAgentConfig, resolveCompiledAgentConfigForSession } =
-  await import('./compile-agent-config');
+const {
+  CompileAgentConfigError,
+  agentMarkdownPath,
+  compileAgentConfig,
+  resolveCompiledAgentConfigForSession,
+} = await import('./compile-agent-config');
 type OpencodeConfig = Awaited<ReturnType<typeof compileAgentConfig>> & object;
 
-// The spec's §2.2 example manifest verbatim — see
-// docs/specs/2026-07-05-agent-first-config-unification.md.
-const SPEC_2_2_FIXTURE = `
+// Governance-only v2 manifest — the 2026-07-05 redirect's shape. Behavior
+// lives in each agent's own `.kortix/opencode/agents/<name>.md`.
+const GOVERNANCE_FIXTURE = `
 kortix_version: 2
 default_agent: support
 
 agents:
   support:
-    description: "Handles customer support triage"
-    model: anthropic/claude-sonnet-5
     connectors: [github, slack]
     secrets: [STRIPE_KEY, GH_TOKEN]
     kortix_cli: [project.session.start, project.cr.open]
     workspace: runtime
-    opencode:
-      mode: primary
-      temperature: 0.2
-      steps: 200
-      color: "#7C5CFF"
-      hidden: false
-      prompt: agents/support.md
-      permission:
-        edit: ask
-        bash: { "git push": deny, "*": allow }
-        webfetch: allow
   pr-bot:
-    description: "Reviews and lands PRs"
     connectors: [github]
     kortix_cli: [project.cr.open, project.cr.merge, project.review.submit]
-    opencode:
-      mode: subagent
-      prompt: agents/pr-bot.md
 `;
 
 const V1_FIXTURE_TOML = `
@@ -73,6 +60,22 @@ function parseYaml(raw: string): Record<string, unknown> {
   return parseManifestText(raw, 'yaml');
 }
 
+function supportMd(frontmatter: string, body: string): string {
+  return `---\n${frontmatter}\n---\n\n${body}`;
+}
+
+describe('agentMarkdownPath', () => {
+  test('defaults to .kortix/opencode/agents/<name>.md', () => {
+    expect(agentMarkdownPath({}, 'support')).toBe('.kortix/opencode/agents/support.md');
+  });
+
+  test('honors a custom top-level [opencode] config_dir', () => {
+    expect(agentMarkdownPath({ opencode: { config_dir: 'custom/dir' } }, 'support')).toBe(
+      'custom/dir/agents/support.md',
+    );
+  });
+});
+
 describe('compileAgentConfig — v1 is a compiler no-op', () => {
   test('returns null for a kortix_version 1 manifest', () => {
     const manifest = parseManifestText(V1_FIXTURE_TOML, 'toml');
@@ -89,15 +92,33 @@ describe('compileAgentConfig — v1 is a compiler no-op', () => {
   });
 });
 
-describe('compileAgentConfig — spec §2.2 example manifest', () => {
-  const manifest = parseYaml(SPEC_2_2_FIXTURE);
-  const promptFiles = {
-    'agents/support.md': 'You triage customer support tickets with empathy and precision.',
-    'agents/pr-bot.md': 'You review and land pull requests, following the house style guide.',
+describe('compileAgentConfig — behavior comes from the agent .md, not the manifest', () => {
+  const manifest = parseYaml(GOVERNANCE_FIXTURE);
+  const agentMdFiles = {
+    '.kortix/opencode/agents/support.md': supportMd(
+      [
+        'description: "Handles customer support triage"',
+        'model: anthropic/claude-sonnet-5',
+        'mode: primary',
+        'temperature: 0.2',
+        'steps: 200',
+        'color: "#7C5CFF"',
+        'hidden: false',
+        'permission:',
+        '  edit: ask',
+        '  bash: { "git push": deny, "*": allow }',
+        '  webfetch: allow',
+      ].join('\n'),
+      'You triage customer support tickets with empathy and precision.',
+    ),
+    '.kortix/opencode/agents/pr-bot.md': supportMd(
+      ['mode: subagent'].join('\n'),
+      'You review and land pull requests, following the house style guide.',
+    ),
   };
 
-  test('compiles the full agent map with 1:1 OpenCode AgentConfig field parity', () => {
-    const compiled = compileAgentConfig(manifest, 'opencode', promptFiles) as OpencodeConfig;
+  test('compiles the full agent map with 1:1 OpenCode AgentConfig field parity from the .md frontmatter', () => {
+    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as OpencodeConfig;
     expect(compiled).not.toBeNull();
     expect(compiled.agent.support).toEqual({
       description: 'Handles customer support triage',
@@ -115,14 +136,13 @@ describe('compileAgentConfig — spec §2.2 example manifest', () => {
       },
     });
     expect(compiled.agent['pr-bot']).toEqual({
-      description: 'Reviews and lands PRs',
       mode: 'subagent',
       prompt: 'You review and land pull requests, following the house style guide.',
     });
   });
 
   test('never copies governance fields (connectors/secrets/kortix_cli/workspace) — no runtime representation', () => {
-    const compiled = compileAgentConfig(manifest, 'opencode', promptFiles) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as OpencodeConfig;
     for (const agentConfig of Object.values(compiled.agent)) {
       expect(agentConfig).not.toHaveProperty('connectors');
       expect(agentConfig).not.toHaveProperty('secrets');
@@ -131,8 +151,8 @@ describe('compileAgentConfig — spec §2.2 example manifest', () => {
     }
   });
 
-  test("top-level model passthrough is the default_agent's declared model", () => {
-    const compiled = compileAgentConfig(manifest, 'opencode', promptFiles) as OpencodeConfig;
+  test("top-level model passthrough is the default_agent's compiled model", () => {
+    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as OpencodeConfig;
     expect(compiled.model).toBe('anthropic/claude-sonnet-5');
     expect(compiled.small_model).toBeUndefined();
   });
@@ -143,170 +163,139 @@ kortix_version: 2
 default_agent: pr-bot
 agents:
   pr-bot:
-    description: "Reviews PRs"
-    opencode:
-      mode: subagent
+    kortix_cli: []
 `);
-    const compiled = compileAgentConfig(noModelManifest) as OpencodeConfig;
+    const compiled = compileAgentConfig(noModelManifest, 'opencode', {
+      '.kortix/opencode/agents/pr-bot.md': supportMd('mode: subagent', 'Reviews PRs'),
+    }) as OpencodeConfig;
     expect(compiled.model).toBeUndefined();
   });
 });
 
-describe('compileAgentConfig — every AgentBlockV2 field maps 1:1', () => {
-  const manifest = parseYaml(`
+describe('compileAgentConfig — a stock OpenCode agent .md with frontmatter compiles cleanly', () => {
+  test('no illegal-frontmatter error — frontmatter is expected, never illegal', () => {
+    const manifest = parseYaml(`
 kortix_version: 2
-default_agent: full
+default_agent: kortix
 agents:
-  full:
-    description: "Full field coverage"
-    model: anthropic/claude-opus-4.8
-    enabled: false
-    opencode:
-      mode: all
-      variant: thinking
-      temperature: 0.7
-      top_p: 0.9
-      hidden: true
-      options:
-        foo: bar
-      color: "#123456"
-      steps: 42
-      permission: allow
+  kortix:
+    connectors: all
+    secrets: all
 `);
-
-  test('maps every optional field through unchanged (Kortix `enabled: false` inverts onto the runtime `disable`)', () => {
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
-    expect(compiled.agent.full).toEqual({
-      description: 'Full field coverage',
-      mode: 'all',
-      model: 'anthropic/claude-opus-4.8',
-      variant: 'thinking',
-      temperature: 0.7,
-      top_p: 0.9,
-      disable: true,
-      hidden: true,
-      options: { foo: 'bar' },
-      color: '#123456',
-      steps: 42,
+    const content = supportMd(
+      ['mode: primary', 'model: anthropic/claude-sonnet-5', 'permission: allow'].join('\n'),
+      'You are a general-purpose Kortix agent.',
+    );
+    expect(() =>
+      compileAgentConfig(manifest, 'opencode', { '.kortix/opencode/agents/kortix.md': content }),
+    ).not.toThrow();
+    const compiled = compileAgentConfig(manifest, 'opencode', {
+      '.kortix/opencode/agents/kortix.md': content,
+    }) as OpencodeConfig;
+    expect(compiled.agent.kortix).toEqual({
+      mode: 'primary',
+      model: 'anthropic/claude-sonnet-5',
       permission: 'allow',
+      prompt: 'You are a general-purpose Kortix agent.',
     });
   });
+});
 
-  test('an agent block with no fields set compiles to an empty config object', () => {
-    const bare = parseYaml(`
+describe('compileAgentConfig — governance-only agent block with no .md yet', () => {
+  test('an agent with no `.md` content supplied compiles to governance overlay only', () => {
+    const manifest = parseYaml(`
 kortix_version: 2
-default_agent: bare
+default_agent: fresh
 agents:
-  bare: {}
+  fresh:
+    connectors: none
 `);
-    const compiled = compileAgentConfig(bare) as OpencodeConfig;
-    expect(compiled.agent.bare).toEqual({});
+    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    expect(compiled.agent.fresh).toEqual({});
+  });
+
+  test('a body-only .md (no frontmatter at all) compiles with just the prompt', () => {
+    const manifest = parseYaml(`
+kortix_version: 2
+default_agent: a
+agents:
+  a: {}
+`);
+    const compiled = compileAgentConfig(manifest, 'opencode', {
+      '.kortix/opencode/agents/a.md': 'Just the body, no frontmatter.',
+    }) as OpencodeConfig;
+    expect(compiled.agent.a).toEqual({ prompt: 'Just the body, no frontmatter.' });
   });
 });
 
-describe('compileAgentConfig — prompt resolution', () => {
-  test('resolves prompt to the file body when content is supplied', () => {
+describe('compileAgentConfig — `enabled: false` governance overlay', () => {
+  test('forces `disable: true` regardless of the .md', () => {
     const manifest = parseYaml(`
 kortix_version: 2
 default_agent: a
 agents:
   a:
-    opencode:
-      prompt: agents/a.md
+    enabled: false
 `);
     const compiled = compileAgentConfig(manifest, 'opencode', {
-      'agents/a.md': 'Just the body, no frontmatter.',
+      '.kortix/opencode/agents/a.md': supportMd('disable: false', 'Body.'),
     }) as OpencodeConfig;
-    expect(compiled.agent.a.prompt).toBe('Just the body, no frontmatter.');
+    expect(compiled.agent.a.disable).toBe(true);
   });
 
-  test('strips a legal frontmatter block (no manifest-owned keys) and keeps the body', () => {
+  test('a hand-authored `disable: true` in the .md passes through when `enabled` is omitted', () => {
     const manifest = parseYaml(`
 kortix_version: 2
 default_agent: a
 agents:
-  a:
-    opencode:
-      prompt: agents/a.md
+  a: {}
 `);
-    const content = ['---', 'title: Support Agent', '---', '', 'Body text follows.'].join('\n');
     const compiled = compileAgentConfig(manifest, 'opencode', {
-      'agents/a.md': content,
+      '.kortix/opencode/agents/a.md': supportMd('disable: true', 'Body.'),
     }) as OpencodeConfig;
-    expect(compiled.agent.a.prompt).toBe('Body text follows.');
-  });
-
-  test('falls back to an OpenCode {file:...} reference when content is not supplied', () => {
-    const manifest = parseYaml(`
-kortix_version: 2
-default_agent: a
-agents:
-  a:
-    opencode:
-      prompt: agents/a.md
-`);
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
-    expect(compiled.agent.a.prompt).toBe('{file:agents/a.md}');
-  });
-
-  test('an agent with no prompt field compiles with no prompt key', () => {
-    const manifest = parseYaml(`
-kortix_version: 2
-default_agent: a
-agents:
-  a:
-    opencode:
-      mode: primary
-`);
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
-    expect(compiled.agent.a).not.toHaveProperty('prompt');
+    expect(compiled.agent.a.disable).toBe(true);
   });
 });
 
-describe('compileAgentConfig — frontmatter-illegal rule', () => {
-  const manifest = parseYaml(`
+describe('compileAgentConfig — malformed .md frontmatter throws', () => {
+  test('an invalid mode value throws a clear CompileAgentConfigError', () => {
+    const manifest = parseYaml(`
 kortix_version: 2
 default_agent: support
 agents:
-  support:
-    opencode:
-      mode: primary
-      prompt: agents/support.md
+  support: {}
 `);
-
-  test('throws a clear CompileAgentConfigError when the .md still carries a manifest-owned key', () => {
-    const content = ['---', 'model: anthropic/claude-sonnet-5', 'mode: primary', '---', '', 'Body.'].join(
-      '\n',
-    );
+    const content = supportMd('mode: bogus', 'Body.');
     expect(() =>
-      compileAgentConfig(manifest, 'opencode', { 'agents/support.md': content }),
+      compileAgentConfig(manifest, 'opencode', {
+        '.kortix/opencode/agents/support.md': content,
+      }),
     ).toThrow(CompileAgentConfigError);
     try {
-      compileAgentConfig(manifest, 'opencode', { 'agents/support.md': content });
+      compileAgentConfig(manifest, 'opencode', { '.kortix/opencode/agents/support.md': content });
       throw new Error('unreachable');
     } catch (err) {
       expect(err).toBeInstanceOf(CompileAgentConfigError);
       const message = (err as InstanceType<typeof CompileAgentConfigError>).message;
       expect(message).toContain('support');
-      expect(message).toContain('agents/support.md');
-      expect(message).toContain('"model"');
-      expect(message).toContain('"mode"');
+      expect(message).toContain('.kortix/opencode/agents/support.md');
+      expect(message).toContain('mode');
     }
   });
 
-  test('a body-only .md (no frontmatter at all) is fine', () => {
+  test('a malformed permission tree throws', () => {
+    const manifest = parseYaml(`
+kortix_version: 2
+default_agent: support
+agents:
+  support: {}
+`);
+    const content = supportMd('permission: sometimes', 'Body.');
     expect(() =>
       compileAgentConfig(manifest, 'opencode', {
-        'agents/support.md': 'Just a plain system prompt, no frontmatter block.',
+        '.kortix/opencode/agents/support.md': content,
       }),
-    ).not.toThrow();
-  });
-
-  test('frontmatter with only non-manifest-owned keys is fine', () => {
-    const content = ['---', 'title: Support Agent Notes', '---', '', 'Body.'].join('\n');
-    expect(() =>
-      compileAgentConfig(manifest, 'opencode', { 'agents/support.md': content }),
-    ).not.toThrow();
+    ).toThrow(CompileAgentConfigError);
   });
 });
 
@@ -361,33 +350,34 @@ agents:
     });
   });
 
-  test('governance `skills` overrides a hand-authored permission.skill rule', () => {
+  test('governance `skills` overrides a hand-authored permission.skill rule in the .md', () => {
     const manifest = parseYaml(`
 kortix_version: 2
 default_agent: a
 agents:
   a:
     skills: all
-    opencode:
-      permission:
-        skill: deny
-        edit: ask
 `);
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest, 'opencode', {
+      '.kortix/opencode/agents/a.md': supportMd(
+        ['permission:', '  skill: deny', '  edit: ask'].join('\n'),
+        'Body.',
+      ),
+    }) as OpencodeConfig;
     expect(compiled.agent.a.permission).toEqual({ edit: 'ask', skill: 'allow' });
   });
 
-  test('a bare whole-agent permission action is expanded so `skills` can own just `skill`', () => {
+  test('a bare whole-agent permission action from the .md is expanded so `skills` can own just `skill`', () => {
     const manifest = parseYaml(`
 kortix_version: 2
 default_agent: a
 agents:
   a:
     skills: none
-    opencode:
-      permission: allow
 `);
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest, 'opencode', {
+      '.kortix/opencode/agents/a.md': supportMd('permission: allow', 'Body.'),
+    }) as OpencodeConfig;
     const permission = compiled.agent.a.permission as Record<string, unknown>;
     expect(permission.skill).toBe('deny');
     expect(permission.edit).toBe('allow');
@@ -399,14 +389,14 @@ agents:
 kortix_version: 2
 default_agent: a
 agents:
-  a:
-    opencode:
-      permission:
-        skill:
-          "trusted-*": allow
-          "*": deny
+  a: {}
 `);
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest, 'opencode', {
+      '.kortix/opencode/agents/a.md': supportMd(
+        ['permission:', '  skill:', '    "trusted-*": allow', '    "*": deny'].join('\n'),
+        'Body.',
+      ),
+    }) as OpencodeConfig;
     expect(compiled.agent.a.permission).toEqual({
       skill: { 'trusted-*': 'allow', '*': 'deny' },
     });
@@ -458,11 +448,11 @@ describe('resolveCompiledAgentConfigForSession', () => {
     expect(await resolveCompiledAgentConfigForSession(PROJECT)).toBeNull();
   });
 
-  test('reads each declared prompt file and returns the compiled JSON for a v2 manifest', async () => {
-    manifestFile = { path: 'kortix.yaml', content: SPEC_2_2_FIXTURE };
-    promptFileContent = {
-      'agents/support.md': 'Support body.',
-      'agents/pr-bot.md': 'PR bot body.',
+  test("reads each declared agent's conventional .md and returns the compiled JSON for a v2 manifest", async () => {
+    manifestFile = { path: 'kortix.yaml', content: GOVERNANCE_FIXTURE };
+    mdFileContent = {
+      '.kortix/opencode/agents/support.md': 'Support body.',
+      '.kortix/opencode/agents/pr-bot.md': 'PR bot body.',
     };
     readRepoFileCalls = [];
     const result = await resolveCompiledAgentConfigForSession(PROJECT);
@@ -470,35 +460,35 @@ describe('resolveCompiledAgentConfigForSession', () => {
     const parsed = JSON.parse(result!) as OpencodeConfig;
     expect(parsed.agent.support.prompt).toBe('Support body.');
     expect(parsed.agent['pr-bot'].prompt).toBe('PR bot body.');
-    expect(parsed.model).toBe('anthropic/claude-sonnet-5');
-    expect(new Set(readRepoFileCalls)).toEqual(new Set(['agents/support.md', 'agents/pr-bot.md']));
+    expect(
+      new Set(readRepoFileCalls.filter((p) => p.startsWith('.kortix/opencode/agents/'))),
+    ).toEqual(
+      new Set(['.kortix/opencode/agents/support.md', '.kortix/opencode/agents/pr-bot.md']),
+    );
   });
 
-  test('falls back to a {file:...} reference (never throws) when a declared prompt file is unreadable', async () => {
-    manifestFile = { path: 'kortix.yaml', content: SPEC_2_2_FIXTURE };
-    promptFileContent = { 'agents/support.md': 'Support body.' }; // pr-bot.md missing
+  test('degrades gracefully (never throws) when a declared agent has no .md yet', async () => {
+    manifestFile = { path: 'kortix.yaml', content: GOVERNANCE_FIXTURE };
+    mdFileContent = { '.kortix/opencode/agents/support.md': 'Support body.' }; // pr-bot.md missing
     const result = await resolveCompiledAgentConfigForSession(PROJECT);
     expect(result).not.toBeNull();
     const parsed = JSON.parse(result!) as OpencodeConfig;
     expect(parsed.agent.support.prompt).toBe('Support body.');
-    expect(parsed.agent['pr-bot'].prompt).toBe('{file:agents/pr-bot.md}');
+    expect(parsed.agent['pr-bot']).toEqual({});
   });
 
-  test('never throws — an illegal frontmatter compile error resolves to null instead', async () => {
+  test('never throws — a malformed .md frontmatter compile error resolves to null instead', async () => {
     manifestFile = {
       path: 'kortix.yaml',
       content: `
 kortix_version: 2
 default_agent: support
 agents:
-  support:
-    opencode:
-      mode: primary
-      prompt: agents/support.md
+  support: {}
 `,
     };
-    promptFileContent = {
-      'agents/support.md': ['---', 'mode: primary', '---', '', 'Body.'].join('\n'),
+    mdFileContent = {
+      '.kortix/opencode/agents/support.md': supportMd('mode: bogus', 'Body.'),
     };
     expect(await resolveCompiledAgentConfigForSession(PROJECT)).toBeNull();
   });

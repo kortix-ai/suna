@@ -33,8 +33,10 @@ describe('project access roles', () => {
   });
 
   test.each([
-    ['owner', null, 'manager'],
-    ['admin', 'member', 'manager'],
+    // Project-role collapse: owner/admin get implicit 'editor' (the top
+    // project role) now, never 'manager' (retired).
+    ['owner', null, 'editor'],
+    ['admin', 'member', 'editor'],
     ['member', 'editor', 'editor'],
     ['member', null, null],
   ] as Array<[AccountRole, ProjectRole | null, ProjectRole | null]>)(
@@ -49,14 +51,16 @@ describe('project access roles', () => {
     ['member', 'session', true], // member is the floor usable role — can run sessions
     ['member', 'write', false],
     ['member', 'manage', false],
+    // Editor is now the top project role (manager was retired). 'write' and
+    // 'manage' collapse to the SAME check now — both true for editor. Note
+    // this coarse gate does NOT grant project.delete / members.manage /
+    // gateway.keys.manage — those are account owner/admin authority only,
+    // asserted separately via assertProjectCapability (see roleAllows's doc
+    // comment in projects/access.ts).
     ['editor', 'read', true],
     ['editor', 'session', true],
     ['editor', 'write', true],
-    ['editor', 'manage', false],
-    ['manager', 'read', true],
-    ['manager', 'session', true],
-    ['manager', 'write', true],
-    ['manager', 'manage', true],
+    ['editor', 'manage', true],
     [null, 'read', false],
     [null, 'session', false], // no role → no session
   ] as Array<[ProjectRole | null, ProjectAccessAction, boolean]>)(
@@ -79,14 +83,16 @@ describe('project access roles', () => {
   );
 
   test('normalizes valid role input and rejects invalid values', () => {
-    expect(parseProjectRole(' Manager ')).toBe('manager');
     expect(parseProjectRole('editor')).toBe('editor');
     expect(parseProjectRole('member')).toBe('member');
-    // `user` and `viewer` are deprecated aliases — both fold into `member`, never round-trip.
+    // `user`, `viewer`, and now `manager` are deprecated aliases — all fold
+    // into their current tier, never round-trip as themselves.
     expect(parseProjectRole('user')).toBe('member');
     expect(parseProjectRole(' USER ')).toBe('member');
     expect(parseProjectRole('viewer')).toBe('member');
     expect(parseProjectRole(' VIEWER ')).toBe('member');
+    expect(parseProjectRole(' Manager ')).toBe('editor');
+    expect(parseProjectRole('MANAGER')).toBe('editor');
     expect(parseProjectRole('owner')).toBeNull();
     expect(parseProjectRole(null)).toBeNull();
   });

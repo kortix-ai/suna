@@ -19,8 +19,11 @@ export interface AdminConnector {
   provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
   platform?: 'slack' | 'email' | null;
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
-  /** Credential storage model — one shared project credential vs each member's own. */
-  credentialMode: 'shared' | 'per_user';
+  /** Credential storage model. Always `shared` — `per_user` (each member's
+   *  own) was removed 2026-07-05 (docs/specs/2026-07-05-agent-first-config-
+   *  unification.md §2.5). A `shared` connector with no credential set
+   *  (`secretSet: false`) needs reconnecting. */
+  credentialMode: 'shared';
   /** Marked sensitive — its reads gate too (require_approval by default). */
   sensitive: boolean;
   /** Which agents may call it. null / [] = ALL agents (default); a list of agent
@@ -67,10 +70,12 @@ export async function setConnectorSharing(
   );
 }
 
+/** `shared` is the only credential mode (`per_user` removed 2026-07-05) — kept
+ *  for back-compat callers, restricted to a no-op on the API side. */
 export async function setConnectorCredentialMode(
   projectId: string,
   slug: string,
-  mode: 'shared' | 'per_user',
+  mode: 'shared',
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
@@ -135,7 +140,7 @@ export interface ConnectorConfig {
   slug: string;
   provider: AdminConnector['provider'];
   platform: 'slack' | 'email' | null;
-  credentialMode: 'shared' | 'per_user';
+  credentialMode: 'shared';
   app: string | null;
   account: string | null;
   url: string | null;
@@ -184,8 +189,9 @@ export interface ConnectorDraftInput {
   endpoint?: string;
   baseUrl?: string;
   spec?: string;
-  /** Credential storage mode. */
-  credential?: 'shared' | 'per_user';
+  /** Credential storage mode. `shared` is the only mode (`per_user` was
+   *  removed 2026-07-05). */
+  credential?: 'shared';
   /** Access — who can use it (applied after create). */
   sharing?: ConnectorSharing;
   auth?: {

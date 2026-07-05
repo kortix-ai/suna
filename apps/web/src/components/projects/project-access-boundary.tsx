@@ -202,14 +202,14 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
       title={sent ? 'Request sent.' : 'Request access to this project.'}
       description={
         sent
-          ? 'A project manager can approve you from the Members screen. Keep this page open and check again once they approve the request.'
-          : 'This Kortix workspace is private. Send a short note and a project manager can add you as a viewer.'
+          ? 'An account owner or admin can approve you from the Members screen. Keep this page open and check again once they approve the request.'
+          : 'This Kortix workspace is private. Send a short note and an account owner or admin can add you as a member.'
       }
       panelTitle={sent ? 'Waiting for approval' : 'Access request'}
       panelDescription={
         sent
-          ? 'Managers have the request in Customize → Members.'
-          : 'A little context helps the manager approve the right account.'
+          ? 'Account owners/admins have the request in Customize → Members.'
+          : 'A little context helps them approve the right account.'
       }
       content={
         <div className="space-y-4">

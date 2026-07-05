@@ -576,19 +576,19 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
   const row = block as Record<string, unknown>;
 
   // v2's `enabled` is a top-level Kortix-governance boolean (validated
-  // upstream by manifest-schema); only a literal `false` disables. `prompt`
-  // is nested under `opencode:` (runtime-behavior layer) — see spec §2.2
-  // "STRUCTURAL REFACTOR".
+  // upstream by manifest-schema); only a literal `false` disables. Behavior
+  // (`file`/`model`) is NOT read from the manifest anymore (2026-07-05
+  // redirect, spec §2.2: "one home per concern") — it lives entirely in the
+  // agent's own `.kortix/opencode/agents/<name>.md` frontmatter, which this
+  // GOVERNANCE-only parser has no reason to read (no I/O here). `file` stays
+  // `null`, which downstream callers already treat as "use the conventional
+  // `.md` by name" (see `AgentSpec.file`'s doc comment); `model` stays `null`,
+  // which the session model-resolution chain already treats as "fall through
+  // to account/platform" — the compiler (compile-agent-config.ts) is what
+  // actually resolves a per-agent model now, straight from that same `.md`.
   const enabled = row.enabled !== false;
-  const opencodeRow =
-    row.opencode && typeof row.opencode === 'object' && !Array.isArray(row.opencode)
-      ? (row.opencode as Record<string, unknown>)
-      : {};
-  const file =
-    typeof opencodeRow.prompt === 'string' && opencodeRow.prompt.trim()
-      ? opencodeRow.prompt.trim()
-      : null;
-  const model = typeof row.model === 'string' && row.model.trim() ? row.model.trim() : null;
+  const file: string | null = null;
+  const model: string | null = null;
 
   const connectorsResolved = resolveGrantSet(row.connectors, 'none');
 

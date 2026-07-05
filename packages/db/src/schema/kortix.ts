@@ -76,10 +76,17 @@ export const sessionLifecycleCommandStatusEnum = kortixSchema.enum(
 );
 
 // `member` is the floor project role (renamed from `user`, see the
-// project_role_member_rename migration). `user` and the older `viewer` are
-// DEPRECATED — both fold into `member` via parseProjectRole/normalizeProjectRole
-// and are no longer assignable. `viewer` lingers because Postgres can't drop an
-// enum member; `user` was renamed in place. Nothing reads or writes either.
+// project_role_member_rename migration); `editor` is the TOP project role
+// (project-role collapse, see the project_role_manager_collapse migration —
+// `manager` was retired, its exclusive powers — project.delete,
+// project.members.manage, project.gateway.keys.manage — moved to ACCOUNT
+// owner/admin authority, see role-perms.ts's ACCOUNT_ONLY_PROJECT_ACTIONS).
+// `user`, `viewer`, and now `manager` are all DEPRECATED — each folds into its
+// current tier via parseProjectRole/normalizeProjectRole and none is
+// assignable anymore. All three linger in the enum because Postgres can't
+// drop an enum member (`project_members`/`project_group_grants` also carry a
+// CHECK constraint barring new `manager` writes at the DB layer). Nothing
+// reads or writes any of the three.
 export const projectRoleEnum = kortixSchema.enum('project_role', [
   'manager',
   'editor',
@@ -683,12 +690,14 @@ export const projectTriggerRuntime = kortixSchema.table(
     lastStatus: varchar('last_status', { length: 32 }),
     lastError: text('last_error'),
     lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
-    // The project member this trigger's automated sessions run AS (the "owner").
-    // A per_user connector resolves its credential to THIS member's connected
-    // accounts in cron/webhook/manual fires ("my email-triage cron uses my
-    // Gmail"). NULL = fall back to the account owner (legacy behavior). Stored
-    // here, not in the portable repo manifest, because a user_id is account-
-    // specific. Defaults to the trigger's creator. See resolveTriggerActor().
+    // The project member this trigger's automated sessions provision AS (the
+    // "owner") — the secret-visibility subject and provisioning actor for
+    // cron/webhook/manual fires. NULL = fall back to the account owner
+    // (legacy behavior). Stored here, not in the portable repo manifest,
+    // because a user_id is account-specific. Defaults to the trigger's
+    // creator. See resolveTriggerActor(). (No longer feeds connector credential
+    // resolution — `per_user` connector credentials were removed 2026-07-05;
+    // every connector resolves the one shared credential regardless of owner.)
     ownerUserId: uuid('owner_user_id'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -3143,9 +3152,25 @@ export const executorExecutionStatusEnum = kortixSchema.enum('executor_execution
 ]);
 
 /**
- * How a connector's credential is stored/used:
- *   shared   = one project-level credential everyone with access uses.
- *   per_user = each member connects their own (BYO account / key).
+ * How a connector's credential is stored/used. `shared` (one project-level
+ * credential everyone with access uses) is the ONLY writable value.
+ *
+ * `per_user` (each member connects their own) was REMOVED 2026-07-05
+ * (docs/specs/2026-07-05-agent-first-config-unification.md §2.5): it conflated
+ * delegated-identity ("act as whichever human launched this session") with
+ * connector credential storage, and had no coherent answer for triggers/
+ * channels (no launching human). Migration
+ * `20260705191549103_remove_per_user_credential_mode.sql` flipped every
+ * `per_user` row to `shared`, deleted the per-member `executor_credentials`
+ * rows (no silent credential promotion — a per-member OAuth is a personal
+ * identity, so those connectors now need reconnecting), and added a CHECK
+ * constraint enforcing `shared` at the DB level. `per_user` stays listed below
+ * ONLY because Postgres cannot cleanly drop a value from an existing enum
+ * type without rebuilding it — the value is orphaned, not reachable: nothing
+ * in the app writes it, and the CHECK constraint rejects it outright. Do not
+ * reintroduce writes of `per_user`. A future "connect your own account"
+ * feature (interactive-sessions-only, tracked separately) will need a new,
+ * differently-named mechanism — not a revival of this one.
  */
 export const executorCredentialModeEnum = kortixSchema.enum('executor_credential_mode', [
   'shared',
@@ -3179,7 +3204,9 @@ export const executorConnectors = kortixSchema.table(
      *  the toml [[connectors]].agent_scope for DECLARED connectors; set DB-side
      *  for synthetic (channel/computer) connectors that have no manifest entry. */
     agentScope: text('agent_scope').array(),
-    /** Credential storage model — shared project credential vs each member brings their own. */
+    /** Credential storage model. `shared` only — see executorCredentialModeEnum
+     *  doc comment for why `per_user` is gone but the enum literal lingers. A
+     *  DB CHECK constraint (added by the removal migration) enforces `shared`. */
     credentialMode: executorCredentialModeEnum('credential_mode').default('shared').notNull(),
     /** Hash over config+auth — skip catalog re-sync when unchanged. */
     manifestHash: varchar('manifest_hash', { length: 64 }),
@@ -3216,8 +3243,12 @@ export const executorConnectorGrants = kortixSchema.table(
 
 /**
  * Connector credentials — split from the connector. One row per (connector, user):
- * `user_id = NULL` is the shared project credential; a set `user_id` is that
- * member's own (per_user mode). Value/binding encrypted; resolved server-side only.
+ * `user_id = NULL` is the shared project credential. A row with a set `user_id`
+ * (that member's own — the `per_user` mode) is no longer written by the app
+ * (removed 2026-07-05; migration `20260705191549103_remove_per_user_credential_mode.sql`
+ * deleted every existing one) — the column stays for shape/back-compat and a
+ * possible future "connect your own account" feature, but every write path
+ * today passes `userId: null`. Value/binding encrypted; resolved server-side only.
  */
 export const executorCredentials = kortixSchema.table(
   'executor_credentials',
@@ -3226,7 +3257,7 @@ export const executorCredentials = kortixSchema.table(
     connectorId: uuid('connector_id')
       .notNull()
       .references(() => executorConnectors.connectorId, { onDelete: 'cascade' }),
-    /** NULL = shared project credential; set = this member's own. */
+    /** NULL = shared project credential (the only mode written today). */
     userId: uuid('user_id'),
     /** `secret` (api key / token) or `connection` (Pipedream account binding id). */
     kind: varchar('kind', { length: 32 }).default('secret').notNull(),

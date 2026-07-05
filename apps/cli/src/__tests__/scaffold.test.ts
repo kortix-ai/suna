@@ -14,7 +14,7 @@ const REQUIRED_BASE_PATHS = [
   '.kortix/opencode/skills/kortix-system/SKILL.md',
   '.kortix/opencode/tools/show.ts',
   'README.md',
-  'kortix.toml',
+  'kortix.yaml',
 ];
 
 const GKW_SKILL_PATHS = [
@@ -61,12 +61,12 @@ describe('applyScaffold', () => {
 
     expect(walk(dir)).toEqual(result.written.sort());
 
-    const manifest = readFileSync(join(dir, 'kortix.toml'), 'utf8');
-    expect(manifest).toContain('name = "Hello World"');
+    const manifest = readFileSync(join(dir, 'kortix.yaml'), 'utf8');
+    expect(manifest).toContain('name: "Hello World"');
     expect(manifest).not.toContain('{{projectName}}');
 
-    expect(manifest).not.toMatch(/^\[sandbox\]/m);
-    expect(manifest).toContain('config_dir = ".kortix/opencode"');
+    expect(manifest).not.toMatch(/^sandbox:/m);
+    expect(manifest).toContain('config_dir: .kortix/opencode');
 
     expect(readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8')).toContain('Hello World');
     expect(result.written.some((p) => p.startsWith('app/'))).toBe(false);
@@ -107,7 +107,7 @@ describe('applyScaffold', () => {
     });
 
     expect(result.skipped.sort()).toEqual(['.kortix/opencode/agents/kortix.md', 'README.md']);
-    expect(result.written).toContain('kortix.toml');
+    expect(result.written).toContain('kortix.yaml');
     expect(result.written).toContain('.kortix/memory/MEMORY.md');
 
     expect(readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8')).toBe('CUSTOM PERSONA');

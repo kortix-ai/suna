@@ -223,15 +223,19 @@ base_url = "https://x.test"
   });
 });
 
+// `per_user` (each member brings their own) was removed 2026-07-05
+// (docs/specs/2026-07-05-agent-first-config-unification.md §2.5) — `shared`
+// is now the only mode, for every provider, including pipedream (whose
+// default used to be `per_user`).
 describe('[[connectors]] — credential mode', () => {
-  test('defaults: pipedream → per_user, others → shared', () => {
+  test('defaults: every provider → shared, including pipedream', () => {
     const pd = parseAndExtract(`
 [[connectors]]
 slug = "gmail"
 provider = "pipedream"
 app = "gmail"
 `).specs[0]!;
-    expect(pd.credentialMode).toBe('per_user');
+    expect(pd.credentialMode).toBe('shared');
     const oa = parseAndExtract(`
 [[connectors]]
 slug = "petstore"
@@ -241,7 +245,7 @@ spec = "https://x/y.json"
     expect(oa.credentialMode).toBe('shared');
   });
 
-  test('explicit override via credential =', () => {
+  test('explicit `credential = "shared"` is a no-op (already the default)', () => {
     const { specs } = parseAndExtract(`
 [[connectors]]
 slug = "gmail"
@@ -249,6 +253,18 @@ provider = "pipedream"
 app = "gmail"
 credential = "shared"
 `);
+    expect(specs[0]!.credentialMode).toBe('shared');
+  });
+
+  test('legacy `credential = "per_user"` is tolerated and resolves to shared', () => {
+    const { specs, errors } = parseAndExtract(`
+[[connectors]]
+slug = "gmail"
+provider = "pipedream"
+app = "gmail"
+credential = "per_user"
+`);
+    expect(errors).toEqual([]);
     expect(specs[0]!.credentialMode).toBe('shared');
   });
 

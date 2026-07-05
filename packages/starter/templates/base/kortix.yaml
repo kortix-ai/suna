@@ -1,11 +1,15 @@
 # Kortix project manifest. Source of truth for project-wide config that
 # lives in git alongside the code. `kortix_version` pins the schema so
 # the platform can evolve safely. v2 manifests are YAML-only, with one
-# `agents:` map per project: Kortix identity + governance (description,
-# model, connectors/secrets/kortix_cli/skills) live top-level, and
-# runtime-specific behavior (prompt/mode/permission/…) lives nested under
-# each agent's `opencode:` block — see
-# docs/specs/2026-07-05-agent-first-config-unification.md.
+# `agents:` map per project — GOVERNANCE ONLY (connectors/secrets/
+# kortix_cli/skills/workspace/enabled). OpenCode BEHAVIOR (description,
+# model, mode, temperature, permission, the prompt itself, …) lives
+# entirely in each agent's own native `.kortix/opencode/agents/<name>.md`
+# frontmatter + body — a stock OpenCode agent file, no Kortix-specific
+# split. The agent's NAME is the join between this map's keys and that
+# `.md`'s filename. See
+# docs/specs/2026-07-05-agent-first-config-unification.md (decision
+# 2026-07-05: "one home per concern").
 kortix_version: 2
 
 # The agent a session/trigger boots when it names no concrete agent (the
@@ -68,56 +72,27 @@ opencode:
   config_dir: .kortix/opencode
 
 # ─── Agents ──────────────────────────────────────────────────────────────
-# One agent map, one source of truth, two clearly separate layers:
-#   - Kortix layer (top-level): identity + governance — description, model,
-#     connectors/secrets/kortix_cli/skills grants the runtime itself can't
-#     express, and workspace (the git boundary). Runtime-agnostic.
-#   - opencode layer (nested): everything the OpenCode runtime actually
-#     executes — mode, sampling, prompt file, and the full permission tree.
-#     Namespaced so a future `runtime: codex`/`claude` project gets its own
-#     block here instead of colliding with this one.
-# `opencode.prompt` points at a body-only `.md` file (no frontmatter — that
-# belongs here now). v2 is deny-by-default: an omitted connectors/secrets/
-# kortix_cli/skills grant resolves to "none", so a scoped specialist starts
-# locked down. The starter's own `kortix` agent is deliberately granted "all"
-# across the board so a fresh project is capable out of the box — narrow it
-# once you know what this project actually needs.
+# One map per project, GOVERNANCE ONLY — connectors/secrets/kortix_cli/
+# skills grants the runtime itself can't express, plus workspace (the git
+# boundary) and enabled. Everything else (description, mode, permission,
+# temperature, the prompt itself, …) lives in the matching
+# `.kortix/opencode/agents/<name>.md` — open those files to see/change what
+# each agent actually does. v2 is deny-by-default: an omitted connectors/
+# secrets/kortix_cli/skills grant resolves to "none", so a scoped specialist
+# starts locked down. The starter's own `kortix` agent is deliberately
+# granted "all" across the board so a fresh project is capable out of the
+# box — narrow it once you know what this project actually needs.
 agents:
   kortix:
-    description: >-
-      Generic Kortix general knowledge worker. Hands-on, full tool access,
-      handles coding / research / content / ops / data tasks end-to-end in
-      an isolated session sandbox. Edit this file to specialize for your
-      project.
     connectors: all
     secrets: all
     kortix_cli: all
     skills: all
-    opencode:
-      mode: primary
-      prompt: .kortix/opencode/agents/kortix.md
-      permission: allow
 
   memory-reflector:
-    description: >-
-      Reflects on recent project activity and curates `.kortix/memory/` —
-      the project brain. Runs on a cron (the `memory-reflector` trigger
-      below) and ends every run by opening a single change request titled
-      `memory: …`. Edit the rubric section of the `kortix-memory` skill to
-      change what gets remembered.
     # Scoped specialist: only what its job needs (open — never merge — a
     # memory CR). No connectors, no project secrets.
     kortix_cli: [project.cr.open]
-    opencode:
-      mode: primary
-      prompt: .kortix/opencode/agents/memory-reflector.md
-      permission:
-        edit: allow
-        bash:
-          "git *": allow
-          "kortix cr *": allow
-          "kortix sessions *": allow
-          "*": ask
 
 # ─── Triggers ────────────────────────────────────────────────────────────
 # Each entry spawns a fresh session that runs `prompt` as its initial

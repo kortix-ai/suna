@@ -7,7 +7,9 @@ import type { Capabilities, Env } from "./env";
 
 export type Capability = keyof Capabilities;
 
-export type ProjectRole = "user" | "editor" | "manager";
+// "manager" (the former top project role) was retired by the project-role
+// collapse — "editor" is now the top project role.
+export type ProjectRole = "user" | "editor";
 
 /** A provisioned identity with the data flows assert against. */
 export interface Principal extends Identity {

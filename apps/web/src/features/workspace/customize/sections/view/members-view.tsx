@@ -14,6 +14,7 @@ import {
 } from '@/components/iam/iam-display-helpers';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
 import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
+import { useProjectCan } from '@/lib/use-project-can';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -134,7 +135,15 @@ export function MembersView({ projectId }: { projectId: string }) {
   });
 
   const project = projectQuery.data;
-  const canManage = project?.effective_project_role === 'manager' || accessQuery.data?.can_manage;
+  // Managing members (invite / change role / remove / resource-grants /
+  // group-grants) is project.members.manage — the project-role collapse
+  // moved this to ACCOUNT owner/admin authority ONLY (see role-perms.ts's
+  // ACCOUNT_ONLY_PROJECT_ACTIONS). No project role, not even editor (the new
+  // top project role), grants it — so probe the live capability instead of
+  // branching on effective_project_role.
+  const canManage = useProjectCan(projectId, 'project.members.manage', {
+    accountId: project?.account_id,
+  }).allowed;
 
   const pendingInvitesQuery = useQuery({
     queryKey: ['project-pending-invites', projectId],
@@ -505,7 +514,6 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
                 <SelectContent>
                   <ProjectRoleSelectItem role="member" />
                   <ProjectRoleSelectItem role="editor" />
-                  <ProjectRoleSelectItem role="manager" />
                 </SelectContent>
               </Select>
             </Field>
@@ -694,8 +702,11 @@ function ProjectAccessCard({
           <ul className="space-y-2">
             {sortedMembers.map((member) => {
               const busy = pendingUserIds.has(member.user_id);
+              // Unused when has_implicit_access is true (that branch renders the
+              // "Full access" badge below, never the role Select) — 'editor' here
+              // just keeps the fallback a valid ProjectRole ('manager' was retired).
               const value =
-                member.project_role ?? (member.has_implicit_access ? 'manager' : 'none');
+                member.project_role ?? (member.has_implicit_access ? 'editor' : 'none');
               const inheritedFromGroup = isInheritedFromGroupOnly(member);
               const inheritedSummary = inheritedFromGroupSummary(member);
 
@@ -750,7 +761,7 @@ function ProjectAccessCard({
                   ) : member.has_implicit_access ? (
                     <Badge variant="outline" size="sm">
                       <Shield className="mr-1 size-3.5" />
-                      Manager
+                      Full access
                     </Badge>
                   ) : inheritedFromGroup ? (
                     <div className="flex shrink-0 items-center gap-2">
@@ -842,7 +853,6 @@ function ProjectAccessCard({
                         <SelectContent>
                           <ProjectRoleSelectItem role="member" />
                           <ProjectRoleSelectItem role="editor" />
-                          <ProjectRoleSelectItem role="manager" />
                         </SelectContent>
                       </Select>
                       {canManage && (
@@ -1457,7 +1467,6 @@ function ProjectGroupGrantsCard({
                 <SelectContent>
                   <ProjectRoleSelectItem role="member" />
                   <ProjectRoleSelectItem role="editor" />
-                  <ProjectRoleSelectItem role="manager" />
                 </SelectContent>
               </Select>
               <Button
@@ -1561,7 +1570,6 @@ function ProjectGroupGrantsCard({
                         <SelectContent>
                           <ProjectRoleSelectItem role="member" />
                           <ProjectRoleSelectItem role="editor" />
-                          <ProjectRoleSelectItem role="manager" />
                         </SelectContent>
                       </Select>
                       <Button
@@ -1743,7 +1751,8 @@ function ResourceAccessCard({
   const grantsQuery = useQuery({
     queryKey: grantsKey,
     queryFn: () => listProjectResourceGrants(projectId),
-    // Manager-only endpoint (403s otherwise) — don't fire it for non-managers.
+    // project.members.manage endpoint (account owner/admin only, 403s
+    // otherwise) — don't fire it for anyone else.
     enabled: canManage,
     staleTime: 20_000,
   });
@@ -1887,7 +1896,7 @@ function ResourceAccessCard({
     <SectionCard
       flush
       title="Resource access"
-      description="Assign agents to a member or department. An agent with no assignments stays open to everyone with project access; assigning one restricts it to the people or departments you choose, who inherit the secrets and connectors that agent declares."
+      description="Assign agents to a member or department to control who can USE them. An agent with no assignment is open to everyone with project access; assigning one restricts it to the people or departments you choose — they inherit that agent's declared skills, connectors, and secrets to use in its sessions. This only ever grants USE, never edit: changing the agent, a skill, a connector, or a secret still requires the editor role."
       count={grants.length}
       action={
         canManage && hasResources ? (
@@ -1903,9 +1912,10 @@ function ResourceAccessCard({
                 <DialogTitle>Assign an agent</DialogTitle>
                 <DialogDescription>
                   Assign an agent to a member or department — they inherit everything that agent
-                  uses: its secrets, connectors, and skills. Resources reach people through agents,
-                  not by direct grant; agents you don't assign stay open to everyone with project
-                  access.
+                  uses (its secrets, connectors, and skills) to USE, not edit. Resources reach
+                  people through agents, not by a direct grant; agents you don't assign stay open
+                  to everyone with project access. Editing the agent or any resource it uses still
+                  requires the editor role.
                 </DialogDescription>
               </DialogHeader>
 
@@ -1990,8 +2000,8 @@ function ResourceAccessCard({
       {!grantsQuery.isLoading && grants.length === 0 && (
         <div className="text-muted-foreground px-6 py-5 text-xs">
           {hasResources
-            ? 'Nothing is scoped yet — every member with project access can see and use all agents, skills, and secrets. Grant one above to restrict it to specific people or departments.'
-            : 'This project has no agents, skills, or secrets to scope yet. Add some first, then come back here to limit who can use them.'}
+            ? 'Nothing is scoped yet — every agent is open to everyone with project access to use. Grant one above to restrict who can use it. Skills, connectors, and secrets aren’t assigned directly here — they’re governed by the editor role (to edit) and inherited through the agents you assign (to use).'
+            : 'This project has no agents to scope yet. Add one first, then come back here to limit who can use it.'}
         </div>
       )}
 
@@ -2070,7 +2080,8 @@ function ResourceAccessCard({
 /**
  * Custom-role assignments for THIS project — the project-level view of the
  * account Roles page's bindings. Custom roles are DEFINED on the account Roles
- * page; here a manager grants one (to a member / department / agent) scoped to
+ * page; here an account owner/admin grants one (to a member / department /
+ * agent) scoped to
  * this project, so a project's full access picture lives in one place.
  */
 function ProjectRoleAssignmentsCard({

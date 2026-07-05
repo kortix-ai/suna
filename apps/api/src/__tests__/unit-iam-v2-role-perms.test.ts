@@ -4,12 +4,15 @@
 import { describe, test, expect } from 'bun:test';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam/actions';
 import {
+  ACCOUNT_ONLY_PROJECT_ACTIONS,
   ACCOUNT_ROLE_PERMS,
   PROJECT_ROLE_PERMS,
+  PROJECT_ROLE_RANK,
   accountRoleAllows,
   projectRoleAllows,
   maxProjectRole,
   implicitProjectRoleForAccount,
+  normalizeProjectRole,
 } from '../iam/role-perms';
 
 describe('IAM V2 — account role table', () => {
@@ -46,16 +49,38 @@ describe('IAM V2 — account role table', () => {
     expect(accountRoleAllows('admin', ACCOUNT_ACTIONS.PROJECT_CREATE)).toBe(true);
     expect(accountRoleAllows('member', ACCOUNT_ACTIONS.PROJECT_CREATE)).toBe(false);
   });
+
+  // Project-role collapse (manager retired): the three former manager-only
+  // project leaves are promoted to account owner/admin authority. Plain
+  // account member never gets them.
+  test('owner and admin hold the three former manager-only project actions; plain member does not', () => {
+    for (const a of ACCOUNT_ONLY_PROJECT_ACTIONS) {
+      expect(accountRoleAllows('owner', a)).toBe(true);
+      expect(accountRoleAllows('admin', a)).toBe(true);
+      expect(accountRoleAllows('member', a)).toBe(false);
+    }
+  });
+
+  test('ACCOUNT_ONLY_PROJECT_ACTIONS is exactly the three former manager-only leaves', () => {
+    expect([...ACCOUNT_ONLY_PROJECT_ACTIONS].sort()).toEqual(
+      [
+        PROJECT_ACTIONS.PROJECT_DELETE,
+        PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+        PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE,
+      ].sort(),
+    );
+  });
 });
 
-describe('IAM V2 — project role table', () => {
-  test('manager ⊇ editor ⊇ member', () => {
+describe('IAM V2 — project role table (2 tiers: manager was retired)', () => {
+  test('exactly two project roles exist: editor and member', () => {
+    expect(Object.keys(PROJECT_ROLE_PERMS).sort()).toEqual(['editor', 'member']);
+    expect(Object.keys(PROJECT_ROLE_RANK).sort()).toEqual(['editor', 'member']);
+  });
+
+  test('editor ⊇ member (strict superset)', () => {
     for (const a of PROJECT_ROLE_PERMS.member) {
       expect(PROJECT_ROLE_PERMS.editor.has(a)).toBe(true);
-      expect(PROJECT_ROLE_PERMS.manager.has(a)).toBe(true);
-    }
-    for (const a of PROJECT_ROLE_PERMS.editor) {
-      expect(PROJECT_ROLE_PERMS.manager.has(a)).toBe(true);
     }
   });
 
@@ -82,21 +107,26 @@ describe('IAM V2 — project role table', () => {
     expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE)).toBe(false);
     expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(false);
     expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_DELETE)).toBe(false);
+    expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE)).toBe(false);
   });
 
-  test('editor can fire and write triggers but not manage members or delete project', () => {
+  test('editor (the top project role) can fire and write triggers but NEVER manage members, delete the project, or manage gateway keys', () => {
     expect(projectRoleAllows('editor', PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE)).toBe(true);
     expect(projectRoleAllows('editor', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE)).toBe(true);
     expect(projectRoleAllows('editor', PROJECT_ACTIONS.PROJECT_WRITE)).toBe(true);
+    // The three actions that used to belong to the retired `manager` role are
+    // NOT reachable via editor — they moved to account owner/admin authority.
     expect(projectRoleAllows('editor', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(false);
     expect(projectRoleAllows('editor', PROJECT_ACTIONS.PROJECT_DELETE)).toBe(false);
+    expect(projectRoleAllows('editor', PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE)).toBe(false);
   });
 
-  test('only manager can delete project or manage members', () => {
-    expect(projectRoleAllows('manager', PROJECT_ACTIONS.PROJECT_DELETE)).toBe(true);
-    expect(projectRoleAllows('manager', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(true);
-    expect(projectRoleAllows('editor', PROJECT_ACTIONS.PROJECT_DELETE)).toBe(false);
-    expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(false);
+  test('no project role — built-in or otherwise — ever grants the three former manager-only actions', () => {
+    for (const role of Object.keys(PROJECT_ROLE_PERMS) as Array<keyof typeof PROJECT_ROLE_PERMS>) {
+      for (const a of ACCOUNT_ONLY_PROJECT_ACTIONS) {
+        expect(projectRoleAllows(role, a)).toBe(false);
+      }
+    }
   });
 });
 
@@ -105,14 +135,26 @@ describe('IAM V2 — role helpers', () => {
     expect(maxProjectRole('member', 'member')).toBe('member');
     expect(maxProjectRole('member', 'editor')).toBe('editor');
     expect(maxProjectRole('editor', 'member')).toBe('editor');
-    expect(maxProjectRole('editor', 'manager')).toBe('manager');
-    expect(maxProjectRole('manager', 'editor')).toBe('manager');
+    expect(maxProjectRole('editor', 'editor')).toBe('editor');
   });
 
-  test('implicit project role: owner/admin get manager, member gets none', () => {
-    expect(implicitProjectRoleForAccount('owner')).toBe('manager');
-    expect(implicitProjectRoleForAccount('admin')).toBe('manager');
+  test('implicit project role: owner/admin get editor (the top project role), member gets none', () => {
+    expect(implicitProjectRoleForAccount('owner')).toBe('editor');
+    expect(implicitProjectRoleForAccount('admin')).toBe('editor');
     expect(implicitProjectRoleForAccount('member')).toBeNull();
+  });
+
+  test('normalizeProjectRole folds every retired alias (manager, viewer, user) into its current tier', () => {
+    expect(normalizeProjectRole('manager')).toBe('editor');
+    expect(normalizeProjectRole('MANAGER')).toBe('editor');
+    expect(normalizeProjectRole('viewer')).toBe('member');
+    expect(normalizeProjectRole('user')).toBe('member');
+    expect(normalizeProjectRole('editor')).toBe('editor');
+    expect(normalizeProjectRole('member')).toBe('member');
+    expect(normalizeProjectRole('nonsense')).toBeNull();
+    expect(normalizeProjectRole(null)).toBeNull();
+    expect(normalizeProjectRole(undefined)).toBeNull();
+    expect(normalizeProjectRole(42)).toBeNull();
   });
 });
 
@@ -145,7 +187,6 @@ describe('IAM V2 — no unknown actions', () => {
     ];
     for (const a of writeLeaves) {
       expect(projectRoleAllows('editor', a)).toBe(true);
-      expect(projectRoleAllows('manager', a)).toBe(true);
       expect(projectRoleAllows('member', a)).toBe(false);
     }
     for (const a of readLeaves) {

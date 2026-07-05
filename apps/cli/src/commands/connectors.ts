@@ -31,7 +31,8 @@ interface AdminConnector {
   name: string;
   provider: Provider;
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
-  credentialMode: 'shared' | 'per_user';
+  /** Always `shared` — `per_user` (each member's own) was removed 2026-07-05. */
+  credentialMode: 'shared';
   actions: ConnectorAction[];
   authSecret: string | null;
   sharing: ConnectorSharing | null;
@@ -72,7 +73,7 @@ Subcommands:
   rm <slug> [--apply]               Remove a [[connectors]] block from kortix.toml
                                     (or --apply to remove on the cloud now).
   rename <slug> <name…>             Set a connector's display name (applies now).
-  mode <slug> <shared|per_user>     Set the profile model (applies now + re-syncs).
+  mode <slug> shared                 Set the profile model (applies now + re-syncs; shared is the only mode).
   agent-scope <slug> --agents a,b   Restrict which AGENTS may call it (applies now:
   agent-scope <slug> --all-agents   commits kortix.toml [[connectors]].agent_scope
                                     + re-syncs). --all-agents clears the restriction.
@@ -104,7 +105,7 @@ Add options (provider-specific):
   --base-url <url>         HTTP base URL (provider=http).
   --spec <url|path>        OpenAPI/GraphQL/HTTP spec ref.
   --auth-type <t>          none|bearer|basic|custom.
-  --credential <mode>      shared|per_user.
+  --credential <mode>      shared (the only mode).
 
 Share options:
   --mode <m>               project | private | members.
@@ -383,10 +384,17 @@ export async function runConnectors(argv: string[]): Promise<number> {
         return 0;
       }
       case 'mode': {
+        // `per_user` (each member brings their own) was removed 2026-07-05
+        // (docs/specs/2026-07-05-agent-first-config-unification.md §2.5) —
+        // `shared` is the only mode; the route stays as a restricted no-op.
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
         const mode = positional[1] ?? f.credential;
-        if (mode !== 'shared' && mode !== 'per_user') return missing('<shared|per_user>');
+        if (mode === 'per_user') {
+          process.stderr.write(`${status.err('per_user credential mode was removed — connectors are always shared now')}\n`);
+          return 1;
+        }
+        if (mode !== 'shared') return missing('<shared>');
         await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/credential-mode`, { mode });
         process.stdout.write(`${status.ok(`Profile model for ${C.bold}${slug}${C.reset} → ${mode}`)}\n`);
         return 0;

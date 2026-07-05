@@ -114,8 +114,12 @@ export interface ConnectorSpec {
   /** When false the materializer / gateway skip this entry. */
   enabled: boolean;
   provider: ConnectorProvider;
-  /** Credential storage mode. Default: pipedream→per_user, others→shared. */
-  credentialMode: 'shared' | 'per_user';
+  /** Credential storage mode. `shared` is the only mode — `per_user` (each
+   *  member brings their own) was removed 2026-07-05 (docs/specs/2026-07-05-
+   *  agent-first-config-unification.md §2.5). A manifest that still says
+   *  `credential = "per_user"` is tolerated (legacy, warning-only) but always
+   *  resolves to `shared` here — it can never round-trip back into git. */
+  credentialMode: 'shared';
   /** Sensitive connector (email/files/secrets-bearing): reads gate too — every
    *  action defaults to require_approval unless an explicit policy opens it. */
   sensitive: boolean;
@@ -217,9 +221,8 @@ export function connectorSpecToTomlEntry(spec: ConnectorSpec): Record<string, un
     provider: spec.provider,
     enabled: spec.enabled,
   };
-  // Only emit credential mode when it differs from the per-app default.
-  const defaultMode = spec.provider === 'pipedream' ? 'per_user' : 'shared';
-  if (spec.credentialMode !== defaultMode) entry.credential = spec.credentialMode;
+  // `shared` is the only mode and the implicit default for every provider —
+  // never emit `credential` (mirrors how `sensitive: false` is omitted).
   // Restrict which agents may call it — omit when all-agents (the default).
   if (spec.agentScope && spec.agentScope.length > 0) entry.agent_scope = spec.agentScope;
   // Provider-specific keys — only emit what carries information.
@@ -336,15 +339,15 @@ function parseConnectorEntry(entry: unknown, index: number): ParseOk | ParseErr 
     : [];
   const agentScope = agentScopeList.length > 0 ? agentScopeList : null;
 
-  // Credential mode — per-app default, overridable via `credential = "..."`.
+  // Credential mode — `shared` is the only mode. `per_user` is tolerated as a
+  // legacy value (existing manifests that still say `credential = "per_user"`
+  // parse fine, same as the manifest-schema validator's warning) but always
+  // resolves to `shared` — it's never round-tripped back into git.
   const credRaw = typeof row.credential === 'string' ? row.credential.trim().toLowerCase() : '';
   if (credRaw && credRaw !== 'shared' && credRaw !== 'per_user') {
-    return err(slug, 'credential must be "shared" or "per_user"');
+    return err(slug, 'credential must be "shared" ("per_user" is tolerated as a legacy value, resolving to "shared")');
   }
-  const credentialMode: 'shared' | 'per_user' =
-    credRaw === 'shared' || credRaw === 'per_user'
-      ? credRaw
-      : provider === 'pipedream' ? 'per_user' : 'shared';
+  const credentialMode: 'shared' = 'shared';
 
   // Defaults; provider blocks fill them in.
   const base: Omit<ConnectorSpec, 'auth' | 'policies'> = {

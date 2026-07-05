@@ -460,21 +460,22 @@ describe('kortix_version 2 — `agents:` map', () => {
     expect(specs.find((s) => s.name === 'other')!.enabled).toBe(true);
   });
 
-  test('`opencode.prompt` maps onto AgentSpec.file', () => {
-    const { specs } = parseV2(`
-  support:
-    opencode:
-      prompt: agents/support.md
-`);
-    expect(specs[0].file).toBe('agents/support.md');
-  });
-
-  test('`model` is carried through', () => {
+  // 2026-07-05 redirect (spec §2.2, "one home per concern"): behavior
+  // (including the prompt file reference and the declarative model) moved
+  // entirely into the agent's own `.md` frontmatter. This governance-only
+  // reader never had I/O to go read that file, so `file`/`model` always
+  // resolve `null` now — even for a stale/out-of-band manifest that still
+  // carries a (now schema-invalid) `opencode`/`model` key. Downstream callers
+  // already treat a `null` file as "use the conventional `.md` by name".
+  test('a stale/out-of-band `opencode`/`model` on the agent block no longer feeds AgentSpec.file/model', () => {
     const { specs } = parseV2(`
   support:
     model: anthropic/claude-sonnet-5
+    opencode:
+      prompt: agents/support.md
 `);
-    expect(specs[0].model).toBe('anthropic/claude-sonnet-5');
+    expect(specs[0].file).toBeNull();
+    expect(specs[0].model).toBeNull();
   });
 
   test('an ungrantable kortix_cli action is rejected the same way as v1', () => {

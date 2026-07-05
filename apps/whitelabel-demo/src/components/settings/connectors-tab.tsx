@@ -216,7 +216,6 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
                 <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="font-mono">{c.slug}</span>
                   {c.provider && <span>· {c.provider}</span>}
-                  {c.credentialMode && <span>· {c.credentialMode}</span>}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">

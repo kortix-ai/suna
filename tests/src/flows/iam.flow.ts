@@ -1142,10 +1142,12 @@ flow(
     });
 
     await ctx.step("built-in role permissions are immutable → 400", async () => {
+      // "builtin:manager" was retired (project-role collapse) — "builtin:editor"
+      // (the top project role now) is the built-in id to probe immutability on.
       const r = await ctx.client.as(ctx.P.OWNER).put(
         "/v1/accounts/:accountId/iam/roles/:roleId/permissions",
         { actions: ["project.review.read"] },
-        { params: { accountId: team.id, roleId: "builtin:manager" } },
+        { params: { accountId: team.id, roleId: "builtin:editor" } },
       );
       r.status(400);
     });
@@ -1263,12 +1265,14 @@ flow(
     });
 
     await ctx.step("built-in role policies are rejected → 400", async () => {
+      // "builtin:manager" was retired (project-role collapse) — "builtin:editor"
+      // (the top project role now) is the built-in id to probe non-bindability on.
       const r = await ctx.client.as(ctx.P.OWNER).post(
         "/v1/accounts/:accountId/iam/policies",
         {
           principalType: "member",
           principalId: member.userId,
-          roleId: "builtin:manager",
+          roleId: "builtin:editor",
           scopeType: "project",
           scopeId: project.id,
         },

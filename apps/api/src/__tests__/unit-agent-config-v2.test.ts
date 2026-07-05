@@ -1,12 +1,19 @@
 /**
- * Unit tests for the full v2 agent-block read/write lib (the "agent builder"
- * backend). Pure functions — no DB, no git — so they exercise the exact
+ * Unit tests for the v2 agent-block GOVERNANCE read/write lib (the "agent
+ * builder" backend's kortix.yaml half — spec docs/specs/2026-07-05-agent-
+ * first-config-unification.md §2.2, redirected 2026-07-05: "one home per
+ * concern"). Pure functions — no DB, no git — so they exercise the exact
  * read/mutate/validate contract the GET/PUT routes depend on:
  *   - readAgentBlockV2: v2 block round-trips verbatim; v1 → null block +
  *     schemaVersion 1 (the UI's degrade signal); a brand-new agent → null block.
  *   - applyAgentBlockV2: upserts the whole block, validates the RESULT through
- *     the real manifest-schema validator (bad permission tree / enum /
- *     ungrantable action → rejected), refuses a v1 manifest.
+ *     the real manifest-schema validator (bad enum / ungrantable action /
+ *     behavioral field → rejected), refuses a v1 manifest.
+ *
+ * Behavior (mode/model/temperature/permission/…) is NOT covered here — it
+ * lives in the agent's `.md` frontmatter, exercised by
+ * `../projects/lib/compile-agent-config.test.ts` and
+ * `@kortix/manifest-schema`'s `validateAgentMdFrontmatter` tests instead.
  */
 import { describe, expect, test } from 'bun:test';
 import { applyAgentBlockV2, readAgentBlockV2 } from '../projects/lib/agent-config-v2';
@@ -17,24 +24,11 @@ kortix_version: 2
 default_agent: support
 agents:
   support:
-    description: Handles support
-    model: anthropic/claude-sonnet-5
     connectors: [github]
     secrets: [STRIPE_KEY]
     skills: [pdf-export]
     kortix_cli: [project.session.start]
     workspace: runtime
-    opencode:
-      mode: primary
-      temperature: 0.2
-      steps: 200
-      color: "#7C5CFF"
-      prompt: agents/support.md
-      permission:
-        edit: ask
-        bash:
-          "git push": deny
-          "*": allow
 `;
 
 const V1 = `
@@ -51,32 +45,22 @@ function v2Manifest(body = V2) {
 }
 
 describe('readAgentBlockV2', () => {
-  test('returns the full declared block verbatim for a v2 agent', () => {
+  test('returns the full declared governance block verbatim for a v2 agent', () => {
     const read = readAgentBlockV2(v2Manifest(), 'support');
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.schemaVersion).toBe(2);
     expect(read.defaultAgent).toBe('support');
     expect(read.block).toMatchObject({
-      description: 'Handles support',
-      model: 'anthropic/claude-sonnet-5',
       connectors: ['github'],
       secrets: ['STRIPE_KEY'],
       skills: ['pdf-export'],
       kortix_cli: ['project.session.start'],
       workspace: 'runtime',
-      opencode: {
-        mode: 'primary',
-        temperature: 0.2,
-        steps: 200,
-        color: '#7C5CFF',
-        prompt: 'agents/support.md',
-      },
     });
-    expect(read.block?.opencode?.permission).toEqual({
-      edit: 'ask',
-      bash: { 'git push': 'deny', '*': 'allow' },
-    });
+    expect(read.block).not.toHaveProperty('opencode');
+    expect(read.block).not.toHaveProperty('description');
+    expect(read.block).not.toHaveProperty('model');
   });
 
   test('returns a null block for an agent that is not declared yet (brand-new)', () => {
@@ -97,26 +81,21 @@ describe('readAgentBlockV2', () => {
 });
 
 describe('applyAgentBlockV2', () => {
-  test('upserts an edited block and validates the resulting manifest', () => {
+  test('upserts an edited governance block and validates the resulting manifest', () => {
     const manifest = v2Manifest();
     const applied = applyAgentBlockV2(manifest, 'support', {
-      description: 'Now updated',
-      opencode: {
-        mode: 'primary',
-        temperature: 0.9,
-        permission: { edit: 'deny', webfetch: 'allow' },
-      },
       connectors: 'all',
       secrets: 'none',
       skills: ['pdf-export', 'web-research'],
+      workspace: 'branch',
     });
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
     const agents = applied.raw.agents as Record<string, Record<string, unknown>>;
-    expect(agents.support.description).toBe('Now updated');
-    expect((agents.support.opencode as Record<string, unknown>).temperature).toBe(0.9);
     expect(agents.support.connectors).toBe('all');
+    expect(agents.support.secrets).toBe('none');
     expect(agents.support.skills).toEqual(['pdf-export', 'web-research']);
+    expect(agents.support.workspace).toBe('branch');
     // Sibling agents / default_agent are untouched by a single-agent edit.
     expect(applied.raw.default_agent).toBe('support');
   });
@@ -124,29 +103,13 @@ describe('applyAgentBlockV2', () => {
   test('creates a brand-new agent block when the name is not declared yet', () => {
     const manifest = v2Manifest();
     const applied = applyAgentBlockV2(manifest, 'pr-bot', {
-      description: 'Reviews PRs',
-      opencode: { mode: 'subagent' },
+      connectors: ['github'],
+      kortix_cli: ['project.cr.open'],
     });
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
     const agents = applied.raw.agents as Record<string, unknown>;
     expect(Object.keys(agents).sort()).toEqual(['pr-bot', 'support']);
-  });
-
-  test('rejects an invalid permission action with the validator error (→ 400 upstream)', () => {
-    const applied = applyAgentBlockV2(v2Manifest(), 'support', {
-      opencode: { permission: { edit: 'maybe' as never } },
-    });
-    expect(applied.ok).toBe(false);
-    if (applied.ok) return;
-    expect(applied.error).toContain('permission');
-  });
-
-  test('rejects a subagent with no description (schema cross-rule)', () => {
-    const applied = applyAgentBlockV2(v2Manifest(), 'support', { opencode: { mode: 'subagent' } });
-    expect(applied.ok).toBe(false);
-    if (applied.ok) return;
-    expect(applied.error).toContain('description');
   });
 
   test('rejects an ungrantable kortix_cli action', () => {
@@ -158,16 +121,28 @@ describe('applyAgentBlockV2', () => {
     expect(applied.error).toContain('kortix_cli');
   });
 
-  test('rejects a bad color value', () => {
-    const applied = applyAgentBlockV2(v2Manifest(), 'support', { opencode: { color: 'burple' } });
+  test('rejects an unknown workspace value', () => {
+    const applied = applyAgentBlockV2(v2Manifest(), 'support', {
+      workspace: 'everywhere' as never,
+    });
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
-    expect(applied.error).toContain('color');
+    expect(applied.error).toContain('workspace');
+  });
+
+  test('rejects a behavioral field on the block — it belongs in the .md frontmatter now', () => {
+    const applied = applyAgentBlockV2(v2Manifest(), 'support', {
+      // @ts-expect-error — `mode` is no longer part of AgentBlockV2 (governance-only)
+      mode: 'primary',
+    });
+    expect(applied.ok).toBe(false);
+    if (applied.ok) return;
+    expect(applied.error).toContain('.md');
   });
 
   test('refuses a v1 manifest with an upgrade pointer (v2-only feature)', () => {
     const applied = applyAgentBlockV2(parseManifestString(V1, 'toml', 'kortix.toml'), 'kortix', {
-      description: 'x',
+      connectors: 'all',
     });
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
@@ -175,7 +150,7 @@ describe('applyAgentBlockV2', () => {
   });
 
   test('rejects an invalid agent name', () => {
-    const applied = applyAgentBlockV2(v2Manifest(), 'Not A Name', { opencode: { mode: 'primary' } });
+    const applied = applyAgentBlockV2(v2Manifest(), 'Not A Name', { connectors: 'all' });
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
     expect(applied.error).toContain('valid agent name');
