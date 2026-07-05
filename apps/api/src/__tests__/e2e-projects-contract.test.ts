@@ -321,9 +321,7 @@ mock.module('../iam/dispatcher', () => {
 
 mockIamMembershipSyncNoop();
 
-const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
-  ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
     c.set('userId', auth.userId);
@@ -352,7 +350,6 @@ mock.module('../projects/git', () => ({
     }
     return `content:${path}@${ref}`;
   },
-  readManifestFromRepo: async () => null,
   archiveRepoSubtree: async (project: ProjectRow, ref: string, path?: string | null) => {
     archiveCalls.push({ projectId: project.projectId, ref, path: path ?? null });
     // git archive --format=zip outputs binary; emit a tiny readable stream
@@ -760,7 +757,6 @@ describe('projects API contract', () => {
       listRepoFiles: async () => repoFiles,
       loadProjectConfig: async () => ({ manifest: {}, env: { required: [], optional: [] }, opencode: {} }),
       readRepoFile: async () => '',
-      readManifestFromRepo: async () => null,
       archiveRepoSubtree: async (_p: any, _r: string, path?: string | null) => {
         if (path && path.startsWith('/')) throw new Error('Invalid path');
         const body = new TextEncoder().encode('ok');

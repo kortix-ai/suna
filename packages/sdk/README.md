@@ -30,7 +30,7 @@ const kortix = createKortix({
 // Projects
 const projects = await kortix.projects.list();
 const detail   = await kortix.project(pid).detail();
-await kortix.project(pid).secrets.upsert({ name: 'STRIPE_API_KEY', value });
+await kortix.project(pid).secrets.upsert({ name: 'ANTHROPIC_API_KEY', value });
 
 // Sessions (id-bound handle)
 const s = kortix.session(pid, sid);

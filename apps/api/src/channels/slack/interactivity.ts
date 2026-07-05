@@ -318,14 +318,12 @@ async function handleSetSelection(
 
   if (kind === 'agent') {
     const agentName = value.a && value.a.length > 0 ? value.a : null;
-    const result = await setChannelAgent(ctx, agentName);
+    const ok = await setChannelAgent(ctx, agentName);
     await respondViaUrl(payload.response_url, {
       response_type: 'ephemeral',
       replace_original: true,
-      text: !result.ok
-        ? result.reason === 'unknown_agent'
-          ? `"${escapeMrkdwn(agentName ?? '')}" is not a declared agent in this project's manifest.`
-          : 'That channel is no longer bound to a project — run `/kortix switch` first.'
+      text: !ok
+        ? 'That channel is no longer bound to a project — run `/kortix switch` first.'
         : agentName
           ? `✓ Agent for this channel set to *${escapeMrkdwn(agentName)}*. New sessions will use it.`
           : '✓ Agent reset to the project default.',

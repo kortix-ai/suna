@@ -17,7 +17,8 @@ const MEMBER_READS = [
   PROJECT_ACTIONS.PROJECT_COMMAND_READ,
   PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
   PROJECT_ACTIONS.PROJECT_SECRET_READ,
-  PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+  PROJECT_ACTIONS.PROJECT_SCHEDULE_READ,
+  PROJECT_ACTIONS.PROJECT_WEBHOOK_READ,
   PROJECT_ACTIONS.PROJECT_GITOPS_READ,
   PROJECT_ACTIONS.PROJECT_FILE_READ,
   PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
@@ -41,8 +42,6 @@ describe('isCustomizeSectionVisible — member vs editor+', () => {
     expect(isCustomizeSectionVisible('agents', can)).toBe(true);
     expect(isCustomizeSectionVisible('connectors', can)).toBe(true);
     expect(isCustomizeSectionVisible('secrets', can)).toBe(true);
-    expect(isCustomizeSectionVisible('schedules', can)).toBe(true);
-    expect(isCustomizeSectionVisible('webhooks', can)).toBe(true);
     expect(isCustomizeSectionVisible('members', can)).toBe(true);
     expect(isCustomizeSectionVisible('settings', can)).toBe(true);
   });

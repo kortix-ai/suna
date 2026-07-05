@@ -138,19 +138,6 @@ function hasAgentsDeclaration(raw: string | null): boolean {
   return Boolean(raw && (/^\s*\[\[?agents\]?\]/m.test(raw) || /^\s*agents\s*:/m.test(raw)));
 }
 
-/** Tolerant `kortix_version` read for a raw parsed manifest object — mirrors
- *  `parseManifestString` in `../triggers.ts` (defaults to 1 when absent, the
- *  same back-compat rule every other manifest reader in this package uses). */
-function manifestSchemaVersionFor(parsed: Record<string, unknown>): number {
-  const raw = parsed.kortix_version;
-  if (typeof raw === 'number' && Number.isFinite(raw)) return Math.floor(raw);
-  if (typeof raw === 'string') {
-    const n = Number(raw);
-    if (Number.isFinite(n)) return Math.floor(n);
-  }
-  return 1;
-}
-
 type NativeAgentSummary = Omit<ProjectConfigSummary['agents'][number], 'source' | 'enabled'>;
 
 export function resolveConfigAgents(
@@ -216,12 +203,7 @@ export async function loadProjectConfig(
   const manifest = parsedManifest ?? parseManifest(manifestRaw);
   const loadedAgents = parsedManifest
     ? extractAgents({
-        // `extractAgents` dispatches its `[[agents]]` (v1 array) vs `agents:`
-        // (v2 map) reader on THIS field — it must reflect the manifest's own
-        // declared `kortix_version`, not a hardcoded v1, or a v2 project's
-        // config summary would misreport its map-shaped `agents` as an
-        // invalid v1 array.
-        schemaVersion: manifestSchemaVersionFor(parsedManifest),
+        schemaVersion: 1,
         raw: parsedManifest,
         format: manifestFormat,
         path: manifestFilePath,

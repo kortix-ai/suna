@@ -85,9 +85,7 @@ mockIamEngineAllowAll();
 
 mockIamMembershipSyncNoop();
 
-const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
-  ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
     c.set('userId', auth.userId);
@@ -115,7 +113,6 @@ mock.module('../projects/git', () => ({
     if (content === undefined) throw new Error(`Not found: ${path}`);
     return content;
   },
-  readManifestFromRepo: async () => null,
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
@@ -253,9 +250,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 // Stub secrets so webhook tests can resolve the trigger's signing secret.
 // Tests can read/override `secretValues` to drive specific behaviors.
 const secretValues = new Map<string, string>();
-const realProjectSecrets = await import('../projects/secrets');
 mock.module('../projects/secrets', () => ({
-  ...realProjectSecrets,
   encryptProjectSecret: (_p: string, v: string) => `enc:${v}`,
   decryptProjectSecret: (_p: string, v: string) => v.replace(/^enc:/, ''),
   isValidSecretName: (n: string) => /^[A-Z_][A-Z0-9_]*$/.test(n),

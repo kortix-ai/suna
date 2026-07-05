@@ -59,7 +59,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 2. `kortix login --token $PAT` → `GET /accounts/me` → 200, host saved active. (§2)
 3. `kortix ship -y` (no `origin` present) → managed path: `POST /projects/provision` → 201 `{push_token, repo_id, repo_url}`; `git remote add origin <freestyle>`; commit; token-header push; writes `.kortix/link.json`. (§14)
 4. Poll `GET /projects/:id/snapshots` → wait for a `ready` snapshot. (§4)
-5. `kortix secrets set STRIPE_API_KEY=sk_live_…` → `POST /projects/:id/secrets` → 200. (§6)
+5. `kortix secrets set OPENAI_API_KEY=sk-…` → `POST /projects/:id/secrets` → 200. (§6)
 6. `kortix sessions new -p "add a README"` → `POST /projects/:id/sessions` → 201 status `provisioning`; branch `<sessionId>` created. (§7)
 7. Poll `GET /projects/:id/sessions/:sid/sandbox` → status `provisioning`→`active`. (§8)
 8. `POST /p/<sandboxId>/8000/session` then `POST /p/<sandboxId>/8000/session/<ocId>/prompt_async` → 204; subscribe `GET /p/<sandboxId>/8000/event` (SSE) → see message deltas; agent commits to branch. (§9)
@@ -287,7 +287,7 @@ DB `review_items` (per-project; `kind change|approval|output|decision|batch`, `s
 
 Specs in `[[triggers]]`; CRUD commits the manifest; runtime `last_fired_at` in `project_trigger_runtime`. Types: `cron`, `webhook` only.
 
-`TRG-1` `GET /projects/:id/triggers` → `read` + leaf `project.trigger.read` → specs + `last_fired_at` + parse `errors` + `webhook_url`; non-member 403/404; ANON 401.
+`TRG-1` `GET /projects/:id/triggers` → `read` → specs + `last_fired_at` + parse `errors` + `webhook_url`.
 `TRG-2` `POST /projects/:id/triggers {name(required),slug?,type,agent?,enabled?,prompt_template,cron?,timezone?,secret_env?}` → `manage` → 201, manifest committed; `name` is required (slug derived from it when omitted); duplicate slug → 409. `webhook` requires `secret_env` (names a `project_secrets` key, regex `^[A-Z_][A-Z0-9_]*$`). `cron` requires 6-field croner expr + IANA `timezone` (default UTC).
 `TRG-3` `PATCH /projects/:id/triggers/:slug` (e.g. `{enabled:false}`) → `manage`.
 `TRG-4` `DELETE /projects/:id/triggers/:slug` → `manage` (also drops runtime row).
@@ -296,7 +296,6 @@ Specs in `[[triggers]]`; CRUD commits the manifest; runtime `last_fired_at` in `
 `TRG-7` webhook fire — `POST /webhooks/projects/:id/:slug` (**public, HMAC**). Sig header `X-Kortix-Signature` or `X-Hub-Signature-256` (`sha256=` stripped), HMAC-SHA256 over raw body vs `project_secrets[secret_env]`, constant-time. Valid → 202 fired/queued; malformed UUID/slug → 400; unknown project → 404; bad sig → 401; missing secret → 409; unknown/disabled/non-webhook trigger → 404; fire failure → 500.
 `TRG-8` fire→run — `fireGitTrigger` → actor = account's first `owner` (no owner → silent fail), `createProjectSession(enforceAccountCap:false, visibility:'project', metadata.trigger_*)` — trigger sessions are project-visible (any project member sees them in `GET /sessions`), not private to the stand-in actor. Backpressure: provisioning sessions ≥3 OR account at tier cap → queued.
 `TRG-9` **No inbound GitHub event webhook exists.** Simulate "GitHub Actions"-style automation as a generic `webhook` trigger; a GitHub repo webhook can drive it if its secret == `secret_env` (via `X-Hub-Signature-256`).
-`TRG-10` `GET /projects/:id/triggers` leaf gate — a member bound to a custom (Enterprise) project role granting `project.read` but NOT `project.trigger.read` loads the project yet is rejected 403 at `GET /triggers` (the `assertProjectCapability(project.trigger.read)` fires after the read passes); a floor `user` member (built-in role carries `project.trigger.read`) still gets 200. Scoped-agent-token variant proven at the API layer in `integration-project-read-leaf-gates-http.test.ts`.
 
 ---
 
@@ -318,9 +317,6 @@ Tokens stored as encrypted project secrets; webhooks public + signature-gated.
 `CHN-15` `DELETE /projects/:id/channels/email/installation?connector_slug=...` → `manage` → removes that profile's inbox binding.
 `CHN-16` AgentMail inbound — `POST /webhooks/email/agentmail`: Svix `svix-*` signature verified against the per-project webhook secret when configured; AgentMail's real unwrapped `message.received` or `message.received.unauthenticated` payload routes by `message.inbox_id` → project, maps `thread_id` 1:1 to a Kortix session, and follow-up emails continue that session.
 `CHN-17` `GET /projects/:id/channels/email/mode` → `read` → `{provider:"agentmail",enabled:boolean,managed_available:boolean}` so the UI can hide Email until `agentmail_email` is enabled and require a project AgentMail key when no managed server key exists.
-`CHN-18` `GET /projects/:id/channels/bindings` → `read` → `{projectDefaultAgent, bindings:[{bindingId,platform,workspaceId,channelId,channelName,channelType,agentName,opencodeModel,conversationPolicy,installedAt,effectiveAgent:{agent,source}}]}` — the web management surface for `chat_channel_bindings` (today populated only via Slack `/kortix agent|model|policy`); `effectiveAgent` resolves `agentName ?? project default ?? 'default'` the same way the Slack panel does.
-`CHN-19` `PATCH /projects/:id/channels/bindings/:bindingId {agentName?,opencodeModel?,conversationPolicy?}` → `project.connector.write` (no dedicated channel-binding leaf exists; reuses the same capability that gates connecting/disconnecting the channel itself) → updates via the same `setChannelAgent`/`setChannelModel`/`setChannelConversationPolicy` helpers the Slack commands call; `agentName` validated against the project's declared `[[agents]]` when adopted (any name accepted for a legacy/undeclared project), `null` resets to the project default, `"default"` is an alias for `null`; `opencodeModel` validated via `isModelServableForAccount` (409 `model_not_servable` when not servable) and normalized to the opencode `kortix/…` ref before storing; unknown `bindingId` → 404; empty body → 400 `empty_patch`.
-`CHN-20` send-primitive IAM gate — `POST /projects/:id/channels/slack/file/upload` and `POST /projects/:id/channels/meet/speak` both post to a channel with the project's bot credentials and now assert leaf `project.connector.write` (IAM enforcement audit; previously gated by project-read only, so any read-capable caller could drive them). A floor `user` member (project.read, no connector.write) → 403 before any Slack/ElevenLabs call; an `editor` (holds connector.write) passes the gate (200/400/404/502/503, never 403); non-member 403/404; ANON 401. The `channel.*` catalog leaves were removed (never wired to a route). Scoped-agent-token variant proven at the API layer in `integration-project-read-leaf-gates-http.test.ts`.
 
 ### Meetings (Recall.ai notetaker bot) — §MEET
 
@@ -330,7 +326,7 @@ A meeting-notetaker bot (Recall.ai) joins Google Meet / Zoom / Teams calls via t
 `MEET-2` `PUT /projects/:id/channels/meet/voice {voice}` → `manage` → sets the bot's TTS voice; unknown voice → 400.
 `MEET-3` `PUT /projects/:id/channels/meet/name {name}` → `manage` → sets the bot's display name (default "Kortix Notetaker"); its first word becomes the wake word.
 `MEET-4` `POST /projects/:id/channels/meet/voices/:voiceId/preview` → `read` → base64 MP3 sample in that voice; unknown voice → 400; no ElevenLabs key → 503.
-`MEET-5` `POST /projects/:id/channels/meet/speak {bot_id,text,voice?}` → leaf `project.connector.write` (send primitive — IAM enforcement audit; was project-read only) → ElevenLabs TTS → Recall `output_audio` (the bot speaks aloud); missing `bot_id`/`text` → 400. Gate coverage in CHN-20.
+`MEET-5` `POST /projects/:id/channels/meet/speak {bot_id,text,voice?}` → `read` → ElevenLabs TTS → Recall `output_audio` (the bot speaks aloud); missing `bot_id`/`text` → 400.
 `MEET-6` Recall realtime relay — `POST /webhooks/meet/realtime`: public; verifies the HMAC session token in `bot.metadata` (bad/missing → 401); wake-gated transcript/chat → live session; the bot's own transcribed speech is echo-suppressed.
 `MEET-7` Recall lifecycle — `POST /webhooks/meet/status`: public; on `bot.done` (verified via the `bot.metadata` token; bad/missing → 401) auto-wakes the session to produce the recap (TL;DR + decisions + action items).
 
@@ -594,8 +590,6 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `CHN-15` `DELETE /projects/:id/channels/email/installation` → manage → 200 for default or requested `connector_slug`; non-member 403/404.
 `CHN-16` `POST /webhooks/email/agentmail` → public; accepts AgentMail's unwrapped message payload shape; unsigned local/unconfigured may 200, configured bad sig → 401, production without signing → 503.
 `CHN-17` `GET /projects/:id/channels/email/mode` → read → 200 mode with enabled flag; non-member 403/404.
-`CHN-18` `GET /projects/:id/channels/bindings` → read → 200 `{projectDefaultAgent,bindings[]}`; non-member 403/404; ANON 401.
-`CHN-19` `PATCH /projects/:id/channels/bindings/:bindingId` → `project.connector.write`; unknown bindingId → 404; empty body → 400; non-member 403/404; ANON 401.
 `Q-5` `GET /queue/sessions/:sid` (unknown) → 200 empty; ANON → 401.
 `Q-6` enqueue → move-up/down + DELETE /messages/:mid → DELETE /sessions/:sid → 200.
 `SRV-2` `POST /servers` 201 · `GET/PUT/DELETE /servers/:id` CRUD → read-after-delete 404.
@@ -616,7 +610,7 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 
 `CR-11` `GET/POST /projects/:id/change-requests` → NONMEMBER → 403/404.
 `CR-12` `GET /projects/:id/change-requests` → ANON → 401.
-`PROJ-9` `POST /projects/:id/manifest/validate {raw,format?}` → 200 {valid,issues}; missing raw → 400. `raw` is parsed as TOML or YAML — the format is derived from the project's configured `manifestPath` first, falls back to an explicit `format:"toml"|"yaml"` in the body, and defaults to `toml` for back-compat. A `kortix.yaml`-configured project's `raw` YAML validates correctly instead of silently mis-parsing as TOML.
+`PROJ-9` `POST /projects/:id/manifest/validate {raw}` → 200 {valid,issues}; missing raw → 400.
 `PROJ-10` `POST /projects/:id/cli-token` → 201 project PAT; `GET` → 200; `DELETE /:tokenId` → 200; unknown → 404.
 `PROJ-11` `PATCH /projects/:id/onboarding {completed}` → 200; NONMEMBER → 403/404.
 `PROJ-12` `GET /projects/:id/version-diff?from&into` → 200; missing → 400; same ref → is_same_ref.

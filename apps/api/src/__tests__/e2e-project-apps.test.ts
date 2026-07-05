@@ -136,7 +136,6 @@ mock.module('../projects/git', () => ({
     if (content === undefined) throw new Error(`Not found: ${path}`);
     return content;
   },
-  readManifestFromRepo: async () => null,
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
@@ -244,9 +243,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   updateCreditAccount: async () => {},
 }));
 
-const realProjectSecrets = await import('../projects/secrets');
 mock.module('../projects/secrets', () => ({
-  ...realProjectSecrets,
   encryptProjectSecret: (_p: string, v: string) => `enc:${v}`,
   decryptProjectSecret: (_p: string, v: string) => v.replace(/^enc:/, ''),
   isValidSecretName: (n: string) => /^[A-Z_][A-Z0-9_]*$/.test(n),

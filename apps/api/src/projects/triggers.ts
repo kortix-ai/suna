@@ -54,29 +54,10 @@ export { MANIFEST_FILENAME_YAML };
 /**
  * Schema version of the manifest. Bumped when we make a breaking change to
  * how the file is parsed. Manifests without `kortix_version` are treated as
- * v1 (backward compat). `KNOWN_SCHEMA_VERSION` deliberately stays `1` — it is
- * the version every v1 test fixture across this package stamps into its
- * `kortix_version` header and the version `parseAgentEntry`/`extractTriggers`'
- * v1 code paths were authored against; changing its VALUE would silently flip
- * every one of those v1-shaped fixtures onto the v2 reader below. See
- * `MAX_SCHEMA_VERSION` for the actual acceptance ceiling.
+ * v1 (backward compat). A higher major than KNOWN_SCHEMA_VERSION → loaders
+ * refuse to interpret the file so we don't silently misread future fields.
  */
 export const KNOWN_SCHEMA_VERSION = 1;
-
-/**
- * Highest schema version this reader (the one the session/trigger/grant
- * pipeline actually reads through — `readManifest`/`parseManifestString`)
- * accepts without throwing. `kortix_version: 2` (the `agents:` map + full
- * OpenCode `AgentConfig` parity + deny-by-default grants — see
- * `@kortix/manifest-schema`'s `ManifestV2`) is validated at write time by
- * `kortix validate` / the CR-merge gate; THIS reader must not also reject it,
- * or every v2 project's session grant resolution would fail closed/open
- * instead of reading the agent's declared grant (the runtime-wiring gap
- * fixed by docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2 —
- * `extractAgents` in `./agents.ts` is the v2-aware consumer). A version above
- * this ceiling is genuinely unknown to the platform and still refused.
- */
-export const MAX_SCHEMA_VERSION = 2;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
@@ -217,9 +198,9 @@ export function parseManifestString(
   if (!Number.isFinite(version) || version < 1) {
     throw new Error('kortix_version must be a positive integer');
   }
-  if (Math.floor(version) > MAX_SCHEMA_VERSION) {
+  if (Math.floor(version) > KNOWN_SCHEMA_VERSION) {
     throw new Error(
-      `Unsupported ${path} schema version ${version}. This platform understands up to v${MAX_SCHEMA_VERSION}; upgrade the platform or pin the manifest.`,
+      `Unsupported ${path} schema version ${version}. This platform understands up to v${KNOWN_SCHEMA_VERSION}; upgrade the platform or pin the manifest.`,
     );
   }
 
@@ -246,7 +227,6 @@ export function serializeManifest(manifest: ParsedManifest): string {
  * so the UI can render them alongside the good ones.
  */
 export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
-  const filename = manifest.path || MANIFEST_FILENAME;
   const rawTriggers = manifest.raw.triggers;
   if (rawTriggers === undefined || rawTriggers === null) {
     return { specs: [], errors: [] };
@@ -257,7 +237,7 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
       errors: [
         {
           slug: '(top-level)',
-          path: filename,
+          path: MANIFEST_FILENAME,
           error: '`triggers` must be an array of tables — use [[triggers]], not [triggers]',
         },
       ],
@@ -269,7 +249,7 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
   const seenSlugs = new Set<string>();
 
   rawTriggers.forEach((entry, index) => {
-    const result = parseTriggerEntry(entry, index, filename);
+    const result = parseTriggerEntry(entry, index);
     if (!result.ok) {
       errors.push(result.error);
       return;
@@ -302,16 +282,12 @@ export async function loadProjectTriggers(project: GitBackedProject): Promise<Lo
   try {
     manifest = await readManifest(project);
   } catch (err) {
-    // The manifest failed to parse before we learned which candidate file it
-    // actually was (.yaml/.yml/.toml) — fall back to the project's configured
-    // manifestPath (best-effort; may be stale for a project that switched
-    // format by hand without updating it) rather than always naming kortix.toml.
     return {
       specs: [],
       errors: [
         {
           slug: '(manifest)',
-          path: project.manifestPath || MANIFEST_FILENAME,
+          path: MANIFEST_FILENAME,
           error: (err as Error).message || 'Failed to read manifest',
         },
       ],
@@ -380,9 +356,7 @@ function isValidTimeZone(tz: string): boolean {
   }
 }
 
-function parseTriggerEntry(entry: unknown, index: number, filename: string = MANIFEST_FILENAME): ParseOk | ParseErr {
-  const err = (slug: string, message: string): ParseErr => makeTriggerError(slug, message, filename);
-
+function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
     return err('(invalid)', `[[triggers]] entry #${index + 1} is not a table`);
   }
@@ -434,7 +408,7 @@ function parseTriggerEntry(entry: unknown, index: number, filename: string = MAN
   }
   const sessionMode: GitTriggerSessionMode = sessionModeRaw === 'reuse' ? 'reuse' : 'fresh';
 
-  const path = `${filename}#triggers.${slug}`;
+  const path = `${MANIFEST_FILENAME}#triggers.${slug}`;
 
   if (type === 'cron') {
     const cron =
@@ -553,9 +527,9 @@ function coerceBool(value: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
-function makeTriggerError(slug: string, message: string, filename: string = MANIFEST_FILENAME): ParseErr {
+function err(slug: string, message: string): ParseErr {
   return {
     ok: false,
-    error: { slug, path: `${filename}#triggers.${slug}`, error: message },
+    error: { slug, path: `${MANIFEST_FILENAME}#triggers.${slug}`, error: message },
   };
 }

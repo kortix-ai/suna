@@ -164,158 +164,27 @@ describe('loadLocalManifest', () => {
   });
 });
 
-describe('manifest-edit — TOML (existing text-surgery behavior, unchanged)', () => {
+describe('manifest-edit guards yaml', () => {
   let dir: string;
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'kortix-edit-toml-'));
+    dir = mkdtempSync(join(tmpdir(), 'kortix-edit-'));
   });
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test('appendArrayBlock adds a [[section]] block', async () => {
+  test('structural edits refuse a kortix.yaml project (no corruption)', async () => {
+    const { appendArrayBlock } = await import('../manifest-edit');
+    writeFileSync(join(dir, 'kortix.yaml'), `kortix_version: 1\nproject:\n  name: demo\n`);
+    expect(() => appendArrayBlock('triggers', { slug: 'x', type: 'cron' }, dir)).toThrow(
+      /kortix\.yaml.*not supported/i,
+    );
+  });
+
+  test('structural edits still work on a kortix.toml project', async () => {
     const { appendArrayBlock, arrayEntryExists } = await import('../manifest-edit');
     writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n`);
     appendArrayBlock('triggers', { slug: 'nightly', type: 'cron' }, dir);
     expect(arrayEntryExists('triggers', 'slug', 'nightly', dir)).toBe(true);
-  });
-
-  test('removeArrayBlock excises a matching block and leaves others intact', async () => {
-    const { appendArrayBlock, removeArrayBlock, arrayEntryExists } = await import('../manifest-edit');
-    writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n`);
-    appendArrayBlock('triggers', { slug: 'nightly', type: 'cron' }, dir);
-    appendArrayBlock('triggers', { slug: 'weekly', type: 'cron' }, dir);
-    expect(removeArrayBlock('triggers', 'slug', 'nightly', dir)).toBe(true);
-    expect(arrayEntryExists('triggers', 'slug', 'nightly', dir)).toBe(false);
-    expect(arrayEntryExists('triggers', 'slug', 'weekly', dir)).toBe(true);
-  });
-
-  test('removeArrayBlock returns false when no block matches', async () => {
-    const { appendArrayBlock, removeArrayBlock } = await import('../manifest-edit');
-    writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n`);
-    appendArrayBlock('triggers', { slug: 'nightly', type: 'cron' }, dir);
-    expect(removeArrayBlock('triggers', 'slug', 'nope', dir)).toBe(false);
-  });
-
-  test('setScalarInArrayBlock updates a scalar inside the matched block', async () => {
-    const { appendArrayBlock, setScalarInArrayBlock, readArrayEntry } = await import('../manifest-edit');
-    writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n`);
-    appendArrayBlock('triggers', { slug: 'nightly', type: 'cron', enabled: true }, dir);
-    expect(setScalarInArrayBlock('triggers', 'slug', 'nightly', 'enabled', false, dir)).toBe(true);
-    expect(readArrayEntry('triggers', 'slug', 'nightly', dir)?.enabled).toBe(false);
-  });
-
-  test('setTableScalar creates the table when absent, then updates it in place', async () => {
-    const { setTableScalar, manifestFile } = await import('../manifest-edit');
-    const { readFileSync } = await import('node:fs');
-    writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n`);
-    setTableScalar('policy', 'default_mode', 'ask', dir);
-    expect(readFileSync(manifestFile(dir), 'utf8')).toContain('[policy]');
-    setTableScalar('policy', 'default_mode', 'allow', dir);
-    const text = readFileSync(manifestFile(dir), 'utf8');
-    expect(text).toContain('default_mode = "allow"');
-    expect(text).not.toContain('default_mode = "ask"');
-  });
-});
-
-describe('manifest-edit — YAML (Document-AST editing, comment-preserving)', () => {
-  let dir: string;
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'kortix-edit-yaml-'));
-  });
-  afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  const FIXTURE = [
-    'kortix_version: 1',
-    'project:',
-    '  name: demo',
-    '',
-    '# Nightly digest trigger',
-    'triggers:',
-    '  - slug: nightly # keep this comment',
-    '    type: cron',
-    '    cron: "0 9 * * *"',
-    '    prompt: run it',
-    '',
-  ].join('\n');
-
-  test('appendArrayBlock adds an entry and preserves existing comments', async () => {
-    const { appendArrayBlock, arrayEntryExists, manifestFile } = await import('../manifest-edit');
-    const { readFileSync } = await import('node:fs');
-    writeFileSync(join(dir, 'kortix.yaml'), FIXTURE);
-    appendArrayBlock('triggers', { slug: 'weekly', type: 'cron', cron: '0 0 * * 0', prompt: 'weekly run' }, dir);
-    expect(arrayEntryExists('triggers', 'slug', 'weekly', dir)).toBe(true);
-    expect(arrayEntryExists('triggers', 'slug', 'nightly', dir)).toBe(true);
-    const text = readFileSync(manifestFile(dir), 'utf8');
-    expect(text).toContain('# Nightly digest trigger');
-    expect(text).toContain('# keep this comment');
-  });
-
-  test('removeArrayBlock excises the matching entry and preserves the surviving entry\'s comment', async () => {
-    const { appendArrayBlock, removeArrayBlock, arrayEntryExists, manifestFile } = await import('../manifest-edit');
-    const { readFileSync } = await import('node:fs');
-    writeFileSync(join(dir, 'kortix.yaml'), FIXTURE);
-    appendArrayBlock('triggers', { slug: 'weekly', type: 'cron', cron: '0 0 * * 0', prompt: 'weekly run' }, dir);
-    expect(removeArrayBlock('triggers', 'slug', 'weekly', dir)).toBe(true);
-    expect(arrayEntryExists('triggers', 'slug', 'weekly', dir)).toBe(false);
-    expect(arrayEntryExists('triggers', 'slug', 'nightly', dir)).toBe(true);
-    const text = readFileSync(manifestFile(dir), 'utf8');
-    expect(text).toContain('# Nightly digest trigger');
-    expect(text).toContain('# keep this comment');
-  });
-
-  test('removeArrayBlock returns false when no entry matches', async () => {
-    const { removeArrayBlock } = await import('../manifest-edit');
-    writeFileSync(join(dir, 'kortix.yaml'), FIXTURE);
-    expect(removeArrayBlock('triggers', 'slug', 'nope', dir)).toBe(false);
-  });
-
-  test('setScalarInArrayBlock updates a scalar in place and preserves comments', async () => {
-    const { setScalarInArrayBlock, readArrayEntry, manifestFile } = await import('../manifest-edit');
-    const { readFileSync } = await import('node:fs');
-    writeFileSync(join(dir, 'kortix.yaml'), FIXTURE);
-    expect(setScalarInArrayBlock('triggers', 'slug', 'nightly', 'enabled', false, dir)).toBe(true);
-    expect(readArrayEntry('triggers', 'slug', 'nightly', dir)?.enabled).toBe(false);
-    const text = readFileSync(manifestFile(dir), 'utf8');
-    expect(text).toContain('# Nightly digest trigger');
-    expect(text).toContain('# keep this comment');
-  });
-
-  test('setScalarInArrayBlock returns false when no entry matches', async () => {
-    const { setScalarInArrayBlock } = await import('../manifest-edit');
-    writeFileSync(join(dir, 'kortix.yaml'), FIXTURE);
-    expect(setScalarInArrayBlock('triggers', 'slug', 'nope', 'enabled', false, dir)).toBe(false);
-  });
-
-  test('setTableScalar creates a new table, then updates it in place, preserving comments', async () => {
-    const { setTableScalar, manifestFile } = await import('../manifest-edit');
-    const { readFileSync } = await import('node:fs');
-    writeFileSync(join(dir, 'kortix.yaml'), FIXTURE);
-    setTableScalar('policy', 'default_mode', 'ask', dir);
-    let text = readFileSync(manifestFile(dir), 'utf8');
-    expect(text).toContain('default_mode: ask');
-    expect(text).toContain('# Nightly digest trigger');
-    setTableScalar('policy', 'default_mode', 'allow', dir);
-    text = readFileSync(manifestFile(dir), 'utf8');
-    expect(text).toContain('default_mode: allow');
-    expect(text).not.toContain('default_mode: ask');
-    expect(text).toContain('# keep this comment');
-  });
-
-  test('appendArrayBlock auto-creates a nested dotted section (sandbox.templates)', async () => {
-    const { appendArrayBlock, arrayEntryExists } = await import('../manifest-edit');
-    writeFileSync(join(dir, 'kortix.yaml'), FIXTURE);
-    appendArrayBlock('sandbox.templates', { slug: 'gpu', image: 'kortix/gpu:latest' }, dir);
-    expect(arrayEntryExists('sandbox.templates', 'slug', 'gpu', dir)).toBe(true);
-  });
-
-  test('prefers kortix.yaml over kortix.toml when both exist (no guard-throw)', async () => {
-    const { appendArrayBlock, arrayEntryExists } = await import('../manifest-edit');
-    writeFileSync(join(dir, 'kortix.toml'), `kortix_version = 1\n`);
-    writeFileSync(join(dir, 'kortix.yaml'), FIXTURE);
-    appendArrayBlock('triggers', { slug: 'weekly', type: 'cron' }, dir);
-    expect(arrayEntryExists('triggers', 'slug', 'weekly', dir)).toBe(true);
   });
 });

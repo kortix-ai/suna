@@ -9,10 +9,6 @@ export interface SessionRuntimeEnvInput {
   frontendUrl?: string;
   initialPrompt?: string | null;
   opencodeModel?: string | null;
-  /** Server-compiled OpenCode agent config (JSON string) for a `kortix_version:
-   *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
-   *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
-  compiledAgentConfig?: string | null;
 }
 
 export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<string, string> {
@@ -34,14 +30,5 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1',
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
     ...(input.opencodeModel ? { KORTIX_OPENCODE_MODEL: input.opencodeModel } : {}),
-    // The sandbox daemon merges this as the BASE of its own composed opencode
-    // config (executor MCP / gateway provider / Slack overlays still apply on
-    // top — see apps/kortix-sandbox-agent-server/src/opencode.ts). Per-call
-    // model overrides (KORTIX_OPENCODE_MODEL above, or an explicit model on a
-    // prompt request) still win over whatever default model this bakes in —
-    // this only sets the manifest agent's/DEFAULT agent's fallback.
-    ...(input.compiledAgentConfig
-      ? { KORTIX_COMPILED_AGENT_CONFIG: input.compiledAgentConfig }
-      : {}),
   };
 }

@@ -15,8 +15,7 @@ import {
   resolveDeclaredSharedSecrets,
   secretNamesDeniedForAgent,
 } from '../secrets';
-import { grantFromLoadedAgents, loadProjectAgents, projectRequiresDeclaredAgents, resolveGovernedAgentGrant } from '../agents';
-import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
+import { grantFromLoadedAgents, loadProjectAgents } from '../agents';
 import { resolveAssignedAgentNames, unionDeclaredResources } from './agent-inheritance';
 import { agentMayUseEnv } from '../../iam/agent-scope';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
@@ -234,24 +233,6 @@ export async function buildSessionSandboxEnvVars(input: {
       `[session ${input.sessionId}] ignored ${droppedReserved.length} project secret(s) with reserved env names: ${droppedReserved.join(', ')}`,
     );
   }
-  // v2-only: compile the manifest's `agents:` map into an OpenCode-native
-  // config the sandbox receives sealed (see compile-agent-config.ts). `null`
-  // for a v1 project (no `kortix_version: 2`) or any read/parse failure — no
-  // KORTIX_COMPILED_AGENT_CONFIG key is emitted below in that case, so a v1
-  // project's sandbox env is byte-for-byte unaffected by this. Gated on the
-  // same `defaultBranch` presence as the [[agents]] grant resolution below
-  // (both need git context; optional call sites that omit it get neither).
-  let compiledAgentConfig: string | null = null;
-  if (input.defaultBranch) {
-    compiledAgentConfig = await resolveCompiledAgentConfigForSession({
-      projectId: input.projectId,
-      repoUrl: input.repoUrl,
-      defaultBranch: input.defaultBranch,
-      manifestPath: input.manifestPath ?? 'kortix.toml',
-      gitAuthToken: null,
-    }).catch(() => null);
-  }
-
   // Per-agent secret scoping: an agent declared in [[agents]] with an `env`
   // allowlist receives ONLY those secrets — so a narrowly-scoped agent can't read
   // another scope's API keys/payment creds straight out of $ENV. No-op for the
@@ -391,7 +372,6 @@ export async function buildSessionSandboxEnvVars(input: {
       // Per-session model override (e.g. Slack turns pin a specific model).
       // The sandbox agent reads this and sets it on every opencode prompt call.
       opencodeModel: input.opencodeModel,
-      compiledAgentConfig,
     }),
   };
 }
@@ -481,26 +461,6 @@ export async function createProjectSession(input: {
   );
   const agentName =
     normalizeString(body.agent_name ?? body.agentName) ?? projectDefaultAgent ?? 'default';
-  // MANDATORY DECLARED AGENTS (flagged — docs/specs/2026-07-05-agent-first-config-
-  // unification.md §2.1/§3 Phase 2). Only projects "subject" to enforcement (the
-  // platform-wide flag, or a project stamped `metadata.require_declared_agents`
-  // at creation) pay for this: an extra manifest read, done synchronously here so
-  // an undeclared agent is REJECTED with an explicit 400 before any row is
-  // inserted or sandbox provisioned — never left to resolve to the permissive
-  // null grant `resolveAgentGrant` falls back to on a later hiccup (see the
-  // `.catch` in session-sandbox.ts `mintExecutorToken`, which must stay
-  // fail-safe for NON-subject projects). Non-subject projects take the exact
-  // same path as before this flag existed (zero added I/O, zero behavior change).
-  if (projectRequiresDeclaredAgents(project.metadata, config.KORTIX_REQUIRE_DECLARED_AGENTS)) {
-    const loadedAgents = await loadProjectAgents(project);
-    const governed = resolveGovernedAgentGrant(agentName, loadedAgents, {
-      subject: true,
-      projectDefaultAgent,
-    });
-    if (!governed.ok) {
-      return { error: { status: 400, body: { error: governed.error, code: governed.code } } };
-    }
-  }
   // Explicit request wins; otherwise fall back to the project's default sandbox
   // template (`[sandbox] default` in kortix.toml, synced to project metadata),
   // so EVERY session — UI, triggers, channels — inherits the project's chosen

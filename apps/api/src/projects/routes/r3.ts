@@ -901,7 +901,6 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ);
 
   const items: Array<{ provider_id: string; expires_in_ms: number | null; updated_at: string }> = [];
   for (const [providerId, cfg] of Object.entries(OAUTH_PROVIDERS)) {
