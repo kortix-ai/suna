@@ -60,9 +60,8 @@ export function MembersSection({ accountId }: { accountId: string }) {
     onSuccess: (result) => {
       setEmail('');
       refresh();
-      const r = result as any;
-      if (r?.status === 'pending') toast.success(`Invitation sent to ${r.email}`);
-      else toast.success(`${r?.email ?? 'Member'} added`);
+      if (result.status === 'pending') toast.success(`Invitation sent to ${result.email}`);
+      else toast.success(`${result.email} added`);
     },
     onError: (err: any) => {
       const msg = String(err?.message ?? '');
@@ -89,7 +88,7 @@ export function MembersSection({ accountId }: { accountId: string }) {
     onError: () => toast.error('Could not remove the member'),
   });
 
-  const items = (members.data as any[]) ?? [];
+  const items = members.data ?? [];
 
   return (
     <section className="space-y-3">
@@ -147,10 +146,10 @@ export function MembersSection({ accountId }: { accountId: string }) {
           <div className="p-6 text-center text-sm text-muted-foreground">Just you so far.</div>
         )}
         {items.map((m, i) => {
-          const label = (m.email ?? m.user_id ?? 'Member') as string;
+          const label = m.email ?? m.user_id ?? 'Member';
           const initial = label.charAt(0).toUpperCase();
-          const memberRole = (m.account_role ?? 'member') as string;
-          const userId = m.user_id as string | undefined;
+          const memberRole = m.account_role;
+          const userId = m.user_id;
           const busy =
             (changeRole.isPending && changeRole.variables?.userId === userId) ||
             (remove.isPending && remove.variables === userId);

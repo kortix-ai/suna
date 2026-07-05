@@ -14,6 +14,7 @@ import {
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions } from '@/lib/query-keys';
 import { generateSessionId } from '@kortix/sdk';
+import type { SandboxTemplate } from '@kortix/sdk/projects-client';
 import {
   type ModelKey,
   useProjectConfig,
@@ -66,8 +67,10 @@ function ProjectHome() {
     queryFn: () => kortix.projects.sandboxTemplates(projectId),
     retry: false,
   });
-  const templateList = ((templates.data as any)?.templates ??
-    (Array.isArray(templates.data) ? templates.data : [])) as any[];
+  // `.sandboxTemplates()` returns `{ items: SandboxTemplate[] }` — this used to
+  // read a nonexistent `.templates` field (masked by an `as any` cast), so the
+  // multi-template picker below never actually rendered any options.
+  const templateList: SandboxTemplate[] = templates.data?.items ?? [];
 
   const start = useMutation({
     mutationFn: async (text: string) => {
@@ -141,7 +144,7 @@ function ProjectHome() {
                 </SelectTrigger>
                 <SelectContent>
                   {templateList.map((t) => {
-                    const slug = String(t.slug ?? t.id ?? t.name ?? 'default');
+                    const slug = t.slug || 'default';
                     return (
                       <SelectItem key={slug} value={slug}>
                         {t.name ?? slug}
