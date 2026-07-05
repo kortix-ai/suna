@@ -279,7 +279,7 @@ export function ShowContentRenderer({
   } = useFileContent(pdfLoadPath, { enabled: !!pdfLoadPath });
 
   // CSV/TSV: text content via SDK
-  const csvLoadPath = isCsv && sandboxPath ? sandboxPath : null;
+  const csvLoadPath = isCsv && !content && sandboxPath ? sandboxPath : null;
   const { data: csvData, isLoading: csvLoading } = useFileContent(csvLoadPath, {
     enabled: !!csvLoadPath,
   });

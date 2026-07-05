@@ -32,7 +32,6 @@ describe('resolveShowType', () => {
   });
 
   test('a textish declaration with a non-rich extension keeps the declared type', () => {
-    // .py maps to the generic `file` category — must not downgrade text→file.
     expect(getShowFileCategory('/w/script.py')).toBe('file');
     expect(resolveShowType('text', '/w/script.py')).toBe('text');
   });

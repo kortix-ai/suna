@@ -76,7 +76,7 @@ export function DocxRenderer({ url, blob, fileName, className, compact = false }
   return (
     <DocxViewerPreview
       src={src}
-      fileName={ensureDocxFileName(fileName)}
+      fileName={fileName ? ensureDocxFileName(fileName) : (blob ? 'document.docx' : undefined)}
       isDark={resolvedTheme === 'dark'}
       onIsDarkChange={() => {}}
       showToolbar={!compact}
