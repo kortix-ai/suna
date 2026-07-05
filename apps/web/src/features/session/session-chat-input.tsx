@@ -249,7 +249,7 @@ export function AgentSelector({
                 flash && 'bg-primary/10 text-foreground',
                 open && 'bg-muted text-foreground',
                 disabled &&
-                  'cursor-not-allowed opacity-70 hover:bg-transparent hover:text-muted-foreground',
+                  'hover:text-muted-foreground cursor-not-allowed opacity-70 hover:bg-transparent',
               )}
             >
               <span className="max-w-[100px] truncate">{displayName}</span>
@@ -1151,6 +1151,10 @@ export interface SessionChatInputProps {
   /** Slot rendered inline in the bottom toolbar, just left of the voice button */
   toolbarSlot?: React.ReactNode;
 
+  /** Extra classes for the input card — e.g. a radius override for the
+   *  project-home hero composer (`rounded-xl`). The drag overlay follows. */
+  cardClassName?: string;
+
   /** Reply context — shows a banner in the input indicating what's being replied to */
   replyTo?: { text: string } | null;
   /** Callback to clear the reply context */
@@ -1231,6 +1235,7 @@ export function SessionChatInput({
   onContextClick,
   inputSlot,
   toolbarSlot,
+  cardClassName,
   replyTo,
   onClearReply,
   lockForQuestion = false,
@@ -2002,12 +2007,18 @@ export function SessionChatInput({
         onDrop={handleDropFiles}
         className={cn(
           'bg-card border-border relative z-10 w-full overflow-visible rounded-[24px] border transition-colors',
+          cardClassName,
           isDragOver && 'border-primary',
         )}
       >
         <div className="relative flex w-full flex-col gap-2 overflow-visible">
           {isDragOver && (
-            <div className="border-primary/70 bg-primary/5 pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[24px] border-2 border-dashed">
+            <div
+              className={cn(
+                'border-primary/70 bg-primary/5 pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[24px] border-2 border-dashed',
+                cardClassName,
+              )}
+            >
               <span className="bg-background/90 text-foreground rounded-md px-3 py-1 text-xs font-medium">
                 {tHardcodedUi.raw(
                   'componentsSessionSessionChatInput.line2038JsxTextDropFilesToAttach',

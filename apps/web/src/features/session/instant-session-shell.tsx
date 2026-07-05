@@ -4,26 +4,23 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { GridFileCard } from './grid-file-card';
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
-import {
-  ProjectHomeWelcomeBody,
-  StarterPromptsCarousel,
-} from '@/features/workspace/project-layout/project-home';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import type { AttachedFile } from '@/features/session/session-chat-input';
-import { optimisticUploadedFileRef } from '@/features/session/uploaded-file-refs';
 import { SessionLayout } from '@/features/session/session-layout';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
+import { optimisticUploadedFileRef } from '@/features/session/uploaded-file-refs';
+import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
 import type { Command } from '@/hooks/opencode/use-opencode-sessions';
-import type { SessionStartStage } from '@kortix/sdk/projects-client';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
+import type { SessionStartStage } from '@kortix/sdk/projects-client';
+import { GridFileCard } from './grid-file-card';
 
 /** The inline status shown under the Kortix logo while the computer is still
  *  coming up after a first send — sleek + minimal, reflecting the live stage. */
@@ -128,6 +125,30 @@ export function InstantSessionShell({
     [handleSend],
   );
 
+  // Defined once and slotted into either the hero position (pre-submit, inside
+  // the welcome body) or the regular bottom position (post-submit thread view).
+  const composerEl = (
+    <ComposerChatInput
+      onSend={handleSend}
+      onCommand={handleCommand}
+      sessionId={sessionId}
+      projectId={projectId}
+      prefill={prefill}
+      boundAgentName={boundAgentName}
+      // While the computer boots after the first send the input stays fully
+      // normal (typeable) — only the send button flips to a stop button. The
+      // stop is disabled because there's nothing running to stop yet; the real
+      // chat's live stop takes over the instant it crossfades in. (A duplicate
+      // send is harmless — handleSend ignores it while `submitted` is set.)
+      isBusy={!!submitted}
+      stopDisabled={!!submitted}
+      autoFocus
+      // Hero radius pre-submit (matches the project home); back to the default
+      // card radius once docked so the crossfade into SessionChat doesn't pop.
+      cardClassName={submitted ? undefined : 'rounded-xl'}
+    />
+  );
+
   const column = (
     <div
       className={cn(
@@ -156,13 +177,19 @@ export function InstantSessionShell({
       />
 
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
-        {/* Empty new session → the identical project-home empty state (welcome
-            heading + setup tiles), so a fresh session opens onto the same
-            surface as the project index page. Swapped out for the optimistic
-            turn the moment a first message is sent (the crossfade is unchanged). */}
+        {/* Empty new session → the identical project-home empty state (centered
+            heading + hero composer + starter chips, setup pills at the bottom),
+            so a fresh session opens onto the same surface as the project index
+            page. Swapped out for the optimistic turn the moment a first message
+            is sent (the crossfade is unchanged); the composer moves to its
+            regular bottom position at the same time. */}
         {!submitted && (
           <div className="flex min-h-0 flex-1 flex-col px-4.5">
-            <ProjectHomeWelcomeBody projectId={projectId} />
+            <ProjectHomeWelcomeBody
+              projectId={projectId}
+              onPickSuggestion={applySuggestion}
+              composer={composerEl}
+            />
           </div>
         )}
         <div
@@ -220,28 +247,10 @@ export function InstantSessionShell({
         </div>
       </div>
 
-      {!submitted && (
-        <div className="relative z-10 mx-auto mb-4 w-full max-w-[52rem] px-2 sm:px-4">
-          <StarterPromptsCarousel onPick={applySuggestion} />
-        </div>
-      )}
-
-      <ComposerChatInput
-        onSend={handleSend}
-        onCommand={handleCommand}
-        sessionId={sessionId}
-        projectId={projectId}
-        prefill={prefill}
-        boundAgentName={boundAgentName}
-        // While the computer boots after the first send the input stays fully
-        // normal (typeable) — only the send button flips to a stop button. The
-        // stop is disabled because there's nothing running to stop yet; the real
-        // chat's live stop takes over the instant it crossfades in. (A duplicate
-        // send is harmless — handleSend ignores it while `submitted` is set.)
-        isBusy={!!submitted}
-        stopDisabled={!!submitted}
-        autoFocus
-      />
+      {/* Once a first message is sent the composer leaves the hero position and
+          docks at the bottom for the thread view (the same jump Perplexity makes
+          when a search becomes a thread). */}
+      {submitted ? composerEl : null}
     </div>
   );
 
