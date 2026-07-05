@@ -412,6 +412,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             </AuthProvider>
           </TooltipProvider>
         </ThemeProvider>
+        <div id="portal" className="fixed left-0 top-0 z-40" />
       </body>
     </html>
   );
