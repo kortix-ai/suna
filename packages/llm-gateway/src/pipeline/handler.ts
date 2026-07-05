@@ -10,7 +10,13 @@ import type {
 } from '../domain';
 import type { FetchImpl } from '../http';
 import { type CircuitBreaker, backoffDelay, realSleep } from '../resilience';
-import { type ExtractedUsage, calculateCost, extractUsageFromJson, jsonHasContent } from '../usage';
+import {
+  type ExtractedUsage,
+  type SseErrorFrame,
+  calculateCost,
+  extractUsageFromJson,
+  jsonHasContent,
+} from '../usage';
 import { runFailover } from './failover';
 import { type StreamProbeResult, probeStream, relayStream } from './streaming';
 import { createTraceEmitter } from './trace';
@@ -410,7 +416,11 @@ export async function handleChatCompletions(
     tried,
   });
 
-  const settle = async (usage: ExtractedUsage | null, response: unknown): Promise<void> => {
+  const settle = async (
+    usage: ExtractedUsage | null,
+    response: unknown,
+    streamError?: SseErrorFrame | null,
+  ): Promise<void> => {
     const usedModel = (
       usage?.model ??
       finalDescriptor.resolvedModel ??
@@ -470,8 +480,12 @@ export async function handleChatCompletions(
       upstreamCost,
       finalCost,
       streaming,
+      ...(streamError ? { streamError: streamError.message } : {}),
     });
 
+    // A stream that carried an upstream error frame delivered a failed turn to
+    // the caller, whatever the HTTP status said — trace it as such (tokens are
+    // still billed above: the upstream consumed them before it died).
     emit({
       ...id,
       requestedModel,
@@ -480,7 +494,10 @@ export async function handleChatCompletions(
       billingMode: finalDescriptor.billingMode,
       streaming,
       status: 200,
-      ok: true,
+      ok: !streamError,
+      ...(streamError
+        ? { errorCode: 'upstream_stream_error', errorMessage: streamError.message }
+        : {}),
       attempts,
       candidatesTried: tried,
       usage: counts,

@@ -26,4 +26,8 @@ export interface UpstreamDescriptor {
   headers?: Record<string, string>;
   omitAuthorization?: boolean;
   pricing?: UpstreamPricing;
+  // Upstream-specific fields merged into the outgoing request body, overriding
+  // any same-named client fields (e.g. OpenRouter's `provider` routing
+  // preferences pinning managed models to reliable hosts). openai-compat only.
+  bodyExtras?: Record<string, unknown>;
 }
