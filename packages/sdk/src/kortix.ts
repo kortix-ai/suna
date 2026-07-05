@@ -16,6 +16,7 @@ import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
  * exact types with zero re-typing. The `project()`/`session()` handles bind ids
  * for ergonomics. Reactive data still comes from `@kortix/sdk/react` hooks.
  */
+import * as F from './files/client';
 import { getClient, getClientForUrl } from './opencode/client';
 import { ApiError } from './platform/api/errors';
 import { type KortixPlatformConfig, configureKortix, platformConfig } from './platform/config';
@@ -50,6 +51,19 @@ function runtime(): OpencodeClient {
  * sandbox happens to be globally active (a different session's runtime) —
  * the caller must resolve THIS handle's runtime first.
  */
+/**
+ * Dedupes concurrent `ensureReady()` calls that would otherwise both drive a
+ * `/start` long-poll for the SAME (projectId, sessionId) — e.g. two session
+ * handles for the same session (or the facade racing the React `useSession`
+ * hook) both calling `ensureReady()`/`start()` before either has resolved a
+ * runtime. Keyed by `${projectId}\n${sessionId}` (not the process-global
+ * "active runtime" — every other handle for a DIFFERENT session gets its own
+ * entry and is unaffected). Cleared on settle (success or failure) so a
+ * transient failure doesn't wedge the key — the next call issues a fresh
+ * `/start` instead of replaying a stale rejected promise forever.
+ */
+const inFlightSessionStarts = new Map<string, Promise<SessionRuntimeEntry>>();
+
 export class SessionNotReadyError extends Error {
   constructor(action: string) {
     super(
@@ -59,9 +73,15 @@ export class SessionNotReadyError extends Error {
   }
 }
 
-export function createKortix(config: KortixPlatformConfig) {
+export function createKortix(config: KortixPlatformConfig, opts?: { global?: boolean }) {
   // Wire the platform seam once. All wrapped functions read it.
-  configureKortix(config);
+  //
+  // `opts.global === false` (used by `@kortix/sdk/server`'s `createScopedKortix`)
+  // skips the process-wide write entirely — that caller relies solely on the
+  // `AsyncLocalStorage` scope `createScopedKortix` wraps every method call in,
+  // so this returned facade never touches (or is affected by) the module-global
+  // singleton other concurrent `createKortix()` calls in the same process share.
+  configureKortix(config, opts);
 
   /**
    * Parse `backendUrl` for its port (used by the subdomain preview scheme).
@@ -505,26 +525,53 @@ export function createKortix(config: KortixPlatformConfig) {
     async function ensureReady(): Promise<SessionRuntimeEntry> {
       const cached = tryResolveReady();
       if (cached) return cached;
-      const started = await P.startProjectSession(projectId, sessionId, 30_000);
-      if (
-        !started ||
-        started.stage !== 'ready' ||
-        !started.sandbox ||
-        !started.opencode_session_id
-      ) {
-        throw new Error(`Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`);
+
+      // Dedup concurrent starts for this (projectId, sessionId) — see
+      // `inFlightSessionStarts`'s doc comment. If another call (this handle or
+      // a different one) already kicked off `/start`, ride its result instead
+      // of issuing a second POST.
+      const key = `${projectId}\n${sessionId}`;
+      const inFlight = inFlightSessionStarts.get(key);
+      if (inFlight) {
+        _ready = await inFlight;
+        return _ready;
       }
-      const externalId = (started.sandbox as { external_id?: string | null }).external_id;
-      if (!externalId) {
-        throw new Error('Session sandbox has no external_id — cannot resolve its runtime URL');
+
+      const startPromise = (async (): Promise<SessionRuntimeEntry> => {
+        const started = await P.startProjectSession(projectId, sessionId, 30_000);
+        if (
+          !started ||
+          started.stage !== 'ready' ||
+          !started.sandbox ||
+          !started.opencode_session_id
+        ) {
+          throw new ApiError(`Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`, {
+            code: 'RUNTIME_UNAVAILABLE',
+          });
+        }
+        const externalId = (started.sandbox as { external_id?: string | null }).external_id;
+        if (!externalId) {
+          throw new ApiError('Session sandbox has no external_id — cannot resolve its runtime URL', {
+            code: 'RUNTIME_UNAVAILABLE',
+          });
+        }
+        const runtimeUrl = getSandboxUrlForExternalId(externalId);
+        // Point the app's shared runtime store at this session too, so React
+        // hosts (which read the global current-runtime) keep working — but this
+        // handle's own operations never read it back, only `_ready` below.
+        setCurrentRuntime(runtimeUrl, externalId);
+        return { opencodeSessionId: started.opencode_session_id, runtimeUrl, sandboxId: externalId };
+      })();
+
+      inFlightSessionStarts.set(key, startPromise);
+      try {
+        _ready = await startPromise;
+        return _ready;
+      } finally {
+        if (inFlightSessionStarts.get(key) === startPromise) {
+          inFlightSessionStarts.delete(key);
+        }
       }
-      const runtimeUrl = getSandboxUrlForExternalId(externalId);
-      // Point the app's shared runtime store at this session too, so React
-      // hosts (which read the global current-runtime) keep working — but this
-      // handle's own operations never read it back, only `_ready` below.
-      setCurrentRuntime(runtimeUrl, externalId);
-      _ready = { opencodeSessionId: started.opencode_session_id, runtimeUrl, sandboxId: externalId };
-      return _ready;
     }
 
     /** Throw `SessionNotReadyError` if neither this handle nor the registry has resolved a runtime yet. */
@@ -683,6 +730,38 @@ export function createKortix(config: KortixPlatformConfig) {
       // with server-owned side-effects) layer on top of this as they land.
       get runtime(): OpencodeClient {
         return getClientForUrl(requireReady('runtime').runtimeUrl);
+      },
+
+      /**
+       * Workspace file operations (daemon `/file` + `/find`) bound to THIS
+       * session's own resolved runtime — never the module-global "active"
+       * sandbox the top-level `@kortix/sdk` `files` export follows. Fixes a
+       * cross-session bleed: a host juggling multiple open sessions (e.g. a
+       * server wrapping several concurrent agent sessions) that called the
+       * global `files.list()` while a DIFFERENT session was "active" would
+       * silently read/write the wrong sandbox. Each call here auto-provisions
+       * via `ensureReady()` (same as `send`/`abort`/`stream`), then runs
+       * against this handle's own runtime URL. Same 12-op surface as the
+       * global `files` namespace, built from the same parameterized core
+       * (`@kortix/sdk/files`'s exports all take an optional trailing
+       * `baseUrl` — this just always supplies THIS session's).
+       */
+      files: {
+        list: async (dirPath: string) => F.listFiles(dirPath, (await ensureReady()).runtimeUrl),
+        read: async (filePath: string) => F.readFile(filePath, (await ensureReady()).runtimeUrl),
+        readBlob: async (filePath: string) => F.readBlob(filePath, (await ensureReady()).runtimeUrl),
+        status: async () => F.getFileStatus((await ensureReady()).runtimeUrl),
+        findFiles: async (query: string, options?: { type?: 'file' | 'directory'; limit?: number }) =>
+          F.findFiles(query, options, (await ensureReady()).runtimeUrl),
+        findText: async (pattern: string) => F.findText(pattern, (await ensureReady()).runtimeUrl),
+        upload: async (file: File | Blob, targetPath?: string, filename?: string) =>
+          F.uploadFile(file, targetPath, filename, (await ensureReady()).runtimeUrl),
+        create: async (filePath: string) => F.createFile(filePath, (await ensureReady()).runtimeUrl),
+        copy: async (sourcePath: string, destPath: string) =>
+          F.copyFile(sourcePath, destPath, (await ensureReady()).runtimeUrl),
+        remove: async (filePath: string) => F.deleteFile(filePath, (await ensureReady()).runtimeUrl),
+        mkdir: async (dirPath: string) => F.mkdir(dirPath, (await ensureReady()).runtimeUrl),
+        rename: async (from: string, to: string) => F.renameFile(from, to, (await ensureReady()).runtimeUrl),
       },
     };
   }

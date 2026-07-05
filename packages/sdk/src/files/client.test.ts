@@ -5,6 +5,9 @@ import * as realAuth from '../platform/auth';
 // Capture daemon requests by overriding ONLY the two seams the file client uses
 // (spread the real module so every other importer's exports stay intact).
 let calls: { url: string; method: string; body?: string }[] = [];
+// When set, the mocked `authenticatedFetch` responds with THIS status instead
+// of a 200 — lets individual tests exercise the daemon-failure path.
+let mockFailStatus: number | null = null;
 
 mock.module('../state/server-store', () => ({
   ...realServerStore,
@@ -15,13 +18,23 @@ mock.module('../platform/auth', () => ({
   getAuthToken: async () => 'tok',
   authenticatedFetch: async (url: string, init: { method?: string; body?: unknown } = {}) => {
     calls.push({ url: String(url), method: init.method ?? 'GET', body: typeof init.body === 'string' ? init.body : undefined });
+    if (mockFailStatus !== null) {
+      return new Response(JSON.stringify({ error: 'daemon unavailable' }), {
+        status: mockFailStatus,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     return new Response(JSON.stringify([]), { status: 200, headers: { 'content-type': 'application/json' } });
   },
 }));
 
 const F = await import('./client');
+const { ApiError } = await import('../platform/api/errors');
 const last = () => calls[calls.length - 1];
-beforeEach(() => { calls = []; });
+beforeEach(() => {
+  calls = [];
+  mockFailStatus = null;
+});
 
 test('list hits GET /file with worktree-relative path', async () => {
   await F.listFiles('/workspace/src');
@@ -112,4 +125,40 @@ test('files namespace exposes the full surface', () => {
   for (const k of ['list','read','readBlob','status','findFiles','findText','upload','create','copy','remove','mkdir','rename','currentProject','health','isReachable']) {
     expect(typeof (F.files as Record<string, unknown>)[k]).toBe('function');
   }
+});
+
+// ── typed errors (P0 fix: every op used to throw a bare `Error`; now every
+// HTTP failure throws `ApiError` with status/response attached) ─────────────
+
+test('findFiles throws ApiError on a daemon failure — no longer swallows to []', async () => {
+  mockFailStatus = 500;
+  await expect(F.findFiles('foo')).rejects.toBeInstanceOf(ApiError);
+  await expect(F.findFiles('foo')).rejects.toMatchObject({ status: 500 });
+});
+
+test('listFiles throws ApiError (with status) on a daemon failure', async () => {
+  mockFailStatus = 503;
+  await expect(F.listFiles('/workspace')).rejects.toBeInstanceOf(ApiError);
+  await expect(F.listFiles('/workspace')).rejects.toMatchObject({ status: 503 });
+});
+
+test('deleteFile/mkdir/renameFile throw ApiError (with status) on a daemon failure', async () => {
+  mockFailStatus = 404;
+  await expect(F.deleteFile('/workspace/x')).rejects.toBeInstanceOf(ApiError);
+  await expect(F.mkdir('/workspace/y')).rejects.toBeInstanceOf(ApiError);
+  await expect(F.renameFile('/workspace/a', '/workspace/b')).rejects.toBeInstanceOf(ApiError);
+});
+
+// ── explicit baseUrl param (internal plumbing for `kortix.session(pid, sid).files`)
+
+test('every op accepts an explicit trailing baseUrl, overriding the module-global active sandbox', async () => {
+  mockFailStatus = null;
+  await F.listFiles('/workspace/src', 'http://other-sandbox.test');
+  expect(last().url).toBe('http://other-sandbox.test/file?path=src');
+
+  await F.getFileStatus('http://other-sandbox.test');
+  expect(last().url).toBe('http://other-sandbox.test/file/status');
+
+  await F.findFiles('foo', undefined, 'http://other-sandbox.test');
+  expect(last().url).toContain('http://other-sandbox.test/find/file?query=foo');
 });

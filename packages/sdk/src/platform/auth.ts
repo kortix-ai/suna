@@ -34,19 +34,45 @@ export async function getSupabaseAccessToken(): Promise<string | null> {
 	return platformConfig().getToken();
 }
 
+function delay(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
- * Retry variant, kept for call-site compatibility. `options` (attempts/
- * backoff/cache-invalidation) are accepted but unused — there is no SDK-side
- * retry loop or cache here to apply them to; this just delegates to
- * `platformConfig().getToken()` like every other getter in this file. A host
- * that needs retry/backoff semantics implements them inside its `getToken`.
+ * Retry variant — actually retries now. Previously accepted `attempts`/
+ * `baseDelayMs`/`invalidateBetweenAttempts` and silently ignored all three
+ * (always a single `getToken()` call), which quietly broke every caller that
+ * depended on retry semantics around a flaky/cold token provider (e.g. right
+ * after sign-in, before a host's own session has hydrated — see the retry
+ * call in `authenticatedFetch`'s 401 handler below).
+ *
+ * Retries up to `attempts` times (default 1 = no retry) until `getToken()`
+ * returns a truthy token, waiting `baseDelayMs` between attempts (default 0).
+ * When `invalidateBetweenAttempts` is set, calls `invalidateTokenCache()`
+ * before each retry — a no-op in this file (there's no SDK-side cache), but
+ * kept as a real call so a host that layers its own cache on `getToken()` (and
+ * wires `invalidateTokenCache`/`setCachedAuthToken` to it, per this file's
+ * top-of-file doc comment) gets invalidated between attempts as intended.
  */
 export async function getSupabaseAccessTokenWithRetry(options?: {
 	attempts?: number;
 	baseDelayMs?: number;
 	invalidateBetweenAttempts?: boolean;
 }): Promise<string | null> {
-	return platformConfig().getToken();
+	const attempts = Math.max(1, options?.attempts ?? 1);
+	const baseDelayMs = options?.baseDelayMs ?? 0;
+	const invalidateBetweenAttempts = options?.invalidateBetweenAttempts ?? false;
+
+	let token: string | null = null;
+	for (let attempt = 0; attempt < attempts; attempt++) {
+		if (attempt > 0) {
+			if (invalidateBetweenAttempts) invalidateTokenCache();
+			if (baseDelayMs > 0) await delay(baseDelayMs);
+		}
+		token = await platformConfig().getToken();
+		if (token) return token;
+	}
+	return token;
 }
 
 /**
@@ -104,6 +130,7 @@ function fetchWithAuth(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
   headers: Headers,
+  signal?: AbortSignal,
 ): Promise<Response> {
   if (input instanceof Request) {
     // Clone the Request with our auth headers baked in.
@@ -111,10 +138,48 @@ function fetchWithAuth(
     // not relying on fetch's init-merge behavior.
     const authedRequest = new Request(input, {
       headers,
+      ...(signal ? { signal } : {}),
     });
     return fetch(authedRequest);
   }
-  return fetch(input, { ...init, headers });
+  return fetch(input, { ...init, headers, ...(signal ? { signal } : {}) });
+}
+
+const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
+
+/**
+ * The one long-lived streaming call reached through this fetch injection
+ * point — `openEventStream` (`state/event-stream.ts`) drives the opencode
+ * client's `global.event(...)` SSE endpoint, which hits `GET {runtimeUrl}/global/event`.
+ * It manages its own lifecycle (a 15s heartbeat watchdog + explicit
+ * abort/reconnect loop) and is meant to stay open far longer than any request
+ * timeout — `withDefaultTimeout` exempts it below so a blanket timeout doesn't
+ * tear the stream down every 30s.
+ */
+function isStreamingRequest(input: RequestInfo | URL): boolean {
+  const url = input instanceof Request ? input.url : String(input);
+  return url.includes('/global/event');
+}
+
+/**
+ * Compose the request's own abort signal — a `Request` always carries one
+ * (the caller's real signal, or a spec-default one that never fires) — with a
+ * default 30s timeout, so a hung non-streaming call can't wedge a "Kortix as
+ * a Backend" server-side handler forever. The SSE event stream is exempted
+ * (see `isStreamingRequest`). Falls back to the caller's bare signal on a
+ * runtime without `AbortSignal.any` (older Node/engines) — guarded so a
+ * caller-supplied signal is never silently dropped.
+ */
+function withDefaultTimeout(input: RequestInfo | URL, init: RequestInit | undefined): AbortSignal | undefined {
+  const callerSignal = input instanceof Request ? input.signal : init?.signal;
+  if (isStreamingRequest(input)) return callerSignal ?? undefined;
+
+  const timeoutSignal = AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS);
+  if (!callerSignal) return timeoutSignal;
+  if (typeof AbortSignal.any === 'function') {
+    return AbortSignal.any([callerSignal, timeoutSignal]);
+  }
+  return callerSignal;
 }
 
 /**
@@ -175,6 +240,10 @@ export async function authenticatedFetch(
   }
 
   const headers = buildAuthHeaders(input, init, token);
+  // 30s default timeout for everything EXCEPT the long-lived SSE event
+  // stream (see `withDefaultTimeout`) — a "Kortix as a Backend" wrapper must
+  // never have a hung sandbox/daemon request wedge its handler forever.
+  const signal = withDefaultTimeout(input, init);
 
   // When the OpenCode SDK passes a Request object (single arg, no init),
   // we must construct a new Request with the auth headers baked in.
@@ -182,7 +251,7 @@ export async function authenticatedFetch(
   // in production builds — Next.js's patched fetch and certain browser
   // implementations don't properly merge init.headers onto an existing
   // Request, causing the Authorization header to be silently dropped.
-  const response = await fetchWithAuth(input, init, headers);
+  const response = await fetchWithAuth(input, init, headers, signal);
 
   if (response.status === 401) {
     // The cached token is stale. Retry once with fresh token.
@@ -191,7 +260,7 @@ export async function authenticatedFetch(
       const newToken = await getAuthTokenWithRetry({ attempts: 2, baseDelayMs: 200 });
       if (newToken && newToken !== token) {
         const retryHeaders = buildAuthHeaders(input, init, newToken);
-        return fetchWithAuth(input, init, retryHeaders);
+        return fetchWithAuth(input, init, retryHeaders, signal);
       }
     }
   }

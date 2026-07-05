@@ -1,6 +1,8 @@
 import { test, expect, beforeEach, mock } from 'bun:test';
 import { createKortix, SessionNotReadyError } from './kortix';
 import { isConfigured } from './platform/config';
+import { listFiles as globalListFiles } from './files/client';
+import { ApiError } from './platform/api/errors';
 
 // Capture every outbound request the facade makes.
 let calls: { url: string; method: string }[] = [];
@@ -508,4 +510,158 @@ test('restart clears the registry entry so a subsequent send re-resolves the run
   const promptCall = calls.find((c) => c.url.includes('/message'));
   expect(promptCall?.url).toContain('/p/sb-reg2-new/8000');
   expect(startCount).toBe(2);
+});
+
+// ── ensureReady() in-flight dedup (P0 robustness fix: two concurrent
+// ensureReady() calls for the SAME (projectId, sessionId) used to both drive
+// their own `/start` long-poll — a real hazard for a "Kortix as a Backend"
+// server handling concurrent requests against one session) ─────────────────
+
+test('ensureReady() dedupes concurrent starts for the same session: only one /start POST fires, both callers resolve', async () => {
+  let startCalls = 0;
+  let releaseStart!: (res: Response) => void;
+  const deferredStart = new Promise<Response>((resolve) => {
+    releaseStart = resolve;
+  });
+
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'POST' });
+    if (url.includes('/sessions/SESS-DEDUP/start')) {
+      startCalls += 1;
+      return deferredStart;
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const handle = k.session('PROJ', 'SESS-DEDUP');
+
+  // Fire twice concurrently, before the (deferred) /start response arrives.
+  const p1 = handle.ensureReady();
+  const p2 = handle.ensureReady();
+
+  // Let both calls reach (and park at) the deferred /start request before
+  // releasing it — proves they're genuinely in flight together, not just
+  // sequentially resolved.
+  await new Promise((r) => setTimeout(r, 0));
+  releaseStart(jsonResponse(sessionStartPayload('sb-dedup', 'ocs-dedup')));
+
+  const [r1, r2] = await Promise.all([p1, p2]);
+  expect(startCalls).toBe(1); // only ONE /start POST fired for both concurrent callers
+  expect(r1.sandboxId).toBe('sb-dedup');
+  expect(r2.sandboxId).toBe('sb-dedup');
+});
+
+test('ensureReady() dedup also covers TWO DIFFERENT handles for the same session', async () => {
+  let startCalls = 0;
+  let releaseStart!: (res: Response) => void;
+  const deferredStart = new Promise<Response>((resolve) => {
+    releaseStart = resolve;
+  });
+
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'POST' });
+    if (url.includes('/sessions/SESS-DEDUP-2/start')) {
+      startCalls += 1;
+      return deferredStart;
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const handleA = k.session('PROJ', 'SESS-DEDUP-2');
+  const handleB = k.session('PROJ', 'SESS-DEDUP-2'); // fresh handle, same (project, session) id
+
+  const p1 = handleA.ensureReady();
+  const p2 = handleB.ensureReady();
+
+  await new Promise((r) => setTimeout(r, 0));
+  releaseStart(jsonResponse(sessionStartPayload('sb-dedup-2', 'ocs-dedup-2')));
+  await Promise.all([p1, p2]);
+  expect(startCalls).toBe(1);
+});
+
+test('ensureReady() clears the in-flight entry on failure, so a retry issues a fresh /start', async () => {
+  let startCalls = 0;
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'POST' });
+    if (url.includes('/sessions/SESS-DEDUP-FAIL/start')) {
+      startCalls += 1;
+      // First attempt: a failure shape (no sandbox / not ready).
+      if (startCalls === 1) return jsonResponse({ stage: 'failed', retriable: true, sandbox: null, opencode_session_id: null, agent_name: 'agent' });
+      return jsonResponse(sessionStartPayload('sb-retry', 'ocs-retry'));
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const handle = k.session('PROJ', 'SESS-DEDUP-FAIL');
+
+  await expect(handle.ensureReady()).rejects.toBeInstanceOf(ApiError);
+  expect(startCalls).toBe(1);
+
+  const ready = await handle.ensureReady();
+  expect(ready.sandboxId).toBe('sb-retry');
+  expect(startCalls).toBe(2);
+});
+
+// ── session(...).files — bound to THIS session's own runtime, never the
+// module-global "active" sandbox the top-level `@kortix/sdk` `files` export
+// follows (P0 fix: cross-session bleed for a host juggling multiple open
+// sessions concurrently) ─────────────────────────────────────────────────────
+
+test("session(...).files hits THIS session's own runtime URL, not whichever session is globally \"active\"", async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'GET' });
+    if (url.includes('/sessions/FILES-A/start')) return jsonResponse(sessionStartPayload('sb-files-a', 'ocs-files-a'));
+    if (url.includes('/sessions/FILES-B/start')) return jsonResponse(sessionStartPayload('sb-files-b', 'ocs-files-b'));
+    if (url.includes('/file?path=')) return jsonResponse([]);
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const a = k.session('PROJ', 'FILES-A');
+  const b = k.session('PROJ', 'FILES-B');
+
+  await a.ensureReady();
+  await b.ensureReady(); // resolves LAST — the module-global "active runtime" now points at B
+
+  calls.length = 0;
+  await a.files.list('/workspace');
+  const aFileCall = calls.find((c) => c.url.includes('/file?path='));
+  expect(aFileCall?.url).toContain('/p/sb-files-a/8000/file');
+  expect(aFileCall?.url).not.toContain('sb-files-b');
+
+  // The module-global `files` export (used directly, not through a session
+  // handle) follows the "active runtime" pointer — which B's later
+  // `ensureReady()` last set. This is the documented, PRE-EXISTING behavior of
+  // the global export; the point of this test is that `a.files` does NOT
+  // share that behavior.
+  calls.length = 0;
+  await globalListFiles('/workspace');
+  const globalFileCall = calls.find((c) => c.url.includes('/file?path='));
+  expect(globalFileCall?.url).toContain('/p/sb-files-b/8000/file');
+});
+
+test('session(...).files auto-provisions via ensureReady() if not already ready', async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'GET' });
+    if (url.includes('/sessions/FILES-AUTO/start')) return jsonResponse(sessionStartPayload('sb-files-auto', 'ocs-files-auto'));
+    if (url.includes('/file/mkdir')) return jsonResponse(true);
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const s = k.session('PROJ', 'FILES-AUTO');
+
+  // Never called ensureReady() directly — mkdir should still resolve against
+  // this session's own runtime.
+  await s.files.mkdir('/workspace/new-dir');
+  const mkdirCall = calls.find((c) => c.url.includes('/file/mkdir'));
+  expect(mkdirCall?.url).toContain('/p/sb-files-auto/8000/file/mkdir');
 });

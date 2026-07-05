@@ -113,3 +113,71 @@ export {
   type ApiErrorFields,
   type BillingErrorUI,
 } from './platform/api/errors';
+
+/**
+ * Exhaustive part/turn classification for building chat UIs — framework-free.
+ * `classifyPart` normalizes every opencode `Part` variant (text, reasoning,
+ * tool, file, subtask, patch, snapshot, agent, retry, compaction, step) into
+ * a `ClassifiedPart`, with a compile-time exhaustiveness check plus a runtime
+ * 'unknown' fallback for forward-compat. `classifyTurn` classifies every part
+ * of a message and normalizes its `info.error` into a `TurnError`, so a host
+ * doesn't have to special-case "assistant message with zero parts but a
+ * failure" as silent nothingness. `toolInfo` is a zero-icon tool-name ->
+ * {label, category} registry a host maps to its own icon set. Also available
+ * from `@kortix/sdk/turns`.
+ */
+export {
+  type ClassifiedAgentPart,
+  type ClassifiedCompactionPart,
+  type ClassifiedFilePart,
+  type ClassifiedPart,
+  type ClassifiedPatchPart,
+  type ClassifiedReasoningPart,
+  type ClassifiedRetryPart,
+  type ClassifiedSnapshotPart,
+  type ClassifiedStepPart,
+  type ClassifiedSubtaskPart,
+  type ClassifiedTextPart,
+  type ClassifiedToolPart,
+  type ClassifiedTurn,
+  type ClassifiedUnknownPart,
+  type ToolCategory,
+  type ToolInfoEntry,
+  type ToolStatus,
+  type ToolView,
+  type TurnError,
+  classifyPart,
+  classifyTurn,
+  humanizeToolName,
+  toolInfo,
+} from './turns/index';
+
+/**
+ * The curated chat-event union — narrows the full `OpenCodeEvent` wire union
+ * down to the ~12 events a product chat UI needs (message/part updates,
+ * session status/idle/error, question asked/answered, permission
+ * asked/replied, todo updated, connection, heartbeat-gap), reshaped into
+ * purpose-built payloads. Also available from `@kortix/sdk/event-stream`.
+ */
+export {
+  heartbeatGapEvent,
+  narrowChatEvent,
+  type KortixChatEvent,
+  type KortixChatEventConnection,
+  type KortixChatEventHeartbeatGap,
+  type KortixChatEventMessageRemoved,
+  type KortixChatEventMessageUpdated,
+  type KortixChatEventPartRemoved,
+  type KortixChatEventPartUpdated,
+  type KortixChatEventPermissionAsked,
+  type KortixChatEventPermissionReplied,
+  type KortixChatEventQuestionAnswered,
+  type KortixChatEventQuestionAsked,
+  type KortixChatEventSessionError,
+  type KortixChatEventSessionIdle,
+  type KortixChatEventSessionStatus,
+  type KortixChatEventTodoUpdated,
+  type KortixChatQuestionInfo,
+  type KortixChatQuestionOption,
+  type KortixChatToolRef,
+} from './state/chat-events';

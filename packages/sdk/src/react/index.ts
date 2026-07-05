@@ -85,3 +85,11 @@ export {
   type SendCallOptions,
   type UseSessionSendResult,
 } from './use-session-send';
+
+// The headless chat kit — `useChatTurns` (memoized `classifyTurn` over a
+// message list) + `renderParts` (compile-time-exhaustive part -> T
+// dispatcher). Framework-free classification lives in `@kortix/sdk/turns`;
+// this is the thin React binding over it. Kept inside the `react` barrel
+// rather than a new `@kortix/sdk/react/chat` subpath — no package.json
+// exports-map change needed to reach it.
+export { useChatTurns, type TurnView, renderParts, type PartRenderers } from './chat';
