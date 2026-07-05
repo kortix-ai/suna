@@ -277,10 +277,10 @@ like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agen
 ```
 project.read  project.write  project.delete  project.deploy
 project.cr.open  project.cr.merge          # opening a CR ≠ merging it (merge lands code on main)
-project.session.read  project.session.start  project.session.exec  project.session.stop
+project.session.read  project.session.start  project.session.stop
 project.members.read  project.members.manage
 project.trigger.read  project.trigger.create  project.trigger.update  project.trigger.delete  project.trigger.fire
-channel.read  channel.connect  channel.send  channel.disconnect
+project.connector.read  project.connector.write   # channels (Slack/meet/email) send + connect are gated here
 ```
 
 `kortix validate` validates `[[agents]]` (rejecting unknown / account-scoped actions) and

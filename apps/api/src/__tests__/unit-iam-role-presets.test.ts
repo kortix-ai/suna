@@ -26,11 +26,11 @@ describe('built-in role presets', () => {
     expect(BUILTIN_BY_ID.has('builtin:nope')).toBe(false);
   });
 
-  test('User tier = read + run: has session start/exec/stop + trigger.fire, NOT write/config', () => {
+  test('User tier = read + run: has session start/stop + trigger.fire, NOT write/config', () => {
     const set = new Set(USER_PRESET_ACTIONS);
     expect(set.has(PROJECT_ACTIONS.PROJECT_READ)).toBe(true);
     expect(set.has(PROJECT_ACTIONS.PROJECT_SESSION_START)).toBe(true);
-    expect(set.has(PROJECT_ACTIONS.PROJECT_SESSION_EXEC)).toBe(true);
+    expect(set.has(PROJECT_ACTIONS.PROJECT_SESSION_STOP)).toBe(true);
     expect(set.has(PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE)).toBe(true);
     // read leaves yes…
     expect(set.has(PROJECT_ACTIONS.PROJECT_AGENT_READ)).toBe(true);

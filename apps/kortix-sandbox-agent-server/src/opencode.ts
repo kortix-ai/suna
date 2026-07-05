@@ -30,11 +30,17 @@ const CODEX_AUTH_JSON_SECRET = 'CODEX_AUTH_JSON'
 const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
 
 // Assemble the inline opencode config (OPENCODE_CONFIG_CONTENT) the daemon hands
-// opencode at spawn. It MERGES over the repo's own opencode config and has three
+// opencode at spawn. It MERGES over the repo's own opencode config and has four
 // independent contributors, any of which may apply:
 //   1. the optional Kortix Executor MCP server (KORTIX_EXECUTOR_MCP_ENABLED=1)
 //   2. the Kortix LLM gateway provider        (when KORTIX_LLM_* env)
 //   3. a Slack permission override            (when this is a Slack session)
+//   4. the server-compiled v2 agent config    (KORTIX_COMPILED_AGENT_CONFIG,
+//                                               apps/api's compile-agent-config.ts)
+// #4 is folded into the BASE (alongside OPENCODE_CONFIG_CONTENT) rather than
+// applied as an overlay — it's apps/api's compiled equivalent of "the repo's
+// own opencode config" for a v2 project, not a daemon-side session-local
+// decision like #1-3.
 // If NONE apply there's nothing to inject, so we return undefined and opencode
 // just uses the repo config as-is.
 export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promise<string | undefined> {
@@ -69,14 +75,32 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
   // session identity the API hands us at boot; also what the in-sandbox `slack`
   // CLI uses to post back to the thread). Contributor #3 keys off it.
   const isSlackSession = !!(env.SLACK_THREAD_TS || env.SLACK_CHANNEL_ID)
-  if (!hasExecutorMcp && !hasLlmGateway && !isSlackSession) return undefined
+  // (4) Server-compiled agent config (kortix_version 2 projects only — see
+  // apps/api/src/projects/lib/compile-agent-config.ts). apps/api compiles the
+  // manifest's `agents:` map into OpenCode's `agent` map + top-level model
+  // server-side and hands it down sealed; the daemon only LAYERS its own
+  // session-local overlays (MCP/gateway/Slack below) on top, never composes
+  // agent behavior itself.
+  const compiledAgentConfigRaw = env.KORTIX_COMPILED_AGENT_CONFIG
+  const hasCompiledAgentConfig = !!compiledAgentConfigRaw
+  if (!hasExecutorMcp && !hasLlmGateway && !isSlackSession && !hasCompiledAgentConfig) return undefined
 
   let base: Record<string, unknown> = {}
+  if (hasCompiledAgentConfig) {
+    try {
+      const parsed = JSON.parse(compiledAgentConfigRaw!)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        base = { ...base, ...(parsed as Record<string, unknown>) }
+      }
+    } catch {
+      logger.warn('[opencode] KORTIX_COMPILED_AGENT_CONFIG present but not valid JSON; ignoring')
+    }
+  }
   if (env.OPENCODE_CONFIG_CONTENT) {
     try {
       const parsed = JSON.parse(env.OPENCODE_CONFIG_CONTENT)
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        base = parsed as Record<string, unknown>
+        base = { ...base, ...(parsed as Record<string, unknown>) }
       }
     } catch {
     }

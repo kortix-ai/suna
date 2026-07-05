@@ -123,14 +123,25 @@ kortix_cli = ["project.read", "project.read", "project.deploy"]
 });
 
 describe('[[agents]] — kortix_cli enum enforcement', () => {
-  test('every channel action is grantable', () => {
+  test('every project connector action is grantable', () => {
     const { specs, errors } = parse(`
 [[agents]]
 name = "a"
-kortix_cli = ["channel.send", "channel.read"]
+kortix_cli = ["project.connector.write", "project.connector.read"]
 `);
     expect(errors).toEqual([]);
-    expect(specs[0].kortixCli).toEqual(['channel.send', 'channel.read']);
+    expect(specs[0].kortixCli).toEqual(['project.connector.write', 'project.connector.read']);
+  });
+
+  test('channel.* actions are no longer grantable (removed dead catalog leaves)', () => {
+    const { specs, errors } = parse(`
+[[agents]]
+name = "a"
+kortix_cli = ["channel.send"]
+`);
+    expect(specs).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].error).toContain('unknown action');
   });
 
   test('account-scoped action is rejected with a clear message', () => {
@@ -330,5 +341,184 @@ describe('applyAgentScope — the dashboard scope editor write step', () => {
     expect(spec.env).toEqual(['DB_URL']);
     expect(spec.connectors).toEqual(['github']);
     expect(parsed.errors).toHaveLength(0);
+  });
+
+  test('"declared in" error names the manifest\'s own filename, not a hard-coded kortix.toml', () => {
+    const r = applyAgentScope(base(), 'ghost', { env: ['X'] }, 'kortix.yaml');
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toBe('No agent "ghost" declared in kortix.yaml');
+  });
+});
+
+// Regression guard: agent spec/error `path` breadcrumbs used to hard-code
+// `kortix.toml` regardless of which file the manifest actually came from.
+// They now derive the filename from the parsed manifest's own `path` (set by
+// `parseManifestString`), so a `kortix.yaml` project's spec/error paths say
+// `kortix.yaml`.
+describe('[[agents]] — spec/error `path` derives from the manifest\'s own filename', () => {
+  function parseYaml(body: string) {
+    return extractAgents(
+      parseManifestString(
+        `kortix_version: ${KNOWN_SCHEMA_VERSION}\nproject:\n  name: test\n${body}`,
+        'yaml',
+        'kortix.yaml',
+      ),
+    );
+  }
+
+  test('a yaml manifest\'s agent spec path says kortix.yaml', () => {
+    const { specs, errors } = parseYaml(`agents:\n  - name: release-bot\n`);
+    expect(errors).toEqual([]);
+    expect(specs[0]?.path).toBe('kortix.yaml#agents.release-bot');
+  });
+
+  test('a yaml manifest\'s `[agents]` (non-array) error path says kortix.yaml', () => {
+    const { errors } = parseYaml(`agents:\n  name: x\n`);
+    expect(errors[0]?.path).toBe('kortix.yaml');
+  });
+
+  test('a toml manifest still says kortix.toml (default, unchanged)', () => {
+    const { specs } = parse(`
+[[agents]]
+name = "release-bot"
+`);
+    expect(specs[0]?.path).toBe('kortix.toml#agents.release-bot');
+  });
+});
+
+// kortix_version 2 — `agents:` is a name→block map (spec §2.1/§2.2), not the
+// v1 `[[agents]]` array. This is the runtime-wiring half of the fix: the v2
+// manifest schema (packages/manifest-schema) already validates this shape at
+// write time; these tests cover the READER apps/api's grant pipeline actually
+// runs through (extractAgents → grantFromLoadedAgents/resolveGovernedAgentGrant).
+describe('kortix_version 2 — `agents:` map', () => {
+  function parseV2(agentsBody: string, opts: { defaultAgent?: string } = {}) {
+    const text = [
+      'kortix_version: 2',
+      `default_agent: ${opts.defaultAgent ?? 'support'}`,
+      'project:',
+      '  name: test',
+      'agents:',
+      agentsBody,
+    ].join('\n');
+    return extractAgents(parseManifestString(text, 'yaml', 'kortix.yaml'));
+  }
+
+  test('a plain agent block, no grants declared → deny-by-default (opposite of v1\'s env:"all")', () => {
+    const { specs, errors } = parseV2(`
+  support:
+    description: "Handles support"
+    mode: primary
+`);
+    expect(errors).toEqual([]);
+    expect(specs).toHaveLength(1);
+    expect(specs[0]).toMatchObject({
+      name: 'support',
+      enabled: true,
+      connectors: [],
+      kortixCli: [],
+      env: [], // v2 default is 'none', unlike v1's 'all' — this is the actual dimension flip
+      file: null,
+    });
+  });
+
+  test('connectors/kortix_cli/secrets lists resolve via resolveGrantSet; `secrets` maps onto AgentSpec.env', () => {
+    const { specs, errors } = parseV2(`
+  support:
+    connectors: [github, slack]
+    kortix_cli: [project.deploy, project.cr.open]
+    secrets: [STRIPE_KEY, GH_TOKEN]
+`);
+    expect(errors).toEqual([]);
+    expect(specs[0].connectors).toEqual(['github', 'slack']);
+    expect(specs[0].kortixCli).toEqual(['project.deploy', 'project.cr.open']);
+    expect(specs[0].env).toEqual(['STRIPE_KEY', 'GH_TOKEN']);
+  });
+
+  test('"all" / "none" string forms resolve the same as v1', () => {
+    const { specs } = parseV2(`
+  support:
+    connectors: all
+    kortix_cli: none
+    secrets: all
+`);
+    expect(specs[0].connectors).toBe('all');
+    expect(specs[0].kortixCli).toEqual([]);
+    expect(specs[0].env).toBe('all');
+  });
+
+  test('`disable: true` maps to enabled=false; omitted/false stays enabled', () => {
+    const { specs } = parseV2(`
+  support:
+    disable: true
+  other:
+    description: "another agent"
+`, { defaultAgent: 'other' });
+    expect(specs.find((s) => s.name === 'support')!.enabled).toBe(false);
+    expect(specs.find((s) => s.name === 'other')!.enabled).toBe(true);
+  });
+
+  test('`prompt` maps onto AgentSpec.file', () => {
+    const { specs } = parseV2(`
+  support:
+    prompt: agents/support.md
+`);
+    expect(specs[0].file).toBe('agents/support.md');
+  });
+
+  test('`model` is carried through', () => {
+    const { specs } = parseV2(`
+  support:
+    model: anthropic/claude-sonnet-5
+`);
+    expect(specs[0].model).toBe('anthropic/claude-sonnet-5');
+  });
+
+  test('an ungrantable kortix_cli action is rejected the same way as v1', () => {
+    const { specs, errors } = parseV2(`
+  support:
+    kortix_cli: [member.invite]
+`);
+    expect(specs).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].error).toContain('account-scoped');
+  });
+
+  test('an invalid agent name (map key) is rejected', () => {
+    const { errors } = parseV2(`
+  "Bad Name":
+    description: "x"
+`, { defaultAgent: 'support' });
+    expect(errors[0]?.error).toContain('Invalid agent name');
+  });
+
+  test('`agents` as an array (the v1 shape) under kortix_version 2 is rejected with a map-shape error', () => {
+    const text = [
+      'kortix_version: 2',
+      'default_agent: support',
+      'project:',
+      '  name: test',
+      'agents:',
+      '  - name: support',
+    ].join('\n');
+    const { specs, errors } = extractAgents(parseManifestString(text, 'yaml', 'kortix.yaml'));
+    expect(specs).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].error).toContain('must be a map of agent name');
+  });
+
+  test('the manifest\'s top-level `default_agent` is captured on LoadedAgents (v1 leaves it null)', () => {
+    const v2 = parseV2(`
+  support:
+    description: "x"
+`, { defaultAgent: 'support' });
+    expect(v2.defaultAgent).toBe('support');
+
+    const v1 = parse(`
+[[agents]]
+name = "release-bot"
+`);
+    expect(v1.defaultAgent).toBeFalsy();
   });
 });
