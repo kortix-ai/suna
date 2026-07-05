@@ -17,8 +17,8 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { ReactNode } from 'react';
 import type { FileNode } from '../types';
-import { getFileIcon } from './file-icon';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -29,6 +29,16 @@ import {
 
 /** Git status for display purposes */
 export type GitStatusType = 'added' | 'deleted' | 'modified';
+
+/**
+ * Icon resolver, injected by the consuming file source. Each source (live
+ * workspace vs. project git-ref) ships its own `file-icon.tsx` with a
+ * different icon set, so this component never imports one directly.
+ */
+export type FileIconResolver = (
+  name: string,
+  opts: { isDirectory: boolean },
+) => ReactNode;
 
 interface FileTreeItemProps {
   node: FileNode;
@@ -51,15 +61,16 @@ interface FileTreeItemProps {
   diagnosticCounts?: { errors: number; warnings: number };
   /** Whether this item is currently being downloaded (shows spinner in context menu) */
   isDownloadingItem?: boolean;
+  /** Icon resolver from the consuming file source's own file-icon module */
+  getIcon: FileIconResolver;
+  /** Label for the "history" context menu item — the live workspace calls
+   * this "View History", the git-ref-scoped Drive view calls it "Checkpoint
+   * history". Defaults to the live-workspace label. */
+  historyLabel?: string;
 }
 
 // Custom MIME type for internal drag-and-drop
 const DRAG_MIME = 'application/x-file-tree-path';
-
-/** File extension / filename to icon mapping */
-function getNodeIcon(node: FileNode) {
-  return getFileIcon(node.name, { isDirectory: node.type === 'directory' });
-}
 
 /** Git status → text color class */
 const gitStatusTextColor: Record<GitStatusType, string> = {
@@ -91,9 +102,13 @@ function getNameSelectionEnd(name: string, isDirectory: boolean): number {
 
 export { DRAG_MIME };
 
-export function FileTreeItem({ node, onClick, onDownload, onRename, onDelete, onHistory, onCopy, onCut, onDropMove, siblingNames, gitStatus, isCut, diagnosticCounts, isDownloadingItem }: FileTreeItemProps) {
+export function FileTreeItem({ node, onClick, onDownload, onRename, onDelete, onHistory, onCopy, onCut, onDropMove, siblingNames, gitStatus, isCut, diagnosticCounts, isDownloadingItem, getIcon, historyLabel }: FileTreeItemProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const hasContextMenu = onDownload || onRename || onDelete || onHistory || onCopy || onCut;
+  const resolvedHistoryLabel =
+    historyLabel ?? tHardcodedUi.raw('featuresFilesComponentsFileTreeItem.line322JsxTextViewHistory');
+
+  const getNodeIcon = (n: FileNode) => getIcon(n.name, { isDirectory: n.type === 'directory' });
 
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameName, setRenameName] = useState('');
@@ -319,7 +334,7 @@ export function FileTreeItem({ node, onClick, onDownload, onRename, onDelete, on
 
         {node.type === 'file' && onHistory && (
           <ContextMenuItem onClick={() => onHistory(node)}>
-            <History className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresFilesComponentsFileTreeItem.line322JsxTextViewHistory')}</ContextMenuItem>
+            <History className="mr-2 h-4 w-4" />{resolvedHistoryLabel}</ContextMenuItem>
         )}
 
         <ContextMenuSeparator />

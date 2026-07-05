@@ -31,11 +31,11 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
-import { isWithinRoot, useFilesStore } from '../store/files-store';
+import { isWithinRoot, useFilesStore } from '@/features/file-browser/store/files-store';
 import { useCurrentProject } from '../hooks';
 import { useInvalidateFileList } from '../hooks/use-file-list';
 import { cn } from '@/lib/utils';
-import type { SortField } from '../store/files-store';
+import type { SortField } from '@/features/file-browser/store/files-store';
 
 interface DriveToolbarProps {
   onUpload: () => void;

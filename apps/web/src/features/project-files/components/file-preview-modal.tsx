@@ -3,7 +3,7 @@
 import { FilePreviewModal as BaseFilePreviewModal } from '@/features/file-viewer';
 import { useTranslations } from 'next-intl';
 import { useProjectFileSource } from '../file-source';
-import { useFilesStore } from '../store/files-store';
+import { useFilesStore } from '@/features/file-browser/store/files-store';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { getFileIcon } from './file-icon';
 

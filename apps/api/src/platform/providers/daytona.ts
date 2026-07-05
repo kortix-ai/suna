@@ -170,8 +170,8 @@ export class DaytonaProvider implements SandboxProvider {
       // provisionSessionSandbox().
       ...opts.envVars,
     };
-    if (!envVars.KORTIX_TOKEN) {
-      throw new Error('[daytona] create() called without KORTIX_TOKEN — sandbox cannot authenticate to the Kortix router.');
+    if (!envVars.KORTIX_SANDBOX_TOKEN) {
+      throw new Error('[daytona] create() called without KORTIX_SANDBOX_TOKEN — sandbox cannot authenticate to the Kortix router.');
     }
 
     // Every Daytona sandbox boots from its project's own per-project

@@ -57,11 +57,11 @@ import {
   useFileRename,
   useFileUpload,
 } from '../hooks/use-file-mutations';
-import { useFilesStore, useFilesStoreApi } from '../store/files-store';
-import type { FileNode } from '../types';
+import { useFilesStore, useFilesStoreApi } from '@/features/file-browser/store/files-store';
+import type { FileNode } from '@/features/file-browser/types';
 import { getFileIcon } from './file-icon';
-import type { GitStatusType } from './file-tree-item';
-import { DRAG_MIME } from './file-tree-item';
+import type { GitStatusType } from '@/features/file-browser/components/file-tree-item';
+import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
 
 // ─── Recursive tree node ────────────────────────────────────────────────────
 

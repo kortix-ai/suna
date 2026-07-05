@@ -19,10 +19,15 @@ import { cn } from '@/lib/utils';
  */
 export function AssistantPendingRow({
   status,
+  body,
   className,
 }: {
   /** Replaces the cycling thinking text (e.g. a retry notice, or a boot stage). */
   status?: ReactNode;
+  /** Replaces the ENTIRE single-line waiting row under the logomark (dot + text +
+   *  elapsed) with a custom block — e.g. the inline boot checklist. Keeps the
+   *  shared Kortix logomark + spacing so the crossfade to the real chat is seamless. */
+  body?: ReactNode;
   className?: string;
 }) {
   // Elapsed timer — formatted exactly like the in-turn indicator (blank under 1s).
@@ -44,20 +49,23 @@ export function AssistantPendingRow({
         className="dark:invert-0 h-[14px] w-auto flex-shrink-0 invert"
       />
       {/* Regular assistant-waiting row: pulsing dot + thinking text + elapsed —
-          identical to SessionChat's in-turn working indicator. */}
-      <div className="text-muted-foreground flex items-center gap-2 py-1 text-xs">
-        <span className="relative flex size-3" aria-hidden>
-          <span className="bg-muted-foreground/30 absolute inline-flex h-full w-full animate-ping rounded-full" />
-          <span className="bg-muted-foreground/50 relative inline-flex size-3 rounded-full" />
-        </span>
-        {status ?? <AnimatedThinkingText className="text-xs" />}
-        {duration && (
-          <>
-            <span className="text-muted-foreground/50">·</span>
-            <span className="text-muted-foreground/70">{duration}</span>
-          </>
-        )}
-      </div>
+          identical to SessionChat's in-turn working indicator. A `body` override
+          swaps this whole row out (e.g. the inline boot checklist). */}
+      {body ?? (
+        <div className="text-muted-foreground flex items-center gap-2 py-1 text-xs">
+          <span className="relative flex size-3" aria-hidden>
+            <span className="bg-muted-foreground/30 absolute inline-flex h-full w-full animate-ping rounded-full" />
+            <span className="bg-muted-foreground/50 relative inline-flex size-3 rounded-full" />
+          </span>
+          {status ?? <AnimatedThinkingText className="text-xs" />}
+          {duration && (
+            <>
+              <span className="text-muted-foreground/50">·</span>
+              <span className="text-muted-foreground/70">{duration}</span>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

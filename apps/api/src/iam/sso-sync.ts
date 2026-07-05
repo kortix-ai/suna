@@ -23,7 +23,7 @@ import {
   listSsoGroupMappings,
 } from '../repositories/sso';
 
-export interface SsoSyncOutcome {
+interface SsoSyncOutcome {
   /** No SAML provider id on this JWT — sync skipped. */
   skipped: boolean;
   /** True when this run created the account_members row. */

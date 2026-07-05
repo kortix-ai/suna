@@ -8,7 +8,7 @@
 
 import { getClient } from '@/lib/opencode-sdk';
 import { getPtyWebSocketUrl } from '@/hooks/opencode/use-opencode-pty';
-import type { GitCommit, FileHistoryResult, FileCommitDiff } from '../types';
+import type { GitCommit, FileHistoryResult, FileCommitDiff } from '@/features/file-browser/types';
 
 // ---------------------------------------------------------------------------
 // Constants

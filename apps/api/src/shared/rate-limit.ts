@@ -29,10 +29,31 @@ interface AuditContext {
   metadata?: Record<string, unknown>;
 }
 
+const UUID_V4_REGEX = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+
+// Hard cap on distinct live buckets per limiter. A limiter keyed on any
+// attacker-influenced value (e.g. the public-session-share id) would otherwise
+// grow this Map without bound under a flood of unique keys → process-wide OOM.
+// When exceeded we evict the oldest-inserted entries (idle ones first).
+const MAX_BUCKETS = 50_000;
+
 export class TokenBucketRateLimiter {
   private buckets = new Map<string, Bucket>();
 
   constructor(private readonly namespace: string) {}
+
+  private evictIfNeeded() {
+    if (this.buckets.size < MAX_BUCKETS) return;
+    // Map preserves insertion order and entries are refreshed in place (never
+    // re-inserted), so the head is the least-recently-created. Drop ~10% to
+    // amortize the sweep across many inserts.
+    const dropCount = Math.ceil(MAX_BUCKETS * 0.1);
+    let dropped = 0;
+    for (const key of this.buckets.keys()) {
+      this.buckets.delete(key);
+      if (++dropped >= dropCount) break;
+    }
+  }
 
   check(key: string, policy: RateLimitPolicy): RateLimitResult {
     const limit = Math.max(1, Math.floor(policy.limit));
@@ -42,6 +63,7 @@ export class TokenBucketRateLimiter {
     let bucket = this.buckets.get(bucketKey);
 
     if (!bucket) {
+      this.evictIfNeeded();
       bucket = { tokens: limit - 1, lastRefill: now };
       this.buckets.set(bucketKey, bucket);
       return { allowed: true, limit, remaining: bucket.tokens, resetMs: windowMs };
@@ -138,6 +160,7 @@ export async function enforceRateLimit(
 
 const inviteAcceptLimiter = new TokenBucketRateLimiter('invite_accept');
 const sandboxProxyLimiter = new TokenBucketRateLimiter('sandbox_proxy');
+const publicSessionShareLimiter = new TokenBucketRateLimiter('public_session_share');
 export const sessionLlmLimiter = new TokenBucketRateLimiter('session_llm');
 
 export function createInviteAcceptRateLimitMiddleware() {
@@ -187,8 +210,49 @@ export function createSandboxProxyRateLimitMiddleware() {
   };
 }
 
+/**
+ * Guards the anonymous `/v1/public/session-shares/:shareId*` family — same
+ * shape as `createInviteAcceptRateLimitMiddleware` (no authenticated identity
+ * to key on), but keyed on the share id path param rather than client IP:
+ * every visitor to one shared link is legitimately behind the same bucket,
+ * while a single caller trying many share ids from behind a shared NAT/VPN
+ * doesn't starve everyone else's shares. Every call also fetches from the
+ * sandbox daemon (list sessions + read messages), so this is deliberately
+ * tighter than the plain metadata-only invite-accept limiter.
+ */
+export function createPublicSessionShareRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    // Key on the share id when it's a well-formed uuid (every visitor to one
+    // shared link shares that bucket); otherwise fall back to client IP. This
+    // MUST run before the raw param can key the bucket Map — an attacker
+    // looping unique garbage ids would otherwise allocate an unbounded number
+    // of buckets (the id is never a real share, so it never reaches the
+    // handler's own validation) and OOM the process.
+    const rawShareId = c.req.param('shareId');
+    const shareId = rawShareId && UUID_V4_REGEX.test(rawShareId) ? rawShareId : `ip:${clientIp(c)}`;
+    const denied = await enforceRateLimit(
+      c,
+      publicSessionShareLimiter,
+      shareId,
+      {
+        limit: positiveInt((config as any).KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN, 60),
+        windowMs: 60_000,
+      },
+      {
+        action: `RATE_LIMIT ${c.req.method} ${c.req.path}`,
+        resourceType: 'public_session_share',
+        resourceId: shareId,
+        metadata: { limiter: 'public_session_share' },
+      },
+    );
+    if (denied) return denied;
+    await next();
+  };
+}
+
 export function resetRateLimiters() {
   inviteAcceptLimiter.reset();
   sandboxProxyLimiter.reset();
+  publicSessionShareLimiter.reset();
   sessionLlmLimiter.reset();
 }

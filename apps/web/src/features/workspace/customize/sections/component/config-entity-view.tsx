@@ -258,8 +258,10 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
       {stateContent ??
         (config ? (
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
-            {/* Left — a selectable list, stuck to the edge and sticky on scroll. */}
-            <div className="lg:border-border/60 space-y-3 lg:sticky lg:top-0 lg:self-start lg:border-r lg:pr-4">
+            {/* Left — a selectable list, sticky on scroll. The top offset keeps
+                it from pinning flush against the scrollport edge (the section's
+                vertical padding scrolls away with the content). */}
+            <div className="lg:border-border/60 space-y-3 lg:sticky lg:top-6 lg:self-start lg:border-r lg:pr-4">
               {searchInput}
               {filtered.length === 0 ? (
                 noMatches
@@ -532,7 +534,7 @@ function EntityDetail<T extends ConfigEntity>({
           </div>
         </div>
         {extra ? (
-          <aside className="space-y-3 xl:sticky xl:top-0 xl:self-start xl:pt-1">{extra}</aside>
+          <aside className="space-y-3 xl:sticky xl:top-6 xl:self-start xl:pt-1">{extra}</aside>
         ) : null}
       </div>
     );

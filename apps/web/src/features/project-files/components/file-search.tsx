@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { FileText, Folder, Search, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFileSearch } from '../hooks';
-import { useFilesStore } from '../store/files-store';
+import { useFilesStore } from '@/features/file-browser/store/files-store';
 
 export function FileSearch() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
