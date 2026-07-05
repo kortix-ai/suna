@@ -192,3 +192,60 @@ describe('relayStream with a primed reader', () => {
     expect(settledBuffer).toBe(text);
   });
 });
+
+describe('relayStream upstream error frames', () => {
+  test('passes the in-stream error frame to settle and warns', async () => {
+    const up = controllableUpstream();
+    const warnings: unknown[][] = [];
+    let settledError: unknown = 'unset';
+    const out = relayStream({
+      upstreamBody: up.stream,
+      captureBodies: false,
+      requestId: 'r-err',
+      logger: { warn: (...args: unknown[]) => warnings.push(args) },
+      settle: async (_usage, _response, streamError) => {
+        settledError = streamError;
+      },
+      heartbeatMs: 10_000,
+    });
+    up.push('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n');
+    up.push('data: {"error":{"message":"Upstream idle timeout exceeded","code":502}}\n\n');
+    up.close();
+    const text = await drain(out);
+    // The frame is still relayed verbatim — the caller must see the failure too.
+    expect(text).toContain('Upstream idle timeout exceeded');
+    await delay(10); // let the detached finally run settle()
+    expect(settledError).toEqual({ message: 'Upstream idle timeout exceeded', code: 502 });
+    expect(warnings.some((w) => String(w[0]).includes('upstream error frame'))).toBe(true);
+  });
+
+  test('settles with a null error frame on a clean stream', async () => {
+    const up = controllableUpstream();
+    let settledError: unknown = 'unset';
+    const out = relayStream({
+      upstreamBody: up.stream,
+      captureBodies: false,
+      requestId: 'r-clean',
+      logger: noop,
+      settle: async (_usage, _response, streamError) => {
+        settledError = streamError;
+      },
+      heartbeatMs: 10_000,
+    });
+    up.push('data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n');
+    up.close();
+    await drain(out);
+    await delay(10);
+    expect(settledError).toBeNull();
+  });
+});
+
+describe('probeStream error frames', () => {
+  test('an error-frame-only stream probes as no-content (so the handler retries it)', async () => {
+    const up = controllableUpstream();
+    up.push('data: {"error":{"message":"Upstream idle timeout exceeded","code":502}}\n\n');
+    up.close();
+    const probe = await probeStream(up.stream);
+    expect(probe.hasContent).toBe(false);
+  });
+});

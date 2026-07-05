@@ -24,9 +24,13 @@ export function buildUpstreamRequest(
   if (descriptor.appReferer) headers['http-referer'] = descriptor.appReferer;
   if (descriptor.headers) Object.assign(headers, descriptor.headers);
 
+  let payload = body;
+  if (descriptor.bodyExtras) payload = { ...payload, ...descriptor.bodyExtras };
+  if (descriptor.resolvedModel) payload = { ...payload, model: descriptor.resolvedModel };
+
   return {
     url: `${trimTrailingSlash(descriptor.baseUrl)}/chat/completions`,
     headers,
-    payload: descriptor.resolvedModel ? { ...body, model: descriptor.resolvedModel } : body,
+    payload,
   };
 }
