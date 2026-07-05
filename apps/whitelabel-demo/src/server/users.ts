@@ -15,7 +15,10 @@ import path from 'node:path';
 
 type UsersData = Record<string, string[]>;
 
-const DATA_DIR = path.join(process.cwd(), '.lumen-data');
+// LUMEN_DATA_DIR override exists so the e2e suite can point a test instance at
+// a throwaway temp dir — without it, tests booting `next start` from the app
+// dir share (and would wipe) the developer's real local store.
+const DATA_DIR = process.env.LUMEN_DATA_DIR || path.join(process.cwd(), '.lumen-data');
 const DATA_FILE = path.join(DATA_DIR, 'users.json');
 
 function readData(): UsersData {

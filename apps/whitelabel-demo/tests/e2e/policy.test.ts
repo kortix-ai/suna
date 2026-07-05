@@ -9,7 +9,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { APP_ROOT, type AppInstance, loginUser, resetUsersStore, startApp, uniqueEmail } from './harness';
+import { TEST_DATA_DIR, type AppInstance, loginUser, resetUsersStore, startApp, uniqueEmail } from './harness';
 import { createMockUpstream, type MockUpstream } from './mock-upstream';
 import { DEMO_PASSWORD, WRAPPER_KEY, wrapperEnv } from './env';
 
@@ -198,7 +198,7 @@ describe('wrapper-mode policy matrix', () => {
     const ids = ((await list.json()) as Array<{ project_id: string }>).map((p) => p.project_id);
     expect(ids.sort()).toEqual([pa.project_id, pb.project_id].sort());
 
-    const store = JSON.parse(readFileSync(join(APP_ROOT, '.lumen-data', 'users.json'), 'utf8'));
+    const store = JSON.parse(readFileSync(join(TEST_DATA_DIR, 'users.json'), 'utf8'));
     expect(store[email].sort()).toEqual([pa.project_id, pb.project_id].sort());
   });
 
@@ -211,7 +211,7 @@ describe('wrapper-mode policy matrix', () => {
     });
     const project = (await provision.json()) as { project_id: string };
 
-    expect(existsSync(join(APP_ROOT, '.lumen-data', 'users.json'))).toBe(true);
+    expect(existsSync(join(TEST_DATA_DIR, 'users.json'))).toBe(true);
 
     // Simulate a fresh page load: brand-new fetch, same bearer token.
     const later = await fetch(`${app.baseUrl}/api/kortix/projects/${project.project_id}`, {
@@ -219,7 +219,7 @@ describe('wrapper-mode policy matrix', () => {
     });
     expect(later.status).toBe(200);
 
-    const store = JSON.parse(readFileSync(join(APP_ROOT, '.lumen-data', 'users.json'), 'utf8'));
+    const store = JSON.parse(readFileSync(join(TEST_DATA_DIR, 'users.json'), 'utf8'));
     expect(store[email]).toContain(project.project_id);
   });
 });

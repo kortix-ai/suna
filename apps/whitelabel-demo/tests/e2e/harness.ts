@@ -6,12 +6,21 @@
  * file that needs a live instance.
  */
 
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 export const APP_ROOT = join(import.meta.dir, '..', '..');
 const NEXT_BIN = join(APP_ROOT, 'node_modules', '.bin', 'next');
+
+/**
+ * Per-test-run ownership store, NEVER the app dir's real `.lumen-data`.
+ * Test instances boot with `LUMEN_DATA_DIR` pointing here (see `startApp`),
+ * so running the suite can't wipe a developer's local wrapper state — which
+ * is exactly what the original cwd-based store did.
+ */
+export const TEST_DATA_DIR = mkdtempSync(join(tmpdir(), 'lumen-e2e-'));
 
 let buildPromise: Promise<void> | null = null;
 
@@ -49,11 +58,12 @@ export interface AppInstance {
   stop(): Promise<void>;
 }
 
-/** Remove the wrapper's per-user ownership JSON store. Always call this
+/** Remove the suite's per-user ownership JSON store (the temp
+ *  `TEST_DATA_DIR`, never the app dir's real `.lumen-data`). Always call this
  *  before AND after a boot that will provision/own projects, so test files
- *  don't leak state into each other via the shared `APP_ROOT` cwd. */
+ *  don't leak state into each other via the shared store. */
 export function resetUsersStore(): void {
-  rmSync(join(APP_ROOT, '.lumen-data'), { recursive: true, force: true });
+  rmSync(TEST_DATA_DIR, { recursive: true, force: true });
 }
 
 /** A fresh, collision-free demo-login email for a single test. */
@@ -93,7 +103,7 @@ export async function startApp(
   const proc = Bun.spawn({
     cmd: [NEXT_BIN, 'start', '-p', '0'],
     cwd: APP_ROOT,
-    env: { ...process.env, ...env },
+    env: { ...process.env, LUMEN_DATA_DIR: TEST_DATA_DIR, ...env },
     stdout: 'pipe',
     stderr: 'pipe',
   });
