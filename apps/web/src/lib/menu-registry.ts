@@ -18,6 +18,7 @@
  */
 
 import { Icon } from '@/features/icon/icon';
+import { WALLPAPERS } from '@/lib/wallpapers';
 import type { ExperimentalFeatureKey } from '@kortix/sdk/projects-client';
 import {
   CogOne,
@@ -68,6 +69,7 @@ import {
   TerminalSquare,
   UserPlus,
   Volume2,
+  Wallpaper as WallpaperIcon,
   Webhook,
 } from 'lucide-react';
 import { IconType } from 'react-icons/lib';
@@ -88,9 +90,16 @@ export type MenuSurface = 'commandPalette' | 'rightSidebar' | 'leftSidebar' | 'u
  * - 'action':   Runs an imperative callback (e.g. "new session", "logout")
  * - 'settings': Opens the UserSettingsModal to a specific tab
  * - 'theme':    Switches the app theme
+ * - 'wallpaper': Applies a wallpaper (same set as Settings → Appearance)
  * - 'sandboxService': Opens a sandbox service preview tab (needs special handler)
  */
-export type MenuItemKind = 'navigate' | 'action' | 'settings' | 'theme' | 'sandboxService';
+export type MenuItemKind =
+  | 'navigate'
+  | 'action'
+  | 'settings'
+  | 'theme'
+  | 'wallpaper'
+  | 'sandboxService';
 
 export type SettingsTabId =
   | 'general'
@@ -114,6 +123,7 @@ export type MenuGroup =
   | 'preferences'
   | 'account'
   | 'theme'
+  | 'wallpaper'
   | 'view'
   | 'admin';
 
@@ -159,6 +169,8 @@ export interface MenuItemDef {
   settingsTab?: SettingsTabId;
   /** For kind='theme': which theme to set */
   themeValue?: string;
+  /** For kind='wallpaper': which wallpaper to apply */
+  wallpaperValue?: string;
   /** For kind='sandboxService': the container port */
   sandboxPort?: string;
 
@@ -861,6 +873,25 @@ export const menuRegistry: MenuItemDef[] = [
     themeValue: 'system',
     keywords: 'theme system auto default os',
   },
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // WALLPAPERS — derived from the appearance-tab list; typing a wallpaper's
+  // name (Dither, Grain, Silk, …) in the palette applies it directly.
+  // ──────────────────────────────────────────────────────────────────────────
+  ...WALLPAPERS.map(
+    (wp): MenuItemDef => ({
+      id: `wallpaper-${wp.id}`,
+      label: `Appearance · ${wp.name}`,
+      icon: WallpaperIcon,
+      group: 'wallpaper',
+      showIn: ['commandPalette'],
+      kind: 'wallpaper',
+      wallpaperValue: wp.id,
+      keywords: `wallpaper wallpapers background appearance ${wp.id}${
+        wp.type === 'shader' ? ' shader shaders animated' : ''
+      }`,
+    }),
+  ),
 
   // ──────────────────────────────────────────────────────────────────────────
   // VIEW
