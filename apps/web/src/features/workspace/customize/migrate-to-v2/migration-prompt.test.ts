@@ -53,4 +53,47 @@ describe('MIGRATE_TO_V2_PROMPT — the core migration artifact', () => {
   test('is a non-trivial, self-contained prompt (not a one-liner)', () => {
     expect(MIGRATE_TO_V2_PROMPT.length).toBeGreaterThan(1000);
   });
+
+  test('points at the canonical schema — CLI command and published URL', () => {
+    expect(MIGRATE_TO_V2_PROMPT).toContain('kortix schema --version 2');
+    expect(MIGRATE_TO_V2_PROMPT).toContain('https://kortix.com/schema/kortix.v2.schema.json');
+  });
+
+  test('lists every v2 clean-break the validator hard-errors on', () => {
+    expect(MIGRATE_TO_V2_PROMPT).toContain('per_user');
+    expect(MIGRATE_TO_V2_PROMPT).toContain('agent_scope');
+    expect(MIGRATE_TO_V2_PROMPT).toContain('project.session.exec');
+    expect(MIGRATE_TO_V2_PROMPT).toContain('channel.send');
+  });
+
+  test('forbids widening a grant to cover a deleted legacy action', () => {
+    expect(MIGRATE_TO_V2_PROMPT).toMatch(/do not substitute a broader grant/i);
+  });
+
+  test('carries a worked before/after example in both formats', () => {
+    expect(MIGRATE_TO_V2_PROMPT).toContain('```toml');
+    const tomlStart = MIGRATE_TO_V2_PROMPT.indexOf('```toml');
+    const yamlAfter = MIGRATE_TO_V2_PROMPT.indexOf('```yaml', tomlStart);
+    expect(yamlAfter).toBeGreaterThan(tomlStart);
+    expect(MIGRATE_TO_V2_PROMPT).toContain('kortix_version = 1');
+    expect(MIGRATE_TO_V2_PROMPT).toContain('kortix_version: 2');
+  });
+
+  test('the worked v2 example authors none of the removed keys (comments may mention them)', () => {
+    const start = MIGRATE_TO_V2_PROMPT.indexOf('becomes this v2');
+    expect(start).toBeGreaterThan(-1);
+    const end = MIGRATE_TO_V2_PROMPT.indexOf('Note what happened', start);
+    expect(end).toBeGreaterThan(start);
+    const withoutComments = MIGRATE_TO_V2_PROMPT.slice(start, end)
+      .split('\n')
+      .map((line) => line.replace(/#.*$/, ''))
+      .join('\n');
+    for (const removed of ['credential:', 'agent_scope:', 'channels:', 'project.session.exec']) {
+      expect(withoutComments).not.toContain(removed);
+    }
+  });
+
+  test('instructs carrying over hand-written TOML comments', () => {
+    expect(MIGRATE_TO_V2_PROMPT.toLowerCase()).toContain('comments');
+  });
 });

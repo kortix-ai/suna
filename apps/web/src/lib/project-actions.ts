@@ -130,6 +130,10 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   sandbox: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE },
   dev: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   settings: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
+  // `upgrade` (migrate the manifest to v2) starts an agent session that edits the
+  // repo and opens a CR — the session itself asserts the real leaves; visibility
+  // follows settings (editor+ via customize.write in isCustomizeSectionVisible).
+  upgrade: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   computers: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE },
   // Meetings (notetaker bot) — connector-backed (materializes kortix_meet), so
   // it follows the connector leaves like channels does.

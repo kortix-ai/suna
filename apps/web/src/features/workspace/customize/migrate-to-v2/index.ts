@@ -7,4 +7,4 @@ export {
 } from './manifest-version';
 export { useMigrateToV2, buildMigrateToV2Stash, type MigrateToV2 } from './use-migrate-to-v2';
 export { MigrateToV2Button, MigrateToV2ButtonView } from './migrate-to-v2-button';
-export { MigrateToV2Card } from './migrate-to-v2-card';
+export { UpgradeView } from './upgrade-view';
