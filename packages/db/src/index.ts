@@ -176,6 +176,7 @@ export {
   executorProjectSettings,
   executorExecutions,
   sessionToolApprovals,
+  sessionToolAllowAll,
   executorConnectorsRelations,
   executorConnectorActionsRelations,
   executorConnectorPoliciesRelations,

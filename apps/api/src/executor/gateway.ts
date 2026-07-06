@@ -147,6 +147,11 @@ export interface GatewayDeps {
     connectorId: string,
     actionPath: string,
   ): Promise<boolean>;
+  /** "Allow ALL for this session" check: has this session been granted a
+   *  blanket allow-all? A hit turns EVERY require_approval into a silent run
+   *  (no hold, no re-prompt). Only ever widens ask→run; never consulted for a
+   *  policy `block`. */
+  isSessionAllowAll?(sessionId: string): Promise<boolean>;
   fetchImpl: FetchImpl;
   /** Pipedream execution (Connect actions/run) — required for pipedream connectors. */
   executePipedream?(input: {
@@ -421,17 +426,22 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       // for THIS connector + action, skip the gate — run it silently, no hold,
       // no re-prompt. Audited as `ok` (reason session_allow) so the timeline
       // still shows the call happened + why it wasn't asked.
+      const allowAll =
+        input.sessionId && deps.isSessionAllowAll
+          ? await deps.isSessionAllowAll(input.sessionId)
+          : false;
       const sessionAllowed =
-        input.sessionId && deps.isSessionToolApproved
+        allowAll ||
+        (input.sessionId && deps.isSessionToolApproved
           ? await deps.isSessionToolApproved(
               input.sessionId,
               connector.connectorId,
               input.actionPath,
             )
-          : false;
+          : false);
       if (sessionAllowed) {
         await audit(deps, input, connector.connectorId, 'ok', action.risk, {
-          reason: 'session_allow',
+          reason: allowAll ? 'session_allow_all' : 'session_allow',
           policy_source: decision.source,
         });
       } else {

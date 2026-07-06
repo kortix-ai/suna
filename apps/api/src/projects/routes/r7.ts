@@ -1,4 +1,4 @@
-import { recordSessionToolApproval } from '../../executor/db-deps';
+import { recordSessionAllowAll, recordSessionToolApproval } from '../../executor/db-deps';
 import { isSessionVisibleTo, loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../executor/share';
 import {
   PROJECT_ACTIONS,
@@ -921,10 +921,13 @@ projectsApp.openapi(
       return c.json({ error: "decision must be 'approve' or 'deny'" }, 400);
     }
     // 'once' (default) = approve just this call; 'session' = also stop asking for
-    // THIS connector+action for the rest of the session. Only meaningful on
-    // approve. (A policy `block` never reaches this endpoint as pending, so
-    // "allow for session" can only ever widen require_approval → run.)
-    const scope = normalizeString(body.scope) === 'session' ? 'session' : 'once';
+    // THIS connector+action for the rest of the session; 'session_all' = stop
+    // asking for EVERY action for the rest of the session (blanket allow-all).
+    // Only meaningful on approve. (A policy `block` never reaches this endpoint
+    // as pending, so these can only ever widen require_approval → run.)
+    const rawScope = normalizeString(body.scope);
+    const scope =
+      rawScope === 'session' ? 'session' : rawScope === 'session_all' ? 'session_all' : 'once';
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -1029,6 +1032,23 @@ projectsApp.openapi(
         });
       } catch (err) {
         console.warn('[approvals] failed to record session allow', {
+          executionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // "Allow ALL for this session": one blanket grant so the gateway auto-runs
+    // every gated tool for the rest of the session. Best-effort + idempotent.
+    if (decision === 'approve' && scope === 'session_all' && row.sessionId) {
+      try {
+        await recordSessionAllowAll({
+          sessionId: row.sessionId,
+          projectId,
+          grantedBy: loaded.userId,
+        });
+      } catch (err) {
+        console.warn('[approvals] failed to record session allow-all', {
           executionId,
           error: err instanceof Error ? err.message : String(err),
         });

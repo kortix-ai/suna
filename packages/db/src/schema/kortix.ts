@@ -3429,6 +3429,24 @@ export const sessionToolApprovals = kortixSchema.table(
   ],
 );
 
+/** "Allow all for this session" — a blanket auto-approve grant. One row per
+ *  session; when present the executor gateway runs every require_approval
+ *  action in that session without a hold or re-prompt (see
+ *  executor/db-deps.ts isSessionAllowAll). Complements session_tool_approvals
+ *  (per-action) with an all-actions grant. */
+export const sessionToolAllowAll = kortixSchema.table(
+  'session_tool_allow_all',
+  {
+    sessionId: uuid('session_id').primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    grantedBy: uuid('granted_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('session_tool_allow_all_project_idx').on(table.projectId)],
+);
+
 export const executorConnectorsRelations = relations(executorConnectors, ({ one, many }) => ({
   project: one(projects, {
     fields: [executorConnectors.projectId],

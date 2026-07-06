@@ -16,6 +16,7 @@ import {
   executorProjectSettings,
   projectSessions,
   projects,
+  sessionToolAllowAll,
   sessionToolApprovals,
 } from '@kortix/db';
 import { db } from '../shared/db';
@@ -148,6 +149,35 @@ export async function recordSessionToolApproval(input: {
       projectId: input.projectId,
       connectorId: input.connectorId,
       actionPath: input.actionPath,
+      grantedBy: input.grantedBy,
+    })
+    .onConflictDoNothing();
+}
+
+/** "Allow ALL for this session" check (gateway hot path): does this session
+ *  hold a blanket allow-all grant? Short-circuits require_approval for every
+ *  action in the session. */
+export async function isSessionAllowAll(sessionId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ sessionId: sessionToolAllowAll.sessionId })
+    .from(sessionToolAllowAll)
+    .where(eq(sessionToolAllowAll.sessionId, sessionId))
+    .limit(1);
+  return !!row;
+}
+
+/** Record a blanket "allow all for the rest of this session" grant (resolve
+ *  endpoint). Idempotent — one row per session. */
+export async function recordSessionAllowAll(input: {
+  sessionId: string;
+  projectId: string;
+  grantedBy: string | null;
+}): Promise<void> {
+  await db
+    .insert(sessionToolAllowAll)
+    .values({
+      sessionId: input.sessionId,
+      projectId: input.projectId,
       grantedBy: input.grantedBy,
     })
     .onConflictDoNothing();
@@ -338,6 +368,7 @@ function makeDbGatewayDeps(): GatewayDeps {
     },
     waitForApprovalDecision: waitForApprovalDecision,
     isSessionToolApproved: isSessionToolApproved,
+    isSessionAllowAll: isSessionAllowAll,
     executePipedream: ({ projectId, connectorSlug, app, actionKey, args, accountId, userId }) =>
       runPipedreamAction(projectId, connectorSlug, app, actionKey, args, accountId, userId),
     executePipedreamProxy: ({ projectId, connectorSlug, args, accountId, userId }) =>
