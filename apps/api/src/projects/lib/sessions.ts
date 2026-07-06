@@ -1,5 +1,5 @@
 import { checkBillingActive } from '../../billing/services/billing-gate';
-import { config, type SandboxProviderName } from '../../config';
+import { config, normalizeProviderName, type SandboxProviderName } from '../../config';
 import { resolveSessionProvider } from './provider-precedence';
 import { auth, json } from '../../openapi';
 import { resolveAccountSessionLimit } from '../../shared/account-limits';
@@ -446,12 +446,16 @@ export async function createProjectSession(input: {
   // Sandbox provider: explicit request › per-project pin (Customize → Settings) ›
   // weighted balancer. The pin lets you put ONE project on e.g. platinum regardless
   // of the global distribution weights — see resolveSessionProvider.
+  // Canonicalise the legacy 'daytona' alias → 'managed' BEFORE the allowed/enabled
+  // check (matches parseAllowedProviders/isProviderEnabled) so an explicit
+  // provider:'daytona' from any client (Kortix server, legacy SDK) keeps working.
+  const requestedProvider = normalizeString(body.provider);
+  const providerPin = normalizeString(
+    (project.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_provider,
+  );
   const picked = resolveSessionProvider({
-    requested: normalizeString(body.provider) ?? null,
-    projectPin:
-      normalizeString(
-        (project.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_provider,
-      ) ?? null,
+    requested: requestedProvider ? normalizeProviderName(requestedProvider) : null,
+    projectPin: providerPin ? normalizeProviderName(providerPin) : null,
     allowed: config.ALLOWED_SANDBOX_PROVIDERS,
     isEnabled: (p) => config.isProviderEnabled(p as SandboxProviderName),
   });
