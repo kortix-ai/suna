@@ -1173,6 +1173,152 @@ describe('project session API contract', () => {
     expect(await missingSession.json()).toMatchObject({ error: 'Not found' });
   });
 
+  test('dashboard start leaves fresh no-external-id provisioning rows alone', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'provisioning',
+      sandboxProvider: 'daytona',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'provisioning',
+        config: {},
+        metadata: {
+          initStatus: 'pending',
+          initAttempts: 0,
+          initMaxAttempts: 3,
+          healthStatus: 'unknown',
+        },
+        lastUsedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'provisioning',
+      retriable: true,
+      sandbox: {
+        sandbox_id: SESSION_ID,
+        external_id: null,
+        status: 'provisioning',
+      },
+    });
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows).toHaveLength(1);
+  });
+
+  test('dashboard start retires abandoned no-external-id provisioning rows and reallocates', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'provisioning',
+      sandboxProvider: 'daytona',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'provisioning',
+        config: {},
+        metadata: {
+          initStatus: 'pending',
+          initAttempts: 0,
+          initMaxAttempts: 3,
+          healthStatus: 'unknown',
+        },
+        lastUsedAt: null,
+        createdAt: new Date(Date.now() - 11 * 60 * 1000),
+        updatedAt: new Date(Date.now() - 11 * 60 * 1000),
+      },
+    ];
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'provisioning',
+      agent_name: 'default',
+      retriable: true,
+      sandbox: null,
+      reason: 'stale_provisioning_pending',
+    });
+
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(sessionSandboxRows).toHaveLength(0);
+    expect(lastProvisionInput?.sandboxId).toBe(SESSION_ID);
+  });
+
+  test('dashboard start retires abandoned started provisioning rows and reallocates', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'provisioning',
+      sandboxProvider: 'platinum',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: null,
+        baseUrl: null,
+        status: 'provisioning',
+        config: {},
+        metadata: {
+          initStatus: 'provisioning',
+          initAttempts: 1,
+          initMaxAttempts: 3,
+          initStartedAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
+          initUpdatedAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
+          healthStatus: 'unknown',
+        },
+        lastUsedAt: null,
+        createdAt: new Date(Date.now() - 6 * 60 * 1000),
+        updatedAt: new Date(Date.now() - 6 * 60 * 1000),
+      },
+    ];
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'provisioning',
+      agent_name: 'default',
+      retriable: true,
+      sandbox: null,
+      reason: 'stale_provisioning_lost',
+    });
+
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(sessionSandboxRows).toHaveLength(0);
+    expect(lastProvisionInput?.sandboxId).toBe(SESSION_ID);
+  });
+
   test('dashboard start of an existing sandbox wakes in place and never allocates a second runtime', async () => {
     const app = createApp();
     sessionRow = {

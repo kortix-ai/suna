@@ -294,6 +294,45 @@ export function sessionRuntimeUrlPath(externalId: string): string {
   return `/p/${externalId}/8000`;
 }
 
+const STALE_PENDING_PROVISIONING_MS = 10 * 60 * 1000;
+const STALE_STARTED_PROVISIONING_MS = 5 * 60 * 1000;
+
+function parseTimestampMs(value: unknown): number | null {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value !== 'string' || !value) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function staleProvisioningReason(
+  row: typeof sessionSandboxes.$inferSelect,
+  nowMs = Date.now(),
+): string | null {
+  if (row.status !== 'provisioning' || row.externalId) return null;
+  const metadata =
+    row.metadata && typeof row.metadata === 'object'
+      ? (row.metadata as Record<string, unknown>)
+      : {};
+  const initStatus = metadata.initStatus;
+  const rowUpdatedAtMs = parseTimestampMs(row.updatedAt) ?? nowMs;
+
+  if (initStatus === 'pending') {
+    return nowMs - rowUpdatedAtMs > STALE_PENDING_PROVISIONING_MS
+      ? 'stale_provisioning_pending'
+      : null;
+  }
+
+  if (initStatus === 'provisioning' || initStatus === 'retrying') {
+    const initUpdatedAtMs =
+      parseTimestampMs(metadata.initUpdatedAt) ?? rowUpdatedAtMs;
+    return nowMs - initUpdatedAtMs > STALE_STARTED_PROVISIONING_MS
+      ? 'stale_provisioning_lost'
+      : null;
+  }
+
+  return null;
+}
+
 export function isMissingRuntimeError(error: unknown): boolean {
   const err = error as
     | {
@@ -498,6 +537,18 @@ export async function openSession(args: {
       sandbox: null,
       opencode_session_id: null,
     };
+  }
+
+  const staleProvisioning = row ? staleProvisioningReason(row) : null;
+  if (row && staleProvisioning) {
+    return replaceStaleRuntimeOnOpen(
+      loaded,
+      visible,
+      projectId,
+      sessionId,
+      row,
+      staleProvisioning,
+    );
   }
 
   // Still provisioning, or active but external_id not yet written.
