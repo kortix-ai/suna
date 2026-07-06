@@ -325,7 +325,7 @@ Cron-only: `cron` (6-field croner `second minute hour day month weekday`) and `t
 
 The parser accepts only canonical trigger field names. Slug uniqueness is per-section — a trigger and an app may share a slug; two triggers may not.
 
-## Channels — removed in v2 {#channels-removed-in-v2}
+## Channels — removed in v2 [#channels-removed-in-v2]
 
 **v2 removes `channels:` from the schema outright.** Channel↔agent routing (Slack today; Teams/Discord/etc. later) is live operational state — the dashboard's Channels page or Slack's own slash commands — not declarative config, the same boundary rule that keeps credentials out of git. The channel *integration* itself still shows up as a `connectors` entry with `provider: channel` once you connect one; only the routing table moved out of the manifest.
 
@@ -412,7 +412,7 @@ store, not in the manifest. Auth is not allowed with `provider: pipedream`.
 Optional per-tool gates. `match` (glob over tool names, required) + `action` =
 `always_run | require_approval | block` (required).
 
-## `agents:` (v2) {#agents-v2}
+## `agents:` (v2) [#agents-v2]
 
 A name→block **map**, keyed by agent name — **governance only**. There is no
 `model`/`mode`/`description`/`permission`/`prompt` here at all: every behavioral
