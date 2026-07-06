@@ -23,10 +23,22 @@ function errorMessage(error: unknown): string {
 }
 
 function isPermanentFileReadFailure(error: unknown): boolean {
+  // Prefer a numeric HTTP status when the thrown error carries one: any 4xx
+  // except 408/429 is a client error that won't fix itself on retry.
+  const status = (error as { status?: unknown } | null)?.status;
+  if (typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+    return true;
+  }
   const msg = errorMessage(error);
   return (
     msg.includes('404') ||
     msg.includes('403') ||
+    msg.includes('400') ||
+    msg.includes('bad request') ||
+    // A directory read (e.g. `.opencode`) returns 400 "Path is a directory" —
+    // permanent, must not be retried on a loop.
+    msg.includes('is a directory') ||
+    msg.includes('eisdir') ||
     msg.includes('not found') ||
     msg.includes('access denied') ||
     msg.includes('no such file') ||
