@@ -33,7 +33,7 @@ describe('ensureFirstProject provisioning', () => {
       {
         account_id: 'acct_1',
         name: 'My First Project',
-        starter_template: 'minimal',
+        starter_template: 'general-knowledge-worker',
         marketplace_items: ['kortix-starter:agent-browser'],
       },
     ]);
