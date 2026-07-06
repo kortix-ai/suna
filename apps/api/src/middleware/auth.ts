@@ -232,16 +232,23 @@ export async function supabaseAuth(c: Context, next: Next) {
     if (typeof (local.payload as { iat?: number }).iat === 'number') {
       c.set('sessionIat', (local.payload as { iat: number }).iat);
     }
-    // SAML JIT — no-ops when the JWT isn't from a SAML provider. We
-    // don't block the request on sync failures since the user already
-    // authenticated; failures are logged for ops review.
-    syncSsoMembership({
-      userId: local.userId,
-      email: local.email,
-      jwtPayload: local.payload as unknown as Record<string, unknown>,
-    }).catch((err) => {
+    // SAML JIT — no-ops when the JWT isn't from a SAML provider. AWAITED so the
+    // org membership is committed BEFORE any downstream handler resolves this
+    // user's account: resolveAccountId / GET /v1/accounts bootstrap a personal
+    // owner+super account for a user with zero memberships, and a fire-and-forget
+    // sync raced (and lost) that bootstrap — stranding SSO users on a standalone
+    // personal account instead of their org. A non-SAML token returns before any
+    // DB work, so this adds no latency to normal logins. We still don't fail the
+    // request on a sync error — the user already authenticated.
+    try {
+      await syncSsoMembership({
+        userId: local.userId,
+        email: local.email,
+        jwtPayload: local.payload as unknown as Record<string, unknown>,
+      });
+    } catch (err) {
       console.warn('[auth] SAML JIT sync failed', err);
-    });
+    }
     setSentryUser({ id: local.userId, email: local.email });
     setContextField('userId', local.userId);
     setContextField('userEmail', local.email);

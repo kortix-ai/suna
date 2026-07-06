@@ -21,6 +21,43 @@ describe('extractSsoProviderId', () => {
     ).toBe('bbb');
   });
 
+  test('reads the real Supabase shape: app_metadata.provider = "sso:<uuid>"', () => {
+    expect(
+      extractSsoProviderId({
+        app_metadata: {
+          provider: 'sso:464651b7-6157-46b1-afaa-5bbd7fa37599',
+          providers: ['sso:464651b7-6157-46b1-afaa-5bbd7fa37599'],
+        },
+      }),
+    ).toBe('464651b7-6157-46b1-afaa-5bbd7fa37599');
+  });
+
+  test('reads the id out of the providers[] array when provider is absent', () => {
+    expect(
+      extractSsoProviderId({ app_metadata: { providers: ['sso:abc-123'] } }),
+    ).toBe('abc-123');
+  });
+
+  test('prefers an explicit sso_provider_id over the provider tag', () => {
+    expect(
+      extractSsoProviderId({
+        app_metadata: { sso_provider_id: 'explicit', provider: 'sso:tagged' },
+      }),
+    ).toBe('explicit');
+  });
+
+  test('non-SSO providers resolve to null', () => {
+    expect(
+      extractSsoProviderId({ app_metadata: { provider: 'email', providers: ['email'] } }),
+    ).toBeNull();
+    expect(extractSsoProviderId({ app_metadata: { provider: 'google' } })).toBeNull();
+  });
+
+  test('an empty "sso:" tag resolves to null', () => {
+    expect(extractSsoProviderId({ app_metadata: { provider: 'sso:' } })).toBeNull();
+    expect(extractSsoProviderId({ app_metadata: { provider: 'sso:   ' } })).toBeNull();
+  });
+
   test('returns null when missing', () => {
     expect(extractSsoProviderId({})).toBeNull();
     expect(extractSsoProviderId(undefined)).toBeNull();
