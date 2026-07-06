@@ -13,6 +13,9 @@ import {
 	useSandboxConnectionStore,
 } from "@/stores/sandbox-connection-store";
 import { useServerStore } from "@/stores/server-store";
+// Boot-grace bound lives in a standalone pure module so it can be unit-tested
+// without this 'use client' hook's React/store dependencies.
+import { isBootGraceExpired } from "./boot-grace";
 
 /**
  * Number of consecutive failures before marking as unreachable
@@ -40,19 +43,6 @@ const POLL_FAILING = 150;
 const POLL_UNREACHABLE = 5_000; // 5s when confirmed unreachable
 
 const CHECK_TIMEOUT = 20_000;
-
-/**
- * How long a sandbox may keep answering /kortix/health with 503 ("proxy up,
- * OpenCode not ready") before we stop treating it as *booting* and treat it as
- * *stopped/stuck*. A genuine boot flips healthy within a few tens of seconds; a
- * stopped box answers 503 forever. Without this bound, that 503 was classified
- * as "connected + booting" and fast-polled every POLL_FAILING (150ms) FOREVER —
- * hammering the daemon and, because everything is gated on the flapping
- * `healthy` flag, re-firing file/SSE queries in an endless refresh storm on the
- * session page. Past the grace window we escalate to "unreachable" (5s poll),
- * which quiets the storm; a box that later returns a healthy 200 still recovers.
- */
-const BOOT_GRACE_MS = 120_000;
 
 function isImmediateOfflineStatus(status: number): boolean {
 	return status === 502 || status === 503 || status === 504;
@@ -178,8 +168,10 @@ export function useSandboxConnection() {
 					if (unhealthySinceRef.current === null) {
 						unhealthySinceRef.current = now;
 					}
-					const bootedTooLong =
-						now - unhealthySinceRef.current > BOOT_GRACE_MS;
+					const bootedTooLong = isBootGraceExpired(
+						unhealthySinceRef.current,
+						now,
+					);
 
 					if (bootedTooLong) {
 						incrementSandboxFail();

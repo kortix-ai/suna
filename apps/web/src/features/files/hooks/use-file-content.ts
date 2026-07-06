@@ -5,26 +5,13 @@ import { useServerStore } from '@/stores/server-store';
 import { readFile } from '../api/opencode-files';
 import type { FileContent } from '../types';
 import { fileReadRetryDelayMs, shouldRetryFileRead } from './file-read-retry';
+import { isSystemDirectoryPath } from './system-dir';
 
 export const fileContentKeys = {
   all: ['opencode-files', 'content'] as const,
   file: (serverUrl: string, filePath: string) =>
     ['opencode-files', 'content', serverUrl, filePath] as const,
 };
-
-/**
- * Elevated system directories that appear in the file tree but are directories,
- * not files. GET /file/content?path=.opencode always returns 400 "Path is a
- * directory"; issuing that read as content is never correct, so we never enable
- * the query for them (it was a recurring source of 400s in the session page).
- */
-const SYSTEM_DIRECTORIES = new Set(['.opencode', '.kortix', '.git']);
-
-function isSystemDirectoryPath(filePath: string | null): boolean {
-  if (!filePath) return false;
-  const normalized = filePath.replace(/^\/+/, '').replace(/\/+$/, '');
-  return SYSTEM_DIRECTORIES.has(normalized);
-}
 
 /**
  * Fetch the content of a single file from the active OpenCode server.
