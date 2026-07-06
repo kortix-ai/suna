@@ -90,8 +90,10 @@ function stripOcPrefix(name: string): string {
   return name.replace(/^oc[-_]/, '');
 }
 
-/** Normalize a tool name to the registry's canonical (underscore) key form. */
-function normalizeToolName(name: string): string {
+/** Normalize a tool name to the registry's canonical (underscore) key form.
+ *  Exported for other turns/ modules (e.g. `view-model.ts`'s per-tool
+ *  dispatch) that need the same `oc-`/dash normalization `toolInfo` uses. */
+export function normalizeToolName(name: string): string {
   return stripOcPrefix(name).replace(/-/g, '_');
 }
 

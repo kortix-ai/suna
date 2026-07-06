@@ -290,3 +290,27 @@ export type {
  * `platform/strings.ts` for why this replaces the regex idiom.
  */
 export { stripTrailingSlashes } from './platform/strings';
+
+/**
+ * Per-tool view models for `ToolView` — a discriminated union with a typed
+ * shape for each tool family a product chat UI renders specially (web/image
+ * search, shell, file read/write/edit, grep/glob search, task, todowrite,
+ * question), plus a `generic` fallback for everything else. Pairs with
+ * `ToolView`'s new `outputParsed`/`outputText` fields and its embedded-
+ * failure detection (a `state.status: "completed"` tool part whose JSON
+ * output body carries `success: false` or a top-level `error` — the shape
+ * router/executor tools like `web_search` commonly return on failure — now
+ * classifies as `status: 'error'` instead of rendering as a success with raw
+ * JSON inside). Also available from `@kortix/sdk/turns`.
+ */
+export {
+  type DiffLine,
+  type DiffLineType,
+  type QuestionItem,
+  type QuestionOption,
+  type SearchMatch,
+  type TodoItem,
+  type ToolViewModel,
+  type WebSearchResultItem,
+  toolViewModel,
+} from './turns/view-model';
