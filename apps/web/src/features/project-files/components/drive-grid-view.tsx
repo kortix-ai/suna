@@ -31,11 +31,11 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useRef, useState, type ComponentType, type ReactNode } from 'react';
-import type { FileNode } from '../types';
+import type { FileNode } from '@/features/file-browser/types';
 import { getFileIcon } from './file-icon';
 import { FileThumbnail } from './file-thumbnail';
-import type { GitStatusType } from './file-tree-item';
-import { DRAG_MIME } from './file-tree-item';
+import type { GitStatusType } from '@/features/file-browser/components/file-tree-item';
+import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
 
 interface DriveGridItemProps {
   node: FileNode;

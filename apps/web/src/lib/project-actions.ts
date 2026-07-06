@@ -12,9 +12,9 @@
  * its custom role a permission set that OMITS the capability's leaf. The UI
  * reflects that by hiding/disabling the section whose `read`/`write` leaf the
  * role no longer grants. Therefore every `read` leaf used below MUST be one the
- * built-in Viewer role is seeded with (role-perms.ts `VIEWER_BASELINE`) and
- * every `write` leaf one Editor is seeded with — otherwise a normal
- * viewer/editor would be stranded out of a section they should still see.
+ * built-in Member role is seeded with (role-perms.ts `PROJECT_MEMBER_BASELINE`)
+ * and every `write` leaf one Editor is seeded with — otherwise a normal
+ * member/editor would be stranded out of a section they should still see.
  */
 
 import type { CustomizeSection } from '@/lib/customize-sections';
@@ -35,10 +35,8 @@ export const PROJECT_ACTIONS = {
   PROJECT_SKILL_WRITE: 'project.skill.write',
   PROJECT_COMMAND_READ: 'project.command.read',
   PROJECT_COMMAND_WRITE: 'project.command.write',
-  PROJECT_SCHEDULE_READ: 'project.schedule.read',
-  PROJECT_SCHEDULE_WRITE: 'project.schedule.write',
-  PROJECT_WEBHOOK_READ: 'project.webhook.read',
-  PROJECT_WEBHOOK_WRITE: 'project.webhook.write',
+  PROJECT_TRIGGER_READ: 'project.trigger.read',
+  PROJECT_TRIGGER_CREATE: 'project.trigger.create',
   PROJECT_FILE_READ: 'project.file.read',
   PROJECT_FILE_WRITE: 'project.file.write',
   PROJECT_CUSTOMIZE_READ: 'project.customize.read',
@@ -50,6 +48,10 @@ export const PROJECT_ACTIONS = {
   PROJECT_SECRET_WRITE: 'project.secret.write',
   PROJECT_CONNECTOR_READ: 'project.connector.read',
   PROJECT_CONNECTOR_WRITE: 'project.connector.write',
+
+  PROJECT_REVIEW_READ: 'project.review.read',
+  PROJECT_REVIEW_SUBMIT: 'project.review.submit',
+  PROJECT_REVIEW_ACT: 'project.review.act',
 } as const;
 
 export type ProjectAction = (typeof PROJECT_ACTIONS)[keyof typeof PROJECT_ACTIONS];
@@ -58,7 +60,7 @@ export type ProjectAction = (typeof PROJECT_ACTIONS)[keyof typeof PROJECT_ACTION
  * Per-section gating leaves.
  *
  * `read`  — gates whether the section is VISIBLE (rail item + deep-link). Must
- *           be a Viewer-seeded leaf so a viewer never loses a section.
+ *           be a Member-seeded leaf so a member never loses a section.
  * `write` — gates the mutating controls INSIDE the section (create/edit/delete).
  *           A user with `read` but not `write` sees the section read-only.
  *
@@ -72,22 +74,53 @@ export type ProjectAction = (typeof PROJECT_ACTIONS)[keyof typeof PROJECT_ACTION
  *   the backend asserts (e.g. sandbox rebuild → customize.write, marketplace
  *   install → gitops.push).
  */
-export const CUSTOMIZE_SECTION_ACCESS: Record<CustomizeSection, { read: ProjectAction; write?: ProjectAction }> = {
+export const CUSTOMIZE_SECTION_ACCESS: Record<
+  CustomizeSection,
+  { read: ProjectAction; write?: ProjectAction }
+> = {
   agents: { read: PROJECT_ACTIONS.PROJECT_AGENT_READ, write: PROJECT_ACTIONS.PROJECT_AGENT_WRITE },
   skills: { read: PROJECT_ACTIONS.PROJECT_SKILL_READ, write: PROJECT_ACTIONS.PROJECT_SKILL_WRITE },
-  commands: { read: PROJECT_ACTIONS.PROJECT_COMMAND_READ, write: PROJECT_ACTIONS.PROJECT_COMMAND_WRITE },
-  connectors: { read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ, write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE },
-  secrets: { read: PROJECT_ACTIONS.PROJECT_SECRET_READ, write: PROJECT_ACTIONS.PROJECT_SECRET_WRITE },
-  channels: { read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ, write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE },
-  schedules: { read: PROJECT_ACTIONS.PROJECT_SCHEDULE_READ, write: PROJECT_ACTIONS.PROJECT_SCHEDULE_WRITE },
-  webhooks: { read: PROJECT_ACTIONS.PROJECT_WEBHOOK_READ, write: PROJECT_ACTIONS.PROJECT_WEBHOOK_WRITE },
+  commands: {
+    read: PROJECT_ACTIONS.PROJECT_COMMAND_READ,
+    write: PROJECT_ACTIONS.PROJECT_COMMAND_WRITE,
+  },
+  connectors: {
+    read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+    write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+  },
+  secrets: {
+    read: PROJECT_ACTIONS.PROJECT_SECRET_READ,
+    write: PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
+  },
+  channels: {
+    read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+    write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+  },
+  // `schedules` and `webhooks` are two views over the SAME backend resource
+  // (project triggers, filtered client-side by `type`) — there is no
+  // dedicated schedule.*/webhook.* leaf server-side (those were removed from
+  // the catalog as dead/unwired; see iam/actions.ts). Gate both on the real
+  // enforcement point: project.trigger.read/create. Update/delete stay gated
+  // on their own leaves inside the view, same precedent as `changes` below.
+  schedules: {
+    read: PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+    write: PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
+  },
+  webhooks: {
+    read: PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+    write: PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
+  },
   changes: { read: PROJECT_ACTIONS.PROJECT_GITOPS_READ, write: PROJECT_ACTIONS.PROJECT_CR_OPEN },
+  review: { read: PROJECT_ACTIONS.PROJECT_REVIEW_READ, write: PROJECT_ACTIONS.PROJECT_REVIEW_ACT },
   files: { read: PROJECT_ACTIONS.PROJECT_FILE_READ, write: PROJECT_ACTIONS.PROJECT_FILE_WRITE },
-  members: { read: PROJECT_ACTIONS.PROJECT_MEMBERS_READ, write: PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE },
+  members: {
+    read: PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
+    write: PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+  },
   marketplace: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_GITOPS_PUSH },
   // LLM gateway sections — visible to any project member; the backend enforces
-  // the specific gateway capability (logs/spend.read, routing.edit, budget.set,
-  // keys.manage) on each mutation route, so visibility gates on project.read.
+  // the specific gateway capability (logs/spend.read, budget.set, keys.manage)
+  // on each mutation route, so visibility gates on project.read.
   'llm-management': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   'llm-overview': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   'llm-providers': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
@@ -97,14 +130,50 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<CustomizeSection, { read: ProjectA
   sandbox: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE },
   dev: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   settings: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
+  // `upgrade` (migrate the manifest to v2) starts an agent session that edits the
+  // repo and opens a CR — the session itself asserts the real leaves; visibility
+  // follows settings (editor+ via customize.write in isCustomizeSectionVisible).
+  upgrade: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   computers: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE },
   // Meetings (notetaker bot) — connector-backed (materializes kortix_meet), so
   // it follows the connector leaves like channels does.
-  meet: { read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ, write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE },
+  meet: {
+    read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+    write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+  },
 };
 
 /** The distinct read leaves used to gate section visibility — handy for a single
  *  batched probe over every section the rail might show. */
 export const CUSTOMIZE_SECTION_READ_ACTIONS: readonly ProjectAction[] = Array.from(
   new Set(Object.values(CUSTOMIZE_SECTION_ACCESS).map((a) => a.read)),
+);
+
+/**
+ * Whether a section is visible in the rail, given the current user's resolved
+ * capabilities (`caps[action].allowed`). The rule:
+ *   • `files` — visible to any member who can READ files. Files live OUTSIDE
+ *     customization, so they're reachable all the time.
+ *   • every other section — customization is an editor+ capability, so it shows
+ *     only when the user can customize (`project.customize.write`, i.e. editor
+ *     or manager) AND still holds that section's own read leaf (so a custom role
+ *     that omits a read leaf keeps hiding just that section). A plain `member`
+ *     (read-only floor) lacks customize.write → sees Files only.
+ */
+export function isCustomizeSectionVisible(
+  s: CustomizeSection,
+  can: (action: ProjectAction) => boolean,
+): boolean {
+  const a = CUSTOMIZE_SECTION_ACCESS[s];
+  if (s === 'files') return can(a.read);
+  return can(PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE) && can(a.read);
+}
+
+/** Distinct actions to probe for section visibility — every read leaf plus the
+ *  editor+ `customize.write` gate — in one batched capability call. */
+export const CUSTOMIZE_SECTION_GATE_ACTIONS: readonly ProjectAction[] = Array.from(
+  new Set<ProjectAction>([
+    ...Object.values(CUSTOMIZE_SECTION_ACCESS).map((a) => a.read),
+    PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+  ]),
 );

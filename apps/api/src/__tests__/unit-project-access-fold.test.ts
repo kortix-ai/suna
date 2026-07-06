@@ -9,22 +9,20 @@
 // the max (used by the UI to render "via X group" or "Account admin").
 
 import { describe, expect, test } from 'bun:test';
-import {
-  foldEffectiveProjectAccess,
-  maxProjectRole,
-} from '../projects/access';
+import { foldEffectiveProjectAccess } from '../projects/access';
+import { maxProjectRole } from '../iam/role-perms';
 
 describe('maxProjectRole', () => {
   test('manager beats editor', () => {
     expect(maxProjectRole('manager', 'editor')).toBe('manager');
     expect(maxProjectRole('editor', 'manager')).toBe('manager');
   });
-  test('editor beats user', () => {
-    expect(maxProjectRole('editor', 'user')).toBe('editor');
-    expect(maxProjectRole('user', 'editor')).toBe('editor');
+  test('editor beats member', () => {
+    expect(maxProjectRole('editor', 'member')).toBe('editor');
+    expect(maxProjectRole('member', 'editor')).toBe('editor');
   });
   test('equal roles return that role', () => {
-    expect(maxProjectRole('user', 'user')).toBe('user');
+    expect(maxProjectRole('member', 'member')).toBe('member');
   });
 });
 
@@ -50,14 +48,14 @@ describe('foldEffectiveProjectAccess', () => {
       expect(r.effective_source).toBe('implicit');
     });
 
-    test('admin in a User group → still Manager, still implicit', () => {
+    test('admin in a Member group → still Manager, still implicit', () => {
       // The exact bug the user hit: setting a low-tier group attachment
       // didn't cap an account admin. The fold keeps Manager + implicit
       // because implicit wins the tie-break against the lower group role.
       const r = foldEffectiveProjectAccess({
         accountRole: 'admin',
         directRole: null,
-        groupSources: [{ group_id: 'g', group_name: 'Users', role: 'user' }],
+        groupSources: [{ group_id: 'g', group_name: 'Members', role: 'member' }],
       });
       expect(r.effective_project_role).toBe('manager');
       expect(r.effective_source).toBe('implicit');
@@ -99,16 +97,16 @@ describe('foldEffectiveProjectAccess', () => {
   });
 
   describe('group-only access', () => {
-    test('member in a User group → User via group', () => {
+    test('member in a Member group → Member via group', () => {
       // The fix that this whole branch enables: previously this row
       // displayed "No access" in the UI; now it correctly surfaces
-      // User + tags the source so the UI can label "via Users".
+      // Member + tags the source so the UI can label "via Members".
       const r = foldEffectiveProjectAccess({
         accountRole: 'member',
         directRole: null,
-        groupSources: [{ group_id: 'g', group_name: 'Users', role: 'user' }],
+        groupSources: [{ group_id: 'g', group_name: 'Members', role: 'member' }],
       });
-      expect(r.effective_project_role).toBe('user');
+      expect(r.effective_project_role).toBe('member');
       expect(r.effective_source).toBe('group');
     });
 
@@ -117,7 +115,7 @@ describe('foldEffectiveProjectAccess', () => {
         accountRole: 'member',
         directRole: null,
         groupSources: [
-          { group_id: 'g1', group_name: 'Users', role: 'user' },
+          { group_id: 'g1', group_name: 'Members', role: 'member' },
           { group_id: 'g2', group_name: 'Engineering', role: 'editor' },
         ],
       });
@@ -132,7 +130,7 @@ describe('foldEffectiveProjectAccess', () => {
         accountRole: 'member',
         directRole: null,
         groupSources: [
-          { group_id: 'g1', group_name: 'Users', role: 'user' },
+          { group_id: 'g1', group_name: 'Members', role: 'member' },
           { group_id: 'g2', group_name: 'Managers', role: 'manager' },
           { group_id: 'g3', group_name: 'Editors', role: 'editor' },
         ],
@@ -140,13 +138,13 @@ describe('foldEffectiveProjectAccess', () => {
       expect(r.group_sources.map((g) => g.group_name)).toEqual([
         'Managers',
         'Editors',
-        'Users',
+        'Members',
       ]);
     });
 
     test('does not mutate input groupSources order', () => {
       const sources = [
-        { group_id: 'g1', group_name: 'Users', role: 'user' as const },
+        { group_id: 'g1', group_name: 'Members', role: 'member' as const },
         { group_id: 'g2', group_name: 'Managers', role: 'manager' as const },
       ];
       const before = sources.map((s) => s.group_name);
@@ -160,22 +158,22 @@ describe('foldEffectiveProjectAccess', () => {
   });
 
   describe('mixed sources (precedence + tie-break)', () => {
-    test('Editor direct + User group → Editor via direct', () => {
+    test('Editor direct + Member group → Editor via direct', () => {
       // Direct beats group when both are non-implicit; max role wins.
       const r = foldEffectiveProjectAccess({
         accountRole: 'member',
         directRole: 'editor',
-        groupSources: [{ group_id: 'g', group_name: 'Users', role: 'user' }],
+        groupSources: [{ group_id: 'g', group_name: 'Members', role: 'member' }],
       });
       expect(r.effective_project_role).toBe('editor');
       expect(r.effective_source).toBe('direct');
     });
 
-    test('User direct + Manager group → Manager via group', () => {
+    test('Member direct + Manager group → Manager via group', () => {
       // Group is stronger here; source label correctly switches to "group".
       const r = foldEffectiveProjectAccess({
         accountRole: 'member',
-        directRole: 'user',
+        directRole: 'member',
         groupSources: [
           { group_id: 'g', group_name: 'Managers', role: 'manager' },
         ],

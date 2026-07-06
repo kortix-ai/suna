@@ -30,34 +30,24 @@ import {
 import { Icon } from '@/features/icon/icon';
 import { UserMenu } from '@/features/layout/user-menu';
 import { useAuth } from '@/features/providers/auth-provider';
-import {
-  ProjectAppsNavItem,
-  ProjectAppsRailItem,
-} from '@/features/workspace/project-sidebar/footer/project-apps-nav';
+import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
-import {
-  ProjectChatGptConnectNavItem,
-  ProjectChatGptConnectRailItem,
-} from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
+import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import {
   ProjectCustomizeNavItem,
-  ProjectCustomizeRailItem,
+  ProjectFilesNavItem,
   useCustomizeKeyboardShortcut,
 } from '@/features/workspace/project-sidebar/footer/project-customize-nav';
-import {
-  ProjectSandboxAlert,
-  ProjectSandboxAlertRailItem,
-} from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
+import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-switcher';
 import { useAdminRole } from '@/hooks/admin';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
-import { listProjectSessions } from '@/lib/projects-client';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
-import { cn } from '@/lib/utils';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { useSessionFilterStore } from '@/stores/session-filter-store';
+import { listProjectSessions } from '@kortix/sdk/projects-client';
 import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -66,17 +56,15 @@ import {
   Mail,
   MessagesSquare,
   PanelLeft,
-  Plus,
   Webhook,
   type LucideIcon,
 } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { HiDotsHorizontal } from 'react-icons/hi';
 import { IconType } from 'react-icons/lib';
-import { SidebarUpgradeButton, SidebarUpgradeRailItem } from './footer/project-upgrade-button';
+import { SidebarUpgradeButton } from './footer/project-upgrade-button';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';
@@ -93,7 +81,7 @@ const SESSION_FILTER_ICONS: Record<SessionFilterValue, LucideIcon | IconMynauiTy
 
 export function ProjectSidebar({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const { state, setOpenMobile, toggleSidebar } = useSidebar();
+  const { state, setOpenMobile, toggleSidebar, peek } = useSidebar();
   const isExpanded = state === 'expanded';
   const isMobile = useIsMobile();
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
@@ -173,106 +161,42 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
 
   return (
     <Sidebar
-      collapsible="icon"
+      collapsible="offcanvas"
       variant="inset"
       className="bg-sidebar [scrollbar-width:'none'] [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden"
     >
       <SidebarHeader className="space-y-2 pt-[max(0.5rem,env(safe-area-inset-top,0px))]">
-        <div className="flex w-full items-center justify-between gap-2">
-          <AnimatePresence initial={false} mode="popLayout">
-            {isExpanded ? (
-              <motion.div
-                key="expanded-sidebar-header"
-                initial={{ opacity: 0, x: -10, filter: 'blur(6px)' }}
-                animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
-                exit={{ opacity: 0, x: -8, filter: 'blur(6px)' }}
-                transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
-                className="flex w-full items-center justify-between gap-1"
+        {/* Offcanvas everywhere: the whole panel slides, so the header keeps a
+            single layout. The collapse toggle exists only while docked — in
+            the flyout the shell's top-left toggle (right above the panel) is
+            the pin control, and the project switcher takes the full width. */}
+        <div className="flex w-full items-center justify-between gap-1">
+          <Button type="button" variant="ghost" size="icon" asChild>
+            <Link href={`/projects/${projectId}`}>
+              <Icon.Kortix className="text-foreground size-4.5" />
+            </Link>
+          </Button>
+          <div className="w-full min-w-0">
+            <ProjectSwitcher variant="sidebar" />
+          </div>
+          {!peek && (
+            <Hint label="Collapse sidebar" side="right">
+              <Button
+                type="button"
+                aria-label="Collapse sidebar"
+                variant="ghost"
+                size="icon"
+                onClick={toggleSidebar}
+                className="kx-fade-up text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground flex shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
               >
-                <Button type="button" variant="ghost" size="icon" asChild>
-                  <Link href={`/projects/${projectId}`}>
-                    <Icon.Kortix className="text-foreground size-4.5" />
-                  </Link>
-                </Button>
-                <div className="w-full min-w-0">
-                  <ProjectSwitcher variant="sidebar" />
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="collapsed-sidebar-header"
-                initial={{ opacity: 0, scale: 0.92, filter: 'blur(6px)' }}
-                animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-                exit={{ opacity: 0, scale: 0.92, filter: 'blur(6px)' }}
-                transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
-                className="flex w-full items-center justify-center"
-              >
-                <Hint
-                  label={tI18nHardcoded.raw(
-                    'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrLabelb7b89bbc',
-                  )}
-                >
-                  <button
-                    type="button"
-                    aria-label={tI18nHardcoded.raw(
-                      'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria0ca75c68',
-                    )}
-                    onClick={toggleSidebar}
-                    className="group/expand text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground relative flex size-8 items-center justify-center rounded-md transition-colors duration-150 ease-out"
-                  >
-                    <Icon.Kortix className="absolute size-4.5 transition-all duration-200 ease-out group-hover/expand:scale-90 group-hover/expand:opacity-0" />
-                    <PanelLeft className="cn-rtl-flip absolute size-4 scale-90 opacity-0 transition-all duration-200 ease-out group-hover/expand:scale-100 group-hover/expand:opacity-100" />
-                  </button>
-                </Hint>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                <PanelLeft className="cn-rtl-flip size-4" />
+              </Button>
+            </Hint>
+          )}
         </div>
       </SidebarHeader>
       <SidebarContent className="relative min-h-0 flex-1 [scrollbar-width:'none'] overflow-hidden [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden">
-        <div
-          className={cn(
-            'absolute inset-0 flex min-h-0 flex-col items-center px-0 pt-0 pb-1',
-            !isExpanded ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
-          )}
-        >
-          <div className="flex w-full flex-col items-center gap-1">
-            <Hint
-              label={tI18nHardcoded.raw(
-                'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrLabel335b2318',
-              )}
-            >
-              <Button
-                type="button"
-                size="icon"
-                aria-label={tI18nHardcoded.raw(
-                  'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria7f9fc26a',
-                )}
-                onClick={handleNewSession}
-                className={cn(
-                  'text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 flex size-8 items-center justify-center border-[1.2px] [&_svg]:size-4!',
-                )}
-              >
-                <Plus />
-              </Button>
-            </Hint>
-          </div>
-
-          <div className="mt-auto flex w-full flex-col items-center gap-1">
-            <ProjectSandboxAlertRailItem projectId={projectId} />
-            <ProjectAppsRailItem projectId={projectId} />
-            <ProjectChatGptConnectRailItem projectId={projectId} />
-            <ProjectCustomizeRailItem />
-            <SidebarUpgradeRailItem accountId={accountId} />
-          </div>
-        </div>
-
-        <div
-          className={cn(
-            'flex h-full min-h-0 flex-col space-y-4',
-            !isExpanded ? 'pointer-events-none opacity-0' : 'pointer-events-auto opacity-100',
-          )}
-        >
+        <div className="flex h-full min-h-0 flex-col space-y-4">
           <SidebarGroup className="py-0">
             <SidebarMenu>
               <SidebarMenuItem>
@@ -357,6 +281,10 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <ProjectSandboxAlert projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectAppsNavItem projectId={projectId} />
+              {/* Files used to live on the collapsed icon rail; with the rail
+                  gone (offcanvas + hover flyout) it needs a docked entry. Above
+                  Customize — files aren't gated behind customize access. */}
+              <ProjectFilesNavItem />
               <ProjectCustomizeNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
               <SidebarUpgradeButton accountId={accountId} />
@@ -365,11 +293,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
         </div>
       </SidebarContent>
 
-      <SidebarFooter className="space-y-0.5 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] group-data-[collapsible=icon]:px-0">
+      <SidebarFooter className="space-y-0.5 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]">
         <UserMenu user={user} variant="sidebar" />
       </SidebarFooter>
 
-      <SidebarRail />
+      {/* No resize rail while collapsed — the edge is the hover-peek zone. */}
+      {isExpanded && <SidebarRail />}
     </Sidebar>
   );
 }

@@ -100,8 +100,6 @@ const COMPUTER: GatewayConnector = {
   baseUrl: null,
   auth: { type: 'none', in: 'header', name: null, prefix: null },
   hasAuth: false, // no credential — the relay is the credential
-  shareScope: 'project',
-  grants: [],
   credentialMode: 'shared',
   enabled: true,
 };
@@ -131,7 +129,7 @@ function makeDeps(outcome: ComputerCallOutcome, action: GatewayAction = FS_READ)
     loadPolicies: async () => [],
     loadProjectPolicies: async () => [],
     loadDefaultMode: async () => 'allow_all',
-    recordExecution: async () => {},
+    recordExecution: async () => null,
     fetchImpl: async () => { throw new Error('fetch must not be used for a computer call'); },
     executeComputerCall: async (i) => { calls.push(i); return outcome; },
   };

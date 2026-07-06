@@ -1,7 +1,9 @@
-// Executor connectors — connector CRUD, sharing, credentials, Pipedream.
+// Executor connectors — connector CRUD, credentials, Pipedream. Connectors are
+// project-wide visible; the only access gate is the agent's `connectors`
+// grant (kortix.yaml [[agents]].connectors), not anything configured here.
 
 import { backendApi } from '../api-client';
-import { unwrap, type ConnectorSharing } from './shared';
+import { unwrap } from './shared';
 
 // ─── Executor connectors ──────────────────────────────────────────────────
 
@@ -19,11 +21,15 @@ export interface AdminConnector {
   provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
   platform?: 'slack' | 'email' | null;
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
-  /** Credential storage model — one shared project credential vs each member's own. */
-  credentialMode: 'shared' | 'per_user';
+  /** Credential storage model. Always `shared` — `per_user` (each member's
+   *  own) was removed 2026-07-05 (docs/specs/2026-07-05-agent-first-config-
+   *  unification.md §2.5). A `shared` connector with no credential set
+   *  (`secretSet: false`) needs reconnecting. */
+  credentialMode: 'shared';
+  /** Marked sensitive — its reads gate too (require_approval by default). */
+  sensitive: boolean;
   actions: ConnectorAction[];
   authSecret: string | null;
-  sharing: ConnectorSharing | null;
   secretSet: boolean;
 }
 
@@ -48,28 +54,28 @@ export async function syncConnectors(projectId: string) {
   );
 }
 
-export async function setConnectorSharing(
-  projectId: string,
-  slug: string,
-  intent: ConnectorSharing,
-) {
-  return unwrap(
-    await backendApi.put<{ ok: boolean }>(
-      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/sharing`,
-      intent,
-    ),
-  );
-}
-
+/** `shared` is the only credential mode (`per_user` removed 2026-07-05) — kept
+ *  for back-compat callers, restricted to a no-op on the API side. */
 export async function setConnectorCredentialMode(
   projectId: string,
   slug: string,
-  mode: 'shared' | 'per_user',
+  mode: 'shared',
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
       `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential-mode`,
       { mode },
+    ),
+  );
+}
+
+/** Toggle a connector's `sensitive` flag — sensitive connectors gate reads too
+ *  (every action defaults to require_approval unless a policy opens it). */
+export async function setConnectorSensitive(projectId: string, slug: string, sensitive: boolean) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/sensitive`,
+      { sensitive },
     ),
   );
 }
@@ -102,7 +108,7 @@ export interface ConnectorConfig {
   slug: string;
   provider: AdminConnector['provider'];
   platform: 'slack' | 'email' | null;
-  credentialMode: 'shared' | 'per_user';
+  credentialMode: 'shared';
   app: string | null;
   account: string | null;
   url: string | null;
@@ -151,10 +157,9 @@ export interface ConnectorDraftInput {
   endpoint?: string;
   baseUrl?: string;
   spec?: string;
-  /** Credential storage mode. */
-  credential?: 'shared' | 'per_user';
-  /** Access — who can use it (applied after create). */
-  sharing?: ConnectorSharing;
+  /** Credential storage mode. `shared` is the only mode (`per_user` was
+   *  removed 2026-07-05). */
+  credential?: 'shared';
   auth?: {
     type?: 'none' | 'bearer' | 'basic' | 'custom';
     in?: 'header' | 'query';

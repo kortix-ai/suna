@@ -1,14 +1,15 @@
 'use client';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import type { ProjectBranch } from '@/lib/projects-client';
+import type { ProjectBranch } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { ChevronsUpDown } from '@mynaui/icons-react';
-import { ArrowDownLeft, ArrowUpRight, Check, GitBranch, Search } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Check, Layers, Search } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { useProjectContext } from '../context';
@@ -75,7 +76,7 @@ export function VersionSelector() {
           )}
         >
           <div className="flex items-center gap-2">
-            <GitBranch className="text-muted-foreground size-3.5 shrink-0" />
+            <Layers className="text-muted-foreground size-3.5 shrink-0" />
             <span className="truncate">{activeRef || 'Version'}</span>
           </div>
           <ChevronsUpDown className="text-muted-foreground size-3 shrink-0" />
@@ -104,7 +105,7 @@ export function VersionSelector() {
           <FadedScrollArea fadeColor="from-popover" className="h-full overscroll-contain">
             {isLoading && (
               <div className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-xs">
-                <Loading className="size-3.5 animate-spin" />
+                <Loading className="size-3.5" />
                 {tHardcodedUi.raw(
                   'featuresProjectFilesComponentsVersionSelector.line122JsxTextLoadingVersions',
                 )}
@@ -200,7 +201,7 @@ function VersionRow({
         {isActive ? (
           <Check className="text-primary size-3.5" />
         ) : (
-          <GitBranch className="text-muted-foreground size-3.5" />
+          <Layers className="text-muted-foreground size-3.5" />
         )}
       </div>
 
@@ -208,30 +209,28 @@ function VersionRow({
         <div className="flex items-center gap-1.5">
           <span className="text-foreground truncate text-sm font-medium">{branch.name}</span>
           {branch.is_default && (
-            <span className="bg-muted text-muted-foreground inline-flex items-center rounded px-1 py-px text-xs font-semibold tracking-wider uppercase">
+            <Badge variant="kortix" size="xs">
               Main
-            </span>
+            </Badge>
           )}
         </div>
 
         <div className="text-muted-foreground/80 mt-0.5 flex items-center gap-1.5 text-xs">
-          <span className="font-mono">{branch.tip_short}</span>
-          {date && <span className="text-muted-foreground/40">·</span>}
-          {date && <span>{date}</span>}
+          {date && <span>Updated {date}</span>}
           {!branch.is_default && branch.ahead != null && branch.behind != null && (
             <>
-              <span className="text-muted-foreground/40">·</span>
+              {date && <span className="text-muted-foreground/40">·</span>}
               <span
-                className="inline-flex items-center gap-1"
+                className="inline-flex items-center gap-1 tabular-nums"
                 title={tHardcodedUi.raw(
                   'featuresProjectFilesComponentsVersionSelector.line234JsxAttrTitleAheadBehindMainVersion',
                 )}
               >
-                <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-500">
+                <span className="text-kortix-green inline-flex items-center gap-0.5">
                   <ArrowUpRight className="h-2.5 w-2.5" />
                   {branch.ahead}
                 </span>
-                <span className="inline-flex items-center gap-0.5 text-red-600 dark:text-red-500">
+                <span className="text-kortix-red inline-flex items-center gap-0.5">
                   <ArrowDownLeft className="h-2.5 w-2.5" />
                   {branch.behind}
                 </span>

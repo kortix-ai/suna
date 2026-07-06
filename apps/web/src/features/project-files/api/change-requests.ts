@@ -1,6 +1,6 @@
 /**
  * Change-request data fetchers for the project-files feature. Thin wrappers
- * over `@/lib/projects-client` so the feature module's hooks can keep their
+ * over `@kortix/sdk/projects-client` so the feature module's hooks can keep their
  * query keys colocated with the rest of the file-explorer caches.
  */
 
@@ -15,6 +15,7 @@ import {
   mergeChangeRequest,
   openChangeRequest,
   reopenChangeRequest,
+  requestChangesOnChangeRequest,
   type ChangeRequest,
   type ChangeRequestDetailResponse,
   type ChangeRequestDiffResponse,
@@ -23,7 +24,7 @@ import {
   type ChangeRequestStatus,
   type CommitSessionResult,
   type VersionDiffPreview,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 
 export type {
   ChangeRequest,
@@ -81,6 +82,10 @@ export async function performClose(projectId: string, crId: string) {
 
 export async function performReopen(projectId: string, crId: string) {
   return reopenChangeRequest(projectId, crId);
+}
+
+export async function performRequestChanges(projectId: string, crId: string, feedback: string) {
+  return requestChangesOnChangeRequest(projectId, crId, feedback);
 }
 
 export async function fetchVersionDiff(

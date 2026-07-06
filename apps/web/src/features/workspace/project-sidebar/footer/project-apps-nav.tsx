@@ -1,24 +1,13 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import { useCallback } from 'react';
 
 import Hint from '@/components/ui/hint';
 import { IconApp } from '@/components/ui/kortix-icons';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
+import { useAppsEnabled } from '@/hooks/projects/use-apps-enabled';
 import { useIsMobile } from '@/hooks/utils';
-import { getProjectDetail } from '@/lib/projects-client';
 import { useAppsOverlayStore } from '@/stores/apps-overlay-store';
-
-function useAppsEnabled(projectId: string): boolean {
-  const { data } = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId),
-    staleTime: 60_000,
-    refetchOnWindowFocus: false,
-  });
-  return data?.project?.apps_enabled ?? false;
-}
 
 function useAppsActivate() {
   const openApps = useAppsOverlayStore((s) => s.openApps);

@@ -43,6 +43,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
 import { SearchListHeader } from '@/components/ui/search-list-header';
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { AgentPickerField, ModelPickerField } from './TriggerAgentModelFields';
 import {
   useProjectTriggers,
   useCreateProjectTrigger,
@@ -112,7 +113,8 @@ function WebhookCreateSheet({
   const [name, setName] = useState('');
   const [secret, setSecret] = useState(genSecret);
   const [prompt, setPrompt] = useState('');
-  const [agent, setAgent] = useState('default');
+  const [agent, setAgent] = useState<string | null>(null);
+  const [model, setModel] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -147,7 +149,8 @@ function WebhookCreateSheet({
         slug,
         type: 'webhook',
         prompt_template: prompt,
-        agent: agent.trim() || 'default',
+        ...(agent ? { agent } : {}),
+        ...(model ? { model } : {}),
         enabled: true,
         secret_env: env,
       });
@@ -191,8 +194,8 @@ function WebhookCreateSheet({
         <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginTop: 16, marginBottom: 6 }}>Prompt</Text>
         <BottomSheetTextInput value={prompt} onChangeText={setPrompt} placeholder="What should the agent do when a request arrives?" placeholderTextColor={muted} multiline style={[input, { height: 96, paddingTop: 10, textAlignVertical: 'top' }]} />
 
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginTop: 14, marginBottom: 6 }}>Agent</Text>
-        <BottomSheetTextInput value={agent} onChangeText={setAgent} placeholder="default" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={[input, { fontFamily: MONO }]} />
+        <AgentPickerField projectId={projectId} value={agent} onChange={setAgent} isDark={isDark} />
+        <ModelPickerField projectId={projectId} value={model} onChange={setModel} isDark={isDark} />
 
         {err && (
           <View style={{ marginTop: 14, padding: 12, borderRadius: 11, backgroundColor: 'rgba(239,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' }}>
@@ -301,6 +304,16 @@ function WebhookDetailSheet({
       onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not save prompt.'),
     });
   };
+  const handleAgentChange = (agent: string) => {
+    update.mutate({ slug: trigger.slug, input: { agent } }, {
+      onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not update agent.'),
+    });
+  };
+  const handleModelChange = (model: string | null) => {
+    update.mutate({ slug: trigger.slug, input: { model } }, {
+      onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not update model.'),
+    });
+  };
   const handleDelete = () => {
     Alert.alert('Remove webhook', `Remove "${trigger.name || trigger.slug}"? Incoming requests will stop firing.`, [
       { text: 'Cancel', style: 'cancel' },
@@ -380,10 +393,12 @@ function WebhookDetailSheet({
           </TouchableOpacity>
         )}
 
+        <AgentPickerField projectId={projectId} value={trigger.agent} onChange={handleAgentChange} isDark={isDark} />
+        <ModelPickerField projectId={projectId} value={trigger.model} onChange={handleModelChange} isDark={isDark} />
+
         {/* Metadata */}
         <View style={{ marginTop: 22, borderRadius: 12, borderWidth: 1, borderColor: border, paddingHorizontal: 14 }}>
           {[
-            { l: 'Agent', v: trigger.agent || 'default' },
             { l: 'Last fired', v: relativeTime(trigger.last_fired_at) },
             { l: 'Source', v: trigger.path },
           ].map((row, i) => (

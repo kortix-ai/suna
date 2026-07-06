@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { AlertTriangle } from 'lucide-react';
+import { PDFViewer } from '@/components/ui/extend/pdf-viewer';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
 
@@ -20,11 +21,18 @@ interface PdfRendererProps {
   fileContent?: string | null;
   /** Existing PDF object URL fallback. */
   url?: string | null;
+  fileName?: string;
   className?: string;
   compact?: boolean;
 }
 
-export function PdfRenderer({ fileContent, url, className, compact = false }: PdfRendererProps) {
+export function PdfRenderer({
+  fileContent,
+  url,
+  fileName,
+  className,
+  compact = false,
+}: PdfRendererProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -87,12 +95,12 @@ export function PdfRenderer({ fileContent, url, className, compact = false }: Pd
   }
 
   return (
-    <div className={cn('h-full w-full overflow-hidden bg-muted/20', compact && 'bg-muted/10 p-2', className)}>
-      <iframe
-        src={pdfUrl}
-        title="PDF preview"
-        className={cn('h-full w-full border-0 bg-white', compact && 'rounded-lg shadow-sm')}
-      />
-    </div>
+    <PDFViewer
+      src={pdfUrl}
+      fileName={fileName}
+      showToolbar={!compact}
+      showUpload={false}
+      className={cn('h-full w-full', className)}
+    />
   );
 }

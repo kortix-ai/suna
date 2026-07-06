@@ -1,7 +1,7 @@
 'use client';
 
+import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
 import { clearConfigOverrides } from '../use-opencode-config';
-import { getSupabaseAccessToken, invalidateTokenCache } from '../../platform/auth';
 import { saveSessionToIDB } from '../../state/idb-sync-cache';
 import { logger } from '../../platform/logger';
 import { getClient, resetClient } from '../../opencode/client';
@@ -11,15 +11,15 @@ import { useOpenCodePendingStore } from '../../state/opencode-pending-store';
 import { useSyncStore } from '../../state/sync-store';
 import { useSandboxConnectionStore } from '../../state/sandbox-connection-store';
 import { useServerStore } from '../../state/server-store';
-import { useCurrentRuntime } from '../../state/current-runtime';
+import { useCurrentRuntime } from '../use-current-runtime';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { opencodeKeys } from '../use-opencode-sessions';
 import { resetPrefetchState } from '../use-session-prefetch';
 import { createEventHandler } from './handle-event';
 import { releaseMessageRehydrate, reserveMessageRehydrate } from './helpers';
-import type { OpenCodeEvent } from './types';
 import { useEventStreamRefs } from './use-event-stream-refs';
+import { openEventStream } from '../../state/event-stream';
 
 /**
  * Connects to OpenCode's SSE event stream via the SDK and
@@ -28,6 +28,13 @@ import { useEventStreamRefs } from './use-event-stream-refs';
  * Instead of invalidating queries (which triggers full refetches),
  * we use setQueryData to surgically update messages, parts, sessions, etc.
  * This matches the SolidJS reference implementation's approach.
+ *
+ * This hook is a THIN React wrapper: the actual connect/reconnect/backoff,
+ * heartbeat watchdog, and event-coalescing machinery is framework-free and
+ * lives in `state/event-stream.ts`'s `openEventStream()`. Everything here is
+ * either genuinely React-only (effect lifecycle, store subscriptions) or
+ * needs the React Query `QueryClient` (cache reads/writes, which
+ * `createEventHandler` and `hydrateCore` below perform).
  */
 export function useOpenCodeEventStream() {
   const queryClient = useQueryClient();
@@ -44,7 +51,6 @@ export function useOpenCodeEventStream() {
   const activeServerUrl = useServerStore((s) => s.getActiveServerUrl());
   const sandboxStatus = useSandboxConnectionStore((s) => s.status);
   const runtimeHealthy = useSandboxConnectionStore((s) => s.healthy);
-  const abortRef = useRef<AbortController | null>(null);
   const isMountRef = useRef(true);
   const prevRuntimeVersionRef = useRef(runtimeVersion);
   const prevServerUrlRef = useRef(activeServerUrl);
@@ -148,12 +154,15 @@ export function useOpenCodeEventStream() {
         .status()
         .then((res) => {
           if (res.data) {
-            const statuses = res.data as Record<string, any>;
+            const statuses = res.data;
             for (const [sessionID, status] of Object.entries(statuses)) {
+              // Locally-synthesized event (this is a REST poll, not an SSE
+              // frame) — omits the `id` field every real `Event` union member
+              // carries, hence the assertion.
               applySyncEvent({
                 type: 'session.status',
                 properties: { sessionID, status },
-              } as any);
+              } as unknown as OpenCodeSdkEvent);
             }
             reconcileMissingBusySessions.current(statuses);
           } else {
@@ -188,7 +197,7 @@ export function useOpenCodeEventStream() {
             .messages({ sessionID: sid })
             .then((res) => {
               if (res.data) {
-                useSyncStore.getState().hydrate(sid, res.data as any);
+                useSyncStore.getState().hydrate(sid, res.data);
                 const s = useSyncStore.getState();
                 const msgs = s.messages[sid] ?? [];
                 if (msgs.length > 0) saveSessionToIDB(sid, msgs, s.parts);
@@ -203,207 +212,18 @@ export function useOpenCodeEventStream() {
     // Hydrate on initial connect — permissions, questions, and statuses
     hydrateCore();
 
-    // Set up SSE via the SDK's AsyncGenerator
-    const abortController = new AbortController();
-    abortRef.current = abortController;
-
-    // Track last stream activity (connect or event) to gate reconnect hydration.
-    // Using only "last event" causes hydrate storms when the server rotates
-    // idle SSE connections that carried no events.
-    let lastStreamActivityTime = Date.now();
-    // Track when the stream connected and whether it delivered any events.
-    // We reset reconnect backoff only after a healthy connection (events received
-    // or sustained >10s). Brief connect→drop loops keep backoff growth.
-    let streamConnectedAt = 0;
-
-    // Event coalescing queue (like the SolidJS reference)
-    let queue: ({ type: string; event: OpenCodeEvent } | undefined)[] = [];
-    let flushTimer: ReturnType<typeof setTimeout> | undefined;
-    let lastFlush = 0;
-
-    // Coalescing map — replaces earlier events of the same key
-    const coalesced = new Map<string, number>();
-
-    // Coalescing keys — determines which events can replace earlier ones
-    // in the same 16ms flush batch.
-    // NOTE: message.part.updated is intentionally NOT coalesced. While the
-    // server sends full part state each time, coalescing can cause a stale
-    // snapshot to be the sole survivor of a batch. When that stale snapshot
-    // is processed before any deltas, it inserts the part with wrong/partial
-    // text (prefix-growth guard can't help — nothing to compare against).
-    // The upsertPart prefix-growth guard efficiently rejects stale snapshots
-    // with a no-op return, so processing every snapshot has minimal cost.
-    function getCoalesceKey(event: OpenCodeEvent): string | undefined {
-      if (event.type === 'session.status') {
-        return `session.status:${(event.properties as any).sessionID}`;
-      }
-      if (event.type === 'lsp.updated') return 'lsp.updated';
-      return undefined;
-    }
-
-    const flush = () => {
-      if (flushTimer) clearTimeout(flushTimer);
-      flushTimer = undefined;
-      if (queue.length === 0) return;
-
-      const events = queue;
-      queue = [];
-      coalesced.clear();
-      lastFlush = Date.now();
-      lastStreamActivityTime = Date.now();
-
-      for (const item of events) {
-        if (!item) continue;
-        handleEvent(item.event);
-      }
-    };
-
-    const schedule = () => {
-      if (flushTimer) return;
-      const elapsed = Date.now() - lastFlush;
-      flushTimer = setTimeout(flush, Math.max(0, 16 - elapsed));
-    };
-
-    // Consume the stream in the background with automatic retry
-    (async () => {
-      let retryCount = 0;
-      while (!abortController.signal.aborted) {
-        let streamHadEvents = false;
-        let stableConnection = false;
-        let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
-        try {
-          const result = await client.global.event({
-            signal: abortController.signal,
-            sseDefaultRetryDelay: 3000,
-            sseMaxRetryDelay: 30000,
-          } as any);
-          const { stream } = result;
-          streamConnectedAt = Date.now();
-          lastStreamActivityTime = streamConnectedAt;
-
-          // Heartbeat timeout — matching the reference. If no events
-          // arrive for 15s, abort and reconnect. This is the ONLY
-          // recovery mechanism we need — replaces the stall watchdog,
-          // reconciler, and visibility handler.
-          const HEARTBEAT_MS = 15_000;
-          const heartbeatAbort = new AbortController();
-          const resetHeartbeat = () => {
-            clearTimeout(heartbeatTimer);
-            heartbeatTimer = setTimeout(() => {
-              logger.warn('SSE heartbeat timeout, forcing reconnect');
-              heartbeatAbort.abort();
-            }, HEARTBEAT_MS);
-          };
-          resetHeartbeat();
-
-          // Consume stream: queue + coalesce + 16ms flush + yield every 8ms
-          let yieldedAt = Date.now();
-          for await (const event of stream) {
-            if (abortController.signal.aborted || heartbeatAbort.signal.aborted) break;
-            streamHadEvents = true;
-            resetHeartbeat();
-            const raw = event as any;
-            const e = (
-              raw && typeof raw === 'object' && 'payload' in raw ? raw.payload : raw
-            ) as OpenCodeEvent;
-            if (!e?.type) continue;
-
-            const ck = getCoalesceKey(e);
-            if (ck) {
-              const existing = coalesced.get(ck);
-              if (existing !== undefined) {
-                queue[existing] = undefined;
-              }
-              coalesced.set(ck, queue.length);
-            }
-            queue.push({ type: (e as any).type, event: e });
-            schedule();
-
-            if (Date.now() - yieldedAt < 8) continue;
-            yieldedAt = Date.now();
-            await new Promise<void>((resolve) => setTimeout(resolve, 0));
-          }
-
-          // Healthy stream if it delivered events, or if it stayed open for >10s.
-          stableConnection = streamHadEvents || Date.now() - streamConnectedAt > 10_000;
-        } catch (err) {
-          if (abortController.signal.aborted) break;
-          const errStr = String(err);
-          const isAuthError =
-            errStr.includes('401') ||
-            errStr.includes('403') ||
-            errStr.includes('Unauthorized') ||
-            errStr.includes('Token refresh failed');
-          logger.error('SSE event stream error', {
-            error: errStr,
-            retryCount,
-            isAuthError,
-          });
-
-          // On auth errors, invalidate the token cache and fetch a fresh token.
-          // This ensures all callers (SSE, health check, SDK) immediately use
-          // the refreshed token instead of serving stale cached ones for 30s.
-          if (isAuthError) {
-            try {
-              invalidateTokenCache();
-              await getSupabaseAccessToken();
-              logger.info('SSE: refreshed auth token after auth error');
-            } catch (refreshErr) {
-              logger.error('SSE: failed to refresh auth token', {
-                error: String(refreshErr),
-              });
-            }
-          }
-        } finally {
-          clearTimeout(heartbeatTimer);
-          flush();
-        }
-
-        // Stream ended or errored — reconnect with exponential backoff.
-        // ERR_INCOMPLETE_CHUNKED_ENCODING is normal when the server closes
-        // the SSE connection between response cycles.
-        // Minimum 1s delay even on first retry to avoid reconnection storms
-        // when the server is flapping (connect → immediate disconnect loops).
-        if (abortController.signal.aborted) break;
-
-        // Re-hydrate messages for loaded sessions when the SSE gap was
-        // significant (>5s). Events missed during the gap (e.g. streaming
-        // assistant response) would never arrive, leaving the UI stale
-        // until the user manually refreshes.
-        const gap = Date.now() - lastStreamActivityTime;
-        if (gap > 5_000) {
-          hydrateCore({ rehydrateMessages: true });
-        }
-
-        if (stableConnection) {
-          // Fast reconnect after healthy streams so live streaming resumes immediately.
-          retryCount = 0;
-        } else {
-          retryCount++;
-          if (retryCount > 1) {
-            logger.warn('SSE event stream reconnecting', { retryCount });
-          }
-        }
-        const delay = stableConnection
-          ? 250
-          : Math.min(1000 * 2 ** Math.min(retryCount - 1, 5), 30000);
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, delay);
-          const onAbort = () => {
-            clearTimeout(timer);
-            resolve();
-          };
-          abortController.signal.addEventListener('abort', onAbort, {
-            once: true,
-          });
-        });
-      }
-    })();
+    // Set up SSE via the framework-free event-stream machine. The
+    // connect/reconnect/backoff loop, heartbeat watchdog, and event
+    // coalescing all live in `openEventStream` — this wrapper only supplies
+    // the QueryClient-dependent event handler and the gap-rehydrate hook.
+    const handle = openEventStream({
+      client,
+      onEvent: handleEvent,
+      onGapRehydrate: () => hydrateCore({ rehydrateMessages: true }),
+    });
 
     return () => {
-      abortController.abort();
-      abortRef.current = null;
-      if (flushTimer) clearTimeout(flushTimer);
+      handle.close();
     };
     // NOTE: urlVersion is intentionally excluded from deps. We only reconnect
     // when the resolved activeServerUrl actually changes, which avoids

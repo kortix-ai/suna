@@ -1,8 +1,8 @@
 // Session sandbox — runtime sandbox row + the session-open (/start) flow.
 
-import type { QueryClient } from '@tanstack/react-query';
-
 import { backendApi } from '../api-client';
+import { setSessionRuntime } from '../../state/session-runtime-registry';
+import { getSandboxUrlForExternalId } from '../../state/server-store/url-helpers';
 
 // ---------------------------------------------------------------------------
 // Session sandbox — runtime row in `kortix.session_sandboxes`. Separate from
@@ -22,7 +22,7 @@ export interface ProjectSessionSandbox {
   session_id: string;
   project_id: string;
   account_id: string;
-  provider: 'daytona' | 'justavps';
+  provider: 'managed' | 'daytona' | 'platinum' | 'local_docker' | 'justavps';
   external_id: string | null;
   base_url: string | null;
   status: ProjectSessionSandboxStatus;
@@ -38,6 +38,8 @@ export type SessionStartStage = 'provisioning' | 'starting' | 'ready' | 'stopped
 export interface SessionStartResult {
   /** Coarse lifecycle stage to render + poll on. */
   stage: SessionStartStage;
+  /** Immutable project-session agent bound at session creation. */
+  agent_name: string;
   /** Whether polling /start again can make progress (false = terminal). */
   retriable: boolean;
   sandbox: ProjectSessionSandbox | null;
@@ -51,6 +53,39 @@ export interface SessionStartResult {
    */
   runtime_url?: string | null;
   reason?: string;
+}
+
+export class SessionStartError extends Error {
+  status?: number;
+  code?: string;
+  terminal: boolean;
+
+  constructor(message: string, options: { status?: number; code?: string; terminal: boolean }) {
+    super(message);
+    this.name = 'SessionStartError';
+    this.status = options.status;
+    this.code = options.code;
+    this.terminal = options.terminal;
+  }
+}
+
+export function isSessionStartError(error: unknown): error is SessionStartError {
+  return error instanceof Error && error.name === 'SessionStartError';
+}
+
+function classifySessionStartFailure(error?: Error): SessionStartError | null {
+  const apiError = error as
+    | (Error & { status?: number; code?: string; details?: { code?: string; error?: string } })
+    | undefined;
+  const status = apiError?.status;
+  const code = apiError?.code ?? apiError?.details?.code ?? apiError?.details?.error;
+  const message = apiError?.message || 'Unable to start this session';
+
+  if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+    return new SessionStartError(message, { status, code, terminal: true });
+  }
+
+  return null;
 }
 
 /**
@@ -70,12 +105,31 @@ export async function startProjectSession(
   const response = await backendApi.post<SessionStartResult>(
     `/projects/${projectId}/sessions/${sessionId}/start${qs}`,
     {},
-    // 402 (billing) is handled by the page's plan gate before polling; other
-    // failures just yield null and the caller retries.
+    // Keep toasts quiet here. Terminal client errors are rendered by the host;
+    // transient transport/server failures still yield null so polling can recover.
     { showErrors: false },
   );
-  if (!response.success || !response.data) return null;
-  return response.data;
+  if (!response.success || !response.data) {
+    const terminal = classifySessionStartFailure(response.error);
+    if (terminal) throw terminal;
+    return null;
+  }
+  const result = response.data;
+  // Populate the shared session-runtime registry the instant a session goes
+  // ready, regardless of WHICH caller drove this /start (the facade's
+  // `ensureReady()` or the React `useSession` hook — both call this one
+  // function). Every other handle for the same session id — a fresh
+  // `kortix.session(pid, sid)` created for a one-off poll, e.g. — can then
+  // adopt this entry instead of throwing SessionNotReadyError or re-POSTing.
+  const externalId = result.sandbox?.external_id;
+  if (result.stage === 'ready' && externalId && result.opencode_session_id) {
+    setSessionRuntime(projectId, sessionId, {
+      opencodeSessionId: result.opencode_session_id,
+      runtimeUrl: getSandboxUrlForExternalId(externalId),
+      sandboxId: externalId,
+    });
+  }
+  return result;
 }
 
 /**
@@ -86,23 +140,4 @@ export async function startProjectSession(
  */
 export function sessionStartKey(projectId: string, sessionId: string) {
   return ['session-start', projectId, sessionId] as const;
-}
-
-/**
- * Begin the session runtime boot DURING the route transition (before the session
- * page mounts), so provisioning overlaps navigation instead of starting after the
- * page paints. Idempotent + fire-and-forget: React Query dedupes against the
- * session page's own query (same key), and `/start` is idempotent server-side.
- * Also warms the route bundle. Use at every createProjectSession→navigate site.
- */
-export function prefetchSessionStart(
-  queryClient: QueryClient,
-  projectId: string,
-  sessionId: string,
-): void {
-  void queryClient.prefetchQuery({
-    queryKey: sessionStartKey(projectId, sessionId),
-    queryFn: () => startProjectSession(projectId, sessionId),
-    staleTime: 0,
-  });
 }

@@ -26,6 +26,18 @@
  * already accepts. The empty (unscoped) map IS cached — that's the common,
  * hot-path case — and every mutation busts it.
  *
+ * AGENT-ONLY member-scoped resource (Marko, resource-model simplification):
+ * only `agent` is a member/department-scopable resource going forward. Skills
+ * and secrets are governed by the EDITOR role (edit) + agent inheritance (use)
+ * instead — assigning an agent to a member lets them USE what that agent
+ * declares (its skills/connectors/secrets), never edit it. `skill` and
+ * `secret` stay in RESOURCE_GRANT_TYPES / ResourceType purely for back-compat:
+ * pre-existing grant rows of those types must keep reading, listing, and
+ * revoking correctly. NEW grants of those types are rejected at the API layer
+ * (see CREATABLE_RESOURCE_GRANT_TYPES + the r7.ts POST /resource-grants gate)
+ * — this module stays permissive so it never has to know which caller is
+ * enforcing that; it's a write-time policy, not a storage-model change.
+ *
  * Import direction: this module imports cache-invalidation (register/bust) but
  * NOT engine-v2; engine-v2 imports this. No cycle.
  */
@@ -38,18 +50,31 @@ import {
   registerProjectScopedMemo,
 } from './cache-invalidation';
 
-/** The resource kinds that support per-resource scoping today. Extensible.
- *  agent/skill ids come from the git config; secret ids are the secret NAME
- *  (uppercased key) from the project_secrets table. */
+/** The resource kinds that support per-resource scoping today. `skill` and
+ *  `secret` are READ/REVOKE-only back-compat holdovers — see the module
+ *  doc comment above and CREATABLE_RESOURCE_GRANT_TYPES below. agent/skill ids
+ *  come from the git config; secret ids are the secret NAME (uppercased key)
+ *  from the project_secrets table. */
 export const RESOURCE_GRANT_TYPES = ['agent', 'skill', 'secret'] as const;
 export type ResourceType = (typeof RESOURCE_GRANT_TYPES)[number];
+
+/** The resource kinds a NEW member/department-scoped grant may be created
+ *  for. Only `agent` — skills and secrets are governed by the editor role
+ *  (edit) + agent inheritance (use), not a direct member-scoped grant. Existing
+ *  skill/secret grant rows (created before this restriction) still read,
+ *  list, and revoke normally; this only gates the CREATE path. */
+export const CREATABLE_RESOURCE_GRANT_TYPES = ['agent'] as const;
+export type CreatableResourceType = (typeof CREATABLE_RESOURCE_GRANT_TYPES)[number];
+export function isCreatableResourceType(v: string): v is CreatableResourceType {
+  return (CREATABLE_RESOURCE_GRANT_TYPES as readonly string[]).includes(v);
+}
 export function isResourceType(v: string): v is ResourceType {
   return (RESOURCE_GRANT_TYPES as readonly string[]).includes(v);
 }
 
 export type PrincipalType = 'member' | 'group';
 
-export interface ResourceGrantPrincipal {
+interface ResourceGrantPrincipal {
   principalType: PrincipalType;
   principalId: string;
 }
@@ -80,6 +105,38 @@ export function isResourceAccessible(
     if (g.principalType === 'group' && groups.has(g.principalId)) return true;
   }
   return false;
+}
+
+/**
+ * PURE. Is this principal EXPLICITLY assigned to the resource? Unlike
+ * `isResourceAccessible`, an UNSCOPED resource (no grants) means "NOT assigned"
+ * (false), not "open to everyone". Gates agent-resource inheritance: inheriting
+ * an agent's secrets requires a deliberate assignment, never the default-open
+ * state — so declaring `inherit` on an unscoped agent grants nobody anything.
+ */
+export function isResourceExplicitlyGranted(
+  grantsForResource: ResourceGrantPrincipal[] | undefined,
+  userId: string,
+  groupIds: readonly string[],
+): boolean {
+  if (!grantsForResource || grantsForResource.length === 0) return false;
+  const groups = new Set(groupIds);
+  for (const g of grantsForResource) {
+    if (g.principalType === 'member' && g.principalId === userId) return true;
+    if (g.principalType === 'group' && groups.has(g.principalId)) return true;
+  }
+  return false;
+}
+
+export async function isProjectResourceExplicitlyGranted(
+  projectId: string,
+  resourceType: ResourceType,
+  resourceId: string,
+  userId: string,
+  groupIds: readonly string[],
+): Promise<boolean> {
+  const map = await loadProjectResourceGrants(projectId, resourceType);
+  return isResourceExplicitlyGranted(map.get(resourceId), userId, groupIds);
 }
 
 /**
@@ -182,7 +239,7 @@ export async function filterAccessibleResourceIds(
 
 // ─── Repository (CRUD) ──────────────────────────────────────────────────────
 
-export interface ResourceGrantRow {
+interface ResourceGrantRow {
   grantId: string;
   resourceType: string;
   resourceId: string;

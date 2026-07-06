@@ -1,12 +1,15 @@
 'use client';
 
 import { type QueryClient } from '@tanstack/react-query';
+import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
 import { useRef } from 'react';
 import { authenticatedFetch } from '../../platform/auth';
-import { useDiagnosticsStore } from '../../state/diagnostics-store';
+import { useDiagnosticsStore, type RawDiagnostic } from '../../state/diagnostics-store';
 import { getActiveOpenCodeUrl } from '../../state/server-store';
 import { useSyncStore } from '../../state/sync-store';
-import { opencodeKeys } from '../use-opencode-sessions';
+import type { SyntheticAbortError } from '../../state/sync-store/types';
+import { type Project, type PathInfo, type SessionStatus, opencodeKeys } from '../use-opencode-sessions';
+import type { NormalizeDiagnosticPaths } from './types';
 
 /**
  * Creates the stable per-stream refs used by the event hook. Each ref captures
@@ -16,7 +19,7 @@ import { opencodeKeys } from '../use-opencode-sessions';
 export function useEventStreamRefs(deps: {
   queryClient: QueryClient;
   stopCompaction: (sessionID: string) => void;
-  applySyncEvent: (event: any) => void;
+  applySyncEvent: (event: OpenCodeSdkEvent) => void;
 }) {
   const { queryClient, stopCompaction, applySyncEvent } = deps;
 
@@ -35,9 +38,9 @@ export function useEventStreamRefs(deps: {
     // Collect prefixes from cached project/path data
     const prefixes: string[] = [];
     try {
-      const project = queryClient.getQueryData<any>(opencodeKeys.currentProject());
+      const project = queryClient.getQueryData<Project>(opencodeKeys.currentProject());
       if (project?.worktree) prefixes.push(project.worktree);
-      const pathInfo = queryClient.getQueryData<any>(opencodeKeys.pathInfo());
+      const pathInfo = queryClient.getQueryData<PathInfo>(opencodeKeys.pathInfo());
       if (pathInfo?.directory) prefixes.push(pathInfo.directory);
       if (pathInfo?.worktree) prefixes.push(pathInfo.worktree);
     } catch {
@@ -59,9 +62,9 @@ export function useEventStreamRefs(deps: {
   });
 
   /** Normalize all keys in a diagnostic map from absolute to relative paths */
-  const normalizeDiagnosticPaths = useRef(
-    (diagsByFile: Record<string, any[]>): Record<string, any[]> => {
-      const normalized: Record<string, any[]> = {};
+  const normalizeDiagnosticPaths = useRef<NormalizeDiagnosticPaths>(
+    function normalizeDiagnosticPaths<T>(diagsByFile: Record<string, T[]>): Record<string, T[]> {
+      const normalized: Record<string, T[]> = {};
       for (const [file, diags] of Object.entries(diagsByFile)) {
         const relPath = normalizeLspPath.current(file);
         normalized[relPath] = diags;
@@ -89,7 +92,7 @@ export function useEventStreamRefs(deps: {
             const baseUrl = getActiveOpenCodeUrl();
             const resp = await authenticatedFetch(`${baseUrl}/lsp/diagnostics`);
             if (!resp.ok) return;
-            const data = (await resp.json()) as Record<string, any[]>;
+            const data = (await resp.json()) as Record<string, RawDiagnostic[]>;
             if (data && typeof data === 'object') {
               const normalized = normalizeDiagnosticPaths.current(data);
               // The endpoint returns the *complete* diagnostics state,
@@ -110,16 +113,22 @@ export function useEventStreamRefs(deps: {
   const markSessionAbortedLocally = useRef(
     (sessionID: string, message = 'The operation was aborted because the runtime shut down.') => {
       if (!sessionID) return;
-      const error = {
+      const error: SyntheticAbortError = {
         name: 'AbortError',
         data: { message },
       };
       stopCompaction(sessionID);
+      // Locally-synthesized event — not from the wire, so it intentionally
+      // omits the `id` field every real `Event` union member carries, and
+      // `error` is the client-only `SyntheticAbortError` shape (not part of
+      // the SDK's `session.error` error union). The sync store's `applyEvent`
+      // handles both structurally (see `MessageError`); the assertion just
+      // documents that this event is fabricated, not wire data.
       applySyncEvent({
         type: 'session.error',
         properties: { sessionID, error },
-      } as any);
-      useSyncStore.getState().setStatus(sessionID, { type: 'idle' } as any);
+      } as unknown as OpenCodeSdkEvent);
+      useSyncStore.getState().setStatus(sessionID, { type: 'idle' });
       useSyncStore.getState().clearOptimisticMessages(sessionID);
     },
   );
@@ -127,15 +136,16 @@ export function useEventStreamRefs(deps: {
   const markSessionIdleLocally = useRef((sessionID: string) => {
     if (!sessionID) return;
     stopCompaction(sessionID);
+    // Same locally-synthesized-event caveat as above: no real `id`.
     applySyncEvent({
       type: 'session.idle',
       properties: { sessionID },
-    } as any);
-    useSyncStore.getState().setStatus(sessionID, { type: 'idle' } as any);
+    } as unknown as OpenCodeSdkEvent);
+    useSyncStore.getState().setStatus(sessionID, { type: 'idle' });
     useSyncStore.getState().clearOptimisticMessages(sessionID);
   });
 
-  const reconcileMissingBusySessions = useRef((nextStatuses: Record<string, any>) => {
+  const reconcileMissingBusySessions = useRef((nextStatuses: Record<string, SessionStatus>) => {
     const previousStatuses = useSyncStore.getState().sessionStatus;
     for (const [sessionID, status] of Object.entries(previousStatuses)) {
       if (status?.type !== 'idle' && !nextStatuses[sessionID]) {

@@ -82,6 +82,11 @@ mock.module('../shared/account-limits', () => ({
   FREE_TIER_PROJECT_LIMIT: 3,
   maxProjectsForAccount: async () => projectLimit,
   maxConcurrentSessionsForTier: () => Number.MAX_SAFE_INTEGER,
+  resolveAccountSessionLimit: async () => ({
+    tier: 'free',
+    limit: Number.MAX_SAFE_INTEGER,
+    source: 'tier',
+  }),
   resolveAccountTier: async () => 'free',
   accountEntitledToLlmGateway: async () => true,
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
@@ -100,7 +105,9 @@ mock.module('../deployments/providers/freestyle', () => ({
   },
 }));
 
+const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
+  ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
     c.set('userId', auth.userId);
@@ -120,6 +127,7 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   readRepoFile: async () => '',
+  readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),

@@ -29,7 +29,7 @@ const CREDIT_POINTS: { title: string; body: string }[] = [
   },
   {
     title: 'Compute by the second',
-    body: 'Agent Computers run about $0.10/hour and auto-stop when idle, so you never pay for a machine sitting still.',
+    body: 'Billed per resource, per second: $0.0000084/vCPU, $0.0000027/GiB RAM, $0.000000018/GiB disk. The default 2 vCPU / 4 GiB / 20 GiB machine runs about $0.10/hour, and auto-stops when idle so you pay $0 the moment it’s not running.',
   },
 ];
 
@@ -56,7 +56,7 @@ const FAQ: [string, string][] = [
   ],
   [
     'How are models and compute priced?',
-    'Free credits are sandbox-only. Team credits cover managed models and compute from one wallet. Bring your own key or connect ChatGPT and you pay the provider directly. Agent-Computer compute is about $0.10/hour, billed by the second and $0 while stopped.',
+    'Free credits are sandbox-only. Team credits cover managed models and compute from one wallet. Bring your own key or connect ChatGPT and you pay the provider directly. Agent Computer compute is billed per second, per resource — $0.0000084/vCPU, $0.0000027/GiB RAM, $0.000000018/GiB disk — about $0.10/hour for the default 2 vCPU / 4 GiB / 20 GiB machine, and $0 while stopped.',
   ],
   [
     'Do I pay per seat or per usage?',

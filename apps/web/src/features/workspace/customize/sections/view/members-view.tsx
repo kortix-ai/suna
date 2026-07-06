@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Check, Clock, KeyRound, Loader2, Mail, MessageSquare, Plus, RefreshCw, Shield, Sparkles, User, Users, X } from 'lucide-react';
+import { Bot, Check, Clock, CornerDownRight, KeyRound, Loader2, Mail, MessageSquare, Plug, Plus, RefreshCw, Shield, Sparkles, User, Users, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
@@ -91,7 +91,7 @@ import {
   type ProjectResourceGrant,
   type ProjectRole,
   type ResourceGrantType,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { UsersSolid } from '@mynaui/icons-react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
@@ -503,7 +503,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <ProjectRoleSelectItem role="user" />
+                  <ProjectRoleSelectItem role="member" />
                   <ProjectRoleSelectItem role="editor" />
                   <ProjectRoleSelectItem role="manager" />
                 </SelectContent>
@@ -840,7 +840,7 @@ function ProjectAccessCard({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <ProjectRoleSelectItem role="user" />
+                          <ProjectRoleSelectItem role="member" />
                           <ProjectRoleSelectItem role="editor" />
                           <ProjectRoleSelectItem role="manager" />
                         </SelectContent>
@@ -982,7 +982,7 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
   });
 
   const approveMutation = useMutation({
-    mutationFn: (requestId: string) => approveProjectAccessRequest(projectId, requestId, 'user'),
+    mutationFn: (requestId: string) => approveProjectAccessRequest(projectId, requestId, 'member'),
     onMutate: (requestId) => markBusy(requestId),
     onSettled: (_data, _error, requestId) => clearBusy(requestId),
     onSuccess: (result) => {
@@ -1455,7 +1455,7 @@ function ProjectGroupGrantsCard({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <ProjectRoleSelectItem role="user" />
+                  <ProjectRoleSelectItem role="member" />
                   <ProjectRoleSelectItem role="editor" />
                   <ProjectRoleSelectItem role="manager" />
                 </SelectContent>
@@ -1559,7 +1559,7 @@ function ProjectGroupGrantsCard({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <ProjectRoleSelectItem role="user" />
+                          <ProjectRoleSelectItem role="member" />
                           <ProjectRoleSelectItem role="editor" />
                           <ProjectRoleSelectItem role="manager" />
                         </SelectContent>
@@ -1664,6 +1664,68 @@ function FilterChips<T extends string>({
   );
 }
 
+/** One dimension (secrets / connectors) of an agent's declared scope. */
+function ScopeLine({
+  icon: Icon,
+  label,
+  items,
+}: {
+  icon: typeof KeyRound;
+  label: string;
+  items: string[];
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <Icon className="text-muted-foreground/70 size-3.5 shrink-0" />
+      <span className="text-muted-foreground text-[11px] font-medium">{label}</span>
+      {items.map((n) => (
+        <Badge key={n} variant="outline" size="xs" className="font-mono">
+          {n}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Blast-radius preview for an agent assignment: the concrete secrets + connectors
+ * the assignee will INHERIT (the pyramid). `'all'` inherits nothing SPECIFIC (it
+ * already means "everything they can see"), so only explicit lists show — mirrors
+ * the backend's unionDeclaredResources.
+ */
+function BlastRadiusPreview({
+  declares,
+}: {
+  declares: { secrets: string[] | 'all'; connectors: string[] | 'all' };
+}) {
+  const secrets = declares.secrets === 'all' ? [] : declares.secrets;
+  const conns = declares.connectors === 'all' ? [] : declares.connectors;
+  const nothingExtra = secrets.length === 0 && conns.length === 0;
+  return (
+    <div className="border-border/60 bg-muted/30 space-y-2 rounded-lg border p-3">
+      <div className="flex items-center gap-1.5">
+        <CornerDownRight className="text-muted-foreground/70 size-3.5 shrink-0" />
+        <span className="text-foreground/80 text-xs font-medium">Assigning this also grants</span>
+      </div>
+      {nothingExtra ? (
+        <p className="text-muted-foreground text-[11px] leading-relaxed">
+          Nothing extra — this agent declares no specific secrets or connectors to inherit.
+        </p>
+      ) : (
+        <>
+          <div className="space-y-1.5">
+            {secrets.length > 0 && <ScopeLine icon={KeyRound} label="Secrets" items={secrets} />}
+            {conns.length > 0 && <ScopeLine icon={Plug} label="Connectors" items={conns} />}
+          </div>
+          <p className="text-muted-foreground/60 text-[11px] leading-relaxed">
+            The member inherits these as their own — usable in Secrets, sessions, and connector calls.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ResourceAccessCard({
   projectId,
   accountId,
@@ -1681,6 +1743,8 @@ function ResourceAccessCard({
   const grantsQuery = useQuery({
     queryKey: grantsKey,
     queryFn: () => listProjectResourceGrants(projectId),
+    // Manager-only endpoint (403s otherwise) — don't fire it for non-managers.
+    enabled: canManage,
     staleTime: 20_000,
   });
   const groupsQuery = useQuery({
@@ -1715,8 +1779,8 @@ function ResourceAccessCard({
     resources.agents.length > 0 || resources.skills.length > 0 || (resources.secrets?.length ?? 0) > 0;
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [pickerType, setPickerType] = useState<ResourceGrantType | ''>(''); // step 1
-  const [pickerResourceId, setPickerResourceId] = useState<string>(''); // step 2
+  const [pickerType] = useState<ResourceGrantType>('agent'); // agent-only grant flow
+  const [pickerResourceId, setPickerResourceId] = useState<string>(''); // the agent
   const [principalValue, setPrincipalValue] = useState<string>(''); // "member:id" | "group:id"
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const markPending = (id: string) => setPendingIds((prev) => new Set(prev).add(id));
@@ -1727,31 +1791,24 @@ function ResourceAccessCard({
       return next;
     });
 
-  // Step 1 of the grant flow: pick the resource TYPE. Only offer types that
-  // actually have resources, so the type buttons never lead to an empty list.
-  const typeOptions = useMemo(
-    () =>
-      (
-        [
-          { type: 'agent', label: 'Agent', Icon: Bot, items: resources.agents },
-          { type: 'skill', label: 'Skill', Icon: Sparkles, items: resources.skills },
-          { type: 'secret', label: 'Secret', Icon: KeyRound, items: resources.secrets ?? [] },
-        ] as const
-      ).filter((o) => o.items.length > 0),
-    [resources],
-  );
-  // Step 2 options: only the resources of the chosen type.
-  const activeItems = typeOptions.find((o) => o.type === pickerType)?.items ?? [];
+  // The grant flow is AGENT-ONLY: the pyramid routes ALL resources — secrets,
+  // connectors, AND skills — to people through the AGENTS they're assigned to,
+  // never by a direct resource→member grant. Declare the resource on an agent
+  // (its scope / skills), then assign the agent here. (Pre-existing skill/secret
+  // grants still render in the list below so they can be revoked.)
+  const activeItems = resources.agents;
+
+  // Blast-radius preview: when an AGENT is picked, what the assignee inherits
+  // (the agent's declared secrets + connectors). Null for skills/secrets or until
+  // an agent is chosen. Reads the `declares` the resource-grants API attaches.
+  const selectedAgentDeclares = useMemo(() => {
+    if (pickerType !== 'agent' || !pickerResourceId) return null;
+    return resources.agents.find((a) => a.id === pickerResourceId)?.declares ?? null;
+  }, [pickerType, pickerResourceId, resources.agents]);
 
   function resetGrantForm() {
-    setPickerType('');
     setPickerResourceId('');
     setPrincipalValue('');
-  }
-
-  function onTypeChange(t: ResourceGrantType) {
-    setPickerType(t);
-    setPickerResourceId(''); // the previous pick belongs to a different type
   }
 
   function invalidate() {
@@ -1788,12 +1845,7 @@ function ResourceAccessCard({
 
   function onDialogOpenChange(next: boolean) {
     if (createMutation.isPending) return;
-    if (next) {
-      // Default the type to the first available so the resource list is live
-      // immediately; the user can still switch types from there.
-      resetGrantForm();
-      setPickerType(typeOptions[0]?.type ?? '');
-    }
+    if (next) resetGrantForm(); // agent-only flow; the agent list is live immediately
     setDialogOpen(next);
   }
 
@@ -1835,7 +1887,7 @@ function ResourceAccessCard({
     <SectionCard
       flush
       title="Resource access"
-      description="Scope specific agents, skills & secrets to a member or department. A resource with no grants stays open to everyone with project access; granting one restricts it to just the people or departments you pick."
+      description="Assign agents to a member or department to control who can USE them. An agent with no assignment is open to everyone with project access; assigning one restricts it to the people or departments you choose — they inherit that agent's declared skills, connectors, and secrets to use in its sessions. This only ever grants USE, never edit: changing the agent, a skill, a connector, or a secret still requires the editor role."
       count={grants.length}
       action={
         canManage && hasResources ? (
@@ -1848,10 +1900,13 @@ function ResourceAccessCard({
             </DialogTrigger>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>Grant resource access</DialogTitle>
+                <DialogTitle>Assign an agent</DialogTitle>
                 <DialogDescription>
-                  Scope an agent, skill, or secret to a member or department. Ungranted resources stay
-                  open to everyone with project access.
+                  Assign an agent to a member or department — they inherit everything that agent
+                  uses (its secrets, connectors, and skills) to USE, not edit. Resources reach
+                  people through agents, not by a direct grant; agents you don't assign stay open
+                  to everyone with project access. Editing the agent or any resource it uses still
+                  requires the editor role.
                 </DialogDescription>
               </DialogHeader>
 
@@ -1865,35 +1920,14 @@ function ResourceAccessCard({
                 }}
               >
                 <div className="space-y-1.5">
-                  <span className="text-muted-foreground text-xs font-medium">1. Resource type</span>
-                  <div className="flex gap-1.5">
-                    {typeOptions.map(({ type, label, Icon }) => (
-                      <Button
-                        key={type}
-                        type="button"
-                        size="sm"
-                        variant={pickerType === type ? 'default' : 'outline'}
-                        className="flex-1 gap-1.5"
-                        onClick={() => onTypeChange(type)}
-                      >
-                        <Icon className="h-3.5 w-3.5" />
-                        {label}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <span className="text-muted-foreground text-xs font-medium">
-                    2. {pickerType ? `${pickerType[0].toUpperCase()}${pickerType.slice(1)}` : 'Resource'}
-                  </span>
+                  <span className="text-muted-foreground text-xs font-medium">1. Agent</span>
                   <Select
                     value={pickerResourceId}
                     onValueChange={setPickerResourceId}
-                    disabled={!pickerType || createMutation.isPending}
+                    disabled={createMutation.isPending}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder={pickerType ? `Select a ${pickerType}` : 'Pick a type first'} />
+                      <SelectValue placeholder="Select an agent" />
                     </SelectTrigger>
                     <SelectContent>
                       {activeItems.map((r) => (
@@ -1905,8 +1939,10 @@ function ResourceAccessCard({
                   </Select>
                 </div>
 
+                {selectedAgentDeclares && <BlastRadiusPreview declares={selectedAgentDeclares} />}
+
                 <div className="space-y-1.5">
-                  <span className="text-muted-foreground text-xs font-medium">3. Grant to</span>
+                  <span className="text-muted-foreground text-xs font-medium">2. Grant to</span>
                   <Select
                     value={principalValue}
                     onValueChange={setPrincipalValue}
@@ -1955,8 +1991,8 @@ function ResourceAccessCard({
       {!grantsQuery.isLoading && grants.length === 0 && (
         <div className="text-muted-foreground px-6 py-5 text-xs">
           {hasResources
-            ? 'Nothing is scoped yet — every member with project access can see and use all agents, skills, and secrets. Grant one above to restrict it to specific people or departments.'
-            : 'This project has no agents, skills, or secrets to scope yet. Add some first, then come back here to limit who can use them.'}
+            ? 'Nothing is scoped yet — every agent is open to everyone with project access to use. Grant one above to restrict who can use it. Skills, connectors, and secrets aren’t assigned directly here — they’re governed by the editor role (to edit) and inherited through the agents you assign (to use).'
+            : 'This project has no agents to scope yet. Add one first, then come back here to limit who can use it.'}
         </div>
       )}
 

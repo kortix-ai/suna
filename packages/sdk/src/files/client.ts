@@ -8,8 +8,9 @@
  * consume `readBlob`/`list` from here.
  */
 import { getClient } from '../opencode/client';
-import { getActiveOpenCodeUrl } from '../state/server-store';
+import { getActiveOpenCodeUrl } from '../state/server-store/active';
 import { getAuthToken, authenticatedFetch } from '../platform/auth';
+import { ApiError } from '../platform/api/errors';
 import type {
   FileContent,
   FileNode,
@@ -26,13 +27,23 @@ export type * from './types';
 
 function unwrap<T>(result: { data?: T; error?: unknown }): T {
   if (result.error) {
-    const err = result.error as { data?: { message?: string }; message?: string; error?: unknown };
+    const err = result.error as {
+      data?: { message?: string };
+      message?: string;
+      error?: unknown;
+      response?: Response;
+      status?: number;
+    };
     const message =
       err?.data?.message ||
       err?.message ||
       (typeof err?.error === 'string' ? err.error : null) ||
       'SDK request failed';
-    throw new Error(message);
+    throw new ApiError(message, {
+      status: err?.response?.status ?? err?.status,
+      response: err?.response,
+      details: err,
+    });
   }
   return result.data as T;
 }
@@ -44,48 +55,97 @@ async function errorMessage(res: Response): Promise<string> {
   return parsed?.error || text || res.statusText || `HTTP ${res.status}`;
 }
 
-/** GET a daemon JSON endpoint (list/status/find), surfacing the server's error. */
-async function fetchDaemonJson<T>(relUrl: string): Promise<T> {
-  const baseUrl = getActiveOpenCodeUrl();
+/**
+ * GET a daemon JSON endpoint (list/status/find), surfacing the server's error.
+ * `baseUrl` defaults to the module-global "active" sandbox for back-compat —
+ * pass an explicit one (e.g. from `kortix.session(pid, sid).files`) to hit a
+ * SPECIFIC session's own runtime instead.
+ */
+async function fetchDaemonJson<T>(relUrl: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<T> {
   const response = await authenticatedFetch(`${baseUrl}${relUrl}`);
-  if (!response.ok) throw new Error(await errorMessage(response));
+  if (!response.ok) {
+    throw new ApiError(await errorMessage(response), { status: response.status, response });
+  }
   return response.json() as Promise<T>;
 }
 
-/** Strip the "/workspace" prefix to a worktree-relative path ("" = root). */
-export function toWorkspaceRelative(filePath: string): string {
+/**
+ * Sandbox filesystem roots the daemon serves (mirrors DEFAULT_ALLOWED_ROOTS in
+ * kortix-sandbox-agent-server). The daemon re-validates every path server-side;
+ * this mirror only keeps hosts from mangling non-workspace paths client-side.
+ */
+export const SANDBOX_FS_ROOTS = ['/workspace', '/tmp', '/home', '/opt'] as const;
+
+const NON_WORKSPACE_ROOTS = SANDBOX_FS_ROOTS.filter((root) => root !== '/workspace');
+
+/** Whether a path is absolute under one of the daemon's allowed roots. */
+export function isUnderSandboxRoot(filePath: string): boolean {
+  return SANDBOX_FS_ROOTS.some((root) => filePath === root || filePath.startsWith(`${root}/`));
+}
+
+/**
+ * Resolve any host path to an absolute sandbox path — paths already under an
+ * allowed root pass through, everything else anchors beneath /workspace.
+ */
+export function toSandboxAbsolutePath(filePath: string): string {
+  if (isUnderSandboxRoot(filePath)) return filePath;
+  return `/workspace/${filePath.replace(/^\/+/, '')}`;
+}
+
+/**
+ * Convert a host path to the daemon query path. /workspace paths become
+ * worktree-relative ("" = root); the other allowed roots (/tmp, /home, /opt)
+ * stay absolute — the daemon resolves absolutes against its own allow-list.
+ * Any other absolute path keeps the legacy leading-slash strip, so
+ * "/README.md"-style pseudo-relative paths still resolve under /workspace.
+ */
+export function toDaemonPath(filePath: string): string {
   let s = filePath || '';
   if (s === '/workspace' || s === '/workspace/') return '';
   if (s.startsWith('/workspace/')) s = s.slice('/workspace/'.length);
+  else if (NON_WORKSPACE_ROOTS.some((root) => s === root || s.startsWith(`${root}/`))) return s;
   while (s.startsWith('/')) s = s.slice(1);
   return s;
 }
 
-/** List files/directories at a path. Daemon `GET /file` (worktree-relative). */
-export async function listFiles(dirPath: string): Promise<FileNode[]> {
-  const rel = toWorkspaceRelative(dirPath) || '.';
-  const nodes = await fetchDaemonJson<FileNode[]>(`/file?path=${encodeURIComponent(rel)}`);
+/** @deprecated Use {@link toDaemonPath} — non-workspace roots now pass through absolute. */
+export const toWorkspaceRelative = toDaemonPath;
+
+/**
+ * List files/directories at a path. Daemon `GET /file`. `baseUrl` defaults to
+ * the module-global "active" sandbox; pass one explicitly to target a
+ * specific session's runtime (see `kortix.session(pid, sid).files`).
+ */
+export async function listFiles(dirPath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<FileNode[]> {
+  const daemonPath = toDaemonPath(dirPath) || '.';
+  const nodes = await fetchDaemonJson<FileNode[]>(`/file?path=${encodeURIComponent(daemonPath)}`, baseUrl);
   return nodes.map((node) => ({ ...node, path: node.absolute || `/workspace/${node.path}` }));
 }
 
 /** Read a file's content (text, or base64 for binaries). Daemon `GET /file/content`. */
-export async function readFile(filePath: string): Promise<FileContent> {
-  const baseUrl = getActiveOpenCodeUrl();
-  const relativePath = toWorkspaceRelative(filePath);
-  const response = await authenticatedFetch(`${baseUrl}/file/content?path=${encodeURIComponent(relativePath)}`);
-  if (!response.ok) throw new Error(await errorMessage(response));
+export async function readFile(filePath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<FileContent> {
+  const daemonPath = toDaemonPath(filePath);
+  const response = await authenticatedFetch(`${baseUrl}/file/content?path=${encodeURIComponent(daemonPath)}`);
+  if (!response.ok) {
+    throw new ApiError(await errorMessage(response), { status: response.status, response });
+  }
   return response.json() as Promise<FileContent>;
 }
 
 /** Raw byte read. Daemon `GET /file/raw`. Throws (so callers can fall back). */
-async function readFileRaw(filePath: string, fallbackMime?: string): Promise<Blob> {
-  const baseUrl = getActiveOpenCodeUrl();
-  const relativePath = toWorkspaceRelative(filePath);
-  const response = await authenticatedFetch(`${baseUrl}/file/raw?path=${encodeURIComponent(relativePath)}`);
-  if (!response.ok) throw new Error(await errorMessage(response));
+async function readFileRaw(filePath: string, fallbackMime?: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<Blob> {
+  const daemonPath = toDaemonPath(filePath);
+  const response = await authenticatedFetch(`${baseUrl}/file/raw?path=${encodeURIComponent(daemonPath)}`);
+  if (!response.ok) {
+    throw new ApiError(await errorMessage(response), { status: response.status, response });
+  }
   // A misrouted /file/raw can fall through to the web SPA shell (200, text/html).
   if ((response.headers.get('content-type') || '').includes('text/html')) {
-    throw new Error('File could not be loaded (raw byte route unavailable)');
+    throw new ApiError('File could not be loaded (raw byte route unavailable)', {
+      status: response.status,
+      response,
+      code: 'INVALID_CONTENT_TYPE',
+    });
   }
   const blob = await response.blob();
   if (fallbackMime && (!blob.type || blob.type === 'application/octet-stream')) {
@@ -95,11 +155,11 @@ async function readFileRaw(filePath: string, fallbackMime?: string): Promise<Blo
 }
 
 /** Read a file as a Blob — prefers `/file/raw`, falls back to base64 `/file/content`. */
-export async function readBlob(filePath: string): Promise<Blob> {
+export async function readBlob(filePath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<Blob> {
   try {
-    return await readFileRaw(filePath);
+    return await readFileRaw(filePath, undefined, baseUrl);
   } catch { /* fall back to JSON content endpoint */ }
-  const result = await readFile(filePath);
+  const result = await readFile(filePath, baseUrl);
   if (result.encoding === 'base64' && result.content) {
     const bytes = Uint8Array.from(atob(result.content), (c) => c.charCodeAt(0));
     return new Blob([bytes], { type: result.mimeType || 'application/octet-stream' });
@@ -108,28 +168,36 @@ export async function readBlob(filePath: string): Promise<Blob> {
 }
 
 /** Git file status — uncommitted changes. Daemon `GET /file/status`. */
-export function getFileStatus(): Promise<GitFileStatus[]> {
-  return fetchDaemonJson<GitFileStatus[]>(`/file/status`);
+export function getFileStatus(baseUrl: string = getActiveOpenCodeUrl()): Promise<GitFileStatus[]> {
+  return fetchDaemonJson<GitFileStatus[]>(`/file/status`, baseUrl);
 }
 
-/** Find files/directories by name (fuzzy). Daemon `GET /find/file`. */
+/**
+ * Find files/directories by name (fuzzy). Daemon `GET /find/file`.
+ *
+ * Throws `ApiError` on failure — like every other op in this module. This
+ * USED TO swallow every failure to `[]`, which silently hid daemon/network
+ * errors from callers. The only real caller of this SDK export
+ * (`apps/web/src/features/files/search/workspace-search-service.ts`) already
+ * wraps each call in its own `.catch(() => [])`, and there are no callers
+ * under `@kortix/sdk/react`, so removing the internal swallow here is
+ * non-breaking — verified by grepping every `findFiles(` call site in the
+ * monorepo before making this change.
+ */
 export async function findFiles(
   query: string,
   options?: { type?: 'file' | 'directory'; limit?: number },
+  baseUrl: string = getActiveOpenCodeUrl(),
 ): Promise<string[]> {
-  try {
-    const params = new URLSearchParams({ query });
-    if (options?.type) params.set('type', options.type);
-    if (options?.limit) params.set('limit', String(options.limit));
-    return await fetchDaemonJson<string[]>(`/find/file?${params.toString()}`);
-  } catch {
-    return [];
-  }
+  const params = new URLSearchParams({ query });
+  if (options?.type) params.set('type', options.type);
+  if (options?.limit) params.set('limit', String(options.limit));
+  return fetchDaemonJson<string[]>(`/find/file?${params.toString()}`, baseUrl);
 }
 
 /** Ripgrep text search. Daemon `GET /find`. Tolerates flat + nested rg-JSON. */
-export async function findText(pattern: string): Promise<FindMatch[]> {
-  const raw = await fetchDaemonJson<Array<Record<string, any>>>(`/find?pattern=${encodeURIComponent(pattern)}`);
+export async function findText(pattern: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<FindMatch[]> {
+  const raw = await fetchDaemonJson<Array<Record<string, any>>>(`/find?pattern=${encodeURIComponent(pattern)}`, baseUrl);
   return raw.map((item) => ({
     path: typeof item.path === 'string' ? item.path : (item.path?.text ?? ''),
     lines: typeof item.lines === 'string' ? item.lines : (item.lines?.text ?? ''),
@@ -175,17 +243,26 @@ async function uploadWithRetry(
     }
     if (res.ok) return res.json();
     const message = await uploadErrorMessage(res);
-    lastError = new Error(`Upload failed (${res.status}): ${message}`);
+    lastError = new ApiError(`Upload failed (${res.status}): ${message}`, { status: res.status, response: res });
     if (!isTransient(res.status) || attempt === UPLOAD_RETRY_DELAYS_MS.length) throw lastError;
     await sleep(UPLOAD_RETRY_DELAYS_MS[attempt]);
   }
+  if (lastError instanceof ApiError) throw lastError;
   const message = lastError instanceof Error ? lastError.message : String(lastError || 'request failed');
-  throw new Error(`Upload failed: ${message}`);
+  throw new ApiError(`Upload failed: ${message}`);
 }
 
-/** Upload a file. Daemon `POST /file/upload`. */
-export function uploadFile(file: File | Blob, targetPath?: string, filename?: string): Promise<UploadResult[]> {
-  const baseUrl = getActiveOpenCodeUrl();
+/**
+ * Upload a file. Daemon `POST /file/upload`. `baseUrl` defaults to the
+ * module-global "active" sandbox; pass one explicitly to target a specific
+ * session's runtime.
+ */
+export function uploadFile(
+  file: File | Blob,
+  targetPath?: string,
+  filename?: string,
+  baseUrl: string = getActiveOpenCodeUrl(),
+): Promise<UploadResult[]> {
   return uploadWithRetry(
     () => {
       const form = new FormData();
@@ -200,8 +277,7 @@ export function uploadFile(file: File | Blob, targetPath?: string, filename?: st
 }
 
 /** Upload content to a specific path via the field-name-as-path convention. */
-function uploadToPath(filePath: string, content: Blob): Promise<UploadResult[]> {
-  const baseUrl = getActiveOpenCodeUrl();
+function uploadToPath(filePath: string, content: Blob, baseUrl: string = getActiveOpenCodeUrl()): Promise<UploadResult[]> {
   return uploadWithRetry(
     () => {
       const form = new FormData();
@@ -218,53 +294,56 @@ function uploadToPath(filePath: string, content: Blob): Promise<UploadResult[]> 
 }
 
 /** Create an empty file at a path. */
-export function createFile(filePath: string): Promise<UploadResult[]> {
+export function createFile(filePath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<UploadResult[]> {
   const rawPath = filePath.trim();
   const absolutePath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
   const parts = absolutePath.split('/');
   const fileName = parts.pop() || 'untitled';
   const dirPath = parts.join('/') || '/workspace';
-  return uploadFile(new File([' '], fileName, { type: 'application/octet-stream' }), dirPath);
+  return uploadFile(new File([' '], fileName, { type: 'application/octet-stream' }), dirPath, undefined, baseUrl);
 }
 
 /** Copy a file (read source bytes → upload to dest). */
-export async function copyFile(sourcePath: string, destPath: string): Promise<UploadResult[]> {
-  return uploadToPath(destPath, await readBlob(sourcePath));
+export async function copyFile(sourcePath: string, destPath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<UploadResult[]> {
+  return uploadToPath(destPath, await readBlob(sourcePath, baseUrl), baseUrl);
 }
 
 /** Delete a file/dir (recursive). Daemon `DELETE /file`. */
-export async function deleteFile(filePath: string): Promise<boolean> {
-  const baseUrl = getActiveOpenCodeUrl();
+export async function deleteFile(filePath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<boolean> {
   const res = await authenticatedFetch(`${baseUrl}/file`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path: filePath }),
   });
-  if (!res.ok) throw new Error(`Delete failed (${res.status}): ${await errorMessage(res)}`);
+  if (!res.ok) {
+    throw new ApiError(`Delete failed (${res.status}): ${await errorMessage(res)}`, { status: res.status, response: res });
+  }
   return res.json();
 }
 
 /** Create a directory (recursive, idempotent). Daemon `POST /file/mkdir`. */
-export async function mkdir(dirPath: string): Promise<boolean> {
-  const baseUrl = getActiveOpenCodeUrl();
+export async function mkdir(dirPath: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<boolean> {
   const res = await authenticatedFetch(`${baseUrl}/file/mkdir`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path: dirPath }),
   });
-  if (!res.ok) throw new Error(`Mkdir failed (${res.status}): ${await errorMessage(res)}`);
+  if (!res.ok) {
+    throw new ApiError(`Mkdir failed (${res.status}): ${await errorMessage(res)}`, { status: res.status, response: res });
+  }
   return res.json();
 }
 
 /** Rename/move a file or directory. Daemon `POST /file/rename`. */
-export async function renameFile(from: string, to: string): Promise<boolean> {
-  const baseUrl = getActiveOpenCodeUrl();
+export async function renameFile(from: string, to: string, baseUrl: string = getActiveOpenCodeUrl()): Promise<boolean> {
   const res = await authenticatedFetch(`${baseUrl}/file/rename`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ from, to }),
   });
-  if (!res.ok) throw new Error(`Rename failed (${res.status}): ${await errorMessage(res)}`);
+  if (!res.ok) {
+    throw new ApiError(`Rename failed (${res.status}): ${await errorMessage(res)}`, { status: res.status, response: res });
+  }
   return res.json();
 }
 
@@ -302,5 +381,7 @@ export const files = {
   currentProject: getCurrentProject,
   health: getServerHealth,
   isReachable: isServerReachable,
+  toDaemonPath,
+  toSandboxAbsolutePath,
   toWorkspaceRelative,
 };

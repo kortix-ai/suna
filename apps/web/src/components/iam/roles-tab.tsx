@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, Loader2, Lock, Pencil, Plus, Search, Shield, Trash2 } from 'lucide-react';
+import Link from 'next/link';
 
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -60,9 +61,19 @@ import {
 
 import { PolicyAssignments } from './policy-assignments';
 
+// Same wording the backend's requireEntitlement('rbac') 402 uses — keep it in
+// sync with apps/api/src/accounts/iam/helpers.ts ENTITLEMENT_LABEL.rbac.
+const RBAC_UPSELL_MESSAGE =
+  'Custom roles, policies, and groups are available on the Enterprise plan. Contact sales to enable it.';
+
 interface RolesTabProps {
   accountId: string;
   canManage: boolean;
+  /** Whether the account's tier carries the `rbac` entitlement. Creating or
+   * editing custom roles and policy assignments is gated on it server-side
+   * (deleting is not — cleanup is always allowed), so those actions are
+   * disabled here rather than left to fail with a 402 on submit. */
+  rbacEnabled: boolean;
 }
 
 /** Prefill payload for opening the create dialog seeded from a built-in role. */
@@ -72,18 +83,31 @@ interface RolePrefill {
   actions: string[];
 }
 
-export function RolesTab({ accountId, canManage }: RolesTabProps) {
+export function RolesTab({ accountId, canManage, rbacEnabled }: RolesTabProps) {
   return (
     <div className="space-y-6">
-      <RolesSection accountId={accountId} canManage={canManage} />
-      <PolicyAssignments accountId={accountId} canManage={canManage} />
+      {canManage && !rbacEnabled && (
+        <InfoBanner
+          tone="info"
+          title="Enterprise feature"
+          action={
+            <Button asChild variant="outline" size="sm">
+              <Link href="/enterprise">Contact sales</Link>
+            </Button>
+          }
+        >
+          {RBAC_UPSELL_MESSAGE}
+        </InfoBanner>
+      )}
+      <RolesSection accountId={accountId} canManage={canManage} rbacEnabled={rbacEnabled} />
+      <PolicyAssignments accountId={accountId} canManage={canManage} rbacEnabled={rbacEnabled} />
     </div>
   );
 }
 
 // ─── Roles list ────────────────────────────────────────────────────────────
 
-function RolesSection({ accountId, canManage }: RolesTabProps) {
+function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createPrefill, setCreatePrefill] = useState<RolePrefill | null>(null);
   const [editTarget, setEditTarget] = useState<IamRole | null>(null);
@@ -103,10 +127,24 @@ function RolesSection({ accountId, canManage }: RolesTabProps) {
   }
 
   const newRoleButton = canManage && (
-    <Button size="sm" onClick={() => openCreate(null)} className="gap-1.5">
-      <Plus className="h-4 w-4" />
-      New role
-    </Button>
+    rbacEnabled ? (
+      <Button size="sm" onClick={() => openCreate(null)} className="gap-1.5">
+        <Plus className="h-4 w-4" />
+        New role
+      </Button>
+    ) : (
+      <Hint label={RBAC_UPSELL_MESSAGE} side="top" className="max-w-xs">
+        <span className="inline-flex items-center gap-1.5">
+          <Button size="sm" className="gap-1.5" disabled>
+            <Plus className="h-4 w-4" />
+            New role
+          </Button>
+          <Badge variant="outline" size="sm">
+            Enterprise
+          </Badge>
+        </span>
+      </Hint>
+    )
   );
 
   return (
@@ -160,6 +198,7 @@ function RolesSection({ accountId, canManage }: RolesTabProps) {
                   accountId={accountId}
                   role={role}
                   canManage={canManage}
+                  rbacEnabled={rbacEnabled}
                   onEdit={() => setEditTarget(role)}
                   onDelete={() => setDeleteTarget(role)}
                   onDuplicate={(prefill) => openCreate(prefill)}
@@ -210,6 +249,7 @@ function RoleRow({
   accountId,
   role,
   canManage,
+  rbacEnabled,
   onEdit,
   onDelete,
   onDuplicate,
@@ -217,6 +257,7 @@ function RoleRow({
   accountId: string;
   role: IamRole;
   canManage: boolean;
+  rbacEnabled: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onDuplicate: (prefill: RolePrefill) => void;
@@ -296,16 +337,23 @@ function RoleRow({
           <div className="flex justify-end gap-1.5">
             {isCustom ? (
               <>
-                <Hint label={`Edit role ${role.name}`} side="top">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    onClick={onEdit}
-                    aria-label={`Edit role ${role.name}`}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
+                <Hint
+                  label={rbacEnabled ? `Edit role ${role.name}` : RBAC_UPSELL_MESSAGE}
+                  side="top"
+                  className={rbacEnabled ? undefined : 'max-w-xs'}
+                >
+                  <span className="inline-flex">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      onClick={onEdit}
+                      disabled={!rbacEnabled}
+                      aria-label={`Edit role ${role.name}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  </span>
                 </Hint>
                 <Hint label={`Delete role ${role.name}`} side="top">
                   <Button
@@ -320,21 +368,27 @@ function RoleRow({
                 </Hint>
               </>
             ) : (
-              <Hint label={`Duplicate ${role.name} into a new custom role`} side="top">
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  onClick={handleDuplicate}
-                  disabled={duplicating}
-                  aria-label={`Duplicate role ${role.name}`}
-                >
-                  {duplicating ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                </Button>
+              <Hint
+                label={rbacEnabled ? `Duplicate ${role.name} into a new custom role` : RBAC_UPSELL_MESSAGE}
+                side="top"
+                className={rbacEnabled ? undefined : 'max-w-xs'}
+              >
+                <span className="inline-flex">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    onClick={handleDuplicate}
+                    disabled={duplicating || !rbacEnabled}
+                    aria-label={`Duplicate role ${role.name}`}
+                  >
+                    {duplicating ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                </span>
               </Hint>
             )}
           </div>

@@ -62,25 +62,25 @@ describe('deriveEffectiveProjectRole', () => {
     expect(deriveEffectiveProjectRole('member', null, [])).toBeNull();
   });
 
-  test('member with a direct User row → user', () => {
-    expect(deriveEffectiveProjectRole('member', 'user', [])).toBe('user');
+  test('member with a direct Member row → member', () => {
+    expect(deriveEffectiveProjectRole('member', 'member', [])).toBe('member');
   });
 
   test('member with only a group Editor → editor', () => {
     expect(deriveEffectiveProjectRole('member', null, ['editor'])).toBe('editor');
   });
 
-  test('member with direct User + group Editor → editor (max wins)', () => {
-    expect(deriveEffectiveProjectRole('member', 'user', ['editor'])).toBe('editor');
+  test('member with direct Member + group Editor → editor (max wins)', () => {
+    expect(deriveEffectiveProjectRole('member', 'member', ['editor'])).toBe('editor');
   });
 
   test('member with multiple group grants → max of all', () => {
-    expect(deriveEffectiveProjectRole('member', null, ['user', 'editor', 'user'])).toBe('editor');
-    expect(deriveEffectiveProjectRole('member', null, ['user', 'manager', 'editor'])).toBe('manager');
+    expect(deriveEffectiveProjectRole('member', null, ['member', 'editor', 'member'])).toBe('editor');
+    expect(deriveEffectiveProjectRole('member', null, ['member', 'manager', 'editor'])).toBe('manager');
   });
 
-  test('owner stays Manager even when group says User (no demotion)', () => {
-    expect(deriveEffectiveProjectRole('owner', 'user', ['user'])).toBe('manager');
+  test('owner stays Manager even when group says Member (no demotion)', () => {
+    expect(deriveEffectiveProjectRole('owner', 'member', ['member'])).toBe('manager');
   });
 
   test('member with direct Manager → manager (no implicit needed)', () => {

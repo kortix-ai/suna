@@ -18,6 +18,13 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -27,11 +34,18 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { successToast } from '@/components/ui/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { ModelSelector } from '@/features/session/model-selector';
+import { flattenModels } from '@/features/session/session-chat-input';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { EmailConnectForm } from '@/features/workspace/customize/sections/connectors-view';
+import {
+  useChannelBindings,
+  useUpdateChannelBinding,
+  type ChannelBinding,
+} from '@/hooks/channels/use-channel-bindings';
 import {
   useConnectSlack,
   useDisconnectEmail,
@@ -43,13 +57,20 @@ import {
   type EmailInstallation,
   type SlackInstallation,
 } from '@/hooks/channels/use-channels-installations';
-import { getProject } from '@/lib/projects-client';
+import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
+import {
+  getProject,
+  getProjectDetail,
+  listProjectAccess,
+  type ProjectConfigSummary,
+} from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { Check, CheckCircleSolid, ExternalLinkSolid } from '@mynaui/icons-react';
 import { Copy, Mail, MessageSquare, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 /** Reserved slug for the built-in Email channel (see api connectors.ts). */
 const EMAIL_CONNECTOR_SLUG = 'kortix_email';
@@ -177,11 +198,217 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
             ) : oauthInstallUrl ? (
               <BringYourOwnPanel projectId={projectId} />
             ) : null}
+
+            {install ? <ChannelBindingsSection projectId={projectId} /> : null}
           </>
         )}
       </div>
     </CustomizeSectionWrapper>
   );
+}
+
+/**
+ * Per-channel agent/model/join-policy overrides — the web management surface
+ * for `chat_channel_bindings` (spec §2.5 "Channels become manageable"). Today
+ * the only other way to change these is the in-Slack `/kortix agent|model|policy`
+ * commands; this edits the same row through `PATCH …/channels/bindings/:id`.
+ */
+function ChannelBindingsSection({ projectId }: { projectId: string }) {
+  const bindingsQuery = useChannelBindings(projectId);
+  const bindings = bindingsQuery.data?.bindings ?? [];
+
+  if (bindingsQuery.isLoading) {
+    return (
+      <div className="space-y-1">
+        <Skeleton className="h-8 rounded-md" />
+        <Skeleton className="h-8 rounded-md" />
+      </div>
+    );
+  }
+  if (bindings.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <Label>Channel bindings</Label>
+      <p className="text-muted-foreground text-xs">
+        Which agent, model, and join policy each connected channel uses. A channel with
+        no override follows the project default.
+      </p>
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead>Channel</TableHead>
+            <TableHead>Agent</TableHead>
+            <TableHead>Model</TableHead>
+            <TableHead>Join policy</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {bindings.map((b) => (
+            <ChannelBindingTableRow
+              key={b.bindingId}
+              projectId={projectId}
+              binding={b}
+              projectDefaultAgent={bindingsQuery.data?.projectDefaultAgent ?? null}
+            />
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+const CONVERSATION_POLICIES: Array<{ value: ChannelBinding['conversationPolicy']; label: string }> = [
+  { value: 'project_open', label: 'Project members can join' },
+  { value: 'owner_only', label: 'Owner only' },
+  { value: 'owner_approval', label: 'Owner approval' },
+];
+
+/** null = "project default" — the picker's own reset option. */
+const AGENT_DEFAULT_VALUE = '__project_default__';
+
+function ChannelBindingTableRow({
+  projectId,
+  binding,
+  projectDefaultAgent,
+}: {
+  projectId: string;
+  binding: ChannelBinding;
+  projectDefaultAgent: string | null;
+}) {
+  const accessQuery = useQuery({
+    queryKey: ['project-access', projectId],
+    queryFn: () => listProjectAccess(projectId),
+    staleTime: 20_000,
+  });
+  const canManage = Boolean(accessQuery.data?.can_manage);
+
+  const detailQuery = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    staleTime: 10_000,
+  });
+  const config: ProjectConfigSummary | undefined = detailQuery.data?.config;
+  const declaredAgents = useMemo(() => {
+    const names = (config?.agents ?? []).map((a) => a.name);
+    // Keep a currently-bound name in the list even if it was since renamed/removed,
+    // so the Select never renders a value it can't display.
+    if (binding.agentName && !names.includes(binding.agentName)) names.push(binding.agentName);
+    return names;
+  }, [config, binding.agentName]);
+
+  const { data: providers } = useOpenCodeProviders();
+  const models = useMemo(() => flattenModels(providers), [providers]);
+  const selectedModel = binding.opencodeModel ? wireToModelKey(stripOpencodeNamespace(binding.opencodeModel)) : null;
+
+  const update = useUpdateChannelBinding();
+
+  return (
+    <TableRow className="hover:bg-transparent">
+      <TableCell>
+        <div className="min-w-0">
+          <p className="text-sm font-medium">{binding.channelName ?? binding.channelId}</p>
+          <p className="text-muted-foreground text-xs">{binding.workspaceId}</p>
+        </div>
+      </TableCell>
+      <TableCell>
+        <Select
+          value={binding.agentName ?? AGENT_DEFAULT_VALUE}
+          onValueChange={(v) =>
+            update.mutate(
+              { projectId, bindingId: binding.bindingId, agentName: v === AGENT_DEFAULT_VALUE ? null : v },
+              {
+                onSuccess: () => successToast('Channel agent updated'),
+                onError: (e) => errorToastFallback(e),
+              },
+            )
+          }
+          disabled={!canManage || update.isPending}
+        >
+          <SelectTrigger className="w-44" variant="popover">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={AGENT_DEFAULT_VALUE}>
+              Project default{projectDefaultAgent ? ` (${projectDefaultAgent})` : ''}
+            </SelectItem>
+            {declaredAgents.map((name) => (
+              <SelectItem key={name} value={name}>
+                {name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell>
+        {canManage ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <ModelSelector
+              models={models}
+              providers={providers}
+              selectedModel={selectedModel}
+              onSelect={(m) =>
+                update.mutate(
+                  {
+                    projectId,
+                    bindingId: binding.bindingId,
+                    opencodeModel: m ? modelKeyToWire(m) : null,
+                  },
+                  {
+                    onSuccess: () => successToast('Channel model updated'),
+                    onError: (e) => errorToastFallback(e),
+                  },
+                )
+              }
+            />
+          </div>
+        ) : (
+          <Badge variant="outline" size="sm" className="font-mono">
+            {binding.opencodeModel ?? 'Auto'}
+          </Badge>
+        )}
+      </TableCell>
+      <TableCell>
+        <Select
+          value={binding.conversationPolicy}
+          onValueChange={(v) =>
+            update.mutate(
+              {
+                projectId,
+                bindingId: binding.bindingId,
+                conversationPolicy: v as ChannelBinding['conversationPolicy'],
+              },
+              {
+                onSuccess: () => successToast('Join policy updated'),
+                onError: (e) => errorToastFallback(e),
+              },
+            )
+          }
+          disabled={!canManage || update.isPending}
+        >
+          <SelectTrigger className="w-44" variant="popover">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CONVERSATION_POLICIES.map((p) => (
+              <SelectItem key={p.value} value={p.value}>
+                {p.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+/** Strip opencode's `kortix/` ref namespace so the bare wire id reaches wireToModelKey. */
+function stripOpencodeNamespace(model: string): string {
+  return model.startsWith('kortix/') ? model.slice('kortix/'.length) : model;
+}
+
+function errorToastFallback(error: unknown) {
+  errorToast(error instanceof Error ? error.message : 'Failed to update channel binding');
 }
 
 function SlackChannelRow({

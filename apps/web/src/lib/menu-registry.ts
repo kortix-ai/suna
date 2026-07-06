@@ -18,7 +18,8 @@
  */
 
 import { Icon } from '@/features/icon/icon';
-import type { ExperimentalFeatureKey } from '@/lib/projects-client';
+import { WALLPAPERS } from '@/lib/wallpapers';
+import type { ExperimentalFeatureKey } from '@kortix/sdk/projects-client';
 import {
   CogOne,
   CogOneSolid,
@@ -32,7 +33,6 @@ import {
   Blocks,
   Bot,
   Boxes,
-  Cable,
   Calendar,
   Coins,
   Compass,
@@ -69,6 +69,7 @@ import {
   TerminalSquare,
   UserPlus,
   Volume2,
+  Wallpaper as WallpaperIcon,
   Webhook,
 } from 'lucide-react';
 import { IconType } from 'react-icons/lib';
@@ -89,9 +90,16 @@ export type MenuSurface = 'commandPalette' | 'rightSidebar' | 'leftSidebar' | 'u
  * - 'action':   Runs an imperative callback (e.g. "new session", "logout")
  * - 'settings': Opens the UserSettingsModal to a specific tab
  * - 'theme':    Switches the app theme
+ * - 'wallpaper': Applies a wallpaper (same set as Settings → Appearance)
  * - 'sandboxService': Opens a sandbox service preview tab (needs special handler)
  */
-export type MenuItemKind = 'navigate' | 'action' | 'settings' | 'theme' | 'sandboxService';
+export type MenuItemKind =
+  | 'navigate'
+  | 'action'
+  | 'settings'
+  | 'theme'
+  | 'wallpaper'
+  | 'sandboxService';
 
 export type SettingsTabId =
   | 'general'
@@ -115,6 +123,7 @@ export type MenuGroup =
   | 'preferences'
   | 'account'
   | 'theme'
+  | 'wallpaper'
   | 'view'
   | 'admin';
 
@@ -160,6 +169,8 @@ export interface MenuItemDef {
   settingsTab?: SettingsTabId;
   /** For kind='theme': which theme to set */
   themeValue?: string;
+  /** For kind='wallpaper': which wallpaper to apply */
+  wallpaperValue?: string;
   /** For kind='sandboxService': the container port */
   sandboxPort?: string;
 
@@ -313,15 +324,14 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-customize',
-    label: 'Plugins',
+    label: 'Customize',
     icon: SlidersHorizontal,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/projects/{projectId}/customize',
     requiresProject: true,
-    keywords:
-      'plugins plugin build customize configure project agents agent skills skill commands command',
+    keywords: 'customize configure project agents skills commands',
   },
   {
     id: 'proj-files',
@@ -336,36 +346,36 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-agents',
-    label: 'Plugins · Agents',
+    label: 'Customize · Agents',
     icon: Bot,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/projects/{projectId}/customize/agents',
     requiresProject: true,
-    keywords: 'plugins plugin agents agent subagents subagent project customize build ai',
+    keywords: 'agents subagents project customize ai',
   },
   {
     id: 'proj-skills',
-    label: 'Plugins · Skills',
+    label: 'Customize · Skills',
     icon: Blocks,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/projects/{projectId}/customize/skills',
     requiresProject: true,
-    keywords: 'plugins plugin skills skill project customize build abilities',
+    keywords: 'skills project customize abilities',
   },
   {
     id: 'proj-commands',
-    label: 'Plugins · Commands',
+    label: 'Customize · Commands',
     icon: TerminalSquare,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/projects/{projectId}/customize/commands',
     requiresProject: true,
-    keywords: 'plugins plugin commands command slash project customize build',
+    keywords: 'commands slash project customize',
   },
   {
     id: 'proj-secrets',
@@ -403,7 +413,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-changes',
-    label: 'Customize · Checkpoints',
+    label: 'Customize · Changes',
     icon: GitPullRequest,
     group: 'navigation',
     showIn: ['commandPalette'],
@@ -411,7 +421,7 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/customize/changes',
     requiresProject: true,
     keywords:
-      'checkpoint checkpoints changes change requests review merge pull request diff commits git history timeline versions branches project customize',
+      'checkpoint checkpoints changes change requests proposed review merge pull request diff commits git history timeline versions branches project customize',
   },
   {
     id: 'proj-marketplace',
@@ -759,7 +769,7 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette'],
     kind: 'settings',
     settingsTab: 'appearance',
-    keywords: 'appearance theme color mode wallpaper',
+    keywords: 'appearance theme color mode wallpaper shader shaders background',
   },
   {
     id: 'pref-sounds',
@@ -863,6 +873,25 @@ export const menuRegistry: MenuItemDef[] = [
     themeValue: 'system',
     keywords: 'theme system auto default os',
   },
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // WALLPAPERS — derived from the appearance-tab list; typing a wallpaper's
+  // name (Dither, Grain, Silk, …) in the palette applies it directly.
+  // ──────────────────────────────────────────────────────────────────────────
+  ...WALLPAPERS.map(
+    (wp): MenuItemDef => ({
+      id: `wallpaper-${wp.id}`,
+      label: `Appearance · ${wp.name}`,
+      icon: WallpaperIcon,
+      group: 'wallpaper',
+      showIn: ['commandPalette'],
+      kind: 'wallpaper',
+      wallpaperValue: wp.id,
+      keywords: `wallpaper wallpapers background appearance ${wp.id}${
+        wp.type === 'shader' ? ' shader shaders animated' : ''
+      }`,
+    }),
+  ),
 
   // ──────────────────────────────────────────────────────────────────────────
   // VIEW

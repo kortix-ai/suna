@@ -1,6 +1,8 @@
 'use client';
 
 import { useSandboxConnectionStore } from '../../state/sandbox-connection-store';
+import { getActiveOpenCodeUrl } from '../../state/server-store/active';
+import { useCurrentRuntime } from '../use-current-runtime';
 import { activeServerKey } from './shared';
 import type {
   Session,
@@ -56,6 +58,9 @@ export interface SendMessageOptions {
   model?: { providerID: string; modelID: string };
   agent?: string;
   variant?: string;
+  /** Session's working directory — lets opencode resolve project-scoped
+   * (`.opencode/agent/*.md`) agents when `agent` names one of them. */
+  directory?: string;
 }
 
 /**
@@ -100,5 +105,17 @@ export const opencodeKeys = {
 };
 
 export function useOpenCodeRuntimeReady() {
-  return useSandboxConnectionStore((s) => s.status === 'connected' && s.healthy === true);
+  const connectedHealthy = useSandboxConnectionStore(
+    (s) => s.status === 'connected' && s.healthy === true,
+  );
+  // The health gate can flip true BEFORE the runtime URL is pinned — billing
+  // envs seed healthy=true optimistically, ahead of useSession's
+  // setCurrentRuntime(). Firing an opencode query in that gap makes getClient()
+  // throw "Server URL not ready — sandbox is still loading". So also require a
+  // resolved URL: subscribe to the runtime url (recomputes the instant the
+  // runtime pins) and fall back to getActiveOpenCodeUrl(), which covers the
+  // self-hosted default-sandbox case where the store url stays null.
+  const runtimeUrl = useCurrentRuntime((s) => s.url);
+  const hasUrl = !!(runtimeUrl || getActiveOpenCodeUrl());
+  return connectedHealthy && hasUrl;
 }

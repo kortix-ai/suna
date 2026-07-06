@@ -3,7 +3,7 @@
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
-import { getProjectDetail, listProjectSecrets } from '@/lib/projects-client';
+import { getProjectDetail, listProjectSecrets } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 

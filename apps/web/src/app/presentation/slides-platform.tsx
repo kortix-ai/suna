@@ -406,7 +406,7 @@ export function useSlides(): SlideDef[] {
               <Bullets
                 items={[
                   <>
-                    <Mono>kortix.toml</Mono>{' '}
+                    <Mono>kortix.yaml</Mono>{' '}
                     {tI18nHardcoded.raw(
                       'autoAppPresentationSlidesPlatformJsxTextTheKortixLayerSandboxca190b4e',
                     )}
@@ -423,20 +423,20 @@ export function useSlides(): SlideDef[] {
               />
             </div>
             <Terminal
-              title="kortix.toml"
+              title="kortix.yaml"
               lines={[
-                { kind: 'comment', text: 'kortix_version = 1' },
+                { kind: 'comment', text: 'kortix_version: 2' },
                 { kind: 'out', text: '' },
-                { kind: 'out', text: '[project]' },
-                { kind: 'out', text: 'name = "acme"' },
+                { kind: 'out', text: 'project:' },
+                { kind: 'out', text: '  name: acme' },
                 { kind: 'out', text: '' },
                 { kind: 'comment', text: '# a trigger runs itself, on a schedule' },
-                { kind: 'out', text: '[[triggers]]' },
-                { kind: 'out', text: 'type = "cron"  agent = "research"' },
+                { kind: 'out', text: 'triggers:' },
+                { kind: 'out', text: '  - type: cron  agent: research' },
                 { kind: 'out', text: '' },
                 { kind: 'comment', text: '# connect a tool’s API as agent tools' },
-                { kind: 'out', text: '[[connectors]]' },
-                { kind: 'out', text: 'slug = "stripe"  provider = "http"' },
+                { kind: 'out', text: 'connectors:' },
+                { kind: 'out', text: '  - slug: stripe  provider: http' },
               ]}
             />
           </div>
@@ -463,7 +463,7 @@ export function useSlides(): SlideDef[] {
           />
           <div className="mt-12 flex flex-wrap items-stretch gap-3">
             {[
-              ['project', 'git repo', 'kortix.toml + config'],
+              ['project', 'git repo', 'kortix.yaml + config'],
               ['session', 'isolated sandbox', 'its own branch'],
               ['agent', 'OpenCode', 'works · commits · pushes'],
               ['change request', 'you review', 'approve to merge'],
@@ -533,7 +533,7 @@ export function useSlides(): SlideDef[] {
               [
                 '02',
                 'Materialize',
-                'The daemon clones the repo, cuts a fresh branch, and reads kortix.toml + OpenCode config into a live runtime.',
+                'The daemon clones the repo, cuts a fresh branch, and reads kortix.yaml + OpenCode config into a live runtime.',
               ],
               [
                 '03',

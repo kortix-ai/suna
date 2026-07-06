@@ -13,7 +13,7 @@ import { MarketplaceInstalledPanel } from '@/features/marketplace/marketplace-in
 import { MarketplaceItemDetail } from '@/features/marketplace/marketplace-item-detail';
 import { useInstalledItems, useUninstallMarketplaceItem } from '@/hooks/marketplace';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
-import { getProjectDetail } from '@/lib/projects-client';
+import { getProjectDetail } from '@kortix/sdk/projects-client';
 import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
 import CustomizeSectionWrapper from '../workspace/customize/sections/component/section-wrapper';
 

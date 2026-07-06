@@ -25,7 +25,7 @@ import {
   type AccountToken,
   type CreatedAccountToken,
 } from '@/lib/api/account-tokens';
-import { listProjectsForAccount, type KortixProject } from '@/lib/projects-client';
+import { listProjectsForAccount, type KortixProject } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { ShieldSolid, TrashSolid } from '@mynaui/icons-react';

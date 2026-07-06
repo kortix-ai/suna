@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 /**
- * Project-wide approval rules for tool calls. Source of truth = `kortix.toml`;
+ * Project-wide approval rules for tool calls. Source of truth = `kortix.yaml`;
  * this panel CRUDs the same file via the admin endpoint, then the gateway
  * enforces on every Executor call.
  *
@@ -41,7 +41,7 @@ import {
   type PolicyAction,
   type PolicyDefaultMode,
   type ProjectPolicy,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
@@ -358,7 +358,7 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
             {tI18nHardcoded.raw(
               'autoComponentsProjectsPoliciesPanelJsxTextUnsavedChangesSavingCommitse36b25bc',
             )}{' '}
-            <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">kortix.toml</code>.
+            <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">kortix.yaml</code>.
           </div>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={revert} disabled={save.isPending}>

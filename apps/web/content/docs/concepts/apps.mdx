@@ -1,24 +1,30 @@
 ---
 title: Apps
-description: Ship a website from your project — the manifest declares it, Kortix deploys it.
+description: Ship a website from your project — the manifest declares it, Kortix deploys it. Experimental.
 ---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+<Callout type="warn" title="Experimental">
+Apps are gated behind the platform flag `KORTIX_APPS_EXPERIMENTAL`. With it off,
+`/apps` routes 404 and the deploy sweep skips every project — entries still
+parse, but nothing deploys.
+</Callout>
 
 An **app** is something deployable that lives alongside your agent in the same
 project — a marketing site, a docs site, a small dashboard. You declare apps
-in `kortix.toml` and Kortix takes care of the build and a public URL.
+in the manifest and Kortix takes care of the build and a public URL.
 
-```toml
-[[apps]]
-slug = "marketing"
-name = "Marketing site"
-
-  [apps.source]
-  type = "git"
-  root_path = "apps/site"
-
-  [apps.build]
-  command = "pnpm build"
-  out_dir = "dist"
+```yaml
+apps:
+  - slug: marketing
+    name: Marketing site
+    source:
+      type: git
+      root_path: apps/site
+    build:
+      command: pnpm build
+      out_dir: dist
 ```
 
 That's a full deploy. Save the file (via a change request or the Apps tab in
@@ -28,7 +34,7 @@ the dashboard), and the next reconcile loop ships it.
 
 Apps reconcile from the manifest. Three pieces:
 
-1. **Manifest is the source of truth.** Edits to a `[[apps]]` entry (commit
+1. **Manifest is the source of truth.** Edits to an `apps` entry (commit
    to `main`, or via the Apps UI which commits for you) are picked up by a
    background sweep that compares each entry's config hash to the last
    deployment and redeploys anything that drifted.
@@ -50,19 +56,20 @@ when you want a custom hostname.
 
 The build phase is optional but defaults sensibly:
 
-- `[apps.build]` with `command` / `out_dir` — forwarded as-is to the provider.
-- `[apps.build]` present but empty — let the provider auto-detect.
-- No `[apps.build]` at all, source is `git` — auto-detect (most repos need a
+- `build` with `command` / `out_dir` — forwarded as-is to the provider.
+- `build` present but empty — let the provider auto-detect.
+- No `build` at all, source is `git` — auto-detect (most repos need a
   build to expose an entrypoint).
-- No `[apps.build]` at all, source is `tar` — skip the build phase (the
+- No `build` at all, source is `tar` — skip the build phase (the
   tarball is treated as the built artifact).
 
 ## Env
 
-`[apps.env]` is a flat `key = "value"` table that the build sees. It's meant
+An app's `env` is a flat key/value map that the build sees. It's meant
 for **non-secret** values like a public API URL. For secrets (API keys, DB
-URLs), declare them in `[env].optional`, set the value in the project's
-Secrets Manager, and reference them by name from your build.
+URLs), declare them under the top-level `env.optional`, set the value on the
+project's Environment variables page, and reference them by name from your
+build.
 
 ## Drift triggers a redeploy
 
@@ -81,8 +88,14 @@ tab.
   (frontends, marketing sites, edge functions). Long-running backends with
   persistent state aren't the target — they belong in their own
   infrastructure.
-- **CI/CD for the agent code itself.** Apps deploy `[[apps]]` entries. They
-  don't deploy `kortix.toml`, your agent, or anything else under
+- **CI/CD for the agent code itself.** Apps deploy `apps` entries. They
+  don't deploy the manifest itself, your agent, or anything else under
   `.kortix/opencode/` — that all just runs inside sessions.
 
-Schema: [Manifest reference — `[[apps]]`](/docs/reference/manifest#apps).
+Schema: [Manifest reference — apps](/docs/reference/manifest#apps).
+
+<Callout type="info" title="Legacy kortix.toml">
+v1 manifests declare the same thing as `[[apps]]`, an array of tables with the
+same fields (`source`, `build`, `env`, `domains`, `framework`). Behavior is
+otherwise identical.
+</Callout>

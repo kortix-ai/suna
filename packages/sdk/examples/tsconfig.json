@@ -1,0 +1,16 @@
+{
+  // Typechecks examples/*.ts standalone from the package build (`pnpm typecheck`
+  // runs this file too — see package.json's "typecheck" script). Examples import
+  // via relative `../src/...` paths (see each file's header comment) so this
+  // project needs no separate `@kortix/sdk` package resolution — it reads the
+  // exact same source `tsconfig.json` already typechecks for the package itself.
+  //
+  // Deliberately NOT part of tsconfig.build.json (dist/ must never contain
+  // compiled examples) and NOT reached by tsconfig.json's `include` (examples/
+  // sits beside src/, not under it).
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["*.ts"]
+}

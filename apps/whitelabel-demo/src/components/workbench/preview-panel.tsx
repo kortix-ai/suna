@@ -48,7 +48,12 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
+import { buildDirectPreviewUrl, parseProxiedPreviewUrl } from '@/lib/preview';
+import { getSessionToken } from '@/lib/session';
 import { cn } from '@/lib/utils';
+import { SessionNotReadyError } from '@kortix/sdk';
+import type { SessionPublicShare } from '@kortix/sdk/projects-client';
+import { useWrapperMode } from '@/app/providers';
 
 // Session sharing intent — a subset of the SDK's ConnectorSharing union that
 // needs no extra ids (private requires an ownerId, so it's omitted here).
@@ -64,8 +69,8 @@ function statusVariant(status?: string) {
 }
 
 /** Best-effort copyable URL for a public share, defensively reading its shape. */
-function shareUrl(share: any): string {
-  const raw: string = share?.public_path ?? share?.proxy_path ?? share?.public_token ?? '';
+function shareUrl(share: SessionPublicShare): string {
+  const raw: string = share.public_path ?? share.proxy_path ?? share.public_token ?? '';
   if (!raw) return '';
   if (/^https?:\/\//.test(raw)) return raw;
   if (typeof window !== 'undefined') {
@@ -95,6 +100,7 @@ export function PreviewPanel({
   sessionId: string;
 }) {
   const qc = useQueryClient();
+  const wrapperMode = useWrapperMode();
   const session = useMemo(() => kortix.session(projectId, sessionId), [projectId, sessionId]);
 
   const previewsKey = ['session-previews', projectId, sessionId];
@@ -135,8 +141,8 @@ export function PreviewPanel({
     queryFn: () => session.publicShares.list(),
   });
 
-  const candidates = (previewsQuery.data?.candidates ?? []) as any[];
-  const shares = (sharesQuery.data?.shares ?? []) as any[];
+  const candidates = previewsQuery.data?.candidates ?? [];
+  const shares = sharesQuery.data?.shares ?? [];
 
   // Default the selection to the first candidate once they arrive / keep a
   // valid selection if the previously-selected port disappears.
@@ -149,8 +155,53 @@ export function PreviewPanel({
 
   const selected = candidates.find((c) => c.id === selectedId) ?? null;
 
-  // SYNC — call directly in render, never awaited.
-  const previewSrc = selected ? session.previewUrl(selected.port, selected.path) : null;
+  // Wrapper mode only: mint (and cache) a short-lived project-scoped Kortix
+  // token so the preview iframe can open the sandbox DIRECTLY instead of
+  // through our same-origin proxy — a Next.js route handler can't proxy a
+  // WebSocket upgrade (dev-server HMR sockets, etc.), so the iframe needs a
+  // real upstream URL + scoped credential instead. See
+  // `src/app/api/preview-token/route.ts`.
+  const previewTokenQuery = useQuery({
+    queryKey: ['preview-token', projectId],
+    queryFn: async () => {
+      const sessionToken = getSessionToken();
+      const res = await fetch(`/api/preview-token?projectId=${encodeURIComponent(projectId)}`, {
+        headers: sessionToken ? { authorization: `Bearer ${sessionToken}` } : undefined,
+      });
+      if (!res.ok) throw new Error('Could not mint a preview token');
+      return res.json() as Promise<{ token: string; upstream: string }>;
+    },
+    enabled: wrapperMode,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
+  // SYNC — call directly in render, never awaited. This handle never itself
+  // calls ensureReady() (the chat surface elsewhere on the page does, via the
+  // shared session-runtime registry) — before that resolves, previewUrl()
+  // throws SessionNotReadyError; render the "no preview yet" state instead of
+  // crashing the page.
+  const previewSrc = selected
+    ? (() => {
+        try {
+          const proxiedUrl = session.previewUrl(selected.port, selected.path);
+          if (wrapperMode && previewTokenQuery.data) {
+            const parsed = parseProxiedPreviewUrl(proxiedUrl);
+            if (parsed) {
+              return buildDirectPreviewUrl(
+                previewTokenQuery.data.upstream,
+                parsed,
+                previewTokenQuery.data.token,
+              );
+            }
+          }
+          return proxiedUrl;
+        } catch (err) {
+          if (err instanceof SessionNotReadyError) return null;
+          throw err;
+        }
+      })()
+    : null;
 
   const setSharingMut = useMutation({
     mutationFn: (value: string) => {

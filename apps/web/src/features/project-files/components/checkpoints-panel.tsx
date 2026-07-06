@@ -7,16 +7,9 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/u
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import type { ProjectCommit } from '@/lib/projects-client';
+import type { ProjectCommit } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
-import {
-  AlertCircle,
-  ChevronDown,
-  GitBranch,
-  GitCommitHorizontal,
-  RefreshCw,
-  X,
-} from 'lucide-react';
+import { AlertCircle, ChevronDown, History, Layers, RefreshCw, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useProjectContext } from '../context';
 import { useCommits } from '../hooks/use-commits';
@@ -118,8 +111,6 @@ function CheckpointListItem({
           </span>
           <span className="text-muted-foreground/30">·</span>
           <span title={formatFull(ts)}>{formatRelative(ts)}</span>
-          <span className="text-muted-foreground/30">·</span>
-          <span className="text-muted-foreground/70 font-mono text-xs">{commit.short_hash}</span>
         </div>
       </div>
     </button>
@@ -171,13 +162,13 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
         )}
       >
         <div className="border-border flex h-12 shrink-0 items-center gap-2 border-b px-3">
-          <span className="text-sm font-medium">Checkpoints</span>
+          <span className="text-sm font-medium">Version history</span>
           {activeRef && (
             <span
               className="bg-muted/50 text-muted-foreground/90 flex max-w-[140px] items-center gap-1 truncate rounded-full px-1.5 py-0.5 text-xs"
               title={`Version: ${activeRef}`}
             >
-              <GitBranch className="h-3 w-3" />
+              <Layers className="h-3 w-3" />
               {activeRef}
             </span>
           )}
@@ -231,7 +222,7 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
 
             {!isLoading && !error && total === 0 && (
               <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
-                <GitCommitHorizontal className="text-muted-foreground/30 h-6 w-6" />
+                <History className="text-muted-foreground/30 h-6 w-6" />
                 <p className="text-muted-foreground text-xs">
                   {tHardcodedUi.raw(
                     'featuresProjectFilesComponentsCheckpointsPanel.line241JsxTextNoCheckpointsYet',
@@ -287,7 +278,7 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
                       {tHardcodedUi.raw(
                         'featuresProjectFilesComponentsCheckpointsPanel.line278JsxTextShowingTheMostRecent',
                       )}{' '}
-                      {total} checkpoints
+                      {total} versions
                     </span>
                   </div>
                 )}

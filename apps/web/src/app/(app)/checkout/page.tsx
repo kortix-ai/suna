@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import React, { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import Script from 'next/script';
 
@@ -136,7 +136,7 @@ function CheckoutContent() {
           </Card>
         ) : isLoading ? (
           <div className="flex flex-col items-center gap-4">
-            <KortixLoader size="xlarge" />
+            <KortixHyperLogo size={80} startOnView={false} loop className="text-foreground" />
             <p className="text-muted-foreground text-sm">{tHardcodedUi.raw('appCheckoutPage.line158JsxTextLoadingSecureCheckout')}</p>
           </div>
         ) : (
@@ -154,7 +154,7 @@ export default function CheckoutPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <KortixLoader size="large" forceTheme="light" />
+        <KortixHyperLogo size={72} startOnView={false} loop className="text-foreground" />
       </div>
     }>
       <CheckoutContent />

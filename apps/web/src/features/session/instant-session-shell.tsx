@@ -4,34 +4,24 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { GridFileCard } from '@/components/thread/file-attachment/GridFileCard';
-import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
-import {
-  ProjectHomeWelcomeBody,
-  StarterPromptsCarousel,
-} from '@/features/workspace/project-layout/project-home';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import type { AttachedFile } from '@/features/session/session-chat-input';
-import { optimisticUploadedFileRef } from '@/features/session/uploaded-file-refs';
 import { SessionLayout } from '@/features/session/session-layout';
+import { SessionBootChecklistInline } from '@/features/session/session-starting-loader';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
+import { optimisticUploadedFileRef } from '@/features/session/uploaded-file-refs';
+import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
 import type { Command } from '@/hooks/opencode/use-opencode-sessions';
-import type { SessionStartStage } from '@/lib/projects-client';
+import { readStartStash, writeStartStash } from '@kortix/sdk/react';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
-
-/** The inline status shown under the Kortix logo while the computer is still
- *  coming up after a first send — sleek + minimal, reflecting the live stage. */
-function bootLabel(stage: SessionStartStage): string {
-  if (stage === 'provisioning') return 'Provisioning your computer';
-  if (stage === 'ready') return 'Connecting';
-  return 'Starting your computer';
-}
+import type { SessionStartStage } from '@kortix/sdk/projects-client';
+import { GridFileCard } from './grid-file-card';
 
 /**
  * The instant session shell — shown the moment a freshly-created session opens,
@@ -41,11 +31,12 @@ function bootLabel(stage: SessionStartStage): string {
  * input you can type into immediately (the input needs no runtime — the home
  * composer proves it). Provisioning runs silently in the background.
  *
- * On the FIRST send we stash the message on the `project_pending_*` keys (which
- * the session page migrates onto the OpenCode pin) so the real {@link SessionChat}
- * auto-sends it the instant the runtime is healthy — and the thread shows an
- * inline "starting your computer" status under the assistant logo until the real
- * chat crossfades in. The boot checklist also lives in the side panel, but only
+ * On the FIRST send we stash the message on the SDK's canonical start-stash
+ * (keyed by the route session id; the session page migrates it onto the
+ * OpenCode pin) so the real {@link SessionChat} auto-sends it the instant the
+ * runtime is healthy — and the thread shows an inline "starting your computer"
+ * status under the assistant logo until the real chat crossfades in. The boot
+ * checklist also lives in the side panel, but only
  * if the user opens it (never auto-opened); once the runtime is ready the panel
  * gracefully falls back to the real (empty) Actions view.
  */
@@ -80,9 +71,12 @@ export function InstantSessionShell({
     files: AttachedFile[];
   } | null>(() => {
     if (typeof window === 'undefined') return null;
-    const text =
-      sessionStorage.getItem(`opencode_pending_prompt:${sessionId}`) ??
-      sessionStorage.getItem(`project_pending_prompt:${sessionId}`);
+    // `readStartStash` covers the canonical SDK stash (written under the route
+    // session id by this shell, the project-home composer, and
+    // `useConfigureThread` — all three producers now share the one canonical
+    // shape) plus its `opencode_pending_prompt` legacy fallback for any other
+    // as-yet-unconverted producer.
+    const text = readStartStash(sessionId)?.prompt;
     if (!text) return null;
     return {
       text,
@@ -102,12 +96,19 @@ export function InstantSessionShell({
       if ((!text.trim() && !files?.length) || submitted) return;
       playSound('send');
 
-      // Hand the message to the real chat: it auto-sends from these keys once the
-      // runtime is healthy (the session page migrates project_* → opencode_*).
-      sessionStorage.setItem(`project_pending_prompt:${sessionId}`, text);
-      if (Object.keys(options).length > 0) {
-        sessionStorage.setItem(`project_pending_options:${sessionId}`, JSON.stringify(options));
-      }
+      // Hand the message to the real chat: it auto-sends from this stash once
+      // the runtime is healthy. `sessionId` here is the route/Kortix-session
+      // id, not the eventual OpenCode pin (`useCanonicalOpenCodeSession`
+      // resolves those independently — see `ensureOpencodeSessionPin` in
+      // apps/api/src/projects/routes/shared.ts); the session page's
+      // `migrateStash` hands this canonical stash off onto the resolved pin
+      // once it exists.
+      writeStartStash(sessionId, {
+        prompt: text,
+        agent: options.agent ?? null,
+        model: options.model ?? null,
+        variant: options.variant ?? null,
+      });
       // File objects can't survive sessionStorage — stash them in the store the
       // real chat consumes (same path the home composer uses).
       if (files?.length) {
@@ -126,6 +127,30 @@ export function InstantSessionShell({
       handleSend(`/${cmd.name}${args ? ` ${args}` : ''}`, undefined, options);
     },
     [handleSend],
+  );
+
+  // Defined once and slotted into either the hero position (pre-submit, inside
+  // the welcome body) or the regular bottom position (post-submit thread view).
+  const composerEl = (
+    <ComposerChatInput
+      onSend={handleSend}
+      onCommand={handleCommand}
+      sessionId={sessionId}
+      projectId={projectId}
+      prefill={prefill}
+      boundAgentName={boundAgentName}
+      // While the computer boots after the first send the input stays fully
+      // normal (typeable) — only the send button flips to a stop button. The
+      // stop is disabled because there's nothing running to stop yet; the real
+      // chat's live stop takes over the instant it crossfades in. (A duplicate
+      // send is harmless — handleSend ignores it while `submitted` is set.)
+      isBusy={!!submitted}
+      stopDisabled={!!submitted}
+      autoFocus
+      // Hero radius pre-submit (matches the project home); back to the default
+      // card radius once docked so the crossfade into SessionChat doesn't pop.
+      cardClassName={submitted ? undefined : 'rounded-xl'}
+    />
   );
 
   const column = (
@@ -156,13 +181,19 @@ export function InstantSessionShell({
       />
 
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
-        {/* Empty new session → the identical project-home empty state (welcome
-            heading + setup tiles), so a fresh session opens onto the same
-            surface as the project index page. Swapped out for the optimistic
-            turn the moment a first message is sent (the crossfade is unchanged). */}
+        {/* Empty new session → the identical project-home empty state (centered
+            heading + hero composer + starter chips, setup pills at the bottom),
+            so a fresh session opens onto the same surface as the project index
+            page. Swapped out for the optimistic turn the moment a first message
+            is sent (the crossfade is unchanged); the composer moves to its
+            regular bottom position at the same time. */}
         {!submitted && (
           <div className="flex min-h-0 flex-1 flex-col px-4.5">
-            <ProjectHomeWelcomeBody projectId={projectId} />
+            <ProjectHomeWelcomeBody
+              projectId={projectId}
+              onPickSuggestion={applySuggestion}
+              composer={composerEl}
+            />
           </div>
         )}
         <div
@@ -202,16 +233,13 @@ export function InstantSessionShell({
                       </p>
                     </div>
                   </div>
-                  {/* While the computer is still coming up the status reflects the
-                      boot stage ("Starting your computer"); once ready it's the
-                      regular thinking text. */}
+                  {/* While the computer is still coming up we show the SAME
+                      stepped boot checklist as the side panel, inline under the
+                      logomark — so the progress is visible without opening the
+                      panel. Once ready it falls back to the regular thinking text. */}
                   <AssistantPendingRow
                     className="mt-6"
-                    status={
-                      ready ? undefined : (
-                        <AnimatedThinkingText statusText={bootLabel(stage)} className="text-xs" />
-                      )
-                    }
+                    body={ready ? undefined : <SessionBootChecklistInline stage={stage} />}
                   />
                 </div>
               </div>
@@ -220,28 +248,10 @@ export function InstantSessionShell({
         </div>
       </div>
 
-      {!submitted && (
-        <div className="relative z-10 mx-auto mb-4 w-full max-w-[52rem] px-2 sm:px-4">
-          <StarterPromptsCarousel onPick={applySuggestion} />
-        </div>
-      )}
-
-      <ComposerChatInput
-        onSend={handleSend}
-        onCommand={handleCommand}
-        sessionId={sessionId}
-        projectId={projectId}
-        prefill={prefill}
-        boundAgentName={boundAgentName}
-        // While the computer boots after the first send the input stays fully
-        // normal (typeable) — only the send button flips to a stop button. The
-        // stop is disabled because there's nothing running to stop yet; the real
-        // chat's live stop takes over the instant it crossfades in. (A duplicate
-        // send is harmless — handleSend ignores it while `submitted` is set.)
-        isBusy={!!submitted}
-        stopDisabled={!!submitted}
-        autoFocus
-      />
+      {/* Once a first message is sent the composer leaves the hero position and
+          docks at the bottom for the thread view (the same jump Perplexity makes
+          when a search becomes a thread). */}
+      {submitted ? composerEl : null}
     </div>
   );
 

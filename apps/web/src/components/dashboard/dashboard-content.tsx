@@ -20,6 +20,7 @@ import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
+import { writeStartStash } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Menu } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -77,15 +78,20 @@ export function DashboardContent() {
 
         // Stash everything the session page needs BEFORE navigating — its
         // pending-prompt effect runs on the first render after pushState,
-        // so sessionStorage must be populated first.
-        sessionStorage.setItem(`opencode_pending_prompt:${session.id}`, text);
+        // so sessionStorage must be populated first. `session.id` here IS the
+        // canonical OpenCode session id (this hook creates the real runtime
+        // session directly, unlike the project-scoped flow), so the SDK's
+        // start-stash (`readStartStash`/`writeStartStash`) reads it back under
+        // the exact same id — no route/pin translation involved.
+        writeStartStash(session.id, {
+          prompt: text,
+          model: options.model ?? null,
+          agent: options.agent ?? null,
+          variant: options.variant ?? null,
+        });
 
         if (files?.length) {
           usePendingFilesStore.getState().setPendingFiles(files);
-        }
-
-        if (Object.keys(options).length > 0) {
-          sessionStorage.setItem(`opencode_pending_options:${session.id}`, JSON.stringify(options));
         }
 
         openTabAndNavigate({

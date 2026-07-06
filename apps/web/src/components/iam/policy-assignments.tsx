@@ -52,14 +52,24 @@ import {
   type KortixProject,
   listAccountMembers,
   listProjectsForAccount,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
+
+// Same wording the backend's requireEntitlement('rbac') 402 uses — keep it in
+// sync with apps/api/src/accounts/iam/helpers.ts ENTITLEMENT_LABEL.rbac.
+const RBAC_UPSELL_MESSAGE =
+  'Custom roles, policies, and groups are available on the Enterprise plan. Contact sales to enable it.';
 
 interface PolicyAssignmentsProps {
   accountId: string;
   canManage: boolean;
+  /** Whether the account's tier carries the `rbac` entitlement. Creating an
+   * assignment is gated on it server-side (removing one is not — cleanup is
+   * always allowed), so the create action is disabled here rather than left
+   * to fail with a 402 on submit. */
+  rbacEnabled: boolean;
 }
 
-export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsProps) {
+export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyAssignmentsProps) {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<IamPolicy | null>(null);
@@ -206,10 +216,24 @@ export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsPro
   }
 
   const newAssignmentButton = canManage ? (
-    <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
-      <Plus className="h-4 w-4" />
-      New assignment
-    </Button>
+    rbacEnabled ? (
+      <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
+        <Plus className="h-4 w-4" />
+        New assignment
+      </Button>
+    ) : (
+      <Hint label={RBAC_UPSELL_MESSAGE} side="top" className="max-w-xs">
+        <span className="inline-flex items-center gap-1.5">
+          <Button size="sm" className="gap-1.5" disabled>
+            <Plus className="h-4 w-4" />
+            New assignment
+          </Button>
+          <Badge variant="outline" size="sm">
+            Enterprise
+          </Badge>
+        </span>
+      </Hint>
+    )
   ) : null;
 
   return (

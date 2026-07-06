@@ -65,13 +65,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout ${{ inputs.ref }} (full history)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
 
       - name: Compute next version (from what's live on prod)
         id: ver
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_BUMP: ${{ inputs.bump }}
         run: |
           set -euo pipefail
           git fetch --no-tags origin prod >/dev/null 2>&1 || true
@@ -81,13 +84,13 @@ jobs:
           [ -n "$BASE" ] || BASE="$(tr -d '[:space:]' < VERSION)"
           echo "Currently live on prod: $BASE"
 
-          EXPLICIT="${{ inputs.version }}"
+          EXPLICIT="$INPUT_VERSION"
           if [ -n "$EXPLICIT" ]; then
             NEW="${EXPLICIT#v}"
           else
             IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE"
             : "${MAJOR:=0}"; : "${MINOR:=0}"; : "${PATCH:=0}"
-            case "${{ inputs.bump }}" in
+            case "$INPUT_BUMP" in
               major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
               minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
               patch) PATCH=$((PATCH + 1)) ;;
@@ -110,6 +113,9 @@ jobs:
           # staging image-build checks to be green — deploy-prod retags those exact
           # images, so they must exist — but we DON'T wait on the slow QA/e2e lanes.
           FAST: ${{ (vars.RELEASE_FAST_TRACK == 'true' || inputs.skip_green) && 'true' || 'false' }}
+          INPUT_REF: ${{ inputs.ref }}
+          RUN_ID: ${{ github.run_id }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           if [ "$FAST" = "true" ]; then
@@ -117,7 +123,7 @@ jobs:
           fi
           TREE_SHA="$(git rev-parse HEAD)"
           IMAGE_SHA="$TREE_SHA"
-          if [ "${{ inputs.ref }}" = "staging" ] && [ -f infra/k8s/envs/staging/values.yaml ]; then
+          if [ "$INPUT_REF" = "staging" ] && [ -f infra/k8s/envs/staging/values.yaml ]; then
             staging_tag="$(yq -r '.image.tag // ""' infra/k8s/envs/staging/values.yaml)"
             if [[ "$staging_tag" =~ ^staging-([0-9a-f]{8})$ ]]; then
               candidate="$(git rev-parse "${BASH_REMATCH[1]}^{commit}" 2>/dev/null || true)"
@@ -128,7 +134,7 @@ jobs:
           fi
           echo "tree_sha=$TREE_SHA" >> "$GITHUB_OUTPUT"
           echo "image_sha=$IMAGE_SHA" >> "$GITHUB_OUTPUT"
-          echo "Promote tree ${{ inputs.ref }} @ $TREE_SHA"
+          echo "Promote tree $INPUT_REF @ $TREE_SHA"
           echo "Release image source @ $IMAGE_SHA"
           # The staging branch tip can be a GitOps pin commit created by
           # deploy-staging.yml after the build. In that normal case the deploy
@@ -159,7 +165,7 @@ jobs:
           check_green() {
             local sha="$1" label="$2"
             local not_green
-            not_green="$(RID="${{ github.run_id }}" gh api "repos/${{ github.repository }}/commits/${sha}/check-runs?per_page=100" --paginate \
+            not_green="$(RID="$RUN_ID" gh api "repos/${REPOSITORY}/commits/${sha}/check-runs?per_page=100" --paginate \
               --jq '[ .check_runs[]
                       | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not)
                       | select(((.name | ascii_downcase | startswith("dependabot")) or (.name | ascii_downcase | startswith("analyze")) or (.name == "compliance-as-code-action") or (.name == "Open review-gated release PR")) | not)
@@ -171,7 +177,7 @@ jobs:
             if [ -n "$not_green" ]; then
               echo "::error::Refusing to promote — ${label} ${sha} is not all-green:"
               echo "$not_green"
-              echo "Wait for these to finish/pass on '${{ inputs.ref }}', then re-run promote." >&2
+              echo "Wait for these to finish/pass on '$INPUT_REF', then re-run promote." >&2
               exit 1
             fi
             echo "✓ ${label} ${sha} is green."
@@ -187,15 +193,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           IN_TITLE: ${{ inputs.title }}
           IN_NOTES: ${{ inputs.notes }}
+          RELEASE_NEW: ${{ steps.ver.outputs.new }}
+          RELEASE_TAG: ${{ steps.ver.outputs.tag }}
+          RELEASE_SOURCE_SHA: ${{ steps.preflight.outputs.image_sha }}
         run: |
           set -euo pipefail
-          NEW="${{ steps.ver.outputs.new }}"
-          TAG="${{ steps.ver.outputs.tag }}"
+          NEW="$RELEASE_NEW"
+          TAG="$RELEASE_TAG"
           RELBR="release/$TAG"
           # The image source is normally the staged source commit. When staging
           # HEAD is a GitOps pin commit, this is the commit named by the pinned
           # `staging-<sha8>` image tag, not the pin commit itself.
-          SRC_SHA="${{ steps.preflight.outputs.image_sha }}"
+          SRC_SHA="$RELEASE_SOURCE_SHA"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -241,13 +250,18 @@ jobs:
           fi
 
       - name: Summary
+        env:
+          RELEASE_TAG: ${{ steps.ver.outputs.tag }}
+          RELEASE_BASE: ${{ steps.ver.outputs.base }}
+          RELEASE_NEW: ${{ steps.ver.outputs.new }}
+          INPUT_REF: ${{ inputs.ref }}
         run: |
           {
-            echo "### Release PR opened — \`${{ steps.ver.outputs.tag }}\`"
+            echo "### Release PR opened — \`$RELEASE_TAG\`"
             echo ""
-            echo "- Live on prod: \`${{ steps.ver.outputs.base }}\`"
-            echo "- Proposed version: \`${{ steps.ver.outputs.new }}\`"
-            echo "- \`${{ inputs.ref }}\` → \`release/${{ steps.ver.outputs.tag }}\` → PR into \`prod\`"
+            echo "- Live on prod: \`$RELEASE_BASE\`"
+            echo "- Proposed version: \`$RELEASE_NEW\`"
+            echo "- \`$INPUT_REF\` → \`release/$RELEASE_TAG\` → PR into \`prod\`"
             echo ""
             echo "_Nothing is published yet. A reviewer approves + merges the PR; the **merge** publishes the version (tag + GitHub Release + image retag + EKS roll + frontend)._"
           } >> "$GITHUB_STEP_SUMMARY"

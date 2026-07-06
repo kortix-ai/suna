@@ -7,12 +7,11 @@ import { ProviderLogo } from '@/features/providers/provider-branding';
 import {
   SharingPicker,
   isSharingComplete,
-  selectionToIntent,
   type SharingSelection,
 } from '@/features/workspace/shared/sharing-picker';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
-import { setPersonalProjectSecret, upsertProjectSecret } from '@/lib/projects-client';
+import { setPersonalProjectSecret, upsertProjectSecret } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, ChevronLeft, ExternalLink, Info, Loader2 } from 'lucide-react';
@@ -41,6 +40,7 @@ export function ApiKeyConnectForm({
   const [sharing, setSharing] = useState<SharingSelection>({
     mode: 'project',
     memberIds: [],
+    groupIds: [],
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -53,10 +53,11 @@ export function ApiKeyConnectForm({
             active: true,
           });
         } else {
+          // Project-wide is the only shared option now — secret sharing
+          // (restricting a shared value to specific members) was retired.
           await upsertProjectSecret(projectId, {
             name: envVar,
             value: values[envVar] ?? '',
-            sharing: selectionToIntent(sharing),
           });
         }
       }
@@ -153,7 +154,7 @@ export function ApiKeyConnectForm({
           </div>
         ))}
 
-        <SharingPicker projectId={projectId} value={sharing} onChange={setSharing} showHeading />
+        <SharingPicker projectId={projectId} value={sharing} onChange={setSharing} showHeading hideMembers />
 
         {provider.helpUrl && helpHostname && (
           <a

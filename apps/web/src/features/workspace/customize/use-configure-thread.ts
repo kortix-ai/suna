@@ -16,6 +16,7 @@
 import { useCallback, useState } from 'react';
 
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
+import { writeStartStash } from '@kortix/sdk/react';
 import { useCustomizeStore } from '@/stores/customize-store';
 
 export type ConfigureKind = 'agent' | 'skill' | 'command';
@@ -76,7 +77,13 @@ export function useConfigureThread(projectId: string): ConfigureThread {
       // so flipping it back would only flash the idle button.
       newSession({
         onNavigate: (sessionId) => {
-          sessionStorage.setItem(`project_pending_prompt:${sessionId}`, prompt);
+          // `sessionId` is the route/Kortix session id here, not the OpenCode
+          // pin the session page resolves later. Stash under the route id via
+          // the SDK's canonical `writeStartStash` — the session page's
+          // `migrateStash` hands this off onto the resolved pin once it
+          // exists. Same situation as the project-home composer's producer
+          // (see its onNavigate for the full trace).
+          writeStartStash(sessionId, { prompt, agent: null, model: null, variant: null });
           closeCustomize();
         },
       });

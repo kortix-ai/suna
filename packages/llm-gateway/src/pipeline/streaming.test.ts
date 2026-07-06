@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { relayStream } from './streaming';
+import { probeStream, relayStream } from './streaming';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -108,5 +108,144 @@ describe('relayStream', () => {
     expect(text).toContain('data: partial\n\n');
     // the partial frame is contiguous: nothing inserted between "par" and "tial"
     expect(text).not.toMatch(/par[^]*keep-alive[^]*tial/);
+  });
+});
+
+describe('probeStream', () => {
+  test('reports hasContent once a content delta arrives, without losing any bytes', async () => {
+    const up = controllableUpstream();
+    up.push('data: {"choices":[{"delta":{},"finish_reason":null}]}\n\n');
+    up.push('data: {"choices":[{"delta":{"content":"hi"}}]}\n\n');
+    const result = await probeStream(up.stream);
+    expect(result.hasContent).toBe(true);
+    expect(result.chunks.length).toBeGreaterThan(0);
+    // every byte read by the probe is preserved for replay — none dropped
+    const replayed = result.chunks.map((c) => dec.decode(c)).join('');
+    expect(replayed).toContain('"content":"hi"');
+  });
+
+  test('reports hasContent=false when the stream closes having produced nothing', async () => {
+    const up = controllableUpstream();
+    up.push('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n');
+    up.push('data: [DONE]\n\n');
+    up.close();
+    const result = await probeStream(up.stream);
+    expect(result.hasContent).toBe(false);
+  });
+
+  test('gives up and assumes content after the probe budget, never blocking a legitimately slow stream', async () => {
+    const up = controllableUpstream();
+    // Push far more empty-delta frames than the probe will buffer, without closing —
+    // the probe must bail out (assume ok) rather than hang or read forever.
+    for (let i = 0; i < 200; i++) up.push('data: {"choices":[{"delta":{}}]}\n\n');
+    const result = await probeStream(up.stream);
+    expect(result.hasContent).toBe(true);
+    expect(result.chunks.length).toBeLessThan(200); // bailed out before draining everything pushed
+  });
+
+  test('a read error mid-probe resolves on whatever content was seen so far', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(enc.encode('data: {"choices":[{"delta":{}}]}\n\n'));
+      },
+      pull() {
+        throw new Error('upstream socket reset');
+      },
+    });
+    const result = await probeStream(stream);
+    expect(result.hasContent).toBe(false);
+  });
+});
+
+describe('relayStream with a primed reader', () => {
+  test('replays the probe-buffered prefix before continuing the live stream — no drops, no duplicates', async () => {
+    const up = controllableUpstream();
+    up.push('data: {"choices":[{"delta":{},"finish_reason":null}]}\n\n');
+    up.push('data: {"choices":[{"delta":{"content":"hi"}}]}\n\n');
+    const probe = await probeStream(up.stream);
+    expect(probe.hasContent).toBe(true);
+
+    let settledBuffer: unknown;
+    const out = relayStream({
+      primed: { reader: probe.reader, chunks: probe.chunks },
+      captureBodies: true,
+      requestId: 'primed-1',
+      logger: noop,
+      settle: async (_usage, response) => {
+        settledBuffer = response;
+      },
+      heartbeatMs: 10_000,
+    });
+    const collected = drain(out);
+    up.push('data: {"choices":[{"delta":{"content":" there"}}]}\n\n');
+    up.push('data: [DONE]\n\n');
+    up.close();
+    const text = await collected;
+
+    expect(text).toBe(
+      'data: {"choices":[{"delta":{},"finish_reason":null}]}\n\n' +
+        'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n' +
+        'data: {"choices":[{"delta":{"content":" there"}}]}\n\n' +
+        'data: [DONE]\n\n',
+    );
+    await delay(10);
+    expect(settledBuffer).toBe(text);
+  });
+});
+
+describe('relayStream upstream error frames', () => {
+  test('passes the in-stream error frame to settle and warns', async () => {
+    const up = controllableUpstream();
+    const warnings: unknown[][] = [];
+    let settledError: unknown = 'unset';
+    const out = relayStream({
+      upstreamBody: up.stream,
+      captureBodies: false,
+      requestId: 'r-err',
+      logger: { warn: (...args: unknown[]) => warnings.push(args) },
+      settle: async (_usage, _response, streamError) => {
+        settledError = streamError;
+      },
+      heartbeatMs: 10_000,
+    });
+    up.push('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n');
+    up.push('data: {"error":{"message":"Upstream idle timeout exceeded","code":502}}\n\n');
+    up.close();
+    const text = await drain(out);
+    // The frame is still relayed verbatim — the caller must see the failure too.
+    expect(text).toContain('Upstream idle timeout exceeded');
+    await delay(10); // let the detached finally run settle()
+    expect(settledError).toEqual({ message: 'Upstream idle timeout exceeded', code: 502 });
+    expect(warnings.some((w) => String(w[0]).includes('upstream error frame'))).toBe(true);
+  });
+
+  test('settles with a null error frame on a clean stream', async () => {
+    const up = controllableUpstream();
+    let settledError: unknown = 'unset';
+    const out = relayStream({
+      upstreamBody: up.stream,
+      captureBodies: false,
+      requestId: 'r-clean',
+      logger: noop,
+      settle: async (_usage, _response, streamError) => {
+        settledError = streamError;
+      },
+      heartbeatMs: 10_000,
+    });
+    up.push('data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n');
+    up.close();
+    await drain(out);
+    await delay(10);
+    expect(settledError).toBeNull();
+  });
+});
+
+describe('probeStream error frames', () => {
+  test('an error-frame-only stream probes as no-content (so the handler retries it)', async () => {
+    const up = controllableUpstream();
+    up.push('data: {"error":{"message":"Upstream idle timeout exceeded","code":502}}\n\n');
+    up.close();
+    const probe = await probeStream(up.stream);
+    expect(probe.hasContent).toBe(false);
   });
 });

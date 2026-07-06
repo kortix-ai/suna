@@ -11,7 +11,7 @@
  * immutable from this view; users mutate via a session sandbox + commit.
  */
 
-import { fetchProjectArchive, listProjectFiles, readProjectFile } from '@/lib/projects-client';
+import { fetchProjectArchive, listProjectFiles, readProjectFile } from '@kortix/sdk/projects-client';
 import type {
   FileContent,
   FileNode,
@@ -19,7 +19,7 @@ import type {
   GitFileStatus,
   OpenCodeProjectInfo,
   ServerHealth,
-} from '../types';
+} from '@/features/file-browser/types';
 
 const READ_ONLY = 'Read-only — project files come from Git';
 

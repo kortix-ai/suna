@@ -10,6 +10,7 @@ import { useLegacyMessages, useMigrateLegacyThread } from '@/hooks/legacy/use-le
 import { useCreateOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { getActiveSandboxId } from '@/stores/server-store';
+import { writeStartStash } from '@kortix/sdk/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
 	Collapsible,
@@ -319,7 +320,10 @@ export default function LegacyThreadPage({
 			const session = await createSession.mutateAsync();
 			const prompt = buildContextPrompt(turns, turnIndex);
 
-			sessionStorage.setItem(`opencode_pending_prompt:${session.id}`, prompt);
+			// `session.id` is the canonical OpenCode session id (created directly by
+			// this hook) so the SDK's start-stash reads it back under the same id —
+			// no route/pin translation involved.
+			writeStartStash(session.id, { prompt, model: null, agent: null });
 
 			openTabAndNavigate({
 				id: session.id,

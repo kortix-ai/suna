@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useServerStore } from '@/stores/server-store';
 import { getFileHistory, getFileCommitDiff, getFileAtCommit } from '../api/git-history';
-import type { FileHistoryResult, FileCommitDiff } from '../types';
+import type { FileHistoryResult, FileCommitDiff } from '@/features/file-browser/types';
 
 export const fileHistoryKeys = {
   all: ['opencode-files', 'history'] as const,

@@ -25,12 +25,12 @@ import {
   newConfigPrompt,
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
+import { cn } from '@/lib/utils';
 import {
   type ProjectConfigSummary,
   getProjectDetail,
   readProjectFile,
-} from '@/lib/projects-client';
-import { cn } from '@/lib/utils';
+} from '@kortix/sdk/projects-client';
 import { DangerTriangleSolid, Pencil, Search } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Copy, type LucideIcon, Plus } from 'lucide-react';
@@ -81,8 +81,14 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
   /** Section-level context rendered above the search (e.g. kortix.toml manifest). */
   renderContext?: (config: ProjectConfigSummary) => ReactNode;
 
-  /** When true, omit the section shell — used inside BuildView tabs. */
-  embedded?: boolean;
+  /**
+   * 'accordion' (default) — a vertical list where each row expands its detail
+   * inline. 'split' — a master-detail layout: a selectable list on the LEFT, the
+   * selected entity's source in the MIDDLE, and `renderDetailExtra` as a right
+   * aside. Use 'split' for agents (the detail carries scope/model/assignment
+   * cards that deserve their own column). Widens the section to fit three panes.
+   */
+  layout?: 'accordion' | 'split';
 }
 
 export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityViewProps<T>) {
@@ -108,7 +114,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
     renderDetailExtra,
     emptyBodyLabel,
     renderContext,
-    embedded = false,
+    layout = 'accordion',
   } = props;
 
   const detailQuery = useQuery({
@@ -123,6 +129,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
     detailQuery.isError && /403|forbidden/i.test((detailQuery.error as Error)?.message ?? '');
 
   const [query, setQuery] = useState('');
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -133,80 +140,94 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
 
   const configure = useConfigureThread(projectId);
 
-  const body = (
-      <div className="space-y-4">
-        {config && entities.length > 0 && renderContext ? renderContext(config) : null}
+  // Master-detail selection (split layout). The right pane follows this; falls
+  // back to the first visible entity so there's always something previewed.
+  const selected = filtered.find((e) => e.path === selectedPath) ?? filtered[0] ?? null;
 
-        <InputGroupSearch>
-          <InputGroupSearchIcon>
-            <Search />
-          </InputGroupSearchIcon>
-          <InputGroupSearchInput
-            placeholder={searchPlaceholder}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            variant="popover"
-          />
-          <InputGroupSearchClear onClick={() => setQuery('')} />
-        </InputGroupSearch>
+  const searchInput = (
+    <InputGroupSearch>
+      <InputGroupSearchIcon>
+        <Search />
+      </InputGroupSearchIcon>
+      <InputGroupSearchInput
+        placeholder={searchPlaceholder}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        variant="popover"
+      />
+      <InputGroupSearchClear onClick={() => setQuery('')} />
+    </InputGroupSearch>
+  );
 
-        {detailQuery.isLoading ? (
-          <div className="space-y-2">
-            {SKELETON_ROWS.map((row) => (
-              <Skeleton key={row} className="h-9 rounded-md" />
-            ))}
-          </div>
-        ) : isForbidden ? (
-          <InfoBanner tone="warning" icon={DangerTriangleSolid} title="Access required">
-            You don&apos;t have permission to read this repository.
-          </InfoBanner>
-        ) : detailQuery.isError ? (
-          <ErrorState
+  // Pre-list states (loading / no-access / error / empty). Null once there are
+  // entities to render — the caller then draws the list. Shared by both layouts.
+  const stateContent = detailQuery.isLoading ? (
+    <div className="space-y-2">
+      {SKELETON_ROWS.map((row) => (
+        <Skeleton key={row} className="h-9 rounded-md" />
+      ))}
+    </div>
+  ) : isForbidden ? (
+    <InfoBanner tone="warning" icon={DangerTriangleSolid} title="Access required">
+      You don&apos;t have permission to read this repository.
+    </InfoBanner>
+  ) : detailQuery.isError ? (
+    <ErrorState
+      size="sm"
+      title="Failed to load"
+      description={(detailQuery.error as Error)?.message ?? `Failed to load ${noun}s`}
+      action={
+        <Button variant="outline" size="sm" onClick={() => detailQuery.refetch()}>
+          Retry
+        </Button>
+      }
+    />
+  ) : entities.length === 0 ? (
+    <EmptyState
+      icon={EmptyIcon}
+      size="sm"
+      title={emptyTitle}
+      action={
+        <div className="flex flex-col items-center gap-2">
+          <Button
+            variant="outline"
             size="sm"
-            title="Failed to load"
-            description={(detailQuery.error as Error)?.message ?? `Failed to load ${noun}s`}
-            action={
-              <Button variant="outline" size="sm" onClick={() => detailQuery.refetch()}>
-                Retry
-              </Button>
-            }
-          />
-        ) : entities.length === 0 ? (
-          <EmptyState
-            icon={EmptyIcon}
-            size="sm"
-            title={emptyTitle}
-            // description={emptyDescription}
-            action={
-              <div className="flex flex-col items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => configure.start(newConfigPrompt(kind))}
-                  disabled={configure.pending}
-                >
-                  {configure.pending ? (
-                    <Loading className="size-3.5 shrink-0" />
-                  ) : (
-                    <Plus className="size-3.5 shrink-0" />
-                  )}
-                  Create {noun}
-                </Button>
-                {emptyDocsHref ? (
-                  <Button asChild variant="ghost" size="sm" className="gap-1.5">
-                    <a href={emptyDocsHref} target="_blank" rel="noopener noreferrer">
-                      Docs
-                    </a>
-                  </Button>
-                ) : null}
-              </div>
-            }
-          />
-        ) : filtered.length === 0 ? (
-          <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-            No matches for <span className="text-foreground font-mono">{query}</span>.
-          </p>
+            className="gap-1.5"
+            onClick={() => configure.start(newConfigPrompt(kind))}
+            disabled={configure.pending}
+          >
+            {configure.pending ? (
+              <Loading className="size-3.5 shrink-0" />
+            ) : (
+              <Plus className="size-3.5 shrink-0" />
+            )}
+            Create {noun}
+          </Button>
+          {emptyDocsHref ? (
+            <Button asChild variant="ghost" size="sm" className="gap-1.5">
+              <a href={emptyDocsHref} target="_blank" rel="noopener noreferrer">
+                Docs
+              </a>
+            </Button>
+          ) : null}
+        </div>
+      }
+    />
+  ) : null;
+
+  const noMatches = (
+    <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+      No matches for <span className="text-foreground font-mono">{query}</span>.
+    </p>
+  );
+
+  const accordionBody = (
+    <div className="space-y-4">
+      {config && entities.length > 0 && renderContext ? renderContext(config) : null}
+      {searchInput}
+      {stateContent ??
+        (filtered.length === 0 ? (
+          noMatches
         ) : config ? (
           <ul className="space-y-2">
             {filtered.map((entity) => (
@@ -227,19 +248,88 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
               </li>
             ))}
           </ul>
-        ) : null}
-      </div>
+        ) : null)}
+    </div>
   );
 
-  if (embedded) {
-    return body;
-  }
+  const splitBody = (
+    <div className="space-y-4">
+      {config && entities.length > 0 && renderContext ? renderContext(config) : null}
+      {stateContent ??
+        (config ? (
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
+            {/* Left — a selectable list, sticky on scroll. The top offset keeps
+                it from pinning flush against the scrollport edge (the section's
+                vertical padding scrolls away with the content). */}
+            <div className="lg:border-border/60 space-y-3 lg:sticky lg:top-6 lg:self-start lg:border-r lg:pr-4">
+              {searchInput}
+              {filtered.length === 0 ? (
+                noMatches
+              ) : (
+                <ul className="space-y-0.5">
+                  {filtered.map((entity) => {
+                    const trailing = renderRowTrailing?.(entity, config);
+                    const isActive = selected?.path === entity.path;
+                    return (
+                      <li key={entity.path}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPath(entity.path)}
+                          aria-current={isActive}
+                          className={cn(
+                            'focus-visible:ring-kortix-blue flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:ring-2 focus-visible:outline-none',
+                            isActive
+                              ? 'bg-secondary text-foreground font-medium'
+                              : 'text-muted-foreground hover:bg-muted/50',
+                          )}
+                        >
+                          <span className="min-w-0 flex-1 truncate">
+                            {renderTriggerLabel(entity)}
+                          </span>
+                          {trailing ? (
+                            <span className="flex shrink-0 items-center gap-1.5">{trailing}</span>
+                          ) : null}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            {/* Right — the selected entity (source in the middle, extras aside). */}
+            <div className="min-w-0">
+              {selected ? (
+                <EntityDetail
+                  key={selected.path}
+                  projectId={projectId}
+                  kind={kind}
+                  entity={selected}
+                  config={config}
+                  renderDetailTitle={renderDetailTitle}
+                  renderDetailMeta={renderDetailMeta}
+                  renderDetailExtra={renderDetailExtra}
+                  emptyBodyLabel={emptyBodyLabel}
+                  split
+                />
+              ) : (
+                <p className="text-muted-foreground/60 px-4 py-16 text-center text-sm">
+                  Pick {noun === 'agent' ? 'an' : 'a'} {noun} on the left to preview it.
+                </p>
+              )}
+            </div>
+          </div>
+        ) : null)}
+    </div>
+  );
+
+  const body = layout === 'split' ? splitBody : accordionBody;
 
   return (
     <CustomizeSectionWrapper
       title={title}
       description={description}
       docs={docs}
+      className={layout === 'split' ? 'max-w-none px-6' : undefined}
       action={
         <div className="flex items-center gap-1.5">
           <MarketplaceSectionButton projectId={projectId} />
@@ -337,6 +427,9 @@ interface EntityDetailProps<T extends ConfigEntity> {
   renderDetailMeta?: (entity: T, config: ProjectConfigSummary) => ReactNode;
   renderDetailExtra?: (entity: T, config: ProjectConfigSummary) => ReactNode;
   emptyBodyLabel: string;
+  /** Master-detail mode: render the source in the middle and `renderDetailExtra`
+   *  as a right-hand aside, instead of stacking the extra above the source. */
+  split?: boolean;
 }
 
 function EntityDetail<T extends ConfigEntity>({
@@ -348,6 +441,7 @@ function EntityDetail<T extends ConfigEntity>({
   renderDetailMeta,
   renderDetailExtra,
   emptyBodyLabel,
+  split,
 }: EntityDetailProps<T>) {
   const configure = useConfigureThread(projectId);
   const fileQuery = useQuery({
@@ -374,57 +468,83 @@ function EntityDetail<T extends ConfigEntity>({
   const meta = renderDetailMeta?.(entity, config);
   const extra = renderDetailExtra?.(entity, config);
 
+  const source = fileQuery.isLoading ? (
+    <div className="space-y-2.5">
+      <Skeleton className="h-4 w-full" />
+      <Skeleton className="h-4 w-11/12" />
+      <Skeleton className="h-4 w-10/12" />
+      <Skeleton className="h-4 w-9/12" />
+    </div>
+  ) : fileQuery.isError ? (
+    <InfoBanner
+      tone="destructive"
+      title="Couldn't load source"
+      action={
+        <Button variant="outline" size="sm" onClick={() => fileQuery.refetch()}>
+          Retry
+        </Button>
+      }
+    >
+      {(fileQuery.error as Error)?.message ?? 'Failed to read source'}
+    </InfoBanner>
+  ) : body.trim() ? (
+    <UnifiedMarkdown content={body} />
+  ) : (
+    <p className="text-muted-foreground/60 text-sm italic">{emptyBodyLabel}</p>
+  );
+
+  const header = (
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0 space-y-2">
+        {meta ? <div className="flex flex-wrap items-center gap-1.5">{meta}</div> : null}
+        <h1 className="text-foreground text-2xl font-semibold tracking-tight text-balance">
+          {renderDetailTitle(entity)}
+        </h1>
+        {entity.description ? (
+          <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed text-pretty">
+            {entity.description}
+          </p>
+        ) : null}
+        <p className="text-muted-foreground/50 truncate font-mono text-xs">{entity.path}</p>
+      </div>
+      <DetailToolbarActions
+        onCopy={onCopy}
+        onEdit={() => configure.start(editConfigPrompt(kind, entity.name, entity.path))}
+        editing={configure.pending}
+        copyDisabled={!fileQuery.data?.content}
+      />
+    </div>
+  );
+
+  if (split) {
+    // Full-width master detail: the source (header + body) fills the MIDDLE with a
+    // readable max-width, and the extra cards sit as a right-hand aside stuck to
+    // the edge. Below xl the aside stacks under the source.
+    return (
+      <div
+        className={cn(
+          'grid grid-cols-1 gap-8 pb-10',
+          extra && 'xl:grid-cols-[minmax(0,1fr)_340px]',
+        )}
+      >
+        <div className="min-w-0">
+          <div className="mx-auto max-w-3xl">
+            {header}
+            <div className="mt-8">{source}</div>
+          </div>
+        </div>
+        {extra ? (
+          <aside className="space-y-3 xl:sticky xl:top-6 xl:self-start xl:pt-1">{extra}</aside>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className="px-4 py-5">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 space-y-2">
-          {meta ? <div className="flex flex-wrap items-center gap-1.5">{meta}</div> : null}
-          <h1 className="text-foreground text-2xl font-semibold tracking-tight text-balance">
-            {renderDetailTitle(entity)}
-          </h1>
-          {entity.description ? (
-            <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed text-pretty">
-              {entity.description}
-            </p>
-          ) : null}
-          <p className="text-muted-foreground/50 truncate font-mono text-xs">{entity.path}</p>
-        </div>
-        <DetailToolbarActions
-          onCopy={onCopy}
-          onEdit={() => configure.start(editConfigPrompt(kind, entity.name, entity.path))}
-          editing={configure.pending}
-          copyDisabled={!fileQuery.data?.content}
-        />
-      </div>
-
+      {header}
       {extra ? <div className="mt-6">{extra}</div> : null}
-
-      <div className="mt-8">
-        {fileQuery.isLoading ? (
-          <div className="space-y-2.5">
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-11/12" />
-            <Skeleton className="h-4 w-10/12" />
-            <Skeleton className="h-4 w-9/12" />
-          </div>
-        ) : fileQuery.isError ? (
-          <InfoBanner
-            tone="destructive"
-            title="Couldn't load source"
-            action={
-              <Button variant="outline" size="sm" onClick={() => fileQuery.refetch()}>
-                Retry
-              </Button>
-            }
-          >
-            {(fileQuery.error as Error)?.message ?? 'Failed to read source'}
-          </InfoBanner>
-        ) : body.trim() ? (
-          <UnifiedMarkdown content={body} />
-        ) : (
-          <p className="text-muted-foreground/60 text-sm italic">{emptyBodyLabel}</p>
-        )}
-      </div>
+      <div className="mt-8">{source}</div>
     </div>
   );
 }

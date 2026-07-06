@@ -899,8 +899,14 @@ async function slashSetAgent(ctx: SlashCtx, arg: string): Promise<SlashResponse>
     return { response_type: 'ephemeral', text: `Bind a project first with \`${ctx.command} switch\`.` };
   }
   const value = name.toLowerCase() === 'default' ? null : name;
-  const ok = await setChannelAgent(ctx, value);
-  if (!ok) {
+  const result = await setChannelAgent(ctx, value);
+  if (!result.ok) {
+    if (result.reason === 'unknown_agent') {
+      return {
+        response_type: 'ephemeral',
+        text: `"${escapeMrkdwn(value ?? '')}" is not a declared agent in this project's manifest. Run \`${ctx.command} agents\` to pick one.`,
+      };
+    }
     return { response_type: 'ephemeral', text: `Bind a project first with \`${ctx.command} switch\`.` };
   }
   return {

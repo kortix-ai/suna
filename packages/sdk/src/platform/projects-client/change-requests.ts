@@ -175,6 +175,7 @@ export async function mergeChangeRequest(
     await backendApi.post<ChangeRequestMergeResponse>(
       `/projects/${projectId}/change-requests/${crId}/merge`,
       input ?? {},
+      { showErrors: false },
     ),
   );
 }
@@ -193,6 +194,21 @@ export async function reopenChangeRequest(projectId: string, crId: string) {
     await backendApi.post<ChangeRequest>(
       `/projects/${projectId}/change-requests/${crId}/reopen`,
       {},
+    ),
+  );
+}
+
+/** Request changes on a CR (Review Center) — records feedback + optionally
+ *  delivers it back to the originating session. */
+export async function requestChangesOnChangeRequest(
+  projectId: string,
+  crId: string,
+  feedback: string,
+) {
+  return unwrap(
+    await backendApi.post<{ change_request: ChangeRequest; delivering: boolean }>(
+      `/projects/${projectId}/change-requests/${crId}/request-changes`,
+      { feedback },
     ),
   );
 }

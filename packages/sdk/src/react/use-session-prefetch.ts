@@ -50,7 +50,7 @@ export async function prefetchSession(sessionId: string): Promise<void> {
     // Fetch fresh data from server in background
     try {
       const res = await getClient().session.messages({ sessionID: sessionId });
-      const data = (res.data ?? []) as any[];
+      const data = res.data ?? [];
       if (data.length > 0) {
         useSyncStore.getState().hydrate(sessionId, data);
         const parts = useSyncStore.getState().parts;

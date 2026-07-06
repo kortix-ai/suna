@@ -19,7 +19,7 @@
  */
 
 import { eq } from 'drizzle-orm';
-import { accountGroupMembers, iamPolicies } from '@kortix/db';
+import { accountGroupMembers, accountMembers, iamPolicies } from '@kortix/db';
 import { db } from '../shared/db';
 
 interface PrincipalScopedMemo {
@@ -80,6 +80,26 @@ export async function invalidateIamCacheForGroup(groupId: string | null | undefi
     invalidateIamCacheForUsers(rows.map((r) => r.userId));
   } catch (err) {
     console.warn('[iam-cache] group invalidation lookup failed', { groupId, err: (err as Error)?.message });
+  }
+}
+
+/**
+ * An account-wide setting the resolved actor caches (e.g. `accounts.mfaRequired`)
+ * changed — bust every member of the account, since resolveActorV2 memoizes that
+ * setting per `${userId}|${accountId}` alongside the member's role. Best-effort,
+ * same contract as invalidateIamCacheForGroup: a lookup failure leaves the
+ * pre-existing TTL fallback rather than failing the mutation.
+ */
+export async function invalidateIamCacheForAccount(accountId: string | null | undefined): Promise<void> {
+  if (!accountId) return;
+  try {
+    const rows = await db
+      .select({ userId: accountMembers.userId })
+      .from(accountMembers)
+      .where(eq(accountMembers.accountId, accountId));
+    invalidateIamCacheForUsers(rows.map((r) => r.userId));
+  } catch (err) {
+    console.warn('[iam-cache] account invalidation lookup failed', { accountId, err: (err as Error)?.message });
   }
 }
 

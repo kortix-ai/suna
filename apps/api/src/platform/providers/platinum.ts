@@ -35,6 +35,27 @@ interface PlatinumSandbox {
 }
 type PlatinumExposedPort = { port: number; url: string; token?: string; public: boolean };
 
+function isMissingSandboxError(error: unknown): boolean {
+  const err = error as
+    | { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown }
+    | null
+    | undefined;
+  if (err?.status === 404 || err?.statusCode === 404) return true;
+  const code = typeof err?.code === 'string' ? err.code.toLowerCase() : '';
+  if (code === 'not_found' || code === 'notfound') return true;
+  const message =
+    typeof err?.message === 'string'
+      ? err.message.toLowerCase()
+      : String(error ?? '').toLowerCase();
+  return (
+    message.includes('-> 404') ||
+    message.includes('"code":"not_found"') ||
+    message.includes('not found') ||
+    message.includes('no such sandbox') ||
+    message.includes('sandbox does not exist')
+  );
+}
+
 export class PlatinumProvider implements SandboxProvider {
   readonly name: ProviderName = 'platinum';
 
@@ -73,8 +94,8 @@ export class PlatinumProvider implements SandboxProvider {
       KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
       ...opts.envVars,
     };
-    if (!envVars.KORTIX_TOKEN) {
-      throw new Error('[platinum] create() called without KORTIX_TOKEN — sandbox cannot authenticate to the Kortix router.');
+    if (!envVars.KORTIX_SANDBOX_TOKEN) {
+      throw new Error('[platinum] create() called without KORTIX_SANDBOX_TOKEN — sandbox cannot authenticate to the Kortix router.');
     }
 
     // autoStopInterval maps to Platinum's auto_stop_minutes. 0 → persistent
@@ -90,10 +111,15 @@ export class PlatinumProvider implements SandboxProvider {
     const autoStop = opts.autoStopInterval ?? config.KORTIX_SANDBOX_AUTOSTOP_MINUTES;
 
     const _t0 = Date.now();
+    // This asks Platinum to long-poll server-side for up to 60s
+    // (wait_timeout_ms) — platinumJson's default 20s client-side abort budget
+    // would cut that off early, so pass an explicit signal comfortably longer
+    // than the server-side wait instead of relying on the default.
     const sandbox = await platinumJson<PlatinumSandbox>(
       '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000',
       {
         method: 'POST',
+        signal: AbortSignal.timeout(70_000),
         body: JSON.stringify({
           template,
           envVars,
@@ -178,7 +204,8 @@ export class PlatinumProvider implements SandboxProvider {
       if (state === 'stopped' || state === 'stopping' || state.includes('archiv')) return 'stopped';
       if (state === 'deleted' || state === 'failed-start' || state === 'lost') return 'removed';
       return 'unknown'; // provisioning / starting / resuming / migrating — transitional
-    } catch {
+    } catch (err) {
+      if (isMissingSandboxError(err)) return 'removed';
       return 'unknown';
     }
   }

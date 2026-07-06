@@ -138,7 +138,7 @@ iamRouter.openapi(
     request: { params: z.object({ accountId: z.string(), tokenId: z.string() }) },
     responses: {
       200: json(z.object({ revoked: z.boolean() }), 'Revocation result'),
-      ...errors(401, 402, 403, 404),
+      ...errors(401, 403, 404),
     },
   }),
   async (c: any) => {
@@ -146,8 +146,8 @@ iamRouter.openapi(
   const accountId = c.req.param('accountId');
   const tokenId = c.req.param('tokenId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-  const denied = await requireEntitlement(c, accountId, 'scim');
-  if (denied) return denied;
+  // Revocation must never 402 — a lapsed/downgraded entitlement can't be the
+  // thing standing between an admin and killing a leaked credential.
 
   const ok = await revokeScimToken(accountId, tokenId);
   if (!ok) return c.json({ error: 'token not found or already revoked' }, 404);

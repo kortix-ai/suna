@@ -14,7 +14,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { ChangelogChange } from '@/lib/platform-client';
+import type { ChangelogChange } from '@kortix/sdk/platform-client';
 
 const changeTypeConfig: Record<string, { icon: typeof Sparkles; color: string }> = {
   feature: { icon: Sparkles, color: 'text-emerald-600 dark:text-emerald-400' },

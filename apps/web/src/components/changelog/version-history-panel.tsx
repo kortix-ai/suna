@@ -6,7 +6,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownToLine, GitCommit, Loader2, Tag } from 'lucide-react';
 
-import { getAllVersions, type VersionEntry, type VersionChannel } from '@/lib/platform-client';
+import { getAllVersions, type VersionEntry, type VersionChannel } from '@kortix/sdk/platform-client';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';

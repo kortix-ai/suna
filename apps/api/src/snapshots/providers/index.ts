@@ -12,6 +12,7 @@
 
 import { daytonaProvider } from './daytona';
 import { platinumProvider } from './platinum';
+import type { WarmRepoContext } from '../build-context';
 
 interface SandboxResourceSpec {
   cpu?: number;
@@ -31,20 +32,16 @@ export interface BuildableTemplate {
   spec: SandboxResourceSpec;
   /** Telemetry: caller-facing slug for logs. */
   slug: string;
-  /** Shared platform default (vs per-project). The default is built ONCE as a
-   *  stateful warm template; per-project templates stay cold (capture=none). */
+  /** Shared platform default (vs per-project). Every template is built cold. */
   isShared?: boolean;
-  /** Stateful warm capture: the provider boots the template, waits for the
-   *  readiness probe, then snapshots the RUNNING VM so sessions CoW-fork warm
-   *  state (~2 s) instead of cold-booting. Falls back to cold spawn if unmet. */
-  capture?: 'none' | 'stateful';
-  captureCondition?: {
-    http?: { port: number; path: string; timeoutSec?: number };
-    cmd?: string;
-    timeoutSec?: number;
-  };
-  /** Boot env for the warm-capture VM (so it reaches the readiness probe). */
-  captureEnv?: Record<string, string>;
+  /**
+   * Per-project COLD warm: bake the project's repo checkout into /workspace at
+   * build time. Threaded straight to `stageBuildContext` → the Dockerfile layer,
+   * which clones the repo (build-time creds) and keeps /workspace. The image
+   * stays capture:'none' (no memory snapshot) — BOTH providers boot it cold.
+   * Absent for the shared default image (workspace stays empty).
+   */
+  warmRepo?: WarmRepoContext;
 }
 
 export type ProviderState =
@@ -91,6 +88,10 @@ export interface SandboxProviderAdapter {
 }
 
 const ADAPTERS = new Map<string, SandboxProviderAdapter>();
+// The managed cloud backend is registered under BOTH its canonical name
+// ('managed') and its legacy alias ('daytona' = daytonaProvider.id), so template
+// rows / sessions holding either value resolve to the same adapter.
+ADAPTERS.set('managed', daytonaProvider);
 ADAPTERS.set(daytonaProvider.id, daytonaProvider);
 ADAPTERS.set(platinumProvider.id, platinumProvider);
 

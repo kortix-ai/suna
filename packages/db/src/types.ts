@@ -1,5 +1,5 @@
 import { sandboxes, deployments, kortixApiKeys, accounts, accountMembers, accountInvitations, accountGithubInstallations, auditEvents, usageEvents, gatewayRequestLogs, gatewayApiKeys, gatewayBudgets, projects, projectGitConnections, projectGitCredentials, projectMembers, projectSecrets, projectSessions, projectSnapshotBuilds, sandboxTemplates, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs, chatChannelBindings, chatInstalls, chatThreads } from './schema/kortix';
-import { apiKeys, accountUser } from './schema/public';
+import { apiKeys } from './schema/public';
 
 // Select types (what you get back from queries)
 export type Account = typeof accounts.$inferSelect;
@@ -43,8 +43,6 @@ export type NewLegacySandboxMigration = typeof legacySandboxMigrations.$inferIns
 export type Sandbox = typeof sandboxes.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type CreditAccount = typeof creditAccounts.$inferSelect;
-/** @deprecated Use AccountMember instead — basejump.account_user is being migrated to kortix.account_members */
-export type AccountUser = typeof accountUser.$inferSelect;
 export type KortixApiKey = typeof kortixApiKeys.$inferSelect;
 
 // Insert types (what you pass to inserts)

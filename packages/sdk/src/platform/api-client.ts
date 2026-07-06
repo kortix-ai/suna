@@ -1,17 +1,24 @@
 import { platformConfig } from './config';
 import { getSupabaseAccessTokenWithRetry } from './auth';
-import { parseBillingError, RequestTooLargeError } from './api/errors';
+import { ApiError, AuthError, parseBillingError, RequestTooLargeError } from './api/errors';
 
 const getApiUrl = () => platformConfig().backendUrl || '';
 
-// Ported verbatim from web's error-handler. User-facing error handling is
-// routed through platformConfig().onError?.() instead of web's handleApiError.
-export interface ApiError extends Error {
-  status?: number;
-  code?: string;
-  details?: any;
-  response?: Response;
-}
+// Ported from web's error-handler. User-facing error handling is routed
+// through platformConfig().onError?.() instead of web's handleApiError.
+// The error classes live in ./api/errors — re-exported here so both the
+// root barrel and the `@kortix/sdk/api-client` subpath expose them.
+export {
+  ApiError,
+  AuthError,
+  BillingError,
+  RequestTooLargeError,
+  parseBillingError,
+  isBillingError,
+  formatBillingErrorForUI,
+  type ApiErrorFields,
+  type BillingErrorUI,
+} from './api/errors';
 
 export interface ErrorContext {
   operation?: string;
@@ -29,6 +36,22 @@ export interface ApiResponse<T = any> {
   data?: T;
   error?: ApiError;
   success: boolean;
+}
+
+// Platform-admin read-only bypass toggle (web only). In-memory, per-tab — never
+// persisted — so it resets on reload and can't linger silently. When on, every
+// request from this client carries `x-kortix-admin-bypass: 1`; the API only
+// honors it for a real platform admin/super_admin on a `read` action (see
+// apps/api/src/projects/lib/access.ts), so this is safe to set unconditionally
+// here rather than threading it through every call site.
+let adminBypassEnabled = false;
+
+export function setAdminBypass(enabled: boolean): void {
+  adminBypassEnabled = enabled;
+}
+
+export function isAdminBypassEnabled(): boolean {
+  return adminBypassEnabled;
 }
 
 async function makeRequest<T = any>(
@@ -72,6 +95,10 @@ async function makeRequest<T = any>(
     // Merge with any headers from fetchOptions
     Object.assign(headers, fetchOptions.headers as Record<string, string>);
 
+    if (adminBypassEnabled) {
+      headers['x-kortix-admin-bypass'] = '1';
+    }
+
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     } else {
@@ -80,11 +107,7 @@ async function makeRequest<T = any>(
       // Callers gated by `enabled: !!user` should prevent this path, but this
       // is a safety net for any calls that slip through.
       return {
-        error: Object.assign(Object.create(Error.prototype), {
-          message: 'Not authenticated',
-          name: 'AuthError',
-          code: 'NO_SESSION',
-        }),
+        error: new AuthError(),
         success: false,
       };
     }
@@ -126,9 +149,7 @@ async function makeRequest<T = any>(
       } catch {
       }
 
-      let error: ApiError | Error = Object.assign(Object.create(Error.prototype), {
-        message: errorMessage,
-        name: 'ApiError',
+      let error: ApiError | Error = new ApiError(errorMessage, {
         status: response.status,
         response: response,
         details: errorData || undefined,
@@ -202,11 +223,7 @@ async function makeRequest<T = any>(
       // "Request timeout" toasts/Sentry events. Swallow it silently.
       if (!didTimeout) {
         return {
-          error: Object.assign(Object.create(Error.prototype), {
-            message: 'Request aborted',
-            name: 'AbortError',
-            code: 'ABORTED',
-          }),
+          error: new ApiError('Request aborted', { name: 'AbortError', code: 'ABORTED' }),
           success: false,
         };
       }
@@ -214,9 +231,7 @@ async function makeRequest<T = any>(
       // Genuine timeout — our timer fired. Attach the endpoint so it's clear
       // *what* timed out (the previous error carried no URL).
       const endpoint = url.replace(getApiUrl(), '') || url;
-      apiError = Object.assign(Object.create(Error.prototype), {
-        message: `Request timed out after ${Math.round(timeout / 1000)}s: ${endpoint}`,
-        name: 'ApiError',
+      apiError = new ApiError(`Request timed out after ${Math.round(timeout / 1000)}s: ${endpoint}`, {
         code: 'TIMEOUT',
         url,
         endpoint,
@@ -229,20 +244,16 @@ async function makeRequest<T = any>(
         platformConfig().onError?.(apiError, errorContext);
       }
     } else if (error instanceof Error) {
-      apiError = Object.assign(Object.create(Error.prototype), {
-        message: error.message,
+      apiError = new ApiError(error.message, {
         name: error.name || 'ApiError',
-        stack: error.stack
+        stack: error.stack,
       });
 
       if (showErrors) {
         platformConfig().onError?.(apiError, errorContext);
       }
     } else {
-      apiError = Object.assign(Object.create(Error.prototype), {
-        message: String(error),
-        name: 'ApiError'
-      });
+      apiError = new ApiError(String(error));
 
       if (showErrors) {
         platformConfig().onError?.(apiError, errorContext);
@@ -265,11 +276,9 @@ export const supabaseClient = {
       const { data, error } = await queryFn();
 
       if (error) {
-        const apiError: ApiError = Object.assign(Object.create(Error.prototype), {
-          message: error.message || 'Database error',
-          name: 'ApiError',
+        const apiError: ApiError = new ApiError(error.message || 'Database error', {
           code: error.code,
-          details: error
+          details: error,
         });
 
         platformConfig().onError?.(apiError, errorContext);
@@ -286,15 +295,8 @@ export const supabaseClient = {
       };
     } catch (error: any) {
       const apiError: ApiError = error instanceof Error
-        ? Object.assign(Object.create(Error.prototype), {
-            message: error.message,
-            name: error.name || 'ApiError',
-            stack: error.stack
-          })
-        : Object.assign(Object.create(Error.prototype), {
-            message: String(error),
-            name: 'ApiError'
-          });
+        ? new ApiError(error.message, { name: error.name || 'ApiError', stack: error.stack })
+        : new ApiError(String(error));
 
       platformConfig().onError?.(apiError, errorContext);
 

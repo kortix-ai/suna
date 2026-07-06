@@ -14,6 +14,7 @@ import {
   CreditCard,
   ExternalLink,
   Filter,
+  FolderKanban,
   History,
   Loader2,
   Mail,
@@ -61,6 +62,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   useAdminAccountLedger,
+  useAdminAccountProjects,
   useAdminAccountUsers,
   useAdminAccounts,
   useAdminDebitCredits,
@@ -1008,6 +1010,7 @@ function AccountDetailSheet({
 
 function AccountDetail({ account }: { account: AdminAccount }) {
   const usersQuery = useAdminAccountUsers(account.accountId);
+  const projectsQuery = useAdminAccountProjects(account.accountId);
   const ledgerQuery = useAdminAccountLedger(account.accountId, 100);
   const actions = billingActionsFor(account);
 
@@ -1078,6 +1081,15 @@ function AccountDetail({ account }: { account: AdminAccount }) {
                 </Badge>
               )}
             </TabsTrigger>
+            <TabsTrigger value="projects" className="gap-1.5">
+              <FolderKanban className="h-3.5 w-3.5" />
+              Projects
+              {projectsQuery.data?.projects && (
+                <Badge variant="muted" size="sm">
+                  {projectsQuery.data.projects.length}
+                </Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="ledger" className="gap-1.5">
               <History className="h-3.5 w-3.5" />
               Ledger
@@ -1093,6 +1105,9 @@ function AccountDetail({ account }: { account: AdminAccount }) {
           </TabsContent>
           <TabsContent value="users" className="mt-4">
             <UsersTab usersQuery={usersQuery} />
+          </TabsContent>
+          <TabsContent value="projects" className="mt-4">
+            <ProjectsTab projectsQuery={projectsQuery} />
           </TabsContent>
           <TabsContent value="ledger" className="mt-4">
             <LedgerTab ledgerQuery={ledgerQuery} />
@@ -1395,6 +1410,83 @@ function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccoun
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function ProjectsTab({
+  projectsQuery,
+}: {
+  projectsQuery: ReturnType<typeof useAdminAccountProjects>;
+}) {
+  if (projectsQuery.isLoading) {
+    return (
+      <div className="border-border/60 bg-card text-muted-foreground flex items-center gap-2 rounded-2xl border px-4 py-6 text-sm">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading projects…
+      </div>
+    );
+  }
+
+  const projects = projectsQuery.data?.projects ?? [];
+  if (projects.length === 0) {
+    return (
+      <div className="border-border/60 bg-card rounded-2xl border">
+        <EmptyState
+          icon={FolderKanban}
+          title="No projects on this account"
+          description="Projects will appear here once the user creates one."
+          size="sm"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-border/60 bg-card divide-border divide-y rounded-2xl border">
+      {projects.map((project) => (
+        <a
+          key={project.projectId}
+          href={`/projects/${project.projectId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:bg-muted/40 flex flex-col gap-2 px-4 py-3 text-sm transition-colors"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate font-medium">{project.name}</span>
+              {project.activeSessionCount > 0 && (
+                <Badge variant="success" size="sm">
+                  {project.activeSessionCount} active
+                </Badge>
+              )}
+              {project.status && project.status !== 'active' && (
+                <Badge variant="muted" size="sm" className="capitalize">
+                  {project.status}
+                </Badge>
+              )}
+            </div>
+            <ExternalLink className="text-muted-foreground/60 h-3.5 w-3.5 shrink-0" />
+          </div>
+          <div className="text-muted-foreground grid grid-cols-2 gap-2 text-xs">
+            <div className="truncate">
+              <span className="text-muted-foreground/70">Sessions: </span>
+              <span className="text-foreground/80">{project.sessionCount}</span>
+            </div>
+            <div className="truncate">
+              <span className="text-muted-foreground/70">Last activity: </span>
+              <span className="text-foreground/80">
+                {project.lastSessionAt ? formatRelative(project.lastSessionAt) : '—'}
+              </span>
+            </div>
+            <div className="truncate">
+              <span className="text-muted-foreground/70">Updated: </span>
+              <span className="text-foreground/80">{formatRelative(project.updatedAt)}</span>
+            </div>
+            <div className="truncate font-mono text-xs">{project.projectId.slice(0, 8)}…</div>
+          </div>
+        </a>
+      ))}
     </div>
   );
 }

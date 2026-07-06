@@ -1,9 +1,9 @@
 /**
  * E2E for the executor HTTP surface — drives the REAL Hono router + REAL gateway
- * via app.fetch(), with in-memory backends. New model: access lives on the
- * connector (shareScope + grants); credentials are split per (connector, user)
- * and resolved by mode. Proves auth, catalog, a tool call, denials, admin
- * sync/sharing, and policy enforcement.
+ * via app.fetch(), with in-memory backends. Connectors are project-wide visible
+ * (no per-connector member/agent scoping); credentials are split per
+ * (connector, user) and resolved by mode. Proves auth, catalog, a tool call,
+ * denials, admin sync, and policy enforcement.
  */
 import { beforeEach, describe, expect, test } from 'bun:test';
 import {
@@ -17,8 +17,6 @@ import {
   type ProjectPolicyView,
 } from '../executor/router';
 import type { GatewayAction, GatewayConnector, GatewayDeps, ExecutionRecord } from '../executor/gateway';
-import type { SecretGrant, SharingIntent } from '../executor/share';
-import { isSecretUsableBy, intentToScope, scopeToIntent } from '../executor/share';
 import { resolveEffectiveAction, type Policy } from '../executor/policy';
 
 const ACCOUNT = 'acct-1';
@@ -53,8 +51,6 @@ function freshWorld(): World {
     baseUrl: 'https://api.stripe.com',
     auth: { type: 'bearer', in: 'header', name: null, prefix: null },
     hasAuth: true,
-    shareScope: 'project',
-    grants: [],
     credentialMode: 'shared',
     enabled: true,
   };
@@ -93,7 +89,7 @@ function makeGatewayDeps(): GatewayDeps {
     loadProjectPolicies: async () => world.projectPolicies,
     loadDefaultMode: async () => world.defaultMode,
     enforcePolicies: true,
-    recordExecution: async (r) => { world.executions.push(r); },
+    recordExecution: async (r) => { world.executions.push(r); return null; },
     fetchImpl: async (url, init) => {
       world.upstream.push({ url, ...init });
       return {
@@ -112,10 +108,9 @@ function principalFor(userId: string): ExecutorPrincipal {
 function catalogFor(p: ExecutorPrincipal): CatalogConnector[] {
   const out: CatalogConnector[] = [];
   for (const conn of world.connectors.values()) {
-    if (!isSecretUsableBy(conn.shareScope, conn.grants, p.subject)) continue;
     if (conn.hasAuth) {
-      const uid = conn.credentialMode === 'per_user' ? p.userId : null;
-      if (!world.credentials.has(credKey(conn.connectorId, uid))) continue;
+      // Always the shared credential — `per_user` was removed 2026-07-05.
+      if (!world.credentials.has(credKey(conn.connectorId, null))) continue;
     }
     const connectorPolicies = world.policiesByConnector.get(conn.connectorId) ?? [];
     const actions = [...world.actions.entries()]
@@ -158,22 +153,13 @@ const deps: ExecutorRouterDeps = {
       provider: conn.provider,
       status: 'active',
       credentialMode: conn.credentialMode,
+      sensitive: false,
       actions: [],
       authSecret: conn.hasAuth ? 'credential' : null,
-      sharing: scopeToIntent(conn.shareScope, conn.grants),
-      secretSet: conn.hasAuth
-        ? world.credentials.has(credKey(conn.connectorId, conn.credentialMode === 'per_user' ? viewerUserId : null))
-        : true,
+      // Always the shared credential — `per_user` was removed 2026-07-05.
+      secretSet: conn.hasAuth ? world.credentials.has(credKey(conn.connectorId, null)) : true,
     })),
   syncConnectors: async () => ({ synced: world.connectors.size, errors: [] }),
-  setSharing: async (_projectId, slug, intent) => {
-    const conn = world.connectors.get(slug);
-    if (!conn) return false;
-    const { shareScope, grants } = intentToScope(intent);
-    conn.shareScope = shareScope;
-    conn.grants = grants;
-    return true;
-  },
   getProjectPolicies: async (): Promise<ProjectPoliciesViewResponse> => ({
     policies: world.projectPolicies.map((p) => ({ match: p.match, action: p.action })),
     defaultMode: world.defaultMode,
@@ -205,14 +191,6 @@ describe('GET /connectors', () => {
     expect(json.connectors[0].actions[0]).toMatchObject({ path: 'charges.create', risk: 'write' });
   });
 
-  test('restricted connector hidden from non-grantee', async () => {
-    const conn = world.connectors.get('stripe')!;
-    conn.shareScope = 'restricted';
-    conn.grants = [{ principalType: 'member', principalId: ALICE }] as SecretGrant[];
-    expect((await (await req('/connectors', { headers: { 'x-test-user': ALICE } })).json()).connectors).toHaveLength(1);
-    expect((await (await req('/connectors', { headers: { 'x-test-user': BOB } })).json()).connectors).toHaveLength(0);
-  });
-
   test('connector with no credential hidden until connected', async () => {
     world.credentials.delete('conn-stripe|shared');
     expect((await (await req('/connectors', { headers: { 'x-test-user': ALICE } })).json()).connectors).toHaveLength(0);
@@ -242,16 +220,6 @@ describe('POST /call', () => {
     expect(res.status).toBe(404);
   });
 
-  test('403 not shared; no upstream call', async () => {
-    const conn = world.connectors.get('stripe')!;
-    conn.shareScope = 'restricted';
-    conn.grants = [{ principalType: 'member', principalId: ALICE }] as SecretGrant[];
-    const res = await req('/call', { method: 'POST', headers: { 'x-test-user': BOB, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }) });
-    expect(res.status).toBe(403);
-    expect((await res.json()).reason).toBe('not_shared');
-    expect(world.upstream).toHaveLength(0);
-  });
-
   test('403 needs_auth when credential missing', async () => {
     world.credentials.delete('conn-stripe|shared');
     const res = await req('/call', { method: 'POST', headers: { 'x-test-user': ALICE, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }) });
@@ -267,43 +235,27 @@ describe('POST /call', () => {
   });
 });
 
-describe('per_user credential mode', () => {
-  test('resolves the acting user\'s own credential', async () => {
-    const conn = world.connectors.get('stripe')!;
-    conn.credentialMode = 'per_user';
-    world.credentials.delete('conn-stripe|shared');
-    world.credentials.set('conn-stripe|user-alice', 'sk_alice');
-    // alice connected → can call
-    const a = await req('/call', { method: 'POST', headers: { 'x-test-user': ALICE, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }) });
-    expect(a.status).toBe(200);
-    expect(world.upstream[0]!.headers.Authorization).toBe('Bearer sk_alice');
-    // bob hasn't → needs_auth
-    const b = await req('/call', { method: 'POST', headers: { 'x-test-user': BOB, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }) });
-    expect(b.status).toBe(403);
-    expect((await b.json()).reason).toBe('needs_auth');
-  });
-});
-
 describe('admin routes', () => {
-  test('list shows credential mode + sharing + secretSet', async () => {
+  test('list shows credential mode + secretSet', async () => {
     expect((await req(`/projects/${PROJECT}/connectors`)).status).toBe(403);
     const json = await (await req(`/projects/${PROJECT}/connectors`, { headers: { 'x-test-admin': ALICE } })).json();
-    expect(json.connectors[0]).toMatchObject({ slug: 'stripe', credentialMode: 'shared', secretSet: true, sharing: { mode: 'project' } });
+    expect(json.connectors[0]).toMatchObject({ slug: 'stripe', credentialMode: 'shared', secretSet: true });
   });
 
   test('sync returns count', async () => {
     expect((await (await req(`/projects/${PROJECT}/connectors/sync`, { method: 'POST', headers: { 'x-test-admin': ALICE } })).json()).synced).toBe(1);
   });
 
-  test('set sharing restricts → gateway then denies the excluded user', async () => {
+  test('the old connector sharing route is gone (404)', async () => {
     const put = await req(`/projects/${PROJECT}/connectors/stripe/sharing`, {
       method: 'PUT', headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'members', memberIds: [ALICE] }),
     });
-    expect(put.status).toBe(200);
+    expect(put.status).toBe(404);
+  });
+
+  test('a connector with no scoping is usable by any user (bob included)', async () => {
     const bob = await req('/call', { method: 'POST', headers: { 'x-test-user': BOB, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }) });
-    expect(bob.status).toBe(403);
-    const alice = await req('/call', { method: 'POST', headers: { 'x-test-user': ALICE, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }) });
-    expect(alice.status).toBe(200);
+    expect(bob.status).toBe(200);
   });
 });
 

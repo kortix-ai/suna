@@ -127,11 +127,17 @@ function stripMarkdownArtifacts(url: string): string {
   return url.slice(0, markerIndex);
 }
 
+const LEADING_WRAPPERS = new Set(["'", '"', '`', '<', '(', '[']);
+const TRAILING_WRAPPERS = new Set(['>', "'", '"', '`', ')', ']', ',', ';', '.', '!', '?']);
+
 function stripUrlWrappers(url: string): string {
-  let out = url.trim();
-  out = out.replace(/^['"`<\(\[]+/, '');
-  out = out.replace(/[>'"`\)\],;.!?]+$/, '');
-  return out;
+  let start = 0;
+  let end = url.length;
+  while (start < end && (url[start] === ' ' || url[start] === '\t')) start++;
+  while (end > start && (url[end - 1] === ' ' || url[end - 1] === '\t')) end--;
+  while (start < end && LEADING_WRAPPERS.has(url[start] as string)) start++;
+  while (end > start && TRAILING_WRAPPERS.has(url[end - 1] as string)) end--;
+  return url.slice(start, end);
 }
 
 function extractLocalhostCandidate(text: string): string | null {
@@ -386,7 +392,11 @@ export function rewriteLocalhostUrl(
   // actually on the user's box. Otherwise we always go path-based through the
   // public API base URL (which terminates at whichever ingress fronts the API).
   if (!isBackendOnLocalhost(subdomainOpts.apiBaseUrl)) {
-    const base = subdomainOpts.apiBaseUrl.replace(/\/+$/, '');
+    // Linear trailing-slash strip — the regex form (/\/+$/) backtracks
+    // quadratically on adversarial input (CodeQL js/polynomial-redos).
+    let baseEnd = subdomainOpts.apiBaseUrl.length;
+    while (baseEnd > 0 && subdomainOpts.apiBaseUrl.charCodeAt(baseEnd - 1) === 47 /* '/' */) baseEnd--;
+    const base = subdomainOpts.apiBaseUrl.slice(0, baseEnd);
     return `${base}/p/${subdomainOpts.sandboxId}/${port}${safePath}`;
   }
 

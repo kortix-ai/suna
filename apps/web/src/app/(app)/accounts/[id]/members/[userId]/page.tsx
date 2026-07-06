@@ -29,7 +29,7 @@ import {
   type MemberGroupSummary,
   type MemberProjectAccess,
 } from '@/lib/iam-client';
-import { getAccount, listAccountMembers, type AccountRole } from '@/lib/projects-client';
+import { getAccount, listAccountMembers, type AccountRole } from '@kortix/sdk/projects-client';
 import { usePermission, usePermissionsFor } from '@/lib/use-permission';
 
 const ROLE_LABEL: Record<string, string> = {
@@ -411,7 +411,7 @@ function MemberGroupsCard({
 
 // ─── V2: Projects this member can reach ───────────────────────────────────
 
-const PROJECT_ROLE_RANK = { manager: 3, editor: 2, user: 1 } as const;
+const PROJECT_ROLE_RANK = { manager: 3, editor: 2, member: 1 } as const;
 const SOURCE_LABEL: Record<MemberProjectAccess['sources'][number], string> = {
   implicit: 'Account admin',
   direct: 'Direct',

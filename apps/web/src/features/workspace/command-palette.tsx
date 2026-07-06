@@ -25,11 +25,15 @@ import { SidebarContext } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useOpenCodeAgents, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { authenticatedFetch } from '@/lib/auth-token';
 import { parseCustomizeSection } from '@/lib/customize-sections';
-import { featureFlags } from '@/lib/feature-flags';
-import { normalizeAppPathname } from '@/lib/instance-routes';
 import { getItemsForSurface, type MenuItemDef, type SettingsTabId } from '@/lib/menu-registry';
+import { cn } from '@/lib/utils';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useCustomizeStore } from '@/stores/customize-store';
+import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import { featureFlags } from '@kortix/sdk/feature-flags';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
+import { systemReload } from '@kortix/sdk/opencode-client';
 import {
   getProjectDetail,
   listAccounts,
@@ -39,12 +43,7 @@ import {
   type KortixAccount,
   type KortixProject,
   type ProjectSession,
-} from '@/lib/projects-client';
-import { cn } from '@/lib/utils';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useCustomizeStore } from '@/stores/customize-store';
-import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
-import { useServerStore } from '@/stores/server-store';
+} from '@kortix/sdk/projects-client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowDown,
@@ -88,7 +87,6 @@ import {
 } from '@/hooks/opencode/use-opencode-sessions';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
-import { clearSessionIDBCache } from '@/lib/idb-sync-cache';
 import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
@@ -101,10 +99,13 @@ import {
 } from '@/lib/utils/sandbox-url';
 import { enrichPreviewMetadata } from '@/lib/utils/session-context';
 import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
+import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { groupMessagesIntoTurns, isTextPart, type TextPart } from '@/ui';
+import { clearSessionIDBCache } from '@kortix/sdk/idb-sync-cache';
 import { chalkColors, formatRelativeTime } from '@kortix/shared';
 import { UsersSolid } from '@mynaui/icons-react';
 import { useTheme } from 'next-themes';
@@ -389,6 +390,9 @@ export function CommandPalette() {
   const createSession = useCreateOpenCodeSession();
   const createPty = useCreatePty();
   const { theme, setTheme } = useTheme();
+  const activeWallpaperId = useUserPreferencesStore(
+    (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID,
+  );
   const billingEnabled = isBillingEnabled();
 
   const { data: agents } = useOpenCodeAgents();
@@ -1031,6 +1035,14 @@ export function CommandPalette() {
     [setTheme, close],
   );
 
+  const handleSetWallpaper = useCallback(
+    (newWallpaperId: string) => {
+      useUserPreferencesStore.getState().setWallpaperId(newWallpaperId);
+      close();
+    },
+    [close],
+  );
+
   const handleCompactSession = useCallback(() => {
     if (!currentSessionId) return;
     reopenPaletteRef.current = true;
@@ -1078,31 +1090,15 @@ export function CommandPalette() {
 
   const handleRestartConfig = useCallback(() => {
     close();
-    const serverUrl = useServerStore.getState().getActiveServerUrl();
-    authenticatedFetch(`${serverUrl}/kortix/services/system/reload`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'dispose-only' }),
-    })
-      .then((res) => {
-        if (res.ok) successToast('Config reloaded');
-        else errorToast('Restart failed');
-      })
+    systemReload('dispose-only')
+      .then(() => successToast('Config reloaded'))
       .catch(() => errorToast('Restart failed'));
   }, [close]);
 
   const handleRestartFull = useCallback(() => {
     close();
-    const serverUrl = useServerStore.getState().getActiveServerUrl();
-    authenticatedFetch(`${serverUrl}/kortix/services/system/reload`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'full' }),
-    })
-      .then((res) => {
-        if (res.ok) successToast('Full restart initiated');
-        else errorToast('Restart failed');
-      })
+    systemReload('full')
+      .then(() => successToast('Full restart initiated'))
       .catch(() => errorToast('Restart failed'));
   }, [close]);
 
@@ -1182,6 +1178,9 @@ export function CommandPalette() {
         case 'theme':
           handleSetTheme(item.themeValue!);
           break;
+        case 'wallpaper':
+          handleSetWallpaper(item.wallpaperValue!);
+          break;
         case 'action': {
           const handler = actionHandlers[item.actionId!];
           if (handler) handler();
@@ -1189,7 +1188,7 @@ export function CommandPalette() {
         }
       }
     },
-    [router, close, handleOpenSettings, handleSetTheme, actionHandlers],
+    [router, close, handleOpenSettings, handleSetTheme, handleSetWallpaper, actionHandlers],
   );
 
   const handleSelectAgent = useCallback(
@@ -1506,6 +1505,8 @@ export function CommandPalette() {
                               : 'Expand Sidebar'
                             : item.label;
                           const isActiveTheme = item.kind === 'theme' && theme === item.themeValue;
+                          const isActiveWallpaper =
+                            item.kind === 'wallpaper' && activeWallpaperId === item.wallpaperValue;
                           const submenuPage = SUBMENU_PAGE_BY_ID[item.id];
 
                           return (
@@ -1526,7 +1527,7 @@ export function CommandPalette() {
                               )}
                               <span className="flex-1">{displayLabel}</span>
                               {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
-                              {isActiveTheme && (
+                              {(isActiveTheme || isActiveWallpaper) && (
                                 <span className="text-primary/60 text-xs font-medium">Active</span>
                               )}
                               {submenuPage && (

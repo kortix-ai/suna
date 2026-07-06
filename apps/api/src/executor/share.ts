@@ -1,21 +1,27 @@
 /**
- * Project-secret sharing — who can use a secret (and therefore the connector
- * bound to it). Three dashboard options map onto one mechanism:
+ * Generic "who can use it" member/group sharing — the mechanism session
+ * visibility (project_session_grants) uses. Three dashboard options map onto
+ * one mechanism:
  *
- *   Project wide   → share_scope='project'                 (everyone)
- *   Select members → share_scope='restricted' + grants     (members and/or groups)
- *   Just me        → share_scope='restricted' + one member grant (the owner)
+ *   Project wide   → visibility='project'                 (everyone)
+ *   Select members → visibility='restricted' + grants     (members and/or groups)
+ *   Just me        → visibility='private'                 (owner only)
  *
  * Rule (Marko): empty allow-list = whole project; ≥1 grant = restricted.
- * Pure logic here is unit-tested; DB helpers feed the gateway + CRUD.
+ * Pure logic here is unit-tested; DB helpers feed the session CRUD.
+ *
+ * Project SECRETS no longer use this — secret sharing was retired (a secret is
+ * always project-wide; see migration 20260706_secrets_v2_identifier_model.sql
+ * and projects/secrets.ts). CONNECTORS no longer use this either — a connector
+ * is always project-wide visible; the only access gate is the agent-side
+ * `[[agents]].connectors` grant (iam/agent-scope.ts). This file keeps the
+ * generic pure helpers + session DB helpers only.
  *
  * See docs/specs/executor.md §6.
  */
 import { eq, inArray } from 'drizzle-orm';
 import {
   accountGroupMembers,
-  projectSecretGrants,
-  projectSecrets,
   projectSessionGrants,
   projectSessions,
 } from '@kortix/db';
@@ -34,7 +40,10 @@ export interface ShareSubject {
   groupIds: string[];
 }
 
-/** Pure: may this subject use a secret with the given scope + grants? */
+/** Pure: may this subject use a `restricted`-allow-list resource with the given
+ *  scope + grants? (Despite the name, this is now generic — session visibility
+ *  is the remaining caller; project secrets and connectors both dropped
+ *  restricted sharing entirely — see the file doc comment.) */
 export function isSecretUsableBy(
   shareScope: ShareScope,
   grants: SecretGrant[],
@@ -82,8 +91,7 @@ export function scopeToIntent(shareScope: ShareScope, grants: SecretGrant[]): Sh
 }
 
 /**
- * Validate/normalize an untrusted sharing body into a SharingIntent.
- * Shared by the connector sharing route and the project-secrets API. Returns
+ * Validate/normalize an untrusted sharing body into a SharingIntent. Returns
  * null when `mode` is missing/unknown so callers can 400. A `private` body with
  * no explicit `ownerId` falls back to the acting user.
  */
@@ -111,38 +119,6 @@ export async function resolveShareSubject(userId: string): Promise<ShareSubject>
     .from(accountGroupMembers)
     .where(eq(accountGroupMembers.userId, userId));
   return { userId, groupIds: rows.map((r) => r.groupId) };
-}
-
-/** Persist a secret's sharing: set scope + replace its grants atomically-ish. */
-export async function setSecretSharing(secretId: string, intent: SharingIntent): Promise<void> {
-  const { shareScope, grants } = intentToScope(intent);
-  await db.update(projectSecrets).set({ shareScope, updatedAt: new Date() }).where(eq(projectSecrets.secretId, secretId));
-  await db.delete(projectSecretGrants).where(eq(projectSecretGrants.secretId, secretId));
-  if (grants.length > 0) {
-    await db.insert(projectSecretGrants).values(
-      grants.map((g) => ({ secretId, principalType: g.principalType, principalId: g.principalId })),
-    );
-  }
-}
-
-/** Bulk-load grants for many secrets → map secretId → grants. */
-export async function loadGrants(secretIds: string[]): Promise<Map<string, SecretGrant[]>> {
-  const out = new Map<string, SecretGrant[]>();
-  if (secretIds.length === 0) return out;
-  const rows = await db
-    .select({
-      secretId: projectSecretGrants.secretId,
-      principalType: projectSecretGrants.principalType,
-      principalId: projectSecretGrants.principalId,
-    })
-    .from(projectSecretGrants)
-    .where(inArray(projectSecretGrants.secretId, secretIds));
-  for (const r of rows) {
-    const list = out.get(r.secretId) ?? [];
-    list.push({ principalType: r.principalType as 'member' | 'group', principalId: r.principalId });
-    out.set(r.secretId, list);
-  }
-  return out;
 }
 
 /* ─── Session sharing — default private; team-wide or select-members ───────────

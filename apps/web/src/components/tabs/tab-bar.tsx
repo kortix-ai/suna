@@ -25,6 +25,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Menu,
+  PanelLeft,
   PanelRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -40,7 +41,7 @@ import {
 import { childMapByParent } from '@/ui';
 import { getClient } from '@/lib/opencode-sdk';
 import { getFileIcon } from '@/features/files/components/file-icon';
-import { normalizeAppPathname, getCurrentInstanceIdFromPathname, getActiveInstanceIdFromCookie, toInstanceAwarePath } from '@/lib/instance-routes';
+import { normalizeAppPathname, getCurrentInstanceIdFromPathname, getActiveInstanceIdFromCookie, toInstanceAwarePath } from '@kortix/sdk/instance-routes';
 import {
   Tooltip,
   TooltipContent,
@@ -59,7 +60,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useRightSidebarSafe } from '@/components/ui/sidebar-right-provider';
-import { isDesktop, desktopPlatform } from '@/lib/desktop';
+import { isDesktop, desktopShellPlatform, type DesktopShellPlatform } from '@/lib/desktop';
 
 const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
 
@@ -573,15 +574,16 @@ export function TabBar() {
   const sidebar = useSidebar();
   const rightSidebar = useRightSidebarSafe();
 
-  // On macOS Tauri with the sidebar collapsed to its icon rail, the inset
-  // begins right where the OS traffic lights end — push the back/forward
-  // chevrons right so they're not flush against the lights. SSR-safe via
-  // useEffect (window only exists client-side under Tauri).
-  const [isMacDesktop, setIsMacDesktop] = useState(false);
+  // Desktop has no icon rail — a collapsed sidebar is fully hidden (offcanvas),
+  // so the tab bar reaches the window's left edge and the macOS traffic lights
+  // sit on top of it. Indent past the lights and show the sidebar toggle there.
+  // SSR-safe via useEffect (window only exists client-side under the shell).
+  const [desktopShell, setDesktopShell] = useState<DesktopShellPlatform | null>(null);
   useEffect(() => {
-    setIsMacDesktop(isDesktop() && desktopPlatform() === 'macos');
+    setDesktopShell(desktopShellPlatform());
   }, []);
-  const needsTrafficLightSpace = isMacDesktop && sidebar.state === 'collapsed';
+  const sidebarHidden = desktopShell !== null && sidebar.state === 'collapsed';
+  const needsTrafficLightSpace = desktopShell === 'macos' && sidebar.state === 'collapsed';
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -1099,12 +1101,28 @@ export function TabBar() {
         <div
           className={cn(
             'flex-shrink-0 flex items-center gap-0 pr-1 hidden md:flex',
-            // Traffic lights now sit centered inside the 72px collapsed rail, so
-            // they no longer spill into the inset — only a small breathing inset
-            // is needed for the back/forward chevrons.
-            needsTrafficLightSpace ? 'pl-3' : 'pl-2',
+            // Sidebar hidden on macOS → the traffic lights (x 10–62) overlay
+            // this leading group; start past them with the same 10px breathing
+            // room the lights keep from the window edge.
+            needsTrafficLightSpace ? 'pl-[4.5rem]' : 'pl-2',
           )}
         >
+          {/* Sidebar hidden on desktop → reopen control lives here, next to
+              the window controls. Opens the full sidebar (no icon rail). */}
+          {sidebarHidden && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={sidebar.toggleSidebar}
+                  className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground/50 hover:text-muted-foreground transition-[color,transform] duration-150 ease-out active:scale-[0.96] cursor-pointer"
+                  aria-label="Open sidebar"
+                >
+                  <PanelLeft className="cn-rtl-flip h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">Open sidebar</TooltipContent>
+            </Tooltip>
+          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <button

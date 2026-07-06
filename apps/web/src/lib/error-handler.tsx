@@ -5,7 +5,7 @@ import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-st
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import * as Sentry from '@sentry/nextjs';
-import { BillingError, formatBillingErrorForUI, isBillingError } from './api/errors';
+import { BillingError, formatBillingErrorForUI, isBillingError } from '@kortix/sdk/react';
 
 const TOP_UP_LABEL = 'Top up';
 const MANAGE_PLAN_LABEL = 'Manage plan';
@@ -253,11 +253,12 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
       typeof v2Detail?.active_sessions === 'number' ? v2Detail.active_sessions : undefined;
     const title =
       limit !== undefined
-        ? `You're at your session limit (${active ?? limit}/${limit})`
-        : 'Session limit reached';
+        ? `You've reached your plan's concurrent-session limit (${active ?? limit}/${limit})`
+        : 'Concurrent-session limit reached';
     if (!shouldSuppressDuplicate(v2Status, title)) {
       warningToast(title, {
-        description: 'Close a running session, or upgrade your plan for more.',
+        description:
+          'Upgrade your plan for a higher limit, or contact the Kortix team to raise it for your account.',
         duration: 6000,
         button: (
           <Button
@@ -284,13 +285,10 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   // Legacy 402 paths (no structured code) — preserved behaviour.
   const errorUI = formatBillingErrorForUI(error);
   if (errorUI) {
-    const detail = (error as BillingError)?.detail as
-      | { code?: string; message?: string; balance?: number }
-      | undefined;
-
-    const message = detail?.message?.toLowerCase() || '';
-    const isCreditsExhausted =
-      message.includes('credit') || message.includes('balance') || message.includes('insufficient');
+    // formatBillingErrorForUI already ran the credits-exhausted classification
+    // (its own regex over detail.message) to pick a title — reuse that result
+    // instead of re-deriving it here with a second, separately-maintained regex.
+    const isCreditsExhausted = errorUI.alertTitle === 'You ran out of credits';
 
     if (isCreditsExhausted) {
       useAccountSettingsModalStore.getState().openAccountSettings({

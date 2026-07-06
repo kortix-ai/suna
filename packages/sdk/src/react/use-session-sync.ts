@@ -149,7 +149,7 @@ export function useSessionSync(sessionId: string) {
 					if (!current || current.length === 0) {
 						useSyncStore.getState().hydrate(
 							sessionId,
-							cached.messages.map((info: any) => ({
+							cached.messages.map((info: Message) => ({
 								info,
 								parts: cached.parts[info.id] ?? [],
 							})),
@@ -195,7 +195,7 @@ export function useSessionSync(sessionId: string) {
 					const res = await getClient().session.messages({
 					sessionID: sessionId,
 				});
-				const data = (res.data ?? []) as any[];
+				const data = res.data ?? [];
 
 				if (data.length === 0) {
 					const freshState = useSyncStore.getState();
@@ -212,7 +212,7 @@ export function useSessionSync(sessionId: string) {
 				}
 
 				if (res.data) {
-					useSyncStore.getState().hydrate(sessionId, res.data as any);
+					useSyncStore.getState().hydrate(sessionId, res.data);
 					// Persist to IDB for next cold load
 					const state = useSyncStore.getState();
 					const msgs = state.messages[sessionId] ?? [];
@@ -351,13 +351,13 @@ export function useSessionSync(sessionId: string) {
 							getClient().session.status().catch(() => null),
 						]);
 						if (msgRes.data) {
-							useSyncStore.getState().hydrate(sessionId, msgRes.data as any);
+							useSyncStore.getState().hydrate(sessionId, msgRes.data);
 						}
 						// Update session status from server — without this,
 						// a dead SSE means session.idle never arrives and the
 						// UI stays stuck on "busy" forever.
 						if (statusRes?.data) {
-							const statuses = statusRes.data as Record<string, any>;
+							const statuses = statusRes.data;
 							const serverStatus = statuses[sessionId];
 							if (serverStatus) {
 								useSyncStore.getState().setStatus(sessionId, serverStatus);

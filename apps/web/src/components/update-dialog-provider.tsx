@@ -3,9 +3,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useUpdateDialogStore } from '@/stores/update-dialog-store';
 import { useGlobalSandboxUpdate } from '@/hooks/platform/use-global-sandbox-update';
-import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
+import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { UpdateDialog } from '@/components/update-dialog';
-import type { UpdatePhase } from '@/lib/platform-client';
+import type { UpdatePhase } from '@kortix/sdk/platform-client';
 
 const DEV_PHASES: UpdatePhase[] = ['pulling', 'patching', 'stopping', 'restarting', 'verifying', 'complete'];
 

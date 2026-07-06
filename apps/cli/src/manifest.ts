@@ -1,21 +1,25 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { parse as parseToml } from 'smol-toml';
 import {
   ENV_NAME_RE,
-  validateManifest,
+  type ManifestFormat,
   type ManifestIssue,
+  manifestCandidatePaths,
+  parseManifestText,
+  validateManifest,
 } from '@kortix/manifest-schema';
 
-/** The `[env]` contract from kortix.toml — names the runtime needs. */
+/** The `[env]` contract from the manifest — names the runtime needs. */
 export interface EnvSpec {
   required: string[];
   optional: string[];
 }
 
 export interface LocalManifest {
-  /** Absolute path to the kortix.toml we read. */
+  /** Absolute path to the manifest we read (kortix.yaml or kortix.toml). */
   path: string;
+  /** The on-disk format — toml or yaml. */
+  format: ManifestFormat;
   raw: string;
   data: Record<string, unknown>;
   env: EnvSpec;
@@ -57,21 +61,44 @@ export function envSpecFromManifest(data: Record<string, unknown>): EnvSpec {
   };
 }
 
+/**
+ * Resolve the on-disk manifest, preferring `kortix.yaml` over `kortix.toml`
+ * (the dual-format rule). Returns the first candidate that exists, or null when
+ * the repo has no manifest.
+ */
+export function resolveLocalManifest(
+  cwd: string = process.cwd(),
+): { path: string; format: ManifestFormat } | null {
+  for (const cand of manifestCandidatePaths()) {
+    const abs = resolve(cwd, cand.path);
+    if (existsSync(abs)) return { path: abs, format: cand.format };
+  }
+  return null;
+}
+
+/** Absolute path of the manifest — the existing file if any, else the canonical
+ *  `kortix.toml` (used for "where to write / look" messages when none exists). */
 export function manifestPath(cwd: string = process.cwd()): string {
-  return resolve(cwd, 'kortix.toml');
+  return resolveLocalManifest(cwd)?.path ?? resolve(cwd, 'kortix.toml');
 }
 
 /**
- * Parse the local kortix.toml. Returns null when there's no manifest (a
- * project may be `.kortix/`-only). Throws smol-toml's `TomlError` on a syntax
- * error — callers surface that as the "does it compile" failure.
+ * Parse the local manifest (kortix.yaml or kortix.toml). Returns null when
+ * there's no manifest (a project may be `.kortix/`-only). Throws the parser's
+ * syntax error — callers surface that as the "does it compile" failure.
  */
 export function loadLocalManifest(cwd: string = process.cwd()): LocalManifest | null {
-  const path = manifestPath(cwd);
-  if (!existsSync(path)) return null;
-  const raw = readFileSync(path, 'utf8');
-  const data = parseToml(raw) as Record<string, unknown>;
-  return { path, raw, data, env: envSpecFromManifest(data) };
+  const resolved = resolveLocalManifest(cwd);
+  if (!resolved) return null;
+  const raw = readFileSync(resolved.path, 'utf8');
+  const data = parseManifestText(raw, resolved.format);
+  return {
+    path: resolved.path,
+    format: resolved.format,
+    raw,
+    data,
+    env: envSpecFromManifest(data),
+  };
 }
 
 /**
@@ -87,11 +114,12 @@ export function lintManifest(data: Record<string, unknown>): ManifestIssues {
 }
 
 /**
- * Validate the on-disk kortix.toml from raw text. Returns a syntax-error
- * issue when the TOML doesn't parse; otherwise runs the canonical schema.
+ * Validate a manifest from raw text. Returns a syntax-error issue when it
+ * doesn't parse; otherwise runs the canonical schema. Pass the `format` so a
+ * `kortix.yaml` is parsed as YAML (defaults to TOML for back-compat).
  */
-export function lintManifestText(raw: string): ManifestIssues {
-  const { issues } = validateManifest(raw);
+export function lintManifestText(raw: string, format: ManifestFormat = 'toml'): ManifestIssues {
+  const { issues } = validateManifest(raw, format);
   return classifyIssues(issues);
 }
 

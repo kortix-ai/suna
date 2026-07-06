@@ -2,6 +2,7 @@
 
 import { ApiKeyGate } from '@/components/api-key-gate';
 import { BrandMark } from '@/components/brand-mark';
+import { LoginGate } from '@/components/login-gate';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
@@ -18,17 +19,22 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { clearApiKey, getApiKey, kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
+import { clearSessionToken, getSessionToken } from '@/lib/session';
 import { relativeTime } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FolderGit2, Loader2, LogOut, Plus, Users } from 'lucide-react';
+import { FolderGit2, Loader2, LogOut, Plus, Receipt, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import { useWrapperMode } from './providers';
 
 export default function Home() {
+  const wrapperMode = useWrapperMode();
   const [ready, setReady] = useState<boolean | null>(null);
-  useEffect(() => setReady(!!getApiKey()), []);
+  useEffect(() => {
+    setReady(wrapperMode ? !!getSessionToken() : !!getApiKey());
+  }, [wrapperMode]);
 
   if (ready === null) {
     return (
@@ -37,18 +43,36 @@ export default function Home() {
       </div>
     );
   }
-  if (!ready) return <ApiKeyGate onReady={() => setReady(true)} />;
+  if (!ready) {
+    return wrapperMode ? (
+      <LoginGate onReady={() => setReady(true)} />
+    ) : (
+      <ApiKeyGate onReady={() => setReady(true)} />
+    );
+  }
   return (
     <Dashboard
+      wrapperMode={wrapperMode}
       onDisconnect={() => {
-        clearApiKey();
+        if (wrapperMode) {
+          clearSessionToken();
+          fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+        } else {
+          clearApiKey();
+        }
         setReady(false);
       }}
     />
   );
 }
 
-function Dashboard({ onDisconnect }: { onDisconnect: () => void }) {
+function Dashboard({
+  wrapperMode,
+  onDisconnect,
+}: {
+  wrapperMode: boolean;
+  onDisconnect: () => void;
+}) {
   const projects = useQuery({ queryKey: qk.projects, queryFn: () => kortix.projects.list() });
   const items = projects.data ?? [];
 
@@ -58,11 +82,19 @@ function Dashboard({ onDisconnect }: { onDisconnect: () => void }) {
         <div className="mx-auto flex max-w-4xl items-center justify-between px-5 py-3">
           <BrandMark />
           <div className="flex items-center gap-1">
-            <Link href="/account">
-              <Button variant="ghost" size="sm">
-                <Users className="size-4" /> Account
-              </Button>
-            </Link>
+            {wrapperMode ? (
+              <Link href="/usage">
+                <Button variant="ghost" size="sm">
+                  <Receipt className="size-4" /> Usage
+                </Button>
+              </Link>
+            ) : (
+              <Link href="/account">
+                <Button variant="ghost" size="sm">
+                  <Users className="size-4" /> Account
+                </Button>
+              </Link>
+            )}
             <Button variant="ghost" size="sm" onClick={onDisconnect}>
               <LogOut className="size-4" /> Disconnect
             </Button>
@@ -88,9 +120,9 @@ function Dashboard({ onDisconnect }: { onDisconnect: () => void }) {
             ))}
           {projects.isError && (
             <Card className="col-span-full p-4 text-sm text-destructive">
-              Couldn&apos;t load projects — check your API key.{' '}
+              Couldn&apos;t load projects — {wrapperMode ? 'try signing in again' : 'check your API key'}.{' '}
               <button className="underline" onClick={onDisconnect}>
-                Reconnect
+                {wrapperMode ? 'Sign out' : 'Reconnect'}
               </button>
             </Card>
           )}

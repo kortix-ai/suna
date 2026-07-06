@@ -20,7 +20,7 @@ import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui
 import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { isBillingEnabled } from '@/lib/config';
-import { listAccounts, type KortixAccount } from '@/lib/projects-client';
+import { listAccounts, type KortixAccount } from '@kortix/sdk/projects-client';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';

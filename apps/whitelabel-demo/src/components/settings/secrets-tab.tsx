@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
+import type { ProjectSecret } from '@kortix/sdk/projects-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { GitBranch, KeyRound, Loader2, Trash2, UserCog } from 'lucide-react';
 import { useState } from 'react';
@@ -57,8 +58,7 @@ export function SecretsTab({ projectId }: { projectId: string }) {
     onError: () => toast.error('Could not save git credential'),
   });
 
-  const raw = secrets.data as any;
-  const items: any[] = Array.isArray(raw) ? raw : (raw?.items ?? []);
+  const items: ProjectSecret[] = secrets.data?.items ?? [];
 
   return (
     <div className="space-y-4">
@@ -156,14 +156,14 @@ function SecretRow({
   removing,
 }: {
   projectId: string;
-  secret: any;
+  secret: ProjectSecret;
   onChanged: () => void;
   onRemove: () => void;
   removing: boolean;
 }) {
-  const name = String(secret?.name ?? '');
-  const mine = secret?.mine as { active: boolean } | null;
-  const effective = String(secret?.effective_source ?? 'none');
+  const name = secret.name;
+  const mine = secret.mine;
+  const effective = secret.effective_source;
   const [personal, setPersonal] = useState('');
 
   const setPersonalMut = useMutation({

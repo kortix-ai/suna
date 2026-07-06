@@ -1,11 +1,19 @@
 import { platformConfig } from '../../platform/config';
 
+// Linear trailing-slash strip — the regex form (/\/+$/) backtracks
+// quadratically on adversarial input (CodeQL js/polynomial-redos).
+function stripTrailingSlashes(s: string): string {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47 /* '/' */) end--;
+  return s.slice(0, end);
+}
+
 /**
  * The backend base URL. All sandbox traffic routes through the backend's
  * unified preview proxy: /v1/p/{sandboxId}/{port}/*
  */
 export function getBackendUrl(): string {
-  return (platformConfig().backendUrl || 'http://localhost:8008/v1').replace(/\/+$/, '');
+  return stripTrailingSlashes(platformConfig().backendUrl || 'http://localhost:8008/v1');
 }
 
 export function getDefaultSandboxUrl(): string {
@@ -31,5 +39,22 @@ export function getSandboxServerUrl(sandboxId: string): string {
  */
 export function getSandboxUrlForExternalId(externalId: string): string {
   return getSandboxServerUrl(externalId);
+}
+
+/**
+ * Derive the base URL for the backend's UNAUTHENTICATED public-share proxy
+ * (`/v1/p/public-share/{token}/{port}` — see
+ * `apps/api/src/sandbox-proxy/routes/public-share.ts`), mirroring how
+ * {@link getSandboxUrlForExternalId} derives the authenticated
+ * `/v1/p/{externalId}/{port}` route. Pure function of the token — no
+ * dependency on the active server.
+ *
+ * The backend blocks the opencode API port (8000) on this route
+ * (`PUBLIC_SHARE_BLOCKED_PORTS` in `apps/api/src/shared/session-public-shares.ts`)
+ * — this only ever reaches a shared preview port or the file share, never a
+ * session's opencode `/session`/`/session/:id/message` API.
+ */
+export function getPublicShareUrlForToken(token: string, port: number): string {
+  return `${getBackendUrl()}/p/public-share/${token}/${port}`;
 }
 

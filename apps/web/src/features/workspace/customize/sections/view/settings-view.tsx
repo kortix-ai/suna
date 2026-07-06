@@ -48,7 +48,7 @@ import {
   type ExperimentalFeatureView,
   type KortixProject,
   type ProjectDetail,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { TrashSolid } from '@mynaui/icons-react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
@@ -112,7 +112,6 @@ export function SettingsView({ projectId }: { projectId: string }) {
             </section>
           )}
           <ExperimentalCard project={project} canManage={!!canManage} />
-          <SandboxProviderCard project={project} canManage={!!canManage} />
           {canManage && (
             <section className="space-y-4">
               <Label>
@@ -318,6 +317,7 @@ function ExperimentalCard({ project, canManage }: { project: KortixProject; canM
                 canManage={canManage}
               />
             ))}
+            <SandboxProviderRow project={project} canManage={canManage} />
           </div>
         </DisclosureContent>
       </Disclosure>
@@ -373,13 +373,13 @@ function ExperimentalFeatureRow({
   );
 }
 
-// Per-project sandbox-provider pin. Overrides the platform's weighted distribution
-// for THIS project only — e.g. put one project on Platinum even when the fleet is
-// mostly Daytona. Options come from the project payload (`available_sandbox_providers`
-// = the enabled set), so the backend + UI agree without a separate providers call.
-// Self-hides when the platform exposes a single provider (nothing to choose).
+// Per-project sandbox-provider pin — rendered as a row INSIDE the Experimental list.
+// Overrides the platform's weighted distribution for THIS project only (e.g. put one
+// project on Platinum even when the fleet is mostly Daytona). Options come from the
+// project payload (`available_sandbox_providers` = the usable set). Hidden only when
+// no provider is usable.
 const AUTO_PROVIDER = '__auto__';
-function SandboxProviderCard({
+function SandboxProviderRow({
   project,
   canManage,
 }: {
@@ -404,46 +404,43 @@ function SandboxProviderCard({
     onError: (error: Error) => errorToast(error.message || 'Failed to update sandbox provider'),
   });
 
-  if (available.length < 2) return null;
+  if (available.length === 0) return null;
 
   const label = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
 
   return (
-    <section className="space-y-4">
-      <Label>Sandbox provider</Label>
-      <div className="bg-popover flex items-center justify-between gap-4 rounded-md border px-4 py-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="text-foreground text-sm font-medium">Provider</p>
-            <Badge variant="highlight" size="sm">
-              Experimental
-            </Badge>
-          </div>
-          <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-            Pin this project to a specific sandbox provider, overriding the platform
-            default. New sessions here run on the chosen provider — “Automatic”
-            follows the platform default.
-          </p>
+    <div className="flex items-center justify-between gap-4 px-4 py-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="text-foreground text-sm font-medium">Sandbox provider</p>
+          <Badge variant="highlight" size="sm">
+            Experimental
+          </Badge>
         </div>
-        <Select
-          value={current ?? AUTO_PROVIDER}
-          onValueChange={(v) => mutation.mutate(v === AUTO_PROVIDER ? null : v)}
-          disabled={!canManage || mutation.isPending}
-        >
-          <SelectTrigger className="w-40 shrink-0" variant="popover">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={AUTO_PROVIDER}>Automatic</SelectItem>
-            {available.map((p) => (
-              <SelectItem key={p} value={p}>
-                {label(p)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+          Pin this project to a specific sandbox provider, overriding the platform
+          default. New sessions here run on the chosen provider — “Automatic” follows
+          the platform default.
+        </p>
       </div>
-    </section>
+      <Select
+        value={current ?? AUTO_PROVIDER}
+        onValueChange={(v) => mutation.mutate(v === AUTO_PROVIDER ? null : v)}
+        disabled={!canManage || mutation.isPending}
+      >
+        <SelectTrigger className="w-40 shrink-0" variant="popover">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={AUTO_PROVIDER}>Automatic</SelectItem>
+          {available.map((p) => (
+            <SelectItem key={p} value={p}>
+              {label(p)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 

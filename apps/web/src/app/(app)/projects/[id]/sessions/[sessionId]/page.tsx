@@ -8,12 +8,13 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
+import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
 import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
+import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
 import { useAccountState } from '@/hooks/billing';
 import {
   clearOpencodeEnsureGuard,
@@ -21,15 +22,19 @@ import {
 } from '@/hooks/opencode/use-canonical-opencode-session';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { isBillingEnabled } from '@/lib/config';
-import { clearSessionFresh, isSessionFresh } from '@/lib/fresh-sessions';
-import { setActiveInstanceCookie } from '@/lib/instance-routes';
-import { formatOpenCodeRuntimeError } from '@/lib/opencode-errors';
-import { getProjectDetail, restartProjectSession, sessionStartKey } from '@/lib/projects-client';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
-import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
+import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { useSession } from '@kortix/sdk/react';
+import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
+import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
+import { formatOpenCodeRuntimeError } from '@kortix/sdk/opencode-errors';
+import {
+  getProjectDetail,
+  restartProjectSession,
+  sessionStartKey,
+} from '@kortix/sdk/projects-client';
+import { migrateStash, readStartStash, useSession } from '@kortix/sdk/react';
 
 /**
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.
@@ -50,7 +55,6 @@ export default function ProjectSessionPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
   const { user, isLoading: authLoading } = useAuth();
-
 
   // Billing gate. An account that cannot run should not start a session — the
   // backend would never provision a sandbox, so polling for one spins forever.
@@ -78,9 +82,14 @@ export default function ProjectSessionPage() {
   // seeding (no client health poll), and the canonical id. Gated on the billing
   // check so a no-plan account never spins on a sandbox that won't provision.
   // replayStartStash:false — the web has its own pending-prompt hand-off (below).
+  // chatEngine:false — this page only reads boot/lifecycle fields (switched,
+  // stage, sandbox, opencodeSessionId); `SessionChat` below mounts its own
+  // useSessionSync + useQuestionSelfHeal. Leaving the default `true` here would
+  // double-mount both against the same session for no reason.
   const session = useSession(projectId, sessionId, {
     enabled: !!user && !billingGatePending && !noPlan,
     replayStartStash: false,
+    chatEngine: false,
   });
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';
@@ -118,9 +127,13 @@ export default function ProjectSessionPage() {
     let fresh = false;
     let pending = false;
     if (typeof window !== 'undefined') {
-      pending =
-        !!sessionStorage.getItem(`opencode_pending_prompt:${sessionId}`) ||
-        !!sessionStorage.getItem(`project_pending_prompt:${sessionId}`);
+      // Was two raw legacy-key checks (`opencode_pending_prompt:<id>` /
+      // `project_pending_prompt:<id>`) — now that every producer stashes
+      // canonically under the route id (see the `migrateStash` call below),
+      // `readStartStash` is the one check that still sees a stash from any of
+      // them (canonical or legacy shape) without knowing which key it lives
+      // under.
+      pending = !!readStartStash(sessionId)?.prompt;
       fresh = pending || isSessionFresh(sessionId);
     }
     freshRef.current = fresh;
@@ -165,6 +178,20 @@ export default function ProjectSessionPage() {
                 'autoAppAppProjectsIdSessionsSessionIdPageJsxTextSubscribe40f5b8e1',
               )}
             </Button>
+          }
+        />
+      );
+    }
+
+    if (session.startError) {
+      const sessionMissing = session.startError.status === 404;
+      return (
+        <InlineSessionError
+          title="Couldn't start session"
+          message={
+            sessionMissing
+              ? 'This session is no longer available, or you do not have access to it.'
+              : session.startError.message
           }
         />
       );
@@ -233,7 +260,11 @@ export default function ProjectSessionPage() {
                 onSubmit={() => setShellSubmitted(true)}
               />
             ) : (
-              <SessionStartingLoader stage={authLoading || !user ? 'provisioning' : startStage} />
+              <SessionStartingLoader
+                stage={authLoading || !user ? 'provisioning' : startStage}
+                projectId={projectId}
+                sessionId={sessionId}
+              />
             )}
           </div>
         )}
@@ -241,7 +272,11 @@ export default function ProjectSessionPage() {
     );
   })();
 
-  return <ProjectShell projectId={projectId}>{inner}</ProjectShell>;
+  return (
+    <ProjectShell projectId={projectId}>
+      <SandboxLoadingBoundary>{inner}</SandboxLoadingBoundary>
+    </ProjectShell>
+  );
 }
 
 function ProjectSessionRuntimeConnection({ children }: { children: ReactNode }) {
@@ -346,7 +381,14 @@ function ActiveSessionChat({
   if (!pinRef.current.id && rootSessionId) pinRef.current.id = rootSessionId;
   const chatSessionId = selectedSession?.id ?? pinRef.current.id ?? rootSessionId ?? null;
 
-  // Migrate the home-composer prompt onto SessionChat's consumer key DURING RENDER.
+  // Migrate the home-composer prompt onto the canonical SDK start-stash DURING
+  // RENDER — every producer (project-home composer, `useConfigureThread`, the
+  // instant shell) stashes under the ROUTE session id (before the canonical
+  // OpenCode session exists); once it resolves, hand the stash off to
+  // `chatSessionId`'s stash, which `readStartStash` (SessionChat's
+  // pending-prompt effect, or `useSession`'s own replay) reads uniformly.
+  // `migrateStash` understands both the canonical shape and any producer that
+  // still writes the older bare-prompt legacy shape at the route id.
   const promptMigratedForRef = useRef<string | null>(null);
   if (
     typeof window !== 'undefined' &&
@@ -354,21 +396,7 @@ function ActiveSessionChat({
     promptMigratedForRef.current !== chatSessionId
   ) {
     promptMigratedForRef.current = chatSessionId;
-    const fromKey = `project_pending_prompt:${sessionId}`;
-    const pending = sessionStorage.getItem(fromKey);
-    if (pending) {
-      const toKey = `opencode_pending_prompt:${chatSessionId}`;
-      if (sessionStorage.getItem(toKey) === null) sessionStorage.setItem(toKey, pending);
-      sessionStorage.removeItem(fromKey);
-    }
-    const fromOptKey = `project_pending_options:${sessionId}`;
-    const pendingOptions = sessionStorage.getItem(fromOptKey);
-    if (pendingOptions) {
-      const toOptKey = `opencode_pending_options:${chatSessionId}`;
-      if (sessionStorage.getItem(toOptKey) === null)
-        sessionStorage.setItem(toOptKey, pendingOptions);
-      sessionStorage.removeItem(fromOptKey);
-    }
+    migrateStash(sessionId, chatSessionId);
   }
 
   // ── Readiness benchmarking marks ───────────────────────────────────────

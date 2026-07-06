@@ -2,18 +2,9 @@
 
 import { Icon as IconMynauiType, SparklesSolid, UsersGroupSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  Bell,
-  CalendarClock,
-  ChevronLeft,
-  ChevronRight,
-  Container,
-  FileCode,
-  Package,
-  type LucideIcon,
-} from 'lucide-react';
+import { Bell, CalendarClock, Container, FileCode, Package, type LucideIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { IconType } from 'react-icons/lib';
 
 import { Badge } from '@/components/ui/badge';
@@ -26,29 +17,26 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Icon } from '@/features/icon/icon';
 import Hint from '@/components/ui/hint';
-import {
-  ComposerChatInput,
-  type ComposerOptions,
-} from '@/features/session/composer-chat-input';
+import { Icon } from '@/features/icon/icon';
+import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import type { Command } from '@/hooks/opencode/use-opencode-sessions';
 import type { CustomizeSection } from '@/lib/customize-sections';
-import {
-  getProjectDetail,
-  listConnectors,
-  listProjectAccessRequests,
-  listProjectAccess,
-  listProjectSandboxes,
-  listProjectTriggers,
-  type SandboxTemplate,
-} from '@/lib/projects-client';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useCustomizeStore } from '@/stores/customize-store';
+import {
+  getProjectDetail,
+  listConnectors,
+  listProjectAccess,
+  listProjectAccessRequests,
+  listProjectSandboxes,
+  listProjectTriggers,
+  type SandboxTemplate,
+} from '@kortix/sdk/projects-client';
 import { chalkColors } from '@kortix/shared';
 import { HiOutlineViewGrid } from 'react-icons/hi';
 
@@ -133,13 +121,15 @@ export function ProjectHome({
         <SessionWelcome />
       </div>
       {pendingAccessCount > 0 ? (
-        <div className="absolute right-4 top-4 z-20">
-          <Hint label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}>
+        <div className="absolute top-4 right-4 z-20">
+          <Hint
+            label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}
+          >
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              className="relative bg-background/80 backdrop-blur-sm"
+              className="bg-background/80 relative backdrop-blur-sm"
               onClick={() => openCustomize('members')}
               aria-label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}
             >
@@ -147,7 +137,7 @@ export function ProjectHome({
               <Badge
                 size="xs"
                 variant="new"
-                className="absolute -right-1 -top-1 min-w-5 px-1 tabular-nums"
+                className="absolute -top-1 -right-1 min-w-5 px-1 tabular-nums"
               >
                 {pendingAccessCount}
               </Badge>
@@ -156,44 +146,57 @@ export function ProjectHome({
         </div>
       ) : null}
 
-      <ProjectHomeWelcomeBody projectId={projectId} />
-
-      <div className="relative z-10 shrink-0">
-        <div className="mx-auto mb-4 w-full max-w-[52rem] px-2 sm:px-4">
-          <StarterPromptsCarousel onPick={applySuggestion} />
-        </div>
-        <ComposerChatInput
-          onSend={handleSend}
-          onCommand={handleCommand}
-          projectId={projectId}
-          isBusy={busy}
-          disabled={busy}
-          autoFocus
-          placeholder={tI18nHardcoded.raw(
-            'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
-          )}
-          prefill={prefill}
-          toolbarSlot={
-            showSandboxPicker ? (
-              <SandboxPicker
-                items={sandboxItems}
-                activeSlug={activeSlug}
-                onSelect={setSelectedSlug}
-              />
-            ) : null
-          }
-        />
-      </div>
+      <ProjectHomeWelcomeBody
+        projectId={projectId}
+        onPickSuggestion={applySuggestion}
+        composer={
+          <ComposerChatInput
+            onSend={handleSend}
+            onCommand={handleCommand}
+            projectId={projectId}
+            isBusy={busy}
+            disabled={busy}
+            autoFocus
+            cardClassName="rounded-xl"
+            placeholder={tI18nHardcoded.raw(
+              'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
+            )}
+            prefill={prefill}
+            toolbarSlot={
+              showSandboxPicker ? (
+                <SandboxPicker
+                  items={sandboxItems}
+                  activeSlug={activeSlug}
+                  onSelect={setSelectedSlug}
+                />
+              ) : null
+            }
+          />
+        }
+      />
     </div>
   );
 }
 
 /**
- * The project-home empty-state body: the welcome heading + the "set up your
- * project" tiles. Shared by the project index page AND the instant session
- * shell's empty state so a brand-new session opens onto the identical surface.
+ * The project-home empty-state body, laid out like Perplexity's home: the
+ * centered welcome heading with the composer directly beneath it and the
+ * starter-prompt chips right under the input — all vertically centered — while
+ * the quiet "set up your project" pills sit at the bottom of the viewport.
+ * Shared by the project index page AND the instant session shell's empty state
+ * so a brand-new session opens onto the identical surface.
  */
-export function ProjectHomeWelcomeBody({ projectId }: { projectId: string }) {
+export function ProjectHomeWelcomeBody({
+  projectId,
+  composer,
+  onPickSuggestion,
+}: {
+  projectId: string;
+  /** The composer input rendered in the hero position, directly under the heading. */
+  composer?: ReactNode;
+  /** When provided, starter-prompt chips render directly below the composer. */
+  onPickSuggestion?: (text: string) => void;
+}) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const detail = useQuery({
     queryKey: ['project-detail', projectId],
@@ -204,143 +207,63 @@ export function ProjectHomeWelcomeBody({ projectId }: { projectId: string }) {
   const displayName = name.trim() || 'this project';
 
   return (
-    <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto">
-      <div className="flex w-full max-w-3xl items-center justify-start py-8 xl:py-8">
-        <h1 className="text-muted-foreground text-left text-[2.3rem] leading-[1.2] tracking-tight text-balance max-sm:text-3xl">
-          Give <span className="text-foreground">{displayName}</span>{' '}
-          {tI18nHardcoded.raw(
-            'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSomething18ab9904',
-          )}
-        </h1>
+    <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="m-auto flex w-full max-w-[52rem] flex-col items-center gap-8 px-2 py-8 sm:px-4">
+          <h1 className="text-muted-foreground max-w-2xl text-center text-4xl leading-[1.2] tracking-tight text-balance max-sm:text-3xl">
+            Give <span className="text-foreground">{displayName}</span>{' '}
+            {tI18nHardcoded.raw(
+              'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSomething18ab9904',
+            )}
+          </h1>
+
+          {composer || onPickSuggestion ? (
+            <div className="flex w-full flex-col items-center">
+              {composer}
+              {onPickSuggestion ? <StarterPromptChips onPick={onPickSuggestion} /> : null}
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      <ProjectHomeSections projectId={projectId} />
+      <div className="flex shrink-0 justify-center px-4 pb-6">
+        <ProjectHomeSections projectId={projectId} />
+      </div>
     </div>
   );
 }
 
-export function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [showLeftFade, setShowLeftFade] = useState(false);
-  const [showRightFade, setShowRightFade] = useState(false);
-
-  const updateScrollFades = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const { scrollLeft, scrollWidth, clientWidth } = el;
-    const maxScroll = scrollWidth - clientWidth;
-    const canScroll = maxScroll > 1;
-    if (!canScroll) {
-      setShowLeftFade(false);
-      setShowRightFade(false);
-      return;
-    }
-    setShowLeftFade(scrollLeft > 1);
-    setShowRightFade(scrollLeft < maxScroll - 1);
-  }, []);
-
-  useLayoutEffect(() => {
-    updateScrollFades();
-  }, [updateScrollFades]);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(updateScrollFades);
-    ro.observe(el);
-    el.addEventListener('scroll', updateScrollFades, { passive: true });
-    window.addEventListener('resize', updateScrollFades);
-    return () => {
-      ro.disconnect();
-      el.removeEventListener('scroll', updateScrollFades);
-      window.removeEventListener('resize', updateScrollFades);
-    };
-  }, [updateScrollFades]);
-
-  const scrollTabs = useCallback((direction: 'left' | 'right') => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const amount = Math.max(el.clientWidth * 0.75, 120);
-    el.scrollBy({
-      left: direction === 'left' ? -amount : amount,
-      behavior: 'smooth',
-    });
-  }, []);
-
+/**
+ * Starter prompt suggestions rendered as a centered, wrapping row of quiet
+ * pills directly above the composer (Perplexity-style). All prompts are
+ * visible at once — no scroll machinery; small screens show the first four.
+ */
+export function StarterPromptChips({ onPick }: { onPick: (text: string) => void }) {
   return (
-    <div className="flex items-center gap-2">
-      <div className="relative min-w-0 flex-1">
-        <div
-          className={cn(
-            'from-background pointer-events-none absolute inset-y-0 left-0 z-10 w-10 bg-gradient-to-r to-transparent transition-opacity',
-            showLeftFade ? 'opacity-100' : 'opacity-0',
-          )}
-          aria-hidden
-        />
-        <div
-          className={cn(
-            'from-background pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-gradient-to-l to-transparent transition-opacity',
-            showRightFade ? 'opacity-100' : 'opacity-0',
-          )}
-          aria-hidden
-        />
-        <div
-          ref={scrollRef}
-          className="[scrollbar-width:none] overflow-x-auto overflow-y-hidden overscroll-x-contain [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-        >
-          <div className="inline-flex w-max justify-start gap-2">
-            {STARTER_PROMPTS.map((p) => {
-              const TabIcon = p.icon;
-              const chalk = chalkColors(p.label);
-              return (
-                <Button
-                  key={p.id}
-                  value={p.id}
-                  onClick={() => onPick(p.prompt)}
-                  variant="secondary"
-                  className="shrink-0 gap-1.5 text-sm"
-                >
-                  <TabIcon
-                    className="size-4 shrink-0"
-                    style={{ color: chalk.foreground }}
-                    aria-hidden
-                  />
-                  {p.label}
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-      {showLeftFade && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="shrink-0"
-          disabled={!showLeftFade}
-          aria-label={tI18nHardcoded.raw(
-            'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrAriaf25547eb',
-          )}
-          onClick={() => scrollTabs('left')}
-        >
-          <ChevronLeft className="text-muted-foreground size-4" />
-        </Button>
-      )}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="shrink-0"
-        disabled={!showRightFade}
-        aria-label={tI18nHardcoded.raw(
-          'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrAria59321156',
-        )}
-        onClick={() => scrollTabs('right')}
-      >
-        <ChevronRight className="text-muted-foreground size-4" />
-      </Button>
+    <div className="flex flex-wrap items-center justify-center gap-2">
+      {STARTER_PROMPTS.map((p, i) => {
+        const ChipIcon = p.icon;
+        const chalk = chalkColors(p.label);
+        return (
+          <Button
+            key={p.id}
+            onClick={() => onPick(p.prompt)}
+            variant="outline"
+            size="sm"
+            className={cn(
+              'bg-background/60 shrink-0 gap-1.5 rounded-md backdrop-blur-sm',
+              i >= 4 && 'max-sm:hidden',
+            )}
+          >
+            <ChipIcon
+              className="size-3.5 shrink-0"
+              style={{ color: chalk.foreground }}
+              aria-hidden
+            />
+            {p.label}
+          </Button>
+        );
+      })}
     </div>
   );
 }
@@ -360,9 +283,9 @@ function SandboxPicker({
   const ActiveIcon = active.is_default ? Container : active.has_image ? Package : FileCode;
   const activeStateTone =
     active.daytona_state === 'active'
-      ? 'bg-emerald-500'
+      ? 'bg-kortix-green'
       : ['pulling', 'building'].includes(active.daytona_state)
-        ? 'bg-blue-500'
+        ? 'bg-kortix-blue'
         : active.daytona_state === 'missing'
           ? 'bg-muted-foreground/40'
           : 'bg-destructive';
@@ -395,9 +318,9 @@ function SandboxPicker({
               : `Dockerfile: ${tpl.dockerfile_path}`;
           const stateTone =
             tpl.daytona_state === 'active'
-              ? 'text-emerald-600 dark:text-emerald-400'
+              ? 'text-kortix-green'
               : ['pulling', 'building'].includes(tpl.daytona_state)
-                ? 'text-blue-600 dark:text-blue-400'
+                ? 'text-kortix-blue'
                 : tpl.daytona_state === 'missing'
                   ? 'text-muted-foreground'
                   : 'text-destructive';
@@ -420,13 +343,13 @@ function SandboxPicker({
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{tpl.name}</span>
                   {tpl.slug === activeSlug && (
-                    <Badge variant="outline" className="h-4 px-1 text-[10px]">
+                    <Badge variant="outline" size="xs">
                       selected
                     </Badge>
                   )}
                 </div>
                 <div className="text-muted-foreground truncate text-xs">{subtitle}</div>
-                <div className={cn('mt-0.5 text-[11px] capitalize', stateTone)}>{stateLabel}</div>
+                <div className={cn('mt-0.5 text-xs capitalize', stateTone)}>{stateLabel}</div>
               </div>
             </DropdownMenuItem>
           );
@@ -436,9 +359,16 @@ function SandboxPicker({
   );
 }
 
-function ProjectHomeSections({ projectId }: { projectId: string }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+type SetupTile = {
+  icon: LucideIcon | IconMynauiType | IconType;
+  title: string;
+  desc: string;
+  count: number | null;
+  section: CustomizeSection;
+};
+
+/** The "set up your project" entries shown as the quiet pill row. */
+function useProjectSetupTiles(projectId: string): SetupTile[] {
   const detail = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
@@ -462,114 +392,79 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
 
   const memberCount = access.data?.members.length ?? 0;
 
-  const tiles: {
-    icon: LucideIcon | IconMynauiType | IconType;
-    title: string;
-    desc: string;
-    count: number | null;
-    setupCta: string;
-    section: CustomizeSection;
-    docs: string;
-  }[] = [
+  return [
     {
       icon: HiOutlineViewGrid,
       title: 'Integrations',
       desc: 'Connect tools your agent can act in.',
       count: connectors.data?.connectors.length ?? 0,
-      setupCta: 'Connect a tool',
       section: 'connectors',
-      docs: '/docs/concepts/connections',
     },
     {
       icon: CalendarClock,
       title: 'Scheduled tasks',
       desc: 'Run work on a schedule or from an event.',
       count: triggers.data?.triggers.length ?? 0,
-      setupCta: 'Add an automation',
       section: 'schedules',
-      docs: '/docs/concepts/triggers',
     },
     {
       icon: SparklesSolid,
       title: 'Skills',
       desc: 'Repeatable workflows your agent reuses.',
       count: detail.data?.config?.skills.length ?? 0,
-      setupCta: 'Create a skill',
       section: 'skills',
-      docs: '/docs/concepts/agents',
     },
     {
       icon: Icon.Slack,
       title: 'Slack',
       desc: 'Run this project right from chat.',
       count: null,
-      setupCta: 'Connect Slack',
       section: 'channels',
-      docs: '/docs/concepts/channels',
     },
     {
       icon: UsersGroupSolid,
       title: 'Your team',
       desc: 'Invite people to run and review work.',
       count: memberCount > 1 ? memberCount : 0,
-      setupCta: 'Invite your team',
       section: 'members',
-      docs: '/docs/concepts/accounts',
     },
     {
       icon: Icon.Kortix,
       title: 'Agent',
       desc: 'Shape how your agent thinks and acts.',
       count: null,
-      setupCta: 'Configure',
       section: 'agents',
-      docs: '/docs/concepts/agents',
     },
   ];
+}
+
+function ProjectHomeSections({ projectId }: { projectId: string }) {
+  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const tiles = useProjectSetupTiles(projectId);
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col space-y-2">
-      <label className="text-muted-foreground text-sm font-medium">
-        {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextBuildbdf03b73')}
-      </label>
-      <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-        {tiles.map((tile) => {
-          const { icon: Icon, title, desc, count, section } = tile;
-          const isSet = (count ?? 0) > 0;
+    <div className="flex w-full max-w-3xl flex-wrap items-center justify-center gap-2">
+      {tiles.map((tile) => {
+        const { icon: TileIcon, title, desc, count, section } = tile;
+        const isSet = (count ?? 0) > 0;
 
-          return (
+        return (
+          <Hint key={section} label={desc} side="top">
             <Button
-              key={section}
-              role="button"
-              variant="secondary"
-              tabIndex={0}
+              variant="outline"
+              size="sm"
               onClick={() => openCustomize(section)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  openCustomize(section);
-                }
-              }}
-              className={cn(
-                'bg-secondary/80 flex h-fit items-start justify-start overflow-hidden rounded-lg px-2.5 backdrop-blur-sm',
-              )}
+              className="bg-background/60 gap-1.5 rounded-md backdrop-blur-sm"
             >
-              <span className="bg-muted flex size-10 shrink-0 items-center justify-center rounded-lg">
-                <Icon className="size-4.5" />
-              </span>
-              <div className="flex min-w-0 flex-1 flex-col items-start justify-start overflow-hidden">
-                <div className="text-foreground truncate text-sm font-medium">{title}</div>
-                <div className="text-muted-foreground truncate text-xs">{desc}</div>
-              </div>
+              <TileIcon className="text-muted-foreground size-4.5 shrink-0" />
+              {title}
               {isSet ? (
-                <Badge size="sm" variant="secondary" className="shrink-0 tabular-nums">
-                  {count}
-                </Badge>
+                <span className="text-muted-foreground text-sm tabular-nums">{count}</span>
               ) : null}
             </Button>
-          );
-        })}
-      </div>
+          </Hint>
+        );
+      })}
     </div>
   );
 }

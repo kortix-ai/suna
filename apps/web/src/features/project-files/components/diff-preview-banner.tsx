@@ -2,8 +2,9 @@
 
 import { useTranslations } from 'next-intl';
 
-import { AlertCircle, Check, Loader2, Minus } from 'lucide-react';
+import { AlertCircle, Check, Minus } from 'lucide-react';
 import { InfoBanner } from '@/components/ui/info-banner';
+import Loading from '@/components/ui/loading';
 import type { VersionDiffPreview } from '../api/change-requests';
 
 interface DiffPreviewBannerProps {
@@ -32,7 +33,7 @@ export function DiffPreviewBanner({
     return (
       <InfoBanner tone="neutral" className={className}>
         <span className="flex items-center gap-2">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />{tHardcodedUi.raw('featuresProjectFilesComponentsDiffPreviewBanner.line33JsxTextCalculatingTheDiff')}</span>
+          <Loading className="h-3.5 w-3.5 shrink-0" />{tHardcodedUi.raw('featuresProjectFilesComponentsDiffPreviewBanner.line33JsxTextCalculatingTheDiff')}</span>
       </InfoBanner>
     );
   }
@@ -67,12 +68,8 @@ export function DiffPreviewBanner({
   return (
     <InfoBanner tone="success" icon={Check} className={className}>
       {preview.files_changed} file{preview.files_changed === 1 ? '' : 's'} changed{' '}
-      <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-        +{preview.additions}
-      </span>{' '}
-      <span className="font-semibold text-red-600 dark:text-red-400">
-        −{preview.deletions}
-      </span>
+      <span className="text-kortix-green font-semibold">+{preview.additions}</span>{' '}
+      <span className="text-kortix-red font-semibold">−{preview.deletions}</span>
     </InfoBanner>
   );
 }

@@ -225,6 +225,101 @@ export async function getProjectSession(
   );
 }
 
+/** One governed action an agent took in a session (from the executor audit). */
+export interface SessionAuditAction {
+  execution_id: string;
+  action: string;
+  connector_id: string | null;
+  /** Connector slug — `${connector}.${action}` is the fully-qualified tool
+   *  path project policies match against. Null on very old rows whose
+   *  connector was deleted. */
+  connector?: string | null;
+  /** ok | error | denied | pending_approval */
+  status: string;
+  /** read | write | destructive | null */
+  risk: string | null;
+  acted_by: string | null;
+  acted_by_email: string | null;
+  /** Who resolved the gated action — set for both approve and deny; null while
+   *  still awaiting a decision. */
+  resolved_by: string | null;
+  resolved_by_email: string | null;
+  result_summary: Record<string, unknown> | null;
+  at: string;
+  resolved_at: string | null;
+}
+
+export interface SessionAudit {
+  session_id: string;
+  agent: string | null;
+  /** False when the account lacks the Enterprise `auditAccess` entitlement —
+   *  `actions` then contains only unresolved pending approvals, not the full
+   *  historical trail. Absent on older backends (treat as true). */
+  audit_access?: boolean;
+  count: number;
+  actions: SessionAuditAction[];
+}
+
+/** Per-session audit trail: every executor-gated action the agent took, with its
+ *  risk + allow/ask/block verdict + who resolved it. Visible to anyone who can
+ *  see the session (its launcher + project managers). */
+export async function getSessionAudit(
+  projectId: string,
+  sessionId: string,
+  limit?: number,
+  options?: { showErrors?: boolean },
+) {
+  const qs = limit ? `?limit=${limit}` : '';
+  return unwrap(
+    await backendApi.get<SessionAudit>(`/projects/${projectId}/sessions/${sessionId}/audit${qs}`, {
+      showErrors: options?.showErrors,
+    }),
+  );
+}
+
+export interface SessionTranscriptToolCall {
+  tool: string;
+  status: string | null;
+}
+
+export interface SessionTranscriptMessage {
+  role: string;
+  created: string | null;
+  completed: string | null;
+  text: string;
+  tools: SessionTranscriptToolCall[];
+  files: Array<{ filename: string | null; mime: string | null }>;
+  reasoning_omitted: boolean;
+  error: { name?: string; message?: string } | null;
+}
+
+/** Compact server-side transcript read — text + tool calls, stripped of tool
+ *  inputs/outputs, for project automation (callable with project-scoped
+ *  session tokens, unlike the raw sandbox proxy). */
+export interface SessionTranscript {
+  available: boolean;
+  reason: string | null;
+  opencode_session_id: string | null;
+  message_count: number;
+  messages: SessionTranscriptMessage[];
+}
+
+export async function getSessionTranscript(
+  projectId: string,
+  sessionId: string,
+  options?: { limit?: number; chars?: number },
+) {
+  const search = new URLSearchParams();
+  if (options?.limit != null) search.set('limit', String(options.limit));
+  if (options?.chars != null) search.set('chars', String(options.chars));
+  const qs = search.toString();
+  return unwrap(
+    await backendApi.get<SessionTranscript>(
+      `/projects/${projectId}/sessions/${sessionId}/transcript${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
 export async function updateProjectSession(
   projectId: string,
   sessionId: string,
@@ -259,6 +354,19 @@ export async function restartProjectSession(
   return unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/restart`,
+      {},
+    ),
+  );
+}
+
+/** Manual pause: stops the running sandbox in place, resumable via start(). */
+export async function stopProjectSession(
+  projectId: string,
+  sessionId: string,
+) {
+  return unwrap(
+    await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
+      `/projects/${projectId}/sessions/${sessionId}/stop`,
       {},
     ),
   );

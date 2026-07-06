@@ -60,8 +60,6 @@ import {
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
-import { kickWarmBaseBuild } from './snapshots/warm-bake';
-import { warmSnapshotsEnabled } from './shared/daytona';
 import { startLegacyMigrationWorker, stopLegacyMigrationWorker } from './projects/legacy-migration-worker';
 import { registerLegacyMigrationRoutes } from './projects/legacy-migration-routes';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
@@ -356,7 +354,6 @@ const HealthSchema = z
     memory_mb: z.number(),
     timestamp: z.string(),
     billing_enabled: z.boolean(),
-    warm_snapshots: z.boolean(),
     tunnel: z.any(),
     leader: z.boolean(),
     trigger_scheduler: z.any(),
@@ -378,10 +375,6 @@ const healthHandler = (c: any) =>
     memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
     timestamp: new Date().toISOString(),
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
-    // Whether the Daytona warm-snapshot path is live in this env (flag + key +
-    // warm target all present) — see snapshots/warm-bake.ts. Surfaced here so a
-    // misconfigured env var is visible remotely instead of failing silently.
-    warm_snapshots: warmSnapshotsEnabled(),
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
     // The leader pod's trigger-sweep heartbeat: when it last ran, how long it
@@ -684,6 +677,14 @@ app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/acce
 import { setupLinksPublicApp } from './setup-links/public-app';
 app.route('/v1/setup-links', setupLinksPublicApp); // /v1/setup-links/{secret,connector}/:token
 
+// Public session shares — PUBLIC, share-id-gated. Anonymous, read-only
+// session title + sanitized transcript for a valid session public-share
+// (any resource type SESS-13's CRUD creates); backs the logged-out
+// `/share/[shareId]` viewer (apps/web). No auth, no client-side sandbox
+// access — the API reads the sandbox's OpenCode daemon server-side.
+import { publicSessionSharesApp } from './public-session-shares';
+app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
+
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
@@ -885,10 +886,6 @@ async function startSingletonWorkers() {
   // the first session anywhere lands on a cache hit. Idempotent + best-effort;
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
-  // Experimental: pre-bake the shared memory-state warm base so the first
-  // session can boot from it (~1.3s). No-op unless the warm_snapshot admin toggle
-  // is on + DAYTONA_WARM_TARGET is set; best-effort.
-  kickWarmBaseBuild();
   startLegacyMigrationWorker();
   startSunaMigrationWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row

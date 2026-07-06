@@ -1,16 +1,20 @@
 // IAM V2 REST surface — groups, super-admin promotion, effective-permission
-// probes, account-wide gates (MFA, sessions, PAT policy), and integrations
-// (SCIM, SAML SSO, service accounts).
+// probes, account-wide gates (MFA, sessions, PAT policy), custom roles, and
+// integrations (SCIM, SAML SSO, service accounts).
 //
-// V1 surfaces (policies, custom roles, permission boundary, strict mode,
-// approvals, break-glass, external grants, project groups, drift,
-// analytics, simulator, policy templates) were removed in PR5c when the
-// V2 engine became the only authorization path. The V1 backend modules
-// they relied on were removed in PR5d. The underlying iam_policies /
-// iam_roles / iam_role_permissions / iam_break_glass_grants /
-// iam_approval_requests / project_groups DB tables still exist but are
-// no longer read from or written to — dropping them is a final
-// destructive step gated on operator sign-off.
+// Older V1 surfaces (permission boundary, strict mode, approvals,
+// break-glass, external grants, drift, analytics, simulator, policy
+// templates) were removed in PR5c when the V2 engine became the only
+// authorization path; their backend modules were removed in PR5d, and the
+// iam_break_glass_grants / iam_approval_requests tables are dead (dropping
+// them is a final destructive step gated on operator sign-off).
+//
+// Custom roles + policies were REBUILT from scratch in Phase 3 of
+// feat/iam-rbac-v1 (June 2026, ./iam/custom-roles.ts): DB-backed custom
+// roles (iam_roles / iam_role_actions) and role bindings (iam_policies) are
+// live, Enterprise-entitlement-gated ('rbac'), and read by the V2 engine
+// (../iam/engine-v2.ts), which unions their granted actions additively on
+// top of the fixed built-in preset roles. These tables are NOT dead.
 //
 // Every handler asserts the relevant IAM action via assertAuthorized()
 // from the engine entry-point in ../iam.
@@ -28,6 +32,7 @@ import './iam/members'; // super-admin, member groups / project-access / effecti
 import './iam/mfa'; // account-wide MFA enforcement
 import './iam/scim-tokens'; // SCIM provisioning tokens
 import './iam/sso'; // SAML SSO provider + group mappings
+import './iam/enterprise-demo'; // self-serve enterprise-preview toggle
 import './iam/policies'; // session policy, active sessions / revoke, PAT policy
 import './iam/service-accounts'; // service accounts (non-human IAM principals)
 import './iam/custom-roles'; // IAM v1: custom roles + action sets + principal→role policies

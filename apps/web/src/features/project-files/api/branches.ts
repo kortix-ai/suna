@@ -5,7 +5,7 @@
  * Git terms internally and the UI translates.
  */
 
-import { listProjectBranches, type ProjectBranchesResponse } from '@/lib/projects-client';
+import { listProjectBranches, type ProjectBranchesResponse } from '@kortix/sdk/projects-client';
 
 export async function fetchBranches(projectId: string): Promise<ProjectBranchesResponse> {
   return listProjectBranches(projectId);

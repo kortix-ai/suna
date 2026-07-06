@@ -1016,8 +1016,9 @@ function writeCompose(instance: string): void {
     restart: unless-stopped
 
   # One-shot: provision the database schema before the API serves traffic.
-  # On a FRESH db this installs the non-kortix prerequisites (basejump etc.)
-  # then applies all migrations; on an already-provisioned db it is a no-op.
+  # On a FRESH db this installs the non-kortix prerequisites (public credit
+  # RPCs, welcome webhook, storage buckets) then applies all migrations; on an
+  # already-provisioned db it is a no-op.
   # Runs the migrator from the API image, which bundles migrations + runner.
   kortix-migrate:
     image: \${API_IMAGE}
@@ -1138,7 +1139,6 @@ ALTER ROLE supabase_admin WITH PASSWORD '${sqlString(env.POSTGRES_PASSWORD)}';
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 CREATE EXTENSION IF NOT EXISTS pg_net;
 CREATE SCHEMA IF NOT EXISTS kortix;
-CREATE SCHEMA IF NOT EXISTS basejump;
 `;
 
   writeFileSync(join(dbDir, 'roles.sql'), roles, 'utf8');

@@ -18,6 +18,7 @@ import { Icon } from '@/features/icon/icon';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
+import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { useSandboxRecovery } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import {
   buildSandboxTemplate,
@@ -28,7 +29,7 @@ import {
   type ProjectSnapshotStatus,
   type SandboxTemplate,
   type SnapshotErrorCategory,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
@@ -347,6 +348,7 @@ function TemplateRow({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
+  const { version: manifestVersion } = useProjectManifestVersion(projectId);
   const buildMut = useMutation({
     mutationFn: () => buildSandboxTemplate(projectId, template.template_id!),
     onSuccess: () => {
@@ -372,7 +374,13 @@ function TemplateRow({
       ? `Image: ${template.image}`
       : `Dockerfile: ${template.dockerfile_path}`;
   const sourceTag =
-    template.source === 'platform' ? 'platform' : template.source === 'ui' ? 'UI' : 'kortix.toml';
+    template.source === 'platform'
+      ? 'platform'
+      : template.source === 'ui'
+        ? 'UI'
+        : manifestVersion === 2
+          ? 'kortix.yaml'
+          : 'kortix.toml';
   const stateInfo = describeState(template.daytona_state);
   const stateBadge = DAYTONA_TONE_BADGE[stateInfo.tone];
   const StateIcon =
@@ -485,6 +493,7 @@ export function SandboxView({ projectId }: { projectId: string }) {
     queryFn: () => getProject(projectId),
     staleTime: 20_000,
   });
+  const { version: manifestVersion } = useProjectManifestVersion(projectId);
   const canManage = projectQuery.data?.effective_project_role === 'manager';
 
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -581,8 +590,18 @@ export function SandboxView({ projectId }: { projectId: string }) {
               {tI18nHardcoded.raw(
                 'autoComponentsProjectsSandboxSnapshotCardJsxTextAtBootAdd8305ffcd',
               )}{' '}
-              <code className="font-mono">[[sandbox.templates]]</code> in{' '}
-              <code className="font-mono">kortix.toml</code>.
+              {manifestVersion === 2 ? (
+                <>
+                  <code className="font-mono">sandbox.templates</code> in{' '}
+                  <code className="font-mono">kortix.yaml</code>
+                </>
+              ) : (
+                <>
+                  <code className="font-mono">[[sandbox.templates]]</code> in{' '}
+                  <code className="font-mono">kortix.toml</code>
+                </>
+              )}
+              .
             </p>
 
             {data.templates_error ? (

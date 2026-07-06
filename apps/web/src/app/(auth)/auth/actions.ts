@@ -6,6 +6,7 @@ import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { isInviteReturnUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
+import { fetchAccountStateWithToken } from '@kortix/sdk/projects-client';
 import { redirect } from 'next/navigation';
 
 function normalizeTrustedOrigin(value?: string | null): string | null {
@@ -661,12 +662,12 @@ export async function verifyOtp(prevState: any, formData: FormData) {
         '',
       );
       if (backendUrl) {
-        const accountStateRes = await fetch(`${backendUrl}/v1/billing/account-state`, {
-          headers: { Authorization: `Bearer ${data.session.access_token}` },
-          signal: AbortSignal.timeout(5000),
+        const accountState = await fetchAccountStateWithToken({
+          backendUrl,
+          accessToken: data.session.access_token,
+          timeoutMs: 5000,
         });
-        if (accountStateRes.ok) {
-          const accountState = await accountStateRes.json();
+        if (accountState) {
           if (!accountHasAppAccess(accountState)) {
             finalDestination = '/accounts';
           } else {

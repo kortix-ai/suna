@@ -1,9 +1,17 @@
-// `user` is the floor project role. The retired `viewer` tier folded into it
-// (see parseProjectRole, which still accepts `viewer` as a legacy alias).
-export type ProjectRole = 'manager' | 'editor' | 'user';
-export type AccountRole = 'owner' | 'admin' | 'member';
+// `member` is the floor project role (renamed from `user`). The retired `user`
+// and `viewer` tiers fold into it — see normalizeProjectRole in iam/role-perms.ts,
+// the canonical parser (this module no longer keeps its own copy).
+import {
+  maxProjectRole,
+  PROJECT_ROLE_RANK,
+  type AccountRole,
+  type ProjectRole,
+} from '../iam/role-perms';
+
+export type { AccountRole, ProjectRole };
+
 // 'session' sits between 'read' and 'write': any project member (a plain
-// `user` included) may start and run sessions, but not customize the project.
+// `member` included) may start and run sessions, but not customize the project.
 export type ProjectAccessAction = 'read' | 'session' | 'write' | 'manage';
 
 export function isAccountManager(role: AccountRole): boolean {
@@ -13,7 +21,7 @@ export function isAccountManager(role: AccountRole): boolean {
 export function roleAllows(role: ProjectRole | null, action: ProjectAccessAction): boolean {
   if (!role) return false;
   if (action === 'read') return true;
-  // Every project role can use sessions — `user` is the base *usable* role.
+  // Every project role can use sessions — `member` is the base *usable* role.
   if (action === 'session') return true;
   if (action === 'write') return role === 'editor' || role === 'manager';
   return role === 'manager';
@@ -25,17 +33,6 @@ export function effectiveProjectRole(
 ): ProjectRole | null {
   if (isAccountManager(accountRole)) return 'manager';
   return projectRole;
-}
-
-export function parseProjectRole(value: unknown): ProjectRole | null {
-  if (typeof value !== 'string') return null;
-  const normalized = value.trim().toLowerCase();
-  // `viewer` is a deprecated alias — fold it into `user` so legacy clients and
-  // old rows keep working, but no new `viewer` ever enters the system.
-  if (normalized === 'viewer') return 'user';
-  return normalized === 'manager' || normalized === 'editor' || normalized === 'user'
-    ? normalized
-    : null;
 }
 
 // ─── Effective access fold ───────────────────────────────────────────────
@@ -65,16 +62,6 @@ export interface EffectiveAccessFold {
   effective_project_role: ProjectRole | null;
   effective_source: AccessSourceTag | null;
   group_sources: GroupSource[];
-}
-
-const PROJECT_ROLE_RANK: Record<ProjectRole, number> = {
-  user: 1,
-  editor: 2,
-  manager: 3,
-};
-
-export function maxProjectRole(a: ProjectRole, b: ProjectRole): ProjectRole {
-  return PROJECT_ROLE_RANK[a] >= PROJECT_ROLE_RANK[b] ? a : b;
 }
 
 export function foldEffectiveProjectAccess(input: {

@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '@/lib/instance-routes';
+import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '@kortix/sdk/instance-routes';
 import { safeLocalStorage } from '@/lib/storage/managed-storage';
 
 // ============================================================================

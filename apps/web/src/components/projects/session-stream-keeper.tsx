@@ -2,12 +2,13 @@
 
 import { useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
-import type { Event as OpenCodeEvent } from '@kortix/sdk/opencode-client';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { getClientForUrl } from '@/lib/opencode-sdk';
 import { getSandboxUrlForExternalId } from '@/stores/server-store';
-import { listProjectSessions } from '@/lib/projects-client';
+import { listProjectSessions } from '@kortix/sdk/projects-client';
+import { openEventStream, type OpenCodeEvent } from '@kortix/sdk/event-stream';
+import type { Event as SyncStoreEvent } from '@kortix/sdk/opencode-client';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import {
   useProjectSessionTabsStore,
@@ -30,10 +31,17 @@ const EMPTY: string[] = [];
  *
  * Deliberately additive and isolated:
  *   - One stream per sandbox, each via its OWN per-URL client (getClientForUrl).
- *   - It only writes to the sync store — never the React Query cache, never the
- *     global active server — so it cannot disturb the active session.
+ *   - It only writes to the sync store — never the React Query cache (except
+ *     the session-list invalidation on park, below), never the global active
+ *     server — so it cannot disturb the active session.
  *   - The currently-viewed session is skipped (its route owns that stream).
- *   - Worst case (sandbox unreachable) it simply retries/no-ops.
+ *   - Streams ride the SDK's `openEventStream` primitive (connect timeout,
+ *     idle-heartbeat watchdog, exponential backoff), NOT a hand-rolled loop —
+ *     so a sandbox that is genuinely gone (archived/stopped while the session
+ *     list still claims `running`) PARKS after a bounded number of hard
+ *     failures instead of retrying 503s forever. On park we invalidate the
+ *     project's session list so the stale `running` status corrects itself
+ *     and this component unmounts the dead stream on the next render.
  */
 export function SessionStreamKeeper({ projectId }: { projectId: string }) {
   const tabs = useProjectSessionTabsStore((s) => s.tabsByProject[projectId]) ?? EMPTY;
@@ -58,6 +66,8 @@ function BackgroundSessionStream({
   projectId: string;
   sessionId: string;
 }) {
+  const queryClient = useQueryClient();
+
   // Derive the live sandbox URL from the project's session LIST (one shared
   // query across all tabs — React Query dedupes the key), NOT a per-tab call.
   // CRITICAL: a background tab must NEVER call /start — that provisions/wakes/
@@ -81,69 +91,34 @@ function BackgroundSessionStream({
     if (!externalId) return;
     const url = getSandboxUrlForExternalId(externalId);
     if (!url) return;
-    const controller = new AbortController();
-    void runBackgroundStream(url, sessionId, controller.signal);
-    return () => controller.abort();
-  }, [externalId, sessionId]);
 
-  return null;
-}
-
-/**
- * Consume a sandbox's SSE event stream and feed it into the sync store, with
- * exponential-backoff reconnect. Mirrors the active stream's consume loop but
- * intentionally minimal: no coalescing, no query-cache writes, no
- * notifications — just keep the session live.
- */
-async function runBackgroundStream(
-  url: string,
-  sessionId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  let retry = 0;
-  while (!signal.aborted) {
-    try {
-      const client = getClientForUrl(url);
-      const result = await client.global.event({
-        signal,
-        sseDefaultRetryDelay: 3000,
-        sseMaxRetryDelay: 30000,
-      } as Parameters<typeof client.global.event>[0]);
-      const { stream } = result;
-      for await (const event of stream) {
-        if (signal.aborted) break;
-        const raw = event as unknown as { payload?: OpenCodeEvent } & OpenCodeEvent;
-        const e = (raw && typeof raw === 'object' && 'payload' in raw
-          ? raw.payload
-          : raw) as OpenCodeEvent | undefined;
-        if (!e?.type) continue;
+    const handle = openEventStream({
+      client: getClientForUrl(url),
+      onEvent: (e: OpenCodeEvent) => {
         try {
-          useSyncStore.getState().applyEvent(e);
+          // The stream's event union is a superset of the sync store's `Event`
+          // (the SDK adds a few members the store simply ignores in its switch)
+          // — same boundary cast the previous hand-rolled loop made.
+          useSyncStore.getState().applyEvent(e as unknown as SyncStoreEvent);
         } catch {
           /* one bad event shouldn't kill the stream */
         }
-      }
-      retry = 0;
-    } catch (err) {
-      if (signal.aborted) break;
-      logger.warn('[session-stream-keeper] background stream error', {
-        sessionId,
-        error: String(err),
-      });
-    }
-
-    if (signal.aborted) break;
-    const delay = Math.min(1000 * 2 ** Math.min(retry++, 5), 30000);
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, delay);
-      signal.addEventListener(
-        'abort',
-        () => {
-          clearTimeout(timer);
-          resolve();
-        },
-        { once: true },
-      );
+      },
+      onParked: ({ consecutiveFailures, lastError }) => {
+        // The sandbox is genuinely unreachable (archived/stopped/dead) — the
+        // stream has permanently stopped retrying. Refresh the session list so
+        // its stale `running` status corrects itself; this component then drops
+        // to `externalId = null` on the next render and stays quiet.
+        logger.warn('[session-stream-keeper] background stream parked — sandbox unreachable', {
+          sessionId,
+          consecutiveFailures,
+          error: String(lastError),
+        });
+        void queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      },
     });
-  }
+    return () => handle.close();
+  }, [externalId, sessionId, projectId, queryClient]);
+
+  return null;
 }
