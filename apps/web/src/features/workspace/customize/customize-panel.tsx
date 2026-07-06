@@ -30,6 +30,7 @@ import { getProjectDetail, listReviewItems } from '@kortix/sdk/projects-client';
 import { AlarmClock, ArrowLeft, ChatMessages, Command, Sparkles } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
+  ArrowUpCircle,
   AudioLines,
   Bot,
   Boxes,
@@ -46,6 +47,8 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { LuSettings, LuUsersRound } from 'react-icons/lu';
+import { detectManifestVersion } from './migrate-to-v2/manifest-version';
+import { UpgradeView } from './migrate-to-v2/upgrade-view';
 import { isRailItemActive } from './rail';
 import { FilesSection } from './sections/files-section';
 import { LlmManagementView } from './sections/gateway-view';
@@ -106,14 +109,21 @@ const MEET_ITEM: RailItem = { section: 'meet', label: 'Meetings', icon: AudioLin
 
 const REVIEW_ITEM: RailItem = { section: 'review', label: 'Review', icon: Inbox };
 
+// Pinned above every group while the project is still on a v1 (kortix.toml)
+// manifest — the one-time agent-led migration to kortix.yaml. Disappears for
+// good once the project is v2.
+const UPGRADE_ITEM: RailItem = { section: 'upgrade', label: 'Upgrade to v2', icon: ArrowUpCircle };
+
 function railGroups(
   tunnelEnabled: boolean,
   marketplaceEnabled: boolean,
   llmGatewayAvailable: boolean,
   meetEnabled: boolean,
   reviewEnabled: boolean,
+  upgradeAvailable: boolean,
 ): readonly RailGroup[] {
-  return GROUPS.map((g) => {
+  const groups = upgradeAvailable ? [{ items: [UPGRADE_ITEM] }, ...GROUPS] : GROUPS;
+  return groups.map((g) => {
     if (g.label === 'Build' && marketplaceEnabled) {
       return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
     }
@@ -188,6 +198,12 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   const llmGatewayAvailable = isLlmGatewayAvailable(detail.data?.project);
   const meetEnabled = detail.data?.project?.experimental?.meet ?? false;
   const reviewEnabled = detail.data?.project?.experimental?.review_center ?? false;
+  // Only offer the v2 upgrade once the manifest read resolved to v1 — while the
+  // detail query is in flight the item stays hidden (popping IN later is fine;
+  // rendering it for an already-v2 project is not).
+  const upgradeAvailable = detail.data
+    ? detectManifestVersion(detail.data.config.manifest_raw) === 1
+    : false;
 
   // "Needs you" count for the Review rail badge. Shares the review inbox's query
   // key so the badge and the section stay in sync; only fetched when the panel is
@@ -208,7 +224,14 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
     // BOTH its flag check (baked into railGroups) AND its read-leaf probe. Empty
     // groups drop out so no orphan header renders.
     () =>
-      railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, meetEnabled, reviewEnabled)
+      railGroups(
+        tunnelEnabled,
+        marketplaceEnabled,
+        llmGatewayAvailable,
+        meetEnabled,
+        reviewEnabled,
+        upgradeAvailable,
+      )
         .map((g) => ({ ...g, items: g.items.filter((item) => isSectionAllowed(item.section)) }))
         .filter((g) => g.items.length > 0),
     [
@@ -217,6 +240,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
       llmGatewayAvailable,
       meetEnabled,
       reviewEnabled,
+      upgradeAvailable,
       isSectionAllowed,
     ],
   );
@@ -465,6 +489,8 @@ function SectionContent({
       return <MembersView projectId={projectId} />;
     case 'settings':
       return <SettingsView projectId={projectId} />;
+    case 'upgrade':
+      return <UpgradeView projectId={projectId} />;
     default:
       return null;
   }

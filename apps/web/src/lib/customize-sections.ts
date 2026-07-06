@@ -32,7 +32,8 @@ export type CustomizeSection =
   | 'meet'
   | 'sandbox'
   | 'dev'
-  | 'settings';
+  | 'settings'
+  | 'upgrade';
 
 export const DEFAULT_CUSTOMIZE_SECTION: CustomizeSection = 'files';
 
@@ -61,6 +62,7 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'sandbox',
   'dev',
   'settings',
+  'upgrade',
 ];
 
 export function parseCustomizeSection(raw: string | null | undefined): CustomizeSection | null {
