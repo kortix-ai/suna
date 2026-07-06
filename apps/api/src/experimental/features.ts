@@ -73,10 +73,10 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     name: 'Marketplace',
     description:
       'Browse and 1-click install skills from a marketplace of community & vendor registries (any SKILL.md repo). Sources, updates, and team scopes are still in flux.',
-    stability: 'experimental',
+    stability: 'beta',
     available: () => true,
-    // Off by default — experimental / WIP.
-    platformDefault: () => false,
+    // On by default for every project — no longer gated behind an opt-in toggle.
+    platformDefault: () => true,
   },
   {
     key: 'agent_tunnel',

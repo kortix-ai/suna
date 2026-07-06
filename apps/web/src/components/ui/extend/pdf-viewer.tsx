@@ -162,7 +162,7 @@ export type PDFViewerProps = {
   ) => void
 }
 
-const DEFAULT_ZOOM = 1
+const DEFAULT_ZOOM = 0.5
 const ZOOM_OPTIONS = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 const PAGE_GAP = 24
 const THUMBNAIL_PAGE_WIDTH = 92
@@ -1818,8 +1818,8 @@ function PDFViewerInner({
   const { state: zoomState, provides: zoom } = useZoom(documentId)
   const { provides: thumbnails } = useThumbnailCapability()
   const { plugin: thumbnailPlugin } = useThumbnailPlugin()
-  // Kortix divergence from upstream: thumbnail sidebar starts open.
-  const [sidebarOpen, setSidebarOpen] = React.useState(true)
+  // Kortix divergence from upstream: thumbnail sidebar starts closed.
+  const [sidebarOpen, setSidebarOpen] = React.useState(false)
   const [isPreparingDownload, setIsPreparingDownload] = React.useState(false)
   const [pageRotationDeltas, setPageRotationDeltas] =
     React.useState<PageRotationDeltas>(() => new Map())

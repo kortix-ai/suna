@@ -398,8 +398,10 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(Object.keys(lock.items).sort()).toContain('kortix-memory');
     expect(Object.keys(lock.items).sort()).toContain('kortix-executor');
     expect(Object.keys(lock.items).sort()).toContain('kortix-slack');
-    expect(Object.keys(lock.items).sort()).toContain('kortix-computer');
     expect(Object.keys(lock.items).sort()).not.toContain('account-research');
+    // kortix-computer now lives in the marketplace tier (opt-in), not the base
+    // floor — it's absent here because this request didn't select it.
+    expect(Object.keys(lock.items).sort()).not.toContain('kortix-computer');
     expect(lock.items['agent-browser'].type).toBe('registry:skill');
     expect(lock.items['agent-browser'].source).toBe('kortix-starter');
     expect(lock.items['agent-browser'].sourceType).toBe('local');

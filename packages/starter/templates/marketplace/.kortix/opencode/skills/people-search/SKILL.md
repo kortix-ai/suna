@@ -1,7 +1,6 @@
 ---
 name: people-search
 description: "Find people — track down a specific person, or assemble a shortlist who match a profile (title + industry + geography + skill). Use to locate a named individual, build a sourcing/recruiting/outreach list, or answer 'who is the X at Y' / 'find people who Z'. Backed by the people_search tool (LinkedIn profile search → structured profiles)."
-defaultProjectInstall: true
 ---
 
 # People Search
