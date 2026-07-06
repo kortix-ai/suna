@@ -17,6 +17,8 @@ interface KortixHyperLogoProps extends Omit<MotionProps, 'children'> {
   delay?: number;
   startOnView?: boolean;
   animateOnHover?: boolean;
+  /** Replay the reveal continuously — use when this is a loading indicator. */
+  loop?: boolean;
 }
 
 export function KortixHyperLogo({
@@ -26,12 +28,14 @@ export function KortixHyperLogo({
   delay = 0,
   startOnView = true,
   animateOnHover = true,
+  loop = false,
   ...props
 }: KortixHyperLogoProps) {
   const clipId = useId();
   const [cells, setCells] = useState<Cell[]>(() => buildCells(false));
   const [progress, setProgress] = useState(1);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [cycle, setCycle] = useState(0);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   const handleAnimationTrigger = () => {
@@ -72,6 +76,7 @@ export function KortixHyperLogo({
 
   useEffect(() => {
     let animationFrameId: number | null = null;
+    let restartTimer: ReturnType<typeof setTimeout> | null = null;
 
     if (isAnimating) {
       const startTime = performance.now();
@@ -84,7 +89,15 @@ export function KortixHyperLogo({
           animationFrameId = requestAnimationFrame(animate);
         } else {
           setProgress(1);
-          setIsAnimating(false);
+          if (loop) {
+            // hold the resolved logo briefly, then re-scramble and replay
+            restartTimer = setTimeout(() => {
+              setCells(buildCells(true));
+              setCycle((c) => c + 1);
+            }, 700);
+          } else {
+            setIsAnimating(false);
+          }
         }
       };
 
@@ -94,8 +107,9 @@ export function KortixHyperLogo({
 
     return () => {
       if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
+      if (restartTimer !== null) clearTimeout(restartTimer);
     };
-  }, [duration, isAnimating]);
+  }, [duration, isAnimating, loop, cycle]);
 
   const fillPhase = Math.min(progress / 0.6, 1);
   const solidOpacity = progress <= 0.6 ? 0 : (progress - 0.6) / 0.4;
