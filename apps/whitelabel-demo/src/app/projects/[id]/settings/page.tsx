@@ -124,18 +124,28 @@ function GeneralTab() {
   });
 
   const current = project.data?.name ?? '';
-  const fileCount = (detail.data as any)?.file_count;
-  const modelCount = catalog.data
-    ? Object.keys((catalog.data as any).models ?? {}).length
-    : undefined;
-  const healthState = (health.data as any)?.status ?? (health.isError ? 'unknown' : undefined);
+  const fileCount = detail.data?.file_count;
+  const modelCount = catalog.data ? Object.keys(catalog.data.models).length : undefined;
+  // `ProjectSandboxHealth` has no `.status` — this used to read one anyway
+  // (masked by an `as any` cast), so the Runtime stat always fell through to
+  // the `isError` branch. Derive the label from the real `ready`/`building`/
+  // `latest_failure` fields instead.
+  const healthState = health.data?.ready
+    ? 'ready'
+    : health.data?.building
+      ? 'building'
+      : health.data?.latest_failure
+        ? 'failed'
+        : health.isError
+          ? 'unknown'
+          : undefined;
 
-  const p = (project.data ?? {}) as Record<string, any>;
-  const repoUrl: string | undefined = p.git_origin_url || p.repo_url || undefined;
+  const p = project.data;
+  const repoUrl: string | undefined = p?.repo_url || undefined;
   const repoLabel = repoUrl
     ? repoUrl.replace(/^https?:\/\//, '').replace(/\.git$/, '')
     : undefined;
-  const baseRef: string | undefined = p.base_ref || p.default_branch || undefined;
+  const baseRef: string | undefined = p?.default_branch || undefined;
 
   return (
     <div className="space-y-4">
@@ -172,10 +182,10 @@ function GeneralTab() {
           />
           {baseRef && <InfoRow label="Default branch" value={baseRef} mono />}
           <InfoRow label="Project ID" value={projectId} mono />
-          {p.account_id && <InfoRow label="Account" value={p.account_id} mono />}
-          {p.status && <InfoRow label="Status" value={p.status} />}
-          <InfoRow label="Created" value={fmtDate(p.created_at)} />
-          <InfoRow label="Last updated" value={fmtDate(p.updated_at)} />
+          {p?.account_id && <InfoRow label="Account" value={p.account_id} mono />}
+          {p?.status && <InfoRow label="Status" value={p.status} />}
+          <InfoRow label="Created" value={fmtDate(p?.created_at)} />
+          <InfoRow label="Last updated" value={fmtDate(p?.updated_at)} />
         </dl>
       </Card>
 

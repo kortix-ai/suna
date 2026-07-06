@@ -52,14 +52,58 @@ const DEFAULT: KortixPlatformConfig = {
 
 let current: KortixPlatformConfig | null = null;
 
-export function configureKortix(config: KortixPlatformConfig): void {
+/**
+ * Per-request override hook, registered ONLY by `@kortix/sdk/server`'s
+ * Node-only `AsyncLocalStorage` layer (`config-node.ts`) — see `runWithKortix`/
+ * `createScopedKortix` there. A browser bundle never imports that subpath, so
+ * this stays `null` for it and `platformConfig()` behaves exactly as before
+ * (reads the process-global `current`). Not part of the public API — do not
+ * call `__setConfigResolver` directly; use `runWithKortix`/`createScopedKortix`.
+ */
+let configResolver: (() => KortixPlatformConfig | undefined) | null = null;
+
+/** @internal Registration seam for `@kortix/sdk/server`. Not for host use. */
+export function __setConfigResolver(fn: (() => KortixPlatformConfig | undefined) | null): void {
+  configResolver = fn;
+}
+
+/** @internal Test-only introspection, so a test file that flips the resolver
+ *  (e.g. to exercise the no-resolver fallback path) can snapshot + restore
+ *  whatever was registered before it, instead of clobbering a resolver another
+ *  test file registered in the same process (bun runs all `src/**\/*.test.ts`
+ *  files in one process, sharing this module's state). */
+export function __getConfigResolver(): (() => KortixPlatformConfig | undefined) | null {
+  return configResolver;
+}
+
+/**
+ * Wire the platform seam. `current` is a process-wide singleton — safe for a
+ * host with exactly one config for its whole lifetime (a browser tab, a CLI,
+ * a single-tenant server), but UNSAFE for a server process that must serve
+ * concurrent requests carrying different tokens (see the warning on
+ * `ServerTokenOptions` in `projects-client/shared.ts`): the last caller to
+ * `configureKortix()`/`createKortix()` wins for every other in-flight request.
+ * For that "Kortix as a Backend" shape, use `runWithKortix`/`createScopedKortix`
+ * from `@kortix/sdk/server` instead — they isolate each call's config in a
+ * Node `AsyncLocalStorage` context instead of this shared global.
+ *
+ * `opts.global === false` (used internally by `createScopedKortix`) skips the
+ * global write entirely, so a scoped client never touches/clobbers `current`.
+ */
+export function configureKortix(config: KortixPlatformConfig, opts?: { global?: boolean }): void {
+  if (opts?.global === false) return;
   current = config;
 }
 
+/**
+ * The platform config in effect for THIS call: an active `runWithKortix`/
+ * `createScopedKortix` scope if one is on the current async context, else the
+ * process-global `current` set by `configureKortix()`, else the inert default.
+ */
 export function platformConfig(): KortixPlatformConfig {
-  return current ?? DEFAULT;
+  return configResolver?.() ?? current ?? DEFAULT;
 }
 
 export function isConfigured(): boolean {
-  return current !== null;
+  return current !== null || configResolver?.() !== undefined;
 }

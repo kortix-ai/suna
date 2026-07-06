@@ -1,4 +1,32 @@
+import type { Model } from '@opencode-ai/sdk/v2/client';
 import { GATEWAY_PROVIDER_IDS, type ProviderListResponse } from './use-opencode-sessions';
+
+/**
+ * Some provider payloads aren't the full opencode `Model` shape — notably the
+ * synthetic "kortix" provider built from the project llm-catalog endpoint
+ * (see `projectLlmCatalogToProviderList`), whose models carry a flatter,
+ * models.dev-ish shape instead of `Model.capabilities`/`Model.cost`/etc. This
+ * union covers both without lying about the shape via `any`; every field
+ * access below is narrowed via `hasCapabilities` rather than cast.
+ */
+type LooseModel =
+  | Model
+  | {
+      id?: string;
+      name?: string;
+      variants?: Record<string, Record<string, unknown>>;
+      reasoning?: boolean;
+      tool_call?: boolean;
+      modalities?: { input?: string[]; output?: string[] };
+      limit?: { context?: number; output?: number };
+      release_date?: string;
+      family?: string;
+      cost?: { input?: number; output?: number };
+    };
+
+function hasCapabilities(model: LooseModel): model is Model {
+  return 'capabilities' in model && model.capabilities != null;
+}
 
 /**
  * Flat model list + the flattening logic (relocated from web's session-chat-input —
@@ -41,36 +69,41 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
     // Defense in depth: the provider list is already source-filtered to the
     // gateway, but never render a native (bypass) provider even if one slips in.
     if (!GATEWAY_PROVIDER_IDS.has(p.id)) continue;
-    for (const [modelID, model] of Object.entries(p.models)) {
-      const caps = (model as any).capabilities;
-      const modalities = (model as any).modalities;
+    for (const [modelID, model] of Object.entries(p.models) as Array<[string, LooseModel]>) {
+      // Narrow `model` itself (not a copy) so the loose-shape-only fields
+      // (`reasoning`, `tool_call`, `modalities`) are safe to read below.
+      let capabilities: FlatModel['capabilities'];
+      if (hasCapabilities(model)) {
+        const caps = model.capabilities;
+        capabilities = {
+          reasoning: caps.reasoning ?? false,
+          vision: caps.input?.image ?? false,
+          toolcall: caps.toolcall ?? false,
+        };
+      } else {
+        capabilities = {
+          reasoning: model.reasoning ?? false,
+          vision: model.modalities?.input?.includes('image') ?? false,
+          toolcall: model.tool_call ?? false,
+        };
+      }
       result.push({
         providerID: p.id,
         providerName: p.name,
         modelID,
         modelName: (model.name || modelID).replace('(latest)', '').trim(),
         variants: model.variants,
-        capabilities: caps
+        capabilities,
+        contextWindow: model.limit?.context,
+        releaseDate: model.release_date,
+        family: model.family,
+        cost: model.cost
           ? {
-              reasoning: caps.reasoning ?? false,
-              vision: caps.input?.image ?? false,
-              toolcall: caps.toolcall ?? false,
-            }
-          : {
-              reasoning: (model as any).reasoning ?? false,
-              vision: modalities?.input?.includes('image') ?? false,
-              toolcall: (model as any).tool_call ?? false,
-            },
-        contextWindow: (model as any).limit?.context,
-        releaseDate: (model as any).release_date,
-        family: (model as any).family,
-        cost: (model as any).cost
-          ? {
-              input: (model as any).cost.input ?? 0,
-              output: (model as any).cost.output ?? 0,
+              input: model.cost.input ?? 0,
+              output: model.cost.output ?? 0,
             }
           : undefined,
-        providerSource: (p as any).source,
+        providerSource: p.source,
       });
     }
   }

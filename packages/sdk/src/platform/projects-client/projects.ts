@@ -172,6 +172,49 @@ export async function inviteRepoCollaborator(
   );
 }
 
+export interface ManifestValidationIssue {
+  [key: string]: unknown;
+}
+
+export interface ManifestValidationResult {
+  valid: boolean;
+  issues: ManifestValidationIssue[];
+}
+
+/**
+ * Validate a `kortix.toml` manifest's raw TOML text server-side — the same
+ * schema the CLI (`kortix ship` pre-flight / `kortix validate`) and the CR-merge
+ * gate exercise. Always resolves (never throws on an invalid manifest) — the
+ * verdict is in the body.
+ */
+export async function validateProjectManifest(
+  projectId: string,
+  raw: string,
+): Promise<ManifestValidationResult> {
+  return unwrap(
+    await backendApi.post<ManifestValidationResult>(`/projects/${projectId}/manifest/validate`, { raw }),
+    'Failed to validate manifest',
+  );
+}
+
+export interface ProjectGitToken {
+  push_token: string;
+  repo_id: string | null;
+  repo_url: string | null;
+}
+
+/**
+ * Mint a fresh scoped git push token for a *managed* project (so the CLI can
+ * `kortix ship` without persisting credentials in git config). Throws (409)
+ * for BYO projects — they push with the user's own git remote auth.
+ */
+export async function getProjectGitToken(projectId: string): Promise<ProjectGitToken> {
+  return unwrap(
+    await backendApi.post<ProjectGitToken>(`/projects/${projectId}/git-token`, {}),
+    'Failed to mint git token',
+  );
+}
+
 /** True when this project's repo is a Kortix-managed GitHub repo (invitable). */
 export function isManagedGithubProject(project: { metadata?: Record<string, unknown> | null }): boolean {
   const git = (project.metadata as { git?: { provider?: string; managed?: boolean } } | undefined)?.git;

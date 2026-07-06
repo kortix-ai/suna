@@ -44,9 +44,9 @@ export function extractSendErrorMessage(error: unknown): string {
   if (typeof error === 'string') return error;
   if (error instanceof Error) return error.message;
   if (typeof error === 'object') {
-    const err = error as Record<string, any>;
-    const root = err.data ?? err;
-    const msg = root?.message || err.message || root?.error || err.error;
+    const err = error as Record<string, unknown>;
+    const root = (err.data as Record<string, unknown> | undefined) ?? err;
+    const msg = root.message || err.message || root.error || err.error;
     if (typeof msg === 'string') return msg;
     try {
       return JSON.stringify(err);
@@ -204,7 +204,7 @@ export function useOpenCodeMessages(sessionId: string) {
     isLoading,
     isError: false,
     error: null,
-    refetch: async () => ({ data: messages } as any),
+    refetch: async () => ({ data: messages }),
   };
 }
 
@@ -307,7 +307,7 @@ export async function promptOpenCodeMessage({
       const client = getClient();
       // The SDK resolves (not rejects) on HTTP errors, returning
       // { error, response } instead of throwing.
-      const result = await client.session.promptAsync(payload as any);
+      const result = await client.session.promptAsync(payload);
       if (!result?.error) return; // 204 — server accepted the prompt.
       error = result.error;
       status = (result.response as Response | undefined)?.status;
@@ -317,9 +317,14 @@ export async function promptOpenCodeMessage({
 
     const delay = getSendRetryDelayMs(attempt, status, error);
     if (delay === null) {
-      const err = error as any;
-      const message = err?.data?.message || err?.message || 'Failed to send message';
-      const wrapped = new Error(message) as SendOpenCodeMessageError;
+      const err =
+        error && typeof error === 'object' ? (error as Record<string, unknown>) : undefined;
+      const errData =
+        err?.data && typeof err.data === 'object' ? (err.data as Record<string, unknown>) : undefined;
+      const message = errData?.message || err?.message || 'Failed to send message';
+      const wrapped = new Error(
+        typeof message === 'string' ? message : 'Failed to send message',
+      ) as SendOpenCodeMessageError;
       if (status) {
         wrapped.status = status;
         wrapped.response = { status };
@@ -349,8 +354,8 @@ export function useAbortOpenCodeSession() {
       // we force-refresh the session status from the server.
       try {
         const statusResult = await client.session.status();
-        const statuses = statusResult.data as Record<string, any>;
-        const serverStatus = statuses[sessionId];
+        const statuses = statusResult.data;
+        const serverStatus = statuses?.[sessionId];
         if (serverStatus && serverStatus.type !== 'idle') {
           // Server still thinks we're busy - update the store with server's view
           // This can happen if SSE events were missed

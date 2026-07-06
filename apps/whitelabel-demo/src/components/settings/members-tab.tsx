@@ -15,6 +15,12 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
+import type {
+  PendingProjectInvite,
+  ProjectAccessMember,
+  ProjectAccessRequest,
+  ProjectGroupGrant,
+} from '@kortix/sdk/projects-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Loader2, Mail, Send, Trash2, Users, X } from 'lucide-react';
 import { useState } from 'react';
@@ -119,13 +125,12 @@ export function MembersTab({ projectId }: { projectId: string }) {
     onError: () => toast.error('Could not revoke invite'),
   });
 
-  const accessData = access.data as any;
-  const members: any[] = Array.isArray(accessData) ? accessData : (accessData?.members ?? []);
-  const requestItems: any[] = ((requests.data as any)?.requests ?? []).filter(
-    (r: any) => (r?.status ?? 'pending') === 'pending',
+  const members: ProjectAccessMember[] = access.data?.members ?? [];
+  const requestItems: ProjectAccessRequest[] = (requests.data?.requests ?? []).filter(
+    (r) => r.status === 'pending',
   );
-  const pendingItems: any[] = (pending.data as any)?.pending ?? [];
-  const grantItems: any[] = (grants.data as any)?.grants ?? [];
+  const pendingItems: PendingProjectInvite[] = pending.data?.pending ?? [];
+  const grantItems: ProjectGroupGrant[] = grants.data?.grants ?? [];
 
   return (
     <div className="space-y-4">

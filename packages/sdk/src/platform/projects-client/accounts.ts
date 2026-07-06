@@ -1,6 +1,7 @@
 // Accounts — account CRUD, members, and account-level invitations.
 
 import { backendApi } from '../api-client';
+import type { ApiError } from '../api/errors';
 import { serverTokenGet, unwrap, type AccountRole, type ServerTokenOptions } from './shared';
 
 export interface KortixAccount {
@@ -245,4 +246,39 @@ export async function fetchAccountsWithToken(
   opts: ServerTokenOptions,
 ): Promise<KortixAccount[] | null> {
   return serverTokenGet<KortixAccount[]>(opts, '/v1/accounts');
+}
+
+/** The identity `GET /accounts/me` resolves — the authenticated user + their account memberships. */
+export interface AccountIdentity {
+  user_id: string;
+  email: string;
+  token_context?: {
+    auth_type: string | null;
+    project_id: string | null;
+    session_id: string | null;
+    agent: string | null;
+    connectors: 'all' | string[] | null;
+    kortix_cli: 'all' | string[] | null;
+  };
+  accounts: Array<{ account_id: string; slug: string; name: string; role: string }>;
+}
+
+export interface ValidateTokenResult {
+  valid: boolean;
+  identity?: AccountIdentity;
+  error?: ApiError;
+}
+
+/**
+ * The "did I paste a valid API key?" check — hits `GET /accounts/me` and
+ * NEVER throws, unlike every other call in this module. Built for a
+ * pasted-token UX (a CLI/SDK setup screen) that wants to render "invalid
+ * token" inline rather than catch an exception.
+ */
+export async function validateToken(): Promise<ValidateTokenResult> {
+  const res = await backendApi.get<AccountIdentity>('/accounts/me', { showErrors: false });
+  if (!res.success || !res.data) {
+    return { valid: false, error: res.error };
+  }
+  return { valid: true, identity: res.data };
 }

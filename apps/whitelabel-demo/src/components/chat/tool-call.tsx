@@ -3,12 +3,18 @@
 /**
  * One agent tool call, rendered as a tidy collapsible card: an icon + humanized
  * name + a one-line summary derived from the args, a live status indicator, and
- * (expanded) the input args + output. Generic over every opencode tool — we read
- * the well-known arg keys and fall back gracefully.
+ * (expanded) the input args + output.
+ *
+ * Takes a normalized `ToolView` from `@kortix/sdk/turns` (`classifyPart`'s tool
+ * variant) instead of the raw wire tool part — status is already mapped to
+ * 'pending'|'running'|'done'|'error', and the icon comes from `toolInfo`'s
+ * `category` (a real registry keyed on tool name) instead of string-sniffing
+ * the tool name (`t.includes('bash')` etc.).
  */
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
+import { type ToolCategory, type ToolView, toolInfo } from '@kortix/sdk/turns';
 import {
   Bot,
   Check,
@@ -17,7 +23,6 @@ import {
   FileText,
   FolderSearch,
   Globe,
-  ListChecks,
   Loader2,
   type LucideIcon,
   Pencil,
@@ -26,30 +31,20 @@ import {
   Wrench,
 } from 'lucide-react';
 
-type AnyPart = Record<string, any>;
+const CATEGORY_ICON: Record<ToolCategory, LucideIcon> = {
+  shell: SquareTerminal,
+  files: FileText,
+  edit: Pencil,
+  search: FolderSearch,
+  web: Globe,
+  task: Bot,
+  other: Wrench,
+};
 
-function meta(tool: string): { icon: LucideIcon; label: string } {
-  const t = tool.toLowerCase();
-  if (t.includes('bash') || t.includes('shell') || t.includes('exec'))
-    return { icon: SquareTerminal, label: 'Terminal' };
-  if (t.includes('webfetch') || t.includes('fetch') || t.includes('http'))
-    return { icon: Globe, label: 'Fetch' };
-  if (t.includes('glob') || t.includes('list') || t === 'ls')
-    return { icon: FolderSearch, label: 'Find files' };
-  if (t.includes('grep') || t.includes('search')) return { icon: Search, label: 'Search' };
-  if (t.includes('edit') || t.includes('patch')) return { icon: Pencil, label: 'Edit' };
-  if (t.includes('write') || t.includes('create')) return { icon: FileText, label: 'Write' };
-  if (t.includes('read') || t.includes('view') || t.includes('cat'))
-    return { icon: FileText, label: 'Read' };
-  if (t.includes('todo')) return { icon: ListChecks, label: 'Plan' };
-  if (t.includes('task') || t.includes('agent')) return { icon: Bot, label: 'Subagent' };
-  return { icon: Wrench, label: tool.replace(/[._-]/g, ' ') };
-}
-
-function summarize(input: AnyPart | undefined): string {
-  if (!input || typeof input !== 'object') return '';
-  const i = input as AnyPart;
-  return (
+function summarize(input: Record<string, unknown> | undefined): string {
+  if (!input) return '';
+  const i = input as Record<string, unknown>;
+  const value =
     i.command ??
     i.filePath ??
     i.path ??
@@ -59,30 +54,26 @@ function summarize(input: AnyPart | undefined): string {
     i.url ??
     i.description ??
     i.prompt ??
-    ''
-  )
-    ?.toString()
+    '';
+  return String(value ?? '')
     .split('\n')[0]
     .slice(0, 140);
 }
 
-function StatusDot({ status }: { status: string }) {
+function StatusDot({ status }: { status: ToolView['status'] }) {
   if (status === 'running' || status === 'pending')
     return <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />;
   if (status === 'error') return <CircleAlert className="size-3.5 shrink-0 text-destructive" />;
   return <Check className="size-3.5 shrink-0 text-emerald-500" />;
 }
 
-export function ToolCall({ part }: { part: AnyPart }) {
-  const tool: string = part.tool ?? 'tool';
-  const state: AnyPart = part.state ?? {};
-  const status: string = state.status ?? 'completed';
-  const { icon: Icon, label } = meta(tool);
-  const summary = summarize(state.input);
-  const output: string | undefined =
-    typeof state.output === 'string' ? state.output : state.error ? String(state.error) : undefined;
+export function ToolCall({ tool }: { tool: ToolView }) {
+  const { category } = toolInfo(tool.name);
+  const Icon = CATEGORY_ICON[category] ?? Wrench;
+  const summary = summarize(tool.input);
+  const output = tool.output ?? tool.error;
 
-  const hasDetail = !!summary || !!output || (state.input && Object.keys(state.input).length > 0);
+  const hasDetail = !!summary || !!output || (tool.input && Object.keys(tool.input).length > 0);
 
   return (
     <Collapsible className="rounded-lg border border-border bg-card/50">
@@ -91,12 +82,12 @@ export function ToolCall({ part }: { part: AnyPart }) {
         className="group flex w-full items-center gap-2 px-2.5 py-2 text-left disabled:cursor-default"
       >
         <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="shrink-0 text-xs font-medium text-foreground">{label}</span>
+        <span className="shrink-0 text-xs font-medium text-foreground">{tool.title}</span>
         {summary && (
           <span className="truncate font-mono text-xs text-muted-foreground">{summary}</span>
         )}
         <span className="ml-auto flex items-center gap-1.5">
-          <StatusDot status={status} />
+          <StatusDot status={tool.status} />
           {hasDetail && (
             <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
           )}
@@ -105,16 +96,16 @@ export function ToolCall({ part }: { part: AnyPart }) {
       {hasDetail && (
         <CollapsibleContent>
           <div className="space-y-2 border-t border-border px-2.5 py-2">
-            {state.input && Object.keys(state.input).length > 0 && (
+            {tool.input && Object.keys(tool.input).length > 0 && (
               <pre className="max-h-48 overflow-auto rounded-md bg-muted/50 p-2 font-mono text-[0.7rem] leading-relaxed text-muted-foreground scrollbar-thin">
-                {JSON.stringify(state.input, null, 2)}
+                {JSON.stringify(tool.input, null, 2)}
               </pre>
             )}
             {output && (
               <pre
                 className={cn(
                   'max-h-72 overflow-auto rounded-md bg-muted/50 p-2 font-mono text-[0.7rem] leading-relaxed scrollbar-thin',
-                  status === 'error' ? 'text-destructive' : 'text-foreground/80',
+                  tool.status === 'error' ? 'text-destructive' : 'text-foreground/80',
                 )}
               >
                 {output.slice(0, 6000)}

@@ -1,10 +1,18 @@
 import { test, expect, beforeEach, mock } from 'bun:test';
 import { configureKortix } from '../platform/config';
+import { setCurrentRuntime } from '../state/current-runtime';
 
-let activeUrl = '';
-mock.module('../state/server-store/active', () => ({
-  getActiveOpenCodeUrl: () => activeUrl,
-}));
+// This file used to fake `getActiveOpenCodeUrl` entirely via
+// `mock.module('../state/server-store/active', ...)`. That's a process-wide,
+// permanent-for-the-sweep override (see the hermetic-pattern comment below) —
+// and since it replaced the WHOLE module with only one export, any other file
+// that imports `state/server-store/active` for real (e.g. a direct test of
+// that module) would see every other export silently gutted to `undefined`.
+// Driving the same "active runtime url" control through the REAL state seam
+// instead (`setCurrentRuntime` — the same primitive `getActiveOpenCodeUrl`
+// itself reads — plus `configureKortix({ billingEnabled: true })` so "no
+// active session" resolves to '', matching the old default) gives this file
+// identical control with no mock at all — nothing left to collide with.
 
 // This file must be hermetic against process-wide `mock.module('../platform/auth', ...)`
 // registrations made by OTHER test files (files/client.test.ts, opencode/env.test.ts,
@@ -49,9 +57,12 @@ const {
 beforeEach(() => {
   resetClient();
   resetPublicClient();
-  activeUrl = '';
+  setCurrentRuntime(null);
   authToken = 'test-token';
-  configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => authToken ?? null });
+  // billingEnabled: true so `getActiveOpenCodeUrl()` resolves to '' with no
+  // active session (matching this file's old `activeUrl = ''` default),
+  // instead of the self-hosted local-dev fallback sandbox url.
+  configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => authToken ?? null, billingEnabled: true });
 });
 
 function captureRequests() {
@@ -159,7 +170,7 @@ function captureRawFetchCalls(response: () => Response) {
 }
 
 test('systemReload POSTs {url}/kortix/services/system/reload with the mode and returns the parsed result', async () => {
-  activeUrl = 'http://sbx.test';
+  setCurrentRuntime('http://sbx.test', 'active-sbx');
   const calls = captureRawFetchCalls(
     () =>
       new Response(JSON.stringify({ success: true, mode: 'dispose-only', steps: ['a'], errors: [] }), {
@@ -177,12 +188,12 @@ test('systemReload POSTs {url}/kortix/services/system/reload with the mode and r
 });
 
 test('systemReload throws when the active runtime url is not ready', async () => {
-  activeUrl = '';
+  setCurrentRuntime(null);
   await expect(systemReload('full')).rejects.toThrow('Server URL not ready');
 });
 
 test('systemReload throws with the daemon error message on a non-ok response', async () => {
-  activeUrl = 'http://sbx.test';
+  setCurrentRuntime('http://sbx.test', 'active-sbx');
   captureRawFetchCalls(
     () => new Response(JSON.stringify({ error: 'daemon unavailable' }), { status: 503 }),
   );

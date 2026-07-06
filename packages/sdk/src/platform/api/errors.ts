@@ -11,6 +11,77 @@
 // Error Classes
 // ============================================================================
 
+/** Constructor fields for {@link ApiError} — everything beyond `message`. */
+export interface ApiErrorFields {
+  status?: number;
+  code?: string;
+  /** Parsed error body (when the response carried JSON). */
+  details?: any;
+  /** Alias of `details` kept for legacy `.data` sniffers. */
+  data?: any;
+  /** The body's `detail` field (FastAPI-style), when present. */
+  detail?: any;
+  response?: Response;
+  /** Full request URL — set on timeouts so it's clear what timed out. */
+  url?: string;
+  /** Request path relative to the backend base — set on timeouts. */
+  endpoint?: string;
+  /** The timeout budget (ms) that elapsed — set on timeouts. */
+  timeout?: number;
+  /** Override `name` (e.g. 'AbortError') while keeping the class. */
+  name?: string;
+  stack?: string;
+}
+
+/**
+ * The REST error `backendApi` produces for any failed request. A real class —
+ * server-side wrappers and non-React hosts can `err instanceof ApiError` and
+ * branch on `.status`/`.code` instead of duck-typing `name === 'ApiError'`
+ * (which still works: `name` is preserved for legacy sniffers).
+ *
+ * `message` is defined as an ENUMERABLE own property on purpose: the previous
+ * ad-hoc `Object.assign(Object.create(Error.prototype), …)` objects had it
+ * enumerable, so spreads and JSON logging of these errors included it.
+ */
+export class ApiError extends Error {
+  status?: number;
+  code?: string;
+  details?: any;
+  data?: any;
+  detail?: any;
+  response?: Response;
+  url?: string;
+  endpoint?: string;
+  timeout?: number;
+
+  constructor(message: string, fields: ApiErrorFields = {}) {
+    super(message);
+    this.name = 'ApiError';
+    const { name, stack, ...rest } = fields;
+    Object.assign(this, rest);
+    if (name) this.name = name;
+    if (stack) this.stack = stack;
+    Object.defineProperty(this, 'message', {
+      value: message,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+/**
+ * "No token available" — `getToken` returned null, so the request was never
+ * sent (see `api-client.ts`). `code` is always `'NO_SESSION'`.
+ */
+export class AuthError extends ApiError {
+  constructor(message = 'Not authenticated') {
+    super(message, { code: 'NO_SESSION' });
+    this.name = 'AuthError';
+  }
+}
+
 /**
  * Generic billing error for HTTP 402 responses.
  * This is the only billing error class the backend actually triggers.

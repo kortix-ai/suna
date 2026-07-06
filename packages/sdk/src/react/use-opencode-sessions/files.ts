@@ -114,8 +114,8 @@ export async function findOpenCodeFiles(query: string): Promise<string[]> {
   // Some backends under-return root-level files via find.files(query).
   if (normalizedQuery.length > 0 && fileMatches.size < 20) {
     const [rootWorkspace, rootEmpty] = await Promise.all([
-      readEntries(client.file.list({ path: '/workspace' } as any)),
-      readEntries(client.file.list({ path: '' } as any)),
+      readEntries(client.file.list({ path: '/workspace' })),
+      readEntries(client.file.list({ path: '' })),
     ]);
     for (const entry of [...rootWorkspace, ...rootEmpty]) {
       if (entry.endsWith('/')) continue;
@@ -133,8 +133,8 @@ export async function findOpenCodeFiles(query: string): Promise<string[]> {
 
     if (!cacheFresh) {
       const roots = await Promise.all([
-        readEntries(client.file.list({ path: '/workspace' } as any)),
-        readEntries(client.file.list({ path: '' } as any)),
+        readEntries(client.file.list({ path: '/workspace' })),
+        readEntries(client.file.list({ path: '' })),
       ]);
       const rootEntries = Array.from(new Set([...roots[0], ...roots[1]]));
 
@@ -149,7 +149,7 @@ export async function findOpenCodeFiles(query: string): Promise<string[]> {
       }
 
       const childLists = await Promise.all(
-        firstLevelDirs.map((dir) => readEntries(client.file.list({ path: dir } as any))),
+        firstLevelDirs.map((dir) => readEntries(client.file.list({ path: dir }))),
       );
 
       for (const children of childLists) {

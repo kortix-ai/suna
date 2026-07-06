@@ -7,7 +7,10 @@ import {
   type OpenCodeEvent,
 } from './event-stream';
 
-const HEARTBEAT_MS = 15_000;
+// Mirrors event-stream.ts's default idle-watchdog budget (raised from 15s —
+// the server emits no idle keepalives, so a 15s budget killed healthy idle
+// sessions on a timer by design; see the HEARTBEAT_MS comment there).
+const HEARTBEAT_MS = 60_000;
 
 function sessionStatus(sessionID: string, statusType: string): OpenCodeEvent {
   return {
@@ -163,12 +166,22 @@ function createLoggingTimers(clock: FakeClock): { timers: EventStreamTimers; log
   return { timers, log };
 }
 
+// Mirrors event-stream.ts's default `connectTimeoutMs`. Every connect attempt
+// now schedules a connect-timeout timer right as it starts (before the
+// connect call resolves) — that's a second `timeout:` log entry ahead of each
+// `connect`, distinct from the real reconnect/backoff delay timer logged just
+// before it. Filtered out below so `reconnectDelaysFromLog` still reports
+// only genuine backoff delays.
+const DEFAULT_CONNECT_TIMEOUT_MS = 20_000;
+
 function reconnectDelaysFromLog(log: string[]): number[] {
   const delays: number[] = [];
   let pendingDelay: number | undefined;
   for (const entry of log) {
     if (entry.startsWith('timeout:')) {
-      pendingDelay = Number(entry.slice('timeout:'.length));
+      const ms = Number(entry.slice('timeout:'.length));
+      if (ms === DEFAULT_CONNECT_TIMEOUT_MS) continue;
+      pendingDelay = ms;
     } else if (entry === 'connect') {
       if (pendingDelay !== undefined) delays.push(pendingDelay);
       pendingDelay = undefined;
@@ -276,7 +289,16 @@ describe('openEventStream reconnect backoff', () => {
       },
     };
 
-    const handle = openEventStream({ client, onEvent: () => {}, timers });
+    // This walks 7 consecutive event-less fast disconnects — exactly one shy
+    // of the default park threshold (8). Raise the threshold so this stays a
+    // pure backoff test, decoupled from the give-up feature (covered by its
+    // own describe block below).
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      timers,
+      maxConsecutiveHardFailures: 100,
+    });
     await tick();
 
     const expectedDelays = [1000, 2000, 4000, 8000, 16000, 30000, 30000];
@@ -351,6 +373,128 @@ describe('openEventStream reconnect backoff', () => {
   });
 });
 
+describe('openEventStream connect timeout', () => {
+  test('a connect call that never resolves times out, aborts the attempt, and retries with backoff', async () => {
+    const clock = createFakeClock();
+    let attempts = 0;
+    const abortedSignals: boolean[] = [];
+    const client: EventStreamClient = {
+      global: {
+        event: async (opts) => {
+          attempts++;
+          const idx = abortedSignals.length;
+          abortedSignals.push(false);
+          opts.signal.addEventListener('abort', () => {
+            abortedSignals[idx] = true;
+          });
+          // Never resolves, rejects, or closes — models a black-holed proxy
+          // that silently swallows the connect request.
+          return new Promise<{ stream: AsyncIterable<unknown> }>(() => {});
+        },
+      },
+    };
+
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      timers: clock,
+      connectTimeoutMs: 20_000,
+    });
+    await tick();
+    expect(attempts).toBe(1);
+    expect(abortedSignals[0]).toBe(false);
+
+    // Short of the connect-timeout deadline: still hung, no abort, no retry.
+    await clock.advance(19_999);
+    await tick();
+    expect(abortedSignals[0]).toBe(false);
+    expect(attempts).toBe(1);
+
+    // Crossing the deadline aborts the hung attempt...
+    await clock.advance(1);
+    await tick();
+    expect(abortedSignals[0]).toBe(true);
+
+    // ...and reconnects through the normal (unhealthy) backoff path — min 1s,
+    // same as any other connect failure.
+    await clock.advance(1000);
+    await tick();
+    expect(attempts).toBe(2);
+
+    handle.close();
+  });
+
+  test('a connect that resolves within the budget is unaffected — no spurious abort or retry', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const dispatched: OpenCodeEvent[] = [];
+
+    const handle = openEventStream({
+      client,
+      onEvent: (e) => dispatched.push(e),
+      timers: clock,
+      connectTimeoutMs: 20_000,
+    });
+    await tick();
+    expect(channels.length).toBe(1);
+
+    // Advance most of the way toward the connect-timeout budget (short of the
+    // separate 15s heartbeat deadline, covered by its own tests) — since
+    // connect already resolved (synchronously, in this fake client), the
+    // connect-timeout timer must already be cleared and this must not force a
+    // reconnect or drop the connection.
+    await clock.advance(10_000);
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(16);
+
+    expect(dispatched.length).toBe(1);
+    expect(channels.length).toBe(1);
+
+    handle.close();
+  });
+
+  test('a slow-but-successful connect (just under budget) keeps the same attempt — no reconnect', async () => {
+    const clock = createFakeClock();
+    let resolveConnect: ((v: { stream: AsyncIterable<unknown> }) => void) | undefined;
+    let attempts = 0;
+    const client: EventStreamClient = {
+      global: {
+        event: () => {
+          attempts++;
+          return new Promise<{ stream: AsyncIterable<unknown> }>((resolve) => {
+            resolveConnect = resolve;
+          });
+        },
+      },
+    };
+
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      timers: clock,
+      connectTimeoutMs: 20_000,
+    });
+    await tick();
+    expect(attempts).toBe(1);
+
+    await clock.advance(19_999);
+    expect(attempts).toBe(1);
+
+    resolveConnect?.(({ stream: createParkingChannel([]) }));
+    await tick();
+
+    // Advance past where the (now-cleared) connect-timeout budget would have
+    // fired, but short of the 15s heartbeat deadline (a separate watchdog,
+    // covered by its own tests) — isolates that the connect timer specifically
+    // didn't leak into a second attempt.
+    await clock.advance(2000);
+    expect(attempts).toBe(1);
+
+    handle.close();
+  });
+});
+
 function createParkingChannel(chunks: unknown[]): AsyncIterable<unknown> {
   let index = 0;
   return {
@@ -372,7 +516,7 @@ function createParkingChannel(chunks: unknown[]): AsyncIterable<unknown> {
 }
 
 describe('openEventStream heartbeat watchdog', () => {
-  test('forces a reconnect and drops the event that surfaces after the 15s deadline', async () => {
+  test('forces a reconnect and drops the event that surfaces after the idle deadline', async () => {
     const clock = createFakeClock();
     const { client, channels } = createConnectableClient();
     const dispatched: OpenCodeEvent[] = [];
@@ -457,7 +601,11 @@ describe('openEventStream heartbeat watchdog', () => {
     await tick();
     expect(abortedSignals[0]).toBe(true);
 
-    await clock.advance(250);
+    // This connection delivered NO events, so a watchdog kill is NOT a
+    // "stable" disconnect — the reconnect rides the exponential backoff path
+    // (min 1s), not the 250ms fast-resume (see the storm fix in
+    // event-stream.ts).
+    await clock.advance(1000);
     await tick();
     expect(abortedSignals.length).toBe(2);
     expect(abortedSignals[1]).toBe(false);
@@ -488,6 +636,432 @@ describe('openEventStream heartbeat watchdog', () => {
     await clock.advance(1000);
     await tick();
     expect(channels.length).toBe(2);
+
+    handle.close();
+  });
+});
+
+// ── Backoff classification (the prod reconnect-storm fix): an idle
+// disconnect — watchdog kill or natural end with no events — must NEVER
+// count as "stable". Only a stream that actually delivered events resets
+// backoff to the 250ms fast path. The old time-based OR-branch ("open >10s
+// counts as stable") locked idle streams killed on any period above 10s
+// into 250ms reconnects forever. ─────────────────────────────────────────
+
+describe('openEventStream idle-disconnect backoff (reconnect-storm fix)', () => {
+  test('repeated watchdog kills of idle (event-less) connections back off exponentially, not at 250ms', async () => {
+    const clock = createFakeClock();
+    const { client } = createConnectableClient();
+    let attempts = 0;
+    const countingClient: EventStreamClient = {
+      global: {
+        event: async (opts) => {
+          attempts++;
+          return client.global.event(opts);
+        },
+      },
+    };
+
+    const handle = openEventStream({ client: countingClient, onEvent: () => {}, timers: clock });
+    await tick();
+    expect(attempts).toBe(1);
+
+    // Cycle 1: idle 60s → watchdog kill → reconnect must wait the FULL 1s
+    // exponential base, not 250ms.
+    await clock.advance(HEARTBEAT_MS);
+    await tick();
+    await clock.advance(999);
+    expect(attempts).toBe(1);
+    await clock.advance(1);
+    expect(attempts).toBe(2);
+
+    // Cycle 2: still idle → delay GROWS to 2s.
+    await clock.advance(HEARTBEAT_MS);
+    await tick();
+    await clock.advance(1999);
+    expect(attempts).toBe(2);
+    await clock.advance(1);
+    expect(attempts).toBe(3);
+
+    // Cycle 3: still idle → delay GROWS to 4s.
+    await clock.advance(HEARTBEAT_MS);
+    await tick();
+    await clock.advance(3999);
+    expect(attempts).toBe(3);
+    await clock.advance(1);
+    expect(attempts).toBe(4);
+
+    handle.close();
+  });
+
+  test('a genuinely eventful connection still resets backoff to the 250ms fast path', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const dispatched: OpenCodeEvent[] = [];
+
+    const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
+    await tick();
+    expect(channels.length).toBe(1);
+
+    // Grow backoff with two idle watchdog kills (1s, then 2s delays).
+    await clock.advance(HEARTBEAT_MS);
+    await tick();
+    await clock.advance(1000);
+    expect(channels.length).toBe(2);
+    await clock.advance(HEARTBEAT_MS);
+    await tick();
+    await clock.advance(2000);
+    expect(channels.length).toBe(3);
+
+    // The third connection delivers a REAL event → stable → backoff resets.
+    channels[2].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(16);
+    expect(dispatched.length).toBe(1);
+
+    channels[2].end();
+    await tick();
+    await clock.advance(250);
+    expect(channels.length).toBe(4);
+
+    handle.close();
+  });
+
+  test('idle heartbeat tolerance: 59s of quiet does not kill the stream; crossing 60s does, into backoff', async () => {
+    const clock = createFakeClock();
+    const abortedSignals: boolean[] = [];
+    let attempts = 0;
+    const client: EventStreamClient = {
+      global: {
+        event: async (opts) => {
+          attempts++;
+          const idx = abortedSignals.length;
+          abortedSignals.push(false);
+          opts.signal.addEventListener('abort', () => {
+            abortedSignals[idx] = true;
+          });
+          return { stream: createParkingChannel([]) };
+        },
+      },
+    };
+
+    const handle = openEventStream({ client, onEvent: () => {}, timers: clock });
+    await tick();
+    expect(attempts).toBe(1);
+
+    // 59s idle (short of the 60s budget): still alive, no watchdog abort.
+    await clock.advance(59_000);
+    await tick();
+    expect(abortedSignals[0]).toBe(false);
+    expect(attempts).toBe(1);
+
+    // Crossing the 60s budget: watchdog kills it...
+    await clock.advance(1_000);
+    await tick();
+    expect(abortedSignals[0]).toBe(true);
+
+    // ...and the reconnect rides the 1s backoff path (idle kill ≠ stable),
+    // NOT the 250ms fast-resume: nothing for 999ms, reconnect at 1s.
+    await clock.advance(999);
+    expect(attempts).toBe(1);
+    await clock.advance(1);
+    expect(attempts).toBe(2);
+
+    handle.close();
+  });
+
+  test('heartbeatTimeoutMs is configurable per stream (a 5s budget kills at 5s idle)', async () => {
+    const clock = createFakeClock();
+    const abortedSignals: boolean[] = [];
+    const client: EventStreamClient = {
+      global: {
+        event: async (opts) => {
+          const idx = abortedSignals.length;
+          abortedSignals.push(false);
+          opts.signal.addEventListener('abort', () => {
+            abortedSignals[idx] = true;
+          });
+          return { stream: createParkingChannel([]) };
+        },
+      },
+    };
+
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      timers: clock,
+      heartbeatTimeoutMs: 5_000,
+    });
+    await tick();
+
+    await clock.advance(4_999);
+    await tick();
+    expect(abortedSignals[0]).toBe(false);
+
+    await clock.advance(1);
+    await tick();
+    expect(abortedSignals[0]).toBe(true);
+
+    handle.close();
+  });
+});
+
+// ── Give-up (parked) terminal state: streams pointed at DEAD sandboxes
+// (archived/stopped sessions) used to retry forever — prod showed continuous
+// 503 loops from /p/{sandbox}/8000/global/event for multiple dead sandboxes
+// at once. After `maxConsecutiveHardFailures` consecutive event-less
+// HTTP/fast failures the stream parks: onParked fires once, no further
+// connect attempts, close() stays safe. ────────────────────────────────────
+
+/** A client whose connect always rejects instantly, like a proxy 503ing a
+ *  dead sandbox. The error carries the vendor client's `cause.status` shape. */
+function createDeadSandboxClient() {
+  let attempts = 0;
+  const client: EventStreamClient = {
+    global: {
+      event: async () => {
+        attempts++;
+        throw new Error('GET /global/event → 503 Service Unavailable', {
+          cause: { body: 'sandbox gone', status: 503 },
+        });
+      },
+    },
+  };
+  return { client, attempts: () => attempts };
+}
+
+describe('openEventStream parked state (dead-sandbox give-up)', () => {
+  test('parks after the default 8 consecutive hard failures: onParked fires once, retries stop for good', async () => {
+    const clock = createFakeClock();
+    const { client, attempts } = createDeadSandboxClient();
+    const parkedReasons: { consecutiveFailures: number; lastError: unknown }[] = [];
+
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      onParked: (reason) => parkedReasons.push(reason),
+      timers: clock,
+    });
+    await tick();
+
+    // Walk the whole backoff ladder (1+2+4+8+16+30+30 = 91s of delays — the
+    // give-up is spread over ~2 minutes, not instant).
+    await clock.advance(200_000);
+    await tick();
+
+    expect(attempts()).toBe(8);
+    expect(parkedReasons).toHaveLength(1);
+    expect(parkedReasons[0].consecutiveFailures).toBe(8);
+    expect(String(parkedReasons[0].lastError)).toContain('503');
+
+    // Terminal: no matter how much more time passes, no further attempts,
+    // no second onParked.
+    await clock.advance(600_000);
+    await tick();
+    expect(attempts()).toBe(8);
+    expect(parkedReasons).toHaveLength(1);
+
+    // close() on a parked handle stays safe/idempotent.
+    expect(() => handle.close()).not.toThrow();
+    expect(() => handle.close()).not.toThrow();
+  });
+
+  test('maxConsecutiveHardFailures is configurable (parks after 3)', async () => {
+    const clock = createFakeClock();
+    const { client, attempts } = createDeadSandboxClient();
+    const parked: number[] = [];
+
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      onParked: (r) => parked.push(r.consecutiveFailures),
+      timers: clock,
+      maxConsecutiveHardFailures: 3,
+    });
+    await tick();
+
+    await clock.advance(60_000);
+    await tick();
+
+    expect(attempts()).toBe(3);
+    expect(parked).toEqual([3]);
+
+    handle.close();
+  });
+
+  test('an eventful connection resets the hard-failure streak', async () => {
+    const clock = createFakeClock();
+    let attempts = 0;
+    const channels: FakeEventChannel[] = [];
+    // Attempts 1-2 fail fast (503); attempt 3 connects and streams an event;
+    // attempts 4+ fail fast again.
+    const client: EventStreamClient = {
+      global: {
+        event: async (opts) => {
+          attempts++;
+          if (attempts === 3) {
+            const channel = new FakeEventChannel();
+            opts.signal.addEventListener('abort', () => channel.end(), { once: true });
+            channels.push(channel);
+            return { stream: channel };
+          }
+          throw new Error('GET /global/event → 503', { cause: { body: '', status: 503 } });
+        },
+      },
+    };
+    const parked: number[] = [];
+
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      onParked: (r) => parked.push(r.consecutiveFailures),
+      timers: clock,
+      maxConsecutiveHardFailures: 3,
+    });
+    await tick();
+
+    // Failures 1 and 2 (streak = 2, one short of the threshold)...
+    await clock.advance(1000);
+    await tick();
+    expect(attempts).toBe(2);
+    await clock.advance(2000);
+    await tick();
+    expect(attempts).toBe(3);
+    expect(parked).toEqual([]);
+
+    // ...then attempt 3 delivers a REAL event — streak resets to 0.
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(16);
+    channels[0].end();
+    await tick();
+
+    // It now takes a FULL fresh streak of 3 to park (attempts 4, 5, 6) — if
+    // the eventful connection hadn't reset the counter, attempt 4 alone
+    // would have tripped it.
+    await clock.advance(60_000);
+    await tick();
+    expect(parked).toEqual([3]);
+    expect(attempts).toBe(6);
+
+    handle.close();
+  });
+
+  test('parks even after prior successful streaming (sandbox died later)', async () => {
+    const clock = createFakeClock();
+    let attempts = 0;
+    const channels: FakeEventChannel[] = [];
+    // Attempt 1 streams events fine; the sandbox then dies — every later
+    // connect 503s.
+    const client: EventStreamClient = {
+      global: {
+        event: async (opts) => {
+          attempts++;
+          if (attempts === 1) {
+            const channel = new FakeEventChannel();
+            opts.signal.addEventListener('abort', () => channel.end(), { once: true });
+            channels.push(channel);
+            return { stream: channel };
+          }
+          throw new Error('GET /global/event → 503', { cause: { body: '', status: 503 } });
+        },
+      },
+    };
+    const parked: number[] = [];
+
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      onParked: (r) => parked.push(r.consecutiveFailures),
+      timers: clock,
+      maxConsecutiveHardFailures: 3,
+    });
+    await tick();
+
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(16);
+    channels[0].end();
+    await tick();
+
+    await clock.advance(60_000);
+    await tick();
+
+    expect(parked).toEqual([3]);
+    expect(attempts).toBe(4); // 1 healthy + 3 hard failures
+
+    handle.close();
+  });
+
+  test('a slow failure without an HTTP status (hung connect → connect timeout) never counts toward the park streak', async () => {
+    const clock = createFakeClock();
+    let attempts = 0;
+    // Every connect hangs forever — the 20s connect timeout kills each one.
+    // 20s > HARD_FAILURE_WINDOW_MS and the synthetic timeout error carries no
+    // cause.status, so these are NOT hard failures and must never park.
+    const client: EventStreamClient = {
+      global: {
+        event: () => {
+          attempts++;
+          return new Promise<{ stream: AsyncIterable<unknown> }>(() => {});
+        },
+      },
+    };
+    const parked: number[] = [];
+
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      onParked: (r) => parked.push(r.consecutiveFailures),
+      timers: clock,
+      maxConsecutiveHardFailures: 2,
+    });
+    await tick();
+
+    // Enough time for well over 2 hung-connect cycles (20s timeout + backoff
+    // each) — with maxConsecutiveHardFailures: 2, a single miscount parks.
+    await clock.advance(200_000);
+    await tick();
+
+    expect(parked).toEqual([]);
+    expect(attempts).toBeGreaterThan(3); // still retrying, never gave up
+
+    handle.close();
+  });
+
+  test('an HTTP-status failure counts as hard even when it arrives slowly (>2s)', async () => {
+    const clock = createFakeClock();
+    let attempts = 0;
+    // Each connect rejects with a 503 — but only after 5s (a slow edge), past
+    // the fast-fail window. The cause.status branch must still classify it.
+    const client: EventStreamClient = {
+      global: {
+        event: () => {
+          attempts++;
+          return new Promise<{ stream: AsyncIterable<unknown> }>((_resolve, reject) => {
+            clock.setTimeout(() => {
+              reject(new Error('GET /global/event → 503', { cause: { body: '', status: 503 } }));
+            }, 5_000);
+          });
+        },
+      },
+    };
+    const parked: number[] = [];
+
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      onParked: (r) => parked.push(r.consecutiveFailures),
+      timers: clock,
+      maxConsecutiveHardFailures: 2,
+    });
+    await tick();
+
+    await clock.advance(60_000);
+    await tick();
+
+    expect(parked).toEqual([2]);
+    expect(attempts).toBe(2);
 
     handle.close();
   });
