@@ -7,7 +7,7 @@
  * sandbox separately (rehydrate). We move it out of the tree before pushing.
  */
 import { dirname, join } from 'node:path';
-import { existsSync, mkdirSync, writeFileSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, rmSync, readdirSync, statSync } from 'node:fs';
 import { getDefaultManagedBackend } from '../git-backends/registry';
 import type { GitConnectionRef } from '../git-backends/types';
 import { buildStarterFiles } from '../starter';
@@ -51,9 +51,10 @@ export async function pushBundleAsRepo(accountId: string, bundleDir: string): Pr
   const pushUrl = await backend.authedPushUrl(ref);
 
   // Keep opencode.db + manifest OUT of the repo (chat storage, not source).
+  // repoStep already moved opencode.db aside (keyed by the stable migrationId);
+  // drop any stragglers so chat storage never lands in the commit.
   for (const f of ['opencode.db', 'migration-manifest.json']) {
-    const p = join(bundleDir, f);
-    if (existsSync(p)) renameSync(p, join(dirname(bundleDir), `${projectId}.${f}`));
+    rmSync(join(bundleDir, f), { force: true });
   }
 
   // One synthesized root config for the whole project.
@@ -63,6 +64,31 @@ export async function pushBundleAsRepo(accountId: string, bundleDir: string): Pr
     if (existsSync(full)) continue; // never clobber his content
     mkdirSync(dirname(full), { recursive: true });
     writeFileSync(full, f.content);
+  }
+
+  // GitHub rejects oversized blobs (and LFS isn't wired up for managed repos),
+  // so a single big workspace artifact would fail the whole push. Strip anything
+  // over the limit and record what was dropped so it isn't lost silently.
+  const MAX_BLOB_BYTES = 50 * 1024 * 1024;
+  const dropped: string[] = [];
+  const strip = (dir: string): void => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === '.git') continue;
+      const p = join(dir, e.name);
+      if (e.isDirectory()) { strip(p); continue; }
+      if (e.isFile()) {
+        const size = statSync(p).size;
+        if (size > MAX_BLOB_BYTES) {
+          dropped.push(`${p.slice(bundleDir.length + 1)} (${(size / 1048576).toFixed(1)}MB)`);
+          rmSync(p, { force: true });
+        }
+      }
+    }
+  };
+  strip(bundleDir);
+  if (dropped.length) {
+    writeFileSync(join(bundleDir, '.kortix-skipped-large-files.txt'),
+      `Omitted from this repo — exceeded GitHub's ${MAX_BLOB_BYTES / 1048576}MB file limit:\n\n${dropped.join('\n')}\n`);
   }
 
   rmSync(join(bundleDir, '.git'), { recursive: true, force: true });

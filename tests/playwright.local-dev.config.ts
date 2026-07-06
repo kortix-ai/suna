@@ -1,7 +1,7 @@
 /**
- * Playwright config for local-dev e2e (Next at :3000, kortix-sandbox at
- * :14000, Supabase at :54321). Separate from playwright.config.ts (which
- * targets the self-hosted bundle on :13737).
+ * Playwright config for local-dev e2e (Next at :3000, API at :8008, Supabase at
+ * :54321). Separate from playwright.config.ts (which targets the self-hosted
+ * bundle on :13737).
  */
 import { defineConfig, devices } from '@playwright/test';
 

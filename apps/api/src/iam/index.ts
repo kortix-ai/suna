@@ -7,10 +7,27 @@ export {
   authorize,
   assertAuthorized,
   listAccessibleResources,
+  filterAccessibleProjectResources,
 } from './dispatcher';
+export {
+  RESOURCE_GRANT_TYPES,
+  isResourceType,
+  CREATABLE_RESOURCE_GRANT_TYPES,
+  isCreatableResourceType,
+  listResourceGrants,
+  upsertResourceGrant,
+  deleteResourceGrant,
+  hasAnyResourceGrants,
+  unscopedResourceIds,
+  isProjectResourceExplicitlyGranted,
+  type ResourceType as ResourceGrantType,
+  type PrincipalType as ResourceGrantPrincipalType,
+} from './resource-grants';
 export {
   ACCOUNT_ACTIONS,
   PROJECT_ACTIONS,
+  ACTION_CATALOG,
+  VALID_ACTIONS,
   resourceTypeForAction,
   type ResourceType,
 } from './actions';

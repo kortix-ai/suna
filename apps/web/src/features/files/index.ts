@@ -19,7 +19,7 @@ export type {
   GitCommit,
   FileHistoryResult,
   FileCommitDiff,
-} from './types';
+} from '@/features/file-browser/types';
 
 // API — read
 export {
@@ -46,9 +46,6 @@ export {
 // Pure path heuristics
 export { hasFileExtension } from './path-utils';
 
-// API — semantic search (LSS)
-export { searchLss } from './api/lss-search';
-
 // API — git history
 export { getFileHistory, getFileCommitDiff, getFileAtCommit } from './api/git-history';
 
@@ -59,8 +56,6 @@ export {
   useFileContent,
   useInvalidateFileContent,
   useFileSearch,
-  useTextSearch,
-  useLssSearch,
   useServerHealth,
   useCurrentProject,
   useFileEventInvalidation,
@@ -73,22 +68,15 @@ export {
   useFileHistory,
   useFileCommitDiff,
   useFileAtCommit,
-  useWorkspaceSearch,
-  searchWorkspaceFiles,
-  rankFileResult,
-  parseFileResults,
   fileListKeys,
   fileContentKeys,
   fileSearchKeys,
   fileHistoryKeys,
-  lssSearchKeys,
 } from './hooks';
 
-export type {
-  FileSearchResult,
-  WorkspaceSearchState,
-  UseWorkspaceSearchOptions,
-} from './hooks';
+// Standalone workspace file search (CMD+K, @-mentions, etc.)
+export { searchWorkspaceFiles } from './search/workspace-search-service';
+export { useWorkspaceSearch } from './hooks/use-workspace-search';
 
 // Store
 export {
@@ -102,7 +90,7 @@ export {
   type ClipboardItem,
   type FilesStore,
   type FilesStoreApi,
-} from './store/files-store';
+} from '@/features/file-browser/store/files-store';
 
 // Components
 export {

@@ -18,6 +18,8 @@
  */
 
 import { Icon } from '@/features/icon/icon';
+import { WALLPAPERS } from '@/lib/wallpapers';
+import type { ExperimentalFeatureKey } from '@kortix/sdk/projects-client';
 import {
   CogOne,
   CogOneSolid,
@@ -30,7 +32,7 @@ import {
   Activity,
   Blocks,
   Bot,
-  Cable,
+  Boxes,
   Calendar,
   Coins,
   Compass,
@@ -38,9 +40,9 @@ import {
   FolderGit2,
   FolderOpen,
   GitCompareArrows,
+  GitPullRequest,
   Globe,
   Hash,
-  Key,
   Keyboard,
   // Settings pages
   KeyRound,
@@ -50,6 +52,7 @@ import {
   LayoutTemplate,
   LogOut,
   MessagesSquare,
+  Monitor,
   // Preferences
   Palette,
   // View / Misc
@@ -59,12 +62,14 @@ import {
   Plus,
   Receipt,
   RefreshCw,
-  Rocket,
   ScrollText,
   Search,
   SlidersHorizontal,
+  Store,
   TerminalSquare,
+  UserPlus,
   Volume2,
+  Wallpaper as WallpaperIcon,
   Webhook,
 } from 'lucide-react';
 import { IconType } from 'react-icons/lib';
@@ -85,9 +90,16 @@ export type MenuSurface = 'commandPalette' | 'rightSidebar' | 'leftSidebar' | 'u
  * - 'action':   Runs an imperative callback (e.g. "new session", "logout")
  * - 'settings': Opens the UserSettingsModal to a specific tab
  * - 'theme':    Switches the app theme
+ * - 'wallpaper': Applies a wallpaper (same set as Settings → Appearance)
  * - 'sandboxService': Opens a sandbox service preview tab (needs special handler)
  */
-export type MenuItemKind = 'navigate' | 'action' | 'settings' | 'theme' | 'sandboxService';
+export type MenuItemKind =
+  | 'navigate'
+  | 'action'
+  | 'settings'
+  | 'theme'
+  | 'wallpaper'
+  | 'sandboxService';
 
 export type SettingsTabId =
   | 'general'
@@ -111,6 +123,7 @@ export type MenuGroup =
   | 'preferences'
   | 'account'
   | 'theme'
+  | 'wallpaper'
   | 'view'
   | 'admin';
 
@@ -156,6 +169,8 @@ export interface MenuItemDef {
   settingsTab?: SettingsTabId;
   /** For kind='theme': which theme to set */
   themeValue?: string;
+  /** For kind='wallpaper': which wallpaper to apply */
+  wallpaperValue?: string;
   /** For kind='sandboxService': the container port */
   sandboxPort?: string;
 
@@ -183,6 +198,10 @@ export interface MenuItemDef {
    *  feature flag (NEXT_PUBLIC_ENABLE_PROJECTS) is on. Used to gate
    *  project-paradigm surfaces (Board today; Milestones, Team later). */
   requiresProjectsFlag?: boolean;
+  /** If set, item is only shown when the named per-project experimental
+   *  feature is enabled (mirrors the Customize rail gating). The palette
+   *  resolves it against the active project's experimental flags. */
+  requiresExperimental?: ExperimentalFeatureKey;
 }
 
 // ============================================================================
@@ -393,6 +412,56 @@ export const menuRegistry: MenuItemDef[] = [
       'policies approval block require_approval rules tools executor guardrails project customize',
   },
   {
+    id: 'proj-changes',
+    label: 'Customize · Changes',
+    icon: GitPullRequest,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/changes',
+    requiresProject: true,
+    keywords:
+      'checkpoint checkpoints changes change requests proposed review merge pull request diff commits git history timeline versions branches project customize',
+  },
+  {
+    id: 'proj-marketplace',
+    label: 'Customize · Marketplace',
+    icon: Store,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/marketplace',
+    requiresProject: true,
+    requiresExperimental: 'marketplace',
+    keywords: 'marketplace store install templates agents skills browse project customize',
+  },
+  {
+    id: 'proj-llm',
+    label: 'Customize · LLM',
+    icon: Boxes,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/llm-management',
+    requiresProject: true,
+    requiresExperimental: 'llm_gateway',
+    keywords:
+      'llm gateway providers models budgets logs api keys overview anthropic openai openrouter google groq xai project customize',
+  },
+  {
+    id: 'proj-computers',
+    label: 'Customize · Computers',
+    icon: Monitor,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/computers',
+    requiresProject: true,
+    requiresExperimental: 'agent_tunnel',
+    keywords:
+      'computers tunnel machines connect reverse local devices remote agent access project customize',
+  },
+  {
     id: 'proj-members',
     label: 'Customize · Members',
     icon: UsersSolid,
@@ -402,6 +471,17 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/customize/members',
     requiresProject: true,
     keywords: 'members team access collaborators project customize',
+  },
+  {
+    id: 'proj-invite',
+    label: 'Invite members',
+    icon: UserPlus,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'inviteMembers',
+    requiresProject: true,
+    keywords: 'invite members add teammate email collaborator people access send project customize',
   },
   {
     id: 'proj-schedules',
@@ -434,7 +514,8 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/customize/channels',
     requiresProject: true,
-    keywords: 'channels slack integrations project customize',
+    keywords:
+      'channels slack email agent mail agentmail agentic mail inbox messaging notifications integrations project customize',
   },
   {
     id: 'proj-settings',
@@ -485,18 +566,6 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'workspace agents skills commands tools build create',
   },
   {
-    id: 'secrets-quick',
-    label: 'Secrets Manager',
-    icon: KeyRound,
-    group: 'quickActions',
-    subGroup: 'security',
-    showIn: ['rightSidebar'],
-    kind: 'navigate',
-    href: '/settings/credentials',
-    tabId: 'settings:secrets',
-    tabType: 'settings',
-  },
-  {
     id: 'providers-quick',
     label: 'LLM Providers',
     icon: Bot,
@@ -505,29 +574,6 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['rightSidebar'],
     kind: 'action',
     actionId: 'openProviderModal',
-  },
-  {
-    id: 'ssh-quick',
-    label: 'SSH',
-    icon: Key,
-    group: 'quickActions',
-    subGroup: 'security',
-    showIn: ['rightSidebar', 'commandPalette'],
-    kind: 'action',
-    actionId: 'generateSSHKey',
-    keywords: 'ssh key generate public private git clone remote',
-  },
-  {
-    id: 'api-keys-quick',
-    label: 'API',
-    icon: Cable,
-    group: 'quickActions',
-    subGroup: 'security',
-    showIn: ['rightSidebar'],
-    kind: 'navigate',
-    href: '/settings/api-keys',
-    tabId: 'settings:api-keys',
-    tabType: 'settings',
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -553,20 +599,6 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/scheduled-tasks',
   },
-  ...(DEPLOYMENTS_ENABLED
-    ? [
-        {
-          id: 'deployments',
-          label: 'Deployments',
-          icon: Rocket,
-          group: 'navigation' as const,
-          subGroup: 'services' as const,
-          showIn: ['commandPalette', 'rightSidebar'] as MenuSurface[],
-          kind: 'navigate' as const,
-          href: '/deployments',
-        },
-      ]
-    : []),
   {
     id: 'running-services',
     label: 'Service Manager',
@@ -707,27 +739,6 @@ export const menuRegistry: MenuItemDef[] = [
   // SETTINGS PAGES (navigate to route)
   // ──────────────────────────────────────────────────────────────────────────
   {
-    id: 'secrets-manager',
-    label: 'Secrets Manager',
-    icon: KeyRound,
-    group: 'settingsPages',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/settings/credentials',
-    tabType: 'settings',
-    keywords: 'secrets manager credentials env environment variables integrations keys',
-  },
-  {
-    id: 'api-keys',
-    label: 'API Keys',
-    icon: CogOneSolid,
-    group: 'settingsPages',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/settings/api-keys',
-    tabType: 'settings',
-  },
-  {
     id: 'llm-providers',
     label: 'LLM Providers',
     icon: Bot,
@@ -758,7 +769,7 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette'],
     kind: 'settings',
     settingsTab: 'appearance',
-    keywords: 'appearance theme color mode wallpaper',
+    keywords: 'appearance theme color mode wallpaper shader shaders background',
   },
   {
     id: 'pref-sounds',
@@ -820,13 +831,13 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-tokens',
-    label: 'CLI tokens',
+    label: 'API keys',
     icon: KeyRound,
     group: 'account',
     showIn: ['commandPalette', 'userMenu'],
     kind: 'settings',
     settingsTab: 'tokens',
-    keywords: 'cli tokens personal access pat command line authentication',
+    keywords: 'api keys tokens personal access pat cli command line authentication',
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -862,6 +873,25 @@ export const menuRegistry: MenuItemDef[] = [
     themeValue: 'system',
     keywords: 'theme system auto default os',
   },
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // WALLPAPERS — derived from the appearance-tab list; typing a wallpaper's
+  // name (Dither, Grain, Silk, …) in the palette applies it directly.
+  // ──────────────────────────────────────────────────────────────────────────
+  ...WALLPAPERS.map(
+    (wp): MenuItemDef => ({
+      id: `wallpaper-${wp.id}`,
+      label: `Appearance · ${wp.name}`,
+      icon: WallpaperIcon,
+      group: 'wallpaper',
+      showIn: ['commandPalette'],
+      kind: 'wallpaper',
+      wallpaperValue: wp.id,
+      keywords: `wallpaper wallpapers background appearance ${wp.id}${
+        wp.type === 'shader' ? ' shader shaders animated' : ''
+      }`,
+    }),
+  ),
 
   // ──────────────────────────────────────────────────────────────────────────
   // VIEW
@@ -978,7 +1008,7 @@ export function getAccountTabs(billingEnabled: boolean): SettingsTab[] {
   const items: SettingsTab[] = [
     { id: 'billing', label: 'Billing', icon: CreditCardSolid },
     { id: 'transactions', label: 'Credits ledger', icon: Receipt },
-    { id: 'tokens', label: 'CLI tokens', icon: KeyRound },
+    { id: 'tokens', label: 'API keys', icon: KeyRound },
   ];
   // Referrals tab disabled for now
   // if (billingEnabled) {

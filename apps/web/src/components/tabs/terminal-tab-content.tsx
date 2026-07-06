@@ -40,10 +40,7 @@ interface TerminalTabContentProps {
 export function TerminalTabContent({ ptyId, tabId, hidden = false }: TerminalTabContentProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const currentSandboxId = useKortixComputerStore((s) => s.currentSandboxId);
-  const serverUrl = useServerStore((s) => {
-    const server = s.servers.find((srv) => srv.id === s.activeServerId);
-    return server?.url ?? s.getActiveServerUrl();
-  });
+  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
 
   const { data: ptys, isLoading, refetch } = useOpenCodePtyList();
   const removePty = useRemovePty();

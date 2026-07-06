@@ -1,5 +1,5 @@
 import type { UpstreamDescriptor } from '@kortix/llm-gateway';
-import type { ManagedModel } from '@kortix/shared/llm-catalog';
+import type { ManagedModel } from '@kortix/llm-catalog';
 import { llmPriceMarkup } from '../../billing/services/tiers';
 import { config } from '../../config';
 import { getModelPricing } from '../../router/config/model-pricing';
@@ -40,6 +40,7 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
     appReferer: config.KORTIX_URL,
     resolvedModel: managed.upstreamModelId,
     pricing: managedPricing(managed),
+    ...(managed.openrouterProvider ? { bodyExtras: { provider: managed.openrouterProvider } } : {}),
   };
 }
 

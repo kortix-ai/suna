@@ -14,6 +14,7 @@ import {
   CreditCard,
   ExternalLink,
   Filter,
+  FolderKanban,
   History,
   Loader2,
   Mail,
@@ -29,7 +30,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { IconInbox } from '@/components/ui/kortix-icons';
 import { PageSearchBar } from '@/components/ui/page-search-bar';
@@ -59,8 +59,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   useAdminAccountLedger,
+  useAdminAccountProjects,
   useAdminAccountUsers,
   useAdminAccounts,
   useAdminDebitCredits,
@@ -1008,6 +1010,7 @@ function AccountDetailSheet({
 
 function AccountDetail({ account }: { account: AdminAccount }) {
   const usersQuery = useAdminAccountUsers(account.accountId);
+  const projectsQuery = useAdminAccountProjects(account.accountId);
   const ledgerQuery = useAdminAccountLedger(account.accountId, 100);
   const actions = billingActionsFor(account);
 
@@ -1078,6 +1081,15 @@ function AccountDetail({ account }: { account: AdminAccount }) {
                 </Badge>
               )}
             </TabsTrigger>
+            <TabsTrigger value="projects" className="gap-1.5">
+              <FolderKanban className="h-3.5 w-3.5" />
+              Projects
+              {projectsQuery.data?.projects && (
+                <Badge variant="muted" size="sm">
+                  {projectsQuery.data.projects.length}
+                </Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="ledger" className="gap-1.5">
               <History className="h-3.5 w-3.5" />
               Ledger
@@ -1093,6 +1105,9 @@ function AccountDetail({ account }: { account: AdminAccount }) {
           </TabsContent>
           <TabsContent value="users" className="mt-4">
             <UsersTab usersQuery={usersQuery} />
+          </TabsContent>
+          <TabsContent value="projects" className="mt-4">
+            <ProjectsTab projectsQuery={projectsQuery} />
           </TabsContent>
           <TabsContent value="ledger" className="mt-4">
             <LedgerTab ledgerQuery={ledgerQuery} />
@@ -1342,7 +1357,7 @@ function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccoun
   }
 
   return (
-    <div className="border-border/60 bg-card divide-border/60 divide-y rounded-2xl border">
+    <div className="border-border/60 bg-card divide-border divide-y rounded-2xl border">
       {users.map((user) => {
         const banned = user.banned_until && new Date(user.banned_until) > new Date();
         const confirmed = !!user.email_confirmed_at;
@@ -1399,6 +1414,83 @@ function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccoun
   );
 }
 
+function ProjectsTab({
+  projectsQuery,
+}: {
+  projectsQuery: ReturnType<typeof useAdminAccountProjects>;
+}) {
+  if (projectsQuery.isLoading) {
+    return (
+      <div className="border-border/60 bg-card text-muted-foreground flex items-center gap-2 rounded-2xl border px-4 py-6 text-sm">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading projects…
+      </div>
+    );
+  }
+
+  const projects = projectsQuery.data?.projects ?? [];
+  if (projects.length === 0) {
+    return (
+      <div className="border-border/60 bg-card rounded-2xl border">
+        <EmptyState
+          icon={FolderKanban}
+          title="No projects on this account"
+          description="Projects will appear here once the user creates one."
+          size="sm"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-border/60 bg-card divide-border divide-y rounded-2xl border">
+      {projects.map((project) => (
+        <a
+          key={project.projectId}
+          href={`/projects/${project.projectId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:bg-muted/40 flex flex-col gap-2 px-4 py-3 text-sm transition-colors"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate font-medium">{project.name}</span>
+              {project.activeSessionCount > 0 && (
+                <Badge variant="success" size="sm">
+                  {project.activeSessionCount} active
+                </Badge>
+              )}
+              {project.status && project.status !== 'active' && (
+                <Badge variant="muted" size="sm" className="capitalize">
+                  {project.status}
+                </Badge>
+              )}
+            </div>
+            <ExternalLink className="text-muted-foreground/60 h-3.5 w-3.5 shrink-0" />
+          </div>
+          <div className="text-muted-foreground grid grid-cols-2 gap-2 text-xs">
+            <div className="truncate">
+              <span className="text-muted-foreground/70">Sessions: </span>
+              <span className="text-foreground/80">{project.sessionCount}</span>
+            </div>
+            <div className="truncate">
+              <span className="text-muted-foreground/70">Last activity: </span>
+              <span className="text-foreground/80">
+                {project.lastSessionAt ? formatRelative(project.lastSessionAt) : '—'}
+              </span>
+            </div>
+            <div className="truncate">
+              <span className="text-muted-foreground/70">Updated: </span>
+              <span className="text-foreground/80">{formatRelative(project.updatedAt)}</span>
+            </div>
+            <div className="truncate font-mono text-xs">{project.projectId.slice(0, 8)}…</div>
+          </div>
+        </a>
+      ))}
+    </div>
+  );
+}
+
 function formatRelative(value: string | null) {
   if (!value) return '—';
   const diff = Date.now() - new Date(value).getTime();
@@ -1440,7 +1532,7 @@ function LedgerTab({ ledgerQuery }: { ledgerQuery: ReturnType<typeof useAdminAcc
   }
 
   return (
-    <div className="border-border/60 bg-card divide-border/60 max-h-[50vh] divide-y overflow-y-auto rounded-2xl border">
+    <div className="border-border/60 bg-card divide-border max-h-[50vh] divide-y overflow-y-auto rounded-2xl border">
       {entries.map((entry) => {
         const amount = Number(entry.amount);
         const positive = amount >= 0;
@@ -1560,7 +1652,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
       )}
 
       <div className="border-border/60 bg-card rounded-2xl border text-sm">
-        <div className="divide-border/60 grid grid-cols-1 divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+        <div className="divide-border grid grid-cols-1 divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0">
           {summary.map(([label, value]) => (
             <div key={label} className="flex items-center justify-between gap-3 px-4 py-3">
               <span className="text-muted-foreground/70 text-xs tracking-wider uppercase">
@@ -1572,7 +1664,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
         </div>
       </div>
 
-      <div className="border-border/60 bg-card divide-border/60 divide-y rounded-2xl border text-sm">
+      <div className="border-border/60 bg-card divide-border divide-y rounded-2xl border text-sm">
         {idRows.map(({ label, value, href }) => (
           <div
             key={label}

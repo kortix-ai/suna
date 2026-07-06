@@ -43,6 +43,8 @@ import { log } from '@/lib/logger';
 import { useAppearanceStore } from '@/stores/appearance-store';
 import { useThemeStore } from '@/stores/theme-store';
 import { installHapticsGate } from '@/lib/haptics';
+import { configureKortix } from '@kortix/sdk';
+import { API_URL, getAuthToken } from '@/api/config';
 import {
   clearWebRegistrationHandoff,
   consumeAuthCallbackState,
@@ -56,6 +58,19 @@ import {
 // Patch expo-haptics globally so every Haptics.* call across the app respects
 // the user's "Haptic Feedback" toggle in Settings → Sounds.
 installHapticsGate();
+
+// Wire the SDK's single app-specific seam once at startup, before any screen
+// mounts. `backendUrl`/`getToken` reuse mobile's own env resolution and
+// Supabase token source (api/config.ts) unchanged — this just injects them
+// into @kortix/sdk so `lib/projects/projects-client.ts` and friends can call
+// through to `backendApi`/`projects-client` instead of hand-rolling fetch.
+configureKortix({
+  backendUrl: API_URL,
+  getToken: getAuthToken,
+  onError: (error, context) => {
+    log.error('❌ [kortix-sdk] request failed:', error, context);
+  },
+});
 
 const THEME_PREFERENCE_KEY = '@theme_preference';
 
@@ -324,27 +339,6 @@ export default function RootLayout() {
         hasFragment: url.includes('#'),
       });
 
-      // Check for universal links (https://kortix.com/share/xxx or https://staging.kortix.com/share/xxx)
-      const isUniversalLink =
-        parsedUrl.scheme === 'https' &&
-        (parsedUrl.hostname === 'kortix.com' ||
-          parsedUrl.hostname === 'www.kortix.com' ||
-          parsedUrl.hostname === 'staging.kortix.com');
-
-      // Handle universal link share paths first
-      if (isUniversalLink && parsedUrl.path?.startsWith('/share/')) {
-        const threadId = parsedUrl.path.replace('/share/', '');
-        if (threadId) {
-          console.log('📖 Opening shared thread (universal link):', threadId);
-          router.push({
-            pathname: '/share/[threadId]',
-            params: { threadId },
-          });
-        }
-        isHandlingDeepLink = false;
-        return;
-      }
-
       // Handle custom scheme callbacks and verified HTTPS universal links.
       if (isMobileAuthCallbackUrl(url)) {
         log.log('📧 Auth callback received, processing...');
@@ -558,30 +552,8 @@ export default function RootLayout() {
           router.replace('/auth');
         }
       } else if (parsedUrl.path?.startsWith('share/') || parsedUrl.hostname === 'share') {
-        // Handle share links: kortix://share/xxx or https://kortix.com/share/xxx
-        console.log('🔗 Share link detected');
-
-        // Extract thread ID from path
-        let threadId: string | null = null;
-
-        if (parsedUrl.path?.startsWith('share/')) {
-          // Path format: share/xxx
-          threadId = parsedUrl.path.replace('share/', '');
-        } else if (parsedUrl.hostname === 'share' && parsedUrl.path) {
-          // Custom scheme format: kortix://share/xxx -> hostname=share, path=xxx
-          threadId = parsedUrl.path.replace(/^\//, '');
-        }
-
-        if (threadId) {
-          console.log('📖 Opening shared thread:', threadId);
-          router.push({
-            pathname: '/share/[threadId]',
-            params: { threadId },
-          });
-        } else {
-          console.warn('⚠️ Share link missing thread ID');
-        }
-
+        // Thread sharing is no longer supported in-app; ignore share deep links.
+        console.warn('⚠️ Share link received but sharing is no longer supported:', parsedUrl.path);
         isHandlingDeepLink = false;
       } else {
         log.log('ℹ️ Not an auth callback, path:', parsedUrl.path);
@@ -730,13 +702,6 @@ export default function RootLayout() {
                                       />
                                       <Stack.Screen name="trigger-detail" />
                                       <Stack.Screen name="worker-config" />
-                                      <Stack.Screen
-                                        name="share/[threadId]"
-                                        options={{
-                                          animation: 'slide_from_right',
-                                          gestureEnabled: true,
-                                        }}
-                                      />
                                     </Stack>
                                   </AuthProtection>
                                 </View>

@@ -2,15 +2,13 @@ import { and, eq } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolvePreviewLink } from '../../sandbox-proxy/backend';
-import { resolveShareSubject } from '../../executor/share';
 import { config } from '../../config';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
-import {
-  listProjectSecretsForUser,
-  projectSecretsRevision,
-} from '../secrets';
+import { listProjectSecretsSnapshotForUser, projectSecretsRevision } from '../secrets';
+import { grantFromLoadedAgents, loadProjectAgents } from '../agents';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
+import { daytonaPreviewHeaders, waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
 
 const SANDBOX_SERVICE_PORT = 8000;
 const FANOUT_CONCURRENCY = 6;
@@ -28,13 +26,40 @@ async function resolveOwnerRawEnv(
 ): Promise<Record<string, string> | null> {
   if (!sessionId) return null;
   const [row] = await db
-    .select({ createdBy: projectSessions.createdBy })
+    .select({ createdBy: projectSessions.createdBy, agentName: projectSessions.agentName })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   if (!row?.createdBy) return null;
-  const subject = await resolveShareSubject(row.createdBy);
-  return listProjectSecretsForUser(projectId, subject);
+
+  // Resolve the running agent's `secrets` grant (by identifier) — the SAME gate
+  // applied at sandbox boot (buildSessionSandboxEnvVars). A hot-push must not
+  // deliver an identifier a scoped agent isn't granted; back-compat/no-git-
+  // context sessions default to 'all' (undefined).
+  const [project] = await db
+    .select({
+      repoUrl: projects.repoUrl,
+      defaultBranch: projects.defaultBranch,
+      manifestPath: projects.manifestPath,
+    })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+
+  let grantEnv: string[] | 'all' | undefined;
+  if (project?.defaultBranch) {
+    const loadedAgents = await loadProjectAgents({
+      projectId,
+      repoUrl: project.repoUrl ?? '',
+      defaultBranch: project.defaultBranch,
+      manifestPath: project.manifestPath ?? 'kortix.toml',
+      gitAuthToken: null,
+    }).catch(() => null);
+    const grant = loadedAgents ? grantFromLoadedAgents(row.agentName ?? '', loadedAgents) : null;
+    grantEnv = grant?.env;
+  }
+
+  return (await listProjectSecretsSnapshotForUser(projectId, row.createdBy, grantEnv)).env;
 }
 
 export async function resolveSandboxEnvSnapshot(
@@ -79,17 +104,15 @@ async function postEnvToDaemon(args: {
   llmGatewayEnabled?: boolean;
   llmGatewayBaseUrl?: string;
   llmGatewayDenyEnv?: string;
-}): Promise<void> {
+}): Promise<{ opencodeState: string | null }> {
   if (!isSecureOrPrivateTarget(args.previewUrl)) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
   }
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${args.serviceKey}`,
-    'X-Daytona-Skip-Preview-Warning': 'true',
-    'X-Daytona-Disable-CORS': 'true',
+    ...daytonaPreviewHeaders(args.previewToken),
   };
-  if (args.previewToken) headers['X-Daytona-Preview-Token'] = args.previewToken;
 
   const res = await fetch(`${args.previewUrl.replace(/\/$/, '')}/kortix/env`, {
     method: 'POST',
@@ -112,6 +135,11 @@ async function postEnvToDaemon(args: {
     const body = await res.text().catch(() => '');
     throw new Error(`env sync failed: ${res.status}${body ? ` ${body.slice(0, 500)}` : ''}`);
   }
+  // The daemon echoes opencode's post-sync state. After a model-affecting change
+  // it restarts opencode and reports `starting` here — the signal we use to wait
+  // for readiness before the prompt is forwarded.
+  const body = (await res.json().catch(() => null)) as { opencode?: unknown } | null;
+  return { opencodeState: typeof body?.opencode === 'string' ? body.opencode : null };
 }
 
 export async function syncSandboxEnvForPrompt(args: {
@@ -125,7 +153,7 @@ export async function syncSandboxEnvForPrompt(args: {
   const snapshot = await resolveSandboxEnvSnapshot(args.projectId, args.sessionId);
   if (!snapshot) return;
   const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(args.projectId);
-  await postEnvToDaemon({
+  const { opencodeState } = await postEnvToDaemon({
     previewUrl: args.previewUrl,
     previewToken: args.previewToken,
     serviceKey: args.serviceKey,
@@ -135,6 +163,22 @@ export async function syncSandboxEnvForPrompt(args: {
     llmGatewayBaseUrl: llmGatewayEnabled ? resolveLlmGatewayBaseUrl() : undefined,
     llmGatewayDenyEnv: llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
   });
+  // A model-affecting change just restarted opencode (state !== 'ok'). The prompt
+  // is forwarded the instant this returns, so block until opencode is serving —
+  // otherwise the forward hits the restart window and 503s "opencode not ready",
+  // dropping the session's first prompt (the user then has to resend).
+  if (opencodeState && opencodeState !== 'ok') {
+    const waitStartedAt = Date.now();
+    const ready = await waitForDaemonOpencodeReady({
+      previewUrl: args.previewUrl,
+      previewToken: args.previewToken,
+    });
+    console.log(
+      `[env-sync] opencode restarted by prompt env-sync (state=${opencodeState}); ` +
+        `waited ${Date.now() - waitStartedAt}ms for readiness before forwarding ` +
+        `(ready=${ready}) session=${args.sessionId}`,
+    );
+  }
   await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
 }
 

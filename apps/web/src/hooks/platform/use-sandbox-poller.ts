@@ -14,9 +14,12 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { getSupabaseAccessToken } from '@/lib/auth-token';
-import { backendApi } from '@/lib/api-client';
 import { getEnv } from '@/lib/env-config';
 import type { ProvisioningStageInfo } from '@/lib/provisioning-stages';
+import {
+  getSandboxProvisionStatus,
+  getSandboxProvisionStreamUrl,
+} from '@kortix/sdk/platform-client';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -28,17 +31,6 @@ export interface SandboxPollerState {
   machineInfo: { ip: string; serverType: string; location: string } | null;
   error: string | null;
   stageEnteredAt: number | null; // timestamp when current stage was entered
-}
-
-interface StatusResponse {
-  status: 'provisioning' | 'active' | 'error' | 'stopped' | 'archived' | 'not_found';
-  stage: string | null;
-  stageProgress: number | null;
-  stageMessage: string | null;
-  machineInfo: { ip: string; serverType: string; location: string } | null;
-  stages: ProvisioningStageInfo[] | null;
-  error?: string | null;
-  startedAt: string | null;
 }
 
 interface UseSandboxPollerOpts {
@@ -99,8 +91,51 @@ function getPlatformUrl(): string {
 }
 
 function getSandboxUrl(sandboxId: string): string {
-  const base = getPlatformUrl().replace('/v1', '');
-  return `${base}/p/${sandboxId}/8000`;
+  // The sandbox proxy is mounted at /v1/p — stripping /v1 here (as this once
+  // did) 404s on every deployment, so the readiness poll only ever timed out.
+  return `${getPlatformUrl()}/p/${sandboxId}/8000`;
+}
+
+// ─── Shared OpenCode `/global/health` probe ─────────────────────────────────
+//
+// This is OpenCode's OWN liveness endpoint — NOT the sandbox daemon's
+// `/kortix/health` that `@kortix/sdk/session`'s `getSessionHealth` probes (see
+// that module's header comment). The two report different things:
+// `/kortix/health` is the daemon wrapper's always-200 liveness probe with a
+// computed `runtimeReady` (folds in repo/branch materialization state);
+// `/global/health` requires the OpenCode process itself to answer and is the
+// only place an OpenCode `version` comes from (see
+// packages/sdk/src/state/sandbox-connection-store.ts, which tracks both
+// versions separately). Callers here (this poller's cold-boot wait, and
+// `update-dialog`'s post-update reconnect probe) want OpenCode's own signal,
+// so they deliberately do NOT route through `getSessionHealth` — but they
+// used to each hand-roll the `{healthy: data?.healthy === true}` parsing
+// independently. This helper standardizes just that contract; callers still
+// own their own auth (bearer vs cookie) and retry/timeout policy via
+// `fetchImpl`/`init`.
+export interface SandboxGlobalHealth {
+  healthy: boolean;
+  version?: string;
+}
+
+export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+export async function fetchSandboxGlobalHealth(
+  sandboxBaseUrl: string,
+  init?: RequestInit,
+  fetchImpl: FetchLike = fetch,
+): Promise<SandboxGlobalHealth> {
+  try {
+    const res = await fetchImpl(`${sandboxBaseUrl}/global/health`, init);
+    if (!res.ok) return { healthy: false };
+    const data = await res.json().catch(() => null);
+    return {
+      healthy: data?.healthy === true,
+      version: typeof data?.version === 'string' ? data.version : undefined,
+    };
+  } catch {
+    return { healthy: false };
+  }
 }
 
 async function waitForOpenCodeHealthy(
@@ -119,30 +154,22 @@ async function waitForOpenCodeHealthy(
 
   while (Date.now() < deadline) {
     if (signal.aborted) return false;
-    let res: Response;
+    // Per-request 2s timeout so a slow proxy doesn't stall a poll slot for
+    // the OS default (~30s). We combine with the outer abort signal so a
+    // hook unmount cancels everything.
+    const reqAbort = new AbortController();
+    const reqTimer = setTimeout(() => reqAbort.abort(), 2_000);
+    const onOuterAbort = () => reqAbort.abort();
+    signal.addEventListener('abort', onOuterAbort, { once: true });
     try {
-      // Per-request 2s timeout so a slow proxy doesn't stall a poll slot for
-      // the OS default (~30s). We combine with the outer abort signal so a
-      // hook unmount cancels everything.
-      const reqAbort = new AbortController();
-      const reqTimer = setTimeout(() => reqAbort.abort(), 2_000);
-      const onOuterAbort = () => reqAbort.abort();
-      signal.addEventListener('abort', onOuterAbort, { once: true });
-      try {
-        res = await fetch(`${url}/global/health`, {
-          signal: reqAbort.signal,
-          credentials: 'include',
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.healthy === true) return true;
-        }
-      } finally {
-        clearTimeout(reqTimer);
-        signal.removeEventListener('abort', onOuterAbort);
-      }
-    } catch {
-      // network blip or per-request timeout — fall through to the sleep + retry
+      const health = await fetchSandboxGlobalHealth(url, {
+        signal: reqAbort.signal,
+        credentials: 'include',
+      });
+      if (health.healthy) return true;
+    } finally {
+      clearTimeout(reqTimer);
+      signal.removeEventListener('abort', onOuterAbort);
     }
     const delay = POLL_RAMP_MS[Math.min(attempt, POLL_RAMP_MS.length - 1)];
     attempt += 1;
@@ -232,13 +259,9 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
 
   // ── HTTP polling fallback ────────────────────────────────────────────────
 
-  const fetchStatus = useCallback(async (): Promise<StatusResponse | null> => {
+  const fetchStatus = useCallback(async () => {
     if (!sandboxId) return null;
-    const res = await backendApi.get<StatusResponse>(`/platform/sandbox/${sandboxId}/status`, {
-      showErrors: false,
-      timeout: 10_000,
-    });
-    return res.success ? (res.data ?? null) : null;
+    return getSandboxProvisionStatus(sandboxId);
   }, [sandboxId]);
 
   const startFallbackPolling = useCallback(() => {
@@ -324,8 +347,7 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
       const token = await getSupabaseAccessToken();
       if (!token) throw new Error('No auth token');
 
-      const baseUrl = getPlatformUrl();
-      const sseUrl = `${baseUrl}/platform/sandbox/${sandboxId}/provision-stream?token=${encodeURIComponent(token)}`;
+      const sseUrl = getSandboxProvisionStreamUrl(sandboxId, token);
 
       const es = new EventSource(sseUrl);
       eventSourceRef.current = es;

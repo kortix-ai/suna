@@ -7,7 +7,7 @@ import type { Capabilities, Env } from "./env";
 
 export type Capability = keyof Capabilities;
 
-export type ProjectRole = "viewer" | "editor" | "manager";
+export type ProjectRole = "user" | "editor" | "manager";
 
 /** A provisioned identity with the data flows assert against. */
 export interface Principal extends Identity {

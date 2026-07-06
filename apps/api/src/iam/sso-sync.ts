@@ -17,12 +17,13 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { accountGroupMembers, accountMembers } from '@kortix/db';
 import { db } from '../shared/db';
+import { invalidateIamCacheForUser } from './cache-invalidation';
 import {
   getSsoProviderBySupabaseId,
   listSsoGroupMappings,
 } from '../repositories/sso';
 
-export interface SsoSyncOutcome {
+interface SsoSyncOutcome {
   /** No SAML provider id on this JWT — sync skipped. */
   skipped: boolean;
   /** True when this run created the account_members row. */
@@ -32,9 +33,28 @@ export interface SsoSyncOutcome {
   groupsRemoved?: string[];
 }
 
+/** Pull the auth `sso_providers` id out of a Supabase `"sso:<uuid>"` tag. */
+function ssoIdFromProviderTag(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const prefix = 'sso:';
+  if (!value.startsWith(prefix)) return null;
+  const id = value.slice(prefix.length).trim();
+  return id.length > 0 ? id : null;
+}
+
 /**
- * Extract the supabase sso_provider id from a JWT payload. Supabase puts
- * it in `app_metadata.provider_id` when the user signed in via SAML.
+ * Extract the Supabase `sso_providers` id from a JWT payload, or null when the
+ * token isn't a SAML login.
+ *
+ * Real Supabase SAML tokens carry the id INSIDE `app_metadata.provider` (and
+ * `app_metadata.providers[]`) as the string `"sso:<uuid>"`, e.g.
+ * `provider: "sso:464651b7-6157-46b1-afaa-5bbd7fa37599"`. We also accept a bare
+ * `sso_provider_id`/`provider_id` for forward-compat and simpler test fixtures.
+ *
+ * The previous implementation read ONLY the bare fields, which no real Supabase
+ * SAML token sets — so `extractSsoProviderId` always returned null and NO SSO
+ * user was ever JIT-provisioned into their org (they fell through to a personal
+ * account instead). Parsing the `"sso:<uuid>"` tag is the actual fix.
  */
 export function extractSsoProviderId(
   payload: Record<string, unknown> | undefined,
@@ -42,10 +62,21 @@ export function extractSsoProviderId(
   if (!payload) return null;
   const meta = payload.app_metadata as Record<string, unknown> | undefined;
   if (!meta) return null;
-  // Supabase historically used `provider_id`; newer versions also set
-  // `sso_provider_id`. Accept either so we're forward-compat.
-  const id = meta.sso_provider_id ?? meta.provider_id;
-  return typeof id === 'string' && id.length > 0 ? id : null;
+
+  // Explicit fields first (forward-compat / fixtures).
+  const explicit = meta.sso_provider_id ?? meta.provider_id;
+  if (typeof explicit === 'string' && explicit.length > 0) return explicit;
+
+  // Real shape: provider = "sso:<uuid>", providers = ["sso:<uuid>"].
+  const fromProvider = ssoIdFromProviderTag(meta.provider);
+  if (fromProvider) return fromProvider;
+  if (Array.isArray(meta.providers)) {
+    for (const p of meta.providers) {
+      const id = ssoIdFromProviderTag(p);
+      if (id) return id;
+    }
+  }
+  return null;
 }
 
 /**
@@ -57,11 +88,19 @@ export function extractGroupClaims(
   claimName: string,
 ): string[] {
   if (!payload) return [];
-  // Try app_metadata first (Supabase wraps SAML attributes there), then
-  // the top level for IdPs that don't.
+  const asObj = (v: unknown): Record<string, unknown> | undefined =>
+    v && typeof v === 'object' ? (v as Record<string, unknown>) : undefined;
+  const app = asObj(payload.app_metadata);
+  const user = asObj(payload.user_metadata);
+  // Supabase SSO nests the mapped SAML attributes under
+  // `user_metadata.custom_claims` (e.g. `custom_claims.groups`) — NOT at the top
+  // of user_metadata — so check custom_claims FIRST, then fall back to the flat
+  // locations other IdPs / non-SSO tokens use.
   const sources: Array<Record<string, unknown> | undefined> = [
-    payload.app_metadata as Record<string, unknown> | undefined,
-    payload.user_metadata as Record<string, unknown> | undefined,
+    asObj(user?.custom_claims),
+    asObj(app?.custom_claims),
+    app,
+    user,
     payload,
   ];
   for (const src of sources) {
@@ -73,6 +112,29 @@ export function extractGroupClaims(
     }
   }
   return [];
+}
+
+/**
+ * Resolve which Kortix group ids a set of IdP claim values map to. Pure —
+ * exported for unit tests.
+ *
+ * Matching is CASE- and whitespace-INSENSITIVE: Azure AD / Entra emits group
+ * values (display names or `sAMAccountName`) whose casing an admin can easily
+ * mistype when creating the mapping, and a silent case mismatch would deny a
+ * user their groups with no error. Object-ID (GUID) values are unaffected —
+ * lowercasing a GUID still matches. Both sides are normalized identically.
+ */
+export function resolveClaimedGroupIds(
+  claims: readonly string[],
+  mappings: ReadonlyArray<{ claimValue: string; groupId: string }>,
+): Set<string> {
+  const norm = (v: string) => v.trim().toLowerCase();
+  const claimSet = new Set(claims.map(norm));
+  const ids = new Set<string>();
+  for (const m of mappings) {
+    if (claimSet.has(norm(m.claimValue))) ids.add(m.groupId);
+  }
+  return ids;
 }
 
 /**
@@ -161,10 +223,7 @@ export async function syncSsoMembership(args: {
   }
 
   const claims = extractGroupClaims(args.jwtPayload, provider.groupClaimName);
-  const claimSet = new Set(claims);
-  const claimedGroupIds = new Set(
-    mappings.filter((m) => claimSet.has(m.claimValue)).map((m) => m.groupId),
-  );
+  const claimedGroupIds = resolveClaimedGroupIds(claims, mappings);
   const mappedGroupIds = new Set(mappings.map((m) => m.groupId));
 
   // Current memberships in this account, restricted to the mapped set
@@ -209,6 +268,12 @@ export async function syncSsoMembership(args: {
           inArray(accountGroupMembers.groupId, toRemove),
         ),
       );
+  }
+
+  // JIT membership changed on login → bust this user so their group-derived
+  // roles are correct on the very first authed request of the session.
+  if (memberCreated || toAdd.length > 0 || toRemove.length > 0) {
+    invalidateIamCacheForUser(args.userId);
   }
 
   return {

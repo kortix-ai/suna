@@ -8,27 +8,28 @@
  *   Admin (dashboard-facing, user auth + project access):
  *     GET  /v1/executor/projects/:projectId/connectors          — list + status
  *     POST /v1/executor/projects/:projectId/connectors/sync     — re-materialize from kortix.toml
- *     PUT  /v1/executor/projects/:projectId/connectors/:slug/sharing — set who-can-use
+ *
+ * Connectors are project-wide visible — the only access gate is the agent-side
+ * `[[agents]].connectors` grant (iam/agent-scope.ts), enforced below.
  *
  * Built against an injected `ExecutorRouterDeps` so the e2e drives the real HTTP
  * layer + real gateway logic with in-memory fakes (db + upstream) at the
  * boundary; production wires DB-backed deps (db-deps.ts). See docs/specs/executor.md.
  */
-import { createRoute, z, type OpenAPIHono } from '@hono/zod-openapi';
-import { type Context } from 'hono';
-import { handleCall, type GatewayDeps } from './gateway';
-import { agentMayUseConnector } from '../iam/agent-scope';
+import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import type { AgentGrant } from '@kortix/db';
-import { parseSharingIntent, type SharingIntent } from './share';
-import { makeOpenApiApp, json, errors, auth } from '../openapi';
+import type { Context } from 'hono';
+import { agentMayUseConnector } from '../iam/agent-scope';
+import { auth, errors, json, makeOpenApiApp } from '../openapi';
+import { type GatewayDeps, handleCall } from './gateway';
 
 // ── Response schemas ─────────────────────────────────────────────────────────
 // Connector catalog/admin shapes are permissive (opaque tool metadata); the
 // /call result `data` and the pipedream/policy payloads are modeled loosely
 // because they pass through opaque upstream content.
 
-// Connector catalog/admin entries carry opaque tool metadata (inputSchema, risk,
-// sharing) — documented by example but modeled with `z.any()` so the strict
+// Connector catalog/admin entries carry opaque tool metadata (inputSchema, risk)
+// — documented by example but modeled with `z.any()` so the strict
 // zod-openapi handler-return check accepts the real interface-typed payloads
 // without rejecting any currently-valid shape.
 const CatalogActionSchema = z
@@ -86,7 +87,7 @@ export interface ExecutorPrincipal {
   accountId: string;
   projectId: string;
   sessionId: string | null;
-  /** The acting identity resolved to its group memberships (for sharing checks). */
+  /** The acting identity resolved to its group memberships. */
   subject: { userId: string; groupIds: string[] };
   /** Per-agent grant from the session token — restricts which connector
    *  profiles this agent may call. Null = no restriction (non-agent token). */
@@ -112,11 +113,12 @@ export interface CatalogConnector {
 
 export interface AdminConnectorView extends CatalogConnector {
   authSecret: string | null;
-  /** Credential storage mode — shared project credential vs each member's own. */
-  credentialMode: 'shared' | 'per_user';
-  /** Current access (who can use), for the dashboard picker. */
-  sharing: SharingIntent | null;
-  /** Whether the viewing user's credential is set (shared row, or their own for per_user). */
+  /** Credential storage mode. Always `shared` — `per_user` (each member's
+   *  own) was removed 2026-07-05. */
+  credentialMode: 'shared';
+  /** Marked sensitive — its reads gate too (require_approval by default). */
+  sensitive: boolean;
+  /** Whether the shared credential is set. */
   secretSet: boolean;
 }
 
@@ -125,9 +127,7 @@ interface SyncResult {
   errors: Array<{ slug: string; error: string }>;
 }
 
-type CrudOutcome =
-  | { ok: true; sync?: SyncResult }
-  | { ok: false; error: string; status: number };
+type CrudOutcome = { ok: true; sync?: SyncResult } | { ok: false; error: string; status: number };
 
 type PolicyAction = 'always_run' | 'require_approval' | 'block';
 export type DefaultMode = 'risk' | 'allow_all';
@@ -154,33 +154,65 @@ export interface ExecutorRouterDeps {
   resolveProjectPrincipal(c: Context, projectId: string): Promise<ExecutorPrincipal | null>;
   /** Build the DB-backed (or fake) gateway deps for a principal. */
   makeGatewayDeps(p: ExecutorPrincipal): GatewayDeps;
-  /** The catalog the principal can actually use (sharing-filtered, blocked hidden). */
+  /** The catalog the principal can actually use (agent-grant filtered, blocked hidden). */
   listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]>;
   /** Admin auth: resolve user + verify project access, or null for 401/403. */
-  resolveAdmin(c: Context, projectId: string): Promise<{ accountId: string; userId: string } | null>;
+  resolveAdmin(
+    c: Context,
+    projectId: string,
+  ): Promise<{ accountId: string; userId: string } | null>;
   listConnectors(projectId: string, viewerUserId: string): Promise<AdminConnectorView[]>;
   syncConnectors(projectId: string, accountId: string): Promise<SyncResult>;
-  /** Set sharing for a connector's bound secret. Returns false if the connector/secret is unknown. */
-  setSharing(projectId: string, slug: string, intent: SharingIntent): Promise<boolean>;
   /** Create/update a connector in kortix.toml + materialize. */
-  createConnector?(projectId: string, accountId: string, draft: Record<string, unknown>): Promise<CrudOutcome>;
+  createConnector?(
+    projectId: string,
+    accountId: string,
+    draft: Record<string, unknown>,
+  ): Promise<CrudOutcome>;
   /** Remove a connector from kortix.toml + drop its rows. */
   deleteConnector?(projectId: string, slug: string): Promise<CrudOutcome>;
   /** Set a connector's credential value (stored scope='connector', never injected). */
   setConnectorCredential?(projectId: string, slug: string, value: string): Promise<CrudOutcome>;
+  /** `userId` is accepted for back-compat but unused — a connector has exactly
+   *  one (shared) credential since `per_user` was removed 2026-07-05. */
   deleteConnectorCredential?(projectId: string, slug: string, userId: string): Promise<CrudOutcome>;
-  /** Change a connector's credential mode (shared ↔ per_user) in kortix.toml + re-sync. */
-  setCredentialMode?(projectId: string, accountId: string, slug: string, mode: 'shared' | 'per_user'): Promise<CrudOutcome>;
+  /** `shared` is the only credential mode (`per_user` removed 2026-07-05). This
+   *  route is kept as a restricted no-op for back-compat callers — the router
+   *  rejects any `mode` other than `shared` before calling this. */
+  setCredentialMode?(
+    projectId: string,
+    accountId: string,
+    slug: string,
+    mode: 'shared',
+  ): Promise<CrudOutcome>;
+  /** Toggle a connector's `sensitive` flag (gate reads too) in kortix.toml + re-sync. */
+  setSensitive?(
+    projectId: string,
+    accountId: string,
+    slug: string,
+    sensitive: boolean,
+  ): Promise<CrudOutcome>;
   /** Rename a connector (display label) in kortix.toml + re-sync. */
-  setConnectorName?(projectId: string, accountId: string, slug: string, name: string): Promise<CrudOutcome>;
+  setConnectorName?(
+    projectId: string,
+    accountId: string,
+    slug: string,
+    name: string,
+  ): Promise<CrudOutcome>;
   /** Read a connector's [[connectors.policies]] (per-tool/per-pattern permissions). */
-  getConnectorPolicies?(projectId: string, slug: string): Promise<{ policies: Array<{ match: string; action: string }> } | null>;
+  getConnectorPolicies?(
+    projectId: string,
+    slug: string,
+  ): Promise<{ policies: Array<{ match: string; action: string }> } | null>;
   /** Read a connector's definition (provider + connection fields) from kortix.toml for editing. */
-  getConnectorConfig?(projectId: string, slug: string): Promise<{
+  getConnectorConfig?(
+    projectId: string,
+    slug: string,
+  ): Promise<{
     slug: string;
     provider: string;
     platform?: string | null;
-    credentialMode: 'shared' | 'per_user';
+    credentialMode: 'shared';
     app: string | null;
     account: string | null;
     url: string | null;
@@ -188,19 +220,50 @@ export interface ExecutorRouterDeps {
     endpoint: string | null;
     baseUrl: string | null;
     spec: string | null;
-    auth: { type: 'none' | 'bearer' | 'basic' | 'custom'; in: 'header' | 'query'; name: string | null; prefix: string | null };
+    auth: {
+      type: 'none' | 'bearer' | 'basic' | 'custom';
+      in: 'header' | 'query';
+      name: string | null;
+      prefix: string | null;
+    };
   } | null>;
   /** Replace a connector's [[connectors.policies]] in kortix.toml + re-sync. */
-  setConnectorPolicies?(projectId: string, accountId: string, slug: string, policies: Array<{ match: string; action: string }>): Promise<CrudOutcome>;
-  /** Pipedream 1-click: mint a connect token (for the frontend SDK overlay) + link. null = not pipedream. */
-  pipedreamConnect?(projectId: string, slug: string, userId: string, redirects?: { success?: string; error?: string }): Promise<{ token?: string; app?: string; connectUrl?: string } | null>;
-  /** Pipedream 1-click: after the user finishes, persist the account binding (their own for per_user). */
-  pipedreamFinalize?(projectId: string, slug: string, userId: string): Promise<{ connected: boolean; accountId?: string } | null>;
+  setConnectorPolicies?(
+    projectId: string,
+    accountId: string,
+    slug: string,
+    policies: Array<{ match: string; action: string }>,
+  ): Promise<CrudOutcome>;
+  /** Pipedream 1-click: mint a connect token (for the frontend SDK overlay) + link.
+   *  null = not pipedream. `userId` is accepted for back-compat but unused —
+   *  the connection is always the shared project account (`per_user` removed
+   *  2026-07-05). */
+  pipedreamConnect?(
+    projectId: string,
+    slug: string,
+    userId: string,
+    redirects?: { success?: string; error?: string },
+  ): Promise<{ token?: string; app?: string; connectUrl?: string } | null>;
+  /** Pipedream 1-click: after the user finishes, persist the shared account binding. */
+  pipedreamFinalize?(
+    projectId: string,
+    slug: string,
+    userId: string,
+  ): Promise<{ connected: boolean; accountId?: string } | null>;
   /** Pipedream webhook: verify sig + finalize. Returns false on bad signature. */
   pipedreamWebhook?(externalUserId: string, sig: string | null): Promise<boolean>;
   /** Browse the Pipedream app catalogue (search + paginate). */
-  listPipedreamApps?(query: string | undefined, cursor: string | undefined): Promise<{
-    apps: Array<{ slug: string; name: string; description: string | null; imgSrc: string | null; categories: string[] }>;
+  listPipedreamApps?(
+    query: string | undefined,
+    cursor: string | undefined,
+  ): Promise<{
+    apps: Array<{
+      slug: string;
+      name: string;
+      description: string | null;
+      imgSrc: string | null;
+      categories: string[];
+    }>;
     nextCursor?: string;
     hasMore: boolean;
   }>;
@@ -246,7 +309,12 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     if (!agentMayUseConnector(p.agentGrant ?? null, connectorSlug)) {
       return c.json({ ok: false, status: 'denied', reason: 'connector_not_assigned' }, 403);
     }
-    const args = body?.args && typeof body.args === 'object' ? (body.args as Record<string, unknown>) : {};
+    const args =
+      body?.args && typeof body.args === 'object' ? (body.args as Record<string, unknown>) : {};
+    // A retry of a call already awaiting approval (the sandbox polls to pause
+    // indefinitely) — wait on THIS execution instead of stacking a new one.
+    const approvalExecutionId =
+      typeof body?.approval_execution_id === 'string' ? body.approval_execution_id : null;
     const result = await handleCall(deps.makeGatewayDeps(p), {
       projectId: p.projectId,
       accountId: p.accountId,
@@ -255,16 +323,28 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       connectorSlug,
       actionPath,
       args,
+      approvalExecutionId,
     });
     switch (result.status) {
       case 'ok':
         return c.json({ ok: true, data: result.data, risk: result.risk });
       case 'pending_approval':
-        return c.json({ ok: false, status: 'pending_approval', reason: result.reason }, 202);
+        return c.json(
+          {
+            ok: false,
+            status: 'pending_approval',
+            reason: result.reason,
+            execution_id: result.executionId ?? null,
+            retryable: result.retryable ?? false,
+          },
+          202,
+        );
       case 'denied':
         return c.json(
           { ok: false, status: 'denied', reason: result.reason },
-          result.reason === 'connector_not_found' || result.reason === 'action_not_found' ? 404 : 403,
+          result.reason === 'connector_not_found' || result.reason === 'action_not_found'
+            ? 404
+            : 403,
         );
       default:
         // 500, not 502 — Cloudflare eats 502 bodies (see route schema note).
@@ -281,7 +361,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       summary: 'List the connectors the executor principal can use',
       ...auth,
       responses: {
-        200: json(ConnectorsResponseSchema, 'Sharing-filtered connector catalog'),
+        200: json(ConnectorsResponseSchema, 'Connector catalog for this principal'),
         ...errors(401),
       },
     }),
@@ -355,7 +435,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       ...auth,
       request: { params: ProjectParam },
       responses: {
-        200: json(ConnectorsResponseSchema, 'Sharing-filtered connector catalog'),
+        200: json(ConnectorsResponseSchema, 'Connector catalog for this principal'),
         ...errors(403),
       },
     }),
@@ -412,7 +492,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       method: 'get',
       path: '/projects/{projectId}/connectors',
       tags: ['executor'],
-      summary: 'List a project\'s connectors with status (dashboard)',
+      summary: "List a project's connectors with status (dashboard)",
       ...auth,
       request: { params: ProjectParam },
       responses: {
@@ -453,14 +533,15 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.createConnector) return c.json({ error: 'not supported' }, 501);
       let body: any;
-      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
-      if (body?.sharing !== undefined) {
-        const intent = parseSharingIntent(body.sharing, admin.userId);
-        if (!intent) return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
-        body.sharing = intent;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: 'invalid_json' }, 400);
       }
       const result = await deps.createConnector(projectId, admin.accountId, body);
-      return result.ok ? c.json({ ok: true, sync: result.sync }) : c.json({ error: result.error }, result.status as 400);
+      return result.ok
+        ? c.json({ ok: true, sync: result.sync })
+        : c.json({ error: result.error }, result.status as 400);
     },
   );
 
@@ -485,7 +566,9 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.deleteConnector) return c.json({ error: 'not supported' }, 501);
       const result = await deps.deleteConnector(projectId, slug);
-      return result.ok ? c.json({ ok: true }) : c.json({ error: result.error }, result.status as 400);
+      return result.ok
+        ? c.json({ ok: true })
+        : c.json({ error: result.error }, result.status as 400);
     },
   );
 
@@ -495,7 +578,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       method: 'put',
       path: '/projects/{projectId}/connectors/{slug}/credential',
       tags: ['executor'],
-      summary: 'Set a connector\'s credential value',
+      summary: "Set a connector's credential value",
       ...auth,
       request: {
         params: ProjectSlugParam,
@@ -515,11 +598,17 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.setConnectorCredential) return c.json({ error: 'not supported' }, 501);
       let body: any;
-      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: 'invalid_json' }, 400);
+      }
       const value = typeof body?.value === 'string' ? body.value : '';
       if (!value) return c.json({ error: 'value is required' }, 400);
       const result = await deps.setConnectorCredential(projectId, slug, value);
-      return result.ok ? c.json({ ok: true }) : c.json({ error: result.error }, result.status as 400);
+      return result.ok
+        ? c.json({ ok: true })
+        : c.json({ error: result.error }, result.status as 400);
     },
   );
 
@@ -544,7 +633,9 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.deleteConnectorCredential) return c.json({ error: 'not supported' }, 501);
       const result = await deps.deleteConnectorCredential(projectId, slug, admin.userId);
-      return result.ok ? c.json({ ok: true }) : c.json({ error: result.error }, result.status as 404);
+      return result.ok
+        ? c.json({ ok: true })
+        : c.json({ error: result.error }, result.status as 404);
     },
   );
 
@@ -570,7 +661,10 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.listPipedreamApps) return c.json({ error: 'pipedream not configured' }, 501);
-      const result = await deps.listPipedreamApps(c.req.query('q') || undefined, c.req.query('cursor') || undefined);
+      const result = await deps.listPipedreamApps(
+        c.req.query('q') || undefined,
+        c.req.query('cursor') || undefined,
+      );
       return c.json(result);
     },
   );
@@ -624,53 +718,16 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     },
   );
 
-  // ── Admin: set sharing for a connector's credential ──────────────────────
-  app.openapi(
-    createRoute({
-      method: 'put',
-      path: '/projects/{projectId}/connectors/{slug}/sharing',
-      tags: ['executor'],
-      summary: 'Set who can use a connector\'s bound credential',
-      ...auth,
-      request: {
-        params: ProjectSlugParam,
-        body: { content: { 'application/json': { schema: OpaqueSchema } } },
-      },
-      responses: {
-        200: json(OkSchema, 'Sharing updated'),
-        ...errors(400, 403, 404),
-      },
-    }),
-    // Manual parse kept: original validates the sharing intent via
-    // parseSharingIntent (custom message) and returns `invalid_json`.
-    async (c: any) => {
-      const projectId = c.req.param('projectId');
-      const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-
-      let body: any;
-      try {
-        body = await c.req.json();
-      } catch {
-        return c.json({ error: 'invalid_json' }, 400);
-      }
-      const intent = parseSharingIntent(body, admin.userId);
-      if (!intent) return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
-
-      const ok = await deps.setSharing(projectId, slug, intent);
-      if (!ok) return c.json({ error: 'connector or its credential not found' }, 404);
-      return c.json({ ok: true });
-    },
-  );
-
-  // ── Admin: change a connector's credential mode (shared ↔ per_user) ───────
+  // ── Admin: connector credential mode — restricted to a `shared`-only no-op.
+  // `per_user` (each member brings their own) was removed 2026-07-05
+  // (docs/specs/2026-07-05-agent-first-config-unification.md §2.5). The route
+  // stays for back-compat callers but only ever accepts `shared` now.
   app.openapi(
     createRoute({
       method: 'put',
       path: '/projects/{projectId}/connectors/{slug}/credential-mode',
       tags: ['executor'],
-      summary: 'Change a connector\'s credential mode (shared ↔ per_user)',
+      summary: "Set a connector's credential mode (shared only — per_user was removed)",
       ...auth,
       request: {
         params: ProjectSlugParam,
@@ -688,13 +745,63 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.setCredentialMode) return c.json({ error: 'not supported' }, 501);
       let body: any;
-      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: 'invalid_json' }, 400);
+      }
       const mode = body?.mode;
-      if (mode !== 'shared' && mode !== 'per_user') {
-        return c.json({ error: 'mode must be "shared" or "per_user"' }, 400);
+      if (mode !== 'shared') {
+        return c.json(
+          { error: mode === 'per_user'
+            ? 'per_user credential mode was removed — connectors are always shared now'
+            : 'mode must be "shared"' },
+          400,
+        );
       }
       const result = await deps.setCredentialMode(projectId, admin.accountId, slug, mode);
-      return result.ok ? c.json({ ok: true, sync: result.sync }) : c.json({ error: result.error }, result.status as 400);
+      return result.ok
+        ? c.json({ ok: true, sync: result.sync })
+        : c.json({ error: result.error }, result.status as 400);
+    },
+  );
+
+  // ── Admin: toggle a connector's `sensitive` flag (reads gate too) ─────────
+  app.openapi(
+    createRoute({
+      method: 'put',
+      path: '/projects/{projectId}/connectors/{slug}/sensitive',
+      tags: ['executor'],
+      summary: "Toggle a connector's sensitive flag (gate reads too)",
+      ...auth,
+      request: {
+        params: ProjectSlugParam,
+        body: { content: { 'application/json': { schema: OpaqueSchema } } },
+      },
+      responses: {
+        200: json(CrudOkSchema, 'Sensitive flag updated'),
+        ...errors(400, 403, 404, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const slug = c.req.param('slug');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.setSensitive) return c.json({ error: 'not supported' }, 501);
+      let body: any;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: 'invalid_json' }, 400);
+      }
+      if (typeof body?.sensitive !== 'boolean') {
+        return c.json({ error: 'sensitive must be a boolean' }, 400);
+      }
+      const result = await deps.setSensitive(projectId, admin.accountId, slug, body.sensitive);
+      return result.ok
+        ? c.json({ ok: true, sync: result.sync })
+        : c.json({ error: result.error }, result.status as 400);
     },
   );
 
@@ -722,11 +829,17 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.setConnectorName) return c.json({ error: 'not supported' }, 501);
       let body: any;
-      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: 'invalid_json' }, 400);
+      }
       const name = typeof body?.name === 'string' ? body.name : '';
       if (!name.trim()) return c.json({ error: '`name` is required' }, 400);
       const result = await deps.setConnectorName(projectId, admin.accountId, slug, name);
-      return result.ok ? c.json({ ok: true, sync: result.sync }) : c.json({ error: result.error }, result.status as 400);
+      return result.ok
+        ? c.json({ ok: true, sync: result.sync })
+        : c.json({ error: result.error }, result.status as 400);
     },
   );
 
@@ -736,7 +849,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       method: 'get',
       path: '/projects/{projectId}/connectors/{slug}/policies',
       tags: ['executor'],
-      summary: 'Read a connector\'s tool-call policies',
+      summary: "Read a connector's tool-call policies",
       ...auth,
       request: { params: ProjectSlugParam },
       responses: {
@@ -762,7 +875,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       method: 'get',
       path: '/projects/{projectId}/connectors/{slug}/config',
       tags: ['executor'],
-      summary: 'Read a connector\'s connection config (provider, url, auth, …)',
+      summary: "Read a connector's connection config (provider, url, auth, …)",
       ...auth,
       request: { params: ProjectSlugParam },
       responses: {
@@ -788,7 +901,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       method: 'put',
       path: '/projects/{projectId}/connectors/{slug}/policies',
       tags: ['executor'],
-      summary: 'Replace a connector\'s tool-call policies',
+      summary: "Replace a connector's tool-call policies",
       ...auth,
       request: {
         params: ProjectSlugParam,
@@ -806,11 +919,17 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.setConnectorPolicies) return c.json({ error: 'not supported' }, 501);
       let body: any;
-      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: 'invalid_json' }, 400);
+      }
       const policies = Array.isArray(body?.policies) ? body.policies : null;
       if (!policies) return c.json({ error: '`policies` must be an array' }, 400);
       const result = await deps.setConnectorPolicies(projectId, admin.accountId, slug, policies);
-      return result.ok ? c.json({ ok: true, sync: result.sync }) : c.json({ error: result.error }, result.status as 400);
+      return result.ok
+        ? c.json({ ok: true, sync: result.sync })
+        : c.json({ error: result.error }, result.status as 400);
     },
   );
 
@@ -842,7 +961,9 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         if (body?.success_redirect_uri || body?.error_redirect_uri) {
           redirects = { success: body.success_redirect_uri, error: body.error_redirect_uri };
         }
-      } catch { /* no body */ }
+      } catch {
+        /* no body */
+      }
       const result = await deps.pipedreamConnect(projectId, slug, admin.userId, redirects);
       if (!result) return c.json({ error: 'not a pipedream connector' }, 404);
       return c.json(result);
@@ -925,7 +1046,11 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       if (!deps.setProjectPolicies) return c.json({ error: 'not supported' }, 501);
 
       let body: any;
-      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: 'invalid_json' }, 400);
+      }
 
       const rawPolicies = Array.isArray(body?.policies) ? body.policies : [];
       const policies: ProjectPolicyView[] = [];
@@ -941,7 +1066,12 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       }
       const defaultMode = body?.defaultMode === 'risk' ? 'risk' : 'allow_all';
 
-      const result = await deps.setProjectPolicies(projectId, admin.accountId, policies, defaultMode);
+      const result = await deps.setProjectPolicies(
+        projectId,
+        admin.accountId,
+        policies,
+        defaultMode,
+      );
       return result.ok
         ? c.json({ ok: true, sync: result.sync })
         : c.json({ error: result.error }, result.status as 400);
@@ -970,7 +1100,11 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       if (!deps.pipedreamWebhook) return c.json({ error: 'pipedream not configured' }, 501);
       const sig = c.req.query('sig') ?? null;
       let body: any;
-      try { body = await c.req.json(); } catch { body = {}; }
+      try {
+        body = await c.req.json();
+      } catch {
+        body = {};
+      }
       const extUserId = typeof body?.external_user_id === 'string' ? body.external_user_id : '';
       if (!extUserId) return c.json({ error: 'missing external_user_id' }, 400);
       const ok = await deps.pipedreamWebhook(extUserId, sig);

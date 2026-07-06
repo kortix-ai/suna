@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
+import type { KortixSendError } from '@kortix/sdk/react';
 
 // ============================================================================
 // Abort detection — user-initiated stops get a lowkey treatment
@@ -139,23 +140,35 @@ function InsufficientCreditsCard({ errorText, className }: { errorText: string; 
 // ============================================================================
 
 interface TurnErrorDisplayProps {
-  errorText: string;
+  /**
+   * Plain-text error — for turn-level errors derived directly from
+   * `AssistantMessage.error.data.message` via `getTurnError()`, which never go
+   * through `classifySendError` (no typed `error` available for them). Ignored
+   * when `error` is also provided.
+   */
+  errorText?: string;
+  /**
+   * Typed send failure from the SDK's `classifySendError` (send/command/reply
+   * catch paths). When present, billing-vs-runtime routing reads `.kind`
+   * (and `.billing.detail.code` for the credits-vs-usage-limit card) instead
+   * of regexing the message.
+   */
+  error?: KortixSendError | null;
   className?: string;
 }
 
 /**
- * Renders a turn-level error inline. Error text is derived directly from
- * `AssistantMessage.error.data.message` via `getTurnError()` — no
- * classification, no severity levels, just the unwrapped error message.
+ * Renders a turn-level or send-failure error inline.
  *
  * Abort errors (user-initiated stops) get a minimal, lowkey treatment —
  * just muted text, no border/background card.
  */
-export function TurnErrorDisplay({ errorText, className }: TurnErrorDisplayProps) {
-  if (!errorText) return null;
+export function TurnErrorDisplay({ errorText, error, className }: TurnErrorDisplayProps) {
+  const text = error ? error.message : errorText;
+  if (!text) return null;
 
   // Abort/cancelled → tiny muted note, no card
-  if (isAbortError(errorText)) {
+  if (isAbortError(text)) {
     return (
       <p className={cn('text-xs text-muted-foreground/50 italic', className)}>
         Interrupted
@@ -163,14 +176,30 @@ export function TurnErrorDisplay({ errorText, className }: TurnErrorDisplayProps
     );
   }
 
-  // Insufficient credits → actionable card with buy/auto-topup buttons
-  if (isInsufficientCreditsError(errorText)) {
-    return <InsufficientCreditsCard errorText={errorText} className={className} />;
+  // Typed billing failure — the "is this billing at all" question is already
+  // answered by `error.kind`, so no message regex needed for that. The
+  // structured entitlement code (when the backend sent one) picks the card;
+  // an unstructured/legacy 402 with no code falls back to a message sniff.
+  if (error?.kind === 'billing') {
+    const code = error.billing?.detail?.code as string | undefined;
+    const isUsageLimitCode =
+      code === 'subscription_required' || code === 'no_account' || code === 'budget_exceeded';
+    if (isUsageLimitCode || (!code && isUsageLimitError(text))) {
+      return <UsageLimitCard errorText={text} className={className} />;
+    }
+    return <InsufficientCreditsCard errorText={text} className={className} />;
+  }
+
+  // Insufficient credits → actionable card with buy/auto-topup buttons.
+  // Also covers turn-level errors passed as plain `errorText`, which never
+  // go through `classifySendError`.
+  if (isInsufficientCreditsError(text)) {
+    return <InsufficientCreditsCard errorText={text} className={className} />;
   }
 
   // Free-tier / subscription / budget limit → actionable upgrade card
-  if (isUsageLimitError(errorText)) {
-    return <UsageLimitCard errorText={errorText} className={className} />;
+  if (isUsageLimitError(text)) {
+    return <UsageLimitCard errorText={text} className={className} />;
   }
 
   // Real errors → full card
@@ -185,7 +214,7 @@ export function TurnErrorDisplay({ errorText, className }: TurnErrorDisplayProps
     >
       <AlertCircle className="size-3.5 mt-0.5 flex-shrink-0 text-muted-foreground/70" />
       <p className="text-xs text-muted-foreground break-words min-w-0">
-        {errorText}
+        {text}
       </p>
     </div>
   );

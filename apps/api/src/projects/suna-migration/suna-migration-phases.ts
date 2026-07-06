@@ -14,7 +14,7 @@
  * and the uploaded opencode archive + the DB rows. A crash before `repo`
  * re-extracts (idempotent: un-archive + tar again).
  */
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
@@ -103,24 +103,41 @@ export async function extractStep(ctx: SunaMigrationContext): Promise<void> {
 export async function repoStep(ctx: SunaMigrationContext): Promise<void> {
   if (typeof ctx.progress.project_id === 'string') { ctx.log('repo: already done'); return; }
   const out = bundlePath(ctx.migrationId);
+  const dbAside = join(tmpdir(), `suna-mig-${ctx.migrationId}.opencode.db`);
+  const bundleDb = join(out, 'opencode.db');
+
+  // The bundle lives in this pod's /tmp. On EKS a retry can resume on a
+  // DIFFERENT pod (3–12 replicas, leader-only worker, no stickiness) where
+  // neither the bundle nor a prior aside exists — rebuild it from the live DB
+  // (extract is idempotent + self-contained) so repo is pod-independent.
+  if (!existsSync(bundleDb) && !existsSync(dbAside)) {
+    ctx.log('repo: bundle absent on this pod, re-extracting');
+    await extractStep(ctx);
+  }
+
+  // Move opencode.db out of the bundle BEFORE pushing (chat storage, not source)
+  // and key the aside to the stable migrationId — NOT the projectId, which
+  // pushBundleAsRepo mints fresh on every call. A retry that re-enters repoStep
+  // must still find the db an earlier attempt moved aside. Move once; idempotent.
+  if (existsSync(bundleDb)) renameSync(bundleDb, dbAside);
+  if (!existsSync(dbAside)) throw new Error('repo: opencode.db missing after re-extract');
+
   const repo = await pushBundleAsRepo(ctx.accountId, out);
 
-  // opencode.db was moved aside by pushBundleAsRepo. Tar it with the db named
-  // exactly `opencode.db` (same convention legacy archives use, which is what
-  // rehydrateSessionChat opens) and upload keyed by projectId for on-open ship.
-  const dbAside = join(tmpdir(), `${repo.projectId}.opencode.db`);
+  // Tar with the db named exactly `opencode.db` (the convention legacy archives
+  // use, which is what rehydrateSessionChat opens) and upload keyed by projectId.
   const stageDir = mkdtempSync(join(tmpdir(), `suna-oc-${repo.projectId}-`));
   copyFileSync(dbAside, join(stageDir, 'opencode.db'));
   const tar = Bun.spawnSync(['tar', 'czf', '-', '-C', stageDir, 'opencode.db']);
   if (tar.exitCode === 0) await uploadOpencodeArchive(repo.projectId, Buffer.from(tar.stdout));
   rmSync(stageDir, { recursive: true, force: true });
-  rmSync(dbAside, { force: true });
 
   await ctx.checkpoint({
     project_id: repo.projectId, repo_url: repo.upstreamUrl, repo_owner: repo.repoOwner,
     repo_name: repo.repoName, default_branch: repo.defaultBranch, provider: repo.provider,
     external_repo_id: repo.externalRepoId, installation_id: repo.installationId, credential_ref: repo.credentialRef,
   });
+  rmSync(dbAside, { force: true });
   ctx.log('repo: pushed + opencode archive uploaded', { repo: repo.upstreamUrl });
 }
 
@@ -142,7 +159,9 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
   await (ctx.database as any).transaction(async (tx: any) => {
     await tx.insert(projects).values({
       projectId, accountId: ctx.accountId, name: 'Legacy (Suna) projects',
-      repoUrl, defaultBranch, manifestPath: 'kortix.toml', status: 'active',
+      // pushBundleAsRepo (suna-push.ts) seeds the new repo with
+      // @kortix/starter, which ships kortix.yaml (kortix_version 2).
+      repoUrl, defaultBranch, manifestPath: 'kortix.yaml', status: 'active',
       metadata: {
         git: { url: repoUrl, upstream_url: repoUrl, default_branch: defaultBranch, provider, managed: true,
                owner: ctx.progress.repo_owner, name: ctx.progress.repo_name },
@@ -169,7 +188,7 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
     for (const s of specs) {
       await tx.insert(projectSessions).values({
         sessionId: crypto.randomUUID(), accountId: ctx.accountId, projectId,
-        branchName: s.slug, baseRef: defaultBranch, sandboxProvider: 'daytona',
+        branchName: s.slug, baseRef: defaultBranch, sandboxProvider: 'managed',
         sandboxId: null, sandboxUrl: null, opencodeSessionId: s.opencodeSessionId,
         agentName: 'default', status: 'stopped', createdBy: ctx.accountId, visibility: 'project',
         metadata: {

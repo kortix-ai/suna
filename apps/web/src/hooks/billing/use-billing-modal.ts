@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { BillingError } from '@/lib/api/errors';
+import { BillingError } from '@kortix/sdk/react';
 
 interface UseBillingModalReturn {
   showModal: boolean;

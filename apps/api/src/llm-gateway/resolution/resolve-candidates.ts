@@ -3,9 +3,9 @@ import {
   type UpstreamDescriptor,
   resolveCatalogUpstream,
 } from '@kortix/llm-gateway';
-import { getManagedModel, pickAutoModel } from '@kortix/shared/llm-catalog';
+import { getManagedModel, pickAutoModel } from '@kortix/llm-catalog';
 import { getAccountTier } from '../../billing/services/entitlements';
-import { tierGrantsAllModels } from '../../billing/services/tiers';
+import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import { config } from '../../config';
 import { getProjectSecretValue } from '../../projects/secrets';
 import { resolveCodexCredential } from '../credentials/codex';
@@ -95,7 +95,7 @@ export async function resolveCandidates(
     if (principal.freeModelsOnly) return [];
     if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
       const tier = await resolveCachedAccountTier(principal.accountId);
-      if (!tierGrantsAllModels(tier)) return [];
+      if (accountIsFreeTierForModels(tier)) return [];
     }
     return managedCandidates(managed);
   }

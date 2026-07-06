@@ -704,7 +704,7 @@ function ProjectSessionListItem({
 
 /**
  * Build a map from parent session ID → array of child session IDs.
- * Ported from web's childMapByParent() in ui/turns.ts.
+ * Ported from childMapByParent() in @kortix/sdk/turns.
  */
 function buildChildMap(sessions: Session[]): Map<string, string[]> {
   const map = new Map<string, string[]>();

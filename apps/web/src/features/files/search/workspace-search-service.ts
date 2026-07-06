@@ -1,6 +1,6 @@
 import { getActiveOpenCodeUrl } from '@/stores/server-store';
 import { findFiles, listFiles } from '../api/opencode-files';
-import type { FileNode } from '../types';
+import type { FileNode } from '@/features/file-browser/types';
 import {
   type WorkspaceSearchEntry,
   type WorkspaceSearchOptions,
@@ -12,7 +12,7 @@ import {
   searchIndexedWorkspaceEntries,
   toWorkspaceSearchEntry,
   workspaceQueryLooksPathLike,
-} from './workspace-search-core';
+} from '@/features/file-browser/search/workspace-search-core';
 
 interface WorkspaceSearchRuntimeOptions extends WorkspaceSearchOptions {
   apiLimit?: number;
@@ -321,4 +321,16 @@ export async function searchWorkspaceFilePaths(
 ): Promise<string[]> {
   const entries = await searchWorkspaceFileEntries(query, options);
   return entries.map(toResultPath);
+}
+
+/**
+ * One-shot async file+folder search with ranking.
+ * Returns plain `string[]` paths (dirs have trailing `/`).
+ * Drop-in replacement for `findOpenCodeFiles`.
+ */
+export async function searchWorkspaceFiles(
+  query: string,
+  limit = 50,
+): Promise<string[]> {
+  return searchWorkspaceFilePaths(query, { limit, apiLimit: Math.max(limit, 100) });
 }

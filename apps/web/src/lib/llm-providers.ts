@@ -3,7 +3,7 @@
  *
  * Data source: a slim snapshot of https://models.dev/api.json (the same data
  * OpenCode uses internally). The snapshot lives at
- * `packages/shared/src/llm-catalog/catalog.generated.json`; its per-model
+ * `packages/llm-catalog/src/catalog.generated.json`; its per-model
  * capability flags are refreshed from models.dev by
  * `apps/web/scripts/enrich-llm-catalog-capabilities.ts`.
  *
@@ -13,7 +13,7 @@
  * with a friendlier flow.
  */
 
-import { CATALOG as catalog } from '@kortix/shared/llm-catalog';
+import { CATALOG as catalog } from '@kortix/llm-catalog';
 
 export interface LlmProviderModel {
   id: string;

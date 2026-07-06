@@ -6,6 +6,7 @@ import { db } from '../../shared/db';
 import {
   getCrById,
   getNextCrNumber,
+  recordRequestedChange,
   serializeChangeRequest,
 } from '../change-requests';
 import {
@@ -13,17 +14,18 @@ import {
   getDiffBetweenShas,
   invalidateProjectMirror,
   previewMerge,
-  resolveBranchTip,
+  resolveBranchAheadState,
 } from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
-import { loadProjectForUser, loadVisibleSession } from '../lib/access';
+import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { assertAgentScope } from '../../iam/agent-scope';
-import { AnyObject, ChangeRequestSchema, projectsApp } from '../lib/app';
+import { PROJECT_ACTIONS } from '../../iam';
+import { AnyObject, ChangeRequestSchema, SessionStartResultSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
-import { restartSession, startSession } from '../session-lifecycle';
+import { continueSession, restartSession, startSession, stopSession } from '../session-lifecycle';
 import {
   refreshCrTips,
 } from './shared';
@@ -44,9 +46,12 @@ projectsApp.openapi(
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
     },
-    responses: { 200: json(z.any(), 'OK'), ...errors(400, 402, 404) },
+    responses: {
+      200: json(SessionStartResultSchema, 'Session readiness payload'),
+      ...errors(400, 402, 404),
+    },
   }),
-  async (c: any) => {
+  async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!UUID_V4_REGEX.test(sessionId))
@@ -54,6 +59,9 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Per-agent gate: resuming a session provisions compute. A scoped agent
+    // token must hold project.session.start (no-op for human/PAT tokens).
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
     const visible = await loadVisibleSession(loaded, sessionId);
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
@@ -110,15 +118,18 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Per-agent gate: restart re-provisions compute. A scoped agent token must
+    // hold project.session.start (no-op for human/PAT tokens).
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
 
-    // Restart is reserved for the session owner or a project manager.
+    // Restart is reserved for the session owner or an account owner/admin.
     const visible = await loadVisibleSession(loaded, sessionId);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
       return c.json(
         {
           error:
-            'Only the session owner or a project manager can restart this session',
+            'Only the session owner or an account owner/admin can restart this session',
         },
         403,
       );
@@ -128,6 +139,58 @@ projectsApp.openapi(
       session: visible.row,
       projectId,
       sessionId,
+    });
+    return c.json(result.body, result.status as any);
+  },
+);
+
+// POST /v1/projects/:projectId/sessions/:sessionId/stop
+// Manual pause: stops the running sandbox in place (disk kept, same contract as
+// an idle auto-stop) without provisioning anything new. Resumable via /start.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/{sessionId}/stop',
+    tags: ['sessions'],
+    summary: 'POST /:projectId/sessions/:sessionId/stop',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), 'OK'),
+      ...errors(400, 403, 404, 409, 502),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!UUID_V4_REGEX.test(sessionId))
+      return c.json({ error: 'Invalid session id' }, 400);
+
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Per-agent gate: same capability as start/restart — stopping is part of
+    // the agent's session-lifecycle surface.
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+
+    // Stop is reserved for the session owner or an account owner/admin, same policy
+    // as restart.
+    const visible = await loadVisibleSession(loaded, sessionId);
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+    if (!visible.canManageSharing) {
+      return c.json(
+        { error: 'Only the session owner or an account owner/admin can stop this session' },
+        403,
+      );
+    }
+
+    const result = await stopSession({
+      projectId,
+      sessionId,
+      accountId: loaded.row.accountId,
+      userId: loaded.userId,
     });
     return c.json(result.body, result.status as any);
   },
@@ -209,7 +272,7 @@ projectsApp.openapi(
     },
     responses: {
       201: json(ChangeRequestSchema, 'The created change request'),
-      ...errors(400, 404, 500),
+      ...errors(400, 404, 422, 500),
     },
   }),
   async (c: any) => {
@@ -217,6 +280,9 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Human-side capability gate (Git Ops). Editors hold it; a custom
+    // role omits project.gitops.push to take Git-Ops away from a department.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
     // Per-agent gate: opening a CR is the agent's intended path to propose work.
     // Default-deny — a scoped agent must be granted project.cr.open.
@@ -251,15 +317,24 @@ projectsApp.openapi(
       if (!sessionRow) originSessionId = null;
     }
 
-    // Resolve current tips so the CR has anchored SHAs from the start.
+    // Resolve current tips so the CR has anchored SHAs from the start, and
+    // refuse an EMPTY change request outright: a head with no commits ahead
+    // of base renders "No changes detected" in the dashboard and can never
+    // be applied (previewMerge reports it un-mergeable). The two shapes are
+    // a committed-but-never-pushed session branch (head tip == base tip) and
+    // a stale branch behind an advanced base (merge-base == head tip); both
+    // came up in the wild via agent flows on 2026-07-06. The resolver forces
+    // a mirror re-fetch before concluding "not ahead", so a push that landed
+    // moments ago never bounces.
     let baseSha: string | null = null;
     let headSha: string | null = null;
+    let headAhead = true;
     try {
       const projectForGit = await withProjectGitAuth(loaded.row);
-      [baseSha, headSha] = await Promise.all([
-        resolveBranchTip(projectForGit, baseRef),
-        resolveBranchTip(projectForGit, headRef),
-      ]);
+      const aheadState = await resolveBranchAheadState(projectForGit, baseRef, headRef);
+      baseSha = aheadState.baseSha;
+      headSha = aheadState.headSha;
+      headAhead = aheadState.ahead;
     } catch (error) {
       return c.json(
         {
@@ -269,6 +344,15 @@ projectsApp.openapi(
               : 'Failed to resolve branches',
         },
         400,
+      );
+    }
+    if (!headAhead) {
+      return c.json(
+        {
+          error: `head_ref "${headRef}" has no commits ahead of "${baseRef}" — the change request would be empty and could never be applied. Commit your work and push the branch (git push origin HEAD), then retry. If your branch is behind an advanced base, rebase onto the latest base first.`,
+          code: 'CR_HEAD_NOT_AHEAD',
+        },
+        422,
       );
     }
 
@@ -341,6 +425,7 @@ projectsApp.openapi(
     const sessionId = c.req.param('sessionId');
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
     const body = await readBody(c);
     const message = normalizeString(body.message) ?? undefined;
@@ -508,6 +593,8 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Per-agent gate: editing a CR is part of the change-request capability.
+    assertAgentScope(c, 'project.cr.open');
 
     const cr = await getCrById(crId, projectId);
     if (!cr) return c.json({ error: 'Change request not found' }, 404);
@@ -532,6 +619,80 @@ projectsApp.openapi(
       .where(eq(changeRequests.crId, crId))
       .returning();
     return c.json(serializeChangeRequest(row));
+  },
+);
+
+// POST /v1/projects/:projectId/change-requests/:crId/request-changes
+// Human "request changes" from the Review Center: persist the feedback on the CR
+// (CRs have no comment table — this is how the ask is remembered + shown back)
+// and deliver it to the agent that opened the change so it revises. Delivery is
+// fire-and-forget: continueSession boots the sandbox if it's asleep, resolves the
+// live session, and retries — so the HTTP response stays snappy.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/change-requests/{crId}/request-changes',
+    tags: ['change-requests'],
+    summary: 'POST /:projectId/change-requests/:crId/request-changes',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), crId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), 'OK'),
+      ...errors(400, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const crId = c.req.param('crId');
+    const body = await readBody(c);
+    const loaded = await loadProjectForUser(c, projectId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
+    );
+
+    const feedback = normalizeString(body.feedback ?? body.text);
+    if (!feedback) return c.json({ error: 'feedback is required' }, 400);
+
+    const cr = await getCrById(crId, projectId);
+    if (!cr) return c.json({ error: 'Change request not found' }, 404);
+    if (cr.status !== 'open') {
+      return c.json({ error: `Cannot request changes on a ${cr.status} change request` }, 409);
+    }
+
+    // Persist first — the ask must survive even if delivery can't reach the agent.
+    const row = await recordRequestedChange(crId, projectId, {
+      text: feedback,
+      by: loaded.userId,
+      at: new Date().toISOString(),
+    });
+    if (!row) return c.json({ error: 'Change request not found' }, 404);
+
+    // Deliver to the originating session's agent (best-effort, background — a
+    // sandbox boot can take seconds, so we never block the response on it).
+    const willDeliver = Boolean(cr.originSessionId);
+    if (cr.originSessionId) {
+      void continueSession({
+        source: 'ui',
+        sessionId: cr.originSessionId,
+        text: `Please revise change request #${cr.number} ("${cr.title}") based on this feedback:\n\n${feedback}`,
+        userId: loaded.userId,
+      }).catch((err) => {
+        console.warn('[change-requests] request-changes delivery failed', {
+          crId,
+          error: String(err),
+        });
+      });
+    }
+
+    return c.json({ change_request: serializeChangeRequest(row), delivering: willDeliver });
   },
 );
 

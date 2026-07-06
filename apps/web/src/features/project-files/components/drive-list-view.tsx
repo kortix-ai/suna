@@ -1,30 +1,7 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
-import { useState, useCallback, useRef } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Folder,
-  FolderCog,
-  MoreVertical,
-  Download,
-  History,
-  Pencil,
-  Trash2,
-  Copy,
-  Scissors,
-  ClipboardCopy,
-  RefreshCw,
-  ArrowUp,
-  ArrowDown,
-  FolderOpen,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import type { FileNode } from '../types';
-import { getFileIcon } from './file-icon';
-import { DRAG_MIME } from './file-tree-item';
-import type { GitStatusType } from './file-tree-item';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -32,10 +9,56 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
-import { useFilesStore, type SortField } from '../store/files-store';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { cn } from '@/lib/utils';
+import { chalkColors } from '@kortix/shared';
+import { ArrowDown, ArrowUp, Folder, FolderCog, MoreVertical } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useCallback, useRef, useState } from 'react';
+import { useFilesStore, type SortField } from '@/features/file-browser/store/files-store';
+import type { FileNode } from '@/features/file-browser/types';
+import { FileDriveMenuItems, FolderDriveMenuItems } from './drive-grid-view';
+import { getFileIcon } from './file-icon';
+import type { GitStatusType } from '@/features/file-browser/components/file-tree-item';
+import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
 
-// ─── List Row ───────────────────────────────────────────────────────────────
+const ELEVATED_DIR_META: Record<string, string> = {
+  '.kortix': 'Project config, tasks, context',
+  '.opencode': 'Agents, skills, commands',
+};
 
+function ChalkBadge({ label }: { label: string }) {
+  const chalk = chalkColors(label);
+
+  return (
+    <Badge
+      variant="transparent"
+      size="xs"
+      className="border font-semibold tracking-wider uppercase backdrop-blur-sm"
+      style={{
+        backgroundColor: chalk.background,
+        color: chalk.foreground,
+        borderColor: chalk.border,
+      }}
+    >
+      {label}
+    </Badge>
+  );
+}
 interface ListRowProps {
   node: FileNode;
   onClick: () => void;
@@ -73,31 +96,39 @@ function ListRow({
   const [renameName, setRenameName] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
-  const contextTriggerRef = useRef<HTMLDivElement>(null);
 
   const isDir = node.type === 'directory';
 
-  const handleDragStart = useCallback((e: React.DragEvent) => {
-    e.dataTransfer.setData(DRAG_MIME, node.path);
-    e.dataTransfer.setData('text/plain', node.name);
-    e.dataTransfer.effectAllowed = 'move';
-    setIsDragging(true);
-  }, [node.path, node.name]);
+  const handleDragStart = useCallback(
+    (e: React.DragEvent) => {
+      e.dataTransfer.setData(DRAG_MIME, node.path);
+      e.dataTransfer.setData('text/plain', node.name);
+      e.dataTransfer.effectAllowed = 'move';
+      setIsDragging(true);
+    },
+    [node.path, node.name],
+  );
 
   const handleDragEnd = useCallback(() => setIsDragging(false), []);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (!isDir || !e.dataTransfer.types.includes(DRAG_MIME)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  }, [isDir]);
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (!isDir || !e.dataTransfer.types.includes(DRAG_MIME)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    },
+    [isDir],
+  );
 
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    if (!isDir || !e.dataTransfer.types.includes(DRAG_MIME)) return;
-    e.preventDefault();
-    dragCounterRef.current++;
-    setIsDragOver(true);
-  }, [isDir]);
+  const handleDragEnter = useCallback(
+    (e: React.DragEvent) => {
+      if (!isDir || !e.dataTransfer.types.includes(DRAG_MIME)) return;
+      e.preventDefault();
+      dragCounterRef.current++;
+      setIsDragOver(true);
+    },
+    [isDir],
+  );
 
   const handleDragLeave = useCallback(() => {
     if (!isDir) return;
@@ -108,16 +139,19 @@ function ListRow({
     }
   }, [isDir]);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    if (!isDir) return;
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounterRef.current = 0;
-    setIsDragOver(false);
-    const sourcePath = e.dataTransfer.getData(DRAG_MIME);
-    if (!sourcePath || sourcePath === node.path || node.path.startsWith(sourcePath + '/')) return;
-    onDropMove?.(sourcePath, node.path);
-  }, [isDir, node.path, onDropMove]);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      if (!isDir) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounterRef.current = 0;
+      setIsDragOver(false);
+      const sourcePath = e.dataTransfer.getData(DRAG_MIME);
+      if (!sourcePath || sourcePath === node.path || node.path.startsWith(sourcePath + '/')) return;
+      onDropMove?.(sourcePath, node.path);
+    },
+    [isDir, node.path, onDropMove],
+  );
 
   const startRenaming = useCallback(() => {
     setRenameName(node.name);
@@ -146,30 +180,52 @@ function ListRow({
     setIsRenaming(false);
   }, [renameName, node, onRename]);
 
-  // Programmatically open context menu on 3-dot click
-  const handleDotsClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const trigger = contextTriggerRef.current;
-    if (trigger) {
-      const rect = (e.target as HTMLElement).getBoundingClientRect();
-      trigger.dispatchEvent(
-        new MouseEvent('contextmenu', {
-          bubbles: true,
-          clientX: rect.left,
-          clientY: rect.bottom,
-        }),
-      );
-    }
-  }, []);
+  const extLower =
+    !isDir && node.name.includes('.') ? node.name.split('.').pop()?.toLowerCase() || '' : '';
+  const ext = extLower ? extLower.toUpperCase() : '';
 
-  const ext = !isDir && node.name.includes('.') ? node.name.split('.').pop()?.toUpperCase() || '—' : '—';
+  const openFolderLabel = tHardcodedUi.raw(
+    'featuresProjectFilesComponentsDriveGridView.line209JsxTextOpenFolder',
+  );
+  const copyPathLabel = tHardcodedUi.raw(
+    'featuresProjectFilesComponentsDriveGridView.line231JsxTextCopyPath',
+  );
+  const checkpointHistoryLabel = tHardcodedUi.raw(
+    'featuresProjectFilesComponentsDriveGridView.line402JsxTextCheckpointHistory',
+  );
+
+  const folderMenuProps = {
+    node,
+    onClick,
+    onDownload,
+    onCopy,
+    onCut,
+    onRename,
+    onDelete,
+    startRenaming,
+    isDownloadingItem,
+    openFolderLabel,
+    copyPathLabel,
+  };
+
+  const fileMenuProps = {
+    node,
+    onClick,
+    onDownload,
+    onHistory,
+    onCopy,
+    onCut,
+    onRename,
+    onDelete,
+    startRenaming,
+    checkpointHistoryLabel,
+    copyPathLabel,
+  };
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div
-          ref={contextTriggerRef}
+        <TableRow
           draggable={!isRenaming}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
@@ -180,119 +236,133 @@ function ListRow({
           onClick={isRenaming ? undefined : onClick}
           onDoubleClick={isRenaming ? undefined : onDoubleClick}
           className={cn(
-            'group grid grid-cols-[1fr_80px_80px_40px] items-center gap-4 px-5 h-11 cursor-pointer select-none',
-            'transition-colors',
-            'hover:bg-muted/30',
-            'border-b border-border/30 last:border-b-0',
+            'group cursor-pointer select-none',
             isCut && 'opacity-40',
             isDragging && 'opacity-30',
-            isDragOver && 'bg-primary/[0.06] ring-1 ring-primary/30',
+            isDragOver && 'bg-primary/8',
           )}
         >
-          {/* Name column */}
-          <div className="flex items-center gap-2.5 min-w-0">
-            {isDir
-              ? <Folder className="h-4 w-4 text-muted-foreground/80 shrink-0" />
-              : getFileIcon(node.name, { className: 'h-4 w-4 shrink-0 text-muted-foreground', variant: 'monochrome' })
-            }
-            {isRenaming ? (
-              <input
-                ref={renameInputRef}
-                type="text"
-                value={renameName}
-                onChange={(e) => setRenameName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') confirmRename();
-                  if (e.key === 'Escape') setIsRenaming(false);
-                }}
-                onBlur={confirmRename}
-                onClick={(e) => e.stopPropagation()}
-                className="flex-1 text-sm bg-transparent border-b border-primary/50 py-0 outline-none min-w-0"
-              />
+          <TableCell>
+            <div className="flex min-w-0 items-center gap-2.5">
+              {isDir ? (
+                <Folder className="text-muted-foreground size-4 shrink-0" />
+              ) : (
+                getFileIcon(node.name, {
+                  className: 'size-4 shrink-0 text-muted-foreground',
+                  variant: 'monochrome',
+                })
+              )}
+              {isRenaming ? (
+                <input
+                  ref={renameInputRef}
+                  type="text"
+                  value={renameName}
+                  onChange={(e) => setRenameName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') confirmRename();
+                    if (e.key === 'Escape') setIsRenaming(false);
+                  }}
+                  onBlur={confirmRename}
+                  onClick={(e) => e.stopPropagation()}
+                  className="border-border min-w-0 flex-1 border-b bg-transparent py-0.5 text-sm outline-none"
+                />
+              ) : (
+                <span
+                  className={cn(
+                    'truncate text-sm font-medium',
+                    node.ignored && 'opacity-50',
+                    node.name.startsWith('.') && 'text-muted-foreground',
+                  )}
+                >
+                  {node.name}
+                </span>
+              )}
+            </div>
+          </TableCell>
+          <TableCell>
+            {isDir ? (
+              <ChalkBadge label="Folder" />
+            ) : ext ? (
+              <ChalkBadge label={ext} />
             ) : (
-              <span className={cn(
-                'text-sm truncate font-medium',
-                node.ignored && 'opacity-50',
-                node.name.startsWith('.') && 'text-muted-foreground',
-              )}>
-                {node.name}
-              </span>
+              <span className="text-muted-foreground text-sm">—</span>
             )}
-          </div>
-
-          {/* Type column */}
-          <span className="text-xs text-muted-foreground/80 truncate font-mono uppercase tracking-wider">
-            {isDir ? 'folder' : ext}
-          </span>
-
-          {/* Size column */}
-          <span className="text-xs text-muted-foreground/60 tabular-nums">
-            —
-          </span>
-
-          {/* Actions column */}
-          <div className="flex justify-end">
+          </TableCell>
+          <TableCell>
             {!isRenaming && (
-              <Button
-                onClick={handleDotsClick}
-                variant="ghost"
-                size="icon-xs"
-                className="opacity-0 group-hover:opacity-100"
-              >
-                <MoreVertical className="h-4 w-4 text-muted-foreground" />
-              </Button>
+              <div className="flex justify-end">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      onClick={(e) => e.stopPropagation()}
+                      variant="ghost"
+                      size="icon-xs"
+                      className="shrink-0 opacity-0 group-hover:opacity-100"
+                    >
+                      <MoreVertical className="text-muted-foreground size-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    {isDir ? (
+                      <FolderDriveMenuItems
+                        Item={DropdownMenuItem}
+                        Separator={DropdownMenuSeparator}
+                        {...folderMenuProps}
+                      />
+                    ) : (
+                      <FileDriveMenuItems
+                        Item={DropdownMenuItem}
+                        Separator={DropdownMenuSeparator}
+                        {...fileMenuProps}
+                      />
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             )}
-          </div>
-        </div>
+          </TableCell>
+        </TableRow>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48">
-        <ContextMenuItem onClick={onClick}>
-          {isDir ? 'Open folder' : 'Preview'}
-        </ContextMenuItem>
-        {onDownload && (
-          <ContextMenuItem onClick={() => onDownload(node)} disabled={isDownloadingItem}>
-            {isDownloadingItem ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-            {isDownloadingItem ? 'Zipping...' : isDir ? 'Download as zip' : 'Download'}
-          </ContextMenuItem>
-        )}
-        {!isDir && onHistory && (
-          <ContextMenuItem onClick={() => onHistory(node)}>
-            <History className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveListView.line267JsxTextCheckpointHistory')}</ContextMenuItem>
-        )}
-        <ContextMenuSeparator />
-        {onCopy && (
-          <ContextMenuItem onClick={() => onCopy(node)}>
-            <ClipboardCopy className="mr-2 h-4 w-4" />
-            Copy
-          </ContextMenuItem>
-        )}
-        {onCut && (
-          <ContextMenuItem onClick={() => onCut(node)}>
-            <Scissors className="mr-2 h-4 w-4" />
-            Cut
-          </ContextMenuItem>
-        )}
-        <ContextMenuItem onClick={() => navigator.clipboard.writeText(node.path)}>
-          <Copy className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveListView.line285JsxTextCopyPath')}</ContextMenuItem>
-        <ContextMenuSeparator />
-        {onRename && (
-          <ContextMenuItem onClick={() => setTimeout(startRenaming, 100)}>
-            <Pencil className="mr-2 h-4 w-4" />
-            Rename
-          </ContextMenuItem>
-        )}
-        {onDelete && (
-          <ContextMenuItem onClick={() => onDelete(node)}>
-            <Trash2 className="mr-2 h-4 w-4" />
-            Remove
-          </ContextMenuItem>
+        {isDir ? (
+          <FolderDriveMenuItems
+            Item={ContextMenuItem}
+            Separator={ContextMenuSeparator}
+            {...folderMenuProps}
+          />
+        ) : (
+          <FileDriveMenuItems
+            Item={ContextMenuItem}
+            Separator={ContextMenuSeparator}
+            {...fileMenuProps}
+          />
         )}
       </ContextMenuContent>
     </ContextMenu>
   );
 }
 
-// ─── Main List View ─────────────────────────────────────────────────────────
+function ElevatedDirRow({ node, onNavigate }: { node: FileNode; onNavigate: () => void }) {
+  return (
+    <TableRow onClick={onNavigate} className="cursor-pointer select-none">
+      <TableCell>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <FolderCog className="text-muted-foreground size-4 shrink-0" />
+          <span className="truncate text-sm font-medium">{node.name}</span>
+          {ELEVATED_DIR_META[node.name] && (
+            <span className="text-muted-foreground hidden truncate text-xs sm:inline">
+              {ELEVATED_DIR_META[node.name]}
+            </span>
+          )}
+        </div>
+      </TableCell>
+      <TableCell>
+        <ChalkBadge label="System" />
+      </TableCell>
+      <TableCell />
+    </TableRow>
+  );
+}
 
 interface DriveListViewProps {
   elevatedDirs: FileNode[];
@@ -313,15 +383,8 @@ interface DriveListViewProps {
   clipboardPath?: string;
   clipboardOperation?: string;
   isDirDownloading: (path: string) => boolean;
-  /** Hide mutation context-menu entries (delete/rename/cut/copy/history). */
   readOnly?: boolean;
 }
-
-/** Descriptions for elevated system directories */
-const ELEVATED_DIR_META: Record<string, string> = {
-  '.kortix': 'Project config, tasks, context',
-  '.opencode': 'Agents, skills, commands',
-};
 
 export function DriveListView({
   elevatedDirs,
@@ -344,10 +407,6 @@ export function DriveListView({
   isDirDownloading,
   readOnly = false,
 }: DriveListViewProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  // In read-only mode, suppress mutation handlers so the row context menu
-  // omits Delete/Rename/Cut/Copy entries entirely. History stays enabled —
-  // it's a read action (checkpoint history of a file).
   const onRename = readOnly ? undefined : rawOnRename;
   const onDelete = readOnly ? undefined : rawOnDelete;
   const onHistory = rawOnHistory;
@@ -369,121 +428,82 @@ export function DriveListView({
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortBy !== field) return null;
-    return sortOrder === 'asc'
-      ? <ArrowUp className="h-3 w-3 ml-1" />
-      : <ArrowDown className="h-3 w-3 ml-1" />;
+    return sortOrder === 'asc' ? (
+      <ArrowUp className="ml-1 size-3" />
+    ) : (
+      <ArrowDown className="ml-1 size-3" />
+    );
   };
 
-  const allItems = [...elevatedDirs, ...dirs, ...files];
-
-  if (allItems.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-24 text-center">
-        <div className="h-14 w-14 rounded-2xl bg-muted/40 flex items-center justify-center mb-4">
-          <FolderOpen className="h-7 w-7 text-muted-foreground/40" />
-        </div>
-        <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsDriveListView.line396JsxTextThisFolderIsEmpty')}</p>
-        <p className="text-xs text-muted-foreground mt-1.5 max-w-xs">{tHardcodedUi.raw('featuresProjectFilesComponentsDriveListView.line398JsxTextNoFilesOrSubfoldersAtThisPathIn')}</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col">
-      {/* Table header */}
-      <div className="grid grid-cols-[1fr_80px_80px_40px] items-center gap-4 px-5 h-10 border-b border-border/40 bg-muted/[0.15] sticky top-0 z-10 backdrop-blur-sm">
-        <Button
-          onClick={() => handleHeaderClick('name')}
-          variant="ghost"
-          size="xs"
-          className="text-xs text-muted-foreground/70 uppercase tracking-[0.08em] font-semibold justify-start hover:text-foreground"
-        >
-          Name
-          <SortIcon field="name" />
-        </Button>
-        <Button
-          onClick={() => handleHeaderClick('type')}
-          variant="ghost"
-          size="xs"
-          className="text-xs text-muted-foreground/70 uppercase tracking-[0.08em] font-semibold hover:text-foreground"
-        >
-          Type
-          <SortIcon field="type" />
-        </Button>
-        <Button
-          onClick={() => handleHeaderClick('size')}
-          variant="ghost"
-          size="xs"
-          className="text-xs text-muted-foreground/70 uppercase tracking-[0.08em] font-semibold hover:text-foreground"
-        >
-          Size
-          <SortIcon field="size" />
-        </Button>
-        <span />
-      </div>
+    <div className="space-y-7 p-5">
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead>
+              <Button
+                onClick={() => handleHeaderClick('name')}
+                variant="transparent"
+                className="text-muted-foreground hover:text-foreground m-0 h-fit w-fit p-0 font-normal has-[>svg]:p-0"
+              >
+                Name
+                <SortIcon field="name" />
+              </Button>
+            </TableHead>
+            <TableHead>
+              <Button
+                onClick={() => handleHeaderClick('type')}
+                variant="transparent"
+                className="text-muted-foreground hover:text-foreground m-0 h-fit w-fit p-0 font-normal has-[>svg]:p-0"
+              >
+                Type
+                <SortIcon field="type" />
+              </Button>
+            </TableHead>
+            <TableHead className="w-[52px]">
+              <span className="sr-only">Actions</span>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {elevatedDirs.map((node) => (
+            <ElevatedDirRow key={node.path} node={node} onNavigate={() => onNavigateToDir(node)} />
+          ))}
 
-      {/* Elevated system directories */}
-      {elevatedDirs.map((node) => (
-        <div
-          key={node.path}
-          onClick={() => onNavigateToDir(node)}
-          className={cn(
-            'group grid grid-cols-[1fr_80px_80px_40px] items-center gap-4 px-5 h-11 cursor-pointer select-none',
-            'border-b border-border/30',
-            'hover:bg-muted/30 transition-colors',
-          )}
-        >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <FolderCog className="h-4 w-4 text-primary/70 shrink-0" />
-            <span className="text-sm font-medium text-foreground truncate">
-              {node.name}
-            </span>
-            {ELEVATED_DIR_META[node.name] && (
-              <span className="text-xs text-muted-foreground/50 truncate hidden sm:inline">
-                {ELEVATED_DIR_META[node.name]}
-              </span>
-            )}
-          </div>
-          <span className="text-xs text-primary/70 font-mono uppercase tracking-wider">
-            system
-          </span>
-          <span className="text-xs text-muted-foreground/40">—</span>
-          <span />
-        </div>
-      ))}
+          {dirs.map((node) => (
+            <ListRow
+              key={node.path}
+              node={node}
+              onClick={() => onNavigateToDir(node)}
+              onDownload={onDownloadDir}
+              isDownloadingItem={isDirDownloading(node.path)}
+              onRename={onRename}
+              onDelete={onDelete}
+              onCopy={onCopy}
+              onCut={onCut}
+              onDropMove={onDropMove}
+              isCut={clipboardOperation === 'cut' && clipboardPath === node.path}
+            />
+          ))}
 
-      {/* Rows */}
-      {dirs.map((node) => (
-        <ListRow
-          key={node.path}
-          node={node}
-          onClick={() => onNavigateToDir(node)}
-          onDownload={onDownloadDir}
-          isDownloadingItem={isDirDownloading(node.path)}
-          onRename={onRename}
-          onDelete={onDelete}
-          onCopy={onCopy}
-          onCut={onCut}
-          onDropMove={onDropMove}
-          isCut={clipboardOperation === 'cut' && clipboardPath === node.path}
-        />
-      ))}
-      {files.map((node) => (
-        <ListRow
-          key={node.path}
-          node={node}
-          onClick={() => onPreviewFile(node)}
-          onDoubleClick={() => onOpenFile(node)}
-          onDownload={onDownload}
-          onRename={onRename}
-          onDelete={onDelete}
-          onHistory={onHistory}
-          onCopy={onCopy}
-          onCut={onCut}
-          gitStatus={gitStatusMap.get(node.path)}
-          isCut={clipboardOperation === 'cut' && clipboardPath === node.path}
-        />
-      ))}
+          {files.map((node) => (
+            <ListRow
+              key={node.path}
+              node={node}
+              onClick={() => onPreviewFile(node)}
+              onDoubleClick={() => onOpenFile(node)}
+              onDownload={onDownload}
+              onRename={onRename}
+              onDelete={onDelete}
+              onHistory={onHistory}
+              onCopy={onCopy}
+              onCut={onCut}
+              gitStatus={gitStatusMap.get(node.path)}
+              isCut={clipboardOperation === 'cut' && clipboardPath === node.path}
+            />
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 }

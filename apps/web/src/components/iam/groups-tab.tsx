@@ -8,6 +8,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, MoreHorizontal, Plus, Search, Trash2, Users } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useMemo, useState } from 'react';
 
@@ -27,8 +28,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/components/ui/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
+import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
@@ -36,7 +37,13 @@ import { Label } from '@/components/ui/label';
 import { List, ListRow } from '@/components/ui/list';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { type AccountGroup, createGroup, deleteGroup, listGroups } from '@/lib/iam-client';
+
+// Same wording the backend's requireEntitlement('rbac') 402 uses — keep it in
+// sync with apps/api/src/accounts/iam/helpers.ts ENTITLEMENT_LABEL.rbac.
+const RBAC_UPSELL_MESSAGE =
+  'Custom roles, policies, and groups are available on the Enterprise plan. Contact sales to enable it.';
 
 interface GroupsTabProps {
   accountId: string;
@@ -44,9 +51,14 @@ interface GroupsTabProps {
    * delete option. Sourced from a usePermission(group.create) probe at
    * the page level so plain admins with explicit policies see it too. */
   canCreate: boolean;
+  /** Whether the account's tier carries the `rbac` entitlement. Creating a
+   * group is gated on it server-side (deleting is not — cleanup is always
+   * allowed), so the create action is disabled here rather than left to
+   * fail with a 402 on submit. */
+  rbacEnabled: boolean;
 }
 
-export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
+export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
@@ -81,22 +93,53 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
     );
   }, [groupsQuery.data, search]);
 
+  const gated = canCreate && !rbacEnabled;
+  const createAction = canCreate ? (
+    rbacEnabled ? (
+      <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
+        <Plus className="h-4 w-4" />
+        {tHardcodedUi.raw('componentsIamGroupsTab.line92JsxTextCreateAGroup')}
+      </Button>
+    ) : (
+      <Hint label={RBAC_UPSELL_MESSAGE} side="top" className="max-w-xs">
+        <span className="inline-flex items-center gap-1.5">
+          <Button size="sm" className="gap-1.5" disabled>
+            <Plus className="h-4 w-4" />
+            {tHardcodedUi.raw('componentsIamGroupsTab.line92JsxTextCreateAGroup')}
+          </Button>
+          <Badge variant="outline" size="sm">
+            Enterprise
+          </Badge>
+        </span>
+      </Hint>
+    )
+  ) : null;
+
   return (
     <SectionCard
       title="Groups"
       description={tI18nHardcoded.raw(
         'autoComponentsIamGroupsTabJsxAttrDescriptionBundleMembersTogether2839aadc',
       )}
-      action={
-        canCreate && (
-          <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
-            <Plus className="h-4 w-4" />
-            {tHardcodedUi.raw('componentsIamGroupsTab.line92JsxTextCreateAGroup')}
-          </Button>
-        )
-      }
+      action={createAction}
       flush
     >
+      {gated && (
+        <div className="border-border/60 border-b px-6 py-4">
+          <InfoBanner
+            tone="info"
+            title="Enterprise feature"
+            action={
+              <Button asChild variant="outline" size="sm">
+                <Link href="/enterprise">Contact sales</Link>
+              </Button>
+            }
+          >
+            {RBAC_UPSELL_MESSAGE}
+          </InfoBanner>
+        </div>
+      )}
+
       <div className="border-border/60 border-b px-6 py-3">
         <div className="relative max-w-sm">
           <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2" />
@@ -146,7 +189,11 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
           icon={Users}
           title={search ? 'No groups match your search' : 'No groups yet'}
           description={
-            !search && canCreate ? 'Create a group to bulk-add members to projects.' : undefined
+            !search && canCreate
+              ? rbacEnabled
+                ? 'Create a group to bulk-add members to projects.'
+                : RBAC_UPSELL_MESSAGE
+              : undefined
           }
         />
       )}

@@ -278,28 +278,7 @@ export interface Turn {
   assistantMessages: MessageWithParts[];
 }
 
-export interface ToolInfo {
-  icon: string;
-  title: string;
-  subtitle?: string;
-}
-
-export interface TurnCostInfo {
-  cost: number;
-  tokens: {
-    input: number;
-    output: number;
-    reasoning: number;
-    cacheRead: number;
-    cacheWrite: number;
-  };
-}
-
-export interface RetryInfo {
-  attempt: number;
-  message: string;
-  next: number;
-}
+export type { Diagnostic, RetryInfo, ToolInfo, TurnCostInfo } from '@kortix/sdk/turns';
 
 export const PERMISSION_LABELS: Record<string, string> = {
   bash: 'Run command',

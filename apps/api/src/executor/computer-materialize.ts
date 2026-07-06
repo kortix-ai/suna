@@ -1,21 +1,27 @@
 /**
  * Auto-materialize the `computer` connector from connected machines.
  *
- * Like the `channel` connector, `computer` needs no `[[connectors]]` entry —
- * connecting a machine over the Agent Computer Tunnel IS the registration. When
- * a project's account has at least one tunnel (and the project has opted into the
- * `agent_tunnel` experimental flag), we synthesize a SINGLE `computer`
+ * Exactly like the Slack `channel` connector, `computer` is a REGULAR connector
+ * with no `[[connectors]]` entry and no experimental opt-in — connecting a
+ * machine over the Agent Computer Tunnel IS the registration. When a project's
+ * account has at least one connected machine, we synthesize a SINGLE `computer`
  * ConnectorSpec here so the materializer treats it like any other connector (DB
- * rows, the fixed action catalog, sharing, policies, and the Executor/Connectors
+ * rows, the fixed action catalog, policies, and the Executor/Connectors
  * surface). One connector fronts ALL the account's machines — the machine is a
  * call argument, resolved at call time. There is no credential: the live WS
  * relay is the credential, and per-machine auth/scope is the tunnel permission
- * layer. See docs/specs/computer-connector.md.
+ * layer.
+ *
+ * NOT gated by the per-project `agent_tunnel` experimental flag: a machine can
+ * only exist when the platform tunnel service is on (the tunnel routes are
+ * `config.TUNNEL_ENABLED`-gated), so machine-presence already implies platform
+ * support. The `agent_tunnel` flag now only gates the dedicated Computers
+ * management UI (device-auth / per-machine permissions), not the connector.
+ * See docs/specs/computer-connector.md.
  */
 import { eq } from 'drizzle-orm';
 import { projects, tunnelConnections } from '@kortix/db';
 import { db } from '../shared/db';
-import { resolveExperimentalFeature } from '../experimental/features';
 import { COMPUTER_SLUG, computerLabel } from './computers';
 import type { ConnectorSpec } from '../projects/connectors';
 import { MANIFEST_FILENAME } from '../projects/triggers';
@@ -28,6 +34,7 @@ function computerSpec(): ConnectorSpec {
     enabled: true,
     provider: 'computer',
     credentialMode: 'shared',
+    sensitive: false,
     app: null,
     account: null,
     url: null,
@@ -48,8 +55,9 @@ function alreadyDeclared(declared: ConnectorSpec[]): boolean {
 
 /**
  * A single synthetic `computer` ConnectorSpec when this project's account has a
- * connected machine and the project has the `agent_tunnel` flag — never written
- * to git, never shadowing an explicit declaration. Returns `[]` otherwise.
+ * connected machine — never written to git, never shadowing an explicit
+ * declaration. Returns `[]` otherwise. Machine presence is the only gate (no
+ * experimental flag): it's a regular connector, materialized like Slack.
  */
 export async function synthesizeComputerConnectors(
   projectId: string,
@@ -58,15 +66,11 @@ export async function synthesizeComputerConnectors(
   if (alreadyDeclared(declared)) return [];
 
   const [proj] = await db
-    .select({ accountId: projects.accountId, metadata: projects.metadata })
+    .select({ accountId: projects.accountId })
     .from(projects)
     .where(eq(projects.projectId, projectId))
     .limit(1);
   if (!proj) return [];
-
-  // Gated by the experimental flag — computers only surface as connectors for
-  // projects opted into the tunnel.
-  if (!resolveExperimentalFeature(proj.metadata, 'agent_tunnel')) return [];
 
   const [tunnel] = await db
     .select({ tunnelId: tunnelConnections.tunnelId })

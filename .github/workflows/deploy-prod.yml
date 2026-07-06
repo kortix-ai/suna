@@ -49,7 +49,7 @@ jobs:
       notes: ${{ steps.v.outputs.notes }}
       source_sha: ${{ steps.v.outputs.source_sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # need full tags + annotations to read the release notes
       - name: Read VERSION + release notes (committed by the promote PR)
@@ -155,7 +155,7 @@ jobs:
     needs: version
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -210,26 +210,42 @@ jobs:
             artifacts/kortix-linux-arm64
           if-no-files-found: error
 
-  # ── Publish the Executor SDK to npm ─────────────────────────────────────────
-  # @kortix/executor-sdk is the programmatic face of the Executor (alongside the
-  # `kortix executor` CLI + `kortix executor mcp` MCP server). It ships to npm on
-  # every version release, in lockstep with the platform version. Requires an
+  # ── Publish the public SDKs to npm ──────────────────────────────────────────
+  # Three packages ship to npm on every version release, in lockstep with the
+  # platform version:
+  #   @kortix/llm-catalog   — the model catalog (models + managed-model defaults)
+  #                           the frontend SDK consumes
+  #   @kortix/sdk           — the frontend data-layer SDK; depends on
+  #                           @kortix/llm-catalog@<version>, pinned in lockstep
+  #   @kortix/executor-sdk  — the programmatic face of the Executor (alongside the
+  #                           `kortix executor` CLI + `kortix executor mcp` server)
+  #
+  # Each package declares its published (dist-pointing) layout in its own
+  # publishConfig. scripts/publish-npm-package.sh builds it, stages that manifest
+  # (scripts/stage-npm-publish.mjs: promote publishConfig, pin workspace deps to
+  # the release version, verify every entrypoint exists in dist/) and publishes
+  # idempotently.
+  #
+  # Auth is Trusted Publishing (OIDC) when the job grants id-token, else the
   # NPM_TOKEN secret (an npm automation token with publish rights on the @kortix
-  # org); until that's set the step skips cleanly so a release is never blocked.
-  publish-sdk:
-    name: Publish @kortix/executor-sdk to npm
+  # org). With neither, the publish step skips cleanly so a release is never
+  # blocked. Once Trusted Publishing is verified per package on npmjs.com (package
+  # → Settings → Trusted Publisher → this repo + this workflow), the NPM_TOKEN
+  # secret and the NODE_AUTH_TOKEN env line below can be removed — OIDC needs no
+  # stored secret.
+
+  # @kortix/llm-catalog publishes first, on its own, so @kortix/sdk's pinned
+  # @kortix/llm-catalog@<version> dependency is already on the registry before the
+  # SDK (and, harmlessly, the Executor SDK) publishes.
+  publish-llm-catalog:
+    name: Publish @kortix/llm-catalog to npm
     needs: version
     runs-on: ubuntu-latest
-    # Trusted Publishing (OIDC): the job mints a short-lived credential at publish
-    # time — no long-lived npm token to store or rotate. Requires a one-time
-    # config on npmjs.com (package → Settings → Trusted Publisher → this repo +
-    # this workflow). NPM_TOKEN stays as a fallback until TP is verified, then it
-    # (and the env line below) can be deleted.
     permissions:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -248,54 +264,58 @@ jobs:
           npm_config_engine_strict: "false"
 
       - name: Build + publish (Trusted Publishing via OIDC; token fallback)
-        working-directory: packages/executor-sdk
+        working-directory: packages/llm-catalog
         env:
           VERSION: ${{ needs.version.outputs.version }}
           # Fallback only. Once Trusted Publishing is verified, delete the
           # NPM_TOKEN secret AND this line — OIDC needs no stored secret.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: bash ../../scripts/publish-npm-package.sh
+
+  publish-sdk:
+    name: Publish ${{ matrix.pkg }} to npm
+    needs: [version, publish-llm-catalog]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # @kortix/sdk needs publish-llm-catalog (above) done first so its pinned
+          # @kortix/llm-catalog@<version> dependency already resolves on npm.
+          - pkg: '@kortix/sdk'
+            dir: sdk
+          - pkg: '@kortix/executor-sdk'
+            dir: executor-sdk
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install workspace deps (pnpm)
         run: |
-          set -euo pipefail
-          # Trusted Publishing (OIDC) requires npm >= 11.5.1; node 22 ships npm 10.
-          npm install -g npm@latest
-          echo "npm $(npm --version)"
-          # Publish if EITHER auth path is available: OIDC (id-token granted →
-          # ACTIONS_ID_TOKEN_REQUEST_URL is set) OR a fallback token.
-          if [ -z "${NODE_AUTH_TOKEN:-}" ] && [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
-            echo "::warning::No npm auth (no OIDC, no NPM_TOKEN) — skipping publish."
-            exit 0
-          fi
-          # Lock the SDK version to the platform release version, then build dist/.
-          npm pkg set version="$VERSION"
-          echo "Building @kortix/executor-sdk@$VERSION"
-          bun run build
-          # The workspace package points at src/ so local TypeScript consumers do
-          # not need a prebuilt dist/. npm does not rewrite main/types/exports
-          # from publishConfig, so stage the published manifest explicitly.
-          node - <<'NODE'
-          const fs = require('node:fs');
-          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          pkg.main = './dist/index.js';
-          pkg.types = './dist/index.d.ts';
-          pkg.exports = { '.': { types: './dist/index.d.ts', import: './dist/index.js' } };
-          pkg.files = ['dist', 'README.md'];
-          if (pkg.publishConfig) {
-            delete pkg.publishConfig.main;
-            delete pkg.publishConfig.types;
-            delete pkg.publishConfig.exports;
-          }
-          fs.writeFileSync('package.json', `${JSON.stringify(pkg, null, 2)}\n`);
-          NODE
-          npm pack --dry-run
-          # Idempotent: a re-run of the same release must not hard-fail on E409.
-          if npm view "@kortix/executor-sdk@$VERSION" version >/dev/null 2>&1; then
-            echo "@kortix/executor-sdk@$VERSION already on npm — skipping (idempotent re-run)."
-            exit 0
-          fi
-          # With TP configured + OIDC available, npm publishes via OIDC (+provenance)
-          # and ignores the token; otherwise it falls back to NODE_AUTH_TOKEN.
-          npm publish
-          echo "Published @kortix/executor-sdk@$VERSION ✅"
+          corepack enable && corepack prepare pnpm@latest --activate || true
+          pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Build + publish (Trusted Publishing via OIDC; token fallback)
+        working-directory: packages/${{ matrix.dir }}
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          # Fallback only. Once Trusted Publishing is verified, delete the
+          # NPM_TOKEN secret AND this line — OIDC needs no stored secret.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: bash ../../scripts/publish-npm-package.sh
 
   # ── Build prod desktop installers (Electron, signed) ────────────────────────
   build-desktop:
@@ -338,7 +358,7 @@ jobs:
               apps/desktop-electron/dist/*.AppImage
               apps/desktop-electron/dist/latest-linux.yml
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -435,7 +455,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -513,7 +533,7 @@ jobs:
     needs: version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -570,7 +590,7 @@ jobs:
       CANONICAL_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
       LIVE_DB_URL: ${{ secrets.PROD_DATABASE_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -931,7 +951,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0

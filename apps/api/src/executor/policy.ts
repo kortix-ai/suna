@@ -106,6 +106,8 @@ export interface EffectiveResolveInput {
   risk: Risk;
   /** Project setting from `[policy].default_mode` in kortix.toml. */
   defaultMode: DefaultMode;
+  /** Connector marked `sensitive` — its reads default to require_approval too. */
+  sensitive?: boolean;
 }
 
 export interface EffectiveResolveResult {
@@ -131,6 +133,12 @@ export function resolveEffectiveAction(input: EffectiveResolveInput): EffectiveR
   const connectorHit = firstMatchOrNull(input.relPath, input.connectorPolicies);
   if (connectorHit) return { action: connectorHit, source: 'connector' };
 
+  // A `sensitive` connector gates EVERYTHING by default — reads included —
+  // regardless of default_mode. A per-connector "sensitive" is a deliberate,
+  // targeted admin choice that should beat the coarse project default; an
+  // explicit policy rule above can still open a specific action. This is the
+  // "reading a private inbox / files / secrets store is not free" tier.
+  if (input.sensitive) return { action: 'require_approval', source: 'risk_default' };
   if (input.defaultMode === 'allow_all') return { action: 'always_run', source: 'allow_all' };
   return { action: riskDefaultAction(input.risk), source: 'risk_default' };
 }

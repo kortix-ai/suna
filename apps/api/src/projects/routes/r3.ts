@@ -1,4 +1,6 @@
-import { parseSharingIntent, resolveShareSubject, setSecretSharing } from '../../executor/share';
+import { parseSharingIntent } from '../../executor/share';
+import { PROJECT_ACTIONS } from '../../iam';
+import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
 import { db } from '../../shared/db';
@@ -7,13 +9,14 @@ import { getTemplateById } from '../../snapshots/templates';
 import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
-import { decryptProjectSecret, encryptProjectSecret, isValidSecretName } from '../secrets';
+import { decryptProjectSecret, encryptProjectSecret, identifierKeyConflicts, isValidIdentifier, isValidSecretName } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
+import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSecrets, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { loadProjectForUser } from '../lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, getProjectGitRemote, hasServerManagedGitAuth, loadGitProject, resolveProjectGitAuth, upsertProjectGitConnection, upsertProjectGitCredential, withProjectGitAuth } from '../lib/git';
 import { CODEX_AUTH_JSON_SECRET_NAME, isSystemProjectSecretName, loadSecretViewsForUser, normalizeString, readBody, serializeProjectGitConnection } from '../lib/serializers';
@@ -38,6 +41,10 @@ projectsApp.openapi(
   const templateId = c.req.param('templateId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Capability gate: building a sandbox template provisions infra. Gated on
+  // project.customize.write so a custom role can withhold it (humans) AND the
+  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   const row = await getTemplateById(templateId);
   if (!row) return c.json({ error: 'Not found' }, 404);
@@ -118,6 +125,15 @@ projectsApp.openapi(
   // Authorization is enforced by loadProjectForUser(... 'manage') above,
   // which routes through the IAM engine (project.write).
 
+  // Privilege-escalation guard: an agent-session token is itself a project
+  // account token carrying a (possibly narrow) AgentGrant. If it could mint a
+  // fresh project token, the new token would carry NO grant — letting a scoped
+  // agent issue an unscoped sibling and escape its own ceiling. Token minting
+  // is a human/manage operation; agents are denied outright.
+  if (getAgentGrant(c)) {
+    return c.json({ error: 'Agent-session tokens cannot mint project tokens' }, 403);
+  }
+
   // One body field: `name`. Defaults to "cli · <project name>".
   let body: { name?: unknown } = {};
   try {
@@ -176,6 +192,12 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Authorization is enforced by loadProjectForUser(... 'manage') above.
+  // Token management is a human/manage operation: an agent-session token must
+  // not revoke project tokens (it could knock out its own siblings / the human
+  // CLI token as a DoS). Symmetric with the mint guard above.
+  if (getAgentGrant(c)) {
+    return c.json({ error: 'Agent-session tokens cannot manage project tokens' }, 403);
+  }
   const ok = await revokeAccountToken(tokenId, loaded.row.accountId);
   if (!ok) return c.json({ error: 'token not found or already revoked' }, 404);
   return c.json({ ok: true });
@@ -299,6 +321,10 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Storing a git credential is a connector-write capability — a custom role can
+  // omit project.connector.write to take credential management away from a
+  // department, and an agent grant must include it (central fold) to write one.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
 
   if (await hasServerManagedGitAuth(loaded.row)) {
     return c.json({ error: 'Git auth is already managed by Kortix for this project' }, 409);
@@ -347,10 +373,12 @@ projectsApp.openapi(
 );
 
 // GET /v1/projects/:projectId/secrets
-// Readable by any project member: returns each secret KEY as the per-user view
-// (the shared row + that member's own override, names only, no plaintext) plus
-// the manifest-declared required/optional env keys. Members manage only their
-// own override; managers additionally manage the shared row (`can_manage_shared`).
+// Readable by any project member: returns each secret IDENTIFIER as the
+// per-user view (the shared row + that member's own override, no plaintext)
+// plus the manifest-declared required/optional env KEYS. Every project member
+// with read access sees every secret — there is no per-secret member/group
+// sharing. Members manage only their own override; managers additionally
+// manage the shared row (`can_manage_shared`).
 
 projectsApp.openapi(
   createRoute({
@@ -371,8 +399,10 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Leaf-gate the read (a custom role can omit project.secret.read) — and, via
+  // the central agent-grant fold, an agent token must hold it in its kortixCli.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
 
-  const subject = await resolveShareSubject(loaded.userId);
   const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
 
   // Manifest is optional — a project without kortix.toml just gets empty
@@ -397,8 +427,16 @@ projectsApp.openapi(
     });
   }
 
-  const items = (await loadSecretViewsForUser(projectId, subject, canManageShared))
-    .filter((item) => !item.system);
+  // Per-agent secrets scoping: a scoped agent token only sees the IDENTIFIERS
+  // it's granted (mirrors the env-injection narrowing), so it can't enumerate
+  // secrets outside its allowlist. No-op for non-agent tokens / 'all' / null
+  // grants. This is the ONLY gate — every project member with read access sees
+  // every secret; there is no per-secret member/group sharing.
+  const agentGrant = getAgentGrant(c);
+
+  const items = (await loadSecretViewsForUser(projectId, loaded.userId, canManageShared))
+    .filter((item) => !item.system)
+    .filter((item) => agentMayUseEnv(agentGrant, item.identifier));
 
   return c.json({
     items,
@@ -438,6 +476,7 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
 
   const name = normalizeString(body.name)?.toUpperCase();
   if (!name) return c.json({ error: 'name is required' }, 400);
@@ -451,31 +490,37 @@ projectsApp.openapi(
     return c.json({ error: `${CODEX_AUTH_JSON_SECRET_NAME} is managed by ChatGPT subscription onboarding` }, 400);
   }
 
-  const value = typeof body.value === 'string' ? body.value : null;
-
-  // Optional sharing intent (project | private | members). Absent → leave
-  // sharing as-is (column defaults to 'project' on first insert).
-  let sharing: ReturnType<typeof parseSharingIntent> | undefined;
-  if (body.sharing != null) {
-    sharing = parseSharingIntent(body.sharing, loaded.userId);
-    if (!sharing) {
-      return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
-    }
+  // Identifier — the unique-per-project handle agents grant + the UI shows.
+  // Defaults to the KEY when omitted (the simple/migrated case).
+  const identifier = normalizeString(body.identifier) ?? name;
+  if (!isValidIdentifier(identifier)) {
+    return c.json({ error: 'identifier must be alphanumeric (A-Z, 0-9, _, ., -; max 128 chars)' }, 400);
   }
 
-  // Look up the existing SHARED row so a sharing-only edit doesn't force
-  // re-entering the value. Creating a brand-new secret still requires a value.
+  const value = typeof body.value === 'string' ? body.value : null;
+
+  // Look up the existing SHARED row by IDENTIFIER so a key-unchanged edit
+  // doesn't force re-entering the value. Creating a brand-new secret still
+  // requires a value.
   const [existing] = await db
-    .select({ secretId: projectSecrets.secretId })
+    .select({ secretId: projectSecrets.secretId, name: projectSecrets.name })
     .from(projectSecrets)
     .where(and(
       eq(projectSecrets.projectId, projectId),
-      eq(projectSecrets.name, name),
+      eq(projectSecrets.identifier, identifier),
       isNull(projectSecrets.ownerUserId),
     ))
     .limit(1);
   if (!existing && value === null) {
     return c.json({ error: 'value is required' }, 400);
+  }
+  // An identifier is a stable handle to ONE secret — redefining its underlying
+  // KEY via upsert would silently retarget every agent grant that references
+  // it. Reject instead of a surprising in-place key swap.
+  if (identifierKeyConflicts(existing?.name ?? null, name)) {
+    return c.json({
+      error: `identifier "${identifier}" already exists with key "${existing!.name}" — delete it first to reuse the identifier with a different key`,
+    }, 409);
   }
 
   const now = new Date();
@@ -485,14 +530,15 @@ projectsApp.openapi(
       .insert(projectSecrets)
       .values({
         projectId,
+        identifier,
         name,
         valueEnc: encryptProjectSecret(projectId, value),
         createdBy: loaded.userId,
         updatedAt: now,
       })
       .onConflictDoUpdate({
-        // The shared row is unique on (project, name) WHERE owner_user_id IS NULL.
-        target: [projectSecrets.projectId, projectSecrets.name],
+        // The shared row is unique on (project, identifier) WHERE owner_user_id IS NULL.
+        target: [projectSecrets.projectId, projectSecrets.identifier],
         targetWhere: isNull(projectSecrets.ownerUserId),
         set: {
           valueEnc: encryptProjectSecret(projectId, value),
@@ -502,7 +548,8 @@ projectsApp.openapi(
       .returning({ secretId: projectSecrets.secretId });
     secretId = row.secretId;
   } else {
-    // Sharing-only update — touch updatedAt so the list reflects the change.
+    // No value change (identifier/name unchanged) — nothing to do besides
+    // touching updatedAt so the list reflects the write.
     await db
       .update(projectSecrets)
       .set({ updatedAt: now })
@@ -510,14 +557,23 @@ projectsApp.openapi(
     secretId = existing!.secretId;
   }
 
-  if (sharing) await setSecretSharing(secretId, sharing);
-
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
 
-  const subject = await resolveShareSubject(loaded.userId);
-  const views = await loadSecretViewsForUser(projectId, subject, true);
-  const view = views.find((v) => v.name === name);
-  return c.json(view ?? { name }, 200);
+  // First provider connect on a default-less project → seed a sensible project
+  // default model (that provider's flagship). Detached + idempotent; never seeds
+  // over an existing default.
+  if (value !== null && isGatewayManagedEnv(name)) {
+    void seedProjectDefaultModelOnConnect({
+      projectId,
+      accountId: loaded.row.accountId,
+      userId: loaded.userId,
+      secretName: name,
+    });
+  }
+
+  const views = await loadSecretViewsForUser(projectId, loaded.userId, true);
+  const view = views.find((v) => v.identifier === identifier);
+  return c.json(view ?? { identifier, name }, 200);
 },
 );
 
@@ -550,9 +606,12 @@ const DEVICE_AUTH_TTL_MS = 15 * 60 * 1000;
 // Floor for the client poll cadence (OpenAI returns its own suggested interval).
 const OAUTH_POLL_INTERVAL_MS = 3000;
 
-// Persists the Codex auth.json as the CODEX_AUTH_JSON project secret with the
-// requested sharing, then returns the caller's view of it. Codex-specific on
-// purpose: a generic OPENCODE_AUTH_JSON row is never overwritten by this.
+// Persists the Codex auth.json as the CODEX_AUTH_JSON project secret — private
+// (the caller's own per-user OAuth login, ownerUserId-scoped) when `sharing`
+// says so, else the project-wide shared row — then returns the caller's view
+// of it. Codex-specific on purpose: a generic OPENCODE_AUTH_JSON row is never
+// overwritten by this. `sharing` only ever chooses private-vs-shared here —
+// member/group secret sharing was retired (see projects/secrets.ts).
 async function writeCodexAuthSecret(input: {
   projectId: string;
   userId: string;
@@ -567,6 +626,7 @@ async function writeCodexAuthSecret(input: {
       .insert(projectSecrets)
       .values({
         projectId,
+        identifier: CODEX_AUTH_JSON_SECRET_NAME,
         name: CODEX_AUTH_JSON_SECRET_NAME,
         valueEnc: encryptProjectSecret(projectId, value),
         ownerUserId: userId,
@@ -588,38 +648,27 @@ async function writeCodexAuthSecret(input: {
       .insert(projectSecrets)
       .values({
         projectId,
+        identifier: CODEX_AUTH_JSON_SECRET_NAME,
         name: CODEX_AUTH_JSON_SECRET_NAME,
         valueEnc: encryptProjectSecret(projectId, value),
         createdBy: userId,
         updatedAt: now,
       })
       .onConflictDoUpdate({
-        target: [projectSecrets.projectId, projectSecrets.name],
+        target: [projectSecrets.projectId, projectSecrets.identifier],
         targetWhere: isNull(projectSecrets.ownerUserId),
         set: {
           valueEnc: encryptProjectSecret(projectId, value),
           updatedAt: now,
         },
       });
-
-    const [row] = await db
-      .select({ secretId: projectSecrets.secretId })
-      .from(projectSecrets)
-      .where(and(
-        eq(projectSecrets.projectId, projectId),
-        eq(projectSecrets.name, CODEX_AUTH_JSON_SECRET_NAME),
-        isNull(projectSecrets.ownerUserId),
-      ))
-      .limit(1);
-    if (sharing && row) await setSecretSharing(row.secretId, sharing);
   }
 
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: true });
 
-  const subject = await resolveShareSubject(userId);
-  const views = await loadSecretViewsForUser(projectId, subject, true);
-  return views.find((v) => v.name === CODEX_AUTH_JSON_SECRET_NAME)
-    ?? { name: CODEX_AUTH_JSON_SECRET_NAME };
+  const views = await loadSecretViewsForUser(projectId, userId, true);
+  return views.find((v) => v.identifier === CODEX_AUTH_JSON_SECRET_NAME)
+    ?? { identifier: CODEX_AUTH_JSON_SECRET_NAME, name: CODEX_AUTH_JSON_SECRET_NAME };
 }
 
 // Best-effort token expiry (ms remaining) from a stored auth.json, for display.
@@ -675,9 +724,15 @@ projectsApp.openapi(
       return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
     }
   }
-  // A shared credential needs manage; a private (owner-only) one just needs read.
-  if (sharing?.mode !== 'private' && !roleAllows(loaded.effectiveRole, 'manage')) {
-    return c.json({ error: 'Only project managers can configure shared provider credentials' }, 403);
+  // A shared credential is a project SECRET WRITE (the device flow persists it
+  // via writeCodexAuthSecret on poll). Gate on the leaf so a custom role can
+  // withhold it and the agent-grant fold applies — closing the gap where the
+  // flow wrote a shared credential behind only loadProjectForUser('read'). A
+  // private (owner-only) credential is the member's own, so read still suffices.
+  // The poll step is reachable only with the project-key-encrypted flow handle
+  // minted here, so gating start transitively protects the write on poll.
+  if (sharing?.mode !== 'private') {
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
   }
 
   // Request a device code straight from OpenAI — a couple HTTPS calls, no
@@ -803,6 +858,7 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ);
 
   const items: Array<{ provider_id: string; expires_in_ms: number | null; updated_at: string }> = [];
   for (const [providerId, cfg] of Object.entries(OAUTH_PROVIDERS)) {
@@ -853,6 +909,7 @@ projectsApp.openapi(
   const provider = c.req.param('provider');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
 
   const cfg = OAUTH_PROVIDERS[provider];
   if (!cfg) return c.json({ error: 'Not found' }, 404);
@@ -866,14 +923,16 @@ projectsApp.openapi(
 },
 );
 
-// DELETE /v1/projects/:projectId/secrets/:name
+// DELETE /v1/projects/:projectId/secrets/:identifier
+// `:identifier` addresses the secret's unique IDENTIFIER (defaults to its KEY
+// for the simple/migrated case, so a plain key-name delete keeps working).
 
 projectsApp.openapi(
   createRoute({
     method: 'delete',
     path: '/{projectId}/secrets/{name}',
     tags: ['secrets'],
-    summary: 'DELETE /:projectId/secrets/:name',
+    summary: 'DELETE /:projectId/secrets/:identifier',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), name: z.string() }),
@@ -885,27 +944,31 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const name = c.req.param('name')?.trim().toUpperCase();
+  const identifier = c.req.param('name')?.trim();
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!name || !isValidSecretName(name)) {
-    return c.json({ error: 'Invalid secret name' }, 400);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
+  if (!identifier || !isValidIdentifier(identifier)) {
+    return c.json({ error: 'Invalid secret identifier' }, 400);
   }
-  if (isSystemProjectSecretName(name)) {
-    return c.json({ error: `${name} is managed by Kortix and cannot be removed` }, 403);
+  // A system row's identifier always equals its reserved KORTIX_* key (the
+  // manifest never lets a human create one), so this alone protects it — no
+  // DB read needed before the delete.
+  if (isSystemProjectSecretName(identifier)) {
+    return c.json({ error: `${identifier} is managed by Kortix and cannot be removed` }, 403);
   }
 
-  // Only the shared row — members' personal overrides for this key are theirs to
-  // remove (via the /personal route) and are left intact.
+  // Only the shared row — members' personal overrides for this identifier are
+  // theirs to remove (via the /personal route) and are left intact.
   await db
     .delete(projectSecrets)
     .where(and(
       eq(projectSecrets.projectId, projectId),
-      eq(projectSecrets.name, name),
+      eq(projectSecrets.identifier, identifier),
       isNull(projectSecrets.ownerUserId),
     ));
 
-  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
+  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(identifier) });
 
   return c.json({ ok: true });
 },
@@ -972,6 +1035,7 @@ projectsApp.openapi(
     }
     await db.insert(projectSecrets).values({
       projectId,
+      identifier: name,
       name,
       valueEnc: encryptProjectSecret(projectId, value),
       ownerUserId: loaded.userId,
@@ -992,8 +1056,7 @@ projectsApp.openapi(
 
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
 
-  const subject = await resolveShareSubject(loaded.userId);
-  const views = await loadSecretViewsForUser(projectId, subject, roleAllows(loaded.effectiveRole, 'manage'));
+  const views = await loadSecretViewsForUser(projectId, loaded.userId, roleAllows(loaded.effectiveRole, 'manage'));
   return c.json(views.find((v) => v.name === name) ?? { name }, 200);
 },
 );

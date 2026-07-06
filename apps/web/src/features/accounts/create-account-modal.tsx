@@ -16,7 +16,7 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { createAccount, type KortixAccount } from '@/lib/projects-client';
+import { createAccount, type KortixAccount } from '@kortix/sdk/projects-client';
 import { useMutation } from '@tanstack/react-query';
 import { FormEvent, useState } from 'react';
 import { Icon } from '../icon/icon';

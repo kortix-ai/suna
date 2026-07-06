@@ -1,0 +1,11 @@
+-- Add 'managed' to the sandbox_provider enum — the canonical name for the managed
+-- cloud backend. 'daytona' (the legacy alias for the SAME backend) is kept as a
+-- valid enum member so existing rows and any external caller still sending
+-- 'daytona' never break. New rows are written as 'managed'; read paths accept
+-- both (config.isManagedProviderName / the adapter registry registers both keys).
+--
+-- ADD VALUE only (never USED in this txn) — matches the existing precedent for
+-- adding enum values (executor_connector_provider 'channel'/'computer'). MUST run
+-- before code that writes 'managed' deploys; the deploy pipeline applies pending
+-- migrations before the API rollout, so ordering holds. Non-destructive + idempotent.
+ALTER TYPE "kortix"."sandbox_provider" ADD VALUE IF NOT EXISTS 'managed';

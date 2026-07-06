@@ -50,7 +50,7 @@ The Executor is provider-pluggable. The `channel` provider (Slack) is the worked
 
 ## 3. Design overview
 
-Add a new Executor provider **`computer`**. When a project's account owns ≥1 tunnel (and the project has the `agent_tunnel` flag), the Executor **synthesizes a single `computer` connector** — no `kortix.toml` entry; connecting a machine IS the registration, exactly like a Slack install. That one connector exposes:
+Add a new Executor provider **`computer`**. When a project's account owns ≥1 tunnel, the Executor **synthesizes a single `computer` connector** — no `kortix.toml` entry, no experimental opt-in; connecting a machine IS the registration, exactly like a Slack install. (Superseding the original D4 gating: the connector is a **regular** connector and no longer requires the per-project `agent_tunnel` flag — see §"D4".) That one connector exposes:
 
 - **`list_computers`** — a meta action (handled server-side, no relay): returns the account's machines with `{ id, name, online, capabilities, platform }` so the agent can pick one.
 - The **tunnel RPC method set** (`fs.*`, `shell.exec`, curated `desktop.cua.*` + a `desktop.cua.call` passthrough), each taking an extra **`computer`** selector arg (machine name or id; optional when exactly one machine is online → defaults to it).
@@ -79,7 +79,7 @@ agent (sandbox)                          API process
 - **D1 — Cardinality: one `computer` connector, many machines.** A single connector per project fronts all the account's machines; the machine is an action argument (`computer`), with `list_computers` for discovery and default-to-sole-online for the common single-machine case. Rationale: machines are account-scoped while connectors are project-scoped, so one connector (exists iff the account has ≥1 machine) is far simpler than synthesizing/fanning N per-machine rows; you govern & share *one* thing ("central front door"); per-machine security is unchanged (the tunnel permission layer gates each machine individually). *(Chosen over per-machine connectors.)*
 - **D2 — In-sandbox: a `computer` skill that drives the Executor (CLI/SDK/MCP).** Keep an ergonomic `computer` skill, but it calls the Executor (`@kortix/executor-sdk` / `kortix executor` / the MCP tools) instead of hitting `POST /rpc` directly — one auth path, one audit trail. Update `kortix-executor` SKILL.md to list the `computer` provider. *(Exact Slack precedent.)*
 - **D3 — Desktop catalog: curated + passthrough.** Typed actions for `fs.*`, `shell.exec`, and high-value `desktop.cua.*` (click/type/press_key/screenshot/scroll/list_apps/launch_app/…), plus a generic `desktop.cua.call` passthrough for the ~45-method long tail. `describe` stays useful without hand-maintaining every schema.
-- **D4 — Naming & gating (defaulted).** Provider/enum value = **`computer`**; connector slug = `computer`; management CLI stays `kortix tunnel`. Synth is **gated by the `agent_tunnel` experimental flag** (per-project) so computers only materialize as connectors for projects opted into the tunnel.
+- **D4 — Naming & gating (UPDATED).** Provider/enum value = **`computer`**; connector slug = `computer`; management CLI stays `kortix tunnel`. **Synth is NOT gated by the `agent_tunnel` experimental flag** — the `computer` connector is a *regular* connector that materializes whenever the account has a connected machine, exactly like the Slack channel connector. A machine can only exist when the platform tunnel service is on (`config.TUNNEL_ENABLED` gates the tunnel routes), so machine-presence already implies platform support. The `agent_tunnel` flag now gates **only** the dedicated Customize → Computers management UI (device-auth / per-machine permissions), not the connector. *(Original decision gated synth on the per-project flag; reversed so connecting a machine "just works" as a connector.)*
 
 ---
 
@@ -149,9 +149,8 @@ It does rate-limit → resolve capability → `checkPermission` → (deny) creat
 
 `apps/api/src/executor/computer-materialize.ts` (NEW), mirroring `channel-materialize.ts` but **one connector, not N**:
 - `synthesizeComputerConnectors(projectId, declared) → ConnectorSpec[]`:
-  1. If the project doesn't have the `agent_tunnel` flag → `[]` (D4 gating).
-  2. If the `computer` slug is already declared → `[]` (never shadow).
-  3. Resolve the project's `accountId`; if the account has **≥1** `tunnel_connections` row → return a single synthetic `computer` `ConnectorSpec` (`provider:'computer'`, `credentialMode:'shared'`, `auth:none`, slug `computer`, name "Computers"); else `[]`.
+  1. If the `computer` slug is already declared → `[]` (never shadow).
+  2. Resolve the project's `accountId`; if the account has **≥1** `tunnel_connections` row → return a single synthetic `computer` `ConnectorSpec` (`provider:'computer'`, `credentialMode:'shared'`, `auth:none`, slug `computer`, name "Computers"); else `[]`. **No `agent_tunnel` flag check** (updated D4) — machine presence is the only gate.
 - Wire into `syncProjectConnectors` next to the channel synth (`sync.ts:120`): fold `computerSpecs` into `specs`; include `'computer'` in the **guarded-deletion** branch (`sync.ts:163`) so the connector is reaped when the last machine is removed but a transient git error never wipes it.
 - `resolveCatalog` case `'computer'` (`sync.ts:290`-style): `{ actions: computerCatalog(), server: null }` — fixed, no network.
 - `connectorConfig` case `'computer'` (`materialize.ts`): `{ auth: { type:'none', … } }`, baseUrl null.

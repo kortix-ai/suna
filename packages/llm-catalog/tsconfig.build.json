@@ -1,0 +1,20 @@
+{
+  "// note": "Emit config for the PUBLISHED @kortix/llm-catalog npm package. In-repo consumers compile from src/ directly (main/types point at src); `bun run build` produces dist/ (JS + .d.ts) that publishConfig points main/types/exports at, plus a copy of catalog.generated.json (tsc type-checks the JSON import but never emits it). Self-contained (does not extend the repo's noEmit base).",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM"],
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/index.ts"],
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts"]
+}

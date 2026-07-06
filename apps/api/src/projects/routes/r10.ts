@@ -14,23 +14,45 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
+import { manifestCandidatePaths } from '@kortix/manifest-schema';
 import { compareInstalled, parseLockContent, serializeLock } from '@kortix/registry';
-import { auth, errors, json } from '../../openapi';
 import { getCatalogItemDetail, resolveOpencodeDir } from '../../marketplace/catalog';
-import { buildInstall, buildInstallBatch, catalogIdForName, resolveItemFiles } from '../../marketplace/install-service';
+import {
+  buildInstall,
+  buildInstallBatch,
+  catalogIdForName,
+  resolveItemFiles,
+} from '../../marketplace/install-service';
+import { auth, errors, json } from '../../openapi';
 import { commitMultipleFilesToBranch } from '../git/branches';
-import { readRepoFile } from '../git/files';
-import { loadProjectForUser } from '../lib/access';
+import { readManifestFromRepo, readRepoFile } from '../git/files';
+import { assertCommitCapabilities, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
 import { readBody } from '../lib/serializers';
 
-async function repoFileOrNull(project: Parameters<typeof readRepoFile>[0], path: string): Promise<string | null> {
+async function repoFileOrNull(
+  project: Parameters<typeof readRepoFile>[0],
+  path: string,
+): Promise<string | null> {
   try {
     return await readRepoFile(project, path, project.defaultBranch);
   } catch {
     return null;
   }
+}
+
+/** The project's manifest raw text, preferring kortix.yaml over kortix.toml
+ *  (dual-format). resolveOpencodeDir reads either format's `config_dir`. */
+async function manifestRawOrNull(
+  project: Parameters<typeof readRepoFile>[0],
+): Promise<string | null> {
+  const found = await readManifestFromRepo(
+    project,
+    manifestCandidatePaths(project.manifestPath).map((cand) => cand.path),
+    project.defaultBranch,
+  ).catch(() => null);
+  return found?.content ?? null;
 }
 
 async function handleMarketplaceInstall(c: any) {
@@ -45,7 +67,7 @@ async function handleMarketplaceInstall(c: any) {
   if (!detail) return c.json({ error: `Unknown item "${id}"` }, 400);
 
   const project = await loadGitProject(loaded);
-  const manifestRaw = await repoFileOrNull(project, 'kortix.toml');
+  const manifestRaw = await manifestRawOrNull(project);
   const configDir = resolveOpencodeDir(manifestRaw);
   const existingLockRaw = await repoFileOrNull(project, 'registry-lock.json');
   const legacyLockRaw = await repoFileOrNull(project, 'skills-lock.json');
@@ -62,6 +84,18 @@ async function handleMarketplaceInstall(c: any) {
   } catch (err) {
     return c.json({ error: (err as Error).message }, 400);
   }
+
+  // Per-capability gate: installing an agent needs project.agent.write, a skill
+  // project.skill.write, etc. — so a role can be scoped to install some resource
+  // types but not others. (Editor/Manager hold them all; the agent-grant fold
+  // still fires through assertProjectCapability.)
+  await assertCommitCapabilities(
+    c,
+    loaded.userId,
+    loaded.row.accountId,
+    projectId,
+    built.files.map((f) => f.path),
+  );
 
   const commit = await commitMultipleFilesToBranch(project, {
     files: built.files,
@@ -115,9 +149,11 @@ async function handleMarketplaceUpdates(c: any) {
   });
 }
 
-async function resolveMarketplaceUpdates(loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>) {
+async function resolveMarketplaceUpdates(
+  loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>,
+) {
   const project = await loadGitProject(loaded);
-  const manifestRaw = await repoFileOrNull(project, 'kortix.toml');
+  const manifestRaw = await manifestRawOrNull(project);
   const configDir = resolveOpencodeDir(manifestRaw);
   const lock = parseLockContent(
     await repoFileOrNull(project, 'registry-lock.json'),
@@ -133,7 +169,12 @@ async function resolveMarketplaceUpdates(loaded: NonNullable<Awaited<ReturnType<
         fresh = null;
       }
       const diff = compareInstalled(e.files, fresh);
-      return { name, type: e.type, status: diff.status, changed: diff.changed.length + diff.added.length + diff.removed.length };
+      return {
+        name,
+        type: e.type,
+        status: diff.status,
+        changed: diff.changed.length + diff.added.length + diff.removed.length,
+      };
     }),
   );
   return updates;
@@ -149,10 +190,11 @@ async function handleMarketplaceUpdate(c: any) {
   if (!name) return c.json({ error: 'name is required' }, 400);
 
   const id = await catalogIdForName(name);
-  if (!id) return c.json({ error: `"${name}" is not in the catalog — cannot update (orphaned)` }, 400);
+  if (!id)
+    return c.json({ error: `"${name}" is not in the catalog — cannot update (orphaned)` }, 400);
 
   const project = await loadGitProject(loaded);
-  const manifestRaw = await repoFileOrNull(project, 'kortix.toml');
+  const manifestRaw = await manifestRawOrNull(project);
   const configDir = resolveOpencodeDir(manifestRaw);
 
   let built;
@@ -167,6 +209,15 @@ async function handleMarketplaceUpdate(c: any) {
   } catch (err) {
     return c.json({ error: (err as Error).message }, 400);
   }
+
+  // Per-capability gate on the resource types this update rewrites.
+  await assertCommitCapabilities(
+    c,
+    loaded.userId,
+    loaded.row.accountId,
+    projectId,
+    built.files.map((f) => f.path),
+  );
 
   const commit = await commitMultipleFilesToBranch(project, {
     files: built.files,
@@ -192,20 +243,29 @@ async function handleMarketplaceUpdateAll(c: any) {
   const updates = await resolveMarketplaceUpdates(loaded);
   const names = updates.filter((u) => u.status === 'update-available').map((u) => u.name);
   if (names.length === 0) {
-    return c.json({ ok: true, updated: [], commit_sha: null, branch: null, file_count: 0, installed: [] });
+    return c.json({
+      ok: true,
+      updated: [],
+      commit_sha: null,
+      branch: null,
+      file_count: 0,
+      installed: [],
+    });
   }
 
   const project = await loadGitProject(loaded);
-  const manifestRaw = await repoFileOrNull(project, 'kortix.toml');
+  const manifestRaw = await manifestRawOrNull(project);
   const configDir = resolveOpencodeDir(manifestRaw);
 
   let built;
   try {
-    const ids = await Promise.all(names.map(async (name) => {
-      const id = await catalogIdForName(name);
-      if (!id) throw new Error(`"${name}" is not in the catalog — cannot update (orphaned)`);
-      return id;
-    }));
+    const ids = await Promise.all(
+      names.map(async (name) => {
+        const id = await catalogIdForName(name);
+        if (!id) throw new Error(`"${name}" is not in the catalog — cannot update (orphaned)`);
+        return id;
+      }),
+    );
     built = await buildInstallBatch({
       ids,
       configDir,
@@ -216,6 +276,15 @@ async function handleMarketplaceUpdateAll(c: any) {
   } catch (err) {
     return c.json({ error: (err as Error).message }, 400);
   }
+
+  // Per-capability gate on the resource types this bulk update rewrites.
+  await assertCommitCapabilities(
+    c,
+    loaded.userId,
+    loaded.row.accountId,
+    projectId,
+    built.files.map((f) => f.path),
+  );
 
   const commit = await commitMultipleFilesToBranch(project, {
     files: built.files,
@@ -248,6 +317,9 @@ async function handleMarketplaceRemove(c: any) {
   if (!entry) return c.json({ error: `"${name}" is not installed` }, 404);
 
   const deletes = entry.files.map((f) => f.target);
+  // Per-capability gate on the resource type being removed (an agent removal
+  // needs project.agent.write, a skill project.skill.write, …).
+  await assertCommitCapabilities(c, loaded.userId, loaded.row.accountId, projectId, deletes);
   delete lock.items[name];
 
   const commit = await commitMultipleFilesToBranch(project, {
@@ -502,6 +574,8 @@ projectsApp.openapi(
     if (!entry) return c.json({ error: `"${name}" is not installed` }, 404);
 
     const deletes = entry.files.map((f) => f.target);
+    // Per-capability gate on the resource type being removed.
+    await assertCommitCapabilities(c, loaded.userId, loaded.row.accountId, projectId, deletes);
     delete lock.items[name];
 
     const commit = await commitMultipleFilesToBranch(project, {

@@ -9,7 +9,7 @@
  * TODO: wire to project history/search once backend supports it
  */
 
-import type { WorkspaceSearchEntry, WorkspaceSearchOptions } from './workspace-search-core';
+import type { WorkspaceSearchEntry, WorkspaceSearchOptions } from '@/features/file-browser/search/workspace-search-core';
 
 interface WorkspaceSearchRuntimeOptions extends WorkspaceSearchOptions {
   apiLimit?: number;
@@ -25,6 +25,13 @@ export async function searchWorkspaceFileEntries(
 export async function searchWorkspaceFilePaths(
   _query: string,
   _options?: WorkspaceSearchRuntimeOptions,
+): Promise<string[]> {
+  return [];
+}
+
+export async function searchWorkspaceFiles(
+  _query: string,
+  _limit = 50,
 ): Promise<string[]> {
   return [];
 }

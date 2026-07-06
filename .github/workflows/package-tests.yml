@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Require a test change alongside source changes
@@ -49,7 +49,7 @@ jobs:
       npm_config_engine_strict: 'false'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -77,6 +77,26 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build + dry-pack publishable npm packages (release gate)
+        run: |
+          set -euo pipefail
+          # @kortix/llm-catalog, @kortix/sdk and @kortix/executor-sdk publish to npm
+          # on release (deploy-prod.yml). Build + stage + dry-pack them on every PR
+          # so a broken dist/ or published manifest fails here, not at release time.
+          # The staging script asserts every publishConfig entrypoint exists in the
+          # emitted dist/ and that workspace deps pin cleanly.
+          node scripts/stage-npm-publish.test.mjs
+          for dir in llm-catalog sdk executor-sdk; do
+            echo "::group::@kortix/$dir build + stage + dry-pack"
+            pnpm --filter "./packages/$dir" run build
+            ( cd "packages/$dir" \
+              && cp package.json /tmp/pkg-bak.json \
+              && VERSION=0.0.0-ci node ../../scripts/stage-npm-publish.mjs \
+              && npm pack --dry-run \
+              && mv /tmp/pkg-bak.json package.json )
+            echo "::endgroup::"
+          done
 
       - name: Guard against focused tests
         run: |
@@ -112,7 +132,7 @@ jobs:
       DOTENV_PRIVATE_KEY: ${{ secrets.DOTENV_PRIVATE_KEY }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Node
         uses: actions/setup-node@v4

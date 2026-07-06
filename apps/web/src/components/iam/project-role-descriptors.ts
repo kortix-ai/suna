@@ -13,7 +13,7 @@
 // The capability lists below mirror the role → action mapping in
 // apps/api/src/iam/role-perms.ts. If you change one, change the other.
 
-import type { ProjectRole, AccountRole } from '@/lib/projects-client';
+import type { ProjectRole, AccountRole } from '@kortix/sdk/projects-client';
 
 export interface ProjectRoleDescriptor {
   /** "Manager" — what the role is called everywhere. */
@@ -25,17 +25,17 @@ export interface ProjectRoleDescriptor {
 }
 
 export const PROJECT_ROLE_DESCRIPTORS: Record<ProjectRole, ProjectRoleDescriptor> = {
-  viewer: {
-    label: 'Viewer',
-    blurb: 'Use the project: start sessions and chat with the agent.',
+  member: {
+    label: 'Member',
+    blurb: 'Read + run sessions and chat, plus fire the project’s triggers.',
     summary:
-      'The base role. Can open the project, start and run sessions, and use the agent chat. Cannot customize the project — no editing settings, deploying, managing members, or changing triggers.',
+      'The floor role for using the project: read everything, run sessions, chat with the agent, and fire its triggers on demand. Can’t edit, deploy, change config, or manage members.',
   },
   editor: {
     label: 'Editor',
-    blurb: 'Everything a viewer does, plus edit and customize the project.',
+    blurb: 'Everything a member does, plus edit and customize the project.',
     summary:
-      'Everything a viewer can do, plus edit the project, deploy, and create or fire triggers. Cannot invite members, change member roles, or delete the project.',
+      'Everything a member can do, plus edit the project, deploy, and create or delete triggers. Cannot invite members, change member roles, or delete the project.',
   },
   manager: {
     label: 'Manager',
@@ -46,7 +46,7 @@ export const PROJECT_ROLE_DESCRIPTORS: Record<ProjectRole, ProjectRoleDescriptor
 };
 
 /** Ordered low → high. Useful for rendering dropdowns consistently. */
-export const PROJECT_ROLES_ASCENDING: ProjectRole[] = ['viewer', 'editor', 'manager'];
+export const PROJECT_ROLES_ASCENDING: ProjectRole[] = ['member', 'editor', 'manager'];
 
 export interface AccountRoleDescriptor {
   label: string;

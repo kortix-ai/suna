@@ -13,14 +13,14 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Icon } from '@/features/icon/icon';
-import { getCurrentInstanceIdFromPathname } from '@/lib/instance-routes';
+import { getCurrentInstanceIdFromPathname } from '@kortix/sdk/instance-routes';
 import {
   getInstanceTabs,
   getPreferenceTabs,
   type SettingsTab,
   type SettingsTabId,
 } from '@/lib/menu-registry';
-import { listSandboxes, type SandboxInfo } from '@/lib/platform-client';
+import { listSandboxes, type SandboxInfo } from '@kortix/sdk/platform-client';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { KeyRound } from 'lucide-react';
@@ -45,7 +45,7 @@ const TAB_DESCRIPTIONS: Partial<Record<TabId, string>> = {
   sounds: 'Choose sound packs and preview notification sounds.',
   notifications: 'Control browser notifications and delivery preferences.',
   shortcuts: 'View keyboard shortcuts available across the app.',
-  tokens: 'Create and manage CLI tokens for the Kortix command line.',
+  tokens: 'Create and manage API keys for the Kortix SDK, CLI, and API.',
   'instance-members': 'Manage who has access to this instance.',
 };
 
@@ -89,7 +89,7 @@ function SidePanelUserSettings({
     [hasInstance],
   );
   const accountTabs: Tab[] = React.useMemo(
-    () => withDescription([{ id: 'tokens', label: 'CLI tokens', icon: KeyRound }]),
+    () => withDescription([{ id: 'tokens', label: 'API keys', icon: KeyRound }]),
     [],
   );
 

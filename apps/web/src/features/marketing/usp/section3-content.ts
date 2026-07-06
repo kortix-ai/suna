@@ -76,7 +76,7 @@ export const FOR_DEVELOPERS = {
   fileTree: {
     name: 'acme-ops',
     children: [
-      { name: 'kortix.toml' },
+      { name: 'kortix.yaml' },
       {
         name: '.kortix',
         children: [
@@ -167,7 +167,7 @@ export const FOR_DEVELOPERS = {
       hash: 'a1f3c2',
       author: 'jay@acme',
       authorType: 'human',
-      message: 'init: scaffold kortix.toml',
+      message: 'init: scaffold kortix.yaml',
     },
     {
       hash: '9d04b7',

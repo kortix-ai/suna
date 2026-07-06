@@ -26,7 +26,7 @@
  *    → hero link card or proxied iframe
  */
 
-import React, { useCallback, useMemo, useState, lazy, Suspense } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, lazy, Suspense } from 'react';
 import {
   AlertTriangle,
   ChevronLeft,
@@ -40,6 +40,7 @@ import {
   Music,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toSandboxAbsolutePath } from '@/features/files/api/opencode-files';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
 import { CodeHighlight, UnifiedMarkdown } from '@/components/markdown/unified-markdown';
@@ -48,7 +49,7 @@ import { TextWithPaths } from '@/components/common/clickable-path';
 import { ImageRenderer } from './image-renderer';
 import { VideoRenderer } from './video-renderer';
 import { FileContentRenderer } from '@/features/files/components/file-content-renderer';
-import { SANDBOX_PORTS } from '@/lib/platform-client';
+import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { useHeicBlob } from '@/hooks/use-heic-url';
 import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
@@ -107,12 +108,6 @@ function isLocalSandboxFilePath(value: string): boolean {
   if (!value) return false;
   if (/^(https?:|data:|blob:)/i.test(value)) return false;
   return value.startsWith('/');
-}
-
-/** Ensure a sandbox file path starts with /workspace/ for the static file server. */
-function ensureWorkspacePath(filePath: string): string {
-  if (filePath.startsWith('/workspace/')) return filePath;
-  return '/workspace/' + filePath.replace(/^\/+/, '');
 }
 
 /** Auto-detect file category from extension — used when type='file' */
@@ -182,6 +177,13 @@ export interface ShowContentProps {
    * to fill; text/code scroll internally rather than capping at a fixed height.
    */
   fill?: boolean;
+  /**
+   * Optional: report load status up to the parent so a single-item `show` whose
+   * artifact failed to load (renamed/deleted file → 404) can be hidden instead
+   * of rendering a broken card. Fired for fetch-backed types (image/video/
+   * audio/pdf/csv/docx/pptx) and forwarded from the generic-file renderer.
+   */
+  onStatusChange?: (status: 'loading' | 'ready' | 'error') => void;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -197,6 +199,7 @@ export function ShowContentRenderer({
   aspectRatio = '',
   LocalhostPreview,
   fill = false,
+  onStatusChange,
 }: ShowContentProps) {
   const arCSS = showAspectRatioToCSS(aspectRatio);
 
@@ -304,6 +307,56 @@ export function ShowContentRenderer({
   }, [title, path]);
 
   // ═════════════════════════════════════════════════════════════════════════
+  // Load-status reporting — lets the parent (ShowTool) hide a dead reference
+  // (renamed/deleted file → 404) instead of rendering a broken card.
+  // `null` = a child renderer owns the reporting (the generic-file branch
+  // forwards `onStatusChange` straight to FileContentRenderer below). The branch
+  // selection here mirrors the render cascade further down.
+  // ═════════════════════════════════════════════════════════════════════════
+  const ownStatus = useMemo<'loading' | 'ready' | 'error' | null>(() => {
+    // Generic file → FileContentRenderer reports via its own onStatusChange.
+    if (effectiveType === 'file' && path && sandboxPath) return null;
+    // Binary/media types backed by useBinaryBlob.
+    if ((isImage || isVideo || isAudio || isDocx || isPptx) && path) {
+      if (blobError) return 'error';
+      if (blobLoading || (isImage && heicConverting)) return 'loading';
+      return 'ready';
+    }
+    // PDF backed by useFileContent (base64).
+    if (isPdf && path) {
+      if (pdfError) return 'error';
+      if (pdfLoading) return 'loading';
+      return 'ready';
+    }
+    // CSV backed by useFileContent (text).
+    if (isCsv && path) return csvLoading ? 'loading' : 'ready';
+    // Everything else (url link, xlsx self-loading, code/markdown/text/html/
+    // error, localhost/html iframe, fallback) renders without a fetch we track.
+    return 'ready';
+  }, [
+    effectiveType,
+    path,
+    sandboxPath,
+    isImage,
+    isVideo,
+    isAudio,
+    isDocx,
+    isPptx,
+    isPdf,
+    isCsv,
+    blobError,
+    blobLoading,
+    heicConverting,
+    pdfError,
+    pdfLoading,
+    csvLoading,
+  ]);
+
+  useEffect(() => {
+    if (ownStatus !== null) onStatusChange?.(ownStatus);
+  }, [ownStatus, onStatusChange]);
+
+  // ═════════════════════════════════════════════════════════════════════════
   // Localhost URL → proxied iframe (caller provides the component)
   // ═════════════════════════════════════════════════════════════════════════
   if (hasLocalhostUrl && LocalhostPreview) {
@@ -316,7 +369,7 @@ export function ShowContentRenderer({
   // ═════════════════════════════════════════════════════════════════════════
   if ((isHtmlFile || (isHtml && !content)) && sandboxPath && LocalhostPreview) {
     const staticPort = parseInt(SANDBOX_PORTS.STATIC_FILE_SERVER ?? '3211', 10);
-    const normalizedPath = ensureWorkspacePath(sandboxPath);
+    const normalizedPath = toSandboxAbsolutePath(sandboxPath);
     const encodedPath = normalizedPath.split('/').filter(Boolean).map(encodeURIComponent).join('/');
     const staticUrl = `http://localhost:${staticPort}/open?path=/${encodedPath}`;
     return <LocalhostPreview url={staticUrl} label={title || fileName || undefined} />;
@@ -493,7 +546,7 @@ export function ShowContentRenderer({
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={cn(mediaH, 'overflow-hidden')}>
-            <DocxRenderer blob={rawBlob} className="h-full" />
+            <DocxRenderer blob={rawBlob} fileName={fileName} className="h-full" />
           </div>
         </Suspense>
       );
@@ -538,6 +591,7 @@ export function ShowContentRenderer({
           showHeader={false}
           className="h-full"
           errorFallback={fileErrorFallback}
+          onStatusChange={onStatusChange}
         />
       </div>
     );

@@ -1,21 +1,23 @@
 import type { AuthedPrincipal } from '@kortix/llm-gateway';
-import { AUTO_MODEL_ID } from '@kortix/shared/llm-catalog';
+import { AUTO_MODEL_ID } from '@kortix/llm-catalog';
 import {
   type AccountModelDefaults,
   getAccountModelDefaults,
   getSessionAgentContext,
 } from '../../repositories/model-preferences';
 import { chooseDefaultModel } from './choose-default-model';
+import { type ModelSource, chooseEffectiveModel, toWireModel } from './effective';
 import { resolveCandidates } from './resolve-candidates';
 
-// Resolves the account/agent-configured default model for a gateway principal,
-// once at authentication (in withResolvedTier). The result is attached to the
-// principal as `defaultModel` and consumed by `pickAutoModel` to turn a request
-// for the synthetic `auto` into the model the account actually wants.
+// Resolves the account/agent/project-configured default model for a gateway
+// principal, once at authentication (in withResolvedTier). The result is attached
+// to the principal as `defaultModel` and consumed by `pickAutoModel` to turn a
+// request for the synthetic `auto` into the model the account actually wants.
 //
-// Resolution order (most-specific wins): per-agent default → account default →
-// undefined (the caller then falls back to the platform default). Per-session and
-// explicit models never reach here — a concrete model is passed through unchanged.
+// Resolution order (most-specific wins): per-agent default → project default →
+// account default → undefined (the caller then falls back to the platform
+// default). Per-session and explicit models never reach here — a concrete model
+// is passed through unchanged.
 
 const PREFS_TTL_MS = 30_000;
 const SESSION_AGENT_TTL_MS = 60_000;
@@ -50,8 +52,10 @@ export async function resolveDefaultModelForPrincipal(
 ): Promise<string | undefined> {
   const defaults = await cachedAccountDefaults(principal.accountId);
   const hasAgentDefaults = Object.keys(defaults.agents).length > 0;
-  // Fast path: nothing configured → the platform default applies (no session read).
-  if (!defaults.account && !hasAgentDefaults) return undefined;
+  const projectDefault = principal.projectId ? defaults.projects[principal.projectId] : undefined;
+  // Fast path: nothing configured for this account/project → the platform default
+  // applies (no session read needed).
+  if (!defaults.account && !hasAgentDefaults && !projectDefault) return undefined;
 
   let agentName: string | null = null;
   if (hasAgentDefaults && principal.sessionId) {
@@ -62,6 +66,7 @@ export async function resolveDefaultModelForPrincipal(
     accountDefault: defaults.account,
     agentDefaults: defaults.agents,
     agentName,
+    projectDefault,
     freeModelsOnly: principal.freeModelsOnly,
   });
 }
@@ -82,6 +87,9 @@ export async function isModelServableForAccount(params: {
   model: string;
 }): Promise<boolean> {
   if (params.model === AUTO_MODEL_ID || params.model === `kortix/${AUTO_MODEL_ID}`) return false;
+  // Accept either the opencode ref (`kortix/<id>`) or the bare wire id — the
+  // gateway resolves the bare id, so normalize before probing candidates.
+  const wire = toWireModel(params.model);
   const candidates = await resolveCandidates(
     {
       userId: params.userId,
@@ -89,7 +97,45 @@ export async function isModelServableForAccount(params: {
       projectId: params.projectId,
       freeModelsOnly: params.freeModelsOnly,
     },
-    params.model,
+    wire,
   );
   return candidates.length > 0;
+}
+
+/**
+ * The effective model for a project/session AND where it came from — for honest
+ * UI/Slack copy ("Sonnet 4.6 · project default") and the model-defaults GET.
+ *
+ * An `explicit` override (a channel/session pin) wins only when it's actually
+ * servable for the account+project; an unservable pin (e.g. a BYOK model whose
+ * key was disconnected, or a retired managed id) degrades to the project →
+ * account → platform chain instead of producing a dead turn. The returned
+ * `model` is a concrete gateway wire id, or null when only the platform default
+ * applies (the caller omits it and the gateway resolves `auto`).
+ */
+export async function resolveEffectiveModel(params: {
+  userId: string;
+  accountId: string;
+  projectId: string;
+  agentName?: string | null;
+  explicit?: string | null;
+  freeModelsOnly: boolean;
+}): Promise<{ model: string | null; source: ModelSource }> {
+  if (params.explicit) {
+    const servable = await isModelServableForAccount({
+      userId: params.userId,
+      accountId: params.accountId,
+      projectId: params.projectId,
+      freeModelsOnly: params.freeModelsOnly,
+      model: params.explicit,
+    });
+    if (servable) return { model: toWireModel(params.explicit), source: 'explicit' };
+  }
+  const defaults = await getAccountModelDefaults(params.accountId);
+  return chooseEffectiveModel({
+    agentDefault: params.agentName ? defaults.agents[params.agentName] : null,
+    projectDefault: defaults.projects[params.projectId],
+    accountDefault: defaults.account,
+    freeModelsOnly: params.freeModelsOnly,
+  });
 }

@@ -7,7 +7,7 @@
  * a connector that can't be reached is stored with status='error' + 0 actions,
  * never failing the whole sweep. See docs/specs/executor.md §3, §7.
  */
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { parse as parseToml } from 'smol-toml';
 import {
   executorConnectorActions,
@@ -173,8 +173,8 @@ export async function syncProjectConnectors(projectId: string, accountId: string
   // materialized like any other connector but never written back to git.
   const channelSpecs = await synthesizeChannelConnectors(projectId, declaredSpecs);
   // Computer connector (the Agent Computer Tunnel) is install-driven the same
-  // way: a single synthetic connector when the account has a machine + the
-  // project opted into agent_tunnel. Also manifest-independent.
+  // way: a single synthetic connector when the account has a connected machine.
+  // A regular connector — no experimental opt-in — also manifest-independent.
   const computerSpecs = await synthesizeComputerConnectors(projectId, declaredSpecs);
   const specs = [...declaredSpecs, ...channelSpecs, ...computerSpecs];
 
@@ -264,9 +264,21 @@ async function upsertConnector(
 
   let connectorId = existingId;
   if (connectorId) {
+    // `sensitive` lives inside `config` but is a CHEAP field: it isn't part of
+    // manifestHashForConnector (deliberately — flipping it must not force a
+    // catalog re-fetch), so on a hash-match reconcile we still patch that one
+    // key in place. Without this, the Sensitive toggle commits to kortix.toml
+    // but the DB config (what the gateway + admin UI read) never updates.
+    const sensitivePatch = spec.sensitive
+      ? sql`coalesce(${executorConnectors.config}, '{}'::jsonb) || '{"sensitive": true}'::jsonb`
+      : sql`coalesce(${executorConnectors.config}, '{}'::jsonb) - 'sensitive'`;
     await db
       .update(executorConnectors)
-      .set(catalog ? { ...common, config: connectorConfig(spec, catalog.server) } : common)
+      .set(
+        catalog
+          ? { ...common, config: connectorConfig(spec, catalog.server) }
+          : { ...common, config: sensitivePatch },
+      )
       .where(eq(executorConnectors.connectorId, connectorId));
   } else {
     // A brand-new connector is never "unchanged", so catalog is always present

@@ -47,7 +47,7 @@ interface BasePayload {
 
 export type SetupLinkPayload =
   | (BasePayload & { kind: 'secret'; fields: SecretFieldSpec[]; scope: SecretScope })
-  | (BasePayload & { kind: 'connector'; slug: string; app: string | null; mode: 'shared' | 'per_user' });
+  | (BasePayload & { kind: 'connector'; slug: string; app: string | null });
 
 export function clampTtlMinutes(minutes?: number | null): number {
   if (typeof minutes !== 'number' || !Number.isFinite(minutes)) return DEFAULT_TTL_MINUTES;
@@ -59,7 +59,6 @@ type ConnectorSpec = {
   kind: 'connector';
   slug: string;
   app?: string | null;
-  mode?: 'shared' | 'per_user';
   uid?: string | null;
 };
 
@@ -75,7 +74,7 @@ export function mintSetupLink(
   const payload: SetupLinkPayload =
     spec.kind === 'secret'
       ? { ...base, kind: 'secret', fields: spec.fields, scope: spec.scope ?? 'runtime' }
-      : { ...base, kind: 'connector', slug: spec.slug, app: spec.app ?? null, mode: spec.mode ?? 'shared' };
+      : { ...base, kind: 'connector', slug: spec.slug, app: spec.app ?? null };
 
   const envelope = encryptProjectSecret(projectId, JSON.stringify(payload));
   const token = TOKEN_PREFIX + Buffer.from(`${projectId}.${envelope}`, 'utf8').toString('base64url');

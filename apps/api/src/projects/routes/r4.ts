@@ -19,11 +19,21 @@ import {
 } from "../../channels/agentmail-api";
 import { config } from "../../config";
 import { getCachedAccountTier } from "../../billing/services/entitlements";
-import { tierGrantsAllModels } from "../../billing/services/tiers";
+import { accountIsFreeTierForModels } from "../../billing/services/tiers";
 import {
   downloadSlackFile,
   uploadSlackFile,
 } from "../../channels/slack/file-proxy";
+import {
+  MEET_VOICES,
+  DEFAULT_MEET_BOT_NAME,
+  isMeetVoice,
+  resolveProjectBotName,
+  resolveProjectVoice,
+  setProjectBotName,
+  setProjectVoice,
+} from "../../channels/meet-voices";
+import { previewVoiceB64, speakInMeeting } from "../../channels/meet-tts";
 import { buildSlackInstallUrl } from "../../channels/slack-oauth";
 import { slackOauthMode } from "../../channels/slack-oauth-mode";
 import {
@@ -33,20 +43,21 @@ import {
   relayTurnStep,
   type QuestionInfo,
 } from "../../channels/slack-webhook";
-import { PROJECT_ACTIONS, assertAuthorized } from "../../iam";
+import { PROJECT_ACTIONS } from "../../iam";
 import { auth, errors, json } from "../../openapi";
 import { projectLlmGatewayEnabled } from "../../llm-gateway/enablement";
 import { gatewayModelCatalog } from "../../llm-gateway/models/catalog-models";
 import {
   invalidateAccountModelDefaults,
   isModelServableForAccount,
+  resolveEffectiveModel,
 } from "../../llm-gateway/resolution/default-model";
 import {
   deleteAccountModelPreference,
   getAccountModelDefaults,
   upsertAccountModelPreference,
 } from "../../repositories/model-preferences";
-import { AUTO_DEFAULT_MODEL_ID } from "@kortix/shared/llm-catalog";
+import { AUTO_DEFAULT_MODEL_ID } from "@kortix/llm-catalog";
 import { resolveExperimentalFeature } from "../../experimental/features";
 import { db } from "../../shared/db";
 import { extractApps } from "../apps";
@@ -63,7 +74,7 @@ import {
   sessionSandboxes,
 } from "@kortix/db";
 import { and, eq, inArray } from "drizzle-orm";
-import { loadProjectForUser } from "../lib/access";
+import { loadProjectForUser, assertProjectCapability } from "../lib/access";
 import { AnyObject, AppSchema, TriggerSchema, projectsApp } from "../lib/app";
 import {
   APPS_DISABLED_BODY,
@@ -76,7 +87,7 @@ import {
   specToAppBody,
   upsertAppInManifest,
 } from "../lib/apps-helpers";
-import { getAccountMembership, withProjectGitAuth } from "../lib/git";
+import { withProjectGitAuth } from "../lib/git";
 import { readBody, requestAuditContext } from "../lib/serializers";
 import {
   commitManifest,
@@ -88,21 +99,20 @@ import {
   parseTriggerDraft,
   removeTriggerFromManifest,
   renderPromptTemplate,
-  setGitTriggerOwner,
   specToBody,
   triggersPausedForProject,
   upsertTriggerInManifest,
   withTriggersPaused,
 } from "../lib/triggers";
 
-// Body keys that change the trigger's *repo manifest* (committed to git). An
-// owner-only edit touches none of these, so we can skip the manifest commit and
-// just update the DB-side owner — owner lives in project_trigger_runtime, never
-// in the portable kortix.toml.
+// Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
+// whose body touches none of these has nothing to commit, so we skip git entirely
+// and treat it as a no-op.
 const TRIGGER_MANIFEST_KEYS = [
   "name",
   "type",
   "agent",
+  "model",
   "enabled",
   "prompt_template",
   "promptTemplate",
@@ -116,33 +126,6 @@ const TRIGGER_MANIFEST_KEYS = [
   "session_mode",
   "sessionMode",
 ] as const;
-
-/**
- * Resolve the owner_user_id from a request body. Returns:
- *   { skip: true }            — body didn't mention an owner; leave it unchanged
- *   { ownerUserId: string|null } — set it (null = reset to account owner)
- *   { error }                 — provided owner isn't a member of the account
- * The default-to-creator behavior lives at the call site (create), not here.
- */
-async function resolveOwnerFromBody(
-  body: Record<string, unknown>,
-  accountId: string,
-): Promise<
-  { skip: true } | { ownerUserId: string | null } | { error: string }
-> {
-  if (!("owner_user_id" in body) && !("ownerUserId" in body))
-    return { skip: true };
-  const raw = (body as any).owner_user_id ?? (body as any).ownerUserId;
-  const ownerUserId = typeof raw === "string" && raw.trim() ? raw.trim() : null;
-  if (ownerUserId) {
-    const membership = await getAccountMembership(ownerUserId, accountId).catch(
-      () => null,
-    );
-    if (!membership)
-      return { error: "owner_user_id must be a member of this account" };
-  }
-  return { ownerUserId };
-}
 
 projectsApp.openapi(
   createRoute({
@@ -163,6 +146,9 @@ projectsApp.openapi(
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    // Leaf-gate the read (a custom role can omit project.trigger.read) — and, via
+    // the central agent-grant fold, an agent token must hold it in its kortixCli.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_READ);
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row));
   },
@@ -190,23 +176,12 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
     // Specific IAM gate so the audit trail records the precise action.
-    await assertAuthorized(
-      loaded.userId,
-      loaded.row.accountId,
-      PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
-      { type: "project", id: projectId },
-    );
+    // assertProjectCapability (not bare assertAuthorized) so the acting token is
+    // threaded and the agent-grant fold fires.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE);
 
     const draft = parseTriggerDraft(body, { existingSlug: null });
     if ("error" in draft) return c.json({ error: draft.error }, 400);
-
-    // Owner: default to the creator (so a per_user connector in this trigger's
-    // automated runs uses the creator's accounts), unless an explicit, valid
-    // owner_user_id is supplied. Validate BEFORE committing the manifest.
-    const ownerReq = await resolveOwnerFromBody(body, loaded.row.accountId);
-    if ("error" in ownerReq) return c.json({ error: ownerReq.error }, 400);
-    const ownerUserId =
-      "skip" in ownerReq ? loaded.userId : ownerReq.ownerUserId;
 
     let manifest: ParsedManifest;
     try {
@@ -236,9 +211,6 @@ projectsApp.openapi(
     if ("error" in result) {
       return c.json({ error: result.error }, result.status as 400 | 502);
     }
-
-    // Persist the owner (DB-side) after the manifest commit succeeds.
-    await setGitTriggerOwner(projectId, draft.slug, ownerUserId);
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
   },
@@ -279,12 +251,7 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertAuthorized(
-      loaded.userId,
-      loaded.row.accountId,
-      PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
-      { type: "project", id: projectId },
-    );
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE);
     const paused = body.paused;
     if (typeof paused !== "boolean") {
       return c.json({ error: "paused must be a boolean" }, 400);
@@ -327,12 +294,7 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertAuthorized(
-      loaded.userId,
-      loaded.row.accountId,
-      PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
-      { type: "project", id: projectId },
-    );
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE);
 
     let manifest: ParsedManifest;
     try {
@@ -348,12 +310,8 @@ projectsApp.openapi(
     );
     if (!current) return c.json({ error: "Not found" }, 404);
 
-    // Owner lives in the DB, not the manifest — validate it up front.
-    const ownerReq = await resolveOwnerFromBody(body, loaded.row.accountId);
-    if ("error" in ownerReq) return c.json({ error: ownerReq.error }, 400);
-
-    // Only commit the repo manifest when a manifest field actually changed. An
-    // owner-only PATCH skips git entirely (owner is a pure platform concern).
+    // Only commit the repo manifest when a manifest field actually changed; a
+    // PATCH that touches none is a no-op that skips git entirely.
     const touchesManifest = TRIGGER_MANIFEST_KEYS.some((k) => k in body);
     if (touchesManifest) {
       // Merge the patch onto the current spec so callers can send partial bodies
@@ -373,11 +331,6 @@ projectsApp.openapi(
       if ("error" in result) {
         return c.json({ error: result.error }, result.status as 400 | 502);
       }
-    }
-
-    // Apply the owner change (if the body specified one) after any manifest commit.
-    if (!("skip" in ownerReq)) {
-      await setGitTriggerOwner(projectId, slug, ownerReq.ownerUserId);
     }
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row));
@@ -406,12 +359,7 @@ projectsApp.openapi(
     const slug = c.req.param("slug");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertAuthorized(
-      loaded.userId,
-      loaded.row.accountId,
-      PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
-      { type: "project", id: projectId },
-    );
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE);
 
     if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
       return c.json({ error: "Invalid slug" }, 400);
@@ -540,6 +488,9 @@ projectsApp.openapi(
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    // Connecting a Slack workspace is a connector-write capability — a custom
+    // role can withhold it and a scoped agent must hold it (central fold).
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
 
     let body: { bot_token?: string; signing_secret?: string };
     try {
@@ -621,6 +572,8 @@ projectsApp.openapi(
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    // Disconnecting Slack tears down the connector — same connector-write gate.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
     await deleteSlackInstall(projectId);
     // Tear down the auto-materialized Slack connector now that the install is gone.
     await reconcileChannelConnectors(projectId);
@@ -1243,13 +1196,22 @@ projectsApp.openapi(
         z.object({ ok: z.boolean(), files: z.any() }).passthrough(),
         "Uploaded",
       ),
-      ...errors(400, 404),
+      ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    // This is a SEND primitive (posts to Slack with the project's bot token), not
+    // a read — a bare project-read gate let ANY project-read caller post
+    // arbitrary files to the workspace. The channel.send leaf in iam/actions.ts
+    // is cataloged but scoped to resource_type='channel' and was never wired
+    // through assertProjectCapability's project-scoped fold (nothing asserts it
+    // today — see the audit note removing CHANNEL_ACTIONS). Reuse the connector
+    // capability that already gates connect/disconnect and the channel-bindings
+    // route instead of inventing a parallel gate for the same resource.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
     const body = await readBody(c);
     const result = await uploadSlackFile(projectId, {
       channel: String(body.channel ?? ""),
@@ -1266,6 +1228,165 @@ projectsApp.openapi(
     if (!result.ok)
       return c.json({ error: result.error }, result.status as 400 | 404);
     return c.json({ ok: true, files: result.files });
+  },
+);
+
+// GET /v1/projects/:projectId/channels/meet/voices
+// The voice picker: the predefined catalog + the project's current selection,
+// plus whether speaking is wired (ElevenLabs configured).
+projectsApp.openapi(
+  createRoute({
+    method: "get",
+    path: "/{projectId}/channels/meet/voices",
+    tags: ["channels"],
+    summary: "GET /:projectId/channels/meet/voices",
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(z.object({ ok: z.boolean() }).passthrough(), "Voices"),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const [selected, botName] = await Promise.all([
+      resolveProjectVoice(projectId),
+      resolveProjectBotName(projectId),
+    ]);
+    return c.json({
+      ok: true,
+      selected: selected.id,
+      bot_name: botName,
+      default_bot_name: DEFAULT_MEET_BOT_NAME,
+      speak_enabled: Boolean(config.ELEVENLABS_API_KEY),
+      voices: MEET_VOICES.map((v) => ({ id: v.id, name: v.name, desc: v.desc })),
+    });
+  },
+);
+
+// PUT /v1/projects/:projectId/channels/meet/name — set the bot's display name.
+projectsApp.openapi(
+  createRoute({
+    method: "put",
+    path: "/{projectId}/channels/meet/name",
+    tags: ["channels"],
+    summary: "PUT /:projectId/channels/meet/name",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), bot_name: z.string() }).passthrough(), "Saved"),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const body = await readBody(c);
+    const name = String(body.name ?? body.bot_name ?? "");
+    const saved = await setProjectBotName(projectId, name);
+    return c.json({ ok: true, bot_name: saved });
+  },
+);
+
+// PUT /v1/projects/:projectId/channels/meet/voice — choose the meeting voice.
+projectsApp.openapi(
+  createRoute({
+    method: "put",
+    path: "/{projectId}/channels/meet/voice",
+    tags: ["channels"],
+    summary: "PUT /:projectId/channels/meet/voice",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), selected: z.string() }).passthrough(), "Saved"),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const body = await readBody(c);
+    const voiceId = String(body.voice ?? "");
+    if (!isMeetVoice(voiceId)) return c.json({ error: "unknown voice" }, 400);
+    const voice = await setProjectVoice(projectId, voiceId);
+    return c.json({ ok: true, selected: voice.id });
+  },
+);
+
+// POST /v1/projects/:projectId/channels/meet/voices/:voiceId/preview
+// Returns a base64 MP3 of a stock line in that voice (for the picker's preview).
+projectsApp.openapi(
+  createRoute({
+    method: "post",
+    path: "/{projectId}/channels/meet/voices/{voiceId}/preview",
+    tags: ["channels"],
+    summary: "POST /:projectId/channels/meet/voices/:voiceId/preview",
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), voiceId: z.string() }) },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), kind: z.string(), b64: z.string() }).passthrough(), "Preview"),
+      ...errors(400, 404, 502, 503),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const voiceId = c.req.param("voiceId");
+    if (!isMeetVoice(voiceId)) return c.json({ error: "unknown voice" }, 400);
+    const r = await previewVoiceB64(voiceId);
+    if (!r.ok) return c.json({ error: r.error }, r.status as 400 | 404 | 502 | 503);
+    return c.json({ ok: true, kind: "mp3", b64: r.b64 });
+  },
+);
+
+// POST /v1/projects/:projectId/channels/meet/speak — the bot speaks in the call.
+// Server-side proxy: text → ElevenLabs (project voice) → Recall output_audio.
+// Both keys stay server-side; backs `meet speak`.
+projectsApp.openapi(
+  createRoute({
+    method: "post",
+    path: "/{projectId}/channels/meet/speak",
+    tags: ["channels"],
+    summary: "POST /:projectId/channels/meet/speak",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), voice: z.string() }).passthrough(), "Spoken"),
+      ...errors(400, 403, 404, 502, 503),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    // Same reasoning as the Slack upload proxy above: this is a SEND primitive
+    // (makes the meeting bot speak), not a read, so a bare project-read gate is
+    // wrong here too. channel.send is dead/unwired (see audit note removing
+    // CHANNEL_ACTIONS) — reuse the connector-write leaf instead.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+    const body = await readBody(c);
+    const botId = String(body.bot_id ?? body.botId ?? "");
+    const text = String(body.text ?? "");
+    const voice = typeof body.voice === "string" ? body.voice : undefined;
+    if (!botId) return c.json({ error: "bot_id required" }, 400);
+    if (!text.trim()) return c.json({ error: "text required" }, 400);
+    const r = await speakInMeeting(projectId, botId, text, voice);
+    if (!r.ok) return c.json({ error: r.error }, r.status as 400 | 404 | 502 | 503);
+    return c.json({ ok: true, voice: r.voice });
   },
 );
 
@@ -1345,7 +1466,7 @@ projectsApp.openapi(
     // synthetic AUTO stay hidden from the picker.
     const freeManagedOnly =
       config.KORTIX_BILLING_INTERNAL_ENABLED && ownerAccountId
-        ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))
+        ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
         : false;
     const models = gatewayModelCatalog(projectId, { freeManagedOnly });
     return c.json({ models });
@@ -1382,25 +1503,36 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
     const ownerAccountId = loaded.row.accountId as string;
+    const userId = c.get("userId") as string;
     const defaults = await getAccountModelDefaults(ownerAccountId);
     const freeTier =
       config.KORTIX_BILLING_INTERNAL_ENABLED
-        ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))
+        ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
         : false;
+    // Honest project-level resolution (project → account → platform) + where it
+    // came from, so the UI can show "Sonnet 4.6 · project default". The
+    // authoritative per-request resolution still happens in the gateway.
+    const resolved = await resolveEffectiveModel({
+      userId,
+      accountId: ownerAccountId,
+      projectId,
+      explicit: null,
+      freeModelsOnly: freeTier,
+    });
     return c.json({
       platformDefault: AUTO_DEFAULT_MODEL_ID,
       accountDefault: defaults.account,
       agentDefaults: defaults.agents,
-      // Account-level resolution (agent/vision-agnostic) for picker display; the
-      // authoritative per-request resolution still happens in the gateway.
-      resolvedForCaller: defaults.account ?? AUTO_DEFAULT_MODEL_ID,
+      projectDefault: defaults.projects[projectId] ?? null,
+      resolvedForCaller: resolved.model ?? AUTO_DEFAULT_MODEL_ID,
+      resolvedSource: resolved.source,
       freeTier,
     });
   },
 );
 
 const ModelDefaultBody = z.object({
-  scope: z.enum(["account", "agent"]),
+  scope: z.enum(["account", "agent", "project"]),
   agentName: z.string().min(1).max(128).optional(),
   model: z.string().min(1).max(128),
 });
@@ -1445,7 +1577,7 @@ projectsApp.openapi(
     }
 
     const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))
+      ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
       : false;
     const servable = await isModelServableForAccount({
       userId,
@@ -1467,7 +1599,8 @@ projectsApp.openapi(
     await upsertAccountModelPreference({
       accountId: ownerAccountId,
       scope,
-      scopeKey: agentName,
+      // agent → agent name; project → the project id; account → '' (in the repo).
+      scopeKey: scope === "agent" ? agentName : scope === "project" ? projectId : undefined,
       model,
       updatedBy: userId,
     });
@@ -1492,7 +1625,7 @@ projectsApp.openapi(
     request: {
       params: z.object({ projectId: z.string() }),
       query: z.object({
-        scope: z.enum(["account", "agent"]),
+        scope: z.enum(["account", "agent", "project"]),
         agentName: z.string().min(1).max(128).optional(),
       }),
     },
@@ -1511,8 +1644,8 @@ projectsApp.openapi(
     const ownerAccountId = loaded.row.accountId as string;
     const scope = c.req.query("scope");
     const agentName = c.req.query("agentName");
-    if (scope !== "account" && scope !== "agent") {
-      return c.json({ error: "scope must be 'account' or 'agent'", code: "invalid_scope" }, 400);
+    if (scope !== "account" && scope !== "agent" && scope !== "project") {
+      return c.json({ error: "scope must be 'account', 'agent', or 'project'", code: "invalid_scope" }, 400);
     }
     if (scope === "agent" && !agentName) {
       return c.json(
@@ -1520,7 +1653,8 @@ projectsApp.openapi(
         400,
       );
     }
-    await deleteAccountModelPreference({ accountId: ownerAccountId, scope, scopeKey: agentName });
+    const scopeKey = scope === "agent" ? agentName : scope === "project" ? projectId : undefined;
+    await deleteAccountModelPreference({ accountId: ownerAccountId, scope, scopeKey });
     invalidateAccountModelDefaults(ownerAccountId);
     return c.json({ ok: true, scope, agentName: scope === "agent" ? agentName : undefined });
   },
@@ -1675,6 +1809,7 @@ projectsApp.openapi(
     const slug = c.req.param("slug");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE);
 
     const { specs } = await loadProjectTriggers(
       await withProjectGitAuth(loaded.row),
@@ -1805,6 +1940,7 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
     const draft = parseAppDraft(body, { existingSlug: null });
     if ("error" in draft) return c.json({ error: draft.error }, 400);
@@ -1866,6 +2002,7 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
     let manifest: ParsedManifest;
     try {
@@ -1922,6 +2059,7 @@ projectsApp.openapi(
     const slug = c.req.param("slug");
     const loaded = await loadProjectForUser(c, projectId, "manage");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
     if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
       return c.json({ error: "Invalid slug" }, 400);

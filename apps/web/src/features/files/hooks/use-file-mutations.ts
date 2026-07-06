@@ -14,7 +14,7 @@ import { fileListKeys } from './use-file-list';
 import { fileContentKeys } from './use-file-content';
 import { gitStatusKeys } from './use-git-status';
 import { useServerStore } from '@/stores/server-store';
-import type { FileNode } from '../types';
+import type { FileNode } from '@/features/file-browser/types';
 
 // ---------------------------------------------------------------------------
 // Upload

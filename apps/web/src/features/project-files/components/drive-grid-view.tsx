@@ -1,30 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
-import { useMemo, useCallback, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import {
-  Folder,
-  FolderOpen,
-  FolderCog,
-  MoreVertical,
-  Download,
-  History,
-  Pencil,
-  Trash2,
-  Copy,
-  Scissors,
-  ClipboardCopy,
-  RefreshCw,
-  Sparkles,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import type { FileNode } from '../types';
-import { getFileIcon } from './file-icon';
-import { FileThumbnail } from './file-thumbnail';
-import { DRAG_MIME } from './file-tree-item';
-import type { GitStatusType } from './file-tree-item';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -32,8 +8,34 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
-
-// ─── Grid Item Props ────────────────────────────────────────────────────────
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
+import { Eye, Pencil, TrashSolid } from '@mynaui/icons-react';
+import {
+  ArrowUpRight,
+  ClipboardCopy,
+  Copy,
+  Download,
+  Folder,
+  FolderCog,
+  History,
+  MoreVertical,
+  Scissors,
+} from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useCallback, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import type { FileNode } from '@/features/file-browser/types';
+import { getFileIcon } from './file-icon';
+import { FileThumbnail } from './file-thumbnail';
+import type { GitStatusType } from '@/features/file-browser/components/file-tree-item';
+import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
 
 interface DriveGridItemProps {
   node: FileNode;
@@ -51,7 +53,185 @@ interface DriveGridItemProps {
   isCut?: boolean;
 }
 
-// ─── Folder Card ────────────────────────────────────────────────────────────
+type DriveMenuItemComponent = ComponentType<{
+  onClick?: () => void;
+  disabled?: boolean;
+  children: ReactNode;
+}>;
+
+type DriveMenuSeparatorComponent = ComponentType;
+
+interface FolderDriveMenuProps {
+  Item: DriveMenuItemComponent;
+  Separator: DriveMenuSeparatorComponent;
+  node: FileNode;
+  onClick: () => void;
+  onDownload?: (node: FileNode) => void;
+  onCopy?: (node: FileNode) => void;
+  onCut?: (node: FileNode) => void;
+  onRename?: (node: FileNode, newName: string) => void;
+  onDelete?: (node: FileNode) => void;
+  startRenaming: () => void;
+  isDownloadingItem?: boolean;
+  openFolderLabel: string;
+  copyPathLabel: string;
+}
+
+export function FolderDriveMenuItems({
+  Item,
+  Separator,
+  node,
+  onClick,
+  onDownload,
+  onCopy,
+  onCut,
+  onRename,
+  onDelete,
+  startRenaming,
+  isDownloadingItem,
+  openFolderLabel,
+  copyPathLabel,
+}: FolderDriveMenuProps) {
+  const hasEditActions = Boolean(onRename || onDelete);
+
+  return (
+    <>
+      <Item onClick={onClick}>
+        <ArrowUpRight />
+        {openFolderLabel}
+      </Item>
+      {onDownload && (
+        <Item onClick={() => onDownload(node)} disabled={isDownloadingItem}>
+          <Download />
+          {isDownloadingItem ? 'Zipping...' : 'Download as zip'}
+        </Item>
+      )}
+      <Separator />
+      {onCopy && (
+        <Item onClick={() => onCopy(node)}>
+          <ClipboardCopy />
+          Copy
+        </Item>
+      )}
+      {onCut && (
+        <Item onClick={() => onCut(node)}>
+          <Scissors />
+          Cut
+        </Item>
+      )}
+      <Item onClick={() => navigator.clipboard.writeText(node.path)}>
+        <Copy />
+        {copyPathLabel}
+      </Item>
+      {hasEditActions && (
+        <>
+          <Separator />
+          {onRename && (
+            <Item onClick={() => setTimeout(startRenaming, 100)}>
+              <Pencil />
+              Rename
+            </Item>
+          )}
+          {onDelete && (
+            <Item onClick={() => onDelete(node)}>
+              <TrashSolid />
+              Remove
+            </Item>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+interface FileDriveMenuProps {
+  Item: DriveMenuItemComponent;
+  Separator: DriveMenuSeparatorComponent;
+  node: FileNode;
+  onClick: () => void;
+  onDownload?: (node: FileNode) => void;
+  onHistory?: (node: FileNode) => void;
+  onCopy?: (node: FileNode) => void;
+  onCut?: (node: FileNode) => void;
+  onRename?: (node: FileNode, newName: string) => void;
+  onDelete?: (node: FileNode) => void;
+  startRenaming: () => void;
+  checkpointHistoryLabel: string;
+  copyPathLabel: string;
+}
+
+export function FileDriveMenuItems({
+  Item,
+  Separator,
+  node,
+  onClick,
+  onDownload,
+  onHistory,
+  onCopy,
+  onCut,
+  onRename,
+  onDelete,
+  startRenaming,
+  checkpointHistoryLabel,
+  copyPathLabel,
+}: FileDriveMenuProps) {
+  const hasEditActions = Boolean(onRename || onDelete);
+
+  return (
+    <>
+      <Item onClick={onClick}>
+        <Eye />
+        Preview
+      </Item>
+      {onDownload && (
+        <Item onClick={() => onDownload(node)}>
+          <Download />
+          Download
+        </Item>
+      )}
+      {onHistory && (
+        <Item onClick={() => onHistory(node)}>
+          <History />
+          {checkpointHistoryLabel}
+        </Item>
+      )}
+      <Separator />
+      {onCopy && (
+        <Item onClick={() => onCopy(node)}>
+          <ClipboardCopy />
+          Copy
+        </Item>
+      )}
+      {onCut && (
+        <Item onClick={() => onCut(node)}>
+          <Scissors />
+          Cut
+        </Item>
+      )}
+      <Item onClick={() => navigator.clipboard.writeText(node.path)}>
+        <Copy />
+        {copyPathLabel}
+      </Item>
+      {hasEditActions && (
+        <>
+          <Separator />
+          {onRename && (
+            <Item onClick={() => setTimeout(startRenaming, 100)}>
+              <Pencil />
+              Rename
+            </Item>
+          )}
+          {onDelete && (
+            <Item onClick={() => onDelete(node)}>
+              <TrashSolid />
+              Remove
+            </Item>
+          )}
+        </>
+      )}
+    </>
+  );
+}
 
 function FolderCard({
   node,
@@ -72,14 +252,16 @@ function FolderCard({
   const [renameName, setRenameName] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
-  const contextTriggerRef = useRef<HTMLDivElement>(null);
 
-  const handleDragStart = useCallback((e: React.DragEvent) => {
-    e.dataTransfer.setData(DRAG_MIME, node.path);
-    e.dataTransfer.setData('text/plain', node.name);
-    e.dataTransfer.effectAllowed = 'move';
-    setIsDragging(true);
-  }, [node.path, node.name]);
+  const handleDragStart = useCallback(
+    (e: React.DragEvent) => {
+      e.dataTransfer.setData(DRAG_MIME, node.path);
+      e.dataTransfer.setData('text/plain', node.name);
+      e.dataTransfer.effectAllowed = 'move';
+      setIsDragging(true);
+    },
+    [node.path, node.name],
+  );
 
   const handleDragEnd = useCallback(() => setIsDragging(false), []);
 
@@ -104,15 +286,18 @@ function FolderCard({
     }
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounterRef.current = 0;
-    setIsDragOver(false);
-    const sourcePath = e.dataTransfer.getData(DRAG_MIME);
-    if (!sourcePath || sourcePath === node.path || node.path.startsWith(sourcePath + '/')) return;
-    onDropMove?.(sourcePath, node.path);
-  }, [node.path, onDropMove]);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounterRef.current = 0;
+      setIsDragOver(false);
+      const sourcePath = e.dataTransfer.getData(DRAG_MIME);
+      if (!sourcePath || sourcePath === node.path || node.path.startsWith(sourcePath + '/')) return;
+      onDropMove?.(sourcePath, node.path);
+    },
+    [node.path, onDropMove],
+  );
 
   const startRenaming = useCallback(() => {
     setRenameName(node.name);
@@ -133,28 +318,30 @@ function FolderCard({
     setIsRenaming(false);
   }, [renameName, node, onRename]);
 
-  // Programmatically open context menu on 3-dot click
-  const handleDotsClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const trigger = contextTriggerRef.current;
-    if (trigger) {
-      const rect = (e.target as HTMLElement).getBoundingClientRect();
-      trigger.dispatchEvent(
-        new MouseEvent('contextmenu', {
-          bubbles: true,
-          clientX: rect.left,
-          clientY: rect.bottom,
-        }),
-      );
-    }
-  }, []);
+  const openFolderLabel = tHardcodedUi.raw(
+    'featuresProjectFilesComponentsDriveGridView.line209JsxTextOpenFolder',
+  );
+  const copyPathLabel = tHardcodedUi.raw(
+    'featuresProjectFilesComponentsDriveGridView.line231JsxTextCopyPath',
+  );
+  const folderMenuProps = {
+    node,
+    onClick,
+    onDownload,
+    onCopy,
+    onCut,
+    onRename,
+    onDelete,
+    startRenaming,
+    isDownloadingItem,
+    openFolderLabel,
+    copyPathLabel,
+  };
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
-          ref={contextTriggerRef}
           draggable={!isRenaming}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
@@ -164,16 +351,14 @@ function FolderCard({
           onDrop={handleDrop}
           onClick={isRenaming ? undefined : onClick}
           className={cn(
-            'group flex items-center gap-2.5 h-11 px-3 rounded-2xl border border-border/50 bg-card cursor-pointer select-none',
-            'transition-colors',
-            'hover:bg-muted/40 hover:border-border',
+            'group border-border bg-popover hover:bg-foreground/4 flex h-11 cursor-pointer items-center gap-2.5 rounded-md border px-3 transition-colors select-none',
             isCut && 'opacity-40',
             isDragging && 'opacity-30',
             isDragOver && 'bg-primary/[0.08] border-primary/40',
           )}
         >
-          <Folder className="h-4 w-4 text-muted-foreground shrink-0" />
-          <div className="flex-1 min-w-0 h-full flex items-center">
+          <Folder className="text-muted-foreground size-4 shrink-0" />
+          <div className="flex h-full min-w-0 flex-1 items-center">
             {isRenaming ? (
               <input
                 ref={renameInputRef}
@@ -186,68 +371,45 @@ function FolderCard({
                 }}
                 onBlur={confirmRename}
                 onClick={(e) => e.stopPropagation()}
-                className="w-full text-sm bg-transparent border-b border-primary/50 py-0.5 outline-none"
+                className="border-primary/50 w-full border-b bg-transparent py-0.5 text-sm outline-none"
               />
             ) : (
-              <span className="text-sm truncate text-foreground font-medium">
-                {node.name}
-              </span>
+              <span className="text-foreground truncate text-sm font-medium">{node.name}</span>
             )}
           </div>
           {!isRenaming && (
-            <Button
-              onClick={handleDotsClick}
-              variant="ghost"
-              size="icon-xs"
-              className="opacity-0 group-hover:opacity-100 shrink-0"
-            >
-              <MoreVertical className="h-3.5 w-3.5 text-muted-foreground" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  onClick={(e) => e.stopPropagation()}
+                  variant="ghost"
+                  size="icon-xs"
+                  className="shrink-0 opacity-0 group-hover:opacity-100"
+                >
+                  <MoreVertical className="text-muted-foreground size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <FolderDriveMenuItems
+                  Item={DropdownMenuItem}
+                  Separator={DropdownMenuSeparator}
+                  {...folderMenuProps}
+                />
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48">
-        <ContextMenuItem onClick={onClick}>{tHardcodedUi.raw('featuresProjectFilesComponentsDriveGridView.line209JsxTextOpenFolder')}</ContextMenuItem>
-        {onDownload && (
-          <ContextMenuItem onClick={() => onDownload(node)} disabled={isDownloadingItem}>
-            <Download className="mr-2 h-4 w-4" />
-            {isDownloadingItem ? 'Zipping...' : 'Download as zip'}
-          </ContextMenuItem>
-        )}
-        <ContextMenuSeparator />
-        {onCopy && (
-          <ContextMenuItem onClick={() => onCopy(node)}>
-            <ClipboardCopy className="mr-2 h-4 w-4" />
-            Copy
-          </ContextMenuItem>
-        )}
-        {onCut && (
-          <ContextMenuItem onClick={() => onCut(node)}>
-            <Scissors className="mr-2 h-4 w-4" />
-            Cut
-          </ContextMenuItem>
-        )}
-        <ContextMenuItem onClick={() => navigator.clipboard.writeText(node.path)}>
-          <Copy className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveGridView.line231JsxTextCopyPath')}</ContextMenuItem>
-        <ContextMenuSeparator />
-        {onRename && (
-          <ContextMenuItem onClick={() => setTimeout(startRenaming, 100)}>
-            <Pencil className="mr-2 h-4 w-4" />
-            Rename
-          </ContextMenuItem>
-        )}
-        {onDelete && (
-          <ContextMenuItem onClick={() => onDelete(node)}>
-            <Trash2 className="mr-2 h-4 w-4" />
-            Remove
-          </ContextMenuItem>
-        )}
+        <FolderDriveMenuItems
+          Item={ContextMenuItem}
+          Separator={ContextMenuSeparator}
+          {...folderMenuProps}
+        />
       </ContextMenuContent>
     </ContextMenu>
   );
 }
-
-// ─── File Card ──────────────────────────────────────────────────────────────
 
 function FileCard({
   node,
@@ -266,14 +428,16 @@ function FileCard({
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameName, setRenameName] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
-  const contextTriggerRef = useRef<HTMLDivElement>(null);
 
-  const handleDragStart = useCallback((e: React.DragEvent) => {
-    e.dataTransfer.setData(DRAG_MIME, node.path);
-    e.dataTransfer.setData('text/plain', node.name);
-    e.dataTransfer.effectAllowed = 'move';
-    setIsDragging(true);
-  }, [node.path, node.name]);
+  const handleDragStart = useCallback(
+    (e: React.DragEvent) => {
+      e.dataTransfer.setData(DRAG_MIME, node.path);
+      e.dataTransfer.setData('text/plain', node.name);
+      e.dataTransfer.effectAllowed = 'move';
+      setIsDragging(true);
+    },
+    [node.path, node.name],
+  );
 
   const handleDragEnd = useCallback(() => setIsDragging(false), []);
 
@@ -300,62 +464,66 @@ function FileCard({
     setIsRenaming(false);
   }, [renameName, node, onRename]);
 
-  // Programmatically open context menu on 3-dot click
-  const handleDotsClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const trigger = contextTriggerRef.current;
-    if (trigger) {
-      const rect = (e.target as HTMLElement).getBoundingClientRect();
-      trigger.dispatchEvent(
-        new MouseEvent('contextmenu', {
-          bubbles: true,
-          clientX: rect.left,
-          clientY: rect.bottom,
-        }),
-      );
-    }
-  }, []);
+  const copyPathLabel = tHardcodedUi.raw(
+    'featuresProjectFilesComponentsDriveGridView.line420JsxTextCopyPath',
+  );
+  const checkpointHistoryLabel = tHardcodedUi.raw(
+    'featuresProjectFilesComponentsDriveGridView.line402JsxTextCheckpointHistory',
+  );
+  const fileMenuProps = {
+    node,
+    onClick,
+    onDownload,
+    onHistory,
+    onCopy,
+    onCut,
+    onRename,
+    onDelete,
+    startRenaming,
+    checkpointHistoryLabel,
+    copyPathLabel,
+  };
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
-          ref={contextTriggerRef}
           draggable={!isRenaming}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
           onClick={isRenaming ? undefined : onClick}
           onDoubleClick={isRenaming ? undefined : onDoubleClick}
           className={cn(
-            'group relative flex flex-col rounded-2xl border border-border/50 bg-card cursor-pointer select-none overflow-hidden',
-            'transition-all duration-150',
-            'hover:border-border hover:shadow-[0_2px_8px_-2px_rgba(0,0,0,0.06)]',
+            'group border-border bg-popover hover:bg-foreground/4 relative flex cursor-pointer flex-col overflow-hidden rounded-md border select-none',
             isCut && 'opacity-40',
             isDragging && 'opacity-30',
           )}
         >
-          {/* Thumbnail area */}
-          <FileThumbnail
-            filePath={node.path}
-            fileName={node.name}
-            className="h-[120px]"
-          />
+          <FileThumbnail filePath={node.path} fileName={node.name} className="h-[120px]" />
 
-          {/* Three-dot menu trigger */}
           {!isRenaming && (
-            <Button
-              onClick={handleDotsClick}
-              variant="ghost"
-              size="icon-xs"
-              className="absolute top-1.5 right-1.5 h-6 w-6 bg-background/90 backdrop-blur-sm border border-border/50 opacity-0 group-hover:opacity-100 transition-opacity z-10"
-            >
-              <MoreVertical className="h-3.5 w-3.5 text-muted-foreground" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  onClick={(e) => e.stopPropagation()}
+                  variant="secondary"
+                  size="icon-sm"
+                  className="absolute top-3 right-3"
+                >
+                  <MoreVertical className="text-muted-foreground size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <FileDriveMenuItems
+                  Item={DropdownMenuItem}
+                  Separator={DropdownMenuSeparator}
+                  {...fileMenuProps}
+                />
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
 
-          {/* Name area */}
-          <div className="px-3 py-2.5 border-t border-border/40 bg-background h-[42px] flex items-center">
+          <div className="border-border/40 bg-background flex items-center border-t px-3 py-2.5">
             {isRenaming ? (
               <input
                 ref={renameInputRef}
@@ -368,59 +536,26 @@ function FileCard({
                 }}
                 onBlur={confirmRename}
                 onClick={(e) => e.stopPropagation()}
-                className="w-full text-sm bg-transparent border-b border-primary/50 py-0.5 outline-none"
+                className="border-primary/50 w-full border-b bg-transparent py-0.5 text-sm outline-none"
               />
             ) : (
-              <div className="flex items-center gap-1.5 min-w-0 w-full">
-                {getFileIcon(node.name, { className: 'h-3.5 w-3.5 shrink-0 text-muted-foreground', variant: 'monochrome' })}
-                <span className="text-sm truncate text-foreground font-medium">{node.name}</span>
+              <div className="flex w-full min-w-0 items-center gap-1.5">
+                {getFileIcon(node.name, {
+                  className: 'size-3.5 shrink-0 text-muted-foreground',
+                  variant: 'monochrome',
+                })}
+                <span className="text-foreground truncate text-sm font-medium">{node.name}</span>
               </div>
             )}
           </div>
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48">
-        <ContextMenuItem onClick={onClick}>
-          Preview
-        </ContextMenuItem>
-        {onDownload && (
-          <ContextMenuItem onClick={() => onDownload(node)}>
-            <Download className="mr-2 h-4 w-4" />
-            Download
-          </ContextMenuItem>
-        )}
-        {onHistory && (
-          <ContextMenuItem onClick={() => onHistory(node)}>
-            <History className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveGridView.line402JsxTextCheckpointHistory')}</ContextMenuItem>
-        )}
-        <ContextMenuSeparator />
-        {onCopy && (
-          <ContextMenuItem onClick={() => onCopy(node)}>
-            <ClipboardCopy className="mr-2 h-4 w-4" />
-            Copy
-          </ContextMenuItem>
-        )}
-        {onCut && (
-          <ContextMenuItem onClick={() => onCut(node)}>
-            <Scissors className="mr-2 h-4 w-4" />
-            Cut
-          </ContextMenuItem>
-        )}
-        <ContextMenuItem onClick={() => navigator.clipboard.writeText(node.path)}>
-          <Copy className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsDriveGridView.line420JsxTextCopyPath')}</ContextMenuItem>
-        <ContextMenuSeparator />
-        {onRename && (
-          <ContextMenuItem onClick={() => setTimeout(startRenaming, 100)}>
-            <Pencil className="mr-2 h-4 w-4" />
-            Rename
-          </ContextMenuItem>
-        )}
-        {onDelete && (
-          <ContextMenuItem onClick={() => onDelete(node)}>
-            <Trash2 className="mr-2 h-4 w-4" />
-            Remove
-          </ContextMenuItem>
-        )}
+        <FileDriveMenuItems
+          Item={ContextMenuItem}
+          Separator={ContextMenuSeparator}
+          {...fileMenuProps}
+        />
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -478,10 +613,6 @@ export function DriveGridView({
   isDirDownloading,
   readOnly = false,
 }: DriveGridViewProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  // In read-only mode, suppress mutation handlers so the item context menu
-  // omits Delete/Rename/Cut/Copy entries entirely. History is a *read* action
-  // (checkpoint history of a file) and stays enabled.
   const onRename = readOnly ? undefined : rawOnRename;
   const onDelete = readOnly ? undefined : rawOnDelete;
   const onHistory = rawOnHistory;
@@ -489,15 +620,10 @@ export function DriveGridView({
   const onCut = readOnly ? undefined : rawOnCut;
   const onDropMove = readOnly ? undefined : rawOnDropMove;
   return (
-    <div className="p-5 space-y-7">
-      {/* Elevated system directories */}
+    <div className="space-y-7 p-5">
       {elevatedDirs.length > 0 && (
-        <section>
-          <SectionHeader
-            label="System"
-            icon={<Sparkles className="h-3.5 w-3.5 text-primary/60" />}
-            count={elevatedDirs.length}
-          />
+        <section className="space-y-2">
+          <SectionHeader label="System" count={elevatedDirs.length} />
           <div
             className="grid gap-2"
             style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}
@@ -511,13 +637,11 @@ export function DriveGridView({
                   onClick={() => onNavigateToDir(node)}
                   title={meta?.description}
                   className={cn(
-                    'group flex h-11 cursor-pointer select-none items-center gap-2.5 rounded-2xl border border-border/50 bg-card px-3',
-                    'transition-colors',
-                    'hover:bg-muted/50 hover:border-border',
+                    'group border-border bg-popover hover:bg-foreground/4 flex h-11 cursor-pointer items-center gap-2.5 rounded-md border px-3 select-none',
                   )}
                 >
-                  <DirIcon className="h-4 w-4 shrink-0 text-primary/70" />
-                  <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+                  <DirIcon className="text-muted-foreground size-4 shrink-0" />
+                  <span className="text-foreground min-w-0 flex-1 truncate text-sm">
                     {node.name}
                   </span>
                 </div>
@@ -527,9 +651,8 @@ export function DriveGridView({
         </section>
       )}
 
-      {/* Folders section */}
       {dirs.length > 0 && (
-        <section>
+        <section className="space-y-2">
           <SectionHeader label="Folders" count={dirs.length} />
           <div
             className="grid gap-2"
@@ -554,9 +677,8 @@ export function DriveGridView({
         </section>
       )}
 
-      {/* Files section */}
       {files.length > 0 && (
-        <section>
+        <section className="space-y-2">
           <SectionHeader label="Files" count={files.length} />
           <div
             className="grid gap-3"
@@ -581,17 +703,6 @@ export function DriveGridView({
           </div>
         </section>
       )}
-
-      {/* Empty state */}
-      {dirs.length === 0 && files.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <div className="h-14 w-14 rounded-2xl bg-muted/40 flex items-center justify-center mb-4">
-            <FolderOpen className="h-7 w-7 text-muted-foreground/40" />
-          </div>
-          <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsDriveGridView.line604JsxTextThisFolderIsEmpty')}</p>
-          <p className="text-xs text-muted-foreground mt-1.5 max-w-xs">{tHardcodedUi.raw('featuresProjectFilesComponentsDriveGridView.line606JsxTextNoFilesOrSubfoldersAtThisPathIn')}</p>
-        </div>
-      )}
     </div>
   );
 }
@@ -606,12 +717,12 @@ function SectionHeader({
   icon?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-baseline gap-2 mb-3 px-0.5">
-      <h3 className="text-sm font-semibold text-foreground/90 flex items-center gap-1.5">
+    <div className="flex w-fit items-center justify-between gap-2 px-1">
+      <Label className="text-foreground/90 flex items-center gap-2 text-sm font-medium">
         {icon}
         {label}
-      </h3>
-      <span className="text-xs text-muted-foreground/60 tabular-nums">{count}</span>
+      </Label>
+      <span className="text-muted-foreground text-[12px] tabular-nums">{count}</span>
     </div>
   );
 }

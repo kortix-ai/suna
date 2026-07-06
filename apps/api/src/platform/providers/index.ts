@@ -1,6 +1,5 @@
 import { config } from '../../config';
 import { DaytonaProvider } from './daytona';
-import { LocalDockerProvider } from './local-docker';
 import { PlatinumProvider } from './platinum';
 
 /**
@@ -10,9 +9,10 @@ import { PlatinumProvider } from './platinum';
  * interface, not the concrete class, so they stay untouched.
  *
  *   - daytona — managed cloud (Daytona)
- *   - local_docker — self-hosted/local Docker runtime
+ *   - platinum — managed cloud (Platinum)
  */
-export type ProviderName = 'daytona' | 'local_docker' | 'platinum';
+// 'managed' is canonical for the managed cloud backend; 'daytona' is its legacy alias.
+export type ProviderName = 'managed' | 'daytona' | 'platinum';
 
 /**
  * Thrown by the Daytona warm path when the experimental memory-snapshot restore
@@ -48,14 +48,6 @@ export interface CreateSandboxOpts {
    * cannot create persistent boxes.
    */
   autoStopInterval?: number;
-  /**
-   * Daytona experimental warm-snapshot path. When set, the sandbox is created
-   * from this memory-state warm base on the WARM target (~1.3s) and the session
-   * daemon is started post-restore with `envVars` written to an env file — since
-   * memory-restore freezes baked env and the entrypoint doesn't re-run. See
-   * snapshots/warm-bake.ts. Daytona-only; other providers ignore it.
-   */
-  warmBaseSnapshot?: string;
 }
 
 export interface ProvisionResult {
@@ -133,17 +125,12 @@ export function getProvider(name: ProviderName): SandboxProvider {
   let provider: SandboxProvider;
 
   switch (name) {
+    case 'managed':
     case 'daytona':
       if (!config.DAYTONA_API_KEY) {
-        throw new Error('Daytona provider requires DAYTONA_API_KEY to be set.');
+        throw new Error('Managed provider requires DAYTONA_API_KEY to be set.');
       }
       provider = new DaytonaProvider();
-      break;
-    case 'local_docker':
-      if (!config.DOCKER_HOST) {
-        throw new Error('Local Docker provider requires DOCKER_HOST to be set.');
-      }
-      provider = new LocalDockerProvider();
       break;
     case 'platinum':
       if (!config.PLATINUM_API_KEY) {

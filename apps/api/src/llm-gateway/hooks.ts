@@ -8,7 +8,7 @@ import type {
 import { assertBillingActive } from '../billing/services/billing-gate';
 import { deductForLlmUsage } from '../billing/services/credits';
 import { getCachedAccountTier } from '../billing/services/entitlements';
-import { llmPriceMarkup, tierGrantsAllModels } from '../billing/services/tiers';
+import { accountIsFreeTierForModels, llmPriceMarkup } from '../billing/services/tiers';
 import { attributeYoloToken } from '../billing/services/yolo-tokens';
 import { config } from '../config';
 import { validateAccountToken } from '../repositories/account-tokens';
@@ -16,9 +16,9 @@ import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
 import { recordUsageEvent } from '../shared/usage-events';
 import { checkBudget } from './budgets';
+import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { validateGatewayKey } from './gateway-keys';
 import { gatewayModelCatalog } from './models/catalog-models';
-import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { resolveCandidates } from './resolution/resolve-candidates';
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
@@ -74,14 +74,21 @@ async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrinc
   const tiered: AuthedPrincipal = config.KORTIX_BILLING_INTERNAL_ENABLED
     ? await (async () => {
         const tier = await getCachedAccountTier(principal.accountId);
-        return { ...principal, tier, freeModelsOnly: !tierGrantsAllModels(tier) };
+        return { ...principal, tier, freeModelsOnly: accountIsFreeTierForModels(tier) };
       })()
     : { ...principal, freeModelsOnly: false };
-  // Resolve the account/agent-configured default model once, here, so it travels
-  // with the principal (including across the RPC boundary to the standalone pod)
-  // and `auto` resolves to it. freeModelsOnly is already set above, so the
-  // resolver can drop a managed default for free tier.
-  const defaultModel = await resolveDefaultModelForPrincipal(tiered);
+  // Resolve the account/project/agent-configured default model once, here, so it
+  // travels with the principal (including across the RPC boundary to the
+  // standalone pod) and `auto` resolves to it. freeModelsOnly is already set
+  // above, so the resolver can drop a managed default for free tier. Never let a
+  // resolution hiccup break auth for every LLM call — degrade to the platform
+  // target (undefined) on error.
+  let defaultModel: string | undefined;
+  try {
+    defaultModel = await resolveDefaultModelForPrincipal(tiered);
+  } catch {
+    defaultModel = undefined;
+  }
   return defaultModel ? { ...tiered, defaultModel } : tiered;
 }
 

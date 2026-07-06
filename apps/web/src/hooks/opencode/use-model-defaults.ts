@@ -18,7 +18,7 @@ import {
   getModelDefaults,
   type ModelDefaultsResponse,
   setModelDefault,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import {
   type ModelKey,
   modelKeyToWire,
@@ -32,14 +32,17 @@ export interface UseModelDefaults {
   isLoading: boolean;
   accountDefault: ModelKey | undefined;
   agentDefaults: Record<string, ModelKey>;
+  projectDefault: ModelKey | undefined;
   platformDefault: ModelKey | undefined;
   freeTier: boolean;
-  /** The configured default for an agent: agent default → account default → platform. */
+  /** The configured default for an agent: agent → project → account → platform. */
   resolveDefaultFor: (agentName: string | undefined) => ModelKey | undefined;
   setAccountDefault: (model: ModelKey) => Promise<void>;
   setAgentDefault: (agentName: string, model: ModelKey) => Promise<void>;
+  setProjectDefault: (model: ModelKey) => Promise<void>;
   clearAccountDefault: () => Promise<void>;
   clearAgentDefault: (agentName: string) => Promise<void>;
+  clearProjectDefault: () => Promise<void>;
 }
 
 export function useModelDefaults(projectId: string | null | undefined): UseModelDefaults {
@@ -68,12 +71,12 @@ export function useModelDefaults(projectId: string | null | undefined): UseModel
   }, [queryClient, queryKey]);
 
   const setMutation = useMutation({
-    mutationFn: (input: { scope: 'account' | 'agent'; agentName?: string; model: string }) =>
+    mutationFn: (input: { scope: 'account' | 'agent' | 'project'; agentName?: string; model: string }) =>
       setModelDefault(projectId as string, input),
     onSuccess: invalidate,
   });
   const clearMutation = useMutation({
-    mutationFn: (params: { scope: 'account' | 'agent'; agentName?: string }) =>
+    mutationFn: (params: { scope: 'account' | 'agent' | 'project'; agentName?: string }) =>
       clearModelDefault(projectId as string, params),
     onSuccess: invalidate,
   });
@@ -89,6 +92,10 @@ export function useModelDefaults(projectId: string | null | undefined): UseModel
     }
     return out;
   }, [data?.agentDefaults]);
+  const projectDefault = useMemo<ModelKey | undefined>(
+    () => (data?.projectDefault ? wireToModelKey(data.projectDefault) : undefined),
+    [data?.projectDefault],
+  );
   const platformDefault = useMemo<ModelKey | undefined>(
     () => (data?.platformDefault ? wireToModelKey(data.platformDefault) : undefined),
     [data?.platformDefault],
@@ -98,11 +105,12 @@ export function useModelDefaults(projectId: string | null | undefined): UseModel
     (agentName: string | undefined): ModelKey | undefined => {
       const wire =
         (agentName ? data?.agentDefaults?.[agentName] : undefined) ??
+        data?.projectDefault ??
         data?.accountDefault ??
         data?.platformDefault;
       return wire ? wireToModelKey(wire) : undefined;
     },
-    [data?.agentDefaults, data?.accountDefault, data?.platformDefault],
+    [data?.agentDefaults, data?.projectDefault, data?.accountDefault, data?.platformDefault],
   );
 
   const setAccountDefault = useCallback(
@@ -118,6 +126,12 @@ export function useModelDefaults(projectId: string | null | undefined): UseModel
     },
     [setMutation],
   );
+  const setProjectDefault = useCallback(
+    async (model: ModelKey) => {
+      await setMutation.mutateAsync({ scope: 'project', model: modelKeyToWire(model) });
+    },
+    [setMutation],
+  );
   const clearAccountDefault = useCallback(async () => {
     setGlobalDefaultModel(undefined);
     await clearMutation.mutateAsync({ scope: 'account' });
@@ -128,18 +142,24 @@ export function useModelDefaults(projectId: string | null | undefined): UseModel
     },
     [clearMutation],
   );
+  const clearProjectDefault = useCallback(async () => {
+    await clearMutation.mutateAsync({ scope: 'project' });
+  }, [clearMutation]);
 
   return {
     data,
     isLoading,
     accountDefault,
     agentDefaults,
+    projectDefault,
     platformDefault,
     freeTier: !!data?.freeTier,
     resolveDefaultFor,
     setAccountDefault,
     setAgentDefault,
+    setProjectDefault,
     clearAccountDefault,
     clearAgentDefault,
+    clearProjectDefault,
   };
 }

@@ -9,7 +9,7 @@
  *     collaborators.
  *   • Experimental / WIP Features — collapsible per-project toggles driven by the
  *     API catalog (project.experimental_features).
- *   • Danger zone (managers) — archive the project.
+ *   • Danger zone (account owners/admins) — archive the project.
  *
  * Mobile branding: PageHeader + PageContent chrome, design tokens.
  */
@@ -396,7 +396,7 @@ export function SettingsNavPage({
   const c = useColors(isDark);
 
   const { data: project, isLoading, isError, error, refetch } = useProject(projectId);
-  const canManage = project?.effective_project_role === 'manager';
+  const canManage = project?.effective_project_role === 'editor';
   const bgColor = isDark ? '#090909' : '#FFFFFF';
 
   return (
