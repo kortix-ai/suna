@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { getTableConfig } from 'drizzle-orm/pg-core';
-import { apiKeys, accountUser, billingCustomersInBasejump } from './public';
+import { apiKeys } from './public';
 
 function primaryColumns(table: any): string[] {
   const cfg = getTableConfig(table);
@@ -35,39 +35,5 @@ describe('public api_keys table', () => {
     const idx = getTableConfig(apiKeys).indexes.map((i) => i.config.name);
     expect(idx).toContain('idx_api_keys_account_id');
     expect(idx).toContain('idx_api_keys_public_key');
-  });
-});
-
-describe('basejump account_user table', () => {
-  test('lives in the basejump schema', () => {
-    expect(getTableConfig(accountUser).schema).toBe('basejump');
-  });
-
-  test('declares a composite primary key on user_id and account_id', () => {
-    expect(primaryColumns(accountUser)).toEqual(['user_id', 'account_id']);
-  });
-
-  test('account_role is not null', () => {
-    const col = getTableConfig(accountUser).columns.find((c) => c.name === 'account_role');
-    expect(col?.notNull).toBe(true);
-  });
-});
-
-describe('basejump billing_customers table', () => {
-  test('lives in the basejump schema with the expected name', () => {
-    const cfg = getTableConfig(billingCustomersInBasejump);
-    expect(cfg.schema).toBe('basejump');
-    expect(cfg.name).toBe('billing_customers');
-  });
-
-  test('uses id as its primary key', () => {
-    expect(primaryColumns(billingCustomersInBasejump)).toEqual(['id']);
-  });
-
-  test('account_id is not null', () => {
-    const col = getTableConfig(billingCustomersInBasejump).columns.find(
-      (c) => c.name === 'account_id',
-    );
-    expect(col?.notNull).toBe(true);
   });
 });

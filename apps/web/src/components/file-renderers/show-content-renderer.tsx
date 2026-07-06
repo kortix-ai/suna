@@ -546,7 +546,7 @@ export function ShowContentRenderer({
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={cn(mediaH, 'overflow-hidden')}>
-            <DocxRenderer blob={rawBlob} className="h-full" />
+            <DocxRenderer blob={rawBlob} fileName={fileName} className="h-full" />
           </div>
         </Suspense>
       );

@@ -895,7 +895,7 @@ export function FileContentRenderer({
           {/* DOCX preview */}
           {isContentReady && fileCategory === 'docx' && rawBlob && (
             <Suspense fallback={<RendererFallback />}>
-              <DocxRenderer blob={rawBlob} className="h-full" />
+              <DocxRenderer blob={rawBlob} fileName={fileName} className="h-full" />
             </Suspense>
           )}
 

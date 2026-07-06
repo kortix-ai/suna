@@ -101,7 +101,7 @@ mock.module('../shared/db', () => {
       select: (fields: any) => {
         // Determine which table is being queried by inspecting selected fields
         // The preview proxy selects several session_sandboxes projections and
-        // { accountRole } from accountUser/account_members depending on the path.
+        // { accountRole } from account_members.
         const fieldKeys = fields ? Object.keys(fields) : [];
         // `createdBy` is the unambiguous signal for the projectSessions
         // owner/agent lookup (sandbox-env-sync.ts) — check it BEFORE the loose

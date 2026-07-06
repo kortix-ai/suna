@@ -1,4 +1,4 @@
-import { accountMembers, accountUser, accounts } from "@kortix/db";
+import { accountMembers } from "@kortix/db";
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -45,10 +45,6 @@ async function syncLegacySubscription(accountId: string): Promise<void> {
   } catch {
     // Timeout or sync failure — never block account resolution on recovery.
   }
-}
-
-function defaultAccountName(): string {
-  return "Account";
 }
 
 /**
@@ -118,65 +114,23 @@ export async function resolveScopedAccountId(
 }
 
 export async function resolveAccountId(userId: string): Promise<string> {
-  try {
-    const [membership] = await db
-      .select({ accountId: accountMembers.accountId })
-      .from(accountMembers)
-      .where(eq(accountMembers.userId, userId))
-      // Deterministic "primary account" = the user's earliest-joined account
-      // (their original). No personal/team flag — there is no such thing now;
-      // a bare (account-agnostic) lookup must be stable, not pick-whatever-row.
-      .orderBy(accountMembers.joinedAt)
-      .limit(1);
+  // NOTE: a failing membership lookup must THROW, not fall through — silently
+  // treating a DB error as "no membership" would mis-scope a multi-account
+  // user to their personal account id below.
+  const [membership] = await db
+    .select({ accountId: accountMembers.accountId })
+    .from(accountMembers)
+    .where(eq(accountMembers.userId, userId))
+    // Deterministic "primary account" = the user's earliest-joined account
+    // (their original). No personal/team flag — there is no such thing now;
+    // a bare (account-agnostic) lookup must be stable, not pick-whatever-row.
+    .orderBy(accountMembers.joinedAt)
+    .limit(1);
 
-    if (membership) {
-      await syncLegacySubscription(membership.accountId);
-      return membership.accountId;
-    }
-  } catch {}
-
-  try {
-    const [legacy] = await db
-      .select({ accountId: accountUser.accountId })
-      .from(accountUser)
-      .where(eq(accountUser.userId, userId))
-      .limit(1);
-
-    if (legacy) {
-      try {
-        await db
-          .insert(accounts)
-          .values({
-            accountId: legacy.accountId,
-            name: defaultAccountName(),
-          })
-          .onConflictDoNothing();
-
-        await db
-          .insert(accountMembers)
-          .values({
-            userId,
-            accountId: legacy.accountId,
-            accountRole: "owner",
-            isSuperAdmin: true,
-          })
-          .onConflictDoNothing();
-
-        console.log(
-          `[resolve-account] Lazy-migrated basejump account ${legacy.accountId} for user ${userId}`,
-        );
-      } catch (migErr) {
-        console.warn(
-          `[resolve-account] Lazy migration failed for ${legacy.accountId}:`,
-          migErr,
-        );
-      }
-
-      await syncLegacySubscription(legacy.accountId);
-
-      return legacy.accountId;
-    }
-  } catch {}
+  if (membership) {
+    await syncLegacySubscription(membership.accountId);
+    return membership.accountId;
+  }
 
   // First-time signup → create the user's personal account (id == userId) and a
   // self-membership. Pending account invitations are auto-claimed on the first

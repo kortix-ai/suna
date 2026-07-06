@@ -903,7 +903,7 @@ async function resolveShipAccount(
     title: 'Ship to which account?',
     items: accounts.map((a) => ({
       value: a,
-      label: `${a.name}${a.personal_account ? ' (personal)' : ''}`,
+      label: a.name,
       sublabel: `${a.slug} · ${a.role}`,
     })),
   });

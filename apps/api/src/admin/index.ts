@@ -57,9 +57,7 @@ adminApp.openapi(
     const { accounts, creditAccounts } = await import('@kortix/db');
     const { and, asc, desc, eq, ilike, gte, lte, inArray, notInArray, isNotNull, isNull, or, sql } =
       await import('drizzle-orm');
-    const { membersTableSql } = await import('./members-table');
     const { parseAdminAccountsListQuery, UNPAID_TIERS } = await import('./accounts-query');
-    const mt = await membersTableSql();
 
     const {
       search,
@@ -79,19 +77,19 @@ adminApp.openapi(
 
     const ownerEmail = sql<string | null>`(
       SELECT au.email FROM auth.users au
-      INNER JOIN ${mt} am ON am.user_id = au.id
+      INNER JOIN kortix.account_members am ON am.user_id = au.id
       WHERE am.account_id = ${accounts.accountId}
       ORDER BY CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, au.email ASC
       LIMIT 1)`;
     const memberCount = sql<number>`(
-      SELECT count(*)::int FROM ${mt} am WHERE am.account_id = ${accounts.accountId})`;
+      SELECT count(*)::int FROM kortix.account_members am WHERE am.account_id = ${accounts.accountId})`;
 
     const conds: any[] = [];
     if (search) {
       conds.push(
         or(
           ilike(accounts.name, `%${search}%`),
-          sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN ${mt} am ON am.user_id = au.id
+          sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN kortix.account_members am ON am.user_id = au.id
                       WHERE am.account_id = ${accounts.accountId} AND au.email ILIKE ${'%' + search + '%'})`,
         ),
       );
@@ -197,8 +195,6 @@ adminApp.openapi(
     const accountId = c.req.param('id');
     const { db } = await import('../shared/db');
     const { sql } = await import('drizzle-orm');
-    const { membersTableSql } = await import('./members-table');
-    const mt = await membersTableSql();
 
     const result: any = await db.execute(sql`
       SELECT au.id AS user_id, au.email,
@@ -209,7 +205,7 @@ adminApp.openapi(
              au.banned_until AS banned_until,
              au.raw_app_meta_data->>'provider' AS provider,
              au.raw_app_meta_data->'providers' AS providers
-      FROM ${mt} am
+      FROM kortix.account_members am
       INNER JOIN auth.users au ON au.id = am.user_id
       WHERE am.account_id = ${accountId}
       ORDER BY CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, au.email ASC`);

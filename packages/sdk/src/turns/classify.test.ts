@@ -117,6 +117,163 @@ describe('classifyPart — exhaustive part model', () => {
     expect(result.tool.output).toBeUndefined();
   });
 
+  test('tool — completed web_search wrapping a 402 as JSON reclassifies as error with the innermost message', () => {
+    // Real prod transcript: web_search's router call failed with a 402, but
+    // the tool itself catches the error and returns `state.status:
+    // "completed"` with the failure serialized as its JSON *output* —
+    // `{"query":"...","success":false,"error":"Error: 402 Error:
+    // {\"error\":true,\"message\":\"Insufficient credits\",\"status\":402}"}`.
+    // Before this fix, ToolView trusted `state.status` and rendered this as
+    // a successful 'done' tool call with raw JSON garbage inside.
+    const output = JSON.stringify({
+      query: 'anthropic claude opus pricing',
+      success: false,
+      error:
+        'Error: 402 Error: {"error":true,"message":"Insufficient credits","status":402}',
+    });
+    const part = {
+      id: 'p20',
+      sessionID: 's1',
+      messageID: 'm1',
+      type: 'tool',
+      callID: 'c20',
+      tool: 'web_search',
+      state: {
+        status: 'completed',
+        input: { query: 'anthropic claude opus pricing' },
+        output,
+        title: 'Web Search',
+        metadata: {},
+        time: { start: 0, end: 1 },
+      },
+    } as Part;
+    const result = classifyPart(part) as Extract<ClassifiedPart, { kind: 'tool' }>;
+    expect(result.tool.status).toBe('error');
+    expect(result.tool.error).toBe('Insufficient credits');
+    // The raw output stays available even once reclassified as an error.
+    expect(result.tool.output).toBe(output);
+    expect(result.tool.outputText).toBe(output);
+    expect(result.tool.outputParsed).toEqual({
+      query: 'anthropic claude opus pricing',
+      success: false,
+      error: 'Error: 402 Error: {"error":true,"message":"Insufficient credits","status":402}',
+    });
+  });
+
+  test('tool — completed web_search with a top-level error object (no success flag) also reclassifies', () => {
+    const output = JSON.stringify({ query: 'q', error: { message: 'Rate limited' } });
+    const part = {
+      id: 'p21',
+      sessionID: 's1',
+      messageID: 'm1',
+      type: 'tool',
+      callID: 'c21',
+      tool: 'web_search',
+      state: { status: 'completed', input: {}, output, title: 'Web Search', metadata: {}, time: { start: 0, end: 1 } },
+    } as Part;
+    const result = classifyPart(part) as Extract<ClassifiedPart, { kind: 'tool' }>;
+    expect(result.tool.status).toBe('error');
+    expect(result.tool.error).toBe('Rate limited');
+  });
+
+  test('tool — completed web_search with real results stays done, exposes outputParsed', () => {
+    const output = JSON.stringify({
+      query: 'kortix ai',
+      success: true,
+      answer: 'Kortix is an open AI command center.',
+      results: [
+        { title: 'Kortix', url: 'https://kortix.ai', snippet: 'The open AI command center.' },
+      ],
+    });
+    const part = {
+      id: 'p22',
+      sessionID: 's1',
+      messageID: 'm1',
+      type: 'tool',
+      callID: 'c22',
+      tool: 'web_search',
+      state: { status: 'completed', input: { query: 'kortix ai' }, output, title: 'Web Search', metadata: {}, time: { start: 0, end: 1 } },
+    } as Part;
+    const result = classifyPart(part) as Extract<ClassifiedPart, { kind: 'tool' }>;
+    expect(result.tool.status).toBe('done');
+    expect(result.tool.error).toBeUndefined();
+    expect((result.tool.outputParsed as { success: boolean }).success).toBe(true);
+  });
+
+  test('tool — completed bash output parses to outputText but no outputParsed (plain text isn\'t JSON)', () => {
+    const part = {
+      id: 'p23',
+      sessionID: 's1',
+      messageID: 'm1',
+      type: 'tool',
+      callID: 'c23',
+      tool: 'bash',
+      state: {
+        status: 'completed',
+        input: { command: 'ls -la' },
+        output: 'total 0\ndrwxr-xr-x  2 me me 64 Jan 1 00:00 .',
+        title: 'Shell',
+        metadata: {},
+        time: { start: 0, end: 1 },
+      },
+    } as Part;
+    const result = classifyPart(part) as Extract<ClassifiedPart, { kind: 'tool' }>;
+    expect(result.tool.status).toBe('done');
+    expect(result.tool.outputText).toBe('total 0\ndrwxr-xr-x  2 me me 64 Jan 1 00:00 .');
+    expect(result.tool.outputParsed).toBeUndefined();
+  });
+
+  test('tool — an unparseable string output never throws and stays generic/done', () => {
+    const part = {
+      id: 'p24',
+      sessionID: 's1',
+      messageID: 'm1',
+      type: 'tool',
+      callID: 'c24',
+      tool: 'read',
+      state: {
+        status: 'completed',
+        input: {},
+        output: '{not valid json at all',
+        title: 'Read',
+        metadata: {},
+        time: { start: 0, end: 1 },
+      },
+    } as Part;
+    expect(() => classifyPart(part)).not.toThrow();
+    const result = classifyPart(part) as Extract<ClassifiedPart, { kind: 'tool' }>;
+    expect(result.tool.status).toBe('done');
+    expect(result.tool.outputParsed).toBeUndefined();
+    expect(result.tool.outputText).toBe('{not valid json at all');
+  });
+
+  test('tool — output over the parse-size cap is never JSON.parsed, even if it would parse', () => {
+    // A huge but technically-valid JSON array — still must not be parsed;
+    // the cap is a size circuit breaker, not a validity check.
+    const hugeArray = `[${Array(80_000).fill('"x"').join(',')}]`; // > 256KB
+    expect(hugeArray.length).toBeGreaterThan(256 * 1024);
+    const part = {
+      id: 'p25',
+      sessionID: 's1',
+      messageID: 'm1',
+      type: 'tool',
+      callID: 'c25',
+      tool: 'web_search',
+      state: {
+        status: 'completed',
+        input: {},
+        output: hugeArray,
+        title: 'Web Search',
+        metadata: {},
+        time: { start: 0, end: 1 },
+      },
+    } as Part;
+    const result = classifyPart(part) as Extract<ClassifiedPart, { kind: 'tool' }>;
+    expect(result.tool.status).toBe('done');
+    expect(result.tool.outputParsed).toBeUndefined();
+    expect(result.tool.outputText).toBe(hugeArray);
+  });
+
   test('file — image attachment', () => {
     const part = {
       id: 'p4',

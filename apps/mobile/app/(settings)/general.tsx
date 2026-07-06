@@ -143,14 +143,6 @@ export default function GeneralSettingsScreen() {
       });
       if (updateError) throw updateError;
 
-      try {
-        await supabase.rpc('update_account', {
-          name: trimmed,
-          account_id: user.id,
-        });
-      } catch {
-      }
-
       setDisplayName(trimmed);
       haptics.success();
       editProfileSheetRef.current?.dismiss();

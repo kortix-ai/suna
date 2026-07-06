@@ -5,7 +5,6 @@ export interface AccountMembership {
   account_id: string;
   slug: string;
   name: string;
-  personal_account: boolean;
   role: string;
 }
 
