@@ -124,7 +124,11 @@ export function useResolveApproval(projectId: string | undefined, sessionId: str
       executionId,
       decision,
       scope = 'once',
-    }: { executionId: string; decision: 'approve' | 'deny'; scope?: 'once' | 'session' }) => {
+    }: {
+      executionId: string;
+      decision: 'approve' | 'deny';
+      scope?: 'once' | 'session' | 'session_all';
+    }) => {
       if (!projectId) throw new Error('No project in context');
       return resolveApproval(projectId, executionId, decision, scope);
     },

@@ -949,15 +949,17 @@ function ConnectorDetail({
               : `Add the credential so the agent and your triggers can use ${displayName}.`}
           </InfoBanner>
         )}
-        <Tabs defaultValue="profile" className="gap-3">
+        {/* The sensitive toggle lives under Permissions (it IS a permission
+            default), so Profile only exists when there's a connection to
+            manage — for Pipedream/managed connectors it would be empty. */}
+        <Tabs defaultValue={!isPipedream && !isManaged ? 'profile' : 'permissions'} className="gap-3">
           <TabsList>
-            <TabsTrigger value="profile">Profile</TabsTrigger>
+            {!isPipedream && !isManaged && <TabsTrigger value="profile">Profile</TabsTrigger>}
             <TabsTrigger value="permissions">Permissions</TabsTrigger>
           </TabsList>
-          <TabsContent value="profile" className="space-y-5">
-            {!isPipedream &&
-              !isManaged &&
-              (isChannel ? (
+          {!isPipedream && !isManaged && (
+            <TabsContent value="profile" className="space-y-5">
+              {isChannel ? (
                 <ChannelConnectionSection
                   projectId={projectId}
                   connector={connector}
@@ -970,10 +972,11 @@ function ConnectorDetail({
                   connector={connector}
                   onChanged={onChanged}
                 />
-              ))}
-            <ProfileSection projectId={projectId} connector={connector} onChanged={onChanged} />
-          </TabsContent>
-          <TabsContent value="permissions">
+              )}
+            </TabsContent>
+          )}
+          <TabsContent value="permissions" className="space-y-5">
+            <SensitiveSection projectId={projectId} connector={connector} onChanged={onChanged} />
             <PermissionsSection projectId={projectId} connector={connector} />
           </TabsContent>
         </Tabs>
@@ -1886,12 +1889,12 @@ export function SlackConnectForm({
 }
 
 /**
- * Profile: the connector's own settings — visible to every project member
- * (connectors are always project-wide); which agents may call it is decided
- * purely by the agent's own `connectors` grant (Agents → kortix.yaml), not
- * anything configured here. This section is just the sensitive toggle.
+ * The connector-wide permission default: `sensitive` gates READS too — every
+ * action asks before it runs (for email/files/secrets where reading is itself
+ * an exfiltration surface). Lives at the top of the Permissions tab since it's
+ * the baseline the per-tool rules below override.
  */
-function ProfileSection({
+function SensitiveSection({
   projectId,
   connector,
   onChanged,
@@ -1912,17 +1915,22 @@ function ProfileSection({
   });
 
   return (
-    <SectionCard title="Profile" description="Connector-wide settings.">
+    <SectionCard
+      title="Sensitive connector"
+      description="The permission baseline for every tool on this connector."
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <ShieldCheck className="text-muted-foreground/70 size-3.5 shrink-0" />
-            <span className="text-foreground/80 text-xs font-medium">Sensitive connector</span>
+            <span className="text-foreground/80 text-xs font-medium">
+              Gate reads too — everything asks first
+            </span>
           </div>
           <p className="text-muted-foreground/60 mt-1 text-[11px] leading-relaxed">
-            Gate <span className="text-foreground/70 font-medium">reads</span> too — every action
-            asks before it runs (approve once, or “allow for session”). For email/files/secrets
-            where reading is itself risky. An explicit policy rule can still open a specific action.
+            Every action — including <span className="text-foreground/70 font-medium">reads</span>{' '}
+            — asks before it runs (approve once, or “allow for session”). For email/files/secrets
+            where reading is itself risky. A per-tool rule below can still open a specific action.
           </p>
         </div>
         <Switch

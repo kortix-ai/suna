@@ -370,6 +370,88 @@ describe('handleCall — policy layer', () => {
     expect(await handleCall(deps, baseInput)).toEqual({ status: 'denied', reason: 'policy_block' });
     expect(consulted).toBe(false); // block short-circuits before any session-allow check
   });
+
+  test('approval carry-over: a recent unconsumed approve lets the fresh call RUN', async () => {
+    const { deps, fetchCalls } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    let waited = false;
+    deps.waitForApprovalDecision = async () => {
+      waited = true;
+      return 'timeout';
+    };
+    const claims: Array<{ sessionId: string; actionPath: string }> = [];
+    deps.consumeApprovedExecution = async (input) => {
+      claims.push({ sessionId: input.sessionId, actionPath: input.actionPath });
+      return true;
+    };
+    const res = await handleCall(deps, baseInput);
+    expect(res.status).toBe('ok');
+    expect(fetchCalls.length).toBeGreaterThan(0); // the call actually ran
+    expect(waited).toBe(false); // no new hold — the grant was already given
+    // QUALIFIED path — must match how audit() records executor_executions rows
+    // (the relative form would never find the approved row).
+    expect(claims).toEqual([{ sessionId: 'sess-1', actionPath: 'stripe.charges.create' }]);
+  });
+
+  test('carry-over miss → normal pending flow (asks like before)', async () => {
+    const { deps } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    deps.recordExecution = async () => 'exec-p';
+    deps.consumeApprovedExecution = async () => false;
+    expect((await handleCall(deps, baseInput)).status).toBe('pending_approval');
+  });
+
+  test('a poll retry never consults carry-over — it waits on ITS execution id', async () => {
+    const { deps } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    let consulted = false;
+    deps.consumeApprovedExecution = async () => {
+      consulted = true;
+      return true;
+    };
+    deps.waitForApprovalDecision = async () => 'timeout';
+    const res = await handleCall(deps, { ...baseInput, approvalExecutionId: 'exec-held' });
+    expect(res).toMatchObject({ status: 'pending_approval', executionId: 'exec-held' });
+    expect(consulted).toBe(false);
+  });
+
+  test('an approve consumed by the held request is marked so it cannot carry over later', async () => {
+    const { deps } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    deps.recordExecution = async () => 'exec-held';
+    deps.waitForApprovalDecision = async () => 'approved';
+    const markedIds: string[] = [];
+    deps.markApprovalConsumed = async (id) => {
+      markedIds.push(id);
+    };
+    const res = await handleCall(deps, baseInput);
+    expect(res.status).toBe('ok');
+    expect(markedIds).toEqual(['exec-held']);
+  });
+
+  test('a deny received by the held request is marked consumed too (in-band — no server resume)', async () => {
+    const { deps } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    deps.recordExecution = async () => 'exec-held';
+    deps.waitForApprovalDecision = async () => 'denied';
+    const markedIds: string[] = [];
+    deps.markApprovalConsumed = async (id) => {
+      markedIds.push(id);
+    };
+    const res = await handleCall(deps, baseInput);
+    expect(res).toEqual({ status: 'denied', reason: 'denied_by_user' });
+    expect(markedIds).toEqual(['exec-held']);
+  });
 });
 
 describe('handleCall — layered policies (project → connector → default)', () => {

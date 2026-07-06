@@ -22,6 +22,7 @@
 import type { ExecutorClient } from '@kortix/executor-sdk';
 import {
   addConnector,
+  callPausingForApproval,
   executorClient,
   mintConnectLink,
   mintSecretLink,
@@ -298,21 +299,9 @@ async function runMetaTool(executor: ExecutorClient, name: string, args: Record<
         };
       }
       const callArgs = asRecord(args.args);
-      // Poll loop for human approval: a `require_approval` call PAUSES the run
-      // until a human decides. The gateway holds each request briefly, then —
-      // while still pending — returns `retryable` + the execution id; we re-issue
-      // the call with that id so the wait is effectively INDEFINITE (like a
-      // question), without any single long-held request. Bounded so a forgotten
-      // approval can't wedge the agent forever.
-      const APPROVAL_POLL_MAX = 40; // ~40 × ~45s ≈ 30 min
-      let result = await executor.call(connector, action, callArgs);
-      for (let i = 0; i < APPROVAL_POLL_MAX; i++) {
-        if (!(result.status === 'pending_approval' && result.retryable && result.execution_id))
-          break;
-        result = await executor.call(connector, action, callArgs, {
-          approvalExecutionId: result.execution_id,
-        });
-      }
+      // Pauses the run for human approval (indefinite poll, like a question) —
+      // shared with `kortix executor call`, see callPausingForApproval.
+      const result = await callPausingForApproval(executor, connector, action, callArgs);
       return { content: content(result), isError: !result.ok };
     }
 

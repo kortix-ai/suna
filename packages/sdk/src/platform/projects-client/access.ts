@@ -426,11 +426,12 @@ export async function resolveApproval(
   executionId: string,
   decision: 'approve' | 'deny',
   // 'once' (default) = just this call; 'session' = also stop asking for this
-  // connector+action for the rest of the session.
-  scope: 'once' | 'session' = 'once',
+  // connector+action for the rest of the session; 'session_all' = stop asking
+  // for ANY gated action for the rest of the session.
+  scope: 'once' | 'session' | 'session_all' = 'once',
 ) {
   return unwrap(
-    await backendApi.post<{ ok: boolean; scope?: 'once' | 'session' }>(
+    await backendApi.post<{ ok: boolean; scope?: 'once' | 'session' | 'session_all' }>(
       `/projects/${projectId}/approvals/${executionId}`,
       { decision, scope },
     ),

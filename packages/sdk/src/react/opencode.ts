@@ -112,6 +112,12 @@ export {
   type UseQuestionSelfHealOptions,
 } from './use-question-self-heal';
 export {
+  usePermissionSelfHeal,
+  findPermissionBlockedCandidate,
+  hasActiveNonQuestionTool,
+  type UsePermissionSelfHealOptions,
+} from './use-permission-self-heal';
+export {
   startStashKey,
   writeStartStash,
   readStartStash,

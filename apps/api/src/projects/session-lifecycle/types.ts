@@ -14,6 +14,7 @@ export type SessionInvocationSource =
   | 'trigger:cron'
   | 'trigger:manual'
   | 'system:sandbox-build-fix'
+  | 'system:approval-resume'
   | 'admin';
 
 export type QueuePolicy = 'never' | 'on_backpressure' | 'always';
