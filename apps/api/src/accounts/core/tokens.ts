@@ -20,6 +20,7 @@ import {
   autoClaimPendingInvites,
   readBodyTokens,
   resolveAccountForUser,
+  resolveAccountDisplayNames,
   lookupEmailsByUserIds,
 } from './app';
 
@@ -81,6 +82,11 @@ accountsRouter.openapi(
     memberships = await loadMemberships();
   }
 
+  const displayNames = await resolveAccountDisplayNames(memberships, {
+    userId,
+    email: userEmail,
+  });
+
   return c.json({
     user_id: userId,
     email: userEmail,
@@ -95,7 +101,7 @@ accountsRouter.openapi(
     accounts: memberships.map((m) => ({
       account_id: m.accountId,
       slug: m.accountId.slice(0, 8),
-      name: accountDisplayName(m.name, userEmail),
+      name: displayNames.get(m.accountId) ?? accountDisplayName(m.name, userEmail),
       role: m.accountRole,
     })),
   });
