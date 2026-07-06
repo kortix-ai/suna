@@ -32,6 +32,7 @@ import { UserMenu } from '@/features/layout/user-menu';
 import { useAuth } from '@/features/providers/auth-provider';
 import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
+import { ProjectInboxNavItem } from '@/features/workspace/project-sidebar/footer/project-inbox-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import {
   ProjectCustomizeNavItem,
@@ -279,6 +280,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           <SidebarGroup className="mt-auto py-0.5">
             <SidebarMenu>
               <ProjectSandboxAlert projectId={projectId} />
+              <ProjectInboxNavItem projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectAppsNavItem projectId={projectId} />
               {/* Files used to live on the collapsed icon rail; with the rail

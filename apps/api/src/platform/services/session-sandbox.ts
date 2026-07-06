@@ -16,6 +16,7 @@ import { eq } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
+import { recordSessionAttention } from '../../inbox/record-attention';
 import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
 import { ensureAgentServiceAccount } from '../../repositories/service-accounts';
@@ -722,6 +723,9 @@ export async function provisionSessionSandbox(opts: {
           .set({ status: 'failed', error: userMessage, updatedAt: new Date() })
           .where(eq(projectSessions.sessionId, sandbox.sandboxId))
           .catch(() => {});
+        await recordSessionAttention(sandbox.sandboxId, 'run_failed', {
+          metadata: { error: { message: userMessage }, provisioning: true },
+        });
       } catch (markErr) {
         console.error(`[session-sandbox] Failed to mark sandbox ${sandbox.sandboxId} as error:`, markErr);
       }

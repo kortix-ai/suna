@@ -988,8 +988,10 @@ async function waitForInitialSessionCreate(baseUrl: string, workspace: string): 
 // the opencode event is handled natively. Shared by the question + turn-end
 // relays so BOTH gate on Slack identically — the question relay used to skip
 // this gate, which auto-answered the `question` tool in non-Slack sessions.
-function slackRelayContext(): { projectId: string; sessionId: string; token: string; apiRoot: string } | null {
-  if (!(process.env.SLACK_THREAD_TS || process.env.SLACK_CHANNEL_ID)) return null
+// Build the apps/api relay context from the KORTIX_* env every session carries.
+// Not Slack-gated — the turn-end relay uses this so run-end is reported for ALL
+// sessions (cron/webhook/channel/web), which is what drives the Automation Inbox.
+function relayContext(): { projectId: string; sessionId: string; token: string; apiRoot: string } | null {
   const projectId = process.env.KORTIX_PROJECT_ID?.trim()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
   // /turn-stream accepts EITHER the session token or the sandbox credential
@@ -1010,6 +1012,13 @@ function slackRelayContext(): { projectId: string; sessionId: string; token: str
   }
   const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
   return { projectId, sessionId, token, apiRoot }
+}
+
+// The question relay STAYS Slack-gated: auto-answering opencode's `question`
+// tool outside Slack was a bug (the dashboard answers it interactively).
+function slackRelayContext(): { projectId: string; sessionId: string; token: string; apiRoot: string } | null {
+  if (!(process.env.SLACK_THREAD_TS || process.env.SLACK_CHANNEL_ID)) return null
+  return relayContext()
 }
 
 // Relay an opencode `question.asked` event for a SLACK session: post the
@@ -1097,11 +1106,11 @@ async function relayTurnEndToApi(
   cfg: Config,
   eventError?: OpencodeTurnError,
 ): Promise<void> {
-  const ctx = slackRelayContext()
+  const ctx = relayContext()
   if (!ctx) return
-  // Only the ROOT turn closes the Slack stream — a subagent going idle mid-task
-  // must NOT finalize the user-facing stream. Detected by parentID (objective),
-  // not pin-equality, so an orphaned-root re-pin can't filter out the real idle.
+  // Only the ROOT turn closes the stream — a subagent going idle mid-task must
+  // NOT finalize the user-facing turn. Detected by parentID (objective), not
+  // pin-equality, so an orphaned-root re-pin can't filter out the real idle.
   if (!(await isRootOpencodeSession(opencodeSessionId, opencode, cfg))) return
 
   // Resolve the turn's error. session.error already hands us one; an idle end

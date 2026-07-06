@@ -44,6 +44,7 @@ import {
   type QuestionInfo,
 } from "../../channels/slack-webhook";
 import { PROJECT_ACTIONS } from "../../iam";
+import { recordSessionAttention } from "../../inbox/record-attention";
 import { auth, errors, json } from "../../openapi";
 import { projectLlmGatewayEnabled } from "../../llm-gateway/enablement";
 import { gatewayModelCatalog } from "../../llm-gateway/models/catalog-models";
@@ -1084,6 +1085,11 @@ projectsApp.openapi(
             }
           : undefined;
       const ok = await relayTurnEnd(sessionId, status, errorInfo);
+      await recordSessionAttention(
+        sessionId,
+        status === "error" ? "run_failed" : "run_completed",
+        errorInfo ? { metadata: { error: errorInfo } } : undefined,
+      );
       return c.json({ ok });
     }
 

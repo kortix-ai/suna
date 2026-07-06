@@ -35,6 +35,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInboxEnabled, useUnreadSessionIds } from '@/hooks/projects/use-project-inbox';
 import { formatDistanceToNowStrict } from 'date-fns';
 import {
   CalendarClock,
@@ -106,6 +107,9 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   );
   const [sessionToShare, setSessionToShare] = useState<ProjectSession | null>(null);
   const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
+
+  const inboxEnabled = useInboxEnabled(projectId);
+  const unreadSessionIds = useUnreadSessionIds(projectId, inboxEnabled);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['project-sessions', projectId],
@@ -191,6 +195,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
                 isActive={!!isActive && !activeOpenCodeSessionId}
                 displayTitle={getSessionDisplayTitle(session)}
                 childCount={children.length}
+                isUnread={unreadSessionIds.has(session.session_id)}
                 onDelete={(id, label) => setSessionToDelete({ id, label })}
                 onShare={(s) => setSessionToShare(s)}
                 onRename={(id, name) => setSessionToRename({ id, name })}
@@ -265,6 +270,7 @@ interface ProjectSessionRowProps {
   onStop: (sessionId: string) => void;
   isStopping: boolean;
   childCount?: number;
+  isUnread?: boolean;
 }
 
 function ProjectSessionRow({
@@ -280,6 +286,7 @@ function ProjectSessionRow({
   onStop,
   isStopping,
   childCount = 0,
+  isUnread = false,
 }: ProjectSessionRowProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -313,9 +320,15 @@ function ProjectSessionRow({
         <Link href={href} className="flex min-w-0 flex-1 items-center gap-2 self-stretch">
           <SessionStatusDot status={session.status} />
 
-          <span className={cn('min-w-0 flex-1 truncate text-sm', isActive && 'font-medium')}>
+          <span
+            className={cn('min-w-0 flex-1 truncate text-sm', (isActive || isUnread) && 'font-medium')}
+          >
             {displayTitle}
           </span>
+
+          {isUnread && (
+            <span className="size-1.5 shrink-0 rounded-full bg-red-500" aria-label="Unread" />
+          )}
 
           {childCount > 0 && (
             <span className="bg-sidebar-accent/60 text-muted-foreground shrink-0 rounded-full px-1.5 py-0.5 text-xs tabular-nums">

@@ -75,6 +75,11 @@ export const sessionLifecycleCommandStatusEnum = kortixSchema.enum(
   ],
 );
 
+export const inboxItemKindEnum = kortixSchema.enum('inbox_item_kind', [
+  'run_completed',
+  'run_failed',
+]);
+
 // `member` is the floor project role (renamed from `user`, see the
 // project_role_member_rename migration). `user` and the older `viewer` are
 // DEPRECATED — both fold into `member` via parseProjectRole/normalizeProjectRole
@@ -561,6 +566,37 @@ export const projectSessions = kortixSchema.table(
     // It is intentionally NOT declared here: re-adding it would make `db:generate`
     // emit a conflicting `CREATE INDEX` against the already-built index. Manage it
     // via that migration; its predicate mirrors ACTIVE_SESSION_STATUSES.
+  ],
+);
+
+export const inboxItems = kortixSchema.table(
+  'inbox_items',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    sessionId: text('session_id').references(() => projectSessions.sessionId, {
+      onDelete: 'cascade',
+    }),
+    userId: uuid('user_id').notNull(),
+    kind: inboxItemKindEnum('kind').notNull(),
+    title: text('title').notNull(),
+    source: text('source'),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    dedupKey: text('dedup_key').notNull(),
+    readAt: timestamp('read_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_inbox_items_user_created').on(table.userId, table.createdAt),
+    index('idx_inbox_items_user_unread').on(table.userId, table.readAt),
+    index('idx_inbox_items_project_user').on(table.projectId, table.userId),
+    index('idx_inbox_items_session').on(table.sessionId),
+    uniqueIndex('idx_inbox_items_dedup').on(table.userId, table.dedupKey),
   ],
 );
 
