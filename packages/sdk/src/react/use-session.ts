@@ -31,6 +31,7 @@ import {
 import { getSandboxUrlForExternalId } from '../state/server-store';
 import { setCurrentRuntime } from '../state/current-runtime';
 import {
+  isSessionStartError,
   type SessionStartResult,
   sessionStartKey,
   startProjectSession,
@@ -252,12 +253,15 @@ export function useSession(
     queryKey: sessionStartKey(projectId, sessionId),
     queryFn: () => startProjectSession(projectId, sessionId, waitMs),
     enabled: enabled && !!projectId && !!sessionId,
+    retry: (failureCount, error) => !isSessionStartError(error) && failureCount < 3,
     refetchInterval: (q) => {
+      if (isSessionStartError(q.state.error)) return false;
       const stage = (q.state.data as SessionStartResult | null | undefined)?.stage;
       return stage === 'ready' || stage === 'failed' || stage === 'stopped' ? false : 1500;
     },
   });
   const startData = start.data ?? null;
+  const startError = isSessionStartError(start.error) ? start.error : null;
   const stage = startData?.stage ?? null;
   const sandbox = startData?.sandbox ?? null;
   const startReady = stage === 'ready';
@@ -411,7 +415,7 @@ export function useSession(
     setSendState(IDLE_SEND_STATE);
   };
 
-  const phase: SessionPhase = terminal ? 'error' : switched ? 'ready' : 'starting';
+  const phase: SessionPhase = terminal || startError ? 'error' : switched ? 'ready' : 'starting';
 
   // 10. Replay the new-session hand-off once ready + thread empty (exactly once).
   // Force-disabled when `chatEngine` is off: this reads `sync.isLoading`/
@@ -457,11 +461,13 @@ export function useSession(
     switched,
     /** Whether polling /start again can still make progress (false = terminal). */
     retriable: startData?.retriable ?? false,
+    /** Terminal /start failure, for hosts to render instead of spinning forever. */
+    startError,
     /** Granular boot phase (connecting|booting|ready|unreachable) for detailed UI. */
     runtimePhase,
     isBusy: sync.isBusy || !!pending,
     isLoading: sync.isLoading,
-    isError: terminal,
+    isError: terminal || !!startError,
     /** Whether there are open interactive prompts (questions/permissions). */
     hasPending: questions.length > 0 || permissions.length > 0,
     /** Latest /start reason (e.g. 'runtime_waking'), surfaced for boot/error UI. */

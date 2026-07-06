@@ -55,6 +55,39 @@ export interface SessionStartResult {
   reason?: string;
 }
 
+export class SessionStartError extends Error {
+  status?: number;
+  code?: string;
+  terminal: boolean;
+
+  constructor(message: string, options: { status?: number; code?: string; terminal: boolean }) {
+    super(message);
+    this.name = 'SessionStartError';
+    this.status = options.status;
+    this.code = options.code;
+    this.terminal = options.terminal;
+  }
+}
+
+export function isSessionStartError(error: unknown): error is SessionStartError {
+  return error instanceof Error && error.name === 'SessionStartError';
+}
+
+function classifySessionStartFailure(error?: Error): SessionStartError | null {
+  const apiError = error as
+    | (Error & { status?: number; code?: string; details?: { code?: string; error?: string } })
+    | undefined;
+  const status = apiError?.status;
+  const code = apiError?.code ?? apiError?.details?.code ?? apiError?.details?.error;
+  const message = apiError?.message || 'Unable to start this session';
+
+  if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+    return new SessionStartError(message, { status, code, terminal: true });
+  }
+
+  return null;
+}
+
 /**
  * THE session-open call. Idempotently provisions/resumes the sandbox and resolves
  * the OpenCode pin server-side, returning ONE readiness payload to poll until
@@ -72,11 +105,15 @@ export async function startProjectSession(
   const response = await backendApi.post<SessionStartResult>(
     `/projects/${projectId}/sessions/${sessionId}/start${qs}`,
     {},
-    // 402 (billing) is handled by the page's plan gate before polling; other
-    // failures just yield null and the caller retries.
+    // Keep toasts quiet here. Terminal client errors are rendered by the host;
+    // transient transport/server failures still yield null so polling can recover.
     { showErrors: false },
   );
-  if (!response.success || !response.data) return null;
+  if (!response.success || !response.data) {
+    const terminal = classifySessionStartFailure(response.error);
+    if (terminal) throw terminal;
+    return null;
+  }
   const result = response.data;
   // Populate the shared session-runtime registry the instant a session goes
   // ready, regardless of WHICH caller drove this /start (the facade's

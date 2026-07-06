@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../config';
 import { clearSessionRuntime, getSessionRuntime } from '../../state/session-runtime-registry';
-import { sessionStartKey, startProjectSession } from './session-sandbox';
+import { isSessionStartError, sessionStartKey, startProjectSession } from './session-sandbox';
 
 const PROJECT = 'P1';
 const SESSION = 'S1';
@@ -83,7 +83,22 @@ test('startProjectSession omits the query string for a zero or negative waitMs',
   expect(last().url).not.toContain('wait_ms');
 });
 
-test('startProjectSession returns null when the response is unsuccessful (never throws)', async () => {
+test('startProjectSession throws a terminal SessionStartError for non-retryable client errors', async () => {
+  nextResponse = { status: 404, body: { error: 'Not found' } };
+
+  let caught: unknown;
+  try {
+    await startProjectSession(PROJECT, SESSION);
+  } catch (error) {
+    caught = error;
+  }
+
+  expect(isSessionStartError(caught)).toBe(true);
+  expect((caught as Error & { status?: number; terminal?: boolean }).status).toBe(404);
+  expect((caught as Error & { status?: number; terminal?: boolean }).terminal).toBe(true);
+});
+
+test('startProjectSession returns null for server failures so callers can retry', async () => {
   nextResponse = { status: 500, body: { message: 'boom' } };
   const result = await startProjectSession(PROJECT, SESSION);
   expect(result).toBeNull();
