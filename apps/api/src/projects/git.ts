@@ -76,6 +76,7 @@ export {
   previewMerge,
   mergeBranches,
   diffStat,
+  resolveBranchAheadState,
 } from './git/merge';
 
 export { loadProjectConfig } from './git/config';
