@@ -346,6 +346,39 @@ describe('handleCall — policy layer', () => {
     expect(waited).toBe(false); // never held / re-prompted
   });
 
+  test('session ALLOW-ALL bypasses the gate for any require_approval action', async () => {
+    const { deps, fetchCalls } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    let waited = false;
+    deps.waitForApprovalDecision = async () => {
+      waited = true;
+      return 'approved';
+    };
+    // No per-action grant, but the session holds a blanket allow-all.
+    deps.isSessionToolApproved = async () => false;
+    deps.isSessionAllowAll = async (sid) => sid === 'sess-1';
+    const res = await handleCall(deps, baseInput);
+    expect(res.status).toBe('ok');
+    expect(fetchCalls.length).toBeGreaterThan(0); // the call actually ran
+    expect(waited).toBe(false); // never held / re-prompted
+  });
+
+  test('policy BLOCK is never allow-all-bypassed', async () => {
+    const { deps } = makeDeps({
+      policies: [{ match: '*', action: 'block' }],
+      enforcePolicies: true,
+    });
+    let consulted = false;
+    deps.isSessionAllowAll = async () => {
+      consulted = true;
+      return true; // even if it would say "allowed"
+    };
+    expect(await handleCall(deps, baseInput)).toEqual({ status: 'denied', reason: 'policy_block' });
+    expect(consulted).toBe(false); // block short-circuits before any allow-all check
+  });
+
   test('session-allow for a DIFFERENT action does not bypass this one', async () => {
     const { deps } = makeDeps({
       policies: [{ match: '*', action: 'require_approval' }],
