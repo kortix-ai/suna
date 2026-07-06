@@ -29,6 +29,7 @@ import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { authRedirectUrl } from '@/lib/desktop';
 import { getEnv } from '@/lib/env-config';
+import { emailDomain, isWorkEmail } from '@/lib/personal-email';
 import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -98,17 +99,6 @@ function AuthCardForm({
   }, []);
   const magicLinkEnabled = enabledMethods.includes('magic');
   const passwordEnabled = enabledMethods.includes('password');
-  // Enterprise SSO (SAML) home-realm discovery. Opt-in per deployment by adding
-  // `sso` to NEXT_PUBLIC_AUTH_METHODS — off by default so consumer sign-in pays
-  // no extra round-trip. `sso` is NOT an AuthMethod (no magic/password-style
-  // toggle); it's a discovery pass that runs on submit before the email flow.
-  const ssoEnabled = useMemo(() => {
-    const raw = getEnv().AUTH_METHODS || 'magic,password';
-    return raw
-      .split(',')
-      .map((s) => s.trim().toLowerCase())
-      .includes('sso');
-  }, []);
   const [method, setMethod] = useState<AuthMethod>(magicLinkEnabled ? 'magic' : 'password');
   const [pending, setPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -156,41 +146,47 @@ function AuthCardForm({
       formData.set('acceptedTerms', 'true');
     }
 
-    // Enterprise home-realm discovery: if this email's domain is bound to a
-    // SAML provider, hand off to the IdP instead of magic-link/password.
-    // signInWithSSO returns { data: { url } } for a matching domain and an
-    // error otherwise, so non-SSO domains (and Supabase instances without SAML
-    // enabled) fall straight through to the normal email flow below. Applies to
-    // both sign-in and sign-up: an SSO user is JIT-provisioned on first login.
-    if (ssoEnabled) {
-      const email = String(formData.get('email') || '').trim();
-      const domain = email.split('@')[1]?.toLowerCase();
-      if (domain) {
-        try {
-          const supabase = createBrowserSupabaseClient();
-          const callbackParams = new URLSearchParams();
-          if (returnUrl) callbackParams.set('returnUrl', returnUrl);
-          if (mobileCallbackState) {
-            callbackParams.set('mobile_callback', '1');
-            callbackParams.set('state', mobileCallbackState);
-          }
-          const callbackPath = `${mobileCallbackState ? '/auth/mobile/callback' : '/auth/callback'}${
-            callbackParams.size ? `?${callbackParams.toString()}` : ''
-          }`;
-          const { data, error } = await supabase.auth.signInWithSSO({
-            domain,
-            options: { redirectTo: authRedirectUrl(callbackPath) },
-          });
-          if (!error && data?.url) {
-            // Full navigation to the IdP; the callback route exchanges the code
-            // on return (same PKCE path as Google OAuth).
-            window.location.href = data.url;
-            return;
-          }
-          // No provider for this domain → fall through to magic/password.
-        } catch {
-          // SAML not enabled on this Supabase, or a transient error — fall through.
+    // Enterprise home-realm discovery — zero-config. When the address is a WORK
+    // email (isWorkEmail skiplists gmail/outlook/… in-memory, so consumer logins
+    // never reach the network) whose domain is bound to a SAML provider, hand off
+    // to the IdP instead of magic-link/password. signInWithSSO returns
+    // { data: { url } } for a matching domain and an error otherwise, so a work
+    // domain with no provider — or a Supabase without SAML enabled — falls
+    // straight through to the email flow below. Runs in both sign-in and sign-up
+    // (an SSO user is JIT-provisioned on first login). `emailDomain` mirrors the
+    // parser isWorkEmail used, so we probe exactly the domain it validated.
+    // "SSO required" enforcement is a server-side concern; this is opportunistic
+    // routing with the email flow as the always-present fallback.
+    const email = String(formData.get('email') || '');
+    const domain = emailDomain(email);
+    if (domain && isWorkEmail(email)) {
+      try {
+        const supabase = createBrowserSupabaseClient();
+        const callbackParams = new URLSearchParams();
+        if (returnUrl) callbackParams.set('returnUrl', returnUrl);
+        if (mobileCallbackState) {
+          callbackParams.set('mobile_callback', '1');
+          callbackParams.set('state', mobileCallbackState);
         }
+        const callbackPath = `${mobileCallbackState ? '/auth/mobile/callback' : '/auth/callback'}${
+          callbackParams.size ? `?${callbackParams.toString()}` : ''
+        }`;
+        const { data, error } = await supabase.auth.signInWithSSO({
+          domain,
+          // We own the redirect (below) so authRedirectUrl's desktop `?desktop=true`
+          // bounce stays authoritative; without skipBrowserRedirect, auth-js also
+          // calls window.location.assign(data.url) — a redundant double-navigation.
+          options: { redirectTo: authRedirectUrl(callbackPath), skipBrowserRedirect: true },
+        });
+        if (!error && data?.url) {
+          // Full navigation to the IdP; the callback route exchanges the code
+          // on return (same PKCE path as Google OAuth).
+          window.location.href = data.url;
+          return;
+        }
+        // Work domain with no SAML provider → fall through to magic/password.
+      } catch {
+        // SAML not enabled on this Supabase, or a transient error — fall through.
       }
     }
 
@@ -554,12 +550,6 @@ function AuthCardForm({
                     : 'Sign in'}
             </Button>
           </form>
-
-          {ssoEnabled && (
-            <p className="text-foreground/40 mt-3 text-center text-xs">
-              Enterprise SSO is enabled — sign in with your work email.
-            </p>
-          )}
 
           {magicLinkEnabled && passwordEnabled && (
             <div className="mt-4 text-center">
