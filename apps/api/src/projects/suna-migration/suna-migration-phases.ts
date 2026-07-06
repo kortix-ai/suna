@@ -188,7 +188,7 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
     for (const s of specs) {
       await tx.insert(projectSessions).values({
         sessionId: crypto.randomUUID(), accountId: ctx.accountId, projectId,
-        branchName: s.slug, baseRef: defaultBranch, sandboxProvider: 'daytona',
+        branchName: s.slug, baseRef: defaultBranch, sandboxProvider: 'managed',
         sandboxId: null, sandboxUrl: null, opencodeSessionId: s.opencodeSessionId,
         agentName: 'default', status: 'stopped', createdBy: ctx.accountId, visibility: 'project',
         metadata: {

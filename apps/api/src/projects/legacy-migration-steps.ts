@@ -419,7 +419,7 @@ export async function dbStep(ctx: MigrationContext): Promise<void> {
         projectId: plan.project_id,
         branchName: spec.branchName,
         baseRef: defaultBranch,
-        sandboxProvider: 'daytona',
+        sandboxProvider: 'managed',
         sandboxId: null,
         sandboxUrl: null,
         opencodeSessionId: spec.opencodeSessionId,

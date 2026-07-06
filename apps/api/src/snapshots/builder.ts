@@ -981,7 +981,7 @@ async function resolveWarmRepoContext(project: GitBackedProject): Promise<WarmRe
  */
 async function reapOldPerProjectWarm(projectId: string, currentName: string, buildProvider: string): Promise<void> {
   try {
-    if (buildProvider === 'daytona') {
+    if (buildProvider === 'daytona' || buildProvider === 'managed') {
       const { listDaytonaSnapshots, deleteDaytonaSnapshotById } = await import('../shared/daytona');
       const snaps = await listDaytonaSnapshots();
       const targets = new Set(ppwarmReapTargets(projectId, currentName, snaps.map((s) => s.name)));

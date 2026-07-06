@@ -209,12 +209,12 @@ setupApp.openapi(
 
   // Provider capabilities — tells the frontend how to handle provisioning UI
   const capabilities: Record<string, { async: boolean; events: boolean; polling: boolean }> = {
-    daytona: { async: false, events: false, polling: false },
+    managed: { async: false, events: false, polling: false },
   };
 
   return c.json({
     providers: available,
-    default: available.includes(config.getDefaultProvider()) ? config.getDefaultProvider() : (available[0] || 'daytona'),
+    default: available.includes(config.getDefaultProvider()) ? config.getDefaultProvider() : (available[0] || 'managed'),
     capabilities: Object.fromEntries(available.map((p) => [p, capabilities[p] || { async: false, events: false, polling: false }])),
   });
   },
@@ -371,7 +371,7 @@ setupApp.openapi(
   // DAYTONA_API_KEY. We don't ping Daytona here on purpose: that's a
   // latency-sensitive UI call and Daytona's auth-check endpoint is
   // their billing concern, not ours.
-  checks.daytona = config.DAYTONA_API_KEY
+  checks.managed = config.DAYTONA_API_KEY
     ? { ok: true }
     : { ok: false, error: 'DAYTONA_API_KEY not configured' };
   return c.json(checks);
