@@ -96,4 +96,17 @@ describe('MIGRATE_TO_V2_PROMPT — the core migration artifact', () => {
   test('instructs carrying over hand-written TOML comments', () => {
     expect(MIGRATE_TO_V2_PROMPT.toLowerCase()).toContain('comments');
   });
+
+  test('pushes the branch before opening the CR — an unpushed commit leaves the CR empty', () => {
+    expect(MIGRATE_TO_V2_PROMPT).toContain('git push origin HEAD');
+    const push = MIGRATE_TO_V2_PROMPT.indexOf('git push origin HEAD');
+    const open = MIGRATE_TO_V2_PROMPT.indexOf('kortix cr open');
+    expect(push).toBeGreaterThan(-1);
+    expect(open).toBeGreaterThan(push);
+  });
+
+  test('verifies the opened CR is non-empty instead of opening a duplicate', () => {
+    expect(MIGRATE_TO_V2_PROMPT).toContain('kortix cr diff');
+    expect(MIGRATE_TO_V2_PROMPT.toLowerCase()).toContain('do not open a second one');
+  });
 });
