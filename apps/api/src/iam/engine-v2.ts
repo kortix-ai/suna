@@ -46,7 +46,6 @@ import type {
   RequestContext,
 } from './engine';
 import {
-  ACCOUNT_ONLY_PROJECT_ACTIONS,
   accountRoleAllows,
   implicitProjectRoleForAccount,
   maxProjectRole,
@@ -55,8 +54,6 @@ import {
   type AccountRole,
   type ProjectRole,
 } from './role-perms';
-
-const ACCOUNT_ONLY_PROJECT_ACTIONS_SET: ReadonlySet<string> = new Set(ACCOUNT_ONLY_PROJECT_ACTIONS);
 
 // ─── Pure helpers (exported for unit tests) ────────────────────────────────
 
@@ -67,17 +64,10 @@ type ActionScopeV2 = 'account' | 'project';
  * project they belong to — callers always pass a project target for
  * those actions. account.*, billing.*, audit.*, member.*, group.*,
  * role.*, policy.*, token.* and project.create are account-level;
- * everything else is project-level — EXCEPT the three former manager-only
- * project leaves (project.delete, project.members.manage,
- * project.gateway.keys.manage), which the project-role collapse promoted to
- * account authority (see role-perms.ts's ACCOUNT_ONLY_PROJECT_ACTIONS /
- * ADMIN_EXTRAS): they still target a specific project, but are authorized
- * exclusively via the ACTOR'S ACCOUNT role (owner/admin), never a project
- * role — built-in or custom.
+ * everything else is project-level.
  */
 export function scopeForActionV2(action: string): ActionScopeV2 {
   if (action === 'project.create') return 'account';
-  if (ACCOUNT_ONLY_PROJECT_ACTIONS_SET.has(action)) return 'account';
   if (
     action.startsWith('account.') ||
     action.startsWith('billing.') ||
@@ -106,7 +96,7 @@ export function deriveEffectiveProjectRole(
   directRole: ProjectRole | null,
   groupRoles: readonly ProjectRole[],
 ): ProjectRole | null {
-  // Owner/admin: implicit Editor (top project role) on every project in the account. Group
+  // Owner/admin: implicit Manager on every project in the account. Group
   // and direct rows can't elevate further; nothing can demote below this.
   const implicit = implicitProjectRoleForAccount(accountRole);
   let best: ProjectRole | null = implicit;
@@ -394,10 +384,9 @@ async function loadEffectiveProjectRole(
 ): Promise<ProjectRole | null> {
   const accountRole = actor.accountRole ?? 'member';
 
-  // Owner/admin carry implicit Editor (the top project role) — the per-project
-  // rows can only tie, never exceed it, so skip the lookups entirely.
-  const implicit = implicitProjectRoleForAccount(accountRole);
-  if (implicit) return implicit;
+  // Owner/admin carry implicit Manager — the per-project rows can only tie,
+  // never exceed it (manager is the top rank), so skip the lookups entirely.
+  if (implicitProjectRoleForAccount(accountRole)) return 'manager';
 
   const rows = await loadProjectRoleRows(userId, projectId, actor.groupIds);
   return deriveEffectiveProjectRole(accountRole, rows.directRole, rows.groupRoles);
@@ -610,7 +599,7 @@ export async function authorizeV2(
   // iam_resource_grants: if that resource is scoped (>=1 grant row), the member
   // must be in the granted set (themselves or one of their groups). Unscoped
   // resources stay project-wide — so this never locks anyone out of a resource
-  // nobody scoped. Owner/admins keep implicit Editor (top project role) and bypass; service
+  // nobody scoped. Owner/admins keep implicit Manager and bypass; service
   // accounts are governed by their own policies + agentGrant, not this fold.
   if (
     effectiveTarget.type === 'project' &&
@@ -661,7 +650,7 @@ export async function filterAccessibleProjectResources(
   if (!actor) return [];
   if (actor.isSuperAdmin) return resourceIds;
   // SAs are governed by their own policies/agentGrant, not the human fold; and
-  // owner/admins keep implicit Editor (top project role) — both see the full list.
+  // owner/admins keep implicit Manager — both see the full list.
   if (actor.kind !== 'member') return resourceIds;
   if (implicitProjectRoleForAccount(actor.accountRole ?? 'member')) return resourceIds;
   return filterAccessibleResourceIds(projectId, resourceType, resourceIds, userId, actor.groupIds);
@@ -726,14 +715,10 @@ export async function listAccessibleProjectsV2(
 
   const accountRole = actor.accountRole ?? 'member';
 
-  // Owner/admin: implicit Editor (top project role) on every project. Allowed
-  // unless the action isn't in Editor's set — this function only lists PROJECT
-  // scope, so an ACCOUNT_ONLY_PROJECT_ACTIONS action (already routed to account
-  // scope by scopeForActionV2) would never legitimately reach here; falling
-  // through to Editor's set (which excludes them) is the safe default either way.
-  const implicitRole = implicitProjectRoleForAccount(accountRole);
-  if (implicitRole) {
-    return projectRoleAllows(implicitRole, action)
+  // Owner/admin: implicit Manager on every project. Allowed unless the
+  // action isn't in Manager's set.
+  if (implicitProjectRoleForAccount(accountRole)) {
+    return projectRoleAllows('manager', action)
       ? { mode: 'all' }
       : { mode: 'none' };
   }

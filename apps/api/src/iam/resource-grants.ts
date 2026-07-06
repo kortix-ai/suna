@@ -16,9 +16,9 @@
  *     department out of everything else.
  *   - SCOPED resources are accessible ONLY to principals with a matching grant:
  *     a member grant for the user, or a group grant for any group the user is
- *     in. Account owners/admins keep implicit Editor (top project role) and
- *     bypass scoping; the fold runs for human members only (service accounts
- *     are governed by their own policies + agentGrant).
+ *     in. Account owners/admins keep implicit Manager and bypass scoping; the
+ *     fold runs for human members only (service accounts are governed by their
+ *     own policies + agentGrant).
  *
  * Cache: a project+type keyed memo (~15s TTL) holds the grant map; mutations
  * bust it synchronously on the writing replica (invalidateIamCacheForProject-

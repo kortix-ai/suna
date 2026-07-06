@@ -48,15 +48,14 @@ export const SANDBOX_DISK_BOUNDS = { min: 1, max: 500 } as const;
 
 /**
  * The actions an agent's `[[agents]].kortix_cli` may grant — the project-scoped
- * surface. MUST stay in sync with apps/api/src/iam/actions.ts PROJECT_ACTIONS
- * MINUS apps/api/src/iam/role-perms.ts ACCOUNT_ONLY_PROJECT_ACTIONS
- * (`project.delete`, `project.members.manage`, `project.gateway.keys.manage` —
- * the three former "manager-only" project leaves, promoted to ACCOUNT
- * owner/admin authority by the project-role collapse; unreachable through ANY
- * project role, built-in or custom, so an agent can never hold them either).
+ * surface. MUST stay in sync with apps/api/src/iam/actions.ts PROJECT_ACTIONS —
+ * every project-scoped action, including the manager-tier leaves
+ * (`project.delete`, `project.members.manage`, `project.gateway.keys.manage`):
+ * these are still reachable via a project's `manager` role, so an agent can be
+ * granted them too.
  *
  * Account-scoped admin actions (member.*, billing.*, token.*, project.create, …)
- * are ALSO excluded here — but omission from this list is NOT the mechanism
+ * are excluded here — but omission from this list is NOT the mechanism
  * that keeps an agent off them. The actual enforcement is that every
  * agent-session token is project-scoped (`account_tokens.project_id`):
  * apps/api's IAM v2 engine (`iam/engine-v2.ts`'s `computeTokenScope`) refuses
@@ -74,19 +73,20 @@ export const SANDBOX_DISK_BOUNDS = { min: 1, max: 500 } as const;
  * or omitting them was a silent no-op.
  */
 // MUST stay in sync with apps/api iam/actions.ts GRANTABLE_KORTIX_CLI (=
-// Object.values(PROJECT_ACTIONS) minus ACCOUNT_ONLY_PROJECT_ACTIONS). The
-// unit-agents-parse drift-guard test fails loudly if these diverge (this
-// package can't import apps/api).
+// Object.values(PROJECT_ACTIONS)). The unit-agents-parse drift-guard test
+// fails loudly if these diverge (this package can't import apps/api).
 export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.read',
   'project.write',
   'project.deploy',
+  'project.delete',
   'project.cr.open',
   'project.cr.merge',
   'project.session.read',
   'project.session.start',
   'project.session.stop',
   'project.members.read',
+  'project.members.manage',
   'project.trigger.read',
   'project.trigger.create',
   'project.trigger.update',
@@ -95,6 +95,7 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.gateway.logs.read',
   'project.gateway.spend.read',
   'project.gateway.budget.set',
+  'project.gateway.keys.manage',
   // IAM v1 per-capability leaves.
   'project.agent.read',
   'project.agent.write',

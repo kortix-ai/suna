@@ -156,7 +156,7 @@ export async function addGroupMembers(accountId: string, groupId: string, userId
 export interface GroupProjectGrant {
   project_id: string;
   project_name: string;
-  role: 'editor' | 'member';
+  role: 'manager' | 'editor' | 'member';
   granted_by: string | null;
   created_at: string;
   /** Auto-revoke timestamp (ISO). null = permanent. Surfaced from the
@@ -198,13 +198,13 @@ export async function listMemberGroups(accountId: string, userId: string) {
 
 // V2-only: which projects can this member reach, at what role, and how?
 // `sources` tells the UI why they have access (one or more of):
-//   implicit — they're an account owner/admin (implicit Editor, the top project role, on every project)
+//   implicit — they're an account owner/admin (manager on every project)
 //   direct   — explicit project_members row
 //   group    — inherited from a project_group_grants attachment
 export interface MemberProjectAccess {
   project_id: string;
   project_name: string;
-  role: 'editor' | 'member';
+  role: 'manager' | 'editor' | 'member';
   sources: Array<'implicit' | 'direct' | 'group'>;
 }
 

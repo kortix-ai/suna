@@ -207,13 +207,6 @@ export const ACTION_CATALOG: ActionCatalogEntry[] = [
  * project.session.stop   → 'project'
  * sandbox.start          → 'sandbox'
  * member.invite          → 'account'  (account-level member admin)
- *
- * project.delete / project.members.manage / project.gateway.keys.manage →
- * 'account' too: the project-role collapse (manager retired) promoted these
- * three to ACCOUNT owner/admin authority — see role-perms.ts's
- * ACCOUNT_ONLY_PROJECT_ACTIONS. They still target a specific project, but a
- * custom role must be ACCOUNT-scoped to carry them (mirrors engine-v2's
- * scopeForActionV2, which routes them to 'account' scope for authorization).
  */
 export function resourceTypeForAction(action: string): ResourceType {
   const prefix = action.split('.', 1)[0] as ResourceType;
@@ -228,10 +221,7 @@ export function resourceTypeForAction(action: string): ResourceType {
     action.startsWith('token.') ||
     action.startsWith('billing.') ||
     action.startsWith('audit.') ||
-    action === 'project.create' ||
-    action === PROJECT_ACTIONS.PROJECT_DELETE ||
-    action === PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE ||
-    action === PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE
+    action === 'project.create'
   ) {
     return 'account';
   }

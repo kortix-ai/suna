@@ -76,17 +76,10 @@ export const sessionLifecycleCommandStatusEnum = kortixSchema.enum(
 );
 
 // `member` is the floor project role (renamed from `user`, see the
-// project_role_member_rename migration); `editor` is the TOP project role
-// (project-role collapse, see the project_role_manager_collapse migration —
-// `manager` was retired, its exclusive powers — project.delete,
-// project.members.manage, project.gateway.keys.manage — moved to ACCOUNT
-// owner/admin authority, see role-perms.ts's ACCOUNT_ONLY_PROJECT_ACTIONS).
-// `user`, `viewer`, and now `manager` are all DEPRECATED — each folds into its
-// current tier via parseProjectRole/normalizeProjectRole and none is
-// assignable anymore. All three linger in the enum because Postgres can't
-// drop an enum member (`project_members`/`project_group_grants` also carry a
-// CHECK constraint barring new `manager` writes at the DB layer). Nothing
-// reads or writes any of the three.
+// project_role_member_rename migration). `user` and the older `viewer` are
+// DEPRECATED — both fold into `member` via parseProjectRole/normalizeProjectRole
+// and are no longer assignable. `viewer` lingers because Postgres can't drop an
+// enum member; `user` was renamed in place. Nothing reads or writes either.
 export const projectRoleEnum = kortixSchema.enum('project_role', [
   'manager',
   'editor',

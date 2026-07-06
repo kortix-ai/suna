@@ -3,7 +3,7 @@
 // the write-time action validator. No db/router imports → unit-testable.
 
 import { ACCOUNT_ACTIONS, ACTION_CATALOG, PROJECT_ACTIONS, VALID_ACTIONS, resourceTypeForAction } from '../../iam';
-import { ACCOUNT_ONLY_PROJECT_ACTIONS, ACCOUNT_ROLE_PERMS, PROJECT_ROLE_PERMS } from '../../iam/role-perms';
+import { ACCOUNT_ROLE_PERMS, PROJECT_ROLE_PERMS } from '../../iam/role-perms';
 
 /** The "Member" floor tier: read everything + start/run sessions + fire
  *  triggers; no editing, config, deploy, gitops, members or secret write.
@@ -24,12 +24,7 @@ export interface BuiltinPreset {
 }
 
 export const BUILTIN_PRESETS: readonly BuiltinPreset[] = [
-  // `manager` (the former top project role) was RETIRED — project roles
-  // collapsed from 3 tiers to 2. `editor` is now the top project role; its
-  // former manager-exclusive powers (delete / members.manage /
-  // gateway.keys.manage) moved to ACCOUNT owner/admin authority (the `owner`
-  // / `admin` presets below), never a project role — see role-perms.ts's
-  // ACCOUNT_ONLY_PROJECT_ACTIONS.
+  { key: 'manager', name: 'Manager', description: 'Full project control, including members and delete.', resourceType: 'project', actions: [...PROJECT_ROLE_PERMS.manager] },
   { key: 'editor', name: 'Editor', description: 'Create and edit project content, run sessions.', resourceType: 'project', actions: [...PROJECT_ROLE_PERMS.editor] },
   { key: 'user', name: 'Member (read + run)', description: 'Read, run sessions, and fire triggers — no editing or config. The project floor role.', resourceType: 'project', actions: [...USER_PRESET_ACTIONS] },
   { key: 'owner', name: 'Owner', description: 'Full account control.', resourceType: 'account', actions: [...ACCOUNT_ROLE_PERMS.owner] },
@@ -57,13 +52,10 @@ export const ACTION_CATALOG_WIRE = ACTION_CATALOG.map((e) => ({
  * own ceiling — becoming an owner in all but name. These powers stay exclusive
  * to the built-in owner/admin presets, which are not user-editable.
  *
- * project.delete / project.members.manage / project.gateway.keys.manage ARE
- * here (added with the project-role collapse): they used to be project-scoped
- * (the built-in Manager preset carried them, so a department lead could hold
- * them at project scope), but Marko moved them to ACCOUNT owner/admin
- * authority only. Barring them from custom roles too closes the workaround an
- * account-scoped custom role would otherwise open (binding a plain member to
- * a role that grants these — a "manager via custom role" escalation).
+ * Note: project.members.manage / project.gateway.keys.manage are intentionally
+ * NOT here — they are project-scoped (a department lead managing their own
+ * project's members can only hand out project roles, never account roles), and
+ * the built-in Manager preset already carries them.
  */
 export const NON_DELEGABLE_ACTIONS: ReadonlySet<string> = new Set<string>([
   // Owner-only: irreversible, billing-bound, or super-admin.
@@ -89,10 +81,6 @@ export const NON_DELEGABLE_ACTIONS: ReadonlySet<string> = new Set<string>([
   // Account-wide credential minting.
   ACCOUNT_ACTIONS.TOKEN_CREATE,
   ACCOUNT_ACTIONS.TOKEN_REVOKE,
-  // Former manager-only project leaves, now account owner/admin-only (see
-  // role-perms.ts's ACCOUNT_ONLY_PROJECT_ACTIONS) — never delegable via a
-  // custom role either.
-  ...ACCOUNT_ONLY_PROJECT_ACTIONS,
 ]);
 
 /** Validate + dedupe a custom role's action list against the known catalog.

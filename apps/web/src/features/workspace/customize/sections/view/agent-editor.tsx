@@ -137,12 +137,12 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
 /**
  * The grantable `kortix_cli` action catalog, grouped for the picker. MUST stay
  * in sync with `GRANTABLE_KORTIX_CLI_ACTIONS` in @kortix/manifest-schema (=
- * PROJECT_ACTIONS in apps/api iam/actions.ts MINUS ACCOUNT_ONLY_PROJECT_ACTIONS
- * — project.delete / project.members.manage / project.gateway.keys.manage,
- * promoted to ACCOUNT owner/admin authority by the project-role collapse, see
- * apps/api/src/iam/role-perms.ts). Mirrored here (not imported) because the
- * manifest-schema/api packages aren't in the web bundle — same mirror
- * discipline as apps/web/src/lib/project-actions.ts.
+ * PROJECT_ACTIONS in apps/api iam/actions.ts — every project-scoped action,
+ * including the manager-tier leaves project.delete / project.members.manage /
+ * project.gateway.keys.manage, still reachable via a project's `manager`
+ * role). Mirrored here (not imported) because the manifest-schema/api
+ * packages aren't in the web bundle — same mirror discipline as
+ * apps/web/src/lib/project-actions.ts.
  *
  * Account-scoped admin actions (member.*, billing.*, token.*, project.create,
  * …) are ALSO absent — but that omission is a UX curation choice, not the
@@ -152,13 +152,13 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
  * `iam/engine-v2.ts`'s `computeTokenScope`).
  */
 export const KORTIX_CLI_CATALOG: { group: string; actions: string[] }[] = [
-  { group: 'Project', actions: ['project.read', 'project.write', 'project.deploy'] },
+  { group: 'Project', actions: ['project.read', 'project.write', 'project.deploy', 'project.delete'] },
   { group: 'Change requests', actions: ['project.cr.open', 'project.cr.merge'] },
   {
     group: 'Sessions',
     actions: ['project.session.read', 'project.session.start', 'project.session.stop'],
   },
-  { group: 'Members', actions: ['project.members.read'] },
+  { group: 'Members', actions: ['project.members.read', 'project.members.manage'] },
   {
     group: 'Triggers',
     actions: [
@@ -175,6 +175,7 @@ export const KORTIX_CLI_CATALOG: { group: string; actions: string[] }[] = [
       'project.gateway.logs.read',
       'project.gateway.spend.read',
       'project.gateway.budget.set',
+      'project.gateway.keys.manage',
     ],
   },
   {

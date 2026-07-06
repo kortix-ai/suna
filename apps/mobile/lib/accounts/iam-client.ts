@@ -146,7 +146,7 @@ export interface MemberGroupSummary {
 export interface MemberProjectAccess {
   project_id: string;
   project_name: string;
-  role: 'editor' | 'member';
+  role: 'manager' | 'editor' | 'member';
   sources: Array<'implicit' | 'direct' | 'group'>;
 }
 

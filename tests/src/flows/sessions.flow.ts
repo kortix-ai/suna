@@ -226,27 +226,23 @@ flow(
 
 /**
  * SESS-14 — public share access boundary. `canManageSharing = isOwner (the
- * session creator) || canManageProject (roleAllows('manage') — i.e. the top
- * project role editor, or account owner/admin)` — projects/lib/access.ts
- * `loadSessionForSharing()`. Project-role collapse: `manager` was retired and
- * `editor` is now the top project role, so 'write' and 'manage' collapse to
- * the same check — a project EDITOR who did NOT create the session CAN now
- * manage its shares (200) via the canManageProject half of the OR. The denied
- * case is a plain project MEMBER (floor role) who did not create the session
- * (403, the sharing-specific message). NONMEMBER is denied earlier, by the
- * account-membership gate in `loadProjectForUser` (throws 403 before the
- * sharing check is ever reached). ANON never reaches the handler (401,
- * `supabaseAuth`).
+ * session creator) || canManageProject (manage role: manager/owner/admin)` —
+ * projects/lib/access.ts `loadSessionForSharing()`. So a project EDITOR who
+ * did NOT create the session is denied (403, the sharing-specific message),
+ * while a project MANAGER who did NOT create it is allowed (200) via the OR.
+ * NONMEMBER is denied earlier, by the account-membership gate in
+ * `loadProjectForUser` (throws 403 before the sharing check is ever reached).
+ * ANON never reaches the handler (401, `supabaseAuth`).
  *
  * `loadSessionForSharing` is deliberately NOT `loadVisibleSession` (the
  * content-visibility gate used for reading a session's transcript): the
  * public-shares routes used to call `loadVisibleSession`, whose
  * `isSessionVisibleTo` check hides a default-`private` session from everyone
- * but its creator — including a project editor/owner with no adminBypass.
- * That made the `canManageProject` half of the OR unreachable: the route
- * 404'd on the visibility gate before ever computing `canManageSharing`, and
- * a plain member got the same 404 instead of the informative 403 this spec
- * expects. `loadSessionForSharing` loads the same row but only computes
+ * but its creator — including a project manager with no adminBypass. That
+ * made the `canManageProject` half of the OR unreachable: the route 404'd on
+ * the visibility gate before ever computing `canManageSharing`, and a plain
+ * editor got the same 404 instead of the informative 403 this spec expects.
+ * `loadSessionForSharing` loads the same row but only computes
  * isOwner/canManageProject — no content-visibility check — since managing
  * share links is a project-management action, not a "can you read this
  * conversation" one.
@@ -267,17 +263,10 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const p = await team.project();
-    // A plain project MEMBER (floor role) — the denied case: has project
-    // access but cannot manage the project, so cannot manage someone else's
-    // session's shares.
-    const member = await team.addMember("member");
-    await team.grantProjectRole(p.id, member.userId!, "user");
-    // A project EDITOR (the top project role now) — the allowed case: editor
-    // holds the coarse 'manage' capability (write ≡ manage after the
-    // project-role collapse), so canManageProject is true even though they
-    // did not create the session.
     const editor = await team.addMember("member");
     await team.grantProjectRole(p.id, editor.userId!, "editor");
+    const manager = await team.addMember("member");
+    await team.grantProjectRole(p.id, manager.userId!, "manager");
 
     const owner = ctx.client.as(ctx.P.OWNER);
     let sessionId = "";
@@ -303,15 +292,15 @@ flow(
       shareId = r.json<any>()?.share?.share_id;
     });
 
-    await ctx.step("a plain project MEMBER who did not create the session cannot list shares → 403", async () => {
+    await ctx.step("a project EDITOR who did not create the session cannot list shares → 403", async () => {
       const r = await ctx.client
-        .as(member)
+        .as(editor)
         .get("/v1/projects/:projectId/sessions/:sessionId/public-shares", { params: { projectId: p.id, sessionId } });
       r.status(403);
     });
-    await ctx.step("a plain project MEMBER cannot create a share on someone else's session → 403", async () => {
+    await ctx.step("a project EDITOR cannot create a share on someone else's session → 403", async () => {
       const r = await ctx.client
-        .as(member)
+        .as(editor)
         .post(
           "/v1/projects/:projectId/sessions/:sessionId/public-shares",
           { preview: { port: 3000 } },
@@ -319,18 +308,18 @@ flow(
         );
       r.status(403);
     });
-    await ctx.step("a plain project MEMBER cannot revoke someone else's share → 403", async () => {
+    await ctx.step("a project EDITOR cannot revoke someone else's share → 403", async () => {
       const r = await ctx.client
-        .as(member)
+        .as(editor)
         .del("/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId", {
           params: { projectId: p.id, sessionId, shareId },
         });
       r.status(403);
     });
 
-    await ctx.step("a project EDITOR (the top project role, not the creator) CAN list shares → 200 (isOwner || canManageProject)", async () => {
+    await ctx.step("a project MANAGER (not the creator) CAN list shares → 200 (isOwner || canManageProject)", async () => {
       const r = await ctx.client
-        .as(editor)
+        .as(manager)
         .get("/v1/projects/:projectId/sessions/:sessionId/public-shares", { params: { projectId: p.id, sessionId } });
       r.status(200).body().has("$.shares[0].share_id", shareId);
     });

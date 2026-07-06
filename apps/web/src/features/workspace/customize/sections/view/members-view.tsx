@@ -14,7 +14,6 @@ import {
 } from '@/components/iam/iam-display-helpers';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
 import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
-import { useProjectCan } from '@/lib/use-project-can';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -135,15 +134,7 @@ export function MembersView({ projectId }: { projectId: string }) {
   });
 
   const project = projectQuery.data;
-  // Managing members (invite / change role / remove / resource-grants /
-  // group-grants) is project.members.manage — the project-role collapse
-  // moved this to ACCOUNT owner/admin authority ONLY (see role-perms.ts's
-  // ACCOUNT_ONLY_PROJECT_ACTIONS). No project role, not even editor (the new
-  // top project role), grants it — so probe the live capability instead of
-  // branching on effective_project_role.
-  const canManage = useProjectCan(projectId, 'project.members.manage', {
-    accountId: project?.account_id,
-  }).allowed;
+  const canManage = project?.effective_project_role === 'manager' || accessQuery.data?.can_manage;
 
   const pendingInvitesQuery = useQuery({
     queryKey: ['project-pending-invites', projectId],
@@ -514,6 +505,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
                 <SelectContent>
                   <ProjectRoleSelectItem role="member" />
                   <ProjectRoleSelectItem role="editor" />
+                  <ProjectRoleSelectItem role="manager" />
                 </SelectContent>
               </Select>
             </Field>
@@ -702,11 +694,8 @@ function ProjectAccessCard({
           <ul className="space-y-2">
             {sortedMembers.map((member) => {
               const busy = pendingUserIds.has(member.user_id);
-              // Unused when has_implicit_access is true (that branch renders the
-              // "Full access" badge below, never the role Select) — 'editor' here
-              // just keeps the fallback a valid ProjectRole ('manager' was retired).
               const value =
-                member.project_role ?? (member.has_implicit_access ? 'editor' : 'none');
+                member.project_role ?? (member.has_implicit_access ? 'manager' : 'none');
               const inheritedFromGroup = isInheritedFromGroupOnly(member);
               const inheritedSummary = inheritedFromGroupSummary(member);
 
@@ -761,7 +750,7 @@ function ProjectAccessCard({
                   ) : member.has_implicit_access ? (
                     <Badge variant="outline" size="sm">
                       <Shield className="mr-1 size-3.5" />
-                      Full access
+                      Manager
                     </Badge>
                   ) : inheritedFromGroup ? (
                     <div className="flex shrink-0 items-center gap-2">
@@ -853,6 +842,7 @@ function ProjectAccessCard({
                         <SelectContent>
                           <ProjectRoleSelectItem role="member" />
                           <ProjectRoleSelectItem role="editor" />
+                          <ProjectRoleSelectItem role="manager" />
                         </SelectContent>
                       </Select>
                       {canManage && (
@@ -1467,6 +1457,7 @@ function ProjectGroupGrantsCard({
                 <SelectContent>
                   <ProjectRoleSelectItem role="member" />
                   <ProjectRoleSelectItem role="editor" />
+                  <ProjectRoleSelectItem role="manager" />
                 </SelectContent>
               </Select>
               <Button
@@ -1570,6 +1561,7 @@ function ProjectGroupGrantsCard({
                         <SelectContent>
                           <ProjectRoleSelectItem role="member" />
                           <ProjectRoleSelectItem role="editor" />
+                          <ProjectRoleSelectItem role="manager" />
                         </SelectContent>
                       </Select>
                       <Button
@@ -1751,8 +1743,7 @@ function ResourceAccessCard({
   const grantsQuery = useQuery({
     queryKey: grantsKey,
     queryFn: () => listProjectResourceGrants(projectId),
-    // project.members.manage endpoint (account owner/admin only, 403s
-    // otherwise) — don't fire it for anyone else.
+    // Manager-only endpoint (403s otherwise) — don't fire it for non-managers.
     enabled: canManage,
     staleTime: 20_000,
   });
@@ -2080,8 +2071,7 @@ function ResourceAccessCard({
 /**
  * Custom-role assignments for THIS project — the project-level view of the
  * account Roles page's bindings. Custom roles are DEFINED on the account Roles
- * page; here an account owner/admin grants one (to a member / department /
- * agent) scoped to
+ * page; here a manager grants one (to a member / department / agent) scoped to
  * this project, so a project's full access picture lives in one place.
  */
 function ProjectRoleAssignmentsCard({

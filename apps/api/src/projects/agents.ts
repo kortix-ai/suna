@@ -33,7 +33,6 @@
 import { createHash } from 'node:crypto';
 import type { ParsedManifest } from './triggers';
 import { PROJECT_ACTIONS, VALID_ACTIONS } from '../iam/actions';
-import { ACCOUNT_ONLY_PROJECT_ACTIONS } from '../iam/role-perms';
 import type { GitBackedProject } from './git';
 import type { AgentGrant } from '@kortix/db';
 import { resolveGrantSet, SLUG_RE, type GrantSetV2 } from '@kortix/manifest-schema';
@@ -50,18 +49,17 @@ const MANIFEST_FILENAME = 'kortix.toml';
 export const DEFAULT_AGENT_SENTINEL = 'default';
 
 /**
- * The actions an agent's `kortix_cli` may grant — the project-scoped surface.
- * `Object.values(PROJECT_ACTIONS)` MINUS `ACCOUNT_ONLY_PROJECT_ACTIONS`
- * (`project.delete`, `project.members.manage`, `project.gateway.keys.manage`
- * — the three former "manager-only" project leaves the project-role collapse
- * promoted to ACCOUNT owner/admin authority; see iam/role-perms.ts). CR
- * actions live in PROJECT_ACTIONS. The channel.* resource actions
+ * The actions an agent's `kortix_cli` may grant — the project-scoped surface,
+ * including the manager-tier project leaves (`project.delete`,
+ * `project.members.manage`, `project.gateway.keys.manage`) — these are still
+ * reachable via a project's `manager` role, so an agent can be granted them
+ * too. CR actions live in PROJECT_ACTIONS. The channel.* resource actions
  * (channel.send, …) were removed from the catalog (IAM enforcement audit):
  * they were never wired to any route, so granting them did nothing — see
  * iam/actions.ts.
  *
  * Account-scoped admin actions (member.*, billing.*, token.*, project.create,
- * …) are ALSO excluded — but simply omitting them from this list is not what
+ * …) are excluded — but simply omitting them from this list is not what
  * stops an agent from calling them. Every agent-session token is
  * project-scoped (`account_tokens.project_id`); the IAM v2 engine
  * (`iam/engine-v2.ts` `computeTokenScope`) refuses ANY account-scope action
@@ -70,9 +68,7 @@ export const DEFAULT_AGENT_SENTINEL = 'default';
  * `validateKortixAction` below flags as a bad `kortix_cli` entry), not the
  * enforcement boundary itself.
  */
-export const GRANTABLE_KORTIX_CLI: ReadonlySet<string> = new Set(
-  Object.values(PROJECT_ACTIONS).filter((a) => !(ACCOUNT_ONLY_PROJECT_ACTIONS as readonly string[]).includes(a)),
-);
+export const GRANTABLE_KORTIX_CLI: ReadonlySet<string> = new Set(Object.values(PROJECT_ACTIONS));
 
 /** Sorted list for `kortix validate` / error messages / the UI picker. */
 export const GRANTABLE_KORTIX_CLI_LIST: readonly string[] = [...GRANTABLE_KORTIX_CLI].sort();

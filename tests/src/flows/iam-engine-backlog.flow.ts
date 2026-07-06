@@ -8,13 +8,11 @@
  * tests/src/flows/iam.flow.ts for coverage of that surface. This file only
  * covers the pieces that still have no CRUD surface (see below).
  *
- * V2 decides access from five fixed code-defined roles (account: owner/
- * admin/member; project: editor/member — `manager` was retired by the
- * project-role collapse, see IAM-6 below) via three tables (account_members,
- * project_members, project_group_grants), UNIONED additively with any DB
- * custom-role grants (iam_policies / iam_role_actions, Enterprise-
- * entitlement-gated) — there are still no deny rules and no per-token
- * policies beyond a token's own iam_policies row.
+ * V2 decides access from six fixed code-defined roles via three tables
+ * (account_members, project_members, project_group_grants), UNIONED
+ * additively with any DB custom-role grants (iam_policies / iam_role_actions,
+ * Enterprise-entitlement-gated) — there are still no deny rules and no
+ * per-token policies beyond a token's own iam_policies row.
  *
  * So these flows verify the ENGINE's observable semantics black-box through
  * the one read surface that exposes the computed decision:
@@ -142,18 +140,9 @@ flow(
 // ─── IAM-6: fixed project-role mapping via effective ────────────────────────
 // Built-in preset roles can't be created/renamed/deleted (immutable,
 // code-defined) — only custom roles can. The fixed project-role → action
-// mapping is verified through the effective probe: `project.write` (an
-// ordinary project-scoped action) follows the project role — an admin's
-// implicit Editor grants it, a plain member with no project path doesn't.
-//
-// `project.delete` is a SEPARATE, deliberate case (the project-role collapse,
-// Marko 2026-07-05): it — along with project.members.manage and
-// project.gateway.keys.manage — moved to ACCOUNT owner/admin authority ONLY.
-// No project role, built-in or custom, reaches it anymore, so it's decided
-// purely by account_role and never even consults project membership —
-// reason is account_role / account_role_insufficient, not project_role /
-// no_project_membership, and a project resourceId on the probe is irrelevant
-// to the verdict.
+// mapping is verified through the effective probe: an admin (implicit
+// Manager) can delete any project; a plain member with no project path
+// cannot.
 
 flow(
   "IAM-6",
@@ -164,43 +153,23 @@ flow(
     const member = await team.addMember("member");
     const project = await team.project();
 
-    await ctx.step("admin → implicit Editor → project.write allowed (project_role)", async () => {
+    await ctx.step("admin → implicit Manager → project.delete allowed (manager action set)", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
         params: { accountId: team.id, userId: admin.userId! },
-        query: { action: "project.write", resourceType: "project", resourceId: project.id },
+        query: { action: "project.delete", resourceType: "project", resourceId: project.id },
       });
       r.status(200).body().has("$.allowed", true).has("$.reason", "project_role");
     });
 
-    await ctx.step("member with no project path → project.write denied (no_project_membership)", async () => {
+    await ctx.step("member with no project path → project.delete denied", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
         params: { accountId: team.id, userId: member.userId! },
-        query: { action: "project.write", resourceType: "project", resourceId: project.id },
+        query: { action: "project.delete", resourceType: "project", resourceId: project.id },
       });
       r.status(200)
         .body()
         .has("$.allowed", false)
         .has("$.reason", "no_project_membership");
-    });
-
-    await ctx.step("admin → project.delete allowed via account_role (NOT project_role — the action is account-scoped now)", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-        params: { accountId: team.id, userId: admin.userId! },
-        query: { action: "project.delete", resourceType: "project", resourceId: project.id },
-      });
-      r.status(200).body().has("$.allowed", true).has("$.reason", "account_role");
-    });
-
-    await ctx.step("member granted the top project role (editor) STILL denied project.delete — account_role_insufficient, not a project-role reason", async () => {
-      await team.grantProjectRole(project.id, member.userId!, "editor");
-      const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-        params: { accountId: team.id, userId: member.userId! },
-        query: { action: "project.delete", resourceType: "project", resourceId: project.id },
-      });
-      r.status(200)
-        .body()
-        .has("$.allowed", false)
-        .has("$.reason", "account_role_insufficient");
     });
   },
 );
@@ -274,11 +243,6 @@ flow(
 // the MAX role, and the lower grant never vetoes the higher. (deny-wins
 // itself is unverifiable black-box because the feature does not exist
 // anywhere in the engine.)
-//
-// Uses `project.write` (an ordinary project-scoped action) rather than
-// project.delete — the project-role collapse moved project.delete to ACCOUNT
-// owner/admin authority only, so it no longer varies by project role/grant
-// at all (see IAM-6) and can't exercise max-role-wins.
 
 flow(
   "IAM-10",
@@ -291,14 +255,14 @@ flow(
     const member = await team.addMember("member");
     const project = await team.project();
 
-    // Low direct role: User (cannot write).
+    // Low direct role: User (cannot delete).
     await ctx.step("give member a direct User role on the project", async () => {
       await team.grantProjectRole(project.id, member.userId!, "user");
     });
 
-    // High group grant: Editor (can write) on the same project.
+    // High group grant: Manager (can delete) on the same project.
     let groupId = "";
-    await ctx.step("create a group, add the member, grant the group Editor on the project", async () => {
+    await ctx.step("create a group, add the member, grant the group Manager on the project", async () => {
       const g = await ctx.client
         .as(ctx.P.OWNER)
         .post(GROUPS, { name: ctx.fixtures.name("grp") }, { params: { accountId: team.id } });
@@ -318,16 +282,16 @@ flow(
         .as(ctx.P.OWNER)
         .post(
           PROJECT_GRANTS,
-          { group_id: groupId, role: "editor" },
+          { group_id: groupId, role: "manager" },
           { params: { projectId: project.id } },
         );
-      grant.status(201).body().has("$.role", "editor");
+      grant.status(201).body().has("$.role", "manager");
     });
 
-    await ctx.step("max-role-wins: project.write allowed (Editor grant overrides the lower User; nothing denies)", async () => {
+    await ctx.step("max-role-wins: project.delete allowed (Manager grant overrides the lower User; nothing denies)", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
         params: { accountId: team.id, userId: member.userId! },
-        query: { action: "project.write", resourceType: "project", resourceId: project.id },
+        query: { action: "project.delete", resourceType: "project", resourceId: project.id },
       });
       r.status(200).body().has("$.allowed", true).has("$.reason", "project_role");
     });
@@ -430,14 +394,10 @@ flow(
 );
 
 // ─── IAM-13: scope match ────────────────────────────────────────────────────
-// A project group-grant matches only its own project. Grant a group Editor
+// A project group-grant matches only its own project. Grant a group Manager
 // on project A; the member is allowed on A (project_role) but denied on
 // project B (no_project_membership), and the account-scoped probe (no
 // resourceId) is also denied — proving the grant is scoped to A's resource.
-//
-// Uses `project.write` rather than project.delete — the project-role
-// collapse moved project.delete to ACCOUNT owner/admin authority only, so it
-// no longer varies per project/grant at all (see IAM-6).
 
 flow(
   "IAM-13",
@@ -452,7 +412,7 @@ flow(
     const projectB = await team.project();
 
     let groupId = "";
-    await ctx.step("create group, add member, grant group Editor on project A only", async () => {
+    await ctx.step("create group, add member, grant group Manager on project A only", async () => {
       const g = await ctx.client
         .as(ctx.P.OWNER)
         .post(GROUPS, { name: ctx.fixtures.name("grp") }, { params: { accountId: team.id } });
@@ -472,16 +432,16 @@ flow(
         .as(ctx.P.OWNER)
         .post(
           PROJECT_GRANTS,
-          { group_id: groupId, role: "editor" },
+          { group_id: groupId, role: "manager" },
           { params: { projectId: projectA.id } },
         );
       grant.status(201);
     });
 
-    await ctx.step("matching scope (project A) → project.write allowed via project_role", async () => {
+    await ctx.step("matching scope (project A) → project.delete allowed via project_role", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
         params: { accountId: team.id, userId: member.userId! },
-        query: { action: "project.write", resourceType: "project", resourceId: projectA.id },
+        query: { action: "project.delete", resourceType: "project", resourceId: projectA.id },
       });
       r.status(200).body().has("$.allowed", true).has("$.reason", "project_role");
     });
@@ -489,7 +449,7 @@ flow(
     await ctx.step("non-matching scope (project B, no grant) → denied no_project_membership", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
         params: { accountId: team.id, userId: member.userId! },
-        query: { action: "project.write", resourceType: "project", resourceId: projectB.id },
+        query: { action: "project.delete", resourceType: "project", resourceId: projectB.id },
       });
       r.status(200)
         .body()
@@ -497,12 +457,12 @@ flow(
         .has("$.reason", "no_project_membership");
     });
 
-    await ctx.step("account-scoped probe (no resourceId) → project.write denied (grant is resource-scoped)", async () => {
+    await ctx.step("account-scoped probe (no resourceId) → project.delete denied (grant is resource-scoped)", async () => {
       // With no resourceType the engine treats target as account; a
       // project.* action then fails project_target_required.
       const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
         params: { accountId: team.id, userId: member.userId! },
-        query: { action: "project.write" },
+        query: { action: "project.delete" },
       });
       r.status(200).body().has("$.allowed", false);
     });

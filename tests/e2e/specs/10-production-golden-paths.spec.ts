@@ -337,9 +337,7 @@ test.describe.serial('10 - SPEC production golden paths', () => {
       201,
     );
     expect(project.repo_url).toContain('github.com');
-    // 'manager' was retired (project-role collapse) — 'editor' is the top
-    // project role a direct grant can carry now.
-    expect(project.effective_project_role).toBe('editor');
+    expect(project.effective_project_role).toBe('manager');
     if (process.env.E2E_REQUIRE_GITHUB_APP === '1') {
       const github = (project.metadata?.github ?? {}) as Record<string, unknown>;
       expect(github.auth_source).toBe('app_installation');

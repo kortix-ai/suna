@@ -125,8 +125,8 @@ test('approveProjectAccessRequest defaults role to "member" and POSTs to /approv
 
 test('approveProjectAccessRequest forwards an explicit role', async () => {
   nextResponse = { status: 200, body: { request: { request_id: 'r1' }, member: { user_id: 'u1' } } };
-  await approveProjectAccessRequest('P1', 'r1', 'editor');
-  expect(last().body).toEqual({ role: 'editor' });
+  await approveProjectAccessRequest('P1', 'r1', 'manager');
+  expect(last().body).toEqual({ role: 'manager' });
 });
 
 test('rejectProjectAccessRequest POSTs an empty body to /reject', async () => {

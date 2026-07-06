@@ -19,7 +19,6 @@ import {
   authorize,
   resourceTypeForAction,
 } from '../../iam';
-import { PROJECT_ROLE_RANK, maxProjectRole, normalizeProjectRole, type ProjectRole } from '../../iam/role-perms';
 import { listGroupsForMember } from '../../repositories/iam';
 import {
   iamRouter,
@@ -187,16 +186,12 @@ iamRouter.openapi(
     await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
   }
 
-  // Canonical role type + helpers (role-perms.ts) — this route used to keep
-  // its own copy (with `manager` as the top tier); reuse the single source of
-  // truth instead so the project-role collapse doesn't have to be re-applied
-  // in N places. `asRole` folds every retired alias (`viewer`, `user`, and
-  // now `manager`) into its current tier at the DB-read boundary; unrecognized
-  // input safely defaults to the floor role rather than throwing.
-  type Role = ProjectRole;
-  const rank = PROJECT_ROLE_RANK;
-  const max = maxProjectRole;
-  const asRole = (raw: string): Role => normalizeProjectRole(raw) ?? 'member';
+  type Role = 'manager' | 'editor' | 'member';
+  const rank: Record<Role, number> = { member: 1, editor: 2, manager: 3 };
+  const max = (a: Role, b: Role): Role => (rank[a] >= rank[b] ? a : b);
+  // Fold the retired `viewer` and `user` tiers into `member` at the DB-read boundary.
+  const asRole = (raw: string): Role =>
+    raw === 'viewer' || raw === 'user' ? 'member' : (raw as Role);
 
   // Project info we'll need for every row in the response.
   const allProjects = await db
@@ -209,7 +204,7 @@ iamRouter.openapi(
     .where(eq(projects.accountId, accountId));
   const projectMeta = new Map(allProjects.map((p) => [p.projectId, p] as const));
 
-  // 1) implicit Editor (top project role) via account_role
+  // 1) implicit manager via account_role
   const [membership] = await db
     .select({ accountRole: accountMembers.accountRole })
     .from(accountMembers)
@@ -231,7 +226,7 @@ iamRouter.openapi(
   if (membership.accountRole === 'owner' || membership.accountRole === 'admin') {
     for (const p of allProjects) {
       if (p.status !== 'active') continue;
-      byProject.set(p.projectId, { role: 'editor', sources: ['implicit'] });
+      byProject.set(p.projectId, { role: 'manager', sources: ['implicit'] });
     }
   }
 

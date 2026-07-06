@@ -172,12 +172,12 @@ describe('isInheritedFromGroupOnly', () => {
     ).toBe(true);
   });
 
-  test('false: implicit Editor (top project role) overrides — not "group-only" access', () => {
+  test('false: implicit Manager overrides — not "group-only" access', () => {
     expect(
       isInheritedFromGroupOnly({
         has_implicit_access: true,
         project_role: null,
-        effective_project_role: 'editor',
+        effective_project_role: 'manager',
         group_sources: [{ group_name: 'Users', role: 'member' }],
       }),
     ).toBe(false);
@@ -247,14 +247,14 @@ describe('inheritedFromGroupSummary', () => {
       inheritedFromGroupSummary({
         has_implicit_access: false,
         project_role: null,
-        effective_project_role: 'editor',
+        effective_project_role: 'manager',
         group_sources: [
-          { group_name: 'A', role: 'editor' },
+          { group_name: 'A', role: 'manager' },
           { group_name: 'B', role: 'editor' },
           { group_name: 'C', role: 'member' },
         ],
       }),
-    ).toBe('Inherited Editor via A + 2 more');
+    ).toBe('Inherited Manager via A + 2 more');
   });
 
   test('null when the row is not group-inherited', () => {
@@ -262,7 +262,7 @@ describe('inheritedFromGroupSummary', () => {
       inheritedFromGroupSummary({
         has_implicit_access: true,
         project_role: null,
-        effective_project_role: 'editor',
+        effective_project_role: 'manager',
         group_sources: [],
       }),
     ).toBeNull();

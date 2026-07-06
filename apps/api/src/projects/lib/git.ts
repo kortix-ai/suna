@@ -787,12 +787,7 @@ export async function registerGitHubLinkedProject(input: {
     accountId: input.accountId,
     projectId: row.projectId,
     userId: input.userId,
-    // 'manager' was retired (project-role collapse) — 'editor' is the top
-    // project role a direct grant can carry now. Registering this project
-    // already required ACCOUNT_ACTIONS.PROJECT_CREATE (owner/admin), so the
-    // creator's REAL authority over delete/members.manage/gateway.keys.manage
-    // comes from their account role, not this project_members row.
-    role: 'editor',
+    role: 'manager',
     grantedBy: input.userId,
   });
 
@@ -928,12 +923,7 @@ export async function registerPatLinkedProject(input: {
     accountId: input.accountId,
     projectId: row.projectId,
     userId: input.userId,
-    // 'manager' was retired (project-role collapse) — 'editor' is the top
-    // project role a direct grant can carry now. Registering this project
-    // already required ACCOUNT_ACTIONS.PROJECT_CREATE (owner/admin), so the
-    // creator's REAL authority over delete/members.manage/gateway.keys.manage
-    // comes from their account role, not this project_members row.
-    role: 'editor',
+    role: 'manager',
     grantedBy: input.userId,
   });
 

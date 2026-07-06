@@ -4,7 +4,7 @@
  * on top of the project-role verdict:
  *   - an UNSCOPED agent (no grants) stays project-wide (no lockout)
  *   - a SCOPED agent (>=1 grant) is usable ONLY by granted principals
- *   - account owner/admin bypass scoping (implicit Editor (top project role))
+ *   - account owner/admin bypass scoping (implicit Manager)
  *   - adding a grant takes effect immediately (upsert busts the resource memo)
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
@@ -83,7 +83,7 @@ describe('per-resource scoping (iam_resource_grants)', () => {
     expect(await canUse(carol, SCOPED_AGENT)).toBe(true); // upsert busted the resource memo
   });
 
-  test('account owner bypasses per-resource scoping (implicit Editor (top project role))', async () => {
+  test('account owner bypasses per-resource scoping (implicit Manager)', async () => {
     const owner = await seedMember('owner');
     // No project grant, no resource grant — still allowed on the scoped agent.
     expect(await canUse(owner, SCOPED_AGENT)).toBe(true);

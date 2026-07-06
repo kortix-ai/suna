@@ -1,9 +1,7 @@
 // Shared helpers + cross-cutting types used by multiple projects-client modules.
 
 export type AccountRole = 'owner' | 'admin' | 'member';
-/** `manager` (the former top project role) was retired by the project-role
- *  collapse — `editor` is now the top project role. */
-export type ProjectRole = 'editor' | 'member';
+export type ProjectRole = 'manager' | 'editor' | 'member';
 
 export type ConnectorSharing =
   | { mode: 'project' }

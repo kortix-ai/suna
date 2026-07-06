@@ -115,12 +115,9 @@ describe('kortix enums', () => {
     expect(sessionLifecycleCommandStatusEnum.enumValues).toContain('dead_lettered');
   });
 
-  test('project_role enum carries editor, member, and the deprecated manager/viewer', () => {
-    // `manager` (former top project role) and `viewer` are both retired
-    // (folded into `editor`/`member` respectively) but remain in the enum
-    // because Postgres can't drop an enum member — nothing reads or writes
-    // either, and a CHECK constraint on project_members/project_group_grants
-    // bars new `manager` writes at the DB layer too.
+  test('project_role enum carries manager, editor, member, and the deprecated viewer', () => {
+    // `viewer` is retired (folded into `member`) but remains in the enum because
+    // Postgres can't drop an enum member — nothing reads or writes it.
     expect(projectRoleEnum.enumValues).toEqual(['manager', 'editor', 'member', 'viewer']);
   });
 

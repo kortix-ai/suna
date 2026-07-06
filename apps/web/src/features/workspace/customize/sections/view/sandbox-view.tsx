@@ -494,10 +494,7 @@ export function SandboxView({ projectId }: { projectId: string }) {
     staleTime: 20_000,
   });
   const { version: manifestVersion } = useProjectManifestVersion(projectId);
-  // Editor is the top project role now that `manager` was retired; sandbox
-  // rebuild/snapshot management is editor-tier (project.customize.write), not
-  // one of the three actions that moved to account owner/admin authority.
-  const canManage = projectQuery.data?.effective_project_role === 'editor';
+  const canManage = projectQuery.data?.effective_project_role === 'manager';
 
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const snapshotsQuery = useQuery({

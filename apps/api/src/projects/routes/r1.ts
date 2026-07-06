@@ -5,7 +5,6 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager, type ProjectRole } from '../access';
-import { normalizeProjectRole } from '../../iam/role-perms';
 import { getBackend, hasBackend, type GitScope } from '../git-backends';
 import { seedRepoViaGitPush } from '../git-backends/seed';
 import { createRepo, getGitHubAppInstallation, listInstallationRepositories, verifyGitHubAppInstallStatePayload } from '../github';
@@ -166,9 +165,9 @@ projectsApp.openapi(
 
   // Ask the IAM engine which projects the caller can READ. V2 returns
   // one of: { mode: 'all' } | { mode: 'none' } | { mode: 'allow_only' }.
-  // 'all' = account admin/owner (implicit Editor, the top project role, on
-  // every project); 'allow_only' = enumerated project IDs from direct
-  // project_members + group grants; 'none' = no access.
+  // 'all' = account admin/owner (manager on every project); 'allow_only'
+  // = enumerated project IDs from direct project_members + group grants;
+  // 'none' = no access.
   const accessible = await listAccessibleResources(
     scope.userId,
     scope.accountId,
@@ -184,10 +183,7 @@ projectsApp.openapi(
   // the UI to label effective_role. We still consult project_members
   // because the IAM engine bridges it into authorize() but doesn't
   // hand the per-row role back here — and the UI wants the original
-  // editor/member label, not just "allowed". Normalize at the DB-read
-  // boundary: a legacy `manager`/`viewer`/`user` row folds into its
-  // current tier (see normalizeProjectRole) rather than surfacing a
-  // retired role name.
+  // manager/editor/viewer label, not just "allowed".
   const grants = await db
     .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
     .from(projectMembers)
@@ -196,10 +192,7 @@ projectsApp.openapi(
       eq(projectMembers.userId, scope.userId),
     ));
   const roleByProject = new Map(
-    grants.flatMap((g) => {
-      const role = normalizeProjectRole(g.projectRole);
-      return role ? [[g.projectId, role] as const] : [];
-    }),
+    grants.map((g) => [g.projectId, g.projectRole as ProjectRole]),
   );
 
   const baseWhere = and(
@@ -221,10 +214,7 @@ projectsApp.openapi(
   }
 
   // Heuristic for effective_role label (UI only, NOT auth):
-  //   - account owner/admin → 'editor' (the top project role; their REAL
-  //     authority over project.delete / members.manage / gateway.keys.manage
-  //     comes from their ACCOUNT role directly, not this label — see
-  //     role-perms.ts's ACCOUNT_ONLY_PROJECT_ACTIONS)
+  //   - account-manager → 'manager' (legacy owner/admin gets full label)
   //   - explicit project_members row → that role
   //   - otherwise → 'member' (engine allowed read but we don't know the
   //     exact role; safe minimum for UI affordances)
@@ -233,7 +223,7 @@ projectsApp.openapi(
     rows.map((row) => {
       const projectRole = roleByProject.get(row.projectId) ?? null;
       const effectiveRole = accountManager
-        ? 'editor'
+        ? 'manager'
         : projectRole ?? 'member';
       return serializeProject(row, { projectRole, effectiveRole });
     }),
@@ -321,7 +311,7 @@ projectsApp.openapi(
     { accountId: scope.accountId, source: 'project-create' },
   );
 
-  return c.json(serializeProject(row, { projectRole: 'editor', effectiveRole: 'editor' }), 201);
+  return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
 },
 );
 
@@ -465,12 +455,7 @@ projectsApp.openapi(
     accountId: scope.accountId,
     projectId: row.projectId,
     userId: scope.userId,
-    // 'manager' was retired (project-role collapse) — 'editor' is now the top
-    // project role a direct grant can carry. The creator's REAL authority
-    // over project.delete / members.manage / gateway.keys.manage comes from
-    // being account owner/admin (required to reach this route at all via
-    // ACCOUNT_ACTIONS.PROJECT_CREATE), not from this project_members row.
-    role: 'editor',
+    role: 'manager',
     grantedBy: scope.userId,
   });
   await upsertProjectGitConnection({
@@ -565,7 +550,7 @@ projectsApp.openapi(
 
   return c.json(
     {
-      ...serializeProject(row, { projectRole: 'editor', effectiveRole: 'editor' }),
+      ...serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
       push_token: pushToken,
       repo_id: provisioned.externalRepoId,
       seeded,

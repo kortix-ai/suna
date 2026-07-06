@@ -13,9 +13,7 @@ const apiStatus = createApiStatusClient(apiBase);
 const authOptions = { supabaseUrl, password };
 
 type AccountRole = 'owner' | 'admin' | 'member';
-// 'manager' was retired (project-role collapse) — 'editor' is the top
-// project role now.
-type ProjectRole = 'editor' | 'user';
+type ProjectRole = 'manager' | 'editor' | 'user';
 
 interface AccountSummary {
   account_id: string;
@@ -206,10 +204,8 @@ test.describe('08 — Accounts, invites, and project access', () => {
       `https://github.com/kortix-ai/e2e-${runId}.git`,
     );
     expect(project.name).toBe(initialProjectName);
-    // 'manager' was retired (project-role collapse) — 'editor' is the top
-    // project role a direct grant can carry now.
-    expect(project.project_role).toBe('editor');
-    expect(project.effective_project_role).toBe('editor');
+    expect(project.project_role).toBe('manager');
+    expect(project.effective_project_role).toBe('manager');
     const projectRepoWebUrl = toGitHubWebUrl(project.repo_url);
 
     const ownerProjects = await api<ProjectSummary[]>(
@@ -287,7 +283,7 @@ test.describe('08 — Accounts, invites, and project access', () => {
       `/projects/${project.project_id}`,
       { name: `${initialProjectName} Admin` },
     );
-    expect(adminUpdate.effective_project_role).toBe('editor');
+    expect(adminUpdate.effective_project_role).toBe('manager');
     expect(adminUpdate.name).toBe(`${initialProjectName} Admin`);
 
     await api<{ account_role: AccountRole }>(

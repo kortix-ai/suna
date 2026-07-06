@@ -18,33 +18,20 @@ export function isAccountManager(role: AccountRole): boolean {
   return role === 'owner' || role === 'admin';
 }
 
-/**
- * Coarse action gate. NOTE: after the project-role collapse (manager
- * retired, editor is the only top project role), 'write' and 'manage' are
- * the SAME check — both require the top project role. This is intentionally
- * coarser than the real V2 leaf-action model: it does NOT grant
- * project.delete / project.members.manage / project.gateway.keys.manage,
- * which moved to ACCOUNT owner/admin authority only (role-perms.ts's
- * ACCOUNT_ONLY_PROJECT_ACTIONS) and are asserted separately via
- * `assertProjectCapability` wherever they matter (see r6.ts's DELETE route
- * and the resource-grants POST route). Callers that need to gate on THAT
- * account-only authority specifically (e.g. an "Archive project" or "Manage
- * members" button) should check `isAccountManager(accountRole)` directly,
- * not this function.
- */
 export function roleAllows(role: ProjectRole | null, action: ProjectAccessAction): boolean {
   if (!role) return false;
   if (action === 'read') return true;
   // Every project role can use sessions — `member` is the base *usable* role.
   if (action === 'session') return true;
-  return role === 'editor';
+  if (action === 'write') return role === 'editor' || role === 'manager';
+  return role === 'manager';
 }
 
 export function effectiveProjectRole(
   accountRole: AccountRole,
   projectRole: ProjectRole | null,
 ): ProjectRole | null {
-  if (isAccountManager(accountRole)) return 'editor';
+  if (isAccountManager(accountRole)) return 'manager';
   return projectRole;
 }
 
@@ -52,7 +39,7 @@ export function effectiveProjectRole(
 //
 // Used by GET /v1/projects/:projectId/access to compute each member's
 // effective access from the three independent sources V2 supports:
-//   - implicit (account owner/admin → Editor, the top project role, on every project)
+//   - implicit (account owner/admin → Manager on every project)
 //   - direct   (explicit project_members row with a project_role)
 //   - group    (project_group_grants attaching a group the user is in)
 //
@@ -86,7 +73,7 @@ export function foldEffectiveProjectAccess(input: {
   let source: AccessSourceTag | null = null;
 
   if (isAccountManager(input.accountRole)) {
-    effective = 'editor';
+    effective = 'manager';
     source = 'implicit';
   }
 

@@ -12,13 +12,10 @@
  *  - Account invites the recipient acts on:
  *    GET/accept/decline /account-invites/:inviteId.
  *
- * Project roles are editor|user (`manager` was retired by the project-role
- * collapse — editor is the top project role now); member-management routes
- * gate on PROJECT_MEMBERS_MANAGE, which moved to ACCOUNT owner/admin
- * authority only — no project role, not even editor, grants it. Source of
- * truth: apps/api/src/projects/index.ts (access + group-grants handlers),
- * apps/api/src/iam/role-perms.ts (ACCOUNT_ONLY_PROJECT_ACTIONS), and
- * apps/api/src/accounts/invites.ts.
+ * Project roles are manager|editor|user; member-management routes gate on
+ * PROJECT_MEMBERS_MANAGE (admin-tier) — a project user/editor without manage
+ * is denied. Source of truth: apps/api/src/projects/index.ts (access +
+ * group-grants handlers) and apps/api/src/accounts/invites.ts.
  */
 import { flow } from "../core/flow";
 
@@ -86,8 +83,7 @@ flow(
       await team.grantProjectRole(p.id, editor.userId!, "editor");
     });
     await ctx.step("project editor cannot manage members → 403", async () => {
-      // PROJECT_MEMBERS_MANAGE is ACCOUNT owner/admin authority only now (not
-      // a project tier at all); editor has write but never manage.
+      // PROJECT_MEMBERS_MANAGE is admin-tier; editor has write but not manage.
       const r = await ctx.client
         .as(editor)
         .put(
@@ -141,7 +137,7 @@ flow(
       r.status(200).body().has("$.ok", true);
     });
     await ctx.step("revoking an account admin's implicit access → 409", async () => {
-      // Owners/admins hold implicit Editor (top project role) on every project — there's no
+      // Owners/admins hold implicit Manager on every project — there's no
       // explicit grant to remove.
       const r = await ctx.client
         .as(ctx.P.OWNER)

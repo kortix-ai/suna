@@ -16,7 +16,7 @@
  *
  * NB: the /apps-config PATCH (the toggle itself) is NOT behind the gate — it's
  * how a project opts in. It lives on the project, not /apps/*, so it's always
- * reachable for a project editor (the top project role) / account owner/admin.
+ * reachable for a manager.
  */
 import { flow } from "../core/flow";
 
@@ -54,7 +54,7 @@ flow(
         .as(ctx.P.NONMEMBER)
         .get("/v1/projects/:projectId/apps", { params: { projectId: p.id } });
       // Gate-off 404, or membership-denied 403 (gate runs first → usually 404,
-      // but an apps-enabled project denies the non-member at 403).
+      // but a manager-enabled project denies the non-member at 403).
       r.status([403, 404]);
     });
     await ctx.step("ANON → 401", async () => {

@@ -9,11 +9,10 @@ import {
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, VALID_ACTIONS } from '../iam/actions';
 
 describe('built-in role presets', () => {
-  test('exposes the built-ins with "user" as the project floor (no viewer) and no "manager" (project-role collapse)', () => {
+  test('exposes the built-ins with "user" as the project floor (no viewer)', () => {
     const keys = BUILTIN_PRESETS.map((p) => p.key).sort();
     // `viewer` was retired — folded into `user`, the read+run floor role.
-    // `manager` was retired — folded into `editor`, now the top project role.
-    expect(keys).toEqual(['admin', 'editor', 'member', 'owner', 'user']);
+    expect(keys).toEqual(['admin', 'editor', 'manager', 'member', 'owner', 'user']);
   });
 
   test('every preset action is a real action (no drift from actions.ts)', () => {
@@ -22,9 +21,8 @@ describe('built-in role presets', () => {
     }
   });
 
-  test('BUILTIN_BY_ID keys on the synthetic builtin: id (no "builtin:manager" — retired)', () => {
-    expect(BUILTIN_BY_ID.get('builtin:editor')?.key).toBe('editor');
-    expect(BUILTIN_BY_ID.has('builtin:manager')).toBe(false);
+  test('BUILTIN_BY_ID keys on the synthetic builtin: id', () => {
+    expect(BUILTIN_BY_ID.get('builtin:manager')?.key).toBe('manager');
     expect(BUILTIN_BY_ID.has('builtin:nope')).toBe(false);
   });
 
@@ -89,11 +87,6 @@ describe('validateActions — privilege-escalation ceiling', () => {
     ACCOUNT_ACTIONS.POLICY_DELETE,
     ACCOUNT_ACTIONS.TOKEN_CREATE,
     ACCOUNT_ACTIONS.TOKEN_REVOKE,
-    // Former manager-only project leaves (project-role collapse) — now
-    // account owner/admin authority ONLY, never delegable via a custom role.
-    PROJECT_ACTIONS.PROJECT_DELETE,
-    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-    PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE,
   ];
 
   test('every non-delegable action is rejected even in an account role', () => {
@@ -125,21 +118,12 @@ describe('validateActions — namespace integrity', () => {
     expect(r.ok).toBe(false);
   });
 
-  test('project.delete / project.members.manage / project.gateway.keys.manage are NEVER delegable — not via a project role (namespace mismatch: they are account-scoped now) nor via an account role (NON_DELEGABLE)', () => {
-    // Project-role collapse: these three moved to account owner/admin
-    // authority only. A "department lead" custom project role can no longer
-    // carry them at all.
-    const projectAttempt = validateActions(
+  test('project.members.manage + gateway.keys.manage stay delegable in a project role (department lead)', () => {
+    const r = validateActions(
       [PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE],
       'project',
     );
-    expect(projectAttempt.ok).toBe(false);
-
-    const accountAttempt = validateActions(
-      [PROJECT_ACTIONS.PROJECT_DELETE, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE],
-      'account',
-    );
-    expect(accountAttempt.ok).toBe(false);
+    expect(r.ok).toBe(true);
   });
 
   test('project.create is account-scoped (lives at account scope) — rejected in a project role', () => {

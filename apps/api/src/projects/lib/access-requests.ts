@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm';
-import { accountMembers, projects } from '@kortix/db';
+import { accountMembers, projectMembers, projects } from '@kortix/db';
 import { sendProjectAccessRequestEmail } from '../../accounts/email';
 import { config } from '../../config';
 import { db } from '../../shared/db';
@@ -22,25 +22,30 @@ export async function notifyProjectAccessRequestManagers(input: {
     .where(eq(projects.projectId, input.projectId))
     .limit(1);
 
-  // Reviewers = account owners/admins only. The former "explicit project
-  // manager" cohort (project_members.project_role === 'manager') was retired
-  // with the project-role collapse — approving an access request is
-  // project.members.manage, which is ACCOUNT owner/admin authority ONLY now
-  // (see role-perms.ts's ACCOUNT_ONLY_PROJECT_ACTIONS), so no project role
-  // (not even editor) grants it.
-  const accountManagers = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(
-      and(
-        eq(accountMembers.accountId, input.accountId),
-        inArray(accountMembers.accountRole, ['owner', 'admin']),
+  const [accountManagers, explicitProjectManagers] = await Promise.all([
+    db
+      .select({ userId: accountMembers.userId })
+      .from(accountMembers)
+      .where(
+        and(
+          eq(accountMembers.accountId, input.accountId),
+          inArray(accountMembers.accountRole, ['owner', 'admin']),
+        ),
       ),
-    );
+    db
+      .select({ userId: projectMembers.userId })
+      .from(projectMembers)
+      .where(
+        and(
+          eq(projectMembers.projectId, input.projectId),
+          eq(projectMembers.projectRole, 'manager'),
+        ),
+      ),
+  ]);
 
-  const reviewerIds = Array.from(new Set(accountManagers.map((row) => row.userId))).filter(
-    (userId) => userId !== input.requesterUserId,
-  );
+  const reviewerIds = Array.from(
+    new Set([...accountManagers, ...explicitProjectManagers].map((row) => row.userId)),
+  ).filter((userId) => userId !== input.requesterUserId);
   if (reviewerIds.length === 0) return;
 
   const emails = await lookupEmailsByUserIds(

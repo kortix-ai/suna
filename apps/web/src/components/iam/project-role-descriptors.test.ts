@@ -13,9 +13,9 @@ import {
 } from './project-role-descriptors';
 
 describe('PROJECT_ROLE_DESCRIPTORS', () => {
-  test('covers every project role (manager was retired — editor is the top role)', () => {
+  test('covers every project role', () => {
     expect(Object.keys(PROJECT_ROLE_DESCRIPTORS).sort()).toEqual(
-      ['editor', 'member'],
+      ['editor', 'manager', 'member'],
     );
   });
 
@@ -55,13 +55,10 @@ describe('PROJECT_ROLE_DESCRIPTORS', () => {
     expect(PROJECT_ROLE_DESCRIPTORS.member.blurb.toLowerCase()).toMatch(/session|chat|use/);
   });
 
-  test('editor summary clarifies member/gateway-key/delete management is account owner/admin authority, not this role', () => {
-    // The project-role collapse moved the three former manager-only leaves
-    // (project.delete, project.members.manage, project.gateway.keys.manage) to
-    // ACCOUNT owner/admin authority — editor (the new top project role) must
-    // not imply it grants them.
-    const text = PROJECT_ROLE_DESCRIPTORS.editor.summary.toLowerCase();
-    expect(text).toMatch(/account owner|admin/);
+  test('manager blurb communicates member management', () => {
+    // The thing that distinguishes Manager from Editor in real use.
+    const text = PROJECT_ROLE_DESCRIPTORS.manager.blurb.toLowerCase();
+    expect(text).toMatch(/invite|member|settings/);
   });
 
   test('editor blurb references the member role (additive framing)', () => {
@@ -80,8 +77,8 @@ describe('PROJECT_ROLE_DESCRIPTORS', () => {
 });
 
 describe('PROJECT_ROLES_ASCENDING', () => {
-  test('matches role hierarchy member → editor (manager was retired)', () => {
-    expect(PROJECT_ROLES_ASCENDING).toEqual(['member', 'editor']);
+  test('matches role hierarchy member → editor → manager', () => {
+    expect(PROJECT_ROLES_ASCENDING).toEqual(['member', 'editor', 'manager']);
   });
 });
 

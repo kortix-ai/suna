@@ -8,7 +8,6 @@ import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 
 import { useDebounce } from '@/hooks/use-debounce';
-import { useProjectCan } from '@/lib/use-project-can';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -67,17 +66,7 @@ export function SettingsView({ projectId }: { projectId: string }) {
   });
 
   const project = projectQuery.data;
-  // Editor is the top project role now that `manager` was retired — this
-  // gate keeps its prior meaning (repository/triggers/experimental/general
-  // settings editing) unchanged.
-  const canManage = project?.effective_project_role === 'editor';
-  // Archiving = project.delete, which the project-role collapse moved to
-  // ACCOUNT owner/admin authority only — not even a project editor gets it
-  // anymore. Probe the live capability instead of bundling it with canManage,
-  // so the Danger Zone isn't shown to someone who'd just get 403'd.
-  const canArchive = useProjectCan(projectId, 'project.delete', {
-    accountId: project?.account_id,
-  }).allowed;
+  const canManage = project?.effective_project_role === 'manager';
 
   const archiveMutation = useMutation({
     mutationFn: () => archiveProject(projectId),
@@ -125,7 +114,7 @@ export function SettingsView({ projectId }: { projectId: string }) {
             </section>
           )}
           <ExperimentalCard project={project} canManage={!!canManage} />
-          {canArchive && (
+          {canManage && (
             <section className="space-y-4">
               <Label>
                 {tHardcodedUi.raw(
