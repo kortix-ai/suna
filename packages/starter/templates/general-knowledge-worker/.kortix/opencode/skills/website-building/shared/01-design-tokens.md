@@ -126,7 +126,7 @@ Maintain both light and dark modes. Ensure WCAG AA contrast (4.5:1 body text, 3:
 This palette is ONLY for sites that are explicitly Kortix-branded. For everything else, run the palette generator.
 
 ```css
-/* NEXUS DESIGN SYSTEM — warm beige surfaces, teal primary accent */
+/* KORTIX DESIGN SYSTEM — warm beige surfaces, teal primary accent */
 
 :root, [data-theme="light"] {
   /* Surfaces (Kortix Beige) */

@@ -1,6 +1,7 @@
 ---
 name: call-prep
 description: "Get fully prepared for any sales call in minutes. This skill works with whatever context you provide, and gets significantly better when you connect your sales tools."
+defaultProjectInstall: true
 ---
 
 # Call Prep

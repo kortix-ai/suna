@@ -84,6 +84,22 @@ export function getProxyServices(): Record<string, ProxyServiceConfig> {
       billingToolName: 'proxy_serper',
     },
 
+    // People search (Apify — LinkedIn profile search actor). Powers the sandbox
+    // `people_search` tool: default-included, billed to the account via Kortix's
+    // APIFY_TOKEN; users can also bring their own APIFY_TOKEN (passthrough).
+    // Locked to the one pinned actor's run endpoint so the shared key can't run
+    // arbitrary (billable) Apify actors.
+    apify: {
+      name: 'apify',
+      targetBaseUrl: config.APIFY_API_URL,
+      getKortixApiKey: () => config.APIFY_TOKEN,
+      keyInjection: { type: 'header', headerName: 'Authorization', prefix: 'Bearer ' },
+      allowedRoutes: [
+        { path: '/v2/acts/harvestapi~linkedin-profile-search/run-sync-get-dataset-items', methods: ['POST'] },
+      ],
+      billingToolName: 'proxy_apify',
+    },
+
     firecrawl: {
       name: 'firecrawl',
       targetBaseUrl: config.FIRECRAWL_API_URL,

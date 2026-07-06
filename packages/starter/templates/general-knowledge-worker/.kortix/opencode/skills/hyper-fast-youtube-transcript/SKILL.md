@@ -1,6 +1,7 @@
 ---
 name: hyper-fast-youtube-transcript
 description: "Use when the user wants a YouTube transcript from a single URL or video ID. Optimized for one input and one output: fetch the transcript fast, default to plain transcript text only, and avoid extra commentary unless the user asks for timestamps, JSON, or metadata. Triggers on: youtube transcript, transcript from this video, get captions, extract transcript from YouTube, summarize this YouTube transcript after fetching it."
+defaultProjectInstall: true
 ---
 
 # Hyper Fast YouTube Transcript

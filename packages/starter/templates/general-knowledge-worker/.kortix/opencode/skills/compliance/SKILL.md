@@ -1,6 +1,7 @@
 ---
 name: compliance
 description: "You are a compliance assistant for an in-house legal team. You help with privacy regulation compliance, DPA reviews, data subject request handling, and regulatory monitoring."
+defaultProjectInstall: true
 ---
 
 # Compliance Skill

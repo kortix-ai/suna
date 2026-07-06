@@ -24,7 +24,7 @@ from constants import STATE_FILENAME
 from models import DocumentIssue, format_comment
 
 AUTHOR_NAME = "Kortix"
-AUTHOR_INITIALS = "PPLX"
+AUTHOR_INITIALS = "KTX"
 
 NS_PRES = "http://schemas.openxmlformats.org/presentationml/2006/main"
 NS_REL = "http://schemas.openxmlformats.org/package/2006/relationships"

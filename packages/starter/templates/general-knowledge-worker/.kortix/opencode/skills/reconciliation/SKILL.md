@@ -1,6 +1,7 @@
 ---
 name: reconciliation
 description: "Methodology and best practices for account reconciliation, including GL-to-subledger, bank reconciliations, and intercompany. Covers reconciling item categorization, aging analy..."
+defaultProjectInstall: true
 ---
 
 # Reconciliation

@@ -25,6 +25,19 @@ Under the hood, .docx is a ZIP container holding XML parts. Creation, reading, a
 
 All tools referenced above (`pandoc`, `soffice`, `pdftoppm`, `docx` npm module, `pdf2docx`) are pre-installed in the sandbox.
 
+## Editing professional documents
+
+Finance, legal, and other corporate documents carry conventions that are easy to break without noticing. Honor these whenever you create or edit one — violating them is what makes output read as obviously machine-generated:
+
+- **Format with Word styles, never literal markdown.** Map `#` to a Heading style, `**bold**` to a bold run, `*italic*` to an italic run, and `>` to a block-quote style. Never leave raw `#`, `**`, `>`, or `- ` characters in the document body — literal markdown is the clearest tell that a file was generated. Apply named paragraph styles (Heading 1, Normal) rather than hand-setting fonts, so the document's theme and any brand template stay intact.
+- **Treat tracked changes as a record, not scratch space.** If a document already has tracked changes, keep your own edits tracked, and never accept or reject someone else's redlines — each is attributed to a named reviewer. For contract edits, default to a tracked-changes redline and offer a clean accepted copy only if asked.
+- **Keep fields and links live.** Cross-references, tables of contents, page numbers, dates, and linked Excel/OLE objects (`REF`, `PAGEREF`, `TOC`, `DATE`, `DOCPROPERTY`, `NUMPAGES`, `LINK`) must stay as fields. Re-typing "Section 2.1" or a linked figure as flat text severs every downstream reference. Don't renumber legal clauses (1.1, (a), (i)) without instruction — referenced numbering will desync.
+- **Match the document's number dialect.** Sample existing figures before adding new ones: currency style (`$1.2bn` vs `$1.2B` vs `$1.2MM`), comma separators, decimal precision per column, and negatives in parentheses for finance (`($1,234)`, not `-$1,234`). In legal text, follow the spelled-out-then-numeral convention already in use (`Thirty (30) days`).
+- **Defined terms are load-bearing.** In contracts, `"the Agreement"` and `"the agreement"` mean different things. Scan the definitions section and inline `("Defined Term")` / `"Defined Term" means …` patterns, then preserve their exact capitalization, pluralization, quote style (curly vs straight), and emphasis (bold/underline) in any new text you generate.
+- **Preserve markings and placeholders verbatim.** Keep confidentiality and privilege banners (`PRIVILEGED & CONFIDENTIAL`, `ATTORNEY WORK PRODUCT`) in the page header, and never add new ones unless asked. Leave deliberate blanks and notes (`[•]`, `[TBD]`, `[NTD: …]`, `[XX]`) untouched — on a "finalize" request, flag what's still missing rather than guessing a value.
+- **Don't disturb template scaffolding.** Content controls and custom XML parts databind firm-managed templates. Insert text into a control's range only; never delete the control, rename its tag, or strip XML parts, and don't "tidy" branded tables or theme fonts.
+- **Check metadata before sharing.** Before any export or hand-off, scan for leftover tracked changes, comments, hidden text, and author metadata, and surface them — never claim metadata was scrubbed without actually removing it.
+
 ## PDF to Word
 
 Start by running `pdf2docx` to get a baseline .docx, then correct any artifacts. Never skip the automated conversion and attempt to rebuild manually.

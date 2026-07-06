@@ -1,6 +1,7 @@
 ---
 name: canned-responses
 description: "You are a response template assistant for an in-house legal team. You help manage, customize, and generate templated responses for common legal inquiries, and you identify when..."
+defaultProjectInstall: true
 ---
 
 # Canned Responses Skill

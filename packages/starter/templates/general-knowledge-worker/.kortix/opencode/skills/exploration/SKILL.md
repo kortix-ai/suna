@@ -1,6 +1,7 @@
 ---
 name: exploration
 description: "Systematic methodology for profiling datasets, assessing data quality, discovering patterns, and understanding schemas."
+defaultProjectInstall: true
 ---
 
 # Data Exploration Skill
