@@ -67,7 +67,7 @@ function step1ScaffoldLines(runtime: RuntimeOption): Line[] {
       t(`~/${STEP1_PROJECT}`, 'faded'),
     ],
     [t('Wrote 9 files:')],
-    [t('  + ', 'faded'), t('kortix.toml')],
+    [t('  + ', 'faded'), t('kortix.yaml')],
     [t('  + ', 'faded'), t('.kortix/opencode/agents/kortix.md')],
     [t('  + ', 'faded'), t('.claude/skills/kortix/SKILL.md')],
     [t('  + ', 'faded'), t('…and 6 more', 'faded')],

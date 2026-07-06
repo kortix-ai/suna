@@ -86,9 +86,9 @@ const MANAGER_ONLY: readonly string[] = [
 ];
 
 /** Actions an editor gets on top of member. Editing the project,
- *  deploying, triggers, and gateway routing are "customization" — that's
- *  what separates an editor from a member. Running sessions is NOT here:
- *  it's part of the member baseline (see below). */
+ *  deploying, and triggers are "customization" — that's what separates an
+ *  editor from a member. Running sessions is NOT here: it's part of the
+ *  member baseline (see below). */
 const EDITOR_EXTRAS: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_WRITE,
   PROJECT_ACTIONS.PROJECT_DEPLOY,
@@ -98,7 +98,6 @@ const EDITOR_EXTRAS: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
   PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
 
-  PROJECT_ACTIONS.PROJECT_GATEWAY_ROUTING_EDIT,
   PROJECT_ACTIONS.PROJECT_GATEWAY_BUDGET_SET,
 
   // Per-capability write leaves (IAM v1). Editor keeps every capability it has
@@ -107,8 +106,6 @@ const EDITOR_EXTRAS: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
   PROJECT_ACTIONS.PROJECT_SKILL_WRITE,
   PROJECT_ACTIONS.PROJECT_COMMAND_WRITE,
-  PROJECT_ACTIONS.PROJECT_SCHEDULE_WRITE,
-  PROJECT_ACTIONS.PROJECT_WEBHOOK_WRITE,
   PROJECT_ACTIONS.PROJECT_FILE_WRITE,
   PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
   PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
@@ -126,9 +123,9 @@ const EDITOR_EXTRAS: readonly string[] = [
  *  the agent and the chat. A role that can't open a session is useless, and
  *  this is the role new members get by default, so it has to be able to drive
  *  Kortix. What it CANNOT do is customize the project: edit settings, deploy,
- *  manage members, create/delete triggers, or change gateway routing — those
- *  live in EDITOR_EXTRAS / MANAGER_ONLY above. Named PROJECT_MEMBER_* to avoid
- *  colliding with the account-role MEMBER_BASELINE above. */
+ *  manage members, or create/delete triggers — those live in EDITOR_EXTRAS /
+ *  MANAGER_ONLY above. Named PROJECT_MEMBER_* to avoid colliding with the
+ *  account-role MEMBER_BASELINE above. */
 const PROJECT_MEMBER_BASELINE: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_READ,
   PROJECT_ACTIONS.PROJECT_SESSION_READ,
@@ -136,7 +133,6 @@ const PROJECT_MEMBER_BASELINE: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
 
   PROJECT_ACTIONS.PROJECT_SESSION_START,
-  PROJECT_ACTIONS.PROJECT_SESSION_EXEC,
   PROJECT_ACTIONS.PROJECT_SESSION_STOP,
 
   PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ,
@@ -147,8 +143,6 @@ const PROJECT_MEMBER_BASELINE: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_AGENT_READ,
   PROJECT_ACTIONS.PROJECT_SKILL_READ,
   PROJECT_ACTIONS.PROJECT_COMMAND_READ,
-  PROJECT_ACTIONS.PROJECT_SCHEDULE_READ,
-  PROJECT_ACTIONS.PROJECT_WEBHOOK_READ,
   PROJECT_ACTIONS.PROJECT_FILE_READ,
   PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
   PROJECT_ACTIONS.PROJECT_GITOPS_READ,

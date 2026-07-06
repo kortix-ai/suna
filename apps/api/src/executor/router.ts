@@ -8,7 +8,9 @@
  *   Admin (dashboard-facing, user auth + project access):
  *     GET  /v1/executor/projects/:projectId/connectors          — list + status
  *     POST /v1/executor/projects/:projectId/connectors/sync     — re-materialize from kortix.toml
- *     PUT  /v1/executor/projects/:projectId/connectors/:slug/sharing — set who-can-use
+ *
+ * Connectors are project-wide visible — the only access gate is the agent-side
+ * `[[agents]].connectors` grant (iam/agent-scope.ts), enforced below.
  *
  * Built against an injected `ExecutorRouterDeps` so the e2e drives the real HTTP
  * layer + real gateway logic with in-memory fakes (db + upstream) at the
@@ -20,15 +22,14 @@ import type { Context } from 'hono';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { type GatewayDeps, handleCall } from './gateway';
-import { type SharingIntent, parseSharingIntent } from './share';
 
 // ── Response schemas ─────────────────────────────────────────────────────────
 // Connector catalog/admin shapes are permissive (opaque tool metadata); the
 // /call result `data` and the pipedream/policy payloads are modeled loosely
 // because they pass through opaque upstream content.
 
-// Connector catalog/admin entries carry opaque tool metadata (inputSchema, risk,
-// sharing) — documented by example but modeled with `z.any()` so the strict
+// Connector catalog/admin entries carry opaque tool metadata (inputSchema, risk)
+// — documented by example but modeled with `z.any()` so the strict
 // zod-openapi handler-return check accepts the real interface-typed payloads
 // without rejecting any currently-valid shape.
 const CatalogActionSchema = z
@@ -86,7 +87,7 @@ export interface ExecutorPrincipal {
   accountId: string;
   projectId: string;
   sessionId: string | null;
-  /** The acting identity resolved to its group memberships (for sharing checks). */
+  /** The acting identity resolved to its group memberships. */
   subject: { userId: string; groupIds: string[] };
   /** Per-agent grant from the session token — restricts which connector
    *  profiles this agent may call. Null = no restriction (non-agent token). */
@@ -112,16 +113,12 @@ export interface CatalogConnector {
 
 export interface AdminConnectorView extends CatalogConnector {
   authSecret: string | null;
-  /** Credential storage mode — shared project credential vs each member's own. */
-  credentialMode: 'shared' | 'per_user';
+  /** Credential storage mode. Always `shared` — `per_user` (each member's
+   *  own) was removed 2026-07-05. */
+  credentialMode: 'shared';
   /** Marked sensitive — its reads gate too (require_approval by default). */
   sensitive: boolean;
-  /** Which agents may call it. null / [] = all agents; a list = restricted to
-   *  those agent names. The connector-side agent gate (mirror of secret scope). */
-  agentScope: string[] | null;
-  /** Current access (who can use), for the dashboard picker. */
-  sharing: SharingIntent | null;
-  /** Whether the viewing user's credential is set (shared row, or their own for per_user). */
+  /** Whether the shared credential is set. */
   secretSet: boolean;
 }
 
@@ -157,7 +154,7 @@ export interface ExecutorRouterDeps {
   resolveProjectPrincipal(c: Context, projectId: string): Promise<ExecutorPrincipal | null>;
   /** Build the DB-backed (or fake) gateway deps for a principal. */
   makeGatewayDeps(p: ExecutorPrincipal): GatewayDeps;
-  /** The catalog the principal can actually use (sharing-filtered, blocked hidden). */
+  /** The catalog the principal can actually use (agent-grant filtered, blocked hidden). */
   listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]>;
   /** Admin auth: resolve user + verify project access, or null for 401/403. */
   resolveAdmin(
@@ -166,8 +163,6 @@ export interface ExecutorRouterDeps {
   ): Promise<{ accountId: string; userId: string } | null>;
   listConnectors(projectId: string, viewerUserId: string): Promise<AdminConnectorView[]>;
   syncConnectors(projectId: string, accountId: string): Promise<SyncResult>;
-  /** Set sharing for a connector's bound secret. Returns false if the connector/secret is unknown. */
-  setSharing(projectId: string, slug: string, intent: SharingIntent): Promise<boolean>;
   /** Create/update a connector in kortix.toml + materialize. */
   createConnector?(
     projectId: string,
@@ -178,13 +173,17 @@ export interface ExecutorRouterDeps {
   deleteConnector?(projectId: string, slug: string): Promise<CrudOutcome>;
   /** Set a connector's credential value (stored scope='connector', never injected). */
   setConnectorCredential?(projectId: string, slug: string, value: string): Promise<CrudOutcome>;
+  /** `userId` is accepted for back-compat but unused — a connector has exactly
+   *  one (shared) credential since `per_user` was removed 2026-07-05. */
   deleteConnectorCredential?(projectId: string, slug: string, userId: string): Promise<CrudOutcome>;
-  /** Change a connector's credential mode (shared ↔ per_user) in kortix.toml + re-sync. */
+  /** `shared` is the only credential mode (`per_user` removed 2026-07-05). This
+   *  route is kept as a restricted no-op for back-compat callers — the router
+   *  rejects any `mode` other than `shared` before calling this. */
   setCredentialMode?(
     projectId: string,
     accountId: string,
     slug: string,
-    mode: 'shared' | 'per_user',
+    mode: 'shared',
   ): Promise<CrudOutcome>;
   /** Toggle a connector's `sensitive` flag (gate reads too) in kortix.toml + re-sync. */
   setSensitive?(
@@ -192,15 +191,6 @@ export interface ExecutorRouterDeps {
     accountId: string,
     slug: string,
     sensitive: boolean,
-  ): Promise<CrudOutcome>;
-  /** Set which AGENTS may call a connector (connector-side agent gate). null/[] =
-   *  all agents. Writes kortix.toml [[connectors]].agent_scope for declared
-   *  connectors (+ re-sync), or the column directly for synthetic ones. */
-  setAgentScope?(
-    projectId: string,
-    accountId: string,
-    slug: string,
-    agentScope: string[] | null,
   ): Promise<CrudOutcome>;
   /** Rename a connector (display label) in kortix.toml + re-sync. */
   setConnectorName?(
@@ -222,7 +212,7 @@ export interface ExecutorRouterDeps {
     slug: string;
     provider: string;
     platform?: string | null;
-    credentialMode: 'shared' | 'per_user';
+    credentialMode: 'shared';
     app: string | null;
     account: string | null;
     url: string | null;
@@ -244,14 +234,17 @@ export interface ExecutorRouterDeps {
     slug: string,
     policies: Array<{ match: string; action: string }>,
   ): Promise<CrudOutcome>;
-  /** Pipedream 1-click: mint a connect token (for the frontend SDK overlay) + link. null = not pipedream. */
+  /** Pipedream 1-click: mint a connect token (for the frontend SDK overlay) + link.
+   *  null = not pipedream. `userId` is accepted for back-compat but unused —
+   *  the connection is always the shared project account (`per_user` removed
+   *  2026-07-05). */
   pipedreamConnect?(
     projectId: string,
     slug: string,
     userId: string,
     redirects?: { success?: string; error?: string },
   ): Promise<{ token?: string; app?: string; connectUrl?: string } | null>;
-  /** Pipedream 1-click: after the user finishes, persist the account binding (their own for per_user). */
+  /** Pipedream 1-click: after the user finishes, persist the shared account binding. */
   pipedreamFinalize?(
     projectId: string,
     slug: string,
@@ -368,7 +361,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       summary: 'List the connectors the executor principal can use',
       ...auth,
       responses: {
-        200: json(ConnectorsResponseSchema, 'Sharing-filtered connector catalog'),
+        200: json(ConnectorsResponseSchema, 'Connector catalog for this principal'),
         ...errors(401),
       },
     }),
@@ -442,7 +435,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       ...auth,
       request: { params: ProjectParam },
       responses: {
-        200: json(ConnectorsResponseSchema, 'Sharing-filtered connector catalog'),
+        200: json(ConnectorsResponseSchema, 'Connector catalog for this principal'),
         ...errors(403),
       },
     }),
@@ -544,12 +537,6 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         body = await c.req.json();
       } catch {
         return c.json({ error: 'invalid_json' }, 400);
-      }
-      if (body?.sharing !== undefined) {
-        const intent = parseSharingIntent(body.sharing, admin.userId);
-        if (!intent)
-          return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
-        body.sharing = intent;
       }
       const result = await deps.createConnector(projectId, admin.accountId, body);
       return result.ok
@@ -731,54 +718,16 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     },
   );
 
-  // ── Admin: set sharing for a connector's credential ──────────────────────
-  app.openapi(
-    createRoute({
-      method: 'put',
-      path: '/projects/{projectId}/connectors/{slug}/sharing',
-      tags: ['executor'],
-      summary: "Set who can use a connector's bound credential",
-      ...auth,
-      request: {
-        params: ProjectSlugParam,
-        body: { content: { 'application/json': { schema: OpaqueSchema } } },
-      },
-      responses: {
-        200: json(OkSchema, 'Sharing updated'),
-        ...errors(400, 403, 404),
-      },
-    }),
-    // Manual parse kept: original validates the sharing intent via
-    // parseSharingIntent (custom message) and returns `invalid_json`.
-    async (c: any) => {
-      const projectId = c.req.param('projectId');
-      const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-
-      let body: any;
-      try {
-        body = await c.req.json();
-      } catch {
-        return c.json({ error: 'invalid_json' }, 400);
-      }
-      const intent = parseSharingIntent(body, admin.userId);
-      if (!intent)
-        return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
-
-      const ok = await deps.setSharing(projectId, slug, intent);
-      if (!ok) return c.json({ error: 'connector or its credential not found' }, 404);
-      return c.json({ ok: true });
-    },
-  );
-
-  // ── Admin: change a connector's credential mode (shared ↔ per_user) ───────
+  // ── Admin: connector credential mode — restricted to a `shared`-only no-op.
+  // `per_user` (each member brings their own) was removed 2026-07-05
+  // (docs/specs/2026-07-05-agent-first-config-unification.md §2.5). The route
+  // stays for back-compat callers but only ever accepts `shared` now.
   app.openapi(
     createRoute({
       method: 'put',
       path: '/projects/{projectId}/connectors/{slug}/credential-mode',
       tags: ['executor'],
-      summary: "Change a connector's credential mode (shared ↔ per_user)",
+      summary: "Set a connector's credential mode (shared only — per_user was removed)",
       ...auth,
       request: {
         params: ProjectSlugParam,
@@ -802,8 +751,13 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         return c.json({ error: 'invalid_json' }, 400);
       }
       const mode = body?.mode;
-      if (mode !== 'shared' && mode !== 'per_user') {
-        return c.json({ error: 'mode must be "shared" or "per_user"' }, 400);
+      if (mode !== 'shared') {
+        return c.json(
+          { error: mode === 'per_user'
+            ? 'per_user credential mode was removed — connectors are always shared now'
+            : 'mode must be "shared"' },
+          400,
+        );
       }
       const result = await deps.setCredentialMode(projectId, admin.accountId, slug, mode);
       return result.ok
@@ -845,54 +799,6 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         return c.json({ error: 'sensitive must be a boolean' }, 400);
       }
       const result = await deps.setSensitive(projectId, admin.accountId, slug, body.sensitive);
-      return result.ok
-        ? c.json({ ok: true, sync: result.sync })
-        : c.json({ error: result.error }, result.status as 400);
-    },
-  );
-
-  // ── Admin: set which AGENTS may call a connector (connector-side agent gate) ─
-  app.openapi(
-    createRoute({
-      method: 'put',
-      path: '/projects/{projectId}/connectors/{slug}/agent-scope',
-      tags: ['executor'],
-      summary: 'Set which agents may call a connector (null/[] = all agents)',
-      ...auth,
-      request: {
-        params: ProjectSlugParam,
-        body: { content: { 'application/json': { schema: OpaqueSchema } } },
-      },
-      responses: {
-        200: json(CrudOkSchema, 'Agent scope updated'),
-        ...errors(400, 403, 404, 501),
-      },
-    }),
-    async (c: any) => {
-      const projectId = c.req.param('projectId');
-      const slug = c.req.param('slug');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.setAgentScope) return c.json({ error: 'not supported' }, 501);
-      let body: any;
-      try {
-        body = await c.req.json();
-      } catch {
-        return c.json({ error: 'invalid_json' }, 400);
-      }
-      // agent_scope: null | [] = all agents; a list of agent names restricts it.
-      let agentScope: string[] | null;
-      if (body?.agent_scope == null) {
-        agentScope = null;
-      } else if (
-        Array.isArray(body.agent_scope) &&
-        body.agent_scope.every((a: unknown) => typeof a === 'string')
-      ) {
-        agentScope = body.agent_scope as string[];
-      } else {
-        return c.json({ error: 'agent_scope must be null or an array of agent names' }, 400);
-      }
-      const result = await deps.setAgentScope(projectId, admin.accountId, slug, agentScope);
       return result.ok
         ? c.json({ ok: true, sync: result.sync })
         : c.json({ error: result.error }, result.status as 400);

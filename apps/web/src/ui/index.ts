@@ -10,3 +10,4 @@
 
 export * from './types';
 export * from '@kortix/sdk/turns';
+export type { QuestionOption } from '@kortix/sdk/turns';

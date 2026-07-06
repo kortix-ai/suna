@@ -108,7 +108,9 @@ mock.module('../deployments/providers/freestyle', () => ({
   },
 }));
 
+const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
+  ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
     c.set('userId', auth.userId);
@@ -135,6 +137,7 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   readRepoFile: async () => '',
+  readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
@@ -319,7 +322,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
       name: 'My Agent',
       repoUrl: expectedRepoUrl,
       defaultBranch: 'main',
-      manifestPath: 'kortix.toml',
+      manifestPath: 'kortix.yaml',
       status: 'active',
       metadata: {
         git: {

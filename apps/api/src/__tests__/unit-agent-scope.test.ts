@@ -117,6 +117,65 @@ connectors = "all"
   });
 });
 
+// kortix_version 2 — the manifest's own top-level `default_agent` MUST resolve
+// the `default` sentinel to a concrete declared agent's grant (spec §2.1),
+// the opposite of v1's "sentinel is non-binding → null" rule tested above.
+// `loaded.defaultAgent` is what carries this from `extractAgents` — it's
+// always null for a v1 manifest, so the v1 tests above are unaffected.
+describe('grantFromLoadedAgents — v2 `default_agent` sentinel resolution', () => {
+  function loadAgentsV2(agentsBody: string, opts: { defaultAgent?: string } = {}) {
+    const text = [
+      'kortix_version: 2',
+      `default_agent: ${opts.defaultAgent ?? 'support'}`,
+      'project:',
+      '  name: t',
+      'agents:',
+      agentsBody,
+    ].join('\n');
+    return extractAgents(parseManifestString(text, 'yaml', 'kortix.yaml'));
+  }
+
+  test('sentinel resolves to the declared default_agent\'s grant, not null', () => {
+    const loaded = loadAgentsV2(`
+  support:
+    connectors: [github]
+    kortix_cli: [project.cr.open]
+`);
+    expect(grantFromLoadedAgents('default', loaded)).toEqual({
+      agent: 'support',
+      connectors: ['github'],
+      kortixCli: ['project.cr.open'],
+      env: [], // v2 deny-by-default (secrets omitted)
+    });
+  });
+
+  test('a concrete declared v2 agent is found directly (not routed through the sentinel)', () => {
+    const loaded = loadAgentsV2(`
+  support:
+    connectors: [github]
+  billing:
+    secrets: [STRIPE_KEY]
+`);
+    expect(grantFromLoadedAgents('billing', loaded)).toEqual({
+      agent: 'billing',
+      connectors: [],
+      kortixCli: [],
+      env: ['STRIPE_KEY'],
+    });
+  });
+
+  test('default_agent naming a disabled/undeclared agent → sentinel falls through to null (unresolved, not a false grant)', () => {
+    const loaded = loadAgentsV2(
+      `
+  support:
+    enabled: false
+`,
+      { defaultAgent: 'support' },
+    );
+    expect(grantFromLoadedAgents('default', loaded)).toBeNull();
+  });
+});
+
 describe('agentMayUseEnv — per-agent secret gate', () => {
   test('null grant → allowed (no restriction)', () => {
     expect(agentMayUseEnv(null, 'GITHUB_TOKEN')).toBe(true);

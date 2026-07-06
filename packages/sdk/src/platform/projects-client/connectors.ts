@@ -1,7 +1,9 @@
-// Executor connectors — connector CRUD, sharing, credentials, Pipedream.
+// Executor connectors — connector CRUD, credentials, Pipedream. Connectors are
+// project-wide visible; the only access gate is the agent's `connectors`
+// grant (kortix.yaml [[agents]].connectors), not anything configured here.
 
 import { backendApi } from '../api-client';
-import { unwrap, type ConnectorSharing } from './shared';
+import { unwrap } from './shared';
 
 // ─── Executor connectors ──────────────────────────────────────────────────
 
@@ -19,17 +21,15 @@ export interface AdminConnector {
   provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
   platform?: 'slack' | 'email' | null;
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
-  /** Credential storage model — one shared project credential vs each member's own. */
-  credentialMode: 'shared' | 'per_user';
+  /** Credential storage model. Always `shared` — `per_user` (each member's
+   *  own) was removed 2026-07-05 (docs/specs/2026-07-05-agent-first-config-
+   *  unification.md §2.5). A `shared` connector with no credential set
+   *  (`secretSet: false`) needs reconnecting. */
+  credentialMode: 'shared';
   /** Marked sensitive — its reads gate too (require_approval by default). */
   sensitive: boolean;
-  /** Which agents may call it. null / [] = ALL agents (default); a list of agent
-   *  names restricts it to those agents' sessions. The connector-side agent gate
-   *  (mirror of the secret agent_scope). */
-  agentScope: string[] | null;
   actions: ConnectorAction[];
   authSecret: string | null;
-  sharing: ConnectorSharing | null;
   secretSet: boolean;
 }
 
@@ -54,23 +54,12 @@ export async function syncConnectors(projectId: string) {
   );
 }
 
-export async function setConnectorSharing(
-  projectId: string,
-  slug: string,
-  intent: ConnectorSharing,
-) {
-  return unwrap(
-    await backendApi.put<{ ok: boolean }>(
-      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/sharing`,
-      intent,
-    ),
-  );
-}
-
+/** `shared` is the only credential mode (`per_user` removed 2026-07-05) — kept
+ *  for back-compat callers, restricted to a no-op on the API side. */
 export async function setConnectorCredentialMode(
   projectId: string,
   slug: string,
-  mode: 'shared' | 'per_user',
+  mode: 'shared',
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
@@ -87,22 +76,6 @@ export async function setConnectorSensitive(projectId: string, slug: string, sen
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
       `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/sensitive`,
       { sensitive },
-    ),
-  );
-}
-
-/** Set which AGENTS may call a connector (the connector-side agent gate, mirror
- *  of the secret agent_scope). `agentScope = null | []` = all agents; a list of
- *  agent names restricts it. Writes kortix.toml for declared connectors. */
-export async function setConnectorAgentScope(
-  projectId: string,
-  slug: string,
-  agentScope: string[] | null,
-) {
-  return unwrap(
-    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/agent-scope`,
-      { agent_scope: agentScope },
     ),
   );
 }
@@ -135,7 +108,7 @@ export interface ConnectorConfig {
   slug: string;
   provider: AdminConnector['provider'];
   platform: 'slack' | 'email' | null;
-  credentialMode: 'shared' | 'per_user';
+  credentialMode: 'shared';
   app: string | null;
   account: string | null;
   url: string | null;
@@ -184,10 +157,9 @@ export interface ConnectorDraftInput {
   endpoint?: string;
   baseUrl?: string;
   spec?: string;
-  /** Credential storage mode. */
-  credential?: 'shared' | 'per_user';
-  /** Access — who can use it (applied after create). */
-  sharing?: ConnectorSharing;
+  /** Credential storage mode. `shared` is the only mode (`per_user` was
+   *  removed 2026-07-05). */
+  credential?: 'shared';
   auth?: {
     type?: 'none' | 'bearer' | 'basic' | 'custom';
     in?: 'header' | 'query';

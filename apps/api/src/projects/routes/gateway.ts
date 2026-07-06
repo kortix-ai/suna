@@ -8,7 +8,7 @@ import { auth, errors, json } from '../../openapi';
 import { authorize } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { PROJECT_ACTIONS } from '../../iam/actions';
-import { loadProjectForUser, lookupEmailsByUserIds } from '../lib/access';
+import { assertProjectCapability, loadProjectForUser, lookupEmailsByUserIds } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { UUID_V4_REGEX } from '../lib/serializers';
 import { createGatewayKey, listGatewayKeys, revokeGatewayKey } from '../../llm-gateway/gateway-keys';
@@ -106,6 +106,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ);
 
     const limit = Math.min(Math.max(Number(c.req.query('limit')) || LIST_LIMIT_DEFAULT, 1), LIST_LIMIT_MAX);
     const offset = Math.max(Number(c.req.query('offset')) || 0, 0);
@@ -146,6 +147,7 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ);
 
     const [row] = await db
       .select()
@@ -181,6 +183,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
 
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
     const [agg] = await db
@@ -227,6 +230,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
 
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
     const rows = await db
@@ -300,6 +304,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
 
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
 
@@ -413,6 +418,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
 
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
     const rows = await db
@@ -463,6 +469,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
 
     const budgets = await db
       .select()
@@ -646,6 +653,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ);
 
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
     const rows = await db

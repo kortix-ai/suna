@@ -23,6 +23,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { DiffStat, STATUS_TEXT } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { createProjectSession } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { SparklesSolid } from '@mynaui/icons-react';
@@ -73,6 +74,7 @@ interface ManifestIssue {
 function buildManifestFixPrompt(
   cr: { number: number; title: string; head_ref: string; base_ref: string },
   issues: ManifestIssue[],
+  manifestFilename: string,
 ): string {
   const issueLines = issues
     .map((i) => {
@@ -81,7 +83,7 @@ function buildManifestFixPrompt(
     })
     .join('\n');
   return [
-    `Change request #${cr.number} ("${cr.title}") can't merge: its kortix.toml fails manifest validation, so the merge is blocked. Fix the manifest so the change request can merge.`,
+    `Change request #${cr.number} ("${cr.title}") can't merge: its ${manifestFilename} fails manifest validation, so the merge is blocked. Fix the manifest so the change request can merge.`,
     ``,
     `Branch: ${cr.head_ref} → ${cr.base_ref}`,
     ``,
@@ -89,7 +91,7 @@ function buildManifestFixPrompt(
     issueLines || '- (the manifest failed to validate against the canonical schema)',
     ``,
     `Steps:`,
-    `1. Open kortix.toml and review each validation error above.`,
+    `1. Open ${manifestFilename} and review each validation error above.`,
     `2. Fix the root cause of each error so the manifest validates against the schema.`,
     `3. Commit the fix and open a change request. Once it merges, the change ships.`,
   ].join('\n');
@@ -202,6 +204,8 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
 
   const router = useRouter();
   const projectId = useProjectContext()?.projectId ?? '';
+  const { version: manifestVersion } = useProjectManifestVersion(projectId);
+  const manifestFilename = manifestVersion === 2 ? 'kortix.yaml' : 'kortix.toml';
 
   const mergeMutation = useMergeChangeRequest();
   const closeMutation = useCloseChangeRequest();
@@ -257,7 +261,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
     if (!cr || !projectId || manifestIssues === null || fixing) return;
     setFixing(true);
     const sessionId = crypto.randomUUID();
-    const prompt = buildManifestFixPrompt(cr, manifestIssues);
+    const prompt = buildManifestFixPrompt(cr, manifestIssues, manifestFilename);
     router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
     onClose();
     router.push(`/projects/${projectId}/sessions/${sessionId}`);
@@ -441,7 +445,8 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                 </ul>
               ) : (
                 <span>
-                  kortix.toml in this change doesn't pass validation. Start a session to fix it.
+                  {manifestFilename} in this change doesn't pass validation. Start a session to fix
+                  it.
                 </span>
               )}
             </InfoBanner>

@@ -1156,6 +1156,9 @@ importers:
       '@eslint/eslintrc':
         specifier: ^3
         version: 3.3.5
+      '@kortix/manifest-schema':
+        specifier: workspace:*
+        version: link:../../packages/manifest-schema
       '@playwright/test':
         specifier: ^1.57.0
         version: 1.61.1
@@ -1375,6 +1378,9 @@ importers:
       '@types/bun':
         specifier: ^1.1.0
         version: 1.3.14
+      ajv:
+        specifier: 8.18.0
+        version: 8.18.0
       typescript:
         specifier: ^5.0.0
         version: 5.9.3

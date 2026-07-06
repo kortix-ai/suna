@@ -4,10 +4,18 @@ import { backendApi } from '../api-client';
 import { unwrap, type ConnectorSharing, type ProjectGitConnection } from './shared';
 
 /**
- * The per-user view of one secret KEY: the shared/project row merged with the
- * requesting member's own override, plus which one wins for them at runtime.
+ * One project secret: `{ identifier, name (the env var KEY), value }`.
+ * `identifier` is unique per project — the handle an agent's `secrets` grant
+ * references and the UI shows. `name` (the KEY) is NOT unique — multiple
+ * identifiers may share one (e.g. GMAPS-primary / GMAPS-backup, both
+ * GOOGLE_MAPS_API_KEY). Authorization is centralized on the agent grant (by
+ * identifier); every project member with read access sees every secret — there
+ * is no per-secret member/group sharing and no resource-side agent allow-list.
  */
 export interface ProjectSecret {
+  /** Unique per project. The handle an agent's `secrets` grant references. */
+  identifier: string;
+  /** The env var KEY injected into the sandbox. Not unique. */
   name: string;
   project_id: string;
   /** Shared row id; null when only a personal override (or nothing) exists. */
@@ -22,23 +30,10 @@ export interface ProjectSecret {
   managed_by?: string | null;
   /** A shared/project value is set. */
   configured: boolean;
-  /** Persisted share scope — 'project' (everyone) or 'restricted' (allow-list). */
-  share_scope?: 'project' | 'restricted';
-  /** Who can use the shared value. Same shape as connector sharing. */
-  sharing?: ConnectorSharing | null;
-  /** Which agents may use this secret. null / [] = ALL agents (default); a list
-   *  of agent names restricts it to those agents' sessions. The single access
-   *  control the Secrets page exposes now that per-member "only me" is retired. */
-  agent_scope?: string[] | null;
-  /** The shared value reaches me (project-wide, or I'm in the allow-list). */
-  usable_by_me: boolean;
-  /** Provenance for `usable_by_me`: the agent(s) I'm assigned to that declare this
-   *  secret. Non-null ONLY when inheritance is the reason I can use it (the share
-   *  scope wouldn't otherwise reach me) — the "assign human → agent" pyramid. */
-  inherited_from?: string[] | null;
-  /** My own per-key override (value never returned), and whether it's active. */
+  /** My own private override (value never returned), and whether it's active.
+   *  Used today only by the CODEX_AUTH_JSON per-user provider login. */
   mine: { active: boolean; updated_at: string } | null;
-  /** What actually runs in my sessions for this key. */
+  /** What actually runs in my sessions for this identifier. */
   effective_source: 'mine' | 'shared' | 'none';
   /** I'm allowed to edit the shared row (project manager). */
   can_manage_shared: boolean;
@@ -76,20 +71,16 @@ export async function upsertProjectSecret(
   projectId: string,
   input: {
     name: string;
-    /** Omit to change scope only on an existing secret (value left untouched). */
+    /** Unique per project. Defaults to `name` when omitted (the simple case —
+     *  one identifier per key). Set explicitly to create a SECOND secret under
+     *  the same key (e.g. "GMAPS-backup" also GOOGLE_MAPS_API_KEY). */
+    identifier?: string;
+    /** Omit to leave an existing secret's value untouched (e.g. a no-op touch). */
     value?: string;
-    sharing?: ConnectorSharing;
-    /** Which agents may use this secret. null / [] = all agents; a list of agent
-     *  names restricts it. Omit (undefined) to leave the current scope unchanged. */
-    agentScope?: string[] | null;
   },
 ) {
-  const { agentScope, ...rest } = input;
   return unwrap(
-    await backendApi.post<ProjectSecret>(
-      `/projects/${projectId}/secrets`,
-      agentScope !== undefined ? { ...rest, agent_scope: agentScope } : rest,
-    ),
+    await backendApi.post<ProjectSecret>(`/projects/${projectId}/secrets`, input),
   );
 }
 
@@ -159,10 +150,10 @@ export async function upsertProjectGitCredential(
   );
 }
 
-export async function deleteProjectSecret(projectId: string, name: string) {
+export async function deleteProjectSecret(projectId: string, identifier: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(name)}`,
+      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}`,
     ),
   );
 }

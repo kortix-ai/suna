@@ -1887,7 +1887,7 @@ function ResourceAccessCard({
     <SectionCard
       flush
       title="Resource access"
-      description="Assign agents to a member or department. An agent with no assignments stays open to everyone with project access; assigning one restricts it to the people or departments you choose, who inherit the secrets and connectors that agent declares."
+      description="Assign agents to a member or department to control who can USE them. An agent with no assignment is open to everyone with project access; assigning one restricts it to the people or departments you choose — they inherit that agent's declared skills, connectors, and secrets to use in its sessions. This only ever grants USE, never edit: changing the agent, a skill, a connector, or a secret still requires the editor role."
       count={grants.length}
       action={
         canManage && hasResources ? (
@@ -1903,9 +1903,10 @@ function ResourceAccessCard({
                 <DialogTitle>Assign an agent</DialogTitle>
                 <DialogDescription>
                   Assign an agent to a member or department — they inherit everything that agent
-                  uses: its secrets, connectors, and skills. Resources reach people through agents,
-                  not by direct grant; agents you don't assign stay open to everyone with project
-                  access.
+                  uses (its secrets, connectors, and skills) to USE, not edit. Resources reach
+                  people through agents, not by a direct grant; agents you don't assign stay open
+                  to everyone with project access. Editing the agent or any resource it uses still
+                  requires the editor role.
                 </DialogDescription>
               </DialogHeader>
 
@@ -1990,8 +1991,8 @@ function ResourceAccessCard({
       {!grantsQuery.isLoading && grants.length === 0 && (
         <div className="text-muted-foreground px-6 py-5 text-xs">
           {hasResources
-            ? 'Nothing is scoped yet — every member with project access can see and use all agents, skills, and secrets. Grant one above to restrict it to specific people or departments.'
-            : 'This project has no agents, skills, or secrets to scope yet. Add some first, then come back here to limit who can use them.'}
+            ? 'Nothing is scoped yet — every agent is open to everyone with project access to use. Grant one above to restrict who can use it. Skills, connectors, and secrets aren’t assigned directly here — they’re governed by the editor role (to edit) and inherited through the agents you assign (to use).'
+            : 'This project has no agents to scope yet. Add one first, then come back here to limit who can use it.'}
         </div>
       )}
 

@@ -198,6 +198,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@kortix/manifest-schema": "workspace:*",
     "@playwright/test": "^1.57.0",
     "@tailwindcss/postcss": "^4.1.4",
     "@types/diff": "^7.0.2",

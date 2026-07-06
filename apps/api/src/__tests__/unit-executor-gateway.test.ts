@@ -1,8 +1,9 @@
 /**
- * Gateway orchestrator — full decision+execution path with fakes. Access lives on
- * the connector (shareScope + grants); the credential is resolved by mode
- * (shared vs per_user) via resolveCredential. Covers success, not-found, sharing
- * denial, needs-auth, audit, pipedream, and policy enforcement.
+ * Gateway orchestrator — full decision+execution path with fakes. A connector
+ * is project-wide visible (no per-connector member/agent scoping); the
+ * credential is always the one shared project credential (`per_user` was
+ * removed 2026-07-05) via resolveCredential. Covers success, not-found,
+ * needs-auth, audit, pipedream, and policy enforcement.
  */
 import { describe, expect, test } from 'bun:test';
 import {
@@ -24,8 +25,6 @@ const STRIPE: GatewayConnector = {
   baseUrl: 'https://api.stripe.com',
   auth: { type: 'bearer', in: 'header', name: null, prefix: null },
   hasAuth: true,
-  shareScope: 'project',
-  grants: [],
   credentialMode: 'shared',
   enabled: true,
 };
@@ -112,14 +111,6 @@ describe('handleCall — happy path', () => {
     expect(records.at(-1)).toMatchObject({ status: 'ok', risk: 'write', actingUserId: ALICE });
   });
 
-  test("per_user mode resolves the acting user's own credential", async () => {
-    const { deps, credentialCalls } = makeDeps({
-      connector: { ...STRIPE, credentialMode: 'per_user' },
-    });
-    await handleCall(deps, baseInput);
-    expect(credentialCalls[0]).toEqual({ connectorId: 'conn-stripe', userId: ALICE });
-  });
-
   test('no-auth connector runs without a credential', async () => {
     const { deps, fetchCalls } = makeDeps({
       connector: { ...STRIPE, hasAuth: false },
@@ -146,33 +137,6 @@ describe('handleCall — denials', () => {
       status: 'denied',
       reason: 'action_not_found',
     });
-  });
-
-  test('not shared (restricted to another member) → denied, no upstream', async () => {
-    const { deps, fetchCalls } = makeDeps({
-      connector: {
-        ...STRIPE,
-        shareScope: 'restricted',
-        grants: [{ principalType: 'member', principalId: 'someone-else' }],
-      },
-    });
-    expect(await handleCall(deps, baseInput)).toEqual({ status: 'denied', reason: 'not_shared' });
-    expect(fetchCalls).toHaveLength(0);
-  });
-
-  test('shared via group membership', async () => {
-    const { deps } = makeDeps({
-      connector: {
-        ...STRIPE,
-        shareScope: 'restricted',
-        grants: [{ principalType: 'group', principalId: 'g1' }],
-      },
-    });
-    const res = await handleCall(deps, {
-      ...baseInput,
-      subject: { userId: ALICE, groupIds: ['g1'] },
-    });
-    expect(res.status).toBe('ok');
   });
 
   test('credential not set → needs_auth', async () => {
@@ -208,9 +172,7 @@ describe('handleCall — pipedream path', () => {
     baseUrl: null,
     auth: { type: 'none', in: 'header', name: null, prefix: null },
     hasAuth: true,
-    shareScope: 'project',
-    grants: [],
-    credentialMode: 'per_user',
+    credentialMode: 'shared',
     enabled: true,
   };
   const SEND: GatewayAction = {
@@ -221,7 +183,7 @@ describe('handleCall — pipedream path', () => {
     binding: { kind: 'pipedream', app: 'gmail', actionKey: 'gmail-send-email' },
   };
 
-  test('routes to executePipedream with the per-user account binding (not HTTP)', async () => {
+  test('routes to executePipedream with the shared account binding (not HTTP)', async () => {
     const { deps, fetchCalls, credentialCalls } = makeDeps({
       connector: PD,
       action: SEND,
@@ -240,7 +202,7 @@ describe('handleCall — pipedream path', () => {
     });
     expect(res).toEqual({ status: 'ok', data: { sent: true }, risk: 'write' });
     expect(fetchCalls).toHaveLength(0);
-    expect(credentialCalls[0]).toEqual({ connectorId: 'conn-gmail', userId: ALICE }); // per_user
+    expect(credentialCalls[0]).toEqual({ connectorId: 'conn-gmail', userId: null }); // shared
     expect(captured).toMatchObject({
       app: 'gmail',
       actionKey: 'gmail-send-email',

@@ -96,7 +96,7 @@ insert into kortix.project_members (
   '${escapeSql(accountId)}'::uuid,
   '${projectId}'::uuid,
   '${escapeSql(userId)}'::uuid,
-  'manager',
+  'editor',
   '${escapeSql(userId)}'::uuid
 );
 `;

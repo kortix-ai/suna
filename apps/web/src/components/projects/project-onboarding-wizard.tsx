@@ -142,7 +142,6 @@ function useToolConnect(projectId: string, onConnected: () => void) {
           app: slug,
           account: 'default',
           credential: 'shared',
-          sharing: { mode: 'project' },
         });
       } catch {
         // Already added — fine, proceed straight to authorize.

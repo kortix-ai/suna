@@ -451,6 +451,33 @@ provider = "computer"
     expect(result.errorPaths).toContain('connectors[0].provider');
     expect(result.issues.some((i) => i.message.includes('managed automatically'))).toBe(true);
   });
+
+  // The platform now also writes a `meet` channel connector — mirrors
+  // connectors.ts's CHANNEL_PLATFORMS (which already included it) and
+  // RESERVED_SLUG_PROVIDERS (`kortix_meet`). Was previously rejected by the
+  // schema gate even though the runtime accepted it.
+  test('a platform-written "meet" channel connector is valid', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "kortix_meet"
+provider = "channel"
+platform = "meet"
+`);
+    expect(errorPaths).toEqual([]);
+    expect(valid).toBe(true);
+  });
+
+  test('reserved slug "kortix_meet" rejects a mismatched provider', () => {
+    const { errorPaths } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "kortix_meet"
+provider = "http"
+base_url = "https://example.com"
+`);
+    expect(errorPaths).toContain('connectors[0].provider');
+  });
 });
 
 describe('validateManifest — [[apps]]', () => {

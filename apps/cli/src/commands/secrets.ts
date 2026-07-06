@@ -24,14 +24,15 @@ Subcommands:
                                     --json.
   set NAME=VALUE [NAME=VALUE …]     Upsert one or more secrets.
                                     Use \`NAME=-\` to read VALUE from stdin.
-  scope NAME --agents a,b           Restrict which AGENTS may use a secret
-  scope NAME --all-agents           (value untouched). --all-agents clears it.
   request NAME [NAME …]             Mint a short-lived link for a human to
                                     ENTER the value(s) — you never see/handle
                                     the raw key. Surface the URL (web: fill-in
                                     modal, Slack: tappable link).
                                     --scope runtime|connector  --expires <min>
   unset NAME [NAME …]               Remove one or more secrets.
+
+Which agents may use a secret is governed by that agent's \`secrets\` grant in
+kortix.yaml (by identifier), not a per-secret setting here.
 
 Global options:
   --project <id>     Operate on this project id (default: linked or
@@ -65,8 +66,6 @@ export async function runSecrets(argv: string[]): Promise<number> {
       return secretsLs(ctxOpts, json);
     case 'set':
       return secretsSet(rest, ctxOpts);
-    case 'scope':
-      return secretsScope(rest, ctxOpts);
     case 'request':
     case 'req':
       return secretsRequest(rest, ctxOpts, json);
@@ -141,7 +140,7 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
   process.stdout.write('\n');
   if (usingLocal) {
     process.stdout.write(
-      `  ${C.dim}Manifest: cloud mirror ${resp.manifest_status} — showing local kortix.toml [env] spec.${C.reset}\n\n`,
+      `  ${C.dim}Manifest: cloud mirror ${resp.manifest_status} — showing local kortix.yaml [env] spec.${C.reset}\n\n`,
     );
   } else if (resp.manifest_status !== 'loaded') {
     process.stdout.write(
@@ -152,7 +151,7 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
   }
 
   if (resp.items.length === 0 && required.length === 0 && optional.length === 0) {
-    process.stdout.write(`  ${C.dim}No secrets set, no [env] spec in kortix.toml.${C.reset}\n\n`);
+    process.stdout.write(`  ${C.dim}No secrets set, no [env] spec in kortix.yaml.${C.reset}\n\n`);
     return 0;
   }
 
@@ -246,54 +245,6 @@ async function secretsSet(args: string[], opts: CtxOpts): Promise<number> {
   }
   process.stdout.write(`\n  ${C.dim}${okCount}/${pairs.length} set${C.reset}\n\n`);
   return okCount === pairs.length ? 0 : 1;
-}
-
-async function secretsScope(rest: string[], opts: CtxOpts): Promise<number> {
-  let agents: string | undefined;
-  let allAgents = false;
-  try {
-    allAgents = takeFlagBool(rest, ['--all-agents']);
-    agents = takeFlagValue(rest, ['--agents']);
-  } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
-  }
-  const name = rest.filter((a) => !a.startsWith('-'))[0]?.trim().toUpperCase();
-  if (!name) {
-    process.stderr.write(`${status.err('Pass a secret NAME.')}\n`);
-    return 2;
-  }
-  // --all-agents clears the restriction (all agents); --agents a,b restricts it.
-  let agentScope: string[] | null;
-  if (allAgents) {
-    agentScope = null;
-  } else if (agents !== undefined) {
-    const list = agents.split(',').map((s) => s.trim()).filter(Boolean);
-    if (list.length === 0) {
-      process.stderr.write(`${status.err('Pass at least one agent (or --all-agents to clear).')}\n`);
-      return 2;
-    }
-    agentScope = list;
-  } else {
-    process.stderr.write(`${status.err('Pass --agents <a,b> or --all-agents.')}\n`);
-    return 2;
-  }
-
-  const ctx = resolveProjectContext(opts);
-  if (!ctx) return 1;
-  try {
-    // No `value` → a scope-only edit (the shared value is left untouched).
-    await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, {
-      name,
-      agent_scope: agentScope,
-    });
-  } catch (err) {
-    return surfaceApiError(err);
-  }
-  process.stdout.write(
-    `${status.ok(`${C.bold}${name}${C.reset} → ${agentScope ? `agents: ${agentScope.join(', ')}` : 'all agents'}`)}\n`,
-  );
-  return 0;
 }
 
 async function secretsRequest(rest: string[], opts: CtxOpts, json = false): Promise<number> {

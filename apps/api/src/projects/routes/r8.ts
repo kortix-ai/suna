@@ -122,14 +122,14 @@ projectsApp.openapi(
     // hold project.session.start (no-op for human/PAT tokens).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
 
-    // Restart is reserved for the session owner or a project manager.
+    // Restart is reserved for the session owner or an account owner/admin.
     const visible = await loadVisibleSession(loaded, sessionId);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
       return c.json(
         {
           error:
-            'Only the session owner or a project manager can restart this session',
+            'Only the session owner or an account owner/admin can restart this session',
         },
         403,
       );
@@ -175,13 +175,13 @@ projectsApp.openapi(
     // the agent's session-lifecycle surface.
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
 
-    // Stop is reserved for the session owner or a project manager, same policy
+    // Stop is reserved for the session owner or an account owner/admin, same policy
     // as restart.
     const visible = await loadVisibleSession(loaded, sessionId);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
       return c.json(
-        { error: 'Only the session owner or a project manager can stop this session' },
+        { error: 'Only the session owner or an account owner/admin can stop this session' },
         403,
       );
     }
@@ -280,7 +280,7 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Human-side capability gate (Git Ops). Editors/managers hold it; a custom
+    // Human-side capability gate (Git Ops). Editors hold it; a custom
     // role omits project.gitops.push to take Git-Ops away from a department.
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 

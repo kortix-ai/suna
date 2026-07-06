@@ -13,9 +13,11 @@ import {
 } from './execute';
 /**
  * Executor gateway — the chokepoint every tool call goes through. Resolves the
- * connector + action, checks the acting user can use it (project-secret
- * sharing), resolves the credential SERVER-SIDE, runs the call, audits it.
- * The sandbox never holds an app secret.
+ * connector + action, resolves the credential SERVER-SIDE, runs the call,
+ * audits it. The sandbox never holds an app secret. Connectors are
+ * project-wide visible (no per-connector member/agent scoping) — the only
+ * access gate is the agent-side `[[agents]].connectors` grant, enforced at the
+ * router before this is ever reached.
  *
  * Policy enforcement is layered (docs/specs/executor.md §8):
  *   1. project-level [[policies]] (fully-qualified patterns) — admin guardrails
@@ -28,13 +30,7 @@ import {
  * with the original allow-all engine; production sets it true.
  */
 import { type DefaultMode, type Policy, resolveEffectiveAction } from './policy';
-import {
-  type SecretGrant,
-  type ShareScope,
-  type ShareSubject,
-  connectorDeniedForAgent,
-  isSecretUsableBy,
-} from './share';
+import type { ShareSubject } from './share';
 import type { ActionBinding, Risk } from './types';
 
 export interface GatewayConnector {
@@ -47,21 +43,14 @@ export interface GatewayConnector {
   auth: ExecutorAuth;
   /** Whether this connector needs a credential at all (false = public/no-auth). */
   hasAuth: boolean;
-  /** Who can use it. */
-  shareScope: ShareScope;
-  grants: SecretGrant[];
-  /** shared = one project credential; per_user = each member's own. */
-  credentialMode: 'shared' | 'per_user';
+  /** Always `shared` (one project credential) — `per_user` (each member's
+   *  own) was removed 2026-07-05. Kept as a field for shape stability. */
+  credentialMode: 'shared';
   enabled: boolean;
   /** Marked sensitive (email/files/secrets-bearing): reads gate too — every
    *  action defaults to require_approval unless an explicit policy opens it.
    *  Optional (absent = not sensitive) so fixtures/callers needn't set it. */
   sensitive?: boolean;
-  /** Which agents may call this connector (the connector-side agent gate,
-   *  mirror of secret agent_scope). Absent/empty = ALL agents; a list of agent
-   *  NAMES restricts it to those agents' sessions. Enforced in connectorUsable
-   *  against the session's running agent. Optional so fixtures needn't set it. */
-  agentScope?: string[];
 }
 
 export interface GatewayAction {
@@ -133,19 +122,6 @@ export interface GatewayDeps {
     automaticAudioOutput: unknown;
     botName: string;
   } | null>;
-  /**
-   * Inheritance pyramid (assign human → agent): the connector slugs the subject
-   * inherits because they're assigned to an agent that declares them. Consulted
-   * ONLY when a connector fails the direct share check — a cold, rare path
-   * ('project'-scoped connectors short-circuit as usable). Optional: absent = no
-   * inheritance. Implementations should memoize per (project, subject).
-   */
-  inheritedConnectorSlugs?(projectId: string, subject: ShareSubject): Promise<ReadonlySet<string>>;
-  /** The running agent's NAME for a session (projectSessions.agent_name) — the
-   *  SAME source the secret gate uses, so the connector agent-scope check agrees
-   *  on identity. Consulted ONLY for a connector that is actually agent-scoped
-   *  (no lookup on the common all-agents path). Absent = never scope-gate. */
-  sessionAgentName?(sessionId: string): Promise<string | null>;
   /** Connector-scoped policies (relative patterns over the connector's tool paths). */
   loadPolicies(connectorId: string): Promise<Policy[]>;
   /** Project-scoped policies (fully-qualified patterns over <slug>.<path>). */
@@ -289,46 +265,25 @@ async function resolveConnectorForCall(
   };
 }
 
-/** Is this connector usable for this call? Human access (sharing) + AGENT access
- *  (connector agent_scope) + credential (by mode). */
+/**
+ * Is this connector usable for this call? Access is public-by-default —
+ * connectors are project-wide visible; the ONLY gate is the agent-side
+ * `[[agents]].connectors` grant (enforced earlier, at the router, via
+ * `agentMayUseConnector`). This function is left with just the credential
+ * check (by mode).
+ */
 async function connectorUsable(
   deps: GatewayDeps,
   connector: GatewayConnector,
-  input: CallInput,
+  _input: CallInput,
   credentialOverride?: string | null,
 ): Promise<{ ok: true; secret: string | null } | { ok: false; reason: string }> {
-  const { projectId, subject } = input;
-  // 1. HUMAN access — who can use this connector. Direct share (project-wide or a
-  // member/department grant), OR inherited via the "assign human → agent"
-  // pyramid: being assigned to an agent that declares this connector grants it.
-  // Inheritance is only consulted on the cold path (a restricted connector the
-  // subject isn't directly granted) — project-scoped connectors short-circuit.
-  if (!isSecretUsableBy(connector.shareScope, connector.grants, subject)) {
-    const inherited = await deps.inheritedConnectorSlugs?.(projectId, subject);
-    if (!inherited?.has(connector.slug)) {
-      return { ok: false, reason: 'not_shared' };
-    }
-  }
-  // 1b. AGENT access — which AGENTS may call this connector (the connector-side
-  // agent_scope, mirror of the secret agent_scope; a DIFFERENT axis from the
-  // agent-side [[agents]].connectors self-narrowing enforced at the router).
-  // Resolved from the SESSION's agent name (the same source the secret gate
-  // uses) so a connector scoped to [pr-bot] denies the fully-privileged
-  // `default` agent exactly as secrets do. Pays the session lookup ONLY when the
-  // connector is actually scoped; fail-closed if the agent can't be identified.
-  if (connector.agentScope && connector.agentScope.length > 0) {
-    const agentName = input.sessionId
-      ? (await deps.sessionAgentName?.(input.sessionId)) ?? null
-      : null;
-    if (connectorDeniedForAgent(connector.agentScope, agentName)) {
-      return { ok: false, reason: 'agent_not_scoped' };
-    }
-  }
-  // 2. Credential — none needed (public), shared, or this member's own (per_user).
+  // Credential — none needed (public), or the one shared project credential.
+  // (`per_user` — each member's own — was removed 2026-07-05; every connector
+  // now resolves the shared, userId-null credential.)
   if (!connector.hasAuth) return { ok: true, secret: null };
   if (credentialOverride != null) return { ok: true, secret: credentialOverride };
-  const userId = connector.credentialMode === 'per_user' ? subject.userId : null;
-  const secret = await deps.resolveCredential(connector, userId);
+  const secret = await deps.resolveCredential(connector, null);
   if (secret == null) return { ok: false, reason: 'needs_auth' };
   return { ok: true, secret };
 }
@@ -570,7 +525,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
           'pipedream connector has no connected account (run `kortix connectors connect`)',
         );
       }
-      const userId = connector.credentialMode === 'per_user' ? input.subject.userId : null;
+      // Always the shared (project-wide) Pipedream external-user binding —
+      // `per_user` (each member's own) was removed 2026-07-05.
+      const userId = null;
       if (b.kind === 'pipedream') {
         if (!deps.executePipedream) throw new Error('pipedream action runner not wired');
         result = await deps.executePipedream({

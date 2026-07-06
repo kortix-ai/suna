@@ -5,11 +5,11 @@ description: The architecture — repo-as-project, the control plane, ephemeral 
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-A **project** is one git repository with a [`kortix.toml`](/docs/reference/manifest)
-at its root. A **session** runs the agent in an isolated sandbox VM with the repo
-cloned onto a branch named after the session. The sandbox is disposable; the
-branch persists. Work reaches the default branch only via a merged
-**[change request](/docs/concepts/change-requests)**.
+A **project** is one git repository with a [manifest](/docs/reference/manifest) —
+`kortix.yaml` by default, or legacy `kortix.toml` — at its root. A **session** runs
+the agent in an isolated sandbox VM with the repo cloned onto a branch named after
+the session. The sandbox is disposable; the branch persists. Work reaches the
+default branch only via a merged **[change request](/docs/concepts/change-requests)**.
 
 ## The pieces
 
@@ -17,8 +17,8 @@ branch persists. Work reaches the default branch only via a merged
   imported GitHub) plus its manifest.
 - **[Sessions](/docs/concepts/sessions)** — isolated Daytona sandbox VMs, each on
   its own branch. Many run at once without interfering.
-- **[Agents](/docs/concepts/agents)** — OpenCode, governed by `kortix.toml`
-  and implemented through `.kortix/opencode/`.
+- **[Agents](/docs/concepts/agents)** — OpenCode, governed by the manifest's
+  `agents:` map and implemented through `.kortix/opencode/`.
 - **[Change requests](/docs/concepts/change-requests)** — the git merge layer
   that lands a branch on the default branch.
 - **[Secrets](/docs/concepts/secrets)** — per-project encrypted values, given to
@@ -53,9 +53,20 @@ branch work survives, and only a merged change request makes it permanent.
 
 ## Two config surfaces
 
-`kortix.toml` + `.kortix/Dockerfile` are Kortix-owned; `.kortix/opencode/` is
-OpenCode-native runtime behavior. Declarative `[[agents]]` entries make Kortix
-the server-side source for launchable agents and grants. See
+The manifest (`kortix.yaml`) + `.kortix/Dockerfile` are Kortix-owned;
+`.kortix/opencode/` is OpenCode-native runtime behavior. `agents:` is a
+name-keyed map that is governance only — `connectors`, `secrets`, `kortix_cli`,
+`skills`, which agent names are launchable, and what each may touch. Everything
+about how an agent behaves (prompt, mode, tools, permissions) lives in that
+agent's own `.kortix/opencode/agents/<name>.md`, a stock OpenCode agent file.
+`default_agent` is required and must name a declared, enabled agent. See
 [Kortix vs OpenCode config](/docs/reference/config-boundary). Drive any of it
 from a terminal with the [CLI](/docs/reference/cli) — it controls the cloud, it
 doesn't run the agent locally.
+
+<Callout type="info" title="Legacy kortix.toml">
+Existing projects may still run on `kortix_version: 1` (`kortix.toml`,
+`[[agents]]` as an array of tables, no required `default_agent`). Both formats
+are read by the platform; migrate in-app via "Upgrade to kortix.yaml." See
+[Projects](/docs/concepts/projects).
+</Callout>

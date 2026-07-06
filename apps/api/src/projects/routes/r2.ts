@@ -13,6 +13,7 @@ import { AnyObject, SandboxTemplateSchema, SnapshotSchema, projectsApp } from '.
 import { GitHubInstallationRequiredError, createGitHubInstallationInstallUrl, getProjectGitConnection, loadGitProject, registerGitHubLinkedProject, registerPatLinkedProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
 import { deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
 import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
+import { resolveManifestValidateFormat } from '../lib/manifest-format';
 
 projectsApp.openapi(
   createRoute({
@@ -76,7 +77,7 @@ projectsApp.openapi(
       { accountId: scope.accountId, source: 'project-create' },
     );
     return c.json({
-      project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
+      project: serializeProject(row, { projectRole: 'editor', effectiveRole: 'editor' }),
       git_connection: serializeProjectGitConnection(await getProjectGitConnection(row.projectId)),
     }, 201);
   }
@@ -124,7 +125,7 @@ projectsApp.openapi(
   );
 
   return c.json({
-    project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
+    project: serializeProject(row, { projectRole: 'editor', effectiveRole: 'editor' }),
     git_connection: serializeProjectGitConnection(await getProjectGitConnection(row.projectId)),
   }, 201);
 },
@@ -263,7 +264,9 @@ projectsApp.openapi(
     installation: githubAuth.installation,
     name: projectName,
     defaultBranch,
-    manifestPath: 'kortix.toml',
+    // The starter just committed above (buildStarterFiles) ships kortix.yaml
+    // (kortix_version 2) — record that path so it's never stale from birth.
+    manifestPath: 'kortix.yaml',
   });
 
   kickProjectTemplatePrebuilds(
@@ -278,7 +281,7 @@ projectsApp.openapi(
   );
 
 
-  return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
+  return c.json(serializeProject(row, { projectRole: 'editor', effectiveRole: 'editor' }), 201);
 },
 );
 
@@ -287,10 +290,14 @@ projectsApp.openapi(
 // `kortix validate`), this server-side endpoint (lets dashboards / tooling
 // ask the server "is this valid?"), and the CR-merge gate.
 //
-// Body: { raw: string } (TOML text). Always returns 200 — the verdict is in
-// the body so the caller can show issues without having to handle HTTP error
-// codes. CLI use: `kortix validate` runs locally, this is for surfaces that
-// don't have the file on disk.
+// Body: { raw: string, format?: 'toml' | 'yaml' }. Always returns 200 — the
+// verdict is in the body so the caller can show issues without having to
+// handle HTTP error codes. CLI use: `kortix validate` runs locally, this is
+// for surfaces that don't have the file on disk.
+//
+// DUAL-FORMAT: `raw` may be TOML or YAML text — see
+// `resolveManifestValidateFormat` (lib/manifest-format.ts) for the resolution
+// order (project manifestPath > body `format` > `toml` default).
 
 // POST /v1/projects/:projectId/manifest/validate
 
@@ -315,15 +322,16 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  let body: { raw?: unknown } = {};
+  let body: { raw?: unknown; format?: unknown } = {};
   try { body = (await c.req.json()) ?? {}; } catch { /* empty */ }
   const raw = typeof body.raw === 'string' ? body.raw : null;
   if (!raw) {
-    return c.json({ error: 'Missing `raw` (TOML string) in body.' }, 400);
+    return c.json({ error: 'Missing `raw` (manifest string) in body.' }, 400);
   }
 
+  const format = resolveManifestValidateFormat(loaded.row.manifestPath, body.format);
   const { validateManifest } = await import('@kortix/manifest-schema');
-  const verdict = validateManifest(raw);
+  const verdict = validateManifest(raw, format);
   return c.json({
     valid: verdict.valid,
     issues: verdict.issues,

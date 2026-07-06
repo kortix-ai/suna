@@ -20,9 +20,9 @@ const HELP = `Usage: kortix agents <subcommand> [options]
 
 Per-agent settings on the linked Kortix project. Today: which MODEL each agent
 runs on — the dynamic gateway default (scope=agent), applied instantly with no
-kortix.toml commit. A session an agent runs that asks for the synthetic \`auto\`
+kortix.yaml commit. A session an agent runs that asks for the synthetic \`auto\`
 model resolves to this pick, falling back to the project → account → platform
-default. (The declarative default lives in kortix.toml as [[agents]].model.)
+default. (The declarative default lives in kortix.yaml as [[agents]].model.)
 
 Subcommands:
   models [--json]                 Show every agent's pinned model + the fallback default.

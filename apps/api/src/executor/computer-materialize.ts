@@ -6,7 +6,7 @@
  * machine over the Agent Computer Tunnel IS the registration. When a project's
  * account has at least one connected machine, we synthesize a SINGLE `computer`
  * ConnectorSpec here so the materializer treats it like any other connector (DB
- * rows, the fixed action catalog, sharing, policies, and the Executor/Connectors
+ * rows, the fixed action catalog, policies, and the Executor/Connectors
  * surface). One connector fronts ALL the account's machines — the machine is a
  * call argument, resolved at call time. There is no credential: the live WS
  * relay is the credential, and per-machine auth/scope is the tunnel permission
@@ -35,8 +35,6 @@ function computerSpec(): ConnectorSpec {
     provider: 'computer',
     credentialMode: 'shared',
     sensitive: false,
-    // Synthetic — agent_scope is set DB-side and preserved across syncs (see channelSpec).
-    agentScope: null,
     app: null,
     account: null,
     url: null,

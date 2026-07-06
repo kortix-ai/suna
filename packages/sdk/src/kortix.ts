@@ -399,17 +399,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         sync: () => P.syncConnectors(projectId),
         setName: (...a: DropFirst<Parameters<typeof P.setConnectorName>>) =>
           P.setConnectorName(projectId, ...a),
-        setSharing: (...a: DropFirst<Parameters<typeof P.setConnectorSharing>>) =>
-          P.setConnectorSharing(projectId, ...a),
         setCredentialMode: (...a: DropFirst<Parameters<typeof P.setConnectorCredentialMode>>) =>
           P.setConnectorCredentialMode(projectId, ...a),
         setCredential: (...a: DropFirst<Parameters<typeof P.setConnectorCredential>>) =>
           P.setConnectorCredential(projectId, ...a),
         setSensitive: (...a: DropFirst<Parameters<typeof P.setConnectorSensitive>>) =>
           P.setConnectorSensitive(projectId, ...a),
-        /** The connector-side agent gate (mirror of a secret's agent_scope) — distinct from `setAgentScope`, which binds an agent's secret/connector allowlist. */
-        setAgentScope: (...a: DropFirst<Parameters<typeof P.setConnectorAgentScope>>) =>
-          P.setConnectorAgentScope(projectId, ...a),
         policies: {
           get: (...a: DropFirst<Parameters<typeof P.getConnectorPolicies>>) =>
             P.getConnectorPolicies(projectId, ...a),

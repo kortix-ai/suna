@@ -46,24 +46,18 @@ test('listProjectSecrets throws when the response is unsuccessful', async () => 
   await expect(listProjectSecrets('P1')).rejects.toBeTruthy();
 });
 
-test('upsertProjectSecret POSTs name/value/sharing without agent_scope when agentScope is omitted', async () => {
+test('upsertProjectSecret POSTs name/value as the raw body', async () => {
   nextResponse = { status: 200, body: { name: 'FOO' } };
-  await upsertProjectSecret('P1', { name: 'FOO', value: 'bar', sharing: { mode: 'project' } });
+  await upsertProjectSecret('P1', { name: 'FOO', value: 'bar' });
   expect(last().url).toContain('/projects/P1/secrets');
   expect(last().method).toBe('POST');
-  expect(last().body).toEqual({ name: 'FOO', value: 'bar', sharing: { mode: 'project' } });
+  expect(last().body).toEqual({ name: 'FOO', value: 'bar' });
 });
 
-test('upsertProjectSecret translates agentScope into agent_scope on the wire', async () => {
+test('upsertProjectSecret includes an explicit identifier when given', async () => {
   nextResponse = { status: 200, body: { name: 'FOO' } };
-  await upsertProjectSecret('P1', { name: 'FOO', agentScope: ['agent-a', 'agent-b'] });
-  expect(last().body).toEqual({ name: 'FOO', agent_scope: ['agent-a', 'agent-b'] });
-});
-
-test('upsertProjectSecret sends agent_scope: null when agentScope is explicitly null', async () => {
-  nextResponse = { status: 200, body: { name: 'FOO' } };
-  await upsertProjectSecret('P1', { name: 'FOO', agentScope: null });
-  expect(last().body).toEqual({ name: 'FOO', agent_scope: null });
+  await upsertProjectSecret('P1', { name: 'FOO', identifier: 'GMAPS-backup', value: 'bar' });
+  expect(last().body).toEqual({ name: 'FOO', identifier: 'GMAPS-backup', value: 'bar' });
 });
 
 test('startProjectProviderOAuth posts to the provider start endpoint with the sharing intent', async () => {

@@ -248,13 +248,7 @@ async function upsertConnector(
   const credentialMode = spec.credentialMode;
 
   // Cheap fields reconciled on every sync. `config` (which folds in the
-  // discovered server) only changes when we actually re-resolved the catalog —
-  // which is why the connector agent-scope is a dedicated COLUMN here, not a
-  // config key: it must reconcile from the toml on every sync (toml-authoritative
-  // for declared connectors), independent of a catalog re-fetch. Synthetic
-  // channel/computer connectors have no manifest entry, so their scope is set
-  // DB-side and MUST survive sync — omit the column for them (leave it untouched).
-  const isSyntheticProvider = spec.provider === 'channel' || spec.provider === 'computer';
+  // discovered server) only changes when we actually re-resolved the catalog.
   const common = {
     name: spec.name,
     providerType: spec.provider,
@@ -266,7 +260,6 @@ async function upsertConnector(
     lastError: catalog?.error ?? null,
     lastSyncedAt: new Date(),
     updatedAt: new Date(),
-    ...(isSyntheticProvider ? {} : { agentScope: spec.agentScope ?? null }),
   } as const;
 
   let connectorId = existingId;

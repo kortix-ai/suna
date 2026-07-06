@@ -116,7 +116,9 @@ function resetState() {
   freestyleCalls = [];
 }
 
+const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
+  ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     if (c.req.header('Authorization') === `Bearer ${PROJECT_SANDBOX_TOKEN}`) {
       c.set('userId', ACCOUNT_ID);
@@ -156,6 +158,10 @@ mock.module('../projects/git', () => ({
   grepRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
   readRepoFile: async () => '',
+  // compile-agent-config.ts (the agent-first v2 compiler) reads the manifest
+  // straight from git — no manifest ⇒ null ⇒ the v1-shaped projects this suite
+  // exercises get no compiled agent config, matching their pre-compiler behavior.
+  readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
@@ -593,13 +599,12 @@ mock.module('../shared/db', () => ({
                   ? secretRows[existingIndex]!.secretId
                   : '00000000-0000-4000-a000-000000000401',
               projectId: values.projectId!,
+              identifier: values.identifier ?? values.name!,
               name: values.name!,
               valueEnc: (set.valueEnc ?? values.valueEnc)!,
               scope: values.scope ?? 'runtime',
-              shareScope: values.shareScope ?? 'project',
               ownerUserId: values.ownerUserId ?? null,
               active: values.active ?? true,
-              agentScope: values.agentScope ?? null,
               createdBy: values.createdBy ?? null,
               createdAt:
                 existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
@@ -903,13 +908,12 @@ describe('project session API contract', () => {
       {
         secretId: '00000000-0000-4000-a000-000000000402',
         projectId: PROJECT_ID,
+        identifier: 'KORTIX_GIT_AUTH_TOKEN',
         name: 'KORTIX_GIT_AUTH_TOKEN',
         valueEnc: encryptProjectSecret(PROJECT_ID, 'legacy-freestyle-token'),
         scope: 'runtime',
-        shareScope: 'project',
         ownerUserId: null,
         active: true,
-        agentScope: null,
         createdBy: USER_ID,
         createdAt: new Date('2026-01-02T00:00:00Z'),
         updatedAt: new Date('2026-01-02T00:00:00Z'),

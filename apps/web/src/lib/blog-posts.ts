@@ -70,46 +70,47 @@ const introducingKortix: BlogPostEntry = {
     { type: 'h2', text: 'kortix.toml: the single source of truth' },
     {
       type: 'p',
-      text: 'At the root of every project sits one file: `kortix.toml`. Any repo with a valid `kortix.toml` at its root *is* a Kortix project — that file defines what the project is, what it’s allowed to do, and how it runs. Here’s a real one:',
+      text: 'At the root of every project sits one file — `kortix.toml` when this was written, `kortix.yaml` today. Any repo with a valid manifest at its root *is* a Kortix project — that file defines what the project is, what it’s allowed to do, and how it runs. Here’s a real one:',
     },
     {
       type: 'code',
-      code: `# kortix.toml — the one file that defines this project.
-kortix_version = 1
+      code: `# kortix.yaml — the one file that defines this project.
+kortix_version: 2
 
-[project]
-name        = "acme-ops"
-description = "Acme's operations command center."
+project:
+  name: acme-ops
+  description: Acme's operations command center.
 
 # Secrets your agents need: names here, encrypted values in the vault.
-[env]
-required = ["DATABASE_URL"]
-optional = ["ANTHROPIC_API_KEY"]
+env:
+  required: [DATABASE_URL]
+  optional: [STRIPE_API_KEY]
 
 # The sandbox every task boots into — your image, your hardware.
-[[sandbox.templates]]
-slug       = "ops"
-dockerfile = ".kortix/Dockerfile"
-cpu        = 4
-memory     = 8
+sandbox:
+  templates:
+    - slug: ops
+      dockerfile: .kortix/Dockerfile
+      cpu: 4
+      memory: 8
 
 # Run work on a schedule — nobody has to kick it off.
-[[triggers]]
-slug = "weekly-health-report"
-type = "cron"
-cron = "0 0 9 * * 1"
-prompt = "Draft the weekly customer health report for review."
+triggers:
+  - slug: weekly-health-report
+    type: cron
+    cron: "0 0 9 * * 1"
+    prompt: Draft the weekly customer health report for review.
 
 # A tool the agent can use — credentials stay in the platform, never here.
-[[connectors]]
-slug = "slack"
-  [[connectors.policies]]
-  match  = "*message*"
-  action = "require_approval"`,
+connectors:
+  - slug: slack
+    policies:
+      - match: "*message*"
+        action: require_approval`,
     },
     {
       type: 'p',
-      text: 'That’s a company’s operating setup in a few dozen lines. The scheduler reads `[[triggers]]`, the sandbox builder reads `[[sandbox.templates]]`, the connector layer reads `[[connectors]]`. Edit it in the dashboard or from inside a session and changes round-trip through the same file — the diff stays clean either way.',
+      text: 'That’s a company’s operating setup in a few dozen lines. The scheduler reads `triggers:`, the sandbox builder reads `sandbox.templates:`, the connector layer reads `connectors:`. Edit it in the dashboard or from inside a session and changes round-trip through the same file — the diff stays clean either way.',
     },
     { type: 'h2', text: 'What happens when you hand off a task' },
     {

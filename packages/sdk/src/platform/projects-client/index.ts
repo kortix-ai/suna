@@ -18,6 +18,7 @@ export * from './triggers';
 export * from './session-sandbox';
 export * from './model-defaults';
 export * from './agent-scope';
+export * from './agent-config';
 export * from './billing';
 export * from './channels';
 export * from './gateway';

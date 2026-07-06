@@ -5,8 +5,8 @@
  *
  * Shows the chronological trail of every governed action the agent took in this
  * session, with any items still awaiting a decision pinned at the top as
- * actionable Approve/Deny cards. The person who launched the session (or a
- * project manager) resolves them here without leaving the session.
+ * actionable Approve/Deny cards. The person who launched the session (or an
+ * account owner/admin) resolves them here without leaving the session.
  */
 
 import { Badge } from '@/components/ui/badge';

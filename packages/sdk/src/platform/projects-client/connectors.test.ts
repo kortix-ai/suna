@@ -10,13 +10,11 @@ import {
   listPipedreamApps,
   pipedreamConnect,
   pipedreamFinalize,
-  setConnectorAgentScope,
   setConnectorCredential,
   setConnectorCredentialMode,
   setConnectorName,
   setConnectorPolicies,
   setConnectorSensitive,
-  setConnectorSharing,
   syncConnectors,
 } from './connectors';
 
@@ -64,21 +62,12 @@ test('syncConnectors POSTs an empty body to the sync endpoint', async () => {
   expect(result).toEqual({ synced: 2, errors: [] });
 });
 
-test('setConnectorSharing PUTs the sharing intent as the raw body', async () => {
-  nextResponse = { status: 200, body: { ok: true } };
-  const result = await setConnectorSharing('P1', 'slack', { mode: 'project' });
-  expect(last().url).toContain('/executor/projects/P1/connectors/slack/sharing');
-  expect(last().method).toBe('PUT');
-  expect(last().body).toEqual({ mode: 'project' });
-  expect(result).toEqual({ ok: true });
-});
-
 test('setConnectorCredentialMode PUTs { mode }', async () => {
   nextResponse = { status: 200, body: { ok: true } };
-  await setConnectorCredentialMode('P1', 'slack', 'per_user');
+  await setConnectorCredentialMode('P1', 'slack', 'shared');
   expect(last().url).toContain('/executor/projects/P1/connectors/slack/credential-mode');
   expect(last().method).toBe('PUT');
-  expect(last().body).toEqual({ mode: 'per_user' });
+  expect(last().body).toEqual({ mode: 'shared' });
 });
 
 test('setConnectorSensitive PUTs { sensitive }', async () => {
@@ -87,17 +76,6 @@ test('setConnectorSensitive PUTs { sensitive }', async () => {
   expect(last().url).toContain('/executor/projects/P1/connectors/slack/sensitive');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ sensitive: true });
-});
-
-test('setConnectorAgentScope PUTs { agent_scope } (snake_case) including the null "all agents" case', async () => {
-  nextResponse = { status: 200, body: { ok: true } };
-  await setConnectorAgentScope('P1', 'slack', ['researcher']);
-  expect(last().url).toContain('/executor/projects/P1/connectors/slack/agent-scope');
-  expect(last().method).toBe('PUT');
-  expect(last().body).toEqual({ agent_scope: ['researcher'] });
-
-  await setConnectorAgentScope('P1', 'slack', null);
-  expect(last().body).toEqual({ agent_scope: null });
 });
 
 test('getConnectorPolicies GETs the policies list', async () => {

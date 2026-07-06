@@ -424,13 +424,22 @@ export const projectAccessRequests = kortixSchema.table(
 );
 
 /**
- * Sharing scope of a project secret. `project` = every project member (default).
- * `restricted` = only the principals (members/groups) in `project_secret_grants`.
- * "Just me" is the degenerate restricted case (one member grant: the creator).
+ * Generic member/group sharing scope + principal-kind enums, shared by several
+ * `restricted`-allow-list features. `project_secrets` itself no longer uses
+ * either (secret sharing was retired — a secret is always project-wide; see
+ * migration 20260706_secrets_v2_identifier_model.sql) — these stay because
+ * `executor_connectors`/`executor_connector_grants` (connector sharing) and
+ * `project_session_grants` (session visibility) still do.
  */
 export const secretShareScopeEnum = kortixSchema.enum('secret_share_scope', [
   'project',
   'restricted',
+]);
+
+/** Principal kind for a member/group allow-list grant. See doc comment above. */
+export const secretGrantPrincipalEnum = kortixSchema.enum('secret_grant_principal', [
+  'member',
+  'group',
 ]);
 
 /**
@@ -444,6 +453,19 @@ export const projectSecretScopeEnum = kortixSchema.enum('project_secret_scope', 
   'connector',
 ]);
 
+/**
+ * A project secret is `{ identifier, name (the KEY), value }`. `identifier` is
+ * the unique-per-project handle — the human-facing label AND what an agent's
+ * `secrets` grant (kortix.yaml) references. `name` is the env var KEY injected
+ * into the sandbox and is deliberately NON-unique: two identifiers (e.g.
+ * "GMAPS-primary" / "GMAPS-backup") may share the same key so an agent can be
+ * granted one specific value among several candidates for the same env var.
+ * Authorization is centralized on the AGENT GRANT (by identifier) — see
+ * `agentMayUseEnv` (iam/agent-scope.ts) and `resolveGrantedSecretEnv`
+ * (projects/secrets.ts). There is no per-secret member/group sharing and no
+ * resource-side agent allow-list on the secret itself (both retired — see
+ * migration 20260706_secrets_v2_identifier_model.sql).
+ */
 export const projectSecrets = kortixSchema.table(
   'project_secrets',
   {
@@ -451,70 +473,40 @@ export const projectSecrets = kortixSchema.table(
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** Unique per (project, identifier) among SHARED rows. Existing/legacy
+     *  rows have identifier === name (backfilled at migration time). */
+    identifier: varchar('identifier', { length: 128 }).notNull(),
+    /** The env var KEY injected into the sandbox. Non-unique — see doc above. */
     name: varchar('name', { length: 64 }).notNull(),
     valueEnc: text('value_enc').notNull(),
     scope: projectSecretScopeEnum('scope').default('runtime').notNull(),
-    shareScope: secretShareScopeEnum('share_scope').default('project').notNull(),
-    // NULL = the shared project-level row (governed by share_scope + grants).
-    // Non-null = that member's PRIVATE per-key override, which shadows the
-    // shared row of the same name in their own sessions. Mirrors
+    // NULL = the shared project-level row. Non-null = that member's PRIVATE
+    // per-identifier override (used ONLY by the CODEX_AUTH_JSON per-user
+    // provider login today — the general "only me" override was retired, see
+    // migration 20260702120000000_unify_secret_access_share_model.sql). Mirrors
     // executor_credentials.userId. See docs/specs/executor.md / iam.md.
     ownerUserId: uuid('owner_user_id'),
     // On a personal override row: whether the member currently uses their own
     // value (true) or has flipped back to the shared one while keeping theirs
     // stored (false). Ignored on shared rows.
     active: boolean('active').default(true).notNull(),
-    // Which agents may use this shared secret. NULL / empty = ALL agents
-    // (project-wide, the default). A non-empty list of agent NAMES restricts it
-    // to those agents' sessions — the executor drops the secret from any session
-    // whose running agent isn't listed (additive narrowing, never widening).
-    agentScope: text('agent_scope').array(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index('idx_project_secrets_project').on(table.projectId),
-    // At most one SHARED row per (project, name)…
-    uniqueIndex('idx_project_secrets_project_name_shared')
-      .on(table.projectId, table.name)
+    // Non-unique lookup index for by-KEY reads (getProjectSecretValue and friends).
+    index('idx_project_secrets_project_name').on(table.projectId, table.name),
+    // At most one SHARED row per (project, identifier)…
+    uniqueIndex('idx_project_secrets_project_identifier_shared')
+      .on(table.projectId, table.identifier)
       .where(sql`${table.ownerUserId} is null`),
-    // …and at most one PERSONAL override per (project, name, member).
+    // …and at most one PERSONAL override per (project, name, member) — the
+    // CODEX_AUTH_JSON per-user row; unchanged by the identifier model.
     uniqueIndex('idx_project_secrets_project_name_owner')
       .on(table.projectId, table.name, table.ownerUserId)
       .where(sql`${table.ownerUserId} is not null`),
-  ],
-);
-
-/**
- * Allow-list for a `restricted` project secret — which members/groups can use
- * it. Empty (with scope=project) = whole project. Dashboard-managed; never in
- * git. Drives connector usability: a connector is usable by a user iff its bound
- * `auth.secret` (or Pipedream connection) is shared with that user.
- */
-export const secretGrantPrincipalEnum = kortixSchema.enum('secret_grant_principal', [
-  'member',
-  'group',
-]);
-
-export const projectSecretGrants = kortixSchema.table(
-  'project_secret_grants',
-  {
-    grantId: uuid('grant_id').defaultRandom().primaryKey(),
-    secretId: uuid('secret_id')
-      .notNull()
-      .references(() => projectSecrets.secretId, { onDelete: 'cascade' }),
-    principalType: secretGrantPrincipalEnum('principal_type').notNull(),
-    principalId: uuid('principal_id').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_project_secret_grants_secret').on(table.secretId),
-    uniqueIndex('idx_project_secret_grants_unique').on(
-      table.secretId,
-      table.principalType,
-      table.principalId,
-    ),
   ],
 );
 
@@ -683,12 +675,14 @@ export const projectTriggerRuntime = kortixSchema.table(
     lastStatus: varchar('last_status', { length: 32 }),
     lastError: text('last_error'),
     lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
-    // The project member this trigger's automated sessions run AS (the "owner").
-    // A per_user connector resolves its credential to THIS member's connected
-    // accounts in cron/webhook/manual fires ("my email-triage cron uses my
-    // Gmail"). NULL = fall back to the account owner (legacy behavior). Stored
-    // here, not in the portable repo manifest, because a user_id is account-
-    // specific. Defaults to the trigger's creator. See resolveTriggerActor().
+    // The project member this trigger's automated sessions provision AS (the
+    // "owner") — the secret-visibility subject and provisioning actor for
+    // cron/webhook/manual fires. NULL = fall back to the account owner
+    // (legacy behavior). Stored here, not in the portable repo manifest,
+    // because a user_id is account-specific. Defaults to the trigger's
+    // creator. See resolveTriggerActor(). (No longer feeds connector credential
+    // resolution — `per_user` connector credentials were removed 2026-07-05;
+    // every connector resolves the one shared credential regardless of owner.)
     ownerUserId: uuid('owner_user_id'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -1438,11 +1432,14 @@ export interface AgentGrant {
   agent: string;
   kortixCli: string[] | 'all';
   connectors: string[] | 'all';
-  /** Project-secret names this agent may receive as sandbox env (and read via
-   *  the secrets API). 'all' = every secret the launching user can see (the
-   *  default for a listed agent when `env` is omitted, and for the catch-all
-   *  agent); an explicit list narrows it; [] = none. Optional for back-compat
-   *  with grants minted before this field existed (treated as 'all'). */
+  /** Project-secret IDENTIFIERS (not env-var keys — see project_secrets.identifier)
+   *  this agent may receive as sandbox env (and read via the secrets API). 'all'
+   *  = every secret in the project (the default for a listed agent when `env` is
+   *  omitted, and for the catch-all agent); an explicit list of identifiers
+   *  narrows it; [] = none. Two granted identifiers that resolve to the same env
+   *  var KEY is a validation error (ambiguous) — see resolveGrantedSecretEnv.
+   *  Optional for back-compat with grants minted before this field existed
+   *  (treated as 'all'). */
   env?: string[] | 'all';
 }
 
@@ -3143,9 +3140,25 @@ export const executorExecutionStatusEnum = kortixSchema.enum('executor_execution
 ]);
 
 /**
- * How a connector's credential is stored/used:
- *   shared   = one project-level credential everyone with access uses.
- *   per_user = each member connects their own (BYO account / key).
+ * How a connector's credential is stored/used. `shared` (one project-level
+ * credential everyone with access uses) is the ONLY writable value.
+ *
+ * `per_user` (each member connects their own) was REMOVED 2026-07-05
+ * (docs/specs/2026-07-05-agent-first-config-unification.md §2.5): it conflated
+ * delegated-identity ("act as whichever human launched this session") with
+ * connector credential storage, and had no coherent answer for triggers/
+ * channels (no launching human). Migration
+ * `20260705191549103_remove_per_user_credential_mode.sql` flipped every
+ * `per_user` row to `shared`, deleted the per-member `executor_credentials`
+ * rows (no silent credential promotion — a per-member OAuth is a personal
+ * identity, so those connectors now need reconnecting), and added a CHECK
+ * constraint enforcing `shared` at the DB level. `per_user` stays listed below
+ * ONLY because Postgres cannot cleanly drop a value from an existing enum
+ * type without rebuilding it — the value is orphaned, not reachable: nothing
+ * in the app writes it, and the CHECK constraint rejects it outright. Do not
+ * reintroduce writes of `per_user`. A future "connect your own account"
+ * feature (interactive-sessions-only, tracked separately) will need a new,
+ * differently-named mechanism — not a revival of this one.
  */
 export const executorCredentialModeEnum = kortixSchema.enum('executor_credential_mode', [
   'shared',
@@ -3170,16 +3183,23 @@ export const executorConnectors = kortixSchema.table(
     config: jsonb('config').default({}).$type<Record<string, unknown>>().notNull(),
     /** Legacy reference to a project_secrets row (kept; credentials now in executor_credentials). */
     authSecret: varchar('auth_secret', { length: 64 }),
-    /** Who can use this connector. `project` = all members; `restricted` = the grants below. */
+    /** ORPHANED 2026-07-06 (docs/specs/2026-07-05-agent-first-config-unification.md):
+     *  connectors are unconditionally project-wide now — authorization lives
+     *  solely on the agent's `connectors` grant. `project` is the only value a
+     *  DB CHECK constraint (added by the retirement migration) still accepts;
+     *  nothing in the app reads or writes this column anymore. */
     shareScope: secretShareScopeEnum('share_scope').default('project').notNull(),
-    /** Which AGENTS may call this connector — the connector-side agent gate,
-     *  mirror of project_secrets.agent_scope. NULL/empty = ALL agents; a list of
-     *  agent NAMES restricts it to those agents' sessions (the executor gateway
-     *  drops a call whose running agent isn't listed). Reconciled every sync from
-     *  the toml [[connectors]].agent_scope for DECLARED connectors; set DB-side
-     *  for synthetic (channel/computer) connectors that have no manifest entry. */
+    /** ORPHANED 2026-07-06 (docs/specs/2026-07-05-agent-first-config-unification.md):
+     *  the connector-side agent gate was retired — the agent-side `connectors`
+     *  grant (`[[agents]].connectors`, iam/agent-scope.ts) is now the ONLY gate
+     *  on which agents may call a connector. Values were nulled by the
+     *  retirement migration; nothing in the app reads or writes this column
+     *  anymore (kept, like `per_user` on executorCredentialModeEnum, because
+     *  Postgres can't cleanly drop a column's meaning without a bigger change). */
     agentScope: text('agent_scope').array(),
-    /** Credential storage model — shared project credential vs each member brings their own. */
+    /** Credential storage model. `shared` only — see executorCredentialModeEnum
+     *  doc comment for why `per_user` is gone but the enum literal lingers. A
+     *  DB CHECK constraint (added by the removal migration) enforces `shared`. */
     credentialMode: executorCredentialModeEnum('credential_mode').default('shared').notNull(),
     /** Hash over config+auth — skip catalog re-sync when unchanged. */
     manifestHash: varchar('manifest_hash', { length: 64 }),
@@ -3196,7 +3216,11 @@ export const executorConnectors = kortixSchema.table(
   ],
 );
 
-/** Access allow-list for a `restricted` connector — which members/groups can use it. */
+/** ORPHANED 2026-07-06 — the per-connector member/department "who can access"
+ *  allow-list was retired (connectors are project-wide now); the retirement
+ *  migration deleted every row and nothing in the app writes to this table
+ *  anymore. Kept (empty) rather than dropped — see the shareScope/agentScope
+ *  comments on executorConnectors. */
 export const executorConnectorGrants = kortixSchema.table(
   'executor_connector_grants',
   {
@@ -3216,8 +3240,12 @@ export const executorConnectorGrants = kortixSchema.table(
 
 /**
  * Connector credentials — split from the connector. One row per (connector, user):
- * `user_id = NULL` is the shared project credential; a set `user_id` is that
- * member's own (per_user mode). Value/binding encrypted; resolved server-side only.
+ * `user_id = NULL` is the shared project credential. A row with a set `user_id`
+ * (that member's own — the `per_user` mode) is no longer written by the app
+ * (removed 2026-07-05; migration `20260705191549103_remove_per_user_credential_mode.sql`
+ * deleted every existing one) — the column stays for shape/back-compat and a
+ * possible future "connect your own account" feature, but every write path
+ * today passes `userId: null`. Value/binding encrypted; resolved server-side only.
  */
 export const executorCredentials = kortixSchema.table(
   'executor_credentials',
@@ -3226,7 +3254,7 @@ export const executorCredentials = kortixSchema.table(
     connectorId: uuid('connector_id')
       .notNull()
       .references(() => executorConnectors.connectorId, { onDelete: 'cascade' }),
-    /** NULL = shared project credential; set = this member's own. */
+    /** NULL = shared project credential (the only mode written today). */
     userId: uuid('user_id'),
     /** `secret` (api key / token) or `connection` (Pipedream account binding id). */
     kind: varchar('kind', { length: 32 }).default('secret').notNull(),
@@ -3438,9 +3466,3 @@ export const executorProjectSettingsRelations = relations(executorProjectSetting
   }),
 }));
 
-export const projectSecretGrantsRelations = relations(projectSecretGrants, ({ one }) => ({
-  secret: one(projectSecrets, {
-    fields: [projectSecretGrants.secretId],
-    references: [projectSecrets.secretId],
-  }),
-}));

@@ -3,7 +3,7 @@ import { printBanner } from './banner.ts';
 import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
-import { runApps } from './commands/apps.ts';
+import { appsExperimentalEnabled, runApps } from './commands/apps.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
@@ -22,13 +22,13 @@ import { runProjects } from './commands/projects.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
+import { runSchema } from './commands/schema.ts';
 import { runSecrets } from './commands/secrets.ts';
 import { runSelfHost } from './commands/self-host.ts';
 import { runSessionsChat } from './commands/sessions-chat.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
 import { runTriggers } from './commands/triggers.ts';
-import { runTunnel } from './commands/tunnel.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
@@ -48,108 +48,157 @@ interface Command {
   blurb: string;
 }
 
-const COMMANDS: readonly Command[] = [
-  { name: 'init', blurb: 'Start a new Kortix project (a fresh standalone directory)' },
-  { name: '<project-name>', blurb: 'Create a new directory and scaffold it' },
-  { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
-  { name: 'validate', blurb: "Statically validate this project's kortix.toml" },
+interface CommandSection {
+  title: string;
+  commands: readonly Command[];
+}
+
+// Grouped for `kortix help` — order + membership here IS the help layout.
+// `apps` is spliced into Resources only when the experimental flag is on
+// (see appsExperimentalEnabled in ./commands/apps.ts), so it stays hidden
+// by default without touching its registration or dispatch below.
+const SECTIONS: readonly CommandSection[] = [
   {
-    name: 'dev',
-    args: '[opencode args…]',
-    blurb: 'Run OpenCode locally against this config (test agents/skills/tools)',
+    title: 'Project',
+    commands: [
+      { name: 'init', blurb: 'Start a new Kortix project (a fresh standalone directory)' },
+      { name: '<project-name>', blurb: 'Create a new directory and scaffold it' },
+      { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
+      { name: 'validate', blurb: "Statically validate this project's kortix.yaml" },
+      {
+        name: 'schema',
+        args: '[--version 1|2]',
+        blurb: 'Print the canonical kortix.yaml/kortix.toml JSON Schema',
+      },
+      {
+        name: 'dev',
+        args: '[opencode args…]',
+        blurb: 'Run OpenCode locally against this config (test agents/skills/tools)',
+      },
+      {
+        name: 'self-host',
+        args: '<subcommand>',
+        blurb: 'Run your own Kortix Cloud from Docker images',
+      },
+    ],
   },
   {
-    name: 'self-host',
-    args: '<subcommand>',
-    blurb: 'Run your own Kortix Cloud from Docker images',
-  },
-  { name: 'login', blurb: 'Authenticate against the Kortix cloud' },
-  { name: 'logout', blurb: 'Remove the stored auth token' },
-  { name: 'whoami', blurb: 'Show the currently authenticated user' },
-  { name: 'token', blurb: 'Show the active token context (project/session/agent grants)' },
-  { name: 'hosts', args: '<subcommand>', blurb: 'Manage + switch Kortix API hosts' },
-  {
-    name: 'accounts',
-    args: '<subcommand>',
-    blurb: 'List + switch the active account (multi-account logins)',
-  },
-  {
-    name: 'projects',
-    args: '<subcommand>',
-    blurb: 'List, link, set-default, open Kortix cloud projects',
-  },
-  { name: 'secrets', args: '<subcommand>', blurb: 'Manage project secrets (project-scoped)' },
-  { name: 'agents', args: '<subcommand>', blurb: "Set which model each agent runs on" },
-  { name: 'env', args: '<subcommand>', blurb: 'Pull/push project secrets as a dotenv file' },
-  { name: 'sessions', args: '<subcommand>', blurb: 'List, create, restart project sessions' },
-  { name: 'chat', args: '[session-id]', blurb: "Talk to a session's agent (REPL or --prompt)" },
-  { name: 'files', args: '<subcommand>', blurb: 'Browse repo files, commits, branches, diffs' },
-  { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
-  {
-    name: 'channels',
-    args: '<subcommand>',
-    blurb: 'Connect Slack to this project (status/connect/disconnect/manifest)',
+    title: 'Auth & hosts',
+    commands: [
+      { name: 'login', blurb: 'Authenticate against the Kortix cloud' },
+      { name: 'logout', blurb: 'Remove the stored auth token' },
+      { name: 'whoami', blurb: 'Show the currently authenticated user' },
+      { name: 'token', blurb: 'Show the active token context (project/session/agent grants)' },
+      { name: 'hosts', args: '<subcommand>', blurb: 'Manage + switch Kortix API hosts' },
+      {
+        name: 'accounts',
+        args: '<subcommand>',
+        blurb: 'List + switch the active account (multi-account logins)',
+      },
+    ],
   },
   {
-    name: 'connectors',
-    args: '<subcommand>',
-    blurb: 'Manage integrations agents call as tools (Pipedream/MCP/HTTP)',
+    title: 'Work',
+    commands: [
+      {
+        name: 'projects',
+        args: '<subcommand>',
+        blurb: 'List, link, set-default, open Kortix cloud projects',
+      },
+      { name: 'sessions', args: '<subcommand>', blurb: 'List, create, restart project sessions' },
+      { name: 'chat', args: '[session-id]', blurb: "Talk to a session's agent (REPL or --prompt)" },
+      { name: 'files', args: '<subcommand>', blurb: 'Browse repo files, commits, branches, diffs' },
+      { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
+      { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
+    ],
   },
   {
-    name: 'executor',
-    args: '<subcommand>',
-    blurb: 'Call connectors as tools (discover/describe/call) + run the MCP server',
+    title: 'Resources',
+    commands: [
+      {
+        name: 'connectors',
+        args: '<subcommand>',
+        blurb: 'Manage integrations agents call as tools (Pipedream/MCP/HTTP)',
+      },
+      { name: 'secrets', args: '<subcommand>', blurb: 'Manage project secrets (project-scoped)' },
+      { name: 'env', args: '<subcommand>', blurb: 'Pull/push project secrets as a dotenv file' },
+      {
+        name: 'channels',
+        args: '<subcommand>',
+        blurb: 'Connect Slack to this project (status/connect/disconnect/manifest)',
+      },
+      {
+        name: 'sandboxes',
+        args: '<subcommand>',
+        blurb: 'Manage sandbox images: templates, builds, health',
+      },
+      {
+        name: 'marketplace',
+        args: '<subcommand>',
+        blurb: 'Search, show, install, and inspect marketplace items',
+      },
+      {
+        name: 'executor',
+        args: '<subcommand>',
+        blurb: 'Call connectors as tools (discover/describe/call) + run the MCP server',
+      },
+      ...(appsExperimentalEnabled()
+        ? [{ name: 'apps', args: '<subcommand>', blurb: 'Manage deployable apps (experimental)' }]
+        : []),
+    ],
   },
   {
-    name: 'marketplace',
-    args: '<subcommand>',
-    blurb: 'Search, show, install, and inspect marketplace items',
+    title: 'Agents',
+    commands: [{ name: 'agents', args: '<subcommand>', blurb: 'Set which model each agent runs on' }],
   },
   {
-    name: 'sandboxes',
-    args: '<subcommand>',
-    blurb: 'Manage sandbox images: templates, builds, health',
-  },
-  { name: 'apps', args: '<subcommand>', blurb: 'Manage deployable apps (experimental)' },
-  { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
-  {
-    name: 'access',
-    args: '<subcommand>',
-    blurb: 'Manage who can use this project (invite/grant/revoke)',
-  },
-  {
-    name: 'roles',
-    args: '<subcommand>',
-    blurb: 'Manage IAM custom roles + policy assignments (account-scoped)',
-  },
-  {
-    name: 'grants',
-    args: '<subcommand>',
-    blurb: 'Assign agents/skills/secrets to members or departments (inheritance pyramid)',
+    title: 'Access & permissions',
+    commands: [
+      {
+        name: 'access',
+        args: '<subcommand>',
+        blurb: 'Manage who can use this project (invite/grant/revoke)',
+      },
+      {
+        name: 'roles',
+        args: '<subcommand>',
+        blurb: 'Manage IAM custom roles + policy assignments (account-scoped)',
+      },
+      {
+        name: 'grants',
+        args: '<subcommand>',
+        blurb: "Assign agents to members or departments (they inherit the agent's skills/connectors/secrets)",
+      },
+    ],
   },
   {
-    name: 'tunnel',
-    args: '<subcommand>',
-    blurb: 'See & drive your fleet of registered computers (Agent Tunnel)',
+    title: 'CLI',
+    commands: [
+      { name: 'update', blurb: 'Pull the latest CLI from kortix.com/install' },
+      { name: 'uninstall', blurb: 'Remove the Kortix CLI from this machine' },
+      { name: 'help', blurb: 'Show this help' },
+      { name: 'version', blurb: 'Print the CLI version' },
+    ],
   },
-  { name: 'update', blurb: 'Pull the latest CLI from kortix.com/install' },
-  { name: 'uninstall', blurb: 'Remove the Kortix CLI from this machine' },
-  { name: 'help', blurb: 'Show this help' },
-  { name: 'version', blurb: 'Print the CLI version' },
-] as const;
+];
 
 function renderHelp(): string {
+  const allCommands = SECTIONS.flatMap((s) => s.commands);
   const labelWidth = Math.max(
-    ...COMMANDS.map((c) => (c.args ? `${c.name} ${c.args}` : c.name).length),
+    ...allCommands.map((c) => (c.args ? `${c.name} ${c.args}` : c.name).length),
   );
   const lines: string[] = [];
   lines.push('');
   lines.push(header('Kortix CLI', VERSION));
   lines.push(rule());
-  lines.push('');
-  for (const cmd of COMMANDS) {
-    const label = cmd.args ? `${cmd.name} ${C.faded}${cmd.args}${C.reset}` : cmd.name;
-    lines.push(`  ${pad(label, labelWidth)}   ${C.dim}${cmd.blurb}${C.reset}`);
+  for (const section of SECTIONS) {
+    if (section.commands.length === 0) continue;
+    lines.push('');
+    lines.push(`  ${C.white}${C.bold}${section.title}${C.reset}`);
+    for (const cmd of section.commands) {
+      const label = cmd.args ? `${cmd.name} ${C.faded}${cmd.args}${C.reset}` : cmd.name;
+      lines.push(`  ${pad(label, labelWidth)}   ${C.dim}${cmd.blurb}${C.reset}`);
+    }
   }
   lines.push('');
   lines.push(
@@ -164,11 +213,13 @@ function printVersion(): void {
 }
 
 async function main(argv: string[]): Promise<number> {
-  for (const arg of argv) {
-    if (arg === '--version' || arg === '-v') {
-      printVersion();
-      return 0;
-    }
+  // Only the LEADING `--version`/`-v` is the global "print the CLI's own
+  // version" flag. Scanning the whole argv used to hijack any subcommand's
+  // own same-named flag (e.g. `kortix schema --version 2`, `kortix self-host
+  // update --version <tag>`) before it ever reached the subcommand parser.
+  if (argv[0] === '--version' || argv[0] === '-v') {
+    printVersion();
+    return 0;
   }
   if (argv.length === 0) {
     // No args — show the big ASCII banner above the help, like `vercel`.
@@ -208,6 +259,9 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'validate') {
     return runValidate(argv.slice(1));
+  }
+  if (argv[0] === 'schema') {
+    return runSchema(argv.slice(1));
   }
   if (argv[0] === 'dev') {
     return runDev(argv.slice(1));
@@ -256,9 +310,6 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'triggers') {
     return runTriggers(argv.slice(1));
-  }
-  if (argv[0] === 'tunnel') {
-    return runTunnel(argv.slice(1));
   }
   if (argv[0] === 'channels') {
     return runChannels(argv.slice(1));

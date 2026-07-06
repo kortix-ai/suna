@@ -25,7 +25,7 @@ repo — in one command. Run it once to create the project, then run it again
 any time to sync. It's the everyday "save my work to the cloud" command.
 
 Every run:
-  1. verify kortix.toml parses + validates   (skip with --no-verify)
+  1. verify kortix.yaml parses + validates   (skip with --no-verify)
   2. git add -A + commit                      (skipped if nothing changed)
   3. offer to set any [env] secret not yet set (prompts you; skip with --no-env)
   4. push the branch you're on → the same-named branch on the project's repo
@@ -67,7 +67,7 @@ Options:
                        GitHub App (App-free import; needs repo Contents R/W).
   -m, --message <msg>  Commit message for the sync (default: "kortix: ship").
   --no-commit          Don't commit. Fail if the working tree is dirty.
-  --no-verify          Skip the kortix.toml validation (compile) check.
+  --no-verify          Skip the kortix.yaml validation (compile) check.
   --no-env             Skip the [env] secret check + prompts.
   --no-connect         Skip the connector connect/credential prompts.
   -y, --yes            Don't prompt; use the active account, skip secret prompts.
@@ -164,7 +164,7 @@ export async function runShip(argv: string[]): Promise<number> {
   // ── Guards ───────────────────────────────────────────────────────────────
   if (!isKortixProject()) {
     process.stderr.write(
-      `${status.err(`Not a Kortix project — no .kortix/ or kortix.toml in ${process.cwd()}.`)}\n` +
+      `${status.err(`Not a Kortix project — no .kortix/ or kortix.yaml in ${process.cwd()}.`)}\n` +
         `  ${C.dim}Run ${C.reset}${C.cyan}kortix init${C.reset}${C.dim} here first.${C.reset}\n`,
     );
     return 1;
@@ -229,12 +229,12 @@ function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
     const detail = (err as Error).message;
     if (flags.noVerify) {
       process.stdout.write(
-        `  ${status.warn(`kortix.toml has a syntax error (ignored via --no-verify)`)}\n`,
+        `  ${status.warn(`kortix.yaml has a syntax error (ignored via --no-verify)`)}\n`,
       );
       return { ok: true, env: empty };
     }
     process.stderr.write(
-      `\n${status.err("kortix.toml doesn't parse — fix it before shipping.")}\n` +
+      `\n${status.err("kortix.yaml doesn't parse — fix it before shipping.")}\n` +
         `  ${C.dim}${detail.split('\n').join('\n  ')}${C.reset}\n` +
         `  ${C.dim}Bypass with ${C.reset}${C.cyan}--no-verify${C.reset}${C.dim}.${C.reset}\n\n`,
     );
@@ -250,7 +250,7 @@ function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
     if (errors.length > 0) {
       process.stderr.write(
         `\n${status.err(
-          `kortix.toml has ${errors.length} error${errors.length === 1 ? '' : 's'}:`,
+          `kortix.yaml has ${errors.length} error${errors.length === 1 ? '' : 's'}:`,
         )}\n`,
       );
       for (const e of errors) process.stderr.write(`  ${C.dim}•${C.reset} ${e}\n`);
@@ -259,7 +259,7 @@ function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
       );
       return { ok: false, env: manifest.env };
     }
-    process.stdout.write(`  ${status.ok('kortix.toml verified')}\n`);
+    process.stdout.write(`  ${status.ok('kortix.yaml verified')}\n`);
   }
 
   return { ok: true, env: manifest.env };

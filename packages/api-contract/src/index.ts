@@ -284,11 +284,21 @@ export const TriggerListSchema = z.object({
 export type TriggerList = z.infer<typeof TriggerListSchema>;
 
 /**
- * The per-user view of one secret KEY as built by `buildSecretView`: the
- * shared/project row merged with the member's own override. Values are never
- * serialized.
+ * The per-user view of one secret, as built by `buildSecretView`: a secret is
+ * `{ identifier, name (the env var KEY), value }`. `identifier` is unique per
+ * project — the handle an agent's `secrets` grant references and the UI
+ * shows. `name` (the KEY) is NOT unique — multiple identifiers may share one
+ * (e.g. GMAPS-primary / GMAPS-backup, both GOOGLE_MAPS_API_KEY). Values are
+ * never serialized.
+ *
+ * Authorization is centralized on the agent grant (by identifier) — there is
+ * no per-secret member/group sharing and no resource-side agent allow-list
+ * (both retired); every project member with read access sees every secret.
  */
 export const SecretSchema = z.object({
+  /** Unique per project. The handle an agent's `secrets` grant references. */
+  identifier: z.string(),
+  /** The env var KEY injected into the sandbox. Not unique. */
   name: z.string(),
   project_id: z.string(),
   secret_id: z.string().nullable(),
@@ -302,20 +312,8 @@ export const SecretSchema = z.object({
   managed_by: z.literal('project_secret').nullable(),
   /** Is a shared project value set at all. */
   configured: z.boolean(),
-  share_scope: z.enum(['project', 'restricted']),
-  sharing: SharingIntentSchema.nullable(),
-  /** Which agents may use this secret. null / [] = ALL agents (default); a list
-   *  of agent names restricts it to those agents' sessions. The single access
-   *  control the Secrets page exposes now that per-member "only me" is retired.
-   *  Nullish for back-compat with older API builds that predate the field. */
-  agent_scope: z.array(z.string()).nullish(),
-  usable_by_me: z.boolean(),
-  /** Provenance for `usable_by_me`: the agent(s) the caller is assigned to that
-   *  declare this secret (the "assign human → agent" inheritance pyramid).
-   *  Non-null ONLY when inheritance is the reason it's usable (the share scope
-   *  wouldn't otherwise reach them) — the UI shows an "Inherited from" badge. */
-  inherited_from: z.array(z.string()).nullish(),
-  /** The caller's private override (value omitted), or null. */
+  /** The caller's private override (value omitted), or null. Used today only by
+   *  the CODEX_AUTH_JSON per-user provider login. */
   mine: z.object({ active: z.boolean(), updated_at: z.string() }).nullable(),
   /** Which value actually gets injected into the caller's sessions. */
   effective_source: z.enum(['mine', 'shared', 'none']),
