@@ -332,19 +332,21 @@ const envSchema = z.object({
   //   autostop   → idle box stops, compute billing ends. CLAMPED to >=1 at the
   //                use site so a box is NEVER created persistent.
   //                This is what actually stops the money burn.
-  //   autoarchive→ stopped box moves to cold storage after a few hours (cheap,
+  //   autoarchive→ stopped box moves to cold storage after half a day (cheap,
   //                still resumable; kept warm-resumable in the meantime).
   //                Was 3 days (4320) until 2026-07-02: the org-wide (shared
   //                across every environment) stopped-sandbox pool rode that
   //                window up to ~32000GiB, tipping the shared 40000GiB total
-  //                disk quota and failing every create/resume org-wide. 360
-  //                (6h) keeps same-workday warm-resume while capping how much
-  //                disk any one environment's idle churn can hold at once.
+  //                disk quota and failing every create/resume org-wide. Went
+  //                to 360 (6h) as the incident fix, then back up to 720 (12h)
+  //                once disk headroom was confirmed stable — keeps next-day
+  //                warm-resume while still capping how much disk any one
+  //                environment's idle churn can hold at once.
   //   autodelete → NEVER (-1). A sandbox is only ever removed when a user
   //                explicitly deletes the session — auto-stop + cold archive
   //                make an idle box nearly free, so we never destroy disk.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES:    optInt(120),
-  KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(360),    // 6 hours
+  KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(720),    // 12 hours
   KORTIX_SANDBOX_AUTODELETE_MINUTES:  optInt(-1),     // never auto-delete
 
   // ── Internal Service Key (auto-generated if missing — never fails) ───────
