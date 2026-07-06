@@ -181,9 +181,9 @@ function wireNoProjects() {
 
 // ─── getProviders ────────────────────────────────────────────────────────────
 
-test('getProviders is pure — no network, always daytona', async () => {
+test('getProviders is pure — no network, always managed', async () => {
   const result = await getProviders();
-  expect(result).toEqual({ providers: ['daytona'], default: 'daytona' });
+  expect(result).toEqual({ providers: ['managed'], default: 'managed' });
   expect(calls.length).toBe(0);
 });
 
