@@ -300,7 +300,7 @@ export async function createTemplate(input: CreateTemplateInput): Promise<DbSand
       name: input.name || input.slug,
       isShared: false,
       source: input.source ?? 'ui',
-      provider: 'daytona',
+      provider: 'managed',
       image: input.image ?? null,
       dockerfilePath: input.dockerfilePath ?? null,
       entrypoint: input.entrypoint ?? null,
@@ -511,7 +511,7 @@ export async function recordTemplateBuilt(
   // lazy, pressure-gated GC eventually notices.
   const oldName = prev?.providerSnapshotName ?? null;
   if (oldName && oldName !== args.snapshotName) {
-    await reapPredecessorSnapshot(templateId, oldName, args.provider ?? prev?.provider ?? 'daytona');
+    await reapPredecessorSnapshot(templateId, oldName, args.provider ?? prev?.provider ?? 'managed');
   }
 }
 
@@ -585,7 +585,7 @@ function synthesizedDefault(): ResolvedTemplate {
     name: tpl.name ?? 'Default',
     isShared: true,
     source: 'platform',
-    provider: 'daytona',
+    provider: 'managed',
     image: null,
     dockerfilePath: null,
     entrypoint: null,
@@ -608,7 +608,7 @@ function rowToResolved(row: DbSandboxTemplate): ResolvedTemplate {
     name: row.name,
     isShared: row.isShared,
     source: (row.source as ResolvedTemplate['source']) ?? 'toml',
-    provider: row.provider ?? 'daytona',
+    provider: row.provider ?? 'managed',
     image: row.image,
     dockerfilePath: row.dockerfilePath,
     entrypoint: row.entrypoint,
@@ -642,7 +642,7 @@ async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<v
           name: tpl.name ?? tpl.slug,
           isShared: false,
           source: 'toml',
-          provider: 'daytona',
+          provider: 'managed',
           image: tpl.image ?? null,
           dockerfilePath: tpl.dockerfile ?? null,
           entrypoint: null,

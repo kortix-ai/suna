@@ -522,7 +522,7 @@ export async function provisionSessionSandbox(opts: {
             provisionTimeline: timeline,
             daytonaSandboxId: result.externalId,
             runtimeArtifact: {
-              artifactType: providerName === 'daytona' ? 'daytona_snapshot' : 'unknown',
+              artifactType: (providerName === 'daytona' || providerName === 'managed') ? 'daytona_snapshot' : 'unknown',
               providerArtifactRef: imageInfo!.snapshotName,
               contentHash: imageInfo!.contentHash,
               sandboxSlug: imageInfo!.slug,

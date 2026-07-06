@@ -88,6 +88,10 @@ export interface SandboxProviderAdapter {
 }
 
 const ADAPTERS = new Map<string, SandboxProviderAdapter>();
+// The managed cloud backend is registered under BOTH its canonical name
+// ('managed') and its legacy alias ('daytona' = daytonaProvider.id), so template
+// rows / sessions holding either value resolve to the same adapter.
+ADAPTERS.set('managed', daytonaProvider);
 ADAPTERS.set(daytonaProvider.id, daytonaProvider);
 ADAPTERS.set(platinumProvider.id, platinumProvider);
 

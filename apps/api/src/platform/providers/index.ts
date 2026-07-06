@@ -11,7 +11,8 @@ import { PlatinumProvider } from './platinum';
  *   - daytona — managed cloud (Daytona)
  *   - platinum — managed cloud (Platinum)
  */
-export type ProviderName = 'daytona' | 'platinum';
+// 'managed' is canonical for the managed cloud backend; 'daytona' is its legacy alias.
+export type ProviderName = 'managed' | 'daytona' | 'platinum';
 
 /**
  * Thrown by the Daytona warm path when the experimental memory-snapshot restore
@@ -124,9 +125,10 @@ export function getProvider(name: ProviderName): SandboxProvider {
   let provider: SandboxProvider;
 
   switch (name) {
+    case 'managed':
     case 'daytona':
       if (!config.DAYTONA_API_KEY) {
-        throw new Error('Daytona provider requires DAYTONA_API_KEY to be set.');
+        throw new Error('Managed provider requires DAYTONA_API_KEY to be set.');
       }
       provider = new DaytonaProvider();
       break;

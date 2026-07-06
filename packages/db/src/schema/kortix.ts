@@ -27,6 +27,11 @@ export const sandboxStatusEnum = kortixSchema.enum('sandbox_status', [
 ]);
 
 export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
+  // 'managed' is the canonical name for the managed cloud backend. 'daytona' is
+  // the legacy alias for the SAME backend, kept valid forever so existing rows
+  // and any external caller still sending 'daytona' never break. New rows write
+  // 'managed'; read paths accept both (config.isManagedProviderName).
+  'managed',
   'daytona',
   'local_docker',
   'justavps',
@@ -534,7 +539,7 @@ export const projectSessions = kortixSchema.table(
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     branchName: text('branch_name').notNull(),
     baseRef: text('base_ref').default('main').notNull(),
-    sandboxProvider: sandboxProviderEnum('sandbox_provider').default('daytona').notNull(),
+    sandboxProvider: sandboxProviderEnum('sandbox_provider').default('managed').notNull(),
     sandboxId: text('sandbox_id'),
     sandboxUrl: text('sandbox_url'),
     opencodeSessionId: text('opencode_session_id'),
@@ -981,7 +986,7 @@ export const sessionSandboxes = kortixSchema.table(
     sessionId: text('session_id').notNull().unique(),
     accountId: uuid('account_id').notNull(),
     projectId: uuid('project_id').notNull(),
-    provider: sandboxProviderEnum('provider').default('daytona').notNull(),
+    provider: sandboxProviderEnum('provider').default('managed').notNull(),
     externalId: text('external_id'),
     baseUrl: text('base_url'),
     status: sessionSandboxStatusEnum('status').default('provisioning').notNull(),
@@ -1076,7 +1081,7 @@ export const sandboxTemplates = kortixSchema.table(
     /** Where the template came from: 'platform' | 'toml' | 'ui'. */
     source: text('source').default('toml').notNull(),
     /** 'daytona' (others to follow). */
-    provider: text('provider').default('daytona').notNull(),
+    provider: text('provider').default('managed').notNull(),
 
     // ─── Image definition (exactly one of image / dockerfilePath) ──────────
     /** Public Docker image reference (e.g. python:3.12-slim). */
@@ -1173,7 +1178,7 @@ export const sandboxes = kortixSchema.table(
     sandboxId: uuid('sandbox_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').notNull(),
     name: varchar('name', { length: 255 }).notNull(),
-    provider: sandboxProviderEnum('provider').default('daytona').notNull(),
+    provider: sandboxProviderEnum('provider').default('managed').notNull(),
     externalId: text('external_id'),
     status: sandboxStatusEnum('status').default('provisioning').notNull(),
     baseUrl: text('base_url').notNull(),
