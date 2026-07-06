@@ -1,0 +1,180 @@
+---
+title: "How we QA every PR before a human reviews it — with an agent that actually runs the change, not just reads the diff"
+description: A step-by-step look at the QA agent we run on Kortix — connected to GitHub, our test environment, and Cloudflare. Every PR spins up a real sandbox, runs the suite, exercises the change end-to-end, and posts a verdict before a reviewer opens the tab.
+date: "2026-07-05"
+author: team
+tags:
+  - QA
+  - Case Study
+  - Engineering
+---
+
+Code review catches what a human can spot by reading. It misses everything you'd
+only find by running the thing — the test that passes locally but flakes in CI,
+the change that works on the happy path and 500s on the edge, the migration that
+looks fine in the diff and locks a table under load. Those get caught in
+staging, or in production, long after the PR was approved.
+
+So we moved that work to the moment the PR opens. This is exactly how we QA our
+own changes on Kortix — every connection, every guardrail — laid out so you can
+build the same gate for your repo.
+
+<KeyFacts>
+  <Fact label="Team">Kortix — the company behind this platform</Fact>
+  <Fact label="Runs on">Every PR, on open and on push</Fact>
+  <Fact label="Connected systems">GitHub · Test environment · Cloudflare</Fact>
+  <Fact label="Mode">Trigger-driven · verdict on the PR</Fact>
+</KeyFacts>
+
+## The problem
+
+The expensive bugs are the ones a diff can't show you. A reviewer reads the code,
+reasons about it, and approves — but nobody actually checked out the branch, ran
+the suite, hit the new endpoint, and watched what happened. CI runs the tests the
+author wrote; it doesn't probe the paths they forgot. And the human reviewer,
+however sharp, is reasoning about behavior instead of observing it.
+
+The usual fixes all stop short. Green CI proves the existing tests pass, not that
+the change is correct. A manual QA pass is thorough but slow, and it happens too
+late to shape the review. And a generic AI reviewer comments on the diff it can
+read — it has no way to run the branch, so it never sees the failure that only
+appears at runtime.
+
+<PullQuote>
+  The goal was never to replace the reviewer. It was to hand them a change that's
+  already been run, exercised, and verified — so review is about judgment, not
+  discovery.
+</PullQuote>
+
+## What we built
+
+On Kortix, every PR wakes an agent that runs like a QA engineer embedded on the
+team. Each PR — on open and on every push — spawns its own isolated session, a
+real cloud computer, with scoped reach into exactly what QA needs: the branch,
+the test suite, a deployable test environment, and the Cloudflare edge in front
+of it. It checks out the change, runs the suite, exercises the new behavior
+against a live deploy, and posts a verdict back on the PR before a human opens
+the tab.
+
+<Figure
+  caption="The QA agent posting its verdict as a PR check"
+  aspect="16/9"
+/>
+
+Here's the whole thing, step by step.
+
+## How we did it — step by step
+
+<Steps>
+<Step title="Connect GitHub as the trigger">
+
+We pointed a signed GitHub webhook at the project. Every PR opened or updated
+fires it, and each firing spawns a fresh **session** in its own isolated sandbox,
+seeded with the branch under test. One PR, one session, one disposable machine.
+Nothing leaks between runs, and a busy queue just means more QA sessions running
+in parallel.
+
+</Step>
+<Step title="Give the agent the branch and the test playbook">
+
+The session checks out the exact branch and installs it clean. Our QA conventions
+live as **skills** and **memory** that ride along: how to run the suite, which
+flows are critical, the edge cases that have bitten us before, and the shape of a
+good verdict. The agent doesn't guess how to test the repo — it follows the same
+playbook our engineers do, and it gets sharper every time a bug slips past and
+gets written down.
+
+</Step>
+<Step title="Connect the systems QA actually needs">
+
+Through scoped **connectors**, brokered server-side so no raw token ever reaches
+the model, the agent can:
+
+- **Run the full suite** — unit, integration, and e2e, inside the sandbox, with
+  the failures captured in full, not just a red X.
+- **Deploy to the test environment** — it stands the change up on a real ephemeral
+  deploy and exercises it end-to-end, hitting the new paths the way a user would.
+- **Reach the edge via Cloudflare** — it validates behavior through the actual
+  edge — routing, headers, caching, redirects — not just against localhost.
+- **Report on GitHub** — a pass/fail verdict and the reproduction land as a check
+  and a comment on the PR.
+
+</Step>
+<Step title="Set the guardrails">
+
+An agent with your test environment and edge access is an agent that could push
+past where QA should stop, so this step matters most. It operates against the
+**test environment only** — production is out of scope entirely — and it
+**never merges or deploys to prod**; its output is a verdict, and a human owns
+the merge. Credentials are encrypted in the Secrets Manager and injected at
+runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Let each PR arrive pre-QA'd">
+
+With that in place, a new PR checks itself out, runs the suite, deploys to the
+test environment, exercises the change through Cloudflare, and posts a verdict —
+green when it holds up, or a red check with the exact failing command, the logs,
+and the steps to reproduce. A flaky test gets flagged with the evidence. A broken
+edge route gets caught before staging. The reviewer opens a PR that's already
+been run.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern, in one line" tone="accent">
+  Connect the repo via a **trigger** on every PR, give the agent scoped
+  **connectors** into the branch, the test suite, the test environment, and
+  Cloudflare, encode the QA playbook as **skills** and **memory**, and keep it to
+  the test environment with a human on the merge. Then let each PR arrive
+  pre-QA'd.
+</Callout>
+
+## Guardrails: safe enough to give real environment access
+
+Handing an agent your test environment and edge is a trust question, not just a
+product one. It's answerable on Kortix because the controls are built in, not
+bolted on:
+
+- **Isolation.** Every PR runs in its own microVM sandbox on its own branch. The
+  session can install, deploy, and hammer the change to reproduce a failure — and
+  only the verdict it reports ever leaves.
+- **Scoped secrets.** The GitHub, test-environment, and Cloudflare credentials
+  live encrypted in the Secrets Manager, injected into the sandbox at runtime,
+  never exposed to the model or the logs.
+- **Test environment only.** The agent's reach stops at the test plane — no
+  production access, no prod deploy, no merge. It reports; the team decides.
+- **Everything is code.** The agent's persona, its skills, and its permissions are
+  files in the repo — reviewable, versioned, and changed only through a reviewed
+  **change request**, never a hidden dashboard setting.
+
+<Figure
+  caption="A red QA verdict with the failing command and repro steps attached"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every PR" label="Run, deployed, and exercised before human review" />
+  <Stat value="Pre-merge" label="Runtime failures caught before they reach staging" />
+  <Stat value="4 systems" label="Branch, suite, test environment, and edge — in one agent" />
+</StatGrid>
+
+Review stopped being the place bugs get discovered. The long tail of "works in the
+diff, breaks at runtime" failures now surfaces on the PR the moment it opens —
+with the failing command, the logs, and the repro already attached. Reviewers
+spend their judgment on the design, not on manually checking out branches, and
+the changes that reach staging have already been run.
+
+## Why this is hard to build anywhere else
+
+An AI reviewer can read your diff. It can't safely be handed your test
+environment and your edge and told to actually run the change — because it has no
+isolation to contain a session, no secrets manager to broker the tokens, no
+scope boundary to keep it off production, and no memory to get better with every
+bug it learns to catch.
+
+Kortix has all four. That's what turns "a bot that comments on PRs" into a QA
+engineer that runs the change before a human ever does — and it's the same
+foundation you'd build your own QA agent on.

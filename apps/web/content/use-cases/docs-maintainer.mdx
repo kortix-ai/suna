@@ -1,0 +1,175 @@
+---
+title: "How we keep our docs true to the code — with an agent that follows every merge, not a quarterly cleanup"
+description: A step-by-step look at the docs agent we run on Kortix — connected to GitHub, our codebase, and our docs site. Every merged PR triages what changed, updates the READMEs, guides, and reference that drifted, and opens a reviewed docs PR before anyone notices the gap.
+date: "2026-07-05"
+author: team
+tags:
+  - Documentation
+  - Case Study
+  - Engineering
+---
+
+Documentation is the first thing to rot and the last thing anyone budgets time
+to fix. Code ships every day; the README, the setup guide, the API reference,
+the architecture note — they all quietly fall a release behind. By the time
+someone notices, the fix is an archaeology project: reconstruct what changed
+across dozens of merges, then rewrite half a dozen pages that all drifted at
+once.
+
+So we stopped treating docs as a quarterly cleanup and wired them to the same
+event that changes the code: the merge. This is exactly how we keep our own docs
+true on Kortix — every connection, every guardrail — laid out so you can build
+the same thing for your repo.
+
+<KeyFacts>
+  <Fact label="Team">Kortix — the company behind this platform</Fact>
+  <Fact label="Source of truth">The codebase itself</Fact>
+  <Fact label="Connected systems">GitHub · Codebase · Docs site</Fact>
+  <Fact label="Mode">Trigger-driven · PR-gated</Fact>
+</KeyFacts>
+
+## The problem
+
+Docs drift is a structural problem, not a discipline problem. The person who
+changes the code is rarely the person who owns the page it affects, and the two
+never get updated in the same motion. A renamed environment variable, a new
+required setup step, a removed endpoint — each is a one-line code change and a
+five-page docs change nobody makes.
+
+The usual fixes all fail the same way. "Docs are part of the PR" works until a
+deadline, then it's the first thing cut. A scheduled audit finds the drift months
+late, all at once, when reconstructing intent is hardest. And pointing a generic
+AI writer at your docs produces confident prose that doesn't actually match the
+code — because it never read the code.
+
+<PullQuote>
+  The goal was never to generate more docs. It was to keep the docs we have true
+  to the code — automatically, on every merge, before the drift compounds.
+</PullQuote>
+
+## What we built
+
+On Kortix, every merge to our repo wakes an agent that runs like a technical
+writer embedded on the team. Each merged PR spawns its own isolated session — a
+real cloud computer — with scoped reach into exactly what a docs update needs:
+the diff that just landed, the full codebase for context, and the docs
+themselves. It figures out what drifted, rewrites the affected pages, and opens a
+docs PR for review. Nothing publishes without a human merge.
+
+<Figure
+  caption="The docs agent opening a follow-up PR after a feature merge"
+  aspect="16/9"
+/>
+
+Here's the whole thing, step by step.
+
+## How we did it — step by step
+
+<Steps>
+<Step title="Connect GitHub as the trigger">
+
+We pointed a signed GitHub webhook at the project. Every merge to the default
+branch fires it, and each firing spawns a fresh **session** in its own isolated
+sandbox, seeded with the merged diff. One PR, one session, one disposable
+machine. Nothing leaks between runs, and a busy day of merges just means more
+sessions running in parallel.
+
+</Step>
+<Step title="Give the agent the codebase and the docs standard">
+
+Our writing conventions live as **skills** and **memory** that ride into every
+session: how our docs are structured, the voice and terminology we use, which
+page owns which subject, and the fixes that worked before. The agent doesn't
+invent a style — it reasons from the same standard our team writes to, and it
+gets sharper every time a docs PR is merged.
+
+</Step>
+<Step title="Connect what a docs update can touch">
+
+Through scoped **connectors**, brokered server-side so no raw token ever reaches
+the model, the agent can:
+
+- **Read the diff and the codebase** — it sees exactly what changed, then reads
+  the surrounding code to understand intent, not just the delta.
+- **Search the docs** — it locates every page, README, and reference section that
+  mentions the changed behavior, so nothing drifts silently.
+- **Open a PR on GitHub** — the rewritten docs come back as a clean, reviewable
+  pull request, linked to the change that prompted it.
+
+</Step>
+<Step title="Set the guardrails">
+
+An agent that can edit your docs is an agent that can quietly rewrite them wrong,
+so this step matters most. The agent **never pushes to a branch anyone reads
+from**: every change lands as a **pull request**, gated on a human merge. It
+edits only files under the docs and README paths — the code itself is
+read-only to it. Credentials are encrypted in the Secrets Manager and injected at
+runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Let each merge close its own docs gap">
+
+With that in place, a merged PR triages what changed, finds every page that
+drifted, rewrites them to match, and opens a docs PR with the reasoning attached.
+A renamed env var becomes a one-click update to the setup guide. A new endpoint
+becomes a reference entry drafted from the actual handler. A removed feature
+becomes a PR that strips the stale section — before a user hits the wrong
+instruction.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern, in one line" tone="accent">
+  Connect the repo via a **trigger** on merge, give the agent scoped
+  **connectors** into the diff, the codebase, and the docs, encode the writing
+  standard as **skills** and **memory**, and gate every change behind a reviewed
+  **PR**. Then let each merge close its own docs gap.
+</Callout>
+
+## Guardrails: safe enough to run on your main repo
+
+Handing an agent write access to your documentation is a trust question, not just
+a product one. It's answerable on Kortix because the controls are built in, not
+bolted on:
+
+- **Isolation.** Every merge runs in its own microVM sandbox on its own branch.
+  The session can read the whole repo to understand a change — and only the docs
+  PR it opens ever leaves.
+- **Scoped secrets.** The GitHub credential lives encrypted in the Secrets
+  Manager, injected into the sandbox at runtime, never exposed to the model or the
+  logs.
+- **PR-gated, always.** No change reaches a branch anyone reads without a person
+  reviewing the diff and clicking merge. The agent proposes; the team disposes.
+- **Everything is code.** The agent's persona, its skills, and its permissions
+  are files in the repo — reviewable, versioned, and changed only through a
+  reviewed **change request**, never a hidden dashboard setting.
+
+<Figure
+  caption="A docs PR held for human review before it merges"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every merge" label="Docs re-checked against the code that changed" />
+  <Stat value="Same-day" label="Drift caught and fixed before it reaches a reader" />
+  <Stat value="3 systems" label="The diff, the codebase, and the docs — in one agent" />
+</StatGrid>
+
+Docs stopped being the thing we felt guilty about. The long tail of "someone
+should update the README" changes that used to pile up now arrive as small,
+reviewable PRs the day the code lands — with the reasoning already written down.
+The team reviews a diff instead of reconstructing months of drift, and readers
+stop hitting instructions that quietly stopped being true.
+
+## Why this is hard to build anywhere else
+
+An AI writer can generate documentation. It can't safely be handed your live repo
+and told to keep it true — because it has no isolation to contain a session, no
+secrets manager to broker the GitHub token, no PR gate to hold every change for
+review, and no memory to get better with each merged fix.
+
+Kortix has all four. That's what turns "a bot that writes docs" into a technical
+writer that keeps your existing docs honest — and it's the same foundation you'd
+build your own docs agent on.

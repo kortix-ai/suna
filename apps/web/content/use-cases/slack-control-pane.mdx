@@ -1,0 +1,180 @@
+---
+title: "How we run the whole company from Slack — one agent with access to every platform, triggered by a message"
+description: A step-by-step look at the control pane we built on Kortix — a single agent reachable from Slack with scoped access to our database, Stripe, sandbox providers, Linear, and GitHub. Ask in a thread; it runs the task across whatever platforms it touches. The only setup is connecting the platform once.
+date: "2026-07-05"
+author: team
+tags:
+  - Operations
+  - Case Study
+  - Enterprise
+---
+
+Every company runs on a dozen platforms — the database, Stripe, the sandbox
+providers, Linear, GitHub — and the work that matters most is the work that
+spans them. Onboard a customer: provision, set up billing, file the tracking
+issue. Ship a fix: review the PR, cut the branch, update the ticket. None of it
+lives in one tool, so all of it lives in a person's head and their twelve open
+tabs.
+
+So we collapsed the tabs into one place people already are: Slack. This is
+exactly how we run our own operations on Kortix — a single agent, reachable from
+a thread, with scoped access to everything — laid out so you can build the same
+control pane for your team.
+
+<KeyFacts>
+  <Fact label="Team">Kortix — the company behind this platform</Fact>
+  <Fact label="Control surface">Slack</Fact>
+  <Fact label="Connected systems">Database · Stripe · Sandboxes · Linear · GitHub</Fact>
+  <Fact label="Setup per platform">Connect once, then it can act</Fact>
+</KeyFacts>
+
+## The problem
+
+The hardest tasks are the cross-platform ones, and they're exactly the ones no
+tool owns. "Onboard this enterprise account" touches the database, Stripe, and
+Linear. "Get this fix out" touches GitHub, the sandbox that reproduces it, and
+the ticket that tracks it. Each step is simple; stitching them together is a
+person context-switching across five tabs, copying IDs between them, and
+remembering the order.
+
+The usual fixes all fragment. A pile of internal scripts each does one thing and
+rots the moment an API changes. A no-code automation tool handles the shape it
+was built for and nothing past it. And a chatbot that "integrates with Slack"
+can answer questions but can't actually *do* the multi-step task — because it has
+no safe way to hold real credentials and take real actions across real systems.
+
+<PullQuote>
+  The goal was never another dashboard. It was one place to ask for anything —
+  and an agent that can actually go do it, across whatever platforms the task
+  happens to touch.
+</PullQuote>
+
+## What we built
+
+On Kortix, our Slack is wired to an agent that runs like an operator with the
+keys to every system. You @-mention it in a thread and describe the task in plain
+language; it spawns its own isolated session — a real cloud computer — with
+scoped reach into the platforms we've connected, figures out the steps, and does
+the work, replying in the thread as it goes. Adding a new capability isn't a
+build — it's connecting one more platform.
+
+<Figure
+  caption="Asking the agent to onboard a customer from a Slack thread"
+  aspect="16/9"
+/>
+
+Here's the whole thing, step by step.
+
+## How we did it — step by step
+
+<Steps>
+<Step title="Make Slack the control surface">
+
+We connected Slack as a **channel**, so a message *is* the trigger. Mention the
+agent in any thread and each request spawns a fresh **session** in its own
+isolated sandbox — the agent lives in the thread and replies as it works, so
+Slack becomes a live control pane, not a fire-and-forget command box. One
+request, one session, one disposable machine.
+
+</Step>
+<Step title="Connect a platform — that's the only setup">
+
+This is the whole trick: to give the agent a new power, you **connect the
+platform to Kortix once**. Database, Stripe, the sandbox providers, Linear,
+GitHub — each is a scoped **connector**, brokered server-side so no raw token
+ever reaches the model. Once a platform is connected, the agent can act on it. No
+new integration to write, no script to maintain — connect it, and it's in reach.
+
+</Step>
+<Step title="Let it do anything across those platforms">
+
+With the platforms connected, the agent handles the cross-platform tasks that
+used to eat an afternoon:
+
+- **Invite a member to Linear**, create the project, and file the tracking
+  issues.
+- **Do a GitHub code review** on an open PR, and **open its own PRs** to the
+  codebase when a change is warranted.
+- **Query the database** to answer a "how many accounts on plan X" question with
+  a real number.
+- **Look up and adjust Stripe** — plan, invoice, subscription state.
+- **Spin up a sandbox** to reproduce a bug or run a one-off job.
+
+Whatever the task spans, it's one thread and one agent instead of five tabs.
+
+</Step>
+<Step title="Set the guardrails">
+
+An agent with the keys to every platform is exactly the agent you must scope
+tightly, so this step matters most. Reach is **read-mostly by default**; the
+actions that touch money, production data, or account state — a Stripe change, a
+merge, a destructive query — stop at a **human approval gate**, right there in
+the thread. Credentials are encrypted in the Secrets Manager and injected at
+runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Run the company from a thread">
+
+With that in place, "onboard this account" becomes one message that provisions in
+the database, sets up billing in Stripe, and files the Linear project — with the
+irreversible steps held for a click. "Review this PR" becomes a real code review
+plus, when needed, a follow-up PR of its own. The work that used to span five
+tools spans one thread.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern, in one line" tone="accent">
+  Make Slack the **channel**, connect each platform to Kortix as a scoped
+  **connector** (the only per-platform setup), and gate every sensitive action
+  behind a human — then let one agent run any cross-platform task from a thread.
+</Callout>
+
+## Guardrails: safe enough to hold every key
+
+Giving one agent access to your database, Stripe, sandboxes, Linear, and GitHub
+at once is a security question, not just a product one. It's answerable on Kortix
+because the controls are built in, not bolted on:
+
+- **Isolation.** Every request runs in its own microVM sandbox on its own branch.
+  A session can install, run, and reach only the platforms it's scoped to — and
+  only what it's explicitly allowed to send ever leaves.
+- **Scoped secrets.** Every platform credential lives encrypted in the Secrets
+  Manager, injected into the sandbox at runtime, never exposed to the model or the
+  logs.
+- **Human approval gates.** The irreversible actions — money, production data,
+  merges — don't happen without a person clicking approve in the thread.
+- **Everything is code.** The agent's persona, its skills, and its per-platform
+  permissions are files in the repo — reviewable, versioned, and changed only
+  through a reviewed **change request**, never a hidden dashboard setting.
+
+<Figure
+  caption="A Stripe change held at a human approval gate inside the Slack thread"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="One thread" label="Any cross-platform task, asked in plain language" />
+  <Stat value="Connect once" label="A new platform is a new capability — no build" />
+  <Stat value="5+ systems" label="Database, Stripe, sandboxes, Linear, GitHub — one agent" />
+</StatGrid>
+
+The context-switching tax is gone. The cross-platform tasks that used to mean a
+person juggling five tabs — onboarding, reviews, provisioning, billing tweaks —
+now happen in the thread they're already discussed in, with the risky steps held
+for a click. And extending it is trivial: connect the next platform, and the
+agent can act on it too.
+
+## Why this is hard to build anywhere else
+
+A Slack bot can post messages. It can't safely be handed your database, Stripe,
+your sandboxes, Linear, and GitHub at once and told to run real tasks across
+them — because it has no isolation to contain a session, no secrets manager to
+broker a dozen tokens, no approval gates to hold back the irreversible actions,
+and no memory to get better with every task it runs.
+
+Kortix has all four. That's what turns "a bot in Slack" into a control pane for
+the whole company — one agent, every platform, one message away — and it's the
+same foundation you'd build your own on.

@@ -31,6 +31,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
   {
     title: 'Resources',
     links: [
+      { label: 'Use Cases', href: '/use-cases' },
       { label: 'Blog', href: '/blog' },
       { label: 'Changelog', href: '/changelog' },
       { label: 'Docs', href: '/docs' },
