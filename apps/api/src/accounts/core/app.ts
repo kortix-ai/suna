@@ -1,8 +1,8 @@
 import { Context } from 'hono';
 import { z } from '@hono/zod-openapi';
-import { and, count, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { makeOpenApiApp } from '../../openapi';
-import { accountInvitations, accountMembers, accounts } from '@kortix/db';
+import { accountInvitations, accountMembers, accountUser, accounts } from '@kortix/db';
 import type { AppEnv } from '../../types';
 import { db } from '../../shared/db';
 import { getSupabase } from '../../shared/supabase';
@@ -16,15 +16,20 @@ export function defaultAccountName(email: string | null | undefined): string {
   return normalized ? `${normalized}'s Account` : 'Account';
 }
 
+// A stored name counts as "proper" only when it isn't one of the placeholder
+// values migrations left behind ('Personal', 'User'). Placeholder accounts
+// fall back to an email-derived name.
+export function properAccountName(name: string | null | undefined): string | null {
+  const normalized = name?.trim();
+  if (!normalized || normalized === 'Personal' || normalized === 'User') return null;
+  return normalized;
+}
+
 export function accountDisplayName(
   name: string | null | undefined,
   email: string | null | undefined,
 ): string {
-  const normalized = name?.trim();
-  if (!normalized || normalized === 'Personal' || normalized === 'User') {
-    return defaultAccountName(email);
-  }
-  return normalized;
+  return properAccountName(name) ?? defaultAccountName(email);
 }
 
 // ─── Shared response/request schemas (power the Scalar docs) ────────────────
@@ -209,6 +214,101 @@ export async function lookupEmailsByUserIds(userIds: string[]): Promise<Map<stri
     }),
   );
   return result;
+}
+
+// Display names for a batch of accounts, deriving the fallback for unnamed
+// (placeholder-named) accounts from the account OWNER's email — not the
+// caller's. Deriving from the caller made every unnamed account a user was
+// invited into render as "<caller>'s Account", so shared projects looked like
+// they lived in the caller's own personal account.
+export async function resolveAccountDisplayNames(
+  rows: Array<{ accountId: string; name: string | null }>,
+  caller: { userId: string; email: string | null | undefined },
+): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  const unnamed: string[] = [];
+  for (const row of rows) {
+    const proper = properAccountName(row.name);
+    if (proper) names.set(row.accountId, proper);
+    else unnamed.push(row.accountId);
+  }
+  if (unnamed.length === 0) return names;
+
+  // Primary owner per unnamed account = earliest-joined 'owner' row.
+  const ownerByAccount = new Map<string, string>();
+  try {
+    const owners = await db
+      .select({ accountId: accountMembers.accountId, userId: accountMembers.userId })
+      .from(accountMembers)
+      .where(and(
+        inArray(accountMembers.accountId, unnamed),
+        eq(accountMembers.accountRole, 'owner'),
+      ))
+      .orderBy(asc(accountMembers.joinedAt));
+    for (const o of owners) {
+      if (!ownerByAccount.has(o.accountId)) ownerByAccount.set(o.accountId, o.userId);
+    }
+  } catch {
+    // account_members may not exist yet — fall through to caller email below.
+  }
+
+  const foreignOwnerIds = [...new Set(ownerByAccount.values())].filter(
+    (id) => id !== caller.userId,
+  );
+  const ownerEmails = await lookupEmailsByUserIds(foreignOwnerIds);
+
+  for (const accountId of unnamed) {
+    const ownerId = ownerByAccount.get(accountId);
+    const email = !ownerId || ownerId === caller.userId
+      ? caller.email // ownerless account: caller email beats a bare 'Account'
+      : ownerEmails.get(ownerId) ?? caller.email;
+    names.set(accountId, defaultAccountName(email));
+  }
+  return names;
+}
+
+// Same idea for legacy basejump memberships (no kortix.accounts row to carry a
+// name at all): resolve each account's basejump owner and name it after them.
+export async function resolveLegacyAccountDisplayNames(
+  accountIds: string[],
+  caller: { userId: string; email: string | null | undefined },
+): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  if (accountIds.length === 0) return names;
+
+  const ownerByAccount = new Map<string, string>();
+  try {
+    const owners = await db
+      .select({ accountId: accountUser.accountId, userId: accountUser.userId })
+      .from(accountUser)
+      .where(and(
+        inArray(accountUser.accountId, accountIds),
+        eq(accountUser.accountRole, 'owner'),
+      ));
+    for (const o of owners) {
+      // Basejump personal accounts use account_id == user_id; prefer that
+      // owner, otherwise first one wins (no join timestamp to order by).
+      if (o.accountId === o.userId || !ownerByAccount.has(o.accountId)) {
+        ownerByAccount.set(o.accountId, o.userId);
+      }
+    }
+  } catch {
+    // basejump may not exist — fall through to caller email below.
+  }
+
+  const foreignOwnerIds = [...new Set(ownerByAccount.values())].filter(
+    (id) => id !== caller.userId,
+  );
+  const ownerEmails = await lookupEmailsByUserIds(foreignOwnerIds);
+
+  for (const accountId of accountIds) {
+    const ownerId = ownerByAccount.get(accountId);
+    const email = !ownerId || ownerId === caller.userId
+      ? caller.email
+      : ownerEmails.get(ownerId) ?? caller.email;
+    names.set(accountId, defaultAccountName(email));
+  }
+  return names;
 }
 
 export function serializeAccount(row: typeof accounts.$inferSelect) {

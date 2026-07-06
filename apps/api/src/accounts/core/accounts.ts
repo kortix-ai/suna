@@ -9,6 +9,8 @@ import {
   accountsRouter,
   accountDisplayName,
   defaultAccountName,
+  resolveAccountDisplayNames,
+  resolveLegacyAccountDisplayNames,
   AccountSummarySchema,
   AccountDetailSchema,
   AccountIdParam,
@@ -58,10 +60,14 @@ export function registerAccountRoutes(): void {
           .where(eq(accountMembers.userId, userId));
 
         if (memberships.length > 0) {
+          const displayNames = await resolveAccountDisplayNames(memberships, {
+            userId,
+            email: userEmail,
+          });
           return c.json(
             memberships.map((m) => ({
               account_id: m.accountId,
-              name: accountDisplayName(m.name, userEmail),
+              name: displayNames.get(m.accountId) ?? accountDisplayName(m.name, userEmail),
               slug: m.accountId.slice(0, 8),
               created_at:
                 m.createdAt?.toISOString() ?? new Date().toISOString(),
@@ -86,10 +92,14 @@ export function registerAccountRoutes(): void {
           .where(eq(accountUser.userId, userId));
 
         if (legacyMemberships.length > 0) {
+          const displayNames = await resolveLegacyAccountDisplayNames(
+            legacyMemberships.map((m) => m.accountId),
+            { userId, email: userEmail },
+          );
           return c.json(
             legacyMemberships.map((m) => ({
               account_id: m.accountId,
-              name: defaultAccountName(userEmail),
+              name: displayNames.get(m.accountId) ?? defaultAccountName(userEmail),
               slug: m.accountId.slice(0, 8),
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
@@ -245,9 +255,14 @@ export function registerAccountRoutes(): void {
           and(eq(projects.accountId, accountId), eq(projects.status, "active")),
         );
 
+      const displayNames = await resolveAccountDisplayNames(
+        [{ accountId: row.accountId, name: row.name }],
+        { userId, email: c.get("userEmail") as string },
+      );
+
       return c.json({
         account_id: row.accountId,
-        name: row.name,
+        name: displayNames.get(row.accountId) ?? row.name,
         member_count: memberCount,
         project_count: Number(projectCountRow?.n ?? 0),
         role: membership.accountRole,
