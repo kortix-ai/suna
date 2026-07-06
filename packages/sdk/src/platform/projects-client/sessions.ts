@@ -230,6 +230,10 @@ export interface SessionAuditAction {
   execution_id: string;
   action: string;
   connector_id: string | null;
+  /** Connector slug — `${connector}.${action}` is the fully-qualified tool
+   *  path project policies match against. Null on very old rows whose
+   *  connector was deleted. */
+  connector?: string | null;
   /** ok | error | denied | pending_approval */
   status: string;
   /** read | write | destructive | null */

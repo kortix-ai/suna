@@ -6,7 +6,7 @@
  */
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm';
 import {
   executorConnectorActions,
   executorConnectorPolicies,
@@ -112,7 +112,9 @@ export async function waitForApprovalDecision(
 }
 
 /** "Allow for this session" check (gateway hot path): is this exact
- *  (session, connector, action) already session-approved? */
+ *  (session, connector, action) already session-approved? A `*` actionPath row
+ *  is the "allow everything for this session" grant (resolve scope
+ *  `session_all` records one per enabled connector) and matches any action. */
 export async function isSessionToolApproved(
   sessionId: string,
   connectorId: string,
@@ -125,11 +127,90 @@ export async function isSessionToolApproved(
       and(
         eq(sessionToolApprovals.sessionId, sessionId),
         eq(sessionToolApprovals.connectorId, connectorId),
-        eq(sessionToolApprovals.actionPath, actionPath),
+        inArray(sessionToolApprovals.actionPath, [actionPath, '*']),
       ),
     )
     .limit(1);
   return !!row;
+}
+
+/** How long an unconsumed human approve stays claimable by a fresh call. Long
+ *  enough for the "agent gave up → approve lands → nudge/`continue` retries"
+ *  round-trip, short enough that a stale yes can't silently authorize a much
+ *  later call. */
+const APPROVAL_CARRYOVER_WINDOW_MS = 15 * 60 * 1000;
+
+/**
+ * Claim a recent approve of (session, connector, action) that no held/poll
+ * request consumed — see GatewayDeps.consumeApprovedExecution. Atomic via the
+ * guarded UPDATE on the not-yet-consumed marker: two racing calls can't both
+ * claim the same grant. Newest grant first; one claim per approve.
+ */
+export async function consumeApprovedExecution(input: {
+  sessionId: string;
+  connectorId: string;
+  actionPath: string;
+}): Promise<boolean> {
+  const cutoff = new Date(Date.now() - APPROVAL_CARRYOVER_WINDOW_MS);
+  const candidates = await db
+    .select({
+      executionId: executorExecutions.executionId,
+      resultSummary: executorExecutions.resultSummary,
+    })
+    .from(executorExecutions)
+    .where(
+      and(
+        eq(executorExecutions.sessionId, input.sessionId),
+        eq(executorExecutions.connectorId, input.connectorId),
+        eq(executorExecutions.actionPath, input.actionPath),
+        // A human-approved gate: the resolve endpoint flips the pending row to
+        // `ok` + stamps approvedBy. Rows from actual runs never have approvedBy.
+        eq(executorExecutions.status, 'ok'),
+        isNotNull(executorExecutions.approvedBy),
+        gt(executorExecutions.resolvedAt, cutoff),
+        sql`${executorExecutions.resultSummary} ->> 'decision' = 'approve'`,
+        sql`${executorExecutions.resultSummary} ->> 'consumed_at' IS NULL`,
+      ),
+    )
+    .orderBy(desc(executorExecutions.resolvedAt))
+    .limit(3);
+  for (const candidate of candidates) {
+    const claimed = await db
+      .update(executorExecutions)
+      .set({
+        resultSummary: {
+          ...(typeof candidate.resultSummary === 'object' && candidate.resultSummary
+            ? candidate.resultSummary
+            : {}),
+          consumed_at: new Date().toISOString(),
+        },
+      })
+      .where(
+        and(
+          eq(executorExecutions.executionId, candidate.executionId),
+          sql`${executorExecutions.resultSummary} ->> 'consumed_at' IS NULL`,
+        ),
+      )
+      .returning({ id: executorExecutions.executionId });
+    if (claimed.length > 0) return true;
+  }
+  return false;
+}
+
+/** Mark an approve consumed by the held/poll request that resumed on it — see
+ *  GatewayDeps.markApprovalConsumed. */
+export async function markApprovalConsumed(executionId: string): Promise<void> {
+  await db
+    .update(executorExecutions)
+    .set({
+      resultSummary: sql`coalesce(${executorExecutions.resultSummary}, '{}'::jsonb) || jsonb_build_object('consumed_at', ${new Date().toISOString()}::text)`,
+    })
+    .where(
+      and(
+        eq(executorExecutions.executionId, executionId),
+        sql`${executorExecutions.resultSummary} ->> 'consumed_at' IS NULL`,
+      ),
+    );
 }
 
 /** Record an "allow for the rest of this session" grant (resolve endpoint).
@@ -338,6 +419,8 @@ function makeDbGatewayDeps(): GatewayDeps {
     },
     waitForApprovalDecision: waitForApprovalDecision,
     isSessionToolApproved: isSessionToolApproved,
+    consumeApprovedExecution: consumeApprovedExecution,
+    markApprovalConsumed: markApprovalConsumed,
     executePipedream: ({ projectId, connectorSlug, app, actionKey, args, accountId, userId }) =>
       runPipedreamAction(projectId, connectorSlug, app, actionKey, args, accountId, userId),
     executePipedreamProxy: ({ projectId, connectorSlug, args, accountId, userId }) =>

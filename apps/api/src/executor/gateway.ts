@@ -147,6 +147,20 @@ export interface GatewayDeps {
     connectorId: string,
     actionPath: string,
   ): Promise<boolean>;
+  /** Approval carry-over: atomically claim a RECENT human approve of this
+   *  (session, connector, action) whose gated call nobody is waiting on
+   *  anymore — the holder timed out / the sandbox client has no poll loop —
+   *  so the NEXT attempt runs instead of re-asking. Returns true when a grant
+   *  was claimed (each approve is consumable exactly once). */
+  consumeApprovedExecution?(input: {
+    sessionId: string;
+    connectorId: string;
+    actionPath: string;
+  }): Promise<boolean>;
+  /** Mark an approve as consumed by the in-flight held/poll request that just
+   *  resumed on it, so the same grant can't ALSO be carried over by a later
+   *  fresh call (best-effort — a failure only risks one extra silent run). */
+  markApprovalConsumed?(executionId: string): Promise<void>;
   fetchImpl: FetchImpl;
   /** Pipedream execution (Connect actions/run) — required for pipedream connectors. */
   executePipedream?(input: {
@@ -429,9 +443,26 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
               input.actionPath,
             )
           : false;
-      if (sessionAllowed) {
+      // Approval carry-over: the human approved this exact (session, connector,
+      // action) recently, but the gated call that asked is no longer waiting —
+      // the 45s hold expired and the client never re-polled (e.g. an older
+      // sandbox CLI without the pause loop), so the approve stamped a row nobody
+      // consumed. Claim that grant now: this fresh attempt IS the approved call,
+      // run it instead of stacking a second ask for the same thing.
+      const carriedOver =
+        !sessionAllowed &&
+        input.sessionId &&
+        !input.approvalExecutionId &&
+        deps.consumeApprovedExecution
+          ? await deps.consumeApprovedExecution({
+              sessionId: input.sessionId,
+              connectorId: connector.connectorId,
+              actionPath: input.actionPath,
+            })
+          : false;
+      if (sessionAllowed || carriedOver) {
         await audit(deps, input, connector.connectorId, 'ok', action.risk, {
-          reason: 'session_allow',
+          reason: sessionAllowed ? 'session_allow' : 'approval_carryover',
           policy_source: decision.source,
         });
       } else {
@@ -464,7 +495,11 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
               retryable: true,
             };
           }
-          // approved → fall through to execute the call below.
+          // approved → fall through to execute the call below. Mark the grant
+          // consumed so a LATER fresh call can't also carry it over.
+          if (deps.markApprovalConsumed) {
+            await deps.markApprovalConsumed(executionId).catch(() => {});
+          }
         } else {
           return {
             status: 'pending_approval',

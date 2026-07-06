@@ -15,7 +15,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountGroups, accountMembers, executorExecutions, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
+import { accountGroupMembers, accountGroups, accountMembers, executorConnectors, executorExecutions, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid } from '../lib/access';
 import { AnyObject, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, SessionSchema, projectsApp } from '../lib/app';
@@ -695,6 +695,18 @@ projectsApp.openapi(
     ];
     const emailByUser = userIds.length ? await lookupEmailsByUserIds(userIds) : new Map<string, string>();
 
+    // Connector slugs in one batched lookup — the UI needs `<slug>.<action>`
+    // to offer a "always run this" project-policy shortcut on a pending row.
+    const connectorIds = [...new Set(rows.map((r) => r.connectorId).filter((v): v is string => !!v))];
+    const slugByConnector = new Map<string, string>();
+    if (connectorIds.length) {
+      const conns = await db
+        .select({ connectorId: executorConnectors.connectorId, slug: executorConnectors.slug })
+        .from(executorConnectors)
+        .where(inArray(executorConnectors.connectorId, connectorIds));
+      for (const conn of conns) slugByConnector.set(conn.connectorId, conn.slug);
+    }
+
     return c.json({
       session_id: sessionId,
       agent: (visible.row.agentName as string | null) ?? null,
@@ -708,6 +720,7 @@ projectsApp.openapi(
         execution_id: r.executionId,
         action: r.actionPath,
         connector_id: r.connectorId,
+        connector: r.connectorId ? (slugByConnector.get(r.connectorId) ?? null) : null,
         status: r.status, // ok | error | denied | pending_approval
         risk: r.risk, // read | write | destructive | null
         acted_by: r.actingUserId,
@@ -921,10 +934,14 @@ projectsApp.openapi(
       return c.json({ error: "decision must be 'approve' or 'deny'" }, 400);
     }
     // 'once' (default) = approve just this call; 'session' = also stop asking for
-    // THIS connector+action for the rest of the session. Only meaningful on
-    // approve. (A policy `block` never reaches this endpoint as pending, so
-    // "allow for session" can only ever widen require_approval → run.)
-    const scope = normalizeString(body.scope) === 'session' ? 'session' : 'once';
+    // THIS connector+action for the rest of the session; 'session_all' = stop
+    // asking for ANY gated action for the rest of the session (a `*` wildcard
+    // grant per enabled connector). Only meaningful on approve. (A policy
+    // `block` never reaches this endpoint as pending, so a session grant can
+    // only ever widen require_approval → run.)
+    const scopeRaw = normalizeString(body.scope);
+    const scope =
+      scopeRaw === 'session' ? 'session' : scopeRaw === 'session_all' ? 'session_all' : 'once';
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -1029,6 +1046,36 @@ projectsApp.openapi(
         });
       } catch (err) {
         console.warn('[approvals] failed to record session allow', {
+          executionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // "Allow everything for this session": one `*` wildcard grant per enabled
+    // connector (the gateway's session check matches `*` against any action).
+    // Enumerated per connector — instead of a schema-level "all connectors"
+    // marker — so a connector added AFTER this grant still asks. Best-effort +
+    // idempotent, same as the single-action grant above.
+    if (decision === 'approve' && scope === 'session_all' && row.sessionId) {
+      try {
+        const conns = await db
+          .select({ connectorId: executorConnectors.connectorId })
+          .from(executorConnectors)
+          .where(
+            and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.enabled, true)),
+          );
+        for (const conn of conns) {
+          await recordSessionToolApproval({
+            sessionId: row.sessionId,
+            projectId,
+            connectorId: conn.connectorId,
+            actionPath: '*',
+            grantedBy: loaded.userId,
+          });
+        }
+      } catch (err) {
+        console.warn('[approvals] failed to record session allow-all', {
           executionId,
           error: err instanceof Error ? err.message : String(err),
         });
