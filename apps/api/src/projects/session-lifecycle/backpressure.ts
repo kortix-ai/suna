@@ -1,5 +1,5 @@
 import { config } from '../../config';
-import { maxConcurrentSessionsForTier, resolveAccountTier } from '../../shared/account-limits';
+import { resolveAccountSessionLimit } from '../../shared/account-limits';
 import { countActiveProjectSessions, countProvisioningProjectSessions } from '../lib/sessions';
 
 export function triggerBackpressureLimit() {
@@ -8,13 +8,14 @@ export function triggerBackpressureLimit() {
 }
 
 export async function sessionBackpressureState(accountId: string, projectId: string) {
-  const [provisioning, active, tier] = await Promise.all([
+  const [provisioning, active, sessionLimit] = await Promise.all([
     countProvisioningProjectSessions(projectId),
     countActiveProjectSessions(accountId),
-    resolveAccountTier(accountId),
+    resolveAccountSessionLimit(accountId),
   ]);
+  const { tier } = sessionLimit;
   const projectProvisioningLimit = triggerBackpressureLimit();
-  const accountActiveLimit = maxConcurrentSessionsForTier(tier);
+  const accountActiveLimit = sessionLimit.limit;
   return {
     shouldQueue: provisioning >= projectProvisioningLimit || active >= accountActiveLimit,
     provisioning,

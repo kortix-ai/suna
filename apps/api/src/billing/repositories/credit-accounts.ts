@@ -85,6 +85,8 @@ export async function getSubscriptionInfo(accountId: string) {
       seatCount: creditAccounts.seatCount,
       seatSubscriptionItemId: creditAccounts.seatSubscriptionItemId,
       autoTopupCustomized: creditAccounts.autoTopupCustomized,
+      // Operator-set per-account concurrent-session override (NULL = use tier).
+      maxConcurrentSessions: creditAccounts.maxConcurrentSessions,
     })
     .from(creditAccounts)
     .where(eq(creditAccounts.accountId, accountId))
