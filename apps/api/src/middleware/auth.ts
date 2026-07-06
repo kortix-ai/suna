@@ -14,6 +14,30 @@ import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 
+/**
+ * Run SAML JIT provisioning for a Supabase-authenticated request. Cheap no-op
+ * when the JWT isn't from a SAML provider (returns before any DB work).
+ *
+ * MUST be called on EVERY Supabase-JWT success path — local AND network
+ * verification, in BOTH supabaseAuth and combinedAuth. A token that fails local
+ * (JWKS) verification falls back to the network `getUser()` path, and the
+ * dashboard also hits combinedAuth routes; if the sync lives on only one of
+ * those paths, SSO users whose requests take a different path are never
+ * provisioned into their org. Never fails the request — the user already
+ * authenticated; sync errors are logged for ops review.
+ */
+async function jitSyncSso(
+  userId: string,
+  email: string,
+  jwtPayload: Record<string, unknown> | undefined,
+): Promise<void> {
+  try {
+    await syncSsoMembership({ userId, email, jwtPayload });
+  } catch (err) {
+    console.warn('[auth] SAML JIT sync failed', err);
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Auth Middleware (3 middlewares — one per auth strategy)
 //
@@ -232,23 +256,14 @@ export async function supabaseAuth(c: Context, next: Next) {
     if (typeof (local.payload as { iat?: number }).iat === 'number') {
       c.set('sessionIat', (local.payload as { iat: number }).iat);
     }
-    // SAML JIT — no-ops when the JWT isn't from a SAML provider. AWAITED so the
-    // org membership is committed BEFORE any downstream handler resolves this
-    // user's account: resolveAccountId / GET /v1/accounts bootstrap a personal
-    // owner+super account for a user with zero memberships, and a fire-and-forget
-    // sync raced (and lost) that bootstrap — stranding SSO users on a standalone
-    // personal account instead of their org. A non-SAML token returns before any
-    // DB work, so this adds no latency to normal logins. We still don't fail the
-    // request on a sync error — the user already authenticated.
-    try {
-      await syncSsoMembership({
-        userId: local.userId,
-        email: local.email,
-        jwtPayload: local.payload as unknown as Record<string, unknown>,
-      });
-    } catch (err) {
-      console.warn('[auth] SAML JIT sync failed', err);
-    }
+    // SAML JIT — provision the SSO user into their org before the request
+    // proceeds (see jitSyncSso). Awaited so the org membership is committed
+    // before any handler bootstraps a personal account for a member-less user.
+    await jitSyncSso(
+      local.userId,
+      local.email,
+      local.payload as unknown as Record<string, unknown>,
+    );
     setSentryUser({ id: local.userId, email: local.email });
     setContextField('userId', local.userId);
     setContextField('userEmail', local.email);
@@ -300,6 +315,10 @@ export async function supabaseAuth(c: Context, next: Next) {
       authType: 'supabase',
       metadata: { verify_path: 'network' },
     });
+    // SAML JIT on the network-verify path too (a token whose kid isn't in the
+    // cached JWKS lands here, NOT the local path) — `user.app_metadata` is the
+    // authoritative record straight from Supabase.
+    await jitSyncSso(user.id, user.email || '', user as unknown as Record<string, unknown>);
     await next();
   } catch (err) {
     if (err instanceof HTTPException) throw err;
@@ -487,6 +506,13 @@ export async function combinedAuth(c: Context, next: Next) {
       authType: 'supabase',
       metadata: { verify_path: 'local' },
     });
+    // SAML JIT — combinedAuth guards user-facing routes too, so SSO users must
+    // provision here as well, not only in supabaseAuth.
+    await jitSyncSso(
+      local.userId,
+      local.email,
+      local.payload as unknown as Record<string, unknown>,
+    );
     await next();
     return;
   }
@@ -537,6 +563,8 @@ export async function combinedAuth(c: Context, next: Next) {
       authType: 'supabase',
       metadata: { verify_path: 'network' },
     });
+    // SAML JIT — combinedAuth network-verify path.
+    await jitSyncSso(user.id, user.email || '', user as unknown as Record<string, unknown>);
     await next();
   } catch (err) {
     if (err instanceof HTTPException) throw err;
