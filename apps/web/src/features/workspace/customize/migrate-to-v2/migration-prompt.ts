@@ -197,10 +197,14 @@ Run \`kortix validate\` (it auto-detects \`kortix.yaml\`). Fix every error it re
 
 ## 9. Land it as a change request — never merge
 
-Commit the changes on your session's branch, then open a change request:
+Commit on your session's branch, **push the branch, then** open the change request. A commit that is never pushed leaves the CR empty ("No changes detected") and un-appliable — the push is not optional:
 
 \`\`\`
+git add -A && git commit -m "Migrate manifest to kortix_version 2 (kortix.yaml)"
+git push origin HEAD
 kortix cr open --head <your-branch> --title "Migrate manifest to kortix_version 2 (kortix.yaml)" --description "<what you converted, which agent you picked as default_agent and why, every legacy key you removed, and any grant you had to leave narrowed>"
 \`\`\`
 
-Do **not** run \`kortix cr merge\`. This is a human-reviewed change like any other — stop once the CR is open and tell the user its number so they can review the diff and merge it themselves.`;
+Then verify the CR actually carries your diff: run \`kortix cr diff <number>\` — if it reports no changes, your push didn't land; push again and re-check (the CR updates automatically, do not open a second one).
+
+Do **not** run \`kortix cr merge\`. This is a human-reviewed change like any other — stop once the CR is open and verified non-empty, and tell the user its number so they can review the diff and merge it themselves.`;
