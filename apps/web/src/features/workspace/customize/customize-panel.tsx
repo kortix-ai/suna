@@ -48,7 +48,7 @@ import {
 import { useCallback, useEffect, useMemo } from 'react';
 import { LuSettings, LuUsersRound } from 'react-icons/lu';
 import { detectManifestVersion } from './migrate-to-v2/manifest-version';
-import { UpgradeView } from './migrate-to-v2/upgrade-view';
+import { UpgradesView } from './migrate-to-v2/upgrade-view';
 import { isRailItemActive } from './rail';
 import { FilesSection } from './sections/files-section';
 import { LlmManagementView } from './sections/gateway-view';
@@ -109,10 +109,11 @@ const MEET_ITEM: RailItem = { section: 'meet', label: 'Meetings', icon: AudioLin
 
 const REVIEW_ITEM: RailItem = { section: 'review', label: 'Review', icon: Inbox };
 
-// Pinned above every group while the project is still on a v1 (kortix.toml)
-// manifest — the one-time agent-led migration to kortix.yaml. Disappears for
-// good once the project is v2.
-const UPGRADE_ITEM: RailItem = { section: 'upgrade', label: 'Upgrade to v2', icon: ArrowUpCircle };
+// The Upgrades section is always reachable (it hosts the one-off prompt
+// runner), but it only claims the pinned top slot while a registry upgrade
+// is actually applicable (e.g. the project is still on a v1 manifest) —
+// otherwise it sits quietly in Manage next to Settings.
+const UPGRADE_ITEM: RailItem = { section: 'upgrade', label: 'Upgrades', icon: ArrowUpCircle };
 
 function railGroups(
   tunnelEnabled: boolean,
@@ -120,9 +121,9 @@ function railGroups(
   llmGatewayAvailable: boolean,
   meetEnabled: boolean,
   reviewEnabled: boolean,
-  upgradeAvailable: boolean,
+  upgradeAttention: boolean,
 ): readonly RailGroup[] {
-  const groups = upgradeAvailable ? [{ items: [UPGRADE_ITEM] }, ...GROUPS] : GROUPS;
+  const groups = upgradeAttention ? [{ items: [UPGRADE_ITEM] }, ...GROUPS] : GROUPS;
   return groups.map((g) => {
     if (g.label === 'Build' && marketplaceEnabled) {
       return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
@@ -140,6 +141,9 @@ function railGroups(
       const at = items.findIndex((it) => it.section === 'changes');
       items.splice(at >= 0 ? at + 1 : items.length, 0, REVIEW_ITEM);
       return { ...g, items };
+    }
+    if (g.label === 'Manage' && !upgradeAttention) {
+      return { ...g, items: [...g.items, UPGRADE_ITEM] };
     }
     return g;
   });
@@ -198,10 +202,10 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   const llmGatewayAvailable = isLlmGatewayAvailable(detail.data?.project);
   const meetEnabled = detail.data?.project?.experimental?.meet ?? false;
   const reviewEnabled = detail.data?.project?.experimental?.review_center ?? false;
-  // Only offer the v2 upgrade once the manifest read resolved to v1 — while the
-  // detail query is in flight the item stays hidden (popping IN later is fine;
-  // rendering it for an already-v2 project is not).
-  const upgradeAvailable = detail.data
+  // Pin Upgrades to the top only once the manifest read resolved to v1 —
+  // while the detail query is in flight (or on v2 projects) the item sits in
+  // its calm Manage slot instead. Same detection the section rows use.
+  const upgradeAttention = detail.data
     ? detectManifestVersion(detail.data.config.manifest_raw) === 1
     : false;
 
@@ -230,7 +234,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
         llmGatewayAvailable,
         meetEnabled,
         reviewEnabled,
-        upgradeAvailable,
+        upgradeAttention,
       )
         .map((g) => ({ ...g, items: g.items.filter((item) => isSectionAllowed(item.section)) }))
         .filter((g) => g.items.length > 0),
@@ -240,7 +244,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
       llmGatewayAvailable,
       meetEnabled,
       reviewEnabled,
-      upgradeAvailable,
+      upgradeAttention,
       isSectionAllowed,
     ],
   );
@@ -490,7 +494,7 @@ function SectionContent({
     case 'settings':
       return <SettingsView projectId={projectId} />;
     case 'upgrade':
-      return <UpgradeView projectId={projectId} />;
+      return <UpgradesView projectId={projectId} />;
     default:
       return null;
   }

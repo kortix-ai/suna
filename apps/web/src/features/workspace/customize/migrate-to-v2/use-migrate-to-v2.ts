@@ -16,18 +16,17 @@
  * prompt expects to be run.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 
-import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { useCustomizeStore } from '@/stores/customize-store';
-import { writeStartStash, type StartStash } from '@kortix/sdk/react';
+import type { StartStash } from '@kortix/sdk/react';
 
 import { MIGRATE_TO_V2_PROMPT } from './migration-prompt';
+import { buildUpgradeStash, useRunUpgrade } from './use-run-upgrade';
 
 /** Pure — the exact stash payload the migration session is seeded with.
  *  Split out from the hook so it's unit-testable without React. */
 export function buildMigrateToV2Stash(): StartStash {
-  return { prompt: MIGRATE_TO_V2_PROMPT, agent: null, model: null, variant: null };
+  return buildUpgradeStash(MIGRATE_TO_V2_PROMPT);
 }
 
 export interface MigrateToV2 {
@@ -40,20 +39,7 @@ export interface MigrateToV2 {
 }
 
 export function useMigrateToV2(projectId: string): MigrateToV2 {
-  const closeCustomize = useCustomizeStore((s) => s.close);
-  const [pending, setPending] = useState(false);
-  const newSession = useNewProjectSession(projectId);
-
-  const start = useCallback(() => {
-    if (pending) return;
-    setPending(true);
-    newSession({
-      onNavigate: (sessionId) => {
-        writeStartStash(sessionId, buildMigrateToV2Stash());
-        closeCustomize();
-      },
-    });
-  }, [pending, newSession, closeCustomize]);
-
-  return { start, pending };
+  const run = useRunUpgrade(projectId);
+  const start = useCallback(() => run.start(MIGRATE_TO_V2_PROMPT), [run]);
+  return { start, pending: run.pending };
 }
