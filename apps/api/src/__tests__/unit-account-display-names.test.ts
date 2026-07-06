@@ -39,7 +39,6 @@ const {
   accountDisplayName,
   properAccountName,
   resolveAccountDisplayNames,
-  resolveLegacyAccountDisplayNames,
 } = await import('../accounts/core/app');
 
 const CALLER = { userId: 'u-caller', email: 'marko@kortix.ai' };
@@ -138,30 +137,5 @@ describe('resolveAccountDisplayNames', () => {
     );
     expect(names.get('a1')).toBe('Acme Corp');
     expect(names.get('a2')).toBe("owner@example.com's Account");
-  });
-});
-
-describe('resolveLegacyAccountDisplayNames', () => {
-  test("basejump account owned by someone else → OWNER's email", async () => {
-    dbResults = [[{ accountId: 'a1', userId: 'u-owner' }]];
-    emailsById = { 'u-owner': 'legacy-owner@example.com' };
-    const names = await resolveLegacyAccountDisplayNames(['a1'], CALLER);
-    expect(names.get('a1')).toBe("legacy-owner@example.com's Account");
-  });
-
-  test('personal-account convention (account_id == user_id) is preferred over other owners', async () => {
-    dbResults = [[
-      { accountId: 'a-personal', userId: 'u-other' },
-      { accountId: 'a-personal', userId: 'a-personal' },
-    ]];
-    emailsById = { 'a-personal': 'real-owner@example.com', 'u-other': 'other@example.com' };
-    const names = await resolveLegacyAccountDisplayNames(['a-personal'], CALLER);
-    expect(names.get('a-personal')).toBe("real-owner@example.com's Account");
-  });
-
-  test("caller's own legacy account → caller's email", async () => {
-    dbResults = [[{ accountId: 'a1', userId: 'u-caller' }]];
-    const names = await resolveLegacyAccountDisplayNames(['a1'], CALLER);
-    expect(names.get('a1')).toBe("marko@kortix.ai's Account");
   });
 });

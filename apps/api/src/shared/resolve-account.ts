@@ -1,4 +1,4 @@
-import { accountMembers, accountUser, accounts } from "@kortix/db";
+import { accountMembers } from "@kortix/db";
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -45,10 +45,6 @@ async function syncLegacySubscription(accountId: string): Promise<void> {
   } catch {
     // Timeout or sync failure — never block account resolution on recovery.
   }
-}
-
-function defaultAccountName(): string {
-  return "Account";
 }
 
 /**
@@ -132,49 +128,6 @@ export async function resolveAccountId(userId: string): Promise<string> {
     if (membership) {
       await syncLegacySubscription(membership.accountId);
       return membership.accountId;
-    }
-  } catch {}
-
-  try {
-    const [legacy] = await db
-      .select({ accountId: accountUser.accountId })
-      .from(accountUser)
-      .where(eq(accountUser.userId, userId))
-      .limit(1);
-
-    if (legacy) {
-      try {
-        await db
-          .insert(accounts)
-          .values({
-            accountId: legacy.accountId,
-            name: defaultAccountName(),
-          })
-          .onConflictDoNothing();
-
-        await db
-          .insert(accountMembers)
-          .values({
-            userId,
-            accountId: legacy.accountId,
-            accountRole: "owner",
-            isSuperAdmin: true,
-          })
-          .onConflictDoNothing();
-
-        console.log(
-          `[resolve-account] Lazy-migrated basejump account ${legacy.accountId} for user ${userId}`,
-        );
-      } catch (migErr) {
-        console.warn(
-          `[resolve-account] Lazy migration failed for ${legacy.accountId}:`,
-          migErr,
-        );
-      }
-
-      await syncLegacySubscription(legacy.accountId);
-
-      return legacy.accountId;
     }
   } catch {}
 

@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 const accounts = { __table: 'accounts', accountId: 'accountId' };
 const accountMembers = { __table: 'accountMembers', accountId: 'accountId', userId: 'userId' };
-const accountUser = { __table: 'accountUser', accountId: 'accountId', userId: 'userId' };
 const billingCustomers = { __table: 'billingCustomers', accountId: 'accountId', id: 'id', email: 'email', active: 'active', provider: 'provider' };
 const creditAccounts = { __table: 'creditAccounts', accountId: 'accountId', tier: 'tier', stripeSubscriptionId: 'stripeSubscriptionId' };
 // Transitively imported by accounts/core/{app,members}.ts (pulled in via the app
@@ -15,7 +14,6 @@ const projectMembers = { __table: 'projectMembers', projectId: 'projectId', user
 
 const state = {
   membership: null as { accountId: string } | null,
-  legacyMembership: null as { accountId: string } | null,
   creditAccount: null as { tier?: string | null; stripeSubscriptionId?: string | null } | null,
   legacyCustomer: null as { id?: string | null; email?: string | null } | null,
   customerSearchResults: [] as Array<{ id: string }>,
@@ -32,8 +30,6 @@ function rowsForTable(table: { __table: string }) {
   switch (table.__table) {
     case 'accountMembers':
       return state.membership ? [state.membership] : [];
-    case 'accountUser':
-      return state.legacyMembership ? [state.legacyMembership] : [];
     case 'creditAccounts':
       return state.creditAccount ? [state.creditAccount] : [];
     default:
@@ -82,7 +78,6 @@ mock.module('drizzle-orm', () => ({
 mock.module('@kortix/db', () => ({
   accounts,
   accountMembers,
-  accountUser,
   billingCustomers,
   creditAccounts,
   accountInvitations,
@@ -153,7 +148,6 @@ const { resolveAccountId } = await import('../shared/resolve-account');
 
 beforeEach(() => {
   state.membership = null;
-  state.legacyMembership = null;
   state.creditAccount = null;
   state.legacyCustomer = null;
   state.customerSearchResults = [];

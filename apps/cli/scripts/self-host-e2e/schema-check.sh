@@ -5,7 +5,7 @@
 # Brings up ONLY the data plane (Postgres + Supabase Auth/REST/Kong + the
 # kortix-migrate one-shot + the API) and asserts that a FRESH database is fully
 # provisioned: the migrate one-shot installs the non-kortix prerequisites
-# (basejump etc.) and applies all migrations, the API serves, an owner can be
+# and applies all migrations, the API serves, an owner can be
 # bootstrapped, and authenticated reads resolve an account.
 #
 # This is the cheap counterpart to run.sh — it needs only the API image, so it
@@ -89,8 +89,10 @@ ok "kortix-migrate one-shot completed (exit 0)"
 KTABLES=$(psqls -c "select count(*) from information_schema.tables where table_schema='kortix'" | tr -d '[:space:]')
 [ "${KTABLES:-0}" -ge 50 ] || die "expected >=50 kortix tables, got '$KTABLES'"
 ok "kortix schema provisioned ($KTABLES tables)"
-[ "$(psqls -c "select to_regclass('basejump.account_user')")" = "basejump.account_user" ] || die "basejump.account_user missing"
-ok "basejump prerequisites present"
+[ "$(psqls -c "select to_regclass('kortix.account_members')")" = "kortix.account_members" ] || die "kortix.account_members missing"
+ok "kortix account tables present"
+[ "$(psqls -c "select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='auth' and c.relname='users' and t.tgname='on_auth_user_created'")" = "0" ] || die "legacy basejump signup trigger still installed"
+ok "no basejump signup trigger (accounts are kortix-native)"
 
 section "API Health"
 START=$(date +%s)

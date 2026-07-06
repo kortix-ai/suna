@@ -57,9 +57,8 @@ adminApp.openapi(
     const { accounts, creditAccounts } = await import('@kortix/db');
     const { and, asc, desc, eq, ilike, gte, lte, inArray, notInArray, isNotNull, isNull, or, sql } =
       await import('drizzle-orm');
-    const { membersTableSql } = await import('./members-table');
     const { parseAdminAccountsListQuery, UNPAID_TIERS } = await import('./accounts-query');
-    const mt = await membersTableSql();
+    const mt = sql.raw('kortix.account_members');
 
     const {
       search,
@@ -197,8 +196,7 @@ adminApp.openapi(
     const accountId = c.req.param('id');
     const { db } = await import('../shared/db');
     const { sql } = await import('drizzle-orm');
-    const { membersTableSql } = await import('./members-table');
-    const mt = await membersTableSql();
+    const mt = sql.raw('kortix.account_members');
 
     const result: any = await db.execute(sql`
       SELECT au.id AS user_id, au.email,

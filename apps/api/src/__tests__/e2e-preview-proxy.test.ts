@@ -101,7 +101,7 @@ mock.module('../shared/db', () => {
       select: (fields: any) => {
         // Determine which table is being queried by inspecting selected fields
         // The preview proxy selects several session_sandboxes projections and
-        // { accountRole } from accountUser/account_members depending on the path.
+        // { accountRole } from account_members.
         const fieldKeys = fields ? Object.keys(fields) : [];
         const isSandboxQuery = fieldKeys.some((key) =>
           ['accountId', 'sandboxId', 'projectId', 'agentName', 'status', 'config', 'provider', 'baseUrl'].includes(key),
