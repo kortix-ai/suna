@@ -1,6 +1,7 @@
 import { useAuth } from '@/features/providers/auth-provider';
-import { authenticatedFetch } from '@/lib/auth-token';
+import { stripTrailingSlashes } from '@kortix/sdk';
 import { ensureSandbox, getSandboxUrl } from '@kortix/sdk/platform-client';
+import { getClientForUrl, triggersRequest } from '@kortix/sdk/opencode-client';
 import { getActiveOpenCodeUrl } from '@/stores/server-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -187,14 +188,10 @@ async function resolveSandboxBaseUrl(_instanceId?: string | null): Promise<strin
   // The active session's runtime is the sandbox — the old per-instance registry
   // lookup is gone, so resolve straight from the current runtime.
   const activeBaseUrl = getActiveOpenCodeUrl();
-  if (activeBaseUrl) return activeBaseUrl.replace(/\/+$/, '');
+  if (activeBaseUrl) return stripTrailingSlashes(activeBaseUrl);
 
   const { sandbox } = await ensureSandbox();
-  return getSandboxUrl(sandbox).replace(/\/+$/, '');
-}
-
-async function getTriggersBaseUrl(instanceId?: string | null): Promise<string> {
-  return `${await resolveSandboxBaseUrl(instanceId)}/kortix/triggers`;
+  return stripTrailingSlashes(getSandboxUrl(sandbox));
 }
 
 async function fetchTriggersJson<T>(
@@ -202,20 +199,8 @@ async function fetchTriggersJson<T>(
   init?: RequestInit,
   instanceId?: string | null,
 ): Promise<T> {
-  const baseUrl = await getTriggersBaseUrl(instanceId);
-  const response = await authenticatedFetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers as Record<string, string> | undefined),
-    },
-  });
-
-  const body = await response.json();
-  if (!response.ok) {
-    throw new Error(body?.error || body?.message || `Request failed with ${response.status}`);
-  }
-  return body as T;
+  const baseUrl = await resolveSandboxBaseUrl(instanceId);
+  return triggersRequest<T>(baseUrl, path, init);
 }
 
 const fetchTriggers = async (sandboxId?: string): Promise<Trigger[]> => {
@@ -398,19 +383,22 @@ async function getSandboxBaseUrl(instanceId?: string | null): Promise<string> {
   return resolveSandboxBaseUrl(instanceId);
 }
 
+function unwrapOpencode<T>(result: { data?: T; error?: unknown }): T {
+  if (result.error) {
+    const err = result.error as { data?: { message?: string }; message?: string };
+    throw new Error(err?.data?.message || err?.message || 'Request failed');
+  }
+  return result.data as T;
+}
+
 const fetchSandboxModels = async (sandboxId: string): Promise<SandboxProvider[]> => {
   const baseUrl = await getSandboxBaseUrl(sandboxId);
-  const response = await authenticatedFetch(`${baseUrl}/config/providers`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch models (${response.status})`);
-  }
-
-  const data = (await response.json()) as Record<string, unknown> | unknown[];
-  const rawProviders: any[] = Array.isArray(data) ? data : ((data.providers || []) as any[]);
-  return rawProviders.map((provider: any) => ({
+  const client = getClientForUrl(baseUrl);
+  const { providers } = unwrapOpencode(await client.config.providers());
+  return providers.map((provider) => ({
     id: provider.id || '',
     name: provider.name || provider.id || '',
-    models: Object.values(provider.models || {}).map((model: any) => ({
+    models: Object.values(provider.models || {}).map((model) => ({
       id: model.id || '',
       name: model.name || model.id || '',
     })),
@@ -419,16 +407,9 @@ const fetchSandboxModels = async (sandboxId: string): Promise<SandboxProvider[]>
 
 const fetchSandboxAgents = async (sandboxId: string): Promise<SandboxAgent[]> => {
   const baseUrl = await getSandboxBaseUrl(sandboxId);
-  const response = await authenticatedFetch(`${baseUrl}/agent`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch agents (${response.status})`);
-  }
-
-  const data = (await response.json()) as Record<string, unknown> | unknown[];
-  const rawAgents: any[] = Array.isArray(data)
-    ? data
-    : ((data.agents || Object.values(data)) as any[]);
-  return rawAgents.map((agent: any) => ({
+  const client = getClientForUrl(baseUrl);
+  const agents = unwrapOpencode(await client.app.agents());
+  return agents.map((agent) => ({
     name: agent.name || '',
     description: agent.description,
     mode: agent.mode,

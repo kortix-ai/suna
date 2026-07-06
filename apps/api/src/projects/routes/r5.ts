@@ -268,6 +268,7 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
 
   const gitProject = await withProjectGitAuth(loaded.row);
   let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
@@ -317,6 +318,7 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
 
   const path = normalizeString(c.req.query('path'));
   const ref = c.req.query('ref') || loaded.row.defaultBranch;
@@ -382,6 +384,7 @@ projectsApp.openapi(
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
 
   const contentSearch = c.req.query('content') === '1';
   const ref = c.req.query('ref') || loaded.row.defaultBranch;
@@ -444,6 +447,7 @@ projectsApp.openapi(
   if (!path) return c.json({ error: 'path query param is required' }, 400);
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
 
   // Visibility isolation: a scoped-out member can't read the raw file of an
   // agent/skill they aren't granted — return the same 404 as a missing file so
@@ -494,6 +498,7 @@ projectsApp.openapi(
   if (!path) return c.json({ error: 'path query param is required' }, 400);
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
 
   const ref = c.req.query('ref') || loaded.row.defaultBranch;
   const limit = Number(c.req.query('limit') || '50');
@@ -529,6 +534,7 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
 
   try {
     const branches = await listBranches(await withProjectGitAuth(loaded.row));
@@ -569,6 +575,7 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
 
   const ref = c.req.query('ref') || loaded.row.defaultBranch;
   const path = normalizeString(c.req.query('path'));
@@ -606,6 +613,7 @@ projectsApp.openapi(
   const sha = c.req.param('sha');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
 
   try {
     const commit = await getCommit(await withProjectGitAuth(loaded.row), sha);
@@ -642,6 +650,7 @@ projectsApp.openapi(
   const path = normalizeString(c.req.query('path'));
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
 
   try {
     const diff = await getCommitDiff(await withProjectGitAuth(loaded.row), sha, { path });
@@ -684,6 +693,7 @@ projectsApp.openapi(
   }
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
 
   if (fromRef === intoRef) {
     return c.json({

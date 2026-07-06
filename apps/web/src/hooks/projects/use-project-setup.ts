@@ -173,9 +173,7 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
     const secretsApply = requiredEnv.length > 0;
     const secretsDone =
       !secretsApply ||
-      requiredEnv.every((key) =>
-        secretItems.some((item) => item.name === key && (item.configured || item.usable_by_me)),
-      );
+      requiredEnv.every((key) => secretItems.some((item) => item.name === key && item.configured));
 
     const connectorCount = connectors.data?.connectors.length ?? 0;
     // "Team invited" = at least one OTHER human has access. We dedupe by user_id

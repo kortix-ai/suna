@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { stripTrailingSlashes } from '@kortix/sdk';
 
 import { cn } from '@/lib/utils';
 import React, { useState, useMemo, useCallback } from 'react';
@@ -46,8 +47,7 @@ import {
   APIKeyRegenerateResponse,
 } from '@/lib/api/api-keys';
 import { getActiveSandboxId, getActiveDbSandboxId, getActiveOpenCodeUrl } from '@/stores/server-store';
-import { getAuthToken } from '@/lib/auth-token';
-import { getEnv } from '@/lib/env-config';
+import { createSandboxShare, listSandboxShares, revokeSandboxShare } from '@kortix/sdk/projects-client';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -180,11 +180,7 @@ export default function APIKeysPage() {
     label: '',
   });
   const queryClient = useQueryClient();
-  const activeInstanceUrl = getActiveOpenCodeUrl()?.replace(/\/+$/, '');
-  const backendBase = useMemo(
-    () => (getEnv().BACKEND_URL || 'http://localhost:8008/v1').replace(/\/+$/, ''),
-    [],
-  );
+  const activeInstanceUrl = stripTrailingSlashes(getActiveOpenCodeUrl() ?? '') || undefined;
 
   // ── Queries & mutations ────────────────────────────────────────────────
 
@@ -271,18 +267,7 @@ export default function APIKeysPage() {
     queryFn: async (): Promise<PublicShareEntry[]> => {
       const sandboxId = activeSandboxExternalId;
       if (!sandboxId) throw new Error('No active sandbox external id');
-      const token = await getAuthToken();
-      if (!token) throw new Error('Not authenticated');
-      const url = new URL(`${backendBase}/p/share`);
-      url.searchParams.set('sandbox_id', sandboxId);
-      const res = await fetch(url.toString(), {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data as any)?.error || (data as any)?.message || 'Failed to load public links');
-      return (data as { shares?: PublicShareEntry[] }).shares ?? [];
+      return listSandboxShares(sandboxId);
     },
   });
 
@@ -290,24 +275,12 @@ export default function APIKeysPage() {
     mutationFn: async () => {
       const sandboxId = activeSandboxExternalId;
       if (!sandboxId) throw new Error('No active sandbox external id');
-      const token = await getAuthToken();
-      if (!token) throw new Error('Not authenticated');
-      const res = await fetch(`${backendBase}/p/share`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          sandbox_id: sandboxId,
-          port: Number(shareForm.port),
-          ttl: shareForm.ttl,
-          label: shareForm.label.trim() || undefined,
-        }),
+      return createSandboxShare({
+        sandboxId,
+        port: Number(shareForm.port),
+        ttl: shareForm.ttl,
+        label: shareForm.label.trim() || undefined,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || data?.message || 'Failed to generate public URL');
-      return data as { url: string; expiresAt?: string; label?: string };
     },
     onSuccess: (data) => {
       setPublicUrlResult(data);
@@ -321,21 +294,7 @@ export default function APIKeysPage() {
     mutationFn: async (token: string) => {
       const sandboxId = activeSandboxExternalId;
       if (!sandboxId) throw new Error('No active sandbox external id');
-      const authToken = await getAuthToken();
-      if (!authToken) throw new Error('Not authenticated');
-      const url = new URL(`${backendBase}/p/share/${encodeURIComponent(token)}`);
-      url.searchParams.set('sandbox_id', sandboxId);
-      const res = await fetch(url.toString(), {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || 'Failed to revoke public link');
-      }
-      return res.json();
+      return revokeSandboxShare(sandboxId, token);
     },
     onSuccess: () => {
       refetchShares();

@@ -85,7 +85,9 @@ mockIamEngineAllowAll();
 
 mockIamMembershipSyncNoop();
 
+const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
+  ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
     c.set('userId', auth.userId);
@@ -112,6 +114,13 @@ mock.module('../projects/git', () => ({
     const content = repoFiles.get(path);
     if (content === undefined) throw new Error(`Not found: ${path}`);
     return content;
+  },
+  readManifestFromRepo: async (_p: any, candidatePaths: string[]) => {
+    for (const path of candidatePaths) {
+      const content = repoFiles.get(path);
+      if (content !== undefined) return { path, content };
+    }
+    return null;
   },
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   listBranches: async () => [],
@@ -250,7 +259,9 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 // Stub secrets so webhook tests can resolve the trigger's signing secret.
 // Tests can read/override `secretValues` to drive specific behaviors.
 const secretValues = new Map<string, string>();
+const realProjectSecrets = await import('../projects/secrets');
 mock.module('../projects/secrets', () => ({
+  ...realProjectSecrets,
   encryptProjectSecret: (_p: string, v: string) => `enc:${v}`,
   decryptProjectSecret: (_p: string, v: string) => v.replace(/^enc:/, ''),
   isValidSecretName: (n: string) => /^[A-Z_][A-Z0-9_]*$/.test(n),
@@ -277,9 +288,20 @@ mock.module('../shared/db', () => ({
                 ? lifecycleCommandRows
                 : table === projectSessions
                   ? sessionRows
-                  : [];
+                  : table === projects
+                    ? [projectRow]
+                    : [];
             const ordered = {
-              limit: async (limit: number) => rows.slice(0, limit),
+              // `selectActiveProjects` chains `.orderBy(...).limit(n).offset(m)` —
+              // `limit()` must return a chainable (and still awaitable) object so
+              // both `await ...limit(n)` and `...limit(n).offset(m)` resolve.
+              limit: (limit: number) => {
+                const limited = rows.slice(0, limit);
+                return {
+                  offset: async (offset: number) => limited.slice(offset),
+                  then: (resolve: (rows: any[]) => unknown) => resolve(limited),
+                };
+              },
               then: (resolve: (rows: any[]) => unknown) => resolve(rows),
             };
             return ordered as any;
@@ -298,6 +320,15 @@ mock.module('../shared/db', () => ({
             if (table === accountGithubInstallations) return [];
             if (table === projectMembers) return [];
             if (table === sessionLifecycleCommands) return lifecycleCommandRows.slice(0, 1);
+            // `getGitTriggerRuntime` does a bare `.select().from(projectTriggerRuntime)
+            // .where(...).limit(1)` (no `orderBy`, no field projection) — without this
+            // branch it always fell through to `[]`, so the sweep never saw a prior
+            // fire's `lastFiredAt` and recomputed the same due-slot idempotency key on
+            // every retry (masking backpressure clearing). Mirrors the `.then()`
+            // fallback below.
+            if (table === projectTriggerRuntime) {
+              return runtimeRows.filter((r) => r.projectId === PROJECT_ID).slice(0, 1);
+            }
             return [];
           };
           // Some callers `await` directly without orderBy/limit (e.g. select

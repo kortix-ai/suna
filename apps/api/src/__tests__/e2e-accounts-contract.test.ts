@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { accountInvitations, accountMembers, accounts, accountUser, projectMembers, projects } from '@kortix/db';
+import { accountInvitations, accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 
 const OWNER_ID = '00000000-0000-4000-a000-000000000001';
 const MEMBER_ID = '00000000-0000-4000-a000-000000000002';
@@ -193,7 +193,6 @@ function selectRows(table: unknown, fields: Record<string, unknown> | undefined,
     );
   }
 
-  if (table === accountUser) return [];
   if (table === projects) return [{ n: 0 }];
   if (table === projectMembers) return [];
   return [];

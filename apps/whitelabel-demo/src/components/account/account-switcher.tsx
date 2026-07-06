@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { kortix } from '@/lib/kortix';
+import type { KortixAccount } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
@@ -36,7 +37,7 @@ export function AccountSwitcher({
   onChange,
   loading,
 }: {
-  accounts: any[];
+  accounts: KortixAccount[];
   value: string | null;
   onChange: (accountId: string) => void;
   loading: boolean;
@@ -79,8 +80,7 @@ function NewAccountDialog({ onCreated }: { onCreated: (accountId: string) => voi
       setOpen(false);
       setName('');
       toast.success('Team account created');
-      const id = (account as any)?.account_id;
-      if (id) onCreated(id);
+      if (account.account_id) onCreated(account.account_id);
     },
     onError: () => toast.error('Could not create the account'),
   });

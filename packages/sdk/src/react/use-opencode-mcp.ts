@@ -31,16 +31,21 @@ export type { McpStatus };
 
 function unwrap<T>(result: { data?: T; error?: unknown; response?: Response }): T {
   if (result.error) {
-    const err = result.error as any;
+    // `error`'s shape varies per endpoint's typed error union — duck-type
+    // defensively via `unknown` rather than assume a shape.
+    const err = result.error;
     const status = (result.response as Response | undefined)?.status;
+    const errRec = err && typeof err === 'object' ? (err as Record<string, unknown>) : undefined;
+    const dataRec =
+      errRec?.data && typeof errRec.data === 'object' ? (errRec.data as Record<string, unknown>) : undefined;
     const msg =
-      err?.data?.message ||
-      err?.message ||
-      err?.error ||
+      dataRec?.message ||
+      errRec?.message ||
+      errRec?.error ||
       (typeof err === 'string' ? err : null) ||
       (typeof err === 'object' ? JSON.stringify(err) : null) ||
       (status ? `Server returned ${status}` : 'SDK request failed');
-    throw new Error(msg);
+    throw new Error(String(msg));
   }
   return result.data as T;
 }

@@ -6,7 +6,6 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import {
   SharingPicker,
   isSharingComplete,
-  selectionToIntent,
   type SharingSelection,
 } from '@/features/workspace/shared/sharing-picker';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
@@ -44,6 +43,7 @@ export function CustomProviderForm({
   const [sharing, setSharing] = useState<SharingSelection>({
     mode: 'project',
     memberIds: [],
+    groupIds: [],
   });
   const [error, setError] = useState<string | null>(null);
   const [savedSnippet, setSavedSnippet] = useState<{
@@ -88,10 +88,11 @@ export function CustomProviderForm({
             active: true,
           });
         } else {
+          // Project-wide is the only shared option now — secret sharing
+          // (restricting a shared value to specific members) was retired.
           await upsertProjectSecret(projectId, {
             name: secretName,
             value: trimmed.apiKey,
-            sharing: selectionToIntent(sharing),
           });
         }
       }
@@ -203,7 +204,7 @@ export function CustomProviderForm({
         </div>
 
         {form.apiKey.trim() && (
-          <SharingPicker projectId={projectId} value={sharing} onChange={setSharing} showHeading />
+          <SharingPicker projectId={projectId} value={sharing} onChange={setSharing} showHeading hideMembers />
         )}
         <div>
           <label className="text-muted-foreground mb-1.5 block text-xs font-medium">

@@ -80,7 +80,7 @@ class DaytonaAdapter implements SandboxProviderAdapter {
       // reports as "Path does not exist: …/scaffold.git". Re-staging self-heals
       // it so the auto/background build recovers on its own instead of needing a
       // manual rebuild (the "always have to manually start" symptom).
-      const ctx = await stageBuildContext(input.snapshotName, userDockerfile);
+      const ctx = await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo);
       const buildLogs: string[] = [];
       try {
         await daytona.snapshot.create(
@@ -175,9 +175,13 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     if (!isDaytonaConfigured()) return;
     snapshotStateCache.delete(snapshotName); // invalidate before mutating
     try {
-      const snap = await getDaytona().snapshot.get(snapshotName);
+      // Bounded for the same reason as getSnapshotState() above: the Daytona
+      // SDK's axios client has a 24h default timeout, so an unbounded call
+      // here can hang the caller indefinitely instead of hitting this
+      // method's own already-forgiving try/catch.
+      const snap = await withTimeout(getDaytona().snapshot.get(snapshotName), SNAPSHOT_STATE_TIMEOUT_MS, `Daytona snapshot.get(${snapshotName})`);
       if (!snap) return;
-      await getDaytona().snapshot.delete(snap);
+      await withTimeout(getDaytona().snapshot.delete(snap), SNAPSHOT_STATE_TIMEOUT_MS, `Daytona snapshot.delete(${snapshotName})`);
     } catch {
       // not found / transient — treat as already gone
     }
@@ -188,7 +192,9 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     let lastState = 'unknown';
     while (Date.now() < deadline) {
       try {
-        const snap = await getDaytona().snapshot.get(name);
+        // Bounded so one hung poll can't defeat this loop's own deadline
+        // check — see deleteSnapshot()'s comment above for why.
+        const snap = await withTimeout(getDaytona().snapshot.get(name), SNAPSHOT_STATE_TIMEOUT_MS, `Daytona snapshot.get(${name})`);
         lastState = String((snap as { state?: string } | null)?.state ?? 'missing').toLowerCase();
         if (lastState === 'active') return;
         if (lastState === 'error' || lastState === 'build_failed') {
@@ -211,11 +217,13 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       try {
-        const snap = await getDaytona().snapshot.get(name);
+        // Bounded so one hung poll can't defeat this loop's own deadline
+        // check — see deleteSnapshot()'s comment above for why.
+        const snap = await withTimeout(getDaytona().snapshot.get(name), SNAPSHOT_STATE_TIMEOUT_MS, `Daytona snapshot.get(${name})`);
         const state = (snap as { state?: string } | null | undefined)?.state;
         if (state === 'active') return 'active';
         if (state === 'error' || state === 'build_failed') {
-          await getDaytona().snapshot.delete(snap as never).catch(() => {});
+          await withTimeout(getDaytona().snapshot.delete(snap as never), SNAPSHOT_STATE_TIMEOUT_MS, `Daytona snapshot.delete(${name})`).catch(() => {});
           return 'failed';
         }
       } catch {

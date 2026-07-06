@@ -20,7 +20,7 @@ const NEW_PROJECT_ID = '00000000-0000-4000-a000-000000000203';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
 type AccountRole = 'owner' | 'admin' | 'member';
-type ProjectRole = 'manager' | 'editor' | 'user';
+type ProjectRole = 'manager' | 'editor' | 'member';
 
 interface ProjectRow {
   projectId: string;
@@ -291,9 +291,9 @@ mock.module('../iam/dispatcher', () => {
     if (am.accountRole === 'owner' || am.accountRole === 'admin') return true;
     const pm = projectMemberRows.find((r) => r.userId === userId && r.projectId === PROJECT_ID);
     const pr = pm?.projectRole ?? null;
-    if (action === 'project.read') return pr === 'user' || pr === 'editor' || pr === 'manager';
-    // Session lifecycle: any project member (a plain `user` included) may run sessions.
-    if (action.startsWith('project.session.')) return pr === 'user' || pr === 'editor' || pr === 'manager';
+    if (action === 'project.read') return pr === 'member' || pr === 'editor' || pr === 'manager';
+    // Session lifecycle: any project member (a plain `member` included) may run sessions.
+    if (action.startsWith('project.session.')) return pr === 'member' || pr === 'editor' || pr === 'manager';
     if (action === 'project.write') return pr === 'editor' || pr === 'manager';
     return pr === 'manager';
   };
@@ -321,7 +321,9 @@ mock.module('../iam/dispatcher', () => {
 
 mockIamMembershipSyncNoop();
 
+const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
+  ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
     c.set('userId', auth.userId);
@@ -350,6 +352,7 @@ mock.module('../projects/git', () => ({
     }
     return `content:${path}@${ref}`;
   },
+  readManifestFromRepo: async () => null,
   archiveRepoSubtree: async (project: ProjectRow, ref: string, path?: string | null) => {
     archiveCalls.push({ projectId: project.projectId, ref, path: path ?? null });
     // git archive --format=zip outputs binary; emit a tiny readable stream
@@ -665,7 +668,7 @@ describe('projects API contract', () => {
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
       userId: MEMBER_ID,
-      projectRole: 'user',
+      projectRole: 'member',
       grantedBy: OWNER_ID,
       createdAt: baseDate,
       updatedAt: baseDate,
@@ -678,8 +681,8 @@ describe('projects API contract', () => {
     expect(body).toHaveLength(1);
     expect(body[0]).toMatchObject({
       project_id: PROJECT_ID,
-      project_role: 'user',
-      effective_project_role: 'user',
+      project_role: 'member',
+      effective_project_role: 'member',
     });
   });
 
@@ -757,6 +760,7 @@ describe('projects API contract', () => {
       listRepoFiles: async () => repoFiles,
       loadProjectConfig: async () => ({ manifest: {}, env: { required: [], optional: [] }, opencode: {} }),
       readRepoFile: async () => '',
+      readManifestFromRepo: async () => null,
       archiveRepoSubtree: async (_p: any, _r: string, path?: string | null) => {
         if (path && path.startsWith('/')) throw new Error('Invalid path');
         const body = new TextEncoder().encode('ok');
@@ -939,7 +943,7 @@ describe('projects API contract', () => {
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
       userId: MEMBER_ID,
-      projectRole: 'user',
+      projectRole: 'member',
       grantedBy: OWNER_ID,
       createdAt: baseDate,
       updatedAt: baseDate,

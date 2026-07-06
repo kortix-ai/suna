@@ -1,6 +1,8 @@
 // Session sandbox — runtime sandbox row + the session-open (/start) flow.
 
 import { backendApi } from '../api-client';
+import { setSessionRuntime } from '../../state/session-runtime-registry';
+import { getSandboxUrlForExternalId } from '../../state/server-store/url-helpers';
 
 // ---------------------------------------------------------------------------
 // Session sandbox — runtime row in `kortix.session_sandboxes`. Separate from
@@ -20,7 +22,7 @@ export interface ProjectSessionSandbox {
   session_id: string;
   project_id: string;
   account_id: string;
-  provider: 'daytona' | 'platinum' | 'local_docker' | 'justavps';
+  provider: 'managed' | 'daytona' | 'platinum' | 'local_docker' | 'justavps';
   external_id: string | null;
   base_url: string | null;
   status: ProjectSessionSandboxStatus;
@@ -53,6 +55,39 @@ export interface SessionStartResult {
   reason?: string;
 }
 
+export class SessionStartError extends Error {
+  status?: number;
+  code?: string;
+  terminal: boolean;
+
+  constructor(message: string, options: { status?: number; code?: string; terminal: boolean }) {
+    super(message);
+    this.name = 'SessionStartError';
+    this.status = options.status;
+    this.code = options.code;
+    this.terminal = options.terminal;
+  }
+}
+
+export function isSessionStartError(error: unknown): error is SessionStartError {
+  return error instanceof Error && error.name === 'SessionStartError';
+}
+
+function classifySessionStartFailure(error?: Error): SessionStartError | null {
+  const apiError = error as
+    | (Error & { status?: number; code?: string; details?: { code?: string; error?: string } })
+    | undefined;
+  const status = apiError?.status;
+  const code = apiError?.code ?? apiError?.details?.code ?? apiError?.details?.error;
+  const message = apiError?.message || 'Unable to start this session';
+
+  if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+    return new SessionStartError(message, { status, code, terminal: true });
+  }
+
+  return null;
+}
+
 /**
  * THE session-open call. Idempotently provisions/resumes the sandbox and resolves
  * the OpenCode pin server-side, returning ONE readiness payload to poll until
@@ -70,12 +105,31 @@ export async function startProjectSession(
   const response = await backendApi.post<SessionStartResult>(
     `/projects/${projectId}/sessions/${sessionId}/start${qs}`,
     {},
-    // 402 (billing) is handled by the page's plan gate before polling; other
-    // failures just yield null and the caller retries.
+    // Keep toasts quiet here. Terminal client errors are rendered by the host;
+    // transient transport/server failures still yield null so polling can recover.
     { showErrors: false },
   );
-  if (!response.success || !response.data) return null;
-  return response.data;
+  if (!response.success || !response.data) {
+    const terminal = classifySessionStartFailure(response.error);
+    if (terminal) throw terminal;
+    return null;
+  }
+  const result = response.data;
+  // Populate the shared session-runtime registry the instant a session goes
+  // ready, regardless of WHICH caller drove this /start (the facade's
+  // `ensureReady()` or the React `useSession` hook — both call this one
+  // function). Every other handle for the same session id — a fresh
+  // `kortix.session(pid, sid)` created for a one-off poll, e.g. — can then
+  // adopt this entry instead of throwing SessionNotReadyError or re-POSTing.
+  const externalId = result.sandbox?.external_id;
+  if (result.stage === 'ready' && externalId && result.opencode_session_id) {
+    setSessionRuntime(projectId, sessionId, {
+      opencodeSessionId: result.opencode_session_id,
+      runtimeUrl: getSandboxUrlForExternalId(externalId),
+      sandboxId: externalId,
+    });
+  }
+  return result;
 }
 
 /**

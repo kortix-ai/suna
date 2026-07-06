@@ -19,23 +19,25 @@ import { SecretsView } from '@/features/workspace/customize/sections/view/secret
 import { SettingsView } from '@/features/workspace/customize/sections/view/settings-view';
 import { SkillsView } from '@/features/workspace/customize/sections/view/skills-view';
 import { useIsMobile } from '@/hooks/utils';
-import { DEFAULT_CUSTOMIZE_SECTION, type CustomizeSection } from '@/lib/customize-sections';
+import { type CustomizeSection, DEFAULT_CUSTOMIZE_SECTION } from '@/lib/customize-sections';
 import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
-import { CUSTOMIZE_SECTION_ACCESS, CUSTOMIZE_SECTION_READ_ACTIONS } from '@/lib/project-actions';
+import { CUSTOMIZE_SECTION_GATE_ACTIONS, isCustomizeSectionVisible } from '@/lib/project-actions';
 import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { getProjectDetail } from '@kortix/sdk/projects-client';
+import { getProjectDetail, listReviewItems } from '@kortix/sdk/projects-client';
 import { AlarmClock, ArrowLeft, ChatMessages, Command, Sparkles } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
+  ArrowUpCircle,
   AudioLines,
   Bot,
   Boxes,
   Container,
   FolderOpen,
-  GitCommitHorizontal,
+  History,
+  Inbox,
   KeyRound,
   Monitor,
   Plug,
@@ -45,12 +47,15 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { LuSettings, LuUsersRound } from 'react-icons/lu';
+import { detectManifestVersion } from './migrate-to-v2/manifest-version';
+import { UpgradesView } from './migrate-to-v2/upgrade-view';
 import { isRailItemActive } from './rail';
 import { FilesSection } from './sections/files-section';
 import { LlmManagementView } from './sections/gateway-view';
 import { ChangesView } from './sections/view/changes-view';
 import { DevView } from './sections/view/dev-view';
-import { RailGroup, RailItem } from './type';
+import { ReviewView } from './sections/view/review-view';
+import type { RailGroup, RailItem } from './type';
 
 const GROUPS: readonly RailGroup[] = [
   {
@@ -65,7 +70,7 @@ const GROUPS: readonly RailGroup[] = [
     label: 'Connect',
     items: [
       { section: 'connectors', label: 'Connectors', icon: Plug },
-      { section: 'secrets', label: 'Secrets', icon: KeyRound },
+      { section: 'secrets', label: 'Environment variables', icon: KeyRound },
       { section: 'channels', label: 'Channels', icon: ChatMessages },
     ],
   },
@@ -79,8 +84,8 @@ const GROUPS: readonly RailGroup[] = [
   {
     label: 'Workspace',
     items: [
-      { section: 'changes', label: 'Checkpoints', icon: GitCommitHorizontal },
       { section: 'files', label: 'Files', icon: FolderOpen },
+      { section: 'changes', label: 'Changes', icon: History },
       { section: 'sandbox', label: 'Sandbox', icon: Container },
       { section: 'dev', label: 'Dev', icon: Terminal },
     ],
@@ -102,13 +107,24 @@ const MARKETPLACE_ITEM: RailItem = { section: 'marketplace', label: 'Marketplace
 
 const MEET_ITEM: RailItem = { section: 'meet', label: 'Meetings', icon: AudioLines };
 
+const REVIEW_ITEM: RailItem = { section: 'review', label: 'Review', icon: Inbox };
+
+// The Upgrades section is always reachable (it hosts the one-off prompt
+// runner), but it only claims the pinned top slot while a registry upgrade
+// is actually applicable (e.g. the project is still on a v1 manifest) —
+// otherwise it sits quietly in Manage next to Settings.
+const UPGRADE_ITEM: RailItem = { section: 'upgrade', label: 'Upgrades', icon: ArrowUpCircle };
+
 function railGroups(
   tunnelEnabled: boolean,
   marketplaceEnabled: boolean,
   llmGatewayAvailable: boolean,
   meetEnabled: boolean,
+  reviewEnabled: boolean,
+  upgradeAttention: boolean,
 ): readonly RailGroup[] {
-  return GROUPS.map((g) => {
+  const groups = upgradeAttention ? [{ items: [UPGRADE_ITEM] }, ...GROUPS] : GROUPS;
+  return groups.map((g) => {
     if (g.label === 'Build' && marketplaceEnabled) {
       return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
     }
@@ -118,6 +134,16 @@ function railGroups(
       if (tunnelEnabled) items.push(COMPUTERS_ITEM);
       if (llmGatewayAvailable) items.push(LLM_ITEM);
       return { ...g, items };
+    }
+    if (g.label === 'Workspace' && reviewEnabled) {
+      // Slot Review right after Changes — both are review surfaces.
+      const items = [...g.items];
+      const at = items.findIndex((it) => it.section === 'changes');
+      items.splice(at >= 0 ? at + 1 : items.length, 0, REVIEW_ITEM);
+      return { ...g, items };
+    }
+    if (g.label === 'Manage' && !upgradeAttention) {
+      return { ...g, items: [...g.items, UPGRADE_ITEM] };
     }
     return g;
   });
@@ -145,7 +171,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   // API re-checks every mutation); this only decides what to show. Feed the
   // accountId we ALREADY hold from the project-detail query so the probe runs on
   // first render rather than being disabled while a separate getProject resolves.
-  const caps = useProjectCans(projectId, CUSTOMIZE_SECTION_READ_ACTIONS, {
+  const caps = useProjectCans(projectId, CUSTOMIZE_SECTION_GATE_ACTIONS, {
     accountId: detail.data?.project?.account_id,
   });
   // Treat BOTH "loading" and "errored" as not-yet-resolved — this is a VISIBILITY
@@ -153,18 +179,19 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   // than blank the UI on a transient probe failure or while it's in flight.
   const capsResolved = useMemo(
     () =>
-      CUSTOMIZE_SECTION_READ_ACTIONS.every(
+      CUSTOMIZE_SECTION_GATE_ACTIONS.every(
         (action) => caps[action] && !caps[action].isLoading && !caps[action].isError,
       ),
     [caps],
   );
-  // A section is permitted when its read leaf resolved to allowed:true. Until the
-  // probe resolves (or if it errored) we permit everything (optimistic).
+  // A section is permitted when its GATE leaf resolved to allowed:true. Every
+  // customize section gates on WRITE (editor+) — a plain `member` sees none of
+  // them; `files` is the exception (gates on read), so it stays reachable. Until
+  // the probe resolves (or if it errored) we permit everything (optimistic).
   const isSectionAllowed = useCallback(
     (s: CustomizeSection) => {
       if (!capsResolved) return true;
-      const readAction = CUSTOMIZE_SECTION_ACCESS[s].read;
-      return caps[readAction]?.allowed === true;
+      return isCustomizeSectionVisible(s, (action) => caps[action]?.allowed === true);
     },
     [caps, capsResolved],
   );
@@ -174,15 +201,52 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   const llmGatewayEnabled = isLlmGatewayEnabled(detail.data?.project);
   const llmGatewayAvailable = isLlmGatewayAvailable(detail.data?.project);
   const meetEnabled = detail.data?.project?.experimental?.meet ?? false;
+  const reviewEnabled = detail.data?.project?.experimental?.review_center ?? false;
+  // Pin Upgrades to the top only once the manifest read resolved to v1 —
+  // while the detail query is in flight (or on v2 projects) the item sits in
+  // its calm Manage slot instead. Same detection the section rows use.
+  const upgradeAttention = detail.data
+    ? detectManifestVersion(detail.data.config.manifest_raw) === 1
+    : false;
+
+  // "Needs you" count for the Review rail badge. Shares the review inbox's query
+  // key so the badge and the section stay in sync; only fetched when the panel is
+  // open and the flag is on.
+  const reviewItemsQuery = useQuery({
+    queryKey: ['review-center', projectId, 'list'],
+    queryFn: () => listReviewItems(projectId),
+    enabled: open && reviewEnabled && !!projectId,
+    staleTime: 5_000,
+    refetchInterval: open && reviewEnabled ? 15_000 : false,
+  });
+  const reviewNeedsYou = (reviewItemsQuery.data?.review_items ?? []).filter(
+    (i) => i.status === 'needs_you',
+  ).length;
+
   const groups = useMemo(
     // Compose flag-gating with IAM visibility: an item shows only if it passes
     // BOTH its flag check (baked into railGroups) AND its read-leaf probe. Empty
     // groups drop out so no orphan header renders.
     () =>
-      railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, meetEnabled)
+      railGroups(
+        tunnelEnabled,
+        marketplaceEnabled,
+        llmGatewayAvailable,
+        meetEnabled,
+        reviewEnabled,
+        upgradeAttention,
+      )
         .map((g) => ({ ...g, items: g.items.filter((item) => isSectionAllowed(item.section)) }))
         .filter((g) => g.items.length > 0),
-    [tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, meetEnabled, isSectionAllowed],
+    [
+      tunnelEnabled,
+      marketplaceEnabled,
+      llmGatewayAvailable,
+      meetEnabled,
+      reviewEnabled,
+      upgradeAttention,
+      isSectionAllowed,
+    ],
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
   // `llm-management` stands in for every `llm-*` sub-section so deep-links still work.
@@ -249,34 +313,39 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
                         active={isRailItemActive(item, section)}
                         onClick={() => setSection(item.section)}
                         orientation="horizontal"
+                        count={item.section === 'review' ? reviewNeedsYou : undefined}
                       />
                     </li>
                   ))}
                 </ul>
               </FadedScrollArea>
-              <ModalClose className="flex shrink-0 items-center px-4">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-muted-foreground shrink-0"
-                  aria-label="Close"
-                >
-                  <Icon.Close className="text-foreground size-4 stroke-1" />
-                </Button>
-              </ModalClose>
+              <div className="flex shrink-0 items-center px-4">
+                <ModalClose asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-muted-foreground shrink-0"
+                    aria-label="Close"
+                  >
+                    <Icon.Close className="text-foreground size-4 stroke-1" />
+                  </Button>
+                </ModalClose>
+              </div>
             </nav>
           ) : (
             <section className="bg-sidebar flex min-h-0 flex-col space-y-10 border-r py-4">
-              <ModalClose className="w-full px-2.5">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground flex w-full items-center justify-start gap-2 px-4 py-2 text-left text-sm font-medium"
-                >
-                  <ArrowLeft />
-                  Back to workspace
-                </Button>
-              </ModalClose>
+              <div className="w-full px-2.5">
+                <ModalClose asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground flex w-full items-center justify-start gap-2 px-4 py-2 text-left text-sm font-medium"
+                  >
+                    <ArrowLeft />
+                    Back to workspace
+                  </Button>
+                </ModalClose>
+              </div>
 
               <nav aria-label="Customize">
                 <div className="flex-1 [scrollbar-width:none] overflow-y-auto px-2.5 py-3 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
@@ -295,6 +364,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
                               item={item}
                               active={isRailItemActive(item, section)}
                               onClick={() => setSection(item.section)}
+                              count={item.section === 'review' ? reviewNeedsYou : undefined}
                             />
                           </li>
                         ))}
@@ -328,14 +398,18 @@ function RailButton({
   active,
   onClick,
   orientation = 'vertical',
+  count,
 }: {
   item: RailItem;
   active: boolean;
   onClick: () => void;
   orientation?: 'vertical' | 'horizontal';
+  /** Optional attention count shown as a pill (e.g. review items needing you). */
+  count?: number;
 }) {
   const Icon = item.icon;
   const horizontal = orientation === 'horizontal';
+  const showCount = count != null && count > 0;
   return (
     <Button
       type="button"
@@ -350,6 +424,17 @@ function RailButton({
     >
       {Icon && <Icon className="size-4 shrink-0" />}
       <span className={cn(!horizontal && 'truncate')}>{item.label}</span>
+      {showCount && (
+        <span
+          className={cn(
+            'shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
+            !horizontal && 'ml-auto',
+            active ? 'bg-primary-foreground/15' : 'bg-kortix-base/15 text-kortix-base',
+          )}
+        >
+          {count}
+        </span>
+      )}
     </Button>
   );
 }
@@ -396,6 +481,8 @@ function SectionContent({
       return <ScheduleView projectId={projectId} type="webhook" />;
     case 'changes':
       return <ChangesView projectId={projectId} />;
+    case 'review':
+      return <ReviewView projectId={projectId} />;
     case 'files':
       return <FilesSection projectId={projectId} />;
     case 'sandbox':
@@ -406,6 +493,8 @@ function SectionContent({
       return <MembersView projectId={projectId} />;
     case 'settings':
       return <SettingsView projectId={projectId} />;
+    case 'upgrade':
+      return <UpgradesView projectId={projectId} />;
     default:
       return null;
   }

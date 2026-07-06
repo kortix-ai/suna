@@ -64,11 +64,13 @@ describe('saveSlackInstall', () => {
     });
     expect(insertedValues).toContainEqual({
       projectId: 'proj-1',
+      identifier: 'SLACK_BOT_TOKEN',
       name: 'SLACK_BOT_TOKEN',
       valueEnc: 'enc:xoxb-test',
     });
     expect(insertedValues).toContainEqual({
       projectId: 'proj-1',
+      identifier: 'SLACK_SIGNING_SECRET',
       name: 'SLACK_SIGNING_SECRET',
       valueEnc: 'enc:signing-secret',
     });

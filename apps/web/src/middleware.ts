@@ -37,6 +37,7 @@ const PUBLIC_ROUTES = [
   '/install.sh',
   '/download', // Desktop installer redirector (per-platform latest)
   '/design-system', // Living design system / brand guidelines should be public
+  '/review', // Review Center clickable prototype — mock data only, public so it is shareable/clickable without login
   '/presentation', // Standalone product deck (/presentation) should be public
   '/rauch', // Rauch-style particle rendering of the Kortix symbol — public, unauthenticated
   '/contact', // Request-a-demo / contact page should be public

@@ -1,43 +1,33 @@
 'use client';
 
-import {
-  useAccountState,
-  accountStateSelectors,
-} from '@/hooks/billing/use-account-state';
+import { useAuth } from '@/features/providers/auth-provider';
 import { SHOW_PERSONAL_CONTACT } from '@/lib/kortix-flags';
+import { isWorkEmail } from '@/lib/personal-email';
 
 /**
  * Which help/contact surface a viewer gets:
  *  - `'none'`     — self-hosters (cloud flag off): show nothing.
- *  - `'standard'` — cloud, NOT on a paid plan: a generic "talk to our team"
- *                   widget (book a demo via /contact). No personal channels.
- *  - `'personal'` — cloud, on a PAID plan: the full founder concierge —
- *                   "Hey, I'm Marko", book a call, WhatsApp, direct email.
+ *  - `'standard'` — cloud, signed up with a personal/consumer email: a
+ *                   generic "talk to our team" widget (book a demo via
+ *                   /contact). No personal channels.
+ *  - `'personal'` — cloud, signed up with a work email: the full founder
+ *                   concierge — "Hey, I'm Marko", book a call, WhatsApp,
+ *                   direct email.
  *
- * Concierge access (the personal tier) is a perk for paying customers; everyone
- * else on cloud still gets a way to reach the team.
+ * Gated on work email, not plan: we want to sell a prospect on the concierge
+ * treatment before they pay, not after. Anyone can sign up with a personal
+ * inbox, so that's the one thing worth gating on to keep this from being a
+ * spam vector for Marko's direct contact info.
  */
 export type PersonalContactTier = 'none' | 'standard' | 'personal';
 
-/**
- * Resolve the contact tier from the cloud build flag + the viewer's plan.
- * Returns `'standard'` (not `'personal'`) until account state has loaded, so a
- * paid user briefly sees the team widget rather than nothing while billing
- * fetches — and we never flash the founder card to a free user. Skips the
- * billing query entirely when the build flag is off.
- */
+/** Resolve the contact tier from the cloud build flag + the signup email domain. */
 export function usePersonalContactTier(): PersonalContactTier {
-  // Only hit the billing endpoint when the build flag is on — self-hosters
-  // (flag off) should never trigger an account-state fetch for this.
-  const { data: accountState } = useAccountState({
-    enabled: SHOW_PERSONAL_CONTACT,
-  });
+  const { user } = useAuth();
 
   if (!SHOW_PERSONAL_CONTACT) return 'none';
 
-  const tierKey = accountStateSelectors.tierKey(accountState)?.toLowerCase();
-  const isPaid = !!tierKey && tierKey !== 'none' && tierKey !== 'free';
-  return isPaid ? 'personal' : 'standard';
+  return isWorkEmail(user?.email) ? 'personal' : 'standard';
 }
 
 /**

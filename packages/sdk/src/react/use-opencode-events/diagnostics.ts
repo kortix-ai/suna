@@ -1,6 +1,11 @@
 import type { Part } from '@opencode-ai/sdk/v2/client';
 import type { RefObject } from 'react';
-import { parseDiagnosticsFromToolOutput, useDiagnosticsStore } from '../../state/diagnostics-store';
+import {
+  parseDiagnosticsFromToolOutput,
+  useDiagnosticsStore,
+  type RawDiagnostic,
+} from '../../state/diagnostics-store';
+import type { NormalizeDiagnosticPaths } from './types';
 
 /**
  * Extract diagnostics carried by a `message.part.updated` part — both the
@@ -10,18 +15,17 @@ import { parseDiagnosticsFromToolOutput, useDiagnosticsStore } from '../../state
  */
 export function applyPartDiagnostics(
   part: Part,
-  normalizeDiagnosticPaths: RefObject<
-    (diagsByFile: Record<string, any[]>) => Record<string, any[]>
-  >,
+  normalizeDiagnosticPaths: RefObject<NormalizeDiagnosticPaths>,
 ): void {
-  const partState = (part as any)?.state;
+  // Only `ToolPart` carries `.state` — every other `Part` variant doesn't.
+  const partState = part.type === 'tool' ? part.state : undefined;
 
   // --- Primary path: parse diagnostics from tool output text ---
   // The OpenCode backend embeds diagnostics as plain text inside
   // <file_diagnostics> / <project_diagnostics> XML tags in the
   // tool's text output (e.g. after write, edit, diagnostics tools).
   if (partState?.status === 'completed' && partState.output) {
-    const output = partState.output as string;
+    const output = partState.output;
     if (output.includes('<file_diagnostics>') || output.includes('<project_diagnostics>')) {
       const parsed = parseDiagnosticsFromToolOutput(output);
       const fileCount = Object.keys(parsed).length;
@@ -29,7 +33,7 @@ export function applyPartDiagnostics(
         // Normalize absolute sandbox paths to project-relative
         const normalized = normalizeDiagnosticPaths.current(parsed);
         // Convert LspDiagnostic[] to RawDiagnostic[] format for the store
-        const asRaw: Record<string, any[]> = {};
+        const asRaw: Record<string, RawDiagnostic[]> = {};
         for (const [file, diags] of Object.entries(normalized)) {
           asRaw[file] = diags.map((d) => ({
             range: {
@@ -46,10 +50,11 @@ export function applyPartDiagnostics(
   }
 
   // --- Fallback: check metadata.diagnostics (legacy / fork path) ---
-  const partMeta = partState?.metadata;
+  // `metadata` isn't on `ToolStatePending` — narrow it away first.
+  const partMeta = partState && partState.status !== 'pending' ? partState.metadata : undefined;
   if (partMeta?.diagnostics && typeof partMeta.diagnostics === 'object') {
-    const diagsByFile = partMeta.diagnostics as Record<string, any[]>;
-    const validEntries: Record<string, any[]> = {};
+    const diagsByFile = partMeta.diagnostics as Record<string, RawDiagnostic[]>;
+    const validEntries: Record<string, RawDiagnostic[]> = {};
     let hasValid = false;
     for (const [file, diags] of Object.entries(diagsByFile)) {
       if (Array.isArray(diags) && diags.length > 0) {

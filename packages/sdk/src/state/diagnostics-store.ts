@@ -383,18 +383,34 @@ export const useDiagnosticsStore = create<DiagnosticsState>()(
   {
     name: 'kortix-diagnostics',
     storage: {
+      // Guarded with try/catch (not just `typeof window`): React Native sets a
+      // global `window` shim but has no `sessionStorage`, so a bare reference
+      // throws a ReferenceError there. Degrading to "diagnostics didn't
+      // persist" is fine; crashing the store is not.
       getItem: (name) => {
-        if (typeof window === 'undefined') return null;
-        const str = sessionStorage.getItem(name);
-        return str ? JSON.parse(str) : null;
+        try {
+          if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return null;
+          const str = sessionStorage.getItem(name);
+          return str ? JSON.parse(str) : null;
+        } catch {
+          return null;
+        }
       },
       setItem: (name, value) => {
-        if (typeof window === 'undefined') return;
-        sessionStorage.setItem(name, JSON.stringify(value));
+        try {
+          if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return;
+          sessionStorage.setItem(name, JSON.stringify(value));
+        } catch {
+          /* ignore — quota or unavailable storage */
+        }
       },
       removeItem: (name) => {
-        if (typeof window === 'undefined') return;
-        sessionStorage.removeItem(name);
+        try {
+          if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return;
+          sessionStorage.removeItem(name);
+        } catch {
+          /* ignore */
+        }
       },
     },
     partialize: (state) => ({ byFile: state.byFile }) as unknown as DiagnosticsState,

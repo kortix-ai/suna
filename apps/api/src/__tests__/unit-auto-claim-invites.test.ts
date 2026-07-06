@@ -130,7 +130,7 @@ describe('autoClaimPendingInvites', () => {
       makeInvite({
         inviteId: 'project',
         accountId: 'acct-project',
-        bootstrapGrants: [{ project_id: 'p1', role: 'user' }],
+        bootstrapGrants: [{ project_id: 'p1', role: 'member' }],
       }),
     ];
 

@@ -12,11 +12,14 @@ export {
 export {
   RESOURCE_GRANT_TYPES,
   isResourceType,
+  CREATABLE_RESOURCE_GRANT_TYPES,
+  isCreatableResourceType,
   listResourceGrants,
   upsertResourceGrant,
   deleteResourceGrant,
   hasAnyResourceGrants,
   unscopedResourceIds,
+  isProjectResourceExplicitlyGranted,
   type ResourceType as ResourceGrantType,
   type PrincipalType as ResourceGrantPrincipalType,
 } from './resource-grants';

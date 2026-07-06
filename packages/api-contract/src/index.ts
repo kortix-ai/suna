@@ -51,6 +51,7 @@ export const ExperimentalFeatureMapSchema = z.object({
   agentmail_email: z.boolean(),
   meet: z.boolean(),
   llm_gateway: z.boolean(),
+  review_center: z.boolean(),
 });
 export type ExperimentalFeatureMap = z.infer<typeof ExperimentalFeatureMapSchema>;
 
@@ -70,13 +71,15 @@ export const ExperimentalFeatureViewSchema = z.object({
 });
 export type ExperimentalFeatureView = z.infer<typeof ExperimentalFeatureViewSchema>;
 
-/** Assignable project roles (`viewer` is deprecated and no longer emitted). */
-export const PROJECT_ROLES = ['manager', 'editor', 'user'] as const;
+/** Assignable project roles (`user`/`viewer` are deprecated and no longer emitted). */
+export const PROJECT_ROLES = ['manager', 'editor', 'member'] as const;
 export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
 export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
 
-/** Every provider that can appear on session/sandbox rows. */
-export const SANDBOX_PROVIDERS = ['daytona', 'local_docker', 'justavps', 'platinum'] as const;
+/** Every provider that can appear on session/sandbox rows. 'managed' is the
+ *  canonical name for the managed cloud backend; 'daytona' is its legacy alias,
+ *  kept so existing rows / callers stay valid. */
+export const SANDBOX_PROVIDERS = ['managed', 'daytona', 'local_docker', 'justavps', 'platinum'] as const;
 export const SandboxProviderSchema = z.enum(SANDBOX_PROVIDERS);
 export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
 
@@ -263,8 +266,6 @@ export const TriggerSchema = z.object({
   secret_env: z.string().nullable(),
   prompt_template: z.string(),
   session_mode: z.enum(['fresh', 'reuse']),
-  /** The member this trigger's automated runs act as (null = account owner). */
-  owner_user_id: z.string().nullable(),
   last_fired_at: z.string().nullable(),
   last_status: z.string().nullable(),
   last_error: z.string().nullable(),
@@ -285,11 +286,21 @@ export const TriggerListSchema = z.object({
 export type TriggerList = z.infer<typeof TriggerListSchema>;
 
 /**
- * The per-user view of one secret KEY as built by `buildSecretView`: the
- * shared/project row merged with the member's own override. Values are never
- * serialized.
+ * The per-user view of one secret, as built by `buildSecretView`: a secret is
+ * `{ identifier, name (the env var KEY), value }`. `identifier` is unique per
+ * project — the handle an agent's `secrets` grant references and the UI
+ * shows. `name` (the KEY) is NOT unique — multiple identifiers may share one
+ * (e.g. GMAPS-primary / GMAPS-backup, both GOOGLE_MAPS_API_KEY). Values are
+ * never serialized.
+ *
+ * Authorization is centralized on the agent grant (by identifier) — there is
+ * no per-secret member/group sharing and no resource-side agent allow-list
+ * (both retired); every project member with read access sees every secret.
  */
 export const SecretSchema = z.object({
+  /** Unique per project. The handle an agent's `secrets` grant references. */
+  identifier: z.string(),
+  /** The env var KEY injected into the sandbox. Not unique. */
   name: z.string(),
   project_id: z.string(),
   secret_id: z.string().nullable(),
@@ -303,10 +314,8 @@ export const SecretSchema = z.object({
   managed_by: z.literal('project_secret').nullable(),
   /** Is a shared project value set at all. */
   configured: z.boolean(),
-  share_scope: z.enum(['project', 'restricted']),
-  sharing: SharingIntentSchema.nullable(),
-  usable_by_me: z.boolean(),
-  /** The caller's private override (value omitted), or null. */
+  /** The caller's private override (value omitted), or null. Used today only by
+   *  the CODEX_AUTH_JSON per-user provider login. */
   mine: z.object({ active: z.boolean(), updated_at: z.string() }).nullable(),
   /** Which value actually gets injected into the caller's sessions. */
   effective_source: z.enum(['mine', 'shared', 'none']),

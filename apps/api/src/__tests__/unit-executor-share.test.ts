@@ -6,6 +6,7 @@ import {
   intentToScope,
   isSecretUsableBy,
   isSessionVisibleTo,
+  parseSharingIntent,
   scopeToIntent,
   sessionIntentToVisibility,
   visibilityToIntent,
@@ -15,6 +16,29 @@ import {
 const ALICE = 'user-alice';
 const BOB = 'user-bob';
 const SALES = 'group-sales';
+
+describe('parseSharingIntent — untrusted body → intent (HTTP gate)', () => {
+  test('members keeps departments (groupIds) and members, dropping non-strings', () => {
+    const out = parseSharingIntent(
+      { mode: 'members', memberIds: ['u1', 42, null], groupIds: ['g1', 'g2', {}] },
+      ALICE,
+    );
+    expect(out).toEqual({ mode: 'members', memberIds: ['u1'], groupIds: ['g1', 'g2'] });
+  });
+
+  test('department-only body survives (not silently downgraded to project)', () => {
+    expect(parseSharingIntent({ mode: 'members', groupIds: ['g1'] }, ALICE)).toEqual({
+      mode: 'members',
+      memberIds: [],
+      groupIds: ['g1'],
+    });
+  });
+
+  test('private falls back ownerId to the calling user; project ignores lists', () => {
+    expect(parseSharingIntent({ mode: 'private' }, ALICE)).toEqual({ mode: 'private', ownerId: ALICE });
+    expect(parseSharingIntent({ mode: 'project', memberIds: ['x'] }, ALICE)).toEqual({ mode: 'project' });
+  });
+});
 
 describe('isSecretUsableBy', () => {
   test('project scope → everyone', () => {

@@ -5,12 +5,24 @@
 import { flow } from "../core/flow";
 import { subscribe } from "../fixtures/billing";
 
-flow("BILL-1", { domain: "billing", tags: ["smoke"], routes: ["GET /v1/billing/account-state"] }, async (ctx) => {
-  await ctx.step("OWNER reads account state", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/account-state");
-    r.status(200);
-  });
-});
+flow(
+  "BILL-1",
+  {
+    domain: "billing",
+    tags: ["smoke"],
+    routes: ["GET /v1/billing/account-state", "GET /v1/billing/account-state/minimal"],
+  },
+  async (ctx) => {
+    await ctx.step("OWNER reads account state", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/account-state");
+      r.status(200);
+    });
+    await ctx.step("OWNER reads the minimal account-state variant → 200", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/account-state/minimal");
+      r.status(200);
+    });
+  },
+);
 
 flow(
   "BILL-12",

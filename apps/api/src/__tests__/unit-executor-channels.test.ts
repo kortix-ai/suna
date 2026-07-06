@@ -298,8 +298,6 @@ const SLACK: GatewayConnector = {
   baseUrl: 'https://slack.com/api',
   auth: { type: 'bearer', in: 'header', name: null, prefix: null },
   hasAuth: true,
-  shareScope: 'project',
-  grants: [],
   credentialMode: 'shared',
   enabled: true,
 };
@@ -312,8 +310,6 @@ const EMAIL: GatewayConnector = {
   baseUrl: 'https://api.agentmail.to/v0',
   auth: { type: 'bearer', in: 'header', name: null, prefix: null },
   hasAuth: true,
-  shareScope: 'project',
-  grants: [],
   credentialMode: 'shared',
   enabled: true,
 };
@@ -370,7 +366,7 @@ function makeDeps(body: string, status = 200) {
     loadPolicies: async () => [],
     loadProjectPolicies: async () => [],
     loadDefaultMode: async () => 'allow_all',
-    recordExecution: async () => {},
+    recordExecution: async () => null,
     fetchImpl: async (url, init) => {
       fetchCalls.push({ url, ...init });
       return { status, ok: status >= 200 && status < 300, text: async () => body };
@@ -416,8 +412,6 @@ describe('handleCall — channel (slack)', () => {
       baseUrl: null,
       auth: { type: 'none', in: 'header', name: null, prefix: null },
       hasAuth: true,
-      shareScope: 'project',
-      grants: [],
       credentialMode: 'shared',
       enabled: true,
     };
@@ -451,7 +445,7 @@ describe('handleCall — channel (slack)', () => {
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
-      recordExecution: async () => {},
+      recordExecution: async () => null,
       fetchImpl: async (url, init) => {
         fetchCalls.push({ url, ...init });
         return { status: 200, ok: true, text: async () => '{"ok":true,"messages":[]}' };
@@ -490,7 +484,7 @@ describe('handleCall — channel (email)', () => {
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
-      recordExecution: async () => {},
+      recordExecution: async () => null,
       fetchImpl: async (url, init) => {
         fetchCalls.push({ url, ...init });
         return { status: 200, ok: true, text: async () => '{"message_id":"msg-reply"}' };
@@ -543,7 +537,7 @@ describe('handleCall — channel (email)', () => {
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
-      recordExecution: async () => {},
+      recordExecution: async () => null,
       fetchImpl: async (url, init) => {
         fetchCalls.push({ url, ...init });
         return { status: 200, ok: true, text: async () => '{"message_id":"msg-reply"}' };
@@ -590,7 +584,7 @@ describe('handleCall — channel (email)', () => {
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
-      recordExecution: async () => {},
+      recordExecution: async () => null,
       fetchImpl: async (url, init) => {
         fetchCalls.push({ url, ...init });
         return { status: 200, ok: true, text: async () => '{"messages":[]}' };
@@ -623,8 +617,6 @@ const MEET: GatewayConnector = {
   baseUrl: 'https://us-west-2.recall.ai/api/v1',
   auth: { type: 'custom', in: 'header', name: 'Authorization', prefix: 'Token ' },
   hasAuth: true,
-  shareScope: 'project',
-  grants: [],
   credentialMode: 'shared',
   enabled: true,
 };
@@ -662,7 +654,7 @@ function meetDeps(action: GatewayAction, body: string, status = 200) {
     loadPolicies: async () => [],
     loadProjectPolicies: async () => [],
     loadDefaultMode: async () => 'allow_all',
-    recordExecution: async () => {},
+    recordExecution: async () => null,
     fetchImpl: async (url, init) => {
       fetchCalls.push({ url, ...init });
       return { status, ok: status >= 200 && status < 300, text: async () => body };

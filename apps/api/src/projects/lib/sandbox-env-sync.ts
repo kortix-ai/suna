@@ -2,17 +2,13 @@ import { and, eq } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolvePreviewLink } from '../../sandbox-proxy/backend';
-import { resolveShareSubject } from '../../executor/share';
 import { config } from '../../config';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
-import {
-  listProjectSecretsForUser,
-  projectSecretsRevision,
-} from '../secrets';
+import { listProjectSecretsSnapshotForUser, projectSecretsRevision } from '../secrets';
+import { grantFromLoadedAgents, loadProjectAgents } from '../agents';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
 import { daytonaPreviewHeaders, waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
-import { filterAccessibleProjectResources } from '../../iam';
 
 const SANDBOX_SERVICE_PORT = 8000;
 const FANOUT_CONCURRENCY = 6;
@@ -30,26 +26,40 @@ async function resolveOwnerRawEnv(
 ): Promise<Record<string, string> | null> {
   if (!sessionId) return null;
   const [row] = await db
-    .select({ createdBy: projectSessions.createdBy, accountId: projects.accountId })
+    .select({ createdBy: projectSessions.createdBy, agentName: projectSessions.agentName })
     .from(projectSessions)
-    .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   if (!row?.createdBy) return null;
-  const subject = await resolveShareSubject(row.createdBy);
-  const env = await listProjectSecretsForUser(projectId, subject);
-  // Per-member/department secret scoping: a scoped-out secret must not reach a
-  // running sandbox via live secret-sync either (mirrors the session-start gate
-  // in buildSessionSandboxEnvVars). Filter by the session's launching user;
-  // owner/admin (implicit Manager) + service accounts bypass.
-  const names = Object.keys(env);
-  if (names.length > 0) {
-    const accessible = new Set(
-      await filterAccessibleProjectResources(row.createdBy, row.accountId, projectId, 'secret', names),
-    );
-    for (const n of names) if (!accessible.has(n)) delete env[n];
+
+  // Resolve the running agent's `secrets` grant (by identifier) — the SAME gate
+  // applied at sandbox boot (buildSessionSandboxEnvVars). A hot-push must not
+  // deliver an identifier a scoped agent isn't granted; back-compat/no-git-
+  // context sessions default to 'all' (undefined).
+  const [project] = await db
+    .select({
+      repoUrl: projects.repoUrl,
+      defaultBranch: projects.defaultBranch,
+      manifestPath: projects.manifestPath,
+    })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+
+  let grantEnv: string[] | 'all' | undefined;
+  if (project?.defaultBranch) {
+    const loadedAgents = await loadProjectAgents({
+      projectId,
+      repoUrl: project.repoUrl ?? '',
+      defaultBranch: project.defaultBranch,
+      manifestPath: project.manifestPath ?? 'kortix.toml',
+      gitAuthToken: null,
+    }).catch(() => null);
+    const grant = loadedAgents ? grantFromLoadedAgents(row.agentName ?? '', loadedAgents) : null;
+    grantEnv = grant?.env;
   }
-  return env;
+
+  return (await listProjectSecretsSnapshotForUser(projectId, row.createdBy, grantEnv)).env;
 }
 
 export async function resolveSandboxEnvSnapshot(

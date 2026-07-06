@@ -2,8 +2,8 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../opencode/client';
-import { useSandboxConnectionStore } from '../state/sandbox-connection-store';
 import type { Config } from '@opencode-ai/sdk/v2/client';
+import { useOpenCodeRuntimeReady } from './use-opencode-sessions/keys';
 
 export type { Config };
 
@@ -13,14 +13,20 @@ export const configKeys = {
 
 function unwrap<T>(result: { data?: T; error?: unknown }): T {
   if (result.error) {
-    const err = result.error as any;
-    throw new Error(err?.data?.message || err?.message || 'Request failed');
+    // `error`'s shape varies per endpoint's typed error union — duck-type
+    // defensively via `unknown` rather than assume a shape.
+    const err = result.error;
+    const errRec = err && typeof err === 'object' ? (err as Record<string, unknown>) : undefined;
+    const dataRec =
+      errRec?.data && typeof errRec.data === 'object' ? (errRec.data as Record<string, unknown>) : undefined;
+    const message = dataRec?.message ?? errRec?.message;
+    throw new Error(typeof message === 'string' ? message : 'Request failed');
   }
   return result.data as T;
 }
 
 export function useOpenCodeConfig() {
-  const runtimeReady = useSandboxConnectionStore((s) => s.status === 'connected' && s.healthy === true);
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<Config>({
     queryKey: configKeys.all,
     queryFn: async () => {
@@ -40,7 +46,9 @@ export function useUpdateOpenCodeConfig() {
   return useMutation({
     mutationFn: async (config: Partial<Config>) => {
       const client = getClient();
-      const result = await client.global.config.update({ config } as any);
+      // The SDK's `update` param type wants a full `Config`, but the server
+      // accepts (and this hook always sends) a partial merge patch.
+      const result = await client.global.config.update({ config: config as Config });
       return unwrap(result) as Config;
     },
     onMutate: async (config) => {

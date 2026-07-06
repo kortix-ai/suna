@@ -344,6 +344,107 @@ describe('kortix CLI black-box behavior', () => {
     expect(result.stdout).not.toContain('registry <subcommand>');
   });
 
+  test('top-level help is grouped into labeled sections', async () => {
+    const result = await runCli(['--help']);
+
+    expect(result.code).toBe(0);
+    for (const heading of [
+      'Project',
+      'Auth & hosts',
+      'Work',
+      'Resources',
+      'Agents',
+      'Access & permissions',
+      'CLI',
+    ]) {
+      expect(result.stdout).toContain(`\n  ${heading}\n`);
+    }
+  });
+
+  test('access, roles, and grants are grouped together under one Access & permissions section', async () => {
+    const result = await runCli(['--help']);
+
+    const sectionStart = result.stdout.indexOf('\n  Access & permissions\n');
+    expect(sectionStart).toBeGreaterThan(-1);
+    const nextSectionStart = result.stdout.indexOf('\n  CLI\n');
+    expect(nextSectionStart).toBeGreaterThan(sectionStart);
+    const section = result.stdout.slice(sectionStart, nextSectionStart);
+
+    expect(section).toContain('access <subcommand>');
+    expect(section).toContain('roles <subcommand>');
+    expect(section).toContain('grants <subcommand>');
+
+    // And they must not also be scattered into any other section.
+    const beforeSection = result.stdout.slice(0, sectionStart);
+    const afterSection = result.stdout.slice(nextSectionStart);
+    for (const name of ['access <subcommand>', 'roles <subcommand>', 'grants <subcommand>']) {
+      expect(beforeSection).not.toContain(name);
+      expect(afterSection).not.toContain(name);
+    }
+  });
+
+  test('apps is hidden from top-level help by default, shown behind KORTIX_APPS_EXPERIMENTAL', async () => {
+    const hidden = await runCli(['--help'], tmp, { KORTIX_APPS_EXPERIMENTAL: '' });
+    expect(hidden.stdout).not.toContain('apps <subcommand>');
+
+    const shown = await runCli(['--help'], tmp, { KORTIX_APPS_EXPERIMENTAL: 'true' });
+    expect(shown.stdout).toContain('apps <subcommand>');
+  });
+
+  test('kortix apps refuses to run without KORTIX_APPS_EXPERIMENTAL and points at the flag', async () => {
+    const result = await runCli(['apps', 'ls'], tmp, {
+      KORTIX_APPS_EXPERIMENTAL: '',
+      KORTIX_CONFIG_FILE: join(tmp, 'missing-config.json'),
+    });
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('experimental');
+    expect(result.stderr).toContain('KORTIX_APPS_EXPERIMENTAL');
+  });
+
+  test('kortix apps proceeds past the experimental gate once KORTIX_APPS_EXPERIMENTAL is set', async () => {
+    const result = await runCli(['apps', 'ls'], tmp, {
+      KORTIX_APPS_EXPERIMENTAL: 'true',
+      KORTIX_CONFIG_FILE: join(tmp, 'missing-config.json'),
+    });
+
+    // Not logged in / no linked project in this tmp dir — the point is it
+    // gets PAST the local experimental gate rather than being blocked by it.
+    expect(result.stderr).not.toContain('experimental and hidden');
+  });
+
+  test('tunnel is no longer a top-level command', async () => {
+    const help = await runCli(['--help']);
+    expect(help.stdout).not.toContain('tunnel <subcommand>');
+    expect(help.stdout).not.toContain('Agent Tunnel');
+
+    // `tunnel` now falls through to the generic project-scaffold path
+    // (`kortix <project-name>`) instead of a dedicated tunnel command.
+    const result = await runCli(['tunnel', '--help']);
+    expect(result.stdout).toContain('Usage: kortix [project-name] [options]');
+    expect(result.stdout).not.toContain('Agent Tunnel');
+    expect(result.stdout).not.toContain('tunnelId');
+  });
+
+  test('schema --version 2 prints the v2 JSON Schema, not the CLI version banner', async () => {
+    // Regression guard: `main()` used to scan the ENTIRE argv for a bare
+    // `--version`/`-v` and print the CLI's own version banner before any
+    // subcommand ever saw its args — which made `kortix schema --version 2`
+    // (and `kortix self-host update --version <tag>`) unreachable.
+    const result = await runCli(['schema', '--version', '2']);
+
+    expect(result.code).toBe(0);
+    const schema = JSON.parse(result.stdout);
+    expect(schema.$id).toBe('https://kortix.com/schema/kortix.v2.schema.json');
+  });
+
+  test('the bare --version flag still prints the CLI version banner', async () => {
+    const result = await runCli(['--version']);
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('Kortix CLI');
+  });
+
   test('add is not a top-level command', async () => {
     const apiBase = startMarketplaceServer();
     const configFile = writeConfig(apiBase);
@@ -422,7 +523,7 @@ describe('kortix CLI black-box behavior', () => {
     const init = await runCli(['init', 'full-e2e', '--yes', '--no-git']);
     expect(init.code).toBe(0);
     const root = join(tmp, 'full-e2e');
-    expect(existsSync(join(root, 'kortix.toml'))).toBe(true);
+    expect(existsSync(join(root, 'kortix.yaml'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'show.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);

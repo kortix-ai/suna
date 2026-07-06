@@ -3512,7 +3512,7 @@
       "line328JsxTextNoAccess": "No access"
     },
     "appProjectsIdCustomizeSecretsPage": {
-      "line104JsxTextProjectSecrets": "Project secrets",
+      "line104JsxTextProjectSecrets": "Environment variables",
       "line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto": "Environment variables injected into each new session.",
       "line109JsxTextManifestValuesAreEncryptedAtRest": "manifest. Values are encrypted at rest.",
       "line278JsxTextSessionsCanStillStartButTheAgentWill": "Sessions can still start, but the agent will likely fail until these are set.",
@@ -5671,12 +5671,12 @@
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "This session is its own version",
-      "line83JsxTextChangesHereLiveOnAStandaloneVersionOf": "Changes here live on a standalone version of your project — separate from",
-      "line85JsxTextSoYouCanWorkInParallelWithoutAffecting": ", so you can work in parallel without affecting it. To make any of them part of your main Kortix version, ask your agent to open a",
-      "line88JsxTextChangeRequest": "change request",
-      "line89JsxTextYouCanReviewAndMergeItInto": "; you can review and merge it into",
+      "line83JsxTextChangesHereLiveOnAStandaloneVersionOf": "Changes here live in this session's own copy of your project, separate from",
+      "line85JsxTextSoYouCanWorkInParallelWithoutAffecting": ", so you can work in parallel without affecting it. To make them part of your project, ask your agent to propose the",
+      "line88JsxTextChangeRequest": "changes for review",
+      "line89JsxTextYouCanReviewAndMergeItInto": "; you approve and apply them to",
       "line91JsxTextWheneverYouAposReReady": "whenever you're ready.",
-      "line96JsxTextAskAgentToOpenAChangeRequest": "Ask agent to open a change request",
+      "line96JsxTextAskAgentToOpenAChangeRequest": "Ask agent to propose these changes",
       "line113JsxTextLoadingChanges": "Loading changes…",
       "line151JsxTextNoChangesYetFilesTheAgentCreatesOr": "No changes yet. Files the agent creates or edits in this session will show up here.",
       "line144JsxTextInThisSessionTheseLiveOnlyHereUntil": "in this session — these live only here until merged into",
@@ -6273,7 +6273,7 @@
       "line692JsxTextFailedToLoadFile": "Failed to load file",
       "line805JsxTextStartingPreviewServer": "Starting preview server…",
       "line844JsxTextBinaryFile": "Binary file",
-      "line869JsxTextUncommittedChanges": "Uncommitted changes",
+      "line869JsxTextUncommittedChanges": "Changed in this session",
       "line915JsxTextInvalidJson": "Invalid JSON",
       "line963JsxTextQuot": "\"",
       "line963JsxTextQuotb4125902": "\""
@@ -6309,8 +6309,8 @@
     "featuresFilesComponentsFileHistoryPopover": {
       "line72JsxTextFailedToLoadDiff": "Failed to load diff",
       "line102JsxTextNoDiff": "No diff",
-      "line160JsxAttrTitleCopyHash": "Copy hash",
-      "line226JsxTextNoCommitHistory": "No commit history",
+      "line160JsxAttrTitleCopyHash": "Copy version ID",
+      "line226JsxTextNoCommitHistory": "No version history yet",
       "line242JsxTextShowingFirst": "Showing first"
     },
     "featuresFilesComponentsFilePreviewModal": {
@@ -6355,49 +6355,49 @@
       "line356JsxTextNoChangesDetected": "No changes detected."
     },
     "featuresProjectFilesComponentsChangeRequestsPanel": {
-      "line131JsxTextChangeRequests": "Change requests",
-      "line145JsxAttrTitleOpenANewChangeRequest": "Open a new change request",
-      "line199JsxTextChangeRequests": "change requests",
-      "line209JsxTextOpenTheFirstOne": "Open the first one"
+      "line131JsxTextChangeRequests": "Proposed changes",
+      "line145JsxAttrTitleOpenANewChangeRequest": "Propose a new change",
+      "line199JsxTextChangeRequests": "No proposed changes here yet",
+      "line209JsxTextOpenTheFirstOne": "Propose the first one"
     },
     "featuresProjectFilesComponentsCheckpointDetailDialog": {
       "line166JsxTextSelectAFileToViewTheDiff": "Select a file to view the diff",
       "line220JsxTextFailedToLoadDiff": "Failed to load diff",
       "line226JsxTextNoTextualDiff": "No textual diff",
-      "line228JsxTextFileMayBeBinaryOrUnchangedInThis": "File may be binary or unchanged in this checkpoint.",
-      "line407JsxAttrTitlePreviousCheckpoint": "Previous checkpoint (←)",
-      "line417JsxAttrTitleNextCheckpoint": "Next checkpoint (→)",
-      "line482JsxAttrTitleCopyCheckpointId": "Copy checkpoint id",
+      "line228JsxTextFileMayBeBinaryOrUnchangedInThis": "File may be binary or unchanged in this version.",
+      "line407JsxAttrTitlePreviousCheckpoint": "Previous version (←)",
+      "line417JsxAttrTitleNextCheckpoint": "Next version (→)",
+      "line482JsxAttrTitleCopyCheckpointId": "Copy version ID",
       "line528JsxAttrPlaceholderFilterFiles": "Filter files",
-      "line546JsxTextFailedToLoadCheckpoint": "Failed to load checkpoint",
-      "line575JsxTextLoadingCheckpoint": "Loading checkpoint…"
+      "line546JsxTextFailedToLoadCheckpoint": "Couldn't load version",
+      "line575JsxTextLoadingCheckpoint": "Loading version…"
     },
     "featuresProjectFilesComponentsCheckpointsPanel": {
-      "line230JsxTextFailedToLoadCheckpoints": "Failed to load checkpoints",
-      "line241JsxTextNoCheckpointsYet": "No checkpoints yet",
+      "line230JsxTextFailedToLoadCheckpoints": "Couldn't load version history",
+      "line241JsxTextNoCheckpointsYet": "No versions saved yet",
       "line278JsxTextShowingTheMostRecent": "Showing the most recent"
     },
     "featuresProjectFilesComponentsDiffPreviewBanner": {
-      "line33JsxTextCalculatingTheDiff": "Calculating the diff…",
-      "line44JsxAttrTitleCouldnTComputeTheDiff": "Couldn't compute the diff",
-      "line57JsxTextSameVersionOnBothSidesPickDifferentVersions": "Same version on both sides — pick different versions.",
-      "line65JsxTextNoChangesBetweenTheseVersionsTheSourceNeeds": "No changes between these versions. The source needs to be ahead of the target before a change request makes sense."
+      "line33JsxTextCalculatingTheDiff": "Comparing versions…",
+      "line44JsxAttrTitleCouldnTComputeTheDiff": "Couldn't compare these versions",
+      "line57JsxTextSameVersionOnBothSidesPickDifferentVersions": "Same version on both sides. Pick two different versions.",
+      "line65JsxTextNoChangesBetweenTheseVersionsTheSourceNeeds": "No changes between these versions yet. Make some changes first, then propose them."
     },
     "featuresProjectFilesComponentsDriveGridView": {
       "line209JsxTextOpenFolder": "Open folder",
       "line231JsxTextCopyPath": "Copy path",
       "line390JsxTextOpenInTab": "Open in tab",
-      "line402JsxTextCheckpointHistory": "Checkpoint history",
+      "line402JsxTextCheckpointHistory": "Version history",
       "line420JsxTextCopyPath": "Copy path",
       "line604JsxTextThisFolderIsEmpty": "This folder is empty",
       "line606JsxTextNoFilesOrSubfoldersAtThisPathIn": "No files or subfolders at this path in the current version."
     },
     "featuresProjectFilesComponentsDriveListView": {
       "line255JsxTextOpenInTab": "Open in tab",
-      "line267JsxTextCheckpointHistory": "Checkpoint history",
+      "line267JsxTextCheckpointHistory": "Version history",
       "line285JsxTextCopyPath": "Copy path",
       "line396JsxTextThisFolderIsEmpty": "This folder is empty",
-      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "No files or subfolders at this path in the current version."
+      "line398JsxTextNoFilesOrSubfoldersAtThisPathIn": "Anything your agents save and any assets added to this project will show up here."
     },
     "featuresProjectFilesComponentsDriveToolbar": {
       "line191JsxAttrTitleDoubleClickToEditPath": "Double-click to edit path",
@@ -6478,9 +6478,9 @@
     "featuresProjectFilesComponentsFileHistoryPopover": {
       "line72JsxTextFailedToLoadDiff": "Failed to load diff",
       "line102JsxTextNoDiff": "No diff",
-      "line160JsxAttrTitleCopyCheckpointId": "Copy checkpoint id",
+      "line160JsxAttrTitleCopyCheckpointId": "Copy version ID",
       "line216JsxTextFailedToLoadHistory": "Failed to load history",
-      "line224JsxTextNoCheckpointsYet": "No checkpoints yet",
+      "line224JsxTextNoCheckpointsYet": "No versions yet",
       "line240JsxTextShowingTheMostRecent": "Showing the most recent"
     },
     "featuresProjectFilesComponentsFilePreviewModal": {
@@ -6519,16 +6519,16 @@
       "line41JsxAttrTitleOpenInNewTab": "Open in new tab"
     },
     "featuresProjectFilesComponentsOpenChangeRequestDialog": {
-      "line226JsxTextOpenChangeRequest": "Open change request",
-      "line231JsxTextProposeMergingThisSessionAposSWorkInto": "Propose merging this session's work into",
-      "line232JsxTextTheSessionNeedsToHaveCommittedAndPushed": ". The session needs to have committed and pushed for there to be a diff.",
-      "line237JsxTextProposeMergingOneVersionIntoAnotherTheMerge": "Propose merging one version into another. The merge runs through Kortix against your project's git host.",
-      "line246JsxAttrTitleNoNonDefaultVersionsYet": "No non-default versions yet.",
-      "line247JsxTextStartASessionEachSessionLivesOnIts": "Start a session — each session lives on its own branch — and you'll be able to open a change request from it.",
+      "line226JsxTextOpenChangeRequest": "Propose changes",
+      "line231JsxTextProposeMergingThisSessionAposSWorkInto": "Propose adding this session's work into",
+      "line232JsxTextTheSessionNeedsToHaveCommittedAndPushed": ". The session needs saved work before there is anything to review.",
+      "line237JsxTextProposeMergingOneVersionIntoAnotherTheMerge": "Propose bringing the changes from one version into another. You review everything before it is applied.",
+      "line246JsxAttrTitleNoNonDefaultVersionsYet": "No other versions yet.",
+      "line247JsxTextStartASessionEachSessionLivesOnIts": "Start a session. Each session works in its own version, and you can propose its changes from there.",
       "line305JsxAttrPlaceholderPickAVersion": "Pick a version",
-      "line354JsxTextPickTwoDifferentVersionsYouCanAposT": "Pick two different versions — you can't merge a version into itself.",
-      "line369JsxAttrPlaceholderContextForReviewersWhatChangedAndWhy": "Context for reviewers — what changed and why.",
-      "line386JsxTextOpenChangeRequest": "Open change request"
+      "line354JsxTextPickTwoDifferentVersionsYouCanAposT": "Pick two different versions. A version can't be compared with itself.",
+      "line369JsxAttrPlaceholderContextForReviewersWhatChangedAndWhy": "Context for reviewers: what changed and why.",
+      "line386JsxTextOpenChangeRequest": "Propose changes"
     },
     "featuresProjectFilesComponentsVersionSelector": {
       "line88JsxAttrTitleSwitchVersion": "Switch version",
@@ -8044,16 +8044,16 @@
     "autoFeaturesMarketingWhyKortixJsxTextEveryAIPlatformSounds31a0bf4e": "Every AI platform sounds the same on paper. Here's what actually changes once you're running on Kortix.",
     "autoFeaturesMarketingWhyKortixJsxTextGetGoingFastGrow2d378210": "Get going fast. Grow without worry.",
     "autoFeaturesMarketingWhyKortixJsxTextKortixIsnTJustb8425b28": "Kortix isn't just simple to start — it's built to grow with you.",
-    "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTexta48f1c83": "Close PR",
-    "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxText9f1f82e8": "Change request",
+    "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTexta48f1c83": "Dismiss",
+    "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxText9f1f82e8": "Proposed change",
     "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxText420d0ec9": "•",
     "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxText7ba43c2e": "Files changed",
-    "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxText561449ba": "Total diff",
+    "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxText561449ba": "Total changes",
     "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTexte4dd9886": "−",
     "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxAttr29624185": "Jump to changed file",
     "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTexta17e79af": "• +",
     "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTexte014913b": "Review changes",
-    "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTextec240dc2": "No textual diff available for this file.",
+    "autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTextec240dc2": "No preview available for this file.",
     "autoFeaturesProjectFilesComponentsFilePreviewModalJsxAttrHistoryLabel0736a6ed": "Checkpoint history",
     "autoFeaturesProjectFilesComponentsFileSearchJsxAttrAriaLabel732c1816": "Close search",
     "autoFeaturesProjectsModalProjectCreateModalJsxTextGoBack8b169f5b": "Go back",
@@ -8067,9 +8067,9 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextNotIn5d967721": "Not in your",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet689021ee": "version yet",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextThisSession009eeb83": "This session is a separate version of",
-    "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextTheseChanges18316b37": ". These changes only exist here — they're not in your",
-    "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet922de6bd": "version yet. Open a change request to merge them in.",
-    "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624": "Open change request",
+    "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextTheseChanges18316b37": ". These changes only exist here; they're not in your",
+    "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet922de6bd": "version yet. Propose the changes to have them reviewed and applied.",
+    "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624": "Propose changes",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextViewChangesaf192a3b": "View changes",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "Rename…",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "Share…",
@@ -8079,13 +8079,13 @@
     "autoFeaturesSessionSessionTerminalPanelJsxTextNewTerminaleeb6bbb9": "New terminal",
     "autoFeaturesSessionSessionVersionHeaderJsxAttrAriaLabelFiles9fd01463": "Files view",
     "autoFeaturesSessionSessionVersionHeaderJsxAttrLabelAllFiles4f423738": "All files",
-    "autoFeaturesSessionSessionVersionHeaderJsxTextOpenChangeRequesta0b45de3": "Open change request",
+    "autoFeaturesSessionSessionVersionHeaderJsxTextOpenChangeRequesta0b45de3": "Propose changes",
     "autoFeaturesSessionSessionVersionHeaderJsxTextWhatThisSession2da8e6ce": "What this session changed in version",
-    "autoFeaturesSessionSessionVersionHeaderJsxTextASeparateVersionc3d7a454": "— a separate version of",
+    "autoFeaturesSessionSessionVersionHeaderJsxTextASeparateVersionc3d7a454": ", a separate version of",
     "autoFeaturesSessionSessionVersionHeaderJsxTextTheseEditsStaya67c1667": ". These edits stay here and don't affect",
     "autoFeaturesSessionSessionVersionHeaderJsxTextUntilYou3cf21807": "until you",
-    "autoFeaturesSessionSessionVersionHeaderJsxTextOpenAChange52446e59": "open a change request",
-    "autoFeaturesSessionSessionVersionHeaderJsxTextToMergeThemde828b03": "to merge them in.",
+    "autoFeaturesSessionSessionVersionHeaderJsxTextOpenAChange52446e59": "propose the changes",
+    "autoFeaturesSessionSessionVersionHeaderJsxTextToMergeThemde828b03": "to get them reviewed and applied.",
     "autoFeaturesSessionToolRenderersJsxTextOpenPrivatePreview0d54e929": "Open private preview",
     "autoFeaturesSessionToolRenderersJsxAttrMessageMemoryIsEmptyc797bb83": "Memory is empty.",
     "autoFeaturesSessionToolRenderersJsxAttrMessageNoChanges0aa33a4a": "No changes.",

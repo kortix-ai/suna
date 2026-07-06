@@ -1,17 +1,18 @@
 /**
- * Gateway orchestrator — full decision+execution path with fakes. Access lives on
- * the connector (shareScope + grants); the credential is resolved by mode
- * (shared vs per_user) via resolveCredential. Covers success, not-found, sharing
- * denial, needs-auth, audit, pipedream, and policy enforcement.
+ * Gateway orchestrator — full decision+execution path with fakes. A connector
+ * is project-wide visible (no per-connector member/agent scoping); the
+ * credential is always the one shared project credential (`per_user` was
+ * removed 2026-07-05) via resolveCredential. Covers success, not-found,
+ * needs-auth, audit, pipedream, and policy enforcement.
  */
 import { describe, expect, test } from 'bun:test';
 import {
-  handleCall,
   type CallInput,
   type ExecutionRecord,
   type GatewayAction,
   type GatewayConnector,
   type GatewayDeps,
+  handleCall,
 } from '../executor/gateway';
 import type { DefaultMode, Policy } from '../executor/policy';
 
@@ -24,8 +25,6 @@ const STRIPE: GatewayConnector = {
   baseUrl: 'https://api.stripe.com',
   auth: { type: 'bearer', in: 'header', name: null, prefix: null },
   hasAuth: true,
-  shareScope: 'project',
-  grants: [],
   credentialMode: 'shared',
   enabled: true,
 };
@@ -35,7 +34,12 @@ const CREATE_CHARGE: GatewayAction = {
   relPath: 'charges.create',
   inputSchema: { type: 'object', properties: { amount: {} } },
   risk: 'write',
-  binding: { kind: 'openapi', method: 'POST', path: '/v1/charges', server: 'https://api.stripe.com' },
+  binding: {
+    kind: 'openapi',
+    method: 'POST',
+    path: '/v1/charges',
+    server: 'https://api.stripe.com',
+  },
 };
 
 interface FakeOpts {
@@ -52,7 +56,12 @@ interface FakeOpts {
 
 function makeDeps(o: FakeOpts = {}) {
   const records: ExecutionRecord[] = [];
-  const fetchCalls: Array<{ url: string; method: string; headers: Record<string, string>; body?: string }> = [];
+  const fetchCalls: Array<{
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    body?: string;
+  }> = [];
   const credentialCalls: Array<{ connectorId: string; userId: string | null }> = [];
   const deps: GatewayDeps = {
     loadConnectorBySlug: async () => (o.connector === undefined ? STRIPE : o.connector),
@@ -65,11 +74,18 @@ function makeDeps(o: FakeOpts = {}) {
     loadProjectPolicies: async () => o.projectPolicies ?? [],
     loadDefaultMode: async () => o.defaultMode ?? 'allow_all',
     enforcePolicies: o.enforcePolicies,
-    recordExecution: async (r) => { records.push(r); },
+    recordExecution: async (r) => {
+      records.push(r);
+      return null;
+    },
     fetchImpl: async (url, init) => {
       fetchCalls.push({ url, ...init });
       const status = o.fetchStatus ?? 200;
-      return { status, ok: status >= 200 && status < 300, text: async () => o.fetchBody ?? '{"id":"ch_1"}' };
+      return {
+        status,
+        ok: status >= 200 && status < 300,
+        text: async () => o.fetchBody ?? '{"id":"ch_1"}',
+      };
     },
   };
   return { deps, records, fetchCalls, credentialCalls };
@@ -95,14 +111,11 @@ describe('handleCall — happy path', () => {
     expect(records.at(-1)).toMatchObject({ status: 'ok', risk: 'write', actingUserId: ALICE });
   });
 
-  test('per_user mode resolves the acting user\'s own credential', async () => {
-    const { deps, credentialCalls } = makeDeps({ connector: { ...STRIPE, credentialMode: 'per_user' } });
-    await handleCall(deps, baseInput);
-    expect(credentialCalls[0]).toEqual({ connectorId: 'conn-stripe', userId: ALICE });
-  });
-
   test('no-auth connector runs without a credential', async () => {
-    const { deps, fetchCalls } = makeDeps({ connector: { ...STRIPE, hasAuth: false }, secret: null });
+    const { deps, fetchCalls } = makeDeps({
+      connector: { ...STRIPE, hasAuth: false },
+      secret: null,
+    });
     const res = await handleCall(deps, baseInput);
     expect(res.status).toBe('ok');
     expect(fetchCalls[0]!.headers.Authorization).toBeUndefined();
@@ -112,28 +125,18 @@ describe('handleCall — happy path', () => {
 describe('handleCall — denials', () => {
   test('connector not found', async () => {
     const { deps } = makeDeps({ connector: null });
-    expect(await handleCall(deps, baseInput)).toEqual({ status: 'denied', reason: 'connector_not_found' });
+    expect(await handleCall(deps, baseInput)).toEqual({
+      status: 'denied',
+      reason: 'connector_not_found',
+    });
   });
 
   test('action not found', async () => {
     const { deps } = makeDeps({ action: null });
-    expect(await handleCall(deps, baseInput)).toEqual({ status: 'denied', reason: 'action_not_found' });
-  });
-
-  test('not shared (restricted to another member) → denied, no upstream', async () => {
-    const { deps, fetchCalls } = makeDeps({
-      connector: { ...STRIPE, shareScope: 'restricted', grants: [{ principalType: 'member', principalId: 'someone-else' }] },
+    expect(await handleCall(deps, baseInput)).toEqual({
+      status: 'denied',
+      reason: 'action_not_found',
     });
-    expect(await handleCall(deps, baseInput)).toEqual({ status: 'denied', reason: 'not_shared' });
-    expect(fetchCalls).toHaveLength(0);
-  });
-
-  test('shared via group membership', async () => {
-    const { deps } = makeDeps({
-      connector: { ...STRIPE, shareScope: 'restricted', grants: [{ principalType: 'group', principalId: 'g1' }] },
-    });
-    const res = await handleCall(deps, { ...baseInput, subject: { userId: ALICE, groupIds: ['g1'] } });
-    expect(res.status).toBe('ok');
   });
 
   test('credential not set → needs_auth', async () => {
@@ -145,12 +148,17 @@ describe('handleCall — denials', () => {
 describe('handleCall — upstream + errors', () => {
   test('non-2xx upstream → error with the body excerpt (agent sees the real cause)', async () => {
     const { deps } = makeDeps({ fetchStatus: 402, fetchBody: '{"error":"declined"}' });
-    expect(await handleCall(deps, baseInput)).toEqual({ status: 'error', reason: 'upstream_402: {"error":"declined"}' });
+    expect(await handleCall(deps, baseInput)).toEqual({
+      status: 'error',
+      reason: 'upstream_402: {"error":"declined"}',
+    });
   });
 
   test('thrown execution error is caught + audited', async () => {
     const { deps, records } = makeDeps();
-    deps.fetchImpl = async () => { throw new Error('network down'); };
+    deps.fetchImpl = async () => {
+      throw new Error('network down');
+    };
     expect(await handleCall(deps, baseInput)).toEqual({ status: 'error', reason: 'network down' });
     expect(records.at(-1)).toMatchObject({ status: 'error' });
   });
@@ -164,9 +172,7 @@ describe('handleCall — pipedream path', () => {
     baseUrl: null,
     auth: { type: 'none', in: 'header', name: null, prefix: null },
     hasAuth: true,
-    shareScope: 'project',
-    grants: [],
-    credentialMode: 'per_user',
+    credentialMode: 'shared',
     enabled: true,
   };
   const SEND: GatewayAction = {
@@ -177,30 +183,55 @@ describe('handleCall — pipedream path', () => {
     binding: { kind: 'pipedream', app: 'gmail', actionKey: 'gmail-send-email' },
   };
 
-  test('routes to executePipedream with the per-user account binding (not HTTP)', async () => {
-    const { deps, fetchCalls, credentialCalls } = makeDeps({ connector: PD, action: SEND, secret: 'apn_abc123' });
+  test('routes to executePipedream with the shared account binding (not HTTP)', async () => {
+    const { deps, fetchCalls, credentialCalls } = makeDeps({
+      connector: PD,
+      action: SEND,
+      secret: 'apn_abc123',
+    });
     let captured: any = null;
-    deps.executePipedream = async (input) => { captured = input; return { status: 200, ok: true, data: { sent: true } }; };
-    const res = await handleCall(deps, { ...baseInput, connectorSlug: 'gmail', actionPath: 'send_email', args: { to: 'a@b.com' } });
+    deps.executePipedream = async (input) => {
+      captured = input;
+      return { status: 200, ok: true, data: { sent: true } };
+    };
+    const res = await handleCall(deps, {
+      ...baseInput,
+      connectorSlug: 'gmail',
+      actionPath: 'send_email',
+      args: { to: 'a@b.com' },
+    });
     expect(res).toEqual({ status: 'ok', data: { sent: true }, risk: 'write' });
     expect(fetchCalls).toHaveLength(0);
-    expect(credentialCalls[0]).toEqual({ connectorId: 'conn-gmail', userId: ALICE }); // per_user
-    expect(captured).toMatchObject({ app: 'gmail', actionKey: 'gmail-send-email', accountId: 'apn_abc123' });
+    expect(credentialCalls[0]).toEqual({ connectorId: 'conn-gmail', userId: null }); // shared
+    expect(captured).toMatchObject({
+      app: 'gmail',
+      actionKey: 'gmail-send-email',
+      accountId: 'apn_abc123',
+    });
   });
 
   test('routes a pipedream_proxy `request` binding to executePipedreamProxy (Connect Proxy)', async () => {
     const REQUEST: GatewayAction = {
       path: 'gmail.request',
       relPath: 'request',
-      inputSchema: { type: 'object', properties: { method: {}, url: {} }, required: ['method', 'url'] },
+      inputSchema: {
+        type: 'object',
+        properties: { method: {}, url: {} },
+        required: ['method', 'url'],
+      },
       risk: 'write',
       binding: { kind: 'pipedream_proxy', app: 'gmail' },
     };
     const { deps, fetchCalls } = makeDeps({ connector: PD, action: REQUEST, secret: 'apn_abc123' });
     let captured: any = null;
-    deps.executePipedreamProxy = async (input) => { captured = input; return { status: 201, ok: true, data: { id: 1 } }; };
+    deps.executePipedreamProxy = async (input) => {
+      captured = input;
+      return { status: 201, ok: true, data: { id: 1 } };
+    };
     const res = await handleCall(deps, {
-      ...baseInput, connectorSlug: 'gmail', actionPath: 'request',
+      ...baseInput,
+      connectorSlug: 'gmail',
+      actionPath: 'request',
       args: { method: 'POST', url: 'https://gmail.googleapis.com/x', body: { a: 1 } },
     });
     expect(res).toEqual({ status: 'ok', data: { id: 1 }, risk: 'write' });
@@ -211,25 +242,215 @@ describe('handleCall — pipedream path', () => {
 
   test('denied (needs_auth) when this member has not connected', async () => {
     const { deps } = makeDeps({ connector: PD, action: SEND, secret: null });
-    expect(await handleCall(deps, { ...baseInput, connectorSlug: 'gmail', actionPath: 'send_email' })).toEqual({ status: 'denied', reason: 'needs_auth' });
+    expect(
+      await handleCall(deps, { ...baseInput, connectorSlug: 'gmail', actionPath: 'send_email' }),
+    ).toEqual({ status: 'denied', reason: 'needs_auth' });
   });
 });
 
 describe('handleCall — policy layer', () => {
   test('allow-all when enforcePolicies is false even with a block rule', async () => {
-    const { deps } = makeDeps({ policies: [{ match: '*', action: 'block' }], enforcePolicies: false });
+    const { deps } = makeDeps({
+      policies: [{ match: '*', action: 'block' }],
+      enforcePolicies: false,
+    });
     expect((await handleCall(deps, baseInput)).status).toBe('ok');
   });
 
   test('block rule denies when enforcement on', async () => {
-    const { deps, fetchCalls } = makeDeps({ policies: [{ match: 'charges.*', action: 'block' }], enforcePolicies: true });
+    const { deps, fetchCalls } = makeDeps({
+      policies: [{ match: 'charges.*', action: 'block' }],
+      enforcePolicies: true,
+    });
     expect(await handleCall(deps, baseInput)).toEqual({ status: 'denied', reason: 'policy_block' });
     expect(fetchCalls).toHaveLength(0);
   });
 
   test('require_approval pauses', async () => {
-    const { deps } = makeDeps({ policies: [{ match: '*', action: 'require_approval' }], enforcePolicies: true });
-    expect(await handleCall(deps, baseInput)).toEqual({ status: 'pending_approval', reason: 'policy_require_approval' });
+    const { deps } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    // No session / no waitForApprovalDecision in the mock → returns pending
+    // immediately, carrying the id + retryable flag the sandbox poll loop uses.
+    expect(await handleCall(deps, baseInput)).toEqual({
+      status: 'pending_approval',
+      reason: 'policy_require_approval',
+      executionId: null,
+      retryable: false,
+    });
+  });
+
+  test('require_approval + approve → falls through and executes the call', async () => {
+    const { deps, fetchCalls } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    deps.recordExecution = async () => 'exec-new';
+    deps.waitForApprovalDecision = async () => 'approved';
+    const res = await handleCall(deps, baseInput);
+    expect(res.status).toBe('ok');
+    expect(fetchCalls.length).toBeGreaterThan(0); // the connector call actually ran
+  });
+
+  test('require_approval + deny → clean refusal', async () => {
+    const { deps } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    deps.recordExecution = async () => 'exec-x';
+    deps.waitForApprovalDecision = async () => 'denied';
+    expect(await handleCall(deps, baseInput)).toEqual({
+      status: 'denied',
+      reason: 'denied_by_user',
+    });
+  });
+
+  test('require_approval retry waits on the passed execution id — no new pending row', async () => {
+    const { deps, records } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    let waitedOn: string | undefined;
+    deps.waitForApprovalDecision = async (id) => {
+      waitedOn = id;
+      return 'timeout';
+    };
+    const res = await handleCall(deps, { ...baseInput, approvalExecutionId: 'exec-existing' });
+    expect(res).toEqual({
+      status: 'pending_approval',
+      reason: 'policy_require_approval',
+      executionId: 'exec-existing',
+      retryable: true,
+    });
+    expect(waitedOn).toBe('exec-existing');
+    expect(records).toHaveLength(0); // did NOT stack a new pending row on retry
+  });
+
+  test('session-allowed → require_approval RUNS without holding or re-prompting', async () => {
+    const { deps, fetchCalls } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    let waited = false;
+    deps.waitForApprovalDecision = async () => {
+      waited = true;
+      return 'approved';
+    };
+    // Exact (session, connector, action) already allowed for this session.
+    deps.isSessionToolApproved = async (sid, _cid, action) =>
+      sid === 'sess-1' && action === 'charges.create';
+    const res = await handleCall(deps, baseInput);
+    expect(res.status).toBe('ok');
+    expect(fetchCalls.length).toBeGreaterThan(0); // the call actually ran
+    expect(waited).toBe(false); // never held / re-prompted
+  });
+
+  test('session-allow for a DIFFERENT action does not bypass this one', async () => {
+    const { deps } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    deps.recordExecution = async () => 'exec-p';
+    deps.isSessionToolApproved = async (_sid, _cid, action) => action === 'charges.refund';
+    // No waiter → the still-gated call returns pending (not run).
+    expect((await handleCall(deps, baseInput)).status).toBe('pending_approval');
+  });
+
+  test('policy BLOCK is never session-allowed (the check is not even consulted)', async () => {
+    const { deps } = makeDeps({
+      policies: [{ match: '*', action: 'block' }],
+      enforcePolicies: true,
+    });
+    let consulted = false;
+    deps.isSessionToolApproved = async () => {
+      consulted = true;
+      return true; // even if it would say "allowed"
+    };
+    expect(await handleCall(deps, baseInput)).toEqual({ status: 'denied', reason: 'policy_block' });
+    expect(consulted).toBe(false); // block short-circuits before any session-allow check
+  });
+
+  test('approval carry-over: a recent unconsumed approve lets the fresh call RUN', async () => {
+    const { deps, fetchCalls } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    let waited = false;
+    deps.waitForApprovalDecision = async () => {
+      waited = true;
+      return 'timeout';
+    };
+    const claims: Array<{ sessionId: string; actionPath: string }> = [];
+    deps.consumeApprovedExecution = async (input) => {
+      claims.push({ sessionId: input.sessionId, actionPath: input.actionPath });
+      return true;
+    };
+    const res = await handleCall(deps, baseInput);
+    expect(res.status).toBe('ok');
+    expect(fetchCalls.length).toBeGreaterThan(0); // the call actually ran
+    expect(waited).toBe(false); // no new hold — the grant was already given
+    // QUALIFIED path — must match how audit() records executor_executions rows
+    // (the relative form would never find the approved row).
+    expect(claims).toEqual([{ sessionId: 'sess-1', actionPath: 'stripe.charges.create' }]);
+  });
+
+  test('carry-over miss → normal pending flow (asks like before)', async () => {
+    const { deps } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    deps.recordExecution = async () => 'exec-p';
+    deps.consumeApprovedExecution = async () => false;
+    expect((await handleCall(deps, baseInput)).status).toBe('pending_approval');
+  });
+
+  test('a poll retry never consults carry-over — it waits on ITS execution id', async () => {
+    const { deps } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    let consulted = false;
+    deps.consumeApprovedExecution = async () => {
+      consulted = true;
+      return true;
+    };
+    deps.waitForApprovalDecision = async () => 'timeout';
+    const res = await handleCall(deps, { ...baseInput, approvalExecutionId: 'exec-held' });
+    expect(res).toMatchObject({ status: 'pending_approval', executionId: 'exec-held' });
+    expect(consulted).toBe(false);
+  });
+
+  test('an approve consumed by the held request is marked so it cannot carry over later', async () => {
+    const { deps } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    deps.recordExecution = async () => 'exec-held';
+    deps.waitForApprovalDecision = async () => 'approved';
+    const markedIds: string[] = [];
+    deps.markApprovalConsumed = async (id) => {
+      markedIds.push(id);
+    };
+    const res = await handleCall(deps, baseInput);
+    expect(res.status).toBe('ok');
+    expect(markedIds).toEqual(['exec-held']);
+  });
+
+  test('a deny received by the held request is marked consumed too (in-band — no server resume)', async () => {
+    const { deps } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    deps.recordExecution = async () => 'exec-held';
+    deps.waitForApprovalDecision = async () => 'denied';
+    const markedIds: string[] = [];
+    deps.markApprovalConsumed = async (id) => {
+      markedIds.push(id);
+    };
+    const res = await handleCall(deps, baseInput);
+    expect(res).toEqual({ status: 'denied', reason: 'denied_by_user' });
+    expect(markedIds).toEqual(['exec-held']);
   });
 });
 
@@ -238,7 +459,12 @@ describe('handleCall — layered policies (project → connector → default)', 
     // Connector says "always_run *" — but project says "*.delete*" → block.
     // Project wins (admin trust property).
     const { deps, fetchCalls } = makeDeps({
-      action: { ...CREATE_CHARGE, path: 'stripe.charges.delete', relPath: 'charges.delete', risk: 'destructive' },
+      action: {
+        ...CREATE_CHARGE,
+        path: 'stripe.charges.delete',
+        relPath: 'charges.delete',
+        risk: 'destructive',
+      },
       projectPolicies: [{ match: '*.delete*', action: 'block' }],
       policies: [{ match: '*', action: 'always_run' }],
     });
@@ -262,7 +488,18 @@ describe('handleCall — layered policies (project → connector → default)', 
 
   test('default_mode=risk: unmatched READ → runs', async () => {
     const { deps, fetchCalls } = makeDeps({
-      action: { ...CREATE_CHARGE, path: 'stripe.charges.list', relPath: 'charges.list', risk: 'read', binding: { kind: 'openapi', method: 'GET', path: '/v1/charges', server: 'https://api.stripe.com' } },
+      action: {
+        ...CREATE_CHARGE,
+        path: 'stripe.charges.list',
+        relPath: 'charges.list',
+        risk: 'read',
+        binding: {
+          kind: 'openapi',
+          method: 'GET',
+          path: '/v1/charges',
+          server: 'https://api.stripe.com',
+        },
+      },
       defaultMode: 'risk',
     });
     const res = await handleCall(deps, { ...baseInput, actionPath: 'charges.list' });

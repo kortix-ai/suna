@@ -57,9 +57,7 @@ adminApp.openapi(
     const { accounts, creditAccounts } = await import('@kortix/db');
     const { and, asc, desc, eq, ilike, gte, lte, inArray, notInArray, isNotNull, isNull, or, sql } =
       await import('drizzle-orm');
-    const { membersTableSql } = await import('./members-table');
     const { parseAdminAccountsListQuery, UNPAID_TIERS } = await import('./accounts-query');
-    const mt = await membersTableSql();
 
     const {
       search,
@@ -79,19 +77,19 @@ adminApp.openapi(
 
     const ownerEmail = sql<string | null>`(
       SELECT au.email FROM auth.users au
-      INNER JOIN ${mt} am ON am.user_id = au.id
+      INNER JOIN kortix.account_members am ON am.user_id = au.id
       WHERE am.account_id = ${accounts.accountId}
       ORDER BY CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, au.email ASC
       LIMIT 1)`;
     const memberCount = sql<number>`(
-      SELECT count(*)::int FROM ${mt} am WHERE am.account_id = ${accounts.accountId})`;
+      SELECT count(*)::int FROM kortix.account_members am WHERE am.account_id = ${accounts.accountId})`;
 
     const conds: any[] = [];
     if (search) {
       conds.push(
         or(
           ilike(accounts.name, `%${search}%`),
-          sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN ${mt} am ON am.user_id = au.id
+          sql`EXISTS (SELECT 1 FROM auth.users au INNER JOIN kortix.account_members am ON am.user_id = au.id
                       WHERE am.account_id = ${accounts.accountId} AND au.email ILIKE ${'%' + search + '%'})`,
         ),
       );
@@ -197,8 +195,6 @@ adminApp.openapi(
     const accountId = c.req.param('id');
     const { db } = await import('../shared/db');
     const { sql } = await import('drizzle-orm');
-    const { membersTableSql } = await import('./members-table');
-    const mt = await membersTableSql();
 
     const result: any = await db.execute(sql`
       SELECT au.id AS user_id, au.email,
@@ -209,7 +205,7 @@ adminApp.openapi(
              au.banned_until AS banned_until,
              au.raw_app_meta_data->>'provider' AS provider,
              au.raw_app_meta_data->'providers' AS providers
-      FROM ${mt} am
+      FROM kortix.account_members am
       INNER JOIN auth.users au ON au.id = am.user_id
       WHERE am.account_id = ${accountId}
       ORDER BY CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, au.email ASC`);
@@ -541,44 +537,6 @@ adminApp.openapi(
       .onConflictDoUpdate({ target: platformSettings.key, set: { value: weights, updatedAt: new Date() } });
     invalidateProviderDistributionCache();
     return c.json({ ok: true, weights });
-  },
-);
-
-// ── Warm-fork snapshots (per-project ~2s session start; DB-backed, not env) ──
-// GET the warm-snapshot toggle. Master switch for the per-project warm-fork
-// (Platinum + Daytona); per-provider sub-gates still apply (daytona warm target,
-// platinum host). Default ON — pure upside (a failed bake degrades to cold).
-adminApp.openapi(
-  createRoute({
-    method: 'get', path: '/api/warm-snapshot-config', tags: ['admin'],
-    summary: 'Get warm snapshot config', ...auth,
-    responses: { 200: json(z.record(z.string(), z.any()), 'config'), ...errors(401, 403) },
-  }),
-  async (c: any) => {
-    const { warmSnapshotSetting } = await import('../platform/services/runtime-settings');
-    return c.json(warmSnapshotSetting());
-  },
-);
-
-// PUT warm-snapshot toggle ({ enabled }). OFF = every session cold-clones its repo.
-adminApp.openapi(
-  createRoute({
-    method: 'put', path: '/api/warm-snapshot-config', tags: ['admin'],
-    summary: 'Set warm snapshot config', ...auth,
-    request: { body: { content: { 'application/json': { schema: z.object({ enabled: z.boolean() }) } } } },
-    responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(401, 403) },
-  }),
-  async (c: any) => {
-    const body = await c.req.json().catch(() => ({}));
-    const value = { enabled: body?.enabled === true };
-    const { db } = await import('../shared/db');
-    const { platformSettings } = await import('@kortix/db');
-    const { WARM_SNAPSHOT_KEY, invalidateRuntimeSettings, refreshRuntimeSettings } = await import('../platform/services/runtime-settings');
-    await db.insert(platformSettings).values({ key: WARM_SNAPSHOT_KEY, value, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: platformSettings.key, set: { value, updatedAt: new Date() } });
-    invalidateRuntimeSettings();
-    await refreshRuntimeSettings();
-    return c.json({ ok: true, ...value });
   },
 );
 

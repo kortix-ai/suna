@@ -16,15 +16,14 @@ import { parseImageOutput } from '@/features/session/image-output-path';
 import { QuestionPrompt } from '@/features/session/question-prompt';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import { isShowContentUnavailable, type ShowLoadStatus } from './show-availability';
-import {
-  SessionRetryDisplay,
-  TurnErrorDisplay,
-} from '@/features/session/session-error-banner';
+import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   cleanResultSnippet,
+  type EmbeddedFailure,
   formatRawOutput,
   looksLikeJsonPayload,
+  parseEmbeddedFailure,
   recoverLinkResults,
 } from '@/features/session/tool-output-format';
 import {
@@ -315,9 +314,7 @@ function ServicePreviewUrlFallback({ preview }: { preview: ServicePreviewState }
           disabled={!previewUrl}
           className={cn(
             'text-foreground inline-flex max-w-full items-center gap-2 rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium shadow-2xs transition-colors',
-            previewUrl
-              ? 'hover:bg-muted'
-              : 'cursor-not-allowed opacity-60',
+            previewUrl ? 'hover:bg-muted' : 'cursor-not-allowed opacity-60',
           )}
         >
           <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
@@ -481,7 +478,10 @@ interface ToolProps {
   forceOpen?: boolean;
   locked?: boolean;
   hasActiveQuestion?: boolean;
-  onPermissionReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void;
+  onPermissionReply?: (
+    requestId: string,
+    reply: 'once' | 'always' | 'reject',
+  ) => void | Promise<void>;
 }
 
 type ToolComponent = ComponentType<ToolProps>;
@@ -3819,6 +3819,13 @@ function parseWebSearchOutput(output: string | any): WebSearchQueryResult[] {
   }
 
   if (parsed) {
+    // Embedded failure: { query, success:false, error } — the tool call
+    // itself completed, but the underlying search request failed (e.g. a 402
+    // from the provider). This is NOT a valid (if empty) result set — treat
+    // it as "no results" so the caller falls through to the failure UI
+    // instead of silently rendering a blank, success-looking query.
+    if (parsed.success === false) return [];
+
     // Batch mode: { results: [{ query, answer, results: [...] }] }
     if (parsed.results && Array.isArray(parsed.results) && parsed.results.length > 0) {
       const firstItem = parsed.results[0];
@@ -3972,6 +3979,51 @@ function wsFavicon(url: string): string | null {
   }
 }
 
+/**
+ * Small destructive "Failed" chip for a tool row's trigger — the inline
+ * equivalent of the `isError` badge used elsewhere in this file (e.g. the
+ * agent-task row), reused for tools whose output embeds a `success:false`
+ * failure even though the part status itself reports `completed`.
+ */
+function EmbeddedFailureBadge() {
+  return (
+    <span className="text-destructive bg-destructive/10 flex-shrink-0 rounded px-1.5 py-0.5 text-xs font-medium whitespace-nowrap">
+      Failed
+    </span>
+  );
+}
+
+/**
+ * Clear failure body for a tool whose call `completed` but whose parsed
+ * output embeds `{success:false, error}` — used so a provider-side failure
+ * (e.g. "402 Insufficient credits") never renders as blank, success-looking
+ * output. `heading` should name the action that failed ("Web search failed").
+ */
+function ToolFailureCard({ heading, failure }: { heading: string; failure: EmbeddedFailure }) {
+  return (
+    <div
+      className={cn(
+        'mx-3 mb-2.5 flex items-start gap-2 rounded-2xl border px-3 py-2.5',
+        STATUS_BORDER.destructive,
+        STATUS_BG.destructive,
+      )}
+    >
+      <CircleAlert className={cn('mt-0.5 size-3.5 flex-shrink-0', STATUS_TEXT.destructive)} />
+      <div className="min-w-0 flex-1 space-y-1">
+        <div
+          className={cn('flex items-center gap-1.5 text-xs font-medium', STATUS_TEXT.destructive)}
+        >
+          <span>{heading}</span>
+          {typeof failure.status === 'number' && (
+            <span className="font-mono text-xs opacity-70">HTTP {failure.status}</span>
+          )}
+        </div>
+        <p className="text-foreground/80 text-xs leading-relaxed break-words">{failure.message}</p>
+      </div>
+    </div>
+  );
+}
+
 function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
@@ -3981,6 +4033,7 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   // Access raw state output to handle both string and object types
   const rawOutput = part.state.status === 'completed' ? (part.state as any).output : undefined;
+  const rawOutputStr = typeof rawOutput === 'string' ? rawOutput : output;
   const queryResults = useMemo(
     () => parseWebSearchOutput(rawOutput ?? output),
     [rawOutput, output],
@@ -3989,11 +4042,19 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     () => queryResults.reduce((n, q) => n + q.sources.length, 0),
     [queryResults],
   );
+  // The tool call itself completed, but the parsed output may still embed a
+  // provider-side failure (`{success:false, error}`, e.g. a 402 from the
+  // search API) — parseWebSearchOutput already returns no results for that
+  // shape, so surface it explicitly instead of rendering a blank success.
+  const failure = useMemo(
+    () => (status === 'completed' ? parseEmbeddedFailure(rawOutputStr) : null),
+    [status, rawOutputStr],
+  );
   const [expandedQuery, setExpandedQuery] = useState<number | null>(null);
 
   // Compact trigger badge
   const triggerBadge =
-    status === 'completed' && queryResults.length > 0
+    status === 'completed' && !failure && queryResults.length > 0
       ? queryResults.length > 1
         ? `${queryResults.length} queries`
         : totalSources > 0
@@ -4003,17 +4064,29 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Search className="size-3.5 flex-shrink-0" />}
+      icon={
+        failure ? (
+          <CircleAlert className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.destructive)} />
+        ) : (
+          <Search className="size-3.5 flex-shrink-0" />
+        )
+      }
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="text-foreground text-xs font-medium whitespace-nowrap">
             {tHardcodedUi.raw('componentsSessionToolRenderers.line3806JsxTextWebSearch')}
           </span>
           <span className="text-muted-foreground truncate font-mono text-xs">{query}</span>
-          {triggerBadge && (
-            <span className="text-primary/70 ml-auto flex-shrink-0 text-xs font-medium whitespace-nowrap">
-              {triggerBadge}
-            </span>
+          {failure ? (
+            <div className="ml-auto flex-shrink-0">
+              <EmbeddedFailureBadge />
+            </div>
+          ) : (
+            triggerBadge && (
+              <span className="text-primary/70 ml-auto flex-shrink-0 text-xs font-medium whitespace-nowrap">
+                {triggerBadge}
+              </span>
+            )
           )}
         </div>
       }
@@ -4133,6 +4206,8 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             );
           })}
         </div>
+      ) : failure ? (
+        <ToolFailureCard heading="Web search failed" failure={failure} />
       ) : output ? (
         <ToolOutputFallback
           output={output}
@@ -4421,20 +4496,39 @@ function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     };
   }, [output, query]);
 
+  // Same embedded-failure shape as web_search: a completed call whose parsed
+  // output is `{success:false, error}` (e.g. a 402 from the search provider).
+  const failure = useMemo(
+    () => (status === 'completed' ? parseEmbeddedFailure(output) : null),
+    [status, output],
+  );
+
   return (
     <BasicTool
-      icon={<ImageIcon className="size-3.5 flex-shrink-0" />}
+      icon={
+        failure ? (
+          <CircleAlert className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.destructive)} />
+        ) : (
+          <ImageIcon className="size-3.5 flex-shrink-0" />
+        )
+      }
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="text-foreground text-xs font-medium whitespace-nowrap">
             {tHardcodedUi.raw('componentsSessionToolRenderers.line4240JsxTextImageSearch')}
           </span>
           <span className="text-muted-foreground truncate font-mono text-xs">{displayQuery}</span>
-          {imageResults.length > 0 && (
-            <span className="text-muted-foreground/60 ml-auto flex-shrink-0 font-mono text-xs whitespace-nowrap">
-              {isBatch ? `${batchCount}q, ` : ''}
-              {imageResults.length} images
-            </span>
+          {failure ? (
+            <div className="ml-auto flex-shrink-0">
+              <EmbeddedFailureBadge />
+            </div>
+          ) : (
+            imageResults.length > 0 && (
+              <span className="text-muted-foreground/60 ml-auto flex-shrink-0 font-mono text-xs whitespace-nowrap">
+                {isBatch ? `${batchCount}q, ` : ''}
+                {imageResults.length} images
+              </span>
+            )
           )}
         </div>
       }
@@ -4475,6 +4569,8 @@ function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             })}
           </div>
         </div>
+      ) : failure ? (
+        <ToolFailureCard heading="Image search failed" failure={failure} />
       ) : output ? (
         <ToolOutputFallback
           output={output.slice(0, 3000)}
@@ -8581,7 +8677,18 @@ function parseToolName(tool: string): {
 export function GenericTool({ part }: ToolProps) {
   const output = partOutput(part);
   const input = partInput(part);
+  const status = partStatus(part);
   const { server, display } = useMemo(() => parseToolName(part.tool), [part.tool]);
+
+  // Generic hardening: a tool call can report `state.status: "completed"`
+  // while its own output embeds `{success:false, error}` (e.g. an
+  // integration proxy returning a 402/500 body as a "successful" tool
+  // result). Conservative on purpose — only this well-known shape flips the
+  // row from a completed look to a failed one.
+  const failure = useMemo(
+    () => (status === 'completed' ? parseEmbeddedFailure(output) : null),
+    [status, output],
+  );
 
   // Primary arg: first meaningful input value (matches reference's label() helper)
   const subtitle = useMemo(() => {
@@ -8628,12 +8735,19 @@ export function GenericTool({ part }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Cpu />}
+      icon={
+        failure ? (
+          <CircleAlert className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.destructive)} />
+        ) : (
+          <Cpu />
+        )
+      }
       trigger={{
         title: display,
         subtitle,
         args: server ? [server, ...args] : args.length > 0 ? args : undefined,
       }}
+      badge={failure ? <EmbeddedFailureBadge /> : undefined}
     >
       {output ? <ToolOutputFallback output={output} toolName={part.tool} /> : null}
     </BasicTool>
@@ -8646,11 +8760,10 @@ export function GenericTool({ part }: ToolProps) {
 
 interface PermissionPromptInlineProps {
   permission: PermissionRequest;
-  onReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void;
+  onReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void | Promise<void>;
 }
 
 function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const [visible, setVisible] = useState(false);
   const [replying, setReplying] = useState(false);
 
@@ -8660,12 +8773,20 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
   }, []);
 
   const label = PERMISSION_LABELS[permission.permission] || permission.permission;
+  const detail = permission.patterns?.length ? permission.patterns.join('  ') : null;
 
   const handleReply = useCallback(
     (reply: 'once' | 'always' | 'reject') => {
       if (replying) return;
       setReplying(true);
-      onReply?.(permission.id, reply);
+      // A failed reply must leave the card answerable — on success the card
+      // unmounts (the permission leaves the pending store), so re-enabling
+      // only ever matters on failure. The full scope options (allow all this
+      // session / persist to config) live in the pinned prompt above the
+      // composer; this inline row keeps the quick decisions in context.
+      void Promise.resolve(onReply?.(permission.id, reply))
+        .catch(() => {})
+        .finally(() => setReplying(false));
     },
     [replying, permission.id, onReply],
   );
@@ -8674,8 +8795,13 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
 
   return (
     <div className={cn('flex items-center gap-2 px-2.5 py-2', STATUS_TEXT.warning)}>
-      <span className="text-foreground flex-1 text-xs">
+      <span className="text-foreground min-w-0 flex-1 text-xs">
         Permission: <span className="font-medium">{label}</span>
+        {detail ? (
+          <code title={detail} className="text-muted-foreground ml-1.5 font-mono text-[11px]">
+            {detail.length > 60 ? `${detail.slice(0, 57)}…` : detail}
+          </code>
+        ) : null}
       </span>
       <div className="flex items-center gap-1.5">
         <Button
@@ -8692,11 +8818,12 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
           onClick={() => handleReply('always')}
           variant="outline"
           size="xs"
+          title="Allow this action for the rest of this session — the agent won't ask again for it"
         >
-          {tHardcodedUi.raw('componentsSessionToolRenderers.line8026JsxTextAllowAlways')}
+          Allow for session
         </Button>
         <Button disabled={replying} onClick={() => handleReply('once')} variant="default" size="xs">
-          {tHardcodedUi.raw('componentsSessionToolRenderers.line8034JsxTextAllowOnce')}
+          Allow once
         </Button>
       </div>
     </div>
@@ -8711,7 +8838,10 @@ interface ToolPartRendererProps {
   part: ToolPart;
   permission?: PermissionRequest;
   question?: QuestionRequest;
-  onPermissionReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void;
+  onPermissionReply?: (
+    requestId: string,
+    reply: 'once' | 'always' | 'reject',
+  ) => void | Promise<void>;
   onQuestionReply?: (requestId: string, answers: string[][]) => void;
   onQuestionReject?: (requestId: string) => void;
   defaultOpen?: boolean;

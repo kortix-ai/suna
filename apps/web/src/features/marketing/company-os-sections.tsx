@@ -81,25 +81,25 @@ export function ProblemSection() {
 type RepoFile = { lang: 'toml' | 'md'; lines: string[] };
 
 const FILES: Record<string, RepoFile> = {
-  'kortix.toml': {
+  'kortix.yaml': {
     lang: 'toml',
     lines: [
-      '[project]',
-      'name = "acme"',
+      'project:',
+      '  name: acme',
       '',
-      '[[connectors]]      # 3,000+ apps, one scoped token',
-      'slug = "slack"',
+      'connectors:         # 3,000+ apps, one scoped token',
+      '  - slug: slack',
       '',
-      '[[agents]]',
-      'name = "go-to-market"',
-      'connectors = ["slack", "hubspot", "gmail"]',
+      'agents:',
+      '  go-to-market:',
+      '    connectors: [slack, hubspot, gmail]',
       '',
-      '[[triggers]]        # runs in a loop, in the night',
-      'slug = "morning-brief"',
-      'cron = "0 8 * * 1-5"',
+      'triggers:            # runs in a loop, in the night',
+      '  - slug: morning-brief',
+      '    cron: "0 8 * * 1-5"',
       '',
-      '[[channels]]        # delivered where people work',
-      'slug = "slack"',
+      'channels:            # delivered where people work',
+      '  - slug: slack',
     ],
   },
   'sales/renewals/SKILL.md': {
@@ -360,7 +360,7 @@ type TreeNode = {
 };
 
 const TREE: TreeNode[] = [
-  { label: 'kortix.toml', depth: 0, kind: 'file', fileId: 'kortix.toml' },
+  { label: 'kortix.yaml', depth: 0, kind: 'file', fileId: 'kortix.yaml' },
   { label: 'AGENTS.md', depth: 0, kind: 'file', fileId: 'AGENTS.md' },
   { label: 'sales', depth: 0, kind: 'folder' },
   { label: 'prospecting/SKILL.md', depth: 1, kind: 'file', fileId: 'sales/prospecting/SKILL.md' },
@@ -435,7 +435,7 @@ function CodeBody({ file }: { file: RepoFile }) {
 
 function RepoExplorer() {
   const tHome = useTranslations('hardcodedUi.appHomePage');
-  const [activeId, setActiveId] = useState<keyof typeof FILES>('kortix.toml');
+  const [activeId, setActiveId] = useState<keyof typeof FILES>('kortix.yaml');
   const active = FILES[activeId];
 
   return (

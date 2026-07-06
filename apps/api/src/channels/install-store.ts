@@ -649,7 +649,7 @@ async function upsertSecret(
   if (updated) return;
 
   try {
-    await db.insert(projectSecrets).values({ projectId, name, valueEnc });
+    await db.insert(projectSecrets).values({ projectId, identifier: name, name, valueEnc });
   } catch (err) {
     if (!isUniqueConflict(err)) throw err;
     const retryUpdated = await updateSharedSecret(projectId, name, valueEnc);

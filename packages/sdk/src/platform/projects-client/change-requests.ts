@@ -198,6 +198,21 @@ export async function reopenChangeRequest(projectId: string, crId: string) {
   );
 }
 
+/** Request changes on a CR (Review Center) — records feedback + optionally
+ *  delivers it back to the originating session. */
+export async function requestChangesOnChangeRequest(
+  projectId: string,
+  crId: string,
+  feedback: string,
+) {
+  return unwrap(
+    await backendApi.post<{ change_request: ChangeRequest; delivering: boolean }>(
+      `/projects/${projectId}/change-requests/${crId}/request-changes`,
+      { feedback },
+    ),
+  );
+}
+
 export interface CommitSessionResult {
   committed: boolean;
   pushed: boolean;

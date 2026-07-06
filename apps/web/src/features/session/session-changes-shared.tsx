@@ -62,7 +62,7 @@ export function useOpenChangeRequest(chatSessionId: string | undefined, baseRef:
     setAsking(true);
     try {
       await sendToSession(chatSessionId, prompt);
-      successToast('Asked your agent to commit and open a change request.');
+      successToast('Asked your agent to propose these changes for review.');
     } catch (err) {
       errorToast(
         err instanceof Error ? err.message : 'Could not reach the agent. Please try again.',

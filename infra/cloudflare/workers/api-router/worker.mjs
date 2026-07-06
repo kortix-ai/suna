@@ -10,6 +10,14 @@
 // failover with no DNS change. Both backends run the same image against the same
 // DB, so a flip is safe (background-worker leadership is a single global DB lease
 // — see apps/api/src/shared/leader-election.ts — so only one side ever runs cron).
+const STRICT_TRANSPORT_SECURITY = 'max-age=31536000';
+
+function addSecurityHeaders(response) {
+  response.headers.set('Strict-Transport-Security', STRICT_TRANSPORT_SECURITY);
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  return response;
+}
+
 export default {
   async fetch(request, env) {
     const active = env.ACTIVE_BACKEND || 'eks';
@@ -25,6 +33,16 @@ export default {
     }
 
     const url = new URL(request.url);
+    if (url.protocol !== 'https:') {
+      url.protocol = 'https:';
+      return new Response(null, {
+        status: 308,
+        headers: {
+          Location: url.toString(),
+        },
+      });
+    }
+
     const targetUrl = new URL(url.pathname + url.search, backendUrl);
 
     // `manual` so backend 3xx responses are passed straight through to the
@@ -43,6 +61,6 @@ export default {
     const response = await fetch(modifiedRequest);
     const newResponse = new Response(response.body, response);
     newResponse.headers.set('X-Backend', active);
-    return newResponse;
+    return addSecurityHeaders(newResponse);
   },
 };

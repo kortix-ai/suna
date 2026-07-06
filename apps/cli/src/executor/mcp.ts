@@ -22,6 +22,7 @@
 import type { ExecutorClient } from '@kortix/executor-sdk';
 import {
   addConnector,
+  callPausingForApproval,
   executorClient,
   mintConnectLink,
   mintSecretLink,
@@ -60,7 +61,8 @@ const META_TOOLS = [
       properties: {
         query: {
           type: 'string',
-          description: 'Natural-language intent to search for. Empty returns the first available tools.',
+          description:
+            'Natural-language intent to search for. Empty returns the first available tools.',
         },
         limit: { type: 'number', description: 'Maximum matches to return (default 20).' },
       },
@@ -71,7 +73,7 @@ const META_TOOLS = [
   {
     name: 'describe',
     description:
-      "Show one tool's full input JSON schema, risk, and description. Pass the connector-namespaced path from discover, e.g. \"stripe.charges.create\". Always describe an unfamiliar tool before calling it.",
+      'Show one tool\'s full input JSON schema, risk, and description. Pass the connector-namespaced path from discover, e.g. "stripe.charges.create". Always describe an unfamiliar tool before calling it.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -93,7 +95,10 @@ const META_TOOLS = [
       type: 'object',
       properties: {
         connector: { type: 'string', description: 'Connector slug, e.g. "stripe".' },
-        action: { type: 'string', description: 'Action path within the connector, e.g. "charges.create".' },
+        action: {
+          type: 'string',
+          description: 'Action path within the connector, e.g. "charges.create".',
+        },
         args: {
           type: 'object',
           description: "Arguments matching the tool's input schema (see describe). Defaults to {}.",
@@ -112,7 +117,10 @@ const META_TOOLS = [
       type: 'object',
       properties: {
         slug: { type: 'string', description: 'Connector slug to connect, e.g. "smartlead".' },
-        expires_in_minutes: { type: 'number', description: 'Link lifetime in minutes (default 30, max 1440).' },
+        expires_in_minutes: {
+          type: 'number',
+          description: 'Link lifetime in minutes (default 30, max 1440).',
+        },
       },
       required: ['slug'],
       additionalProperties: false,
@@ -129,12 +137,26 @@ const META_TOOLS = [
         names: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Env var name(s) to request, e.g. ["APOLLO_API_KEY","SMARTLEAD_API_KEY"]. UPPER_SNAKE_CASE.',
+          description:
+            'Env var name(s) to request, e.g. ["APOLLO_API_KEY","SMARTLEAD_API_KEY"]. UPPER_SNAKE_CASE.',
         },
-        scope: { type: 'string', enum: ['runtime', 'connector'], description: 'runtime (default) or connector.' },
-        labels: { type: 'object', description: 'Optional per-name human label, { NAME: "label" }.' },
-        descriptions: { type: 'object', description: 'Optional per-name hint shown on the form, { NAME: "where to find it" }.' },
-        expires_in_minutes: { type: 'number', description: 'Link lifetime in minutes (default 30, max 1440).' },
+        scope: {
+          type: 'string',
+          enum: ['runtime', 'connector'],
+          description: 'runtime (default) or connector.',
+        },
+        labels: {
+          type: 'object',
+          description: 'Optional per-name human label, { NAME: "label" }.',
+        },
+        descriptions: {
+          type: 'object',
+          description: 'Optional per-name hint shown on the form, { NAME: "where to find it" }.',
+        },
+        expires_in_minutes: {
+          type: 'number',
+          description: 'Link lifetime in minutes (default 30, max 1440).',
+        },
       },
       required: ['names'],
       additionalProperties: false,
@@ -149,15 +171,30 @@ const META_TOOLS = [
       type: 'object',
       properties: {
         slug: { type: 'string', description: 'Connector slug, e.g. "smartlead".' },
-        provider: { type: 'string', enum: ['pipedream', 'mcp', 'openapi', 'graphql', 'http'], description: 'Connector provider.' },
-        app: { type: 'string', description: 'Pipedream app slug (provider=pipedream), e.g. "smartlead".' },
+        provider: {
+          type: 'string',
+          enum: ['pipedream', 'mcp', 'openapi', 'graphql', 'http'],
+          description: 'Connector provider.',
+        },
+        app: {
+          type: 'string',
+          description: 'Pipedream app slug (provider=pipedream), e.g. "smartlead".',
+        },
         name: { type: 'string', description: 'Optional display name.' },
         url: { type: 'string', description: 'MCP server URL (provider=mcp).' },
-        transport: { type: 'string', enum: ['http', 'sse'], description: 'MCP transport (provider=mcp).' },
+        transport: {
+          type: 'string',
+          enum: ['http', 'sse'],
+          description: 'MCP transport (provider=mcp).',
+        },
         endpoint: { type: 'string', description: 'GraphQL endpoint (provider=graphql).' },
         base_url: { type: 'string', description: 'HTTP base URL (provider=http).' },
         spec: { type: 'string', description: 'OpenAPI/GraphQL/HTTP spec ref.' },
-        credential: { type: 'string', enum: ['shared', 'per_user'], description: 'Credential storage mode.' },
+        credential: {
+          type: 'string',
+          enum: ['shared'],
+          description: 'Credential storage mode (shared is the only mode).',
+        },
       },
       required: ['slug', 'provider'],
       additionalProperties: false,
@@ -166,7 +203,8 @@ const META_TOOLS = [
   },
   {
     name: 'remove_connector',
-    description: 'Remove a connector from this project (committed to kortix.toml on main + catalog). No change request needed.',
+    description:
+      'Remove a connector from this project (committed to kortix.toml on main + catalog). No change request needed.',
     inputSchema: {
       type: 'object',
       properties: { slug: { type: 'string', description: 'Connector slug to remove.' } },
@@ -225,14 +263,28 @@ async function runMetaTool(executor: ExecutorClient, name: string, args: Record<
     case 'describe': {
       const ref = typeof args.tool === 'string' ? args.tool : '';
       if (!ref.includes('.')) {
-        return { content: content({ ok: false, error: 'tool must be a "<connector>.<action>" path' }), isError: true };
+        return {
+          content: content({ ok: false, error: 'tool must be a "<connector>.<action>" path' }),
+          isError: true,
+        };
       }
       const tool = await executor.describe(ref);
       if (!tool) {
-        return { content: content({ ok: false, error: `unknown tool "${ref}" — run discover to list tools` }), isError: true };
+        return {
+          content: content({
+            ok: false,
+            error: `unknown tool "${ref}" — run discover to list tools`,
+          }),
+          isError: true,
+        };
       }
       return {
-        content: content({ tool: tool.tool, risk: tool.risk, description: tool.description, inputSchema: tool.inputSchema }),
+        content: content({
+          tool: tool.tool,
+          risk: tool.risk,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+        }),
         isError: false,
       };
     }
@@ -241,17 +293,24 @@ async function runMetaTool(executor: ExecutorClient, name: string, args: Record<
       const connector = typeof args.connector === 'string' ? args.connector : '';
       const action = typeof args.action === 'string' ? args.action : '';
       if (!connector || !action) {
-        return { content: content({ ok: false, error: 'connector and action are required' }), isError: true };
+        return {
+          content: content({ ok: false, error: 'connector and action are required' }),
+          isError: true,
+        };
       }
       const callArgs = asRecord(args.args);
-      const result = await executor.call(connector, action, callArgs);
+      // Pauses the run for human approval (indefinite poll, like a question) —
+      // shared with `kortix executor call`, see callPausingForApproval.
+      const result = await callPausingForApproval(executor, connector, action, callArgs);
       return { content: content(result), isError: !result.ok };
     }
 
     case 'connect': {
       const slug = typeof args.slug === 'string' ? args.slug : '';
-      if (!slug) return { content: content({ ok: false, error: 'slug is required' }), isError: true };
-      const expires = typeof args.expires_in_minutes === 'number' ? args.expires_in_minutes : undefined;
+      if (!slug)
+        return { content: content({ ok: false, error: 'slug is required' }), isError: true };
+      const expires =
+        typeof args.expires_in_minutes === 'number' ? args.expires_in_minutes : undefined;
       try {
         const link = await mintConnectLink({ slug, expiresInMinutes: expires });
         return {
@@ -261,12 +320,16 @@ async function runMetaTool(executor: ExecutorClient, name: string, args: Record<
             app: link.app,
             url: link.url,
             expires_at: link.expires_at,
-            instructions: 'Surface this url to the human now. Web: opens a connect popup. Slack: tappable link.',
+            instructions:
+              'Surface this url to the human now. Web: opens a connect popup. Slack: tappable link.',
           }),
           isError: false,
         };
       } catch (err) {
-        return { content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }), isError: true };
+        return {
+          content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+          isError: true,
+        };
       }
     }
 
@@ -274,9 +337,12 @@ async function runMetaTool(executor: ExecutorClient, name: string, args: Record<
       const names = Array.isArray(args.names)
         ? args.names.filter((n): n is string => typeof n === 'string')
         : [];
-      if (names.length === 0) return { content: content({ ok: false, error: 'names is required' }), isError: true };
-      const scope = args.scope === 'connector' ? 'connector' : args.scope === 'runtime' ? 'runtime' : undefined;
-      const expires = typeof args.expires_in_minutes === 'number' ? args.expires_in_minutes : undefined;
+      if (names.length === 0)
+        return { content: content({ ok: false, error: 'names is required' }), isError: true };
+      const scope =
+        args.scope === 'connector' ? 'connector' : args.scope === 'runtime' ? 'runtime' : undefined;
+      const expires =
+        typeof args.expires_in_minutes === 'number' ? args.expires_in_minutes : undefined;
       try {
         const link = await mintSecretLink({
           names,
@@ -292,21 +358,37 @@ async function runMetaTool(executor: ExecutorClient, name: string, args: Record<
             scope: link.scope,
             url: link.url,
             expires_at: link.expires_at,
-            instructions: 'Surface this url to the human now. Web: opens a fill-in modal. Slack: tappable link. You never see the value; once submitted it appears in KORTIX_PROJECT_SECRET_NAMES.',
+            instructions:
+              'Surface this url to the human now. Web: opens a fill-in modal. Slack: tappable link. You never see the value; once submitted it appears in KORTIX_PROJECT_SECRET_NAMES.',
           }),
           isError: false,
         };
       } catch (err) {
-        return { content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }), isError: true };
+        return {
+          content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+          isError: true,
+        };
       }
     }
 
     case 'add_connector': {
       const slug = typeof args.slug === 'string' ? args.slug : '';
       const provider = typeof args.provider === 'string' ? args.provider : '';
-      if (!slug || !provider) return { content: content({ ok: false, error: 'slug and provider are required' }), isError: true };
+      if (!slug || !provider)
+        return {
+          content: content({ ok: false, error: 'slug and provider are required' }),
+          isError: true,
+        };
       const draft: Record<string, unknown> = { slug, provider };
-      for (const k of ['app', 'name', 'url', 'transport', 'endpoint', 'spec', 'credential'] as const) {
+      for (const k of [
+        'app',
+        'name',
+        'url',
+        'transport',
+        'endpoint',
+        'spec',
+        'credential',
+      ] as const) {
         if (typeof args[k] === 'string') draft[k] = args[k];
       }
       if (typeof args.base_url === 'string') draft.baseUrl = args.base_url;
@@ -314,24 +396,35 @@ async function runMetaTool(executor: ExecutorClient, name: string, args: Record<
         const res = await addConnector(draft);
         return {
           content: content({
-            ok: true, slug, provider, applied: true, sync: res.sync,
+            ok: true,
+            slug,
+            provider,
+            applied: true,
+            sync: res.sync,
             instructions: `Live now (committed to kortix.toml on main + synced) — no change request needed. Next: call connect("${slug}") for a Pipedream app, or request_secret for an API key.`,
           }),
           isError: false,
         };
       } catch (err) {
-        return { content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }), isError: true };
+        return {
+          content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+          isError: true,
+        };
       }
     }
 
     case 'remove_connector': {
       const slug = typeof args.slug === 'string' ? args.slug : '';
-      if (!slug) return { content: content({ ok: false, error: 'slug is required' }), isError: true };
+      if (!slug)
+        return { content: content({ ok: false, error: 'slug is required' }), isError: true };
       try {
         await removeConnector(slug);
         return { content: content({ ok: true, slug, removed: true }), isError: false };
       } catch (err) {
-        return { content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }), isError: true };
+        return {
+          content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+          isError: true,
+        };
       }
     }
 
@@ -372,11 +465,13 @@ async function handle(req: JsonRpcRequest, executor: ExecutorClient) {
   }
 }
 
-function writeResponse(id: JsonRpcRequest['id'], result: unknown, error?: { code: number; message: string }) {
+function writeResponse(
+  id: JsonRpcRequest['id'],
+  result: unknown,
+  error?: { code: number; message: string },
+) {
   if (id === undefined || id === null) return;
-  const payload = error
-    ? { jsonrpc: '2.0', id, error }
-    : { jsonrpc: '2.0', id, result };
+  const payload = error ? { jsonrpc: '2.0', id, error } : { jsonrpc: '2.0', id, result };
   process.stdout.write(`${JSON.stringify(payload)}\n`);
 }
 
@@ -404,7 +499,10 @@ export async function runExecutorMcpServer(): Promise<number> {
         const result = await handle(req, executor);
         writeResponse(req.id, result);
       } catch (err) {
-        writeResponse(req.id, null, { code: -32000, message: err instanceof Error ? err.message : String(err) });
+        writeResponse(req.id, null, {
+          code: -32000,
+          message: err instanceof Error ? err.message : String(err),
+        });
       }
     }
   }

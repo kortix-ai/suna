@@ -1,6 +1,6 @@
 {
   "name": "@kortix/sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Official Kortix frontend TypeScript SDK — one typed client for the Kortix agent platform. Unifies project/session lifecycle and live agent streaming behind a single ergonomic Session handle, so web, mobile, and white-label apps never touch the raw HTTP API or OpenCode semantics.",
   "type": "module",
   "license": "Elastic-2.0",
@@ -14,7 +14,7 @@
   "sideEffects": false,
   "dependencies": {
     "@kortix/llm-catalog": "workspace:*",
-    "@opencode-ai/sdk": "^1.14.28",
+    "@opencode-ai/sdk": "1.17.11",
     "zustand": "^5.0.3"
   },
   "peerDependencies": {
@@ -29,6 +29,7 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./server": "./src/server.ts",
     "./react": "./src/react/index.ts",
     "./opencode-client": "./src/opencode/client.ts",
     "./config": "./src/platform/config.ts",
@@ -43,6 +44,7 @@
     "./platform-client": "./src/platform/platform-client/index.ts",
     "./server-store": "./src/state/server-store.ts",
     "./sync-store": "./src/state/sync-store.ts",
+    "./event-stream": "./src/state/event-stream.ts",
     "./sandbox-connection-store": "./src/state/sandbox-connection-store.ts",
     "./opencode-pending-store": "./src/state/opencode-pending-store.ts",
     "./files": "./src/files/client.ts",
@@ -56,6 +58,7 @@
     "types": "./dist/index.d.ts",
     "exports": {
       ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+      "./server": { "types": "./dist/server.d.ts", "import": "./dist/server.js" },
       "./react": { "types": "./dist/react/index.d.ts", "import": "./dist/react/index.js" },
       "./opencode-client": {
         "types": "./dist/opencode/client.d.ts",
@@ -103,6 +106,10 @@
         "types": "./dist/state/sync-store.d.ts",
         "import": "./dist/state/sync-store.js"
       },
+      "./event-stream": {
+        "types": "./dist/state/event-stream.d.ts",
+        "import": "./dist/state/event-stream.js"
+      },
       "./sandbox-connection-store": {
         "types": "./dist/state/sandbox-connection-store.d.ts",
         "import": "./dist/state/sandbox-connection-store.js"
@@ -120,7 +127,7 @@
   },
   "files": ["dist", "src", "README.md"],
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p examples/tsconfig.json",
     "test": "bun test src",
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
     "prepublishOnly": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths"

@@ -1,51 +1,68 @@
 /**
  * Shared auth token helpers.
  *
- * Provides Supabase JWT authentication for all requests.
+ * Every function below is a thin delegate to `platformConfig().getToken()` —
+ * the SDK holds no token state of its own. Token acquisition (Supabase
+ * getSession/refreshSession or any other provider), caching, deduplicating
+ * concurrent callers (SSE, health check, session fetch, etc. all racing for a
+ * token on page load), and the install/bootstrap seam are entirely the host
+ * app's responsibility, implemented inside the `getToken` it passes to
+ * `configureKortix`/`createKortix`. A host that wants the old 30s-TTL +
+ * inflight-dedup behavior re-implements it in its own `getToken`; the SDK
+ * itself does not cache, dedupe, or retry beyond calling `getToken()` again.
  *
- * `getAuthToken()` is the unified getter: returns the Supabase JWT.
- * Use it anywhere you need to authenticate against the sandbox proxy.
+ * `getAuthToken()` is the unified getter: returns whatever token the host's
+ * `getToken()` resolves. `getSupabaseAccessToken()` is kept as an alias for
+ * callers that historically asked for "the Supabase token" specifically —
+ * same delegate, same value.
  *
- * `getSupabaseAccessToken()` is kept for callers that specifically need the
- * Supabase JWT (e.g. platform API calls that go through Supabase auth).
- *
- * **Deduplication**: Multiple callers (SSE, health check, session fetch, etc.)
- * all call getSupabaseAccessToken() on page load simultaneously. Without
- * deduplication, each triggers its own getSession() → refreshSession() chain,
- * causing 5+ parallel Supabase auth roundtrips that take seconds. The inflight
- * promise ensures only ONE auth call runs at a time; all others piggyback.
- *
- * **Caching**: The resolved token is cached for TOKEN_CACHE_TTL (30s). Within
- * that window, subsequent calls return instantly. After TTL, the next call
- * refreshes from Supabase.
- *
- * SDK port: token acquisition (Supabase getSession/refreshSession), the 30s
- * token cache, the inflight dedup, and the install/bootstrap seam are all owned
- * by the host app and injected via `platformConfig().getToken()`. The exported
- * function names below are preserved verbatim so callers don't break.
+ * `invalidateTokenCache()` / `setCachedAuthToken()` / `setBootstrapAuthToken()`
+ * are no-ops here (there is no SDK-side cache to invalidate or seed); they're
+ * kept as exported names so existing call sites compile unchanged, and a host
+ * that layers its own caching on top of `getToken()` can wire these to that
+ * cache if it wants the "invalidate on 401" / "seed before hydration" hooks to
+ * do something.
  */
 
+import {
+	buildAuthHeaders,
+	syntheticUnauthenticatedResponse,
+	withDefaultTimeout,
+	withTokenRetry,
+	type TokenRetryOptions,
+} from './auth-core';
 import { platformConfig } from './config';
 
 /**
- * Get the current Supabase access token with caching + deduplication.
- *
- * Fast path: returns cached token if within TTL.
- * Slow path: deduplicates concurrent calls into a single auth roundtrip.
+ * Get the current auth token. Delegates directly to `platformConfig().getToken()`
+ * — any caching/deduplication the host wants happens inside that function.
  */
 export async function getSupabaseAccessToken(): Promise<string | null> {
 	return platformConfig().getToken();
 }
 
 /**
- * Retry token acquisition for initial auth hydration / stale cache recovery.
+ * Retry variant — actually retries now. Previously accepted `attempts`/
+ * `baseDelayMs`/`invalidateBetweenAttempts` and silently ignored all three
+ * (always a single `getToken()` call), which quietly broke every caller that
+ * depended on retry semantics around a flaky/cold token provider (e.g. right
+ * after sign-in, before a host's own session has hydrated — see the retry
+ * call in `authenticatedFetch`'s 401 handler below).
+ *
+ * Retries up to `attempts` times (default 1 = no retry) until `getToken()`
+ * returns a truthy token, waiting `baseDelayMs` between attempts (default 0).
+ * When `invalidateBetweenAttempts` is set, calls `invalidateTokenCache()`
+ * before each retry — a no-op in this file (there's no SDK-side cache), but
+ * kept as a real call so a host that layers its own cache on `getToken()` (and
+ * wires `invalidateTokenCache`/`setCachedAuthToken` to it, per this file's
+ * top-of-file doc comment) gets invalidated between attempts as intended.
  */
-export async function getSupabaseAccessTokenWithRetry(options?: {
-	attempts?: number;
-	baseDelayMs?: number;
-	invalidateBetweenAttempts?: boolean;
-}): Promise<string | null> {
-	return platformConfig().getToken();
+export async function getSupabaseAccessTokenWithRetry(
+	options?: TokenRetryOptions,
+): Promise<string | null> {
+	// The retry loop itself lives in `auth-core.ts` (pure, un-mockable in
+	// tests) — this delegate just binds it to the live platform config.
+	return withTokenRetry(() => platformConfig().getToken(), options, invalidateTokenCache);
 }
 
 /**
@@ -81,11 +98,9 @@ export async function getAuthToken(): Promise<string | null> {
   return getSupabaseAccessToken();
 }
 
-export async function getAuthTokenWithRetry(options?: {
-	attempts?: number;
-	baseDelayMs?: number;
-	invalidateBetweenAttempts?: boolean;
-}): Promise<string | null> {
+export async function getAuthTokenWithRetry(
+	options?: TokenRetryOptions,
+): Promise<string | null> {
 	return getSupabaseAccessTokenWithRetry(options);
 }
 
@@ -103,6 +118,7 @@ function fetchWithAuth(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
   headers: Headers,
+  signal?: AbortSignal,
 ): Promise<Response> {
   if (input instanceof Request) {
     // Clone the Request with our auth headers baked in.
@@ -110,33 +126,16 @@ function fetchWithAuth(
     // not relying on fetch's init-merge behavior.
     const authedRequest = new Request(input, {
       headers,
+      ...(signal ? { signal } : {}),
     });
     return fetch(authedRequest);
   }
-  return fetch(input, { ...init, headers });
+  return fetch(input, { ...init, headers, ...(signal ? { signal } : {}) });
 }
 
-/**
- * Build a Headers object from request input + init, injecting the auth token.
- */
-function buildAuthHeaders(
-  input: RequestInfo | URL,
-  init?: RequestInit,
-  token?: string | null,
-): Headers {
-  const headers = new Headers(
-    input instanceof Request ? input.headers : undefined,
-  );
-  if (init?.headers) {
-    new Headers(init.headers).forEach((value, key) => {
-      headers.set(key, value);
-    });
-  }
-  if (token && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
-  return headers;
-}
+// Timeout composition, streaming exemption, and header building live in
+// `auth-core.ts` (pure + directly unit-tested there); this file wires them to
+// the live token seam.
 
 /**
  * Shared authenticated fetch — injects auth tokens and handles 401 responses.
@@ -167,13 +166,14 @@ export async function authenticatedFetch(
   // naked request. Safe for all callers including the OpenCode SDK which
   // expects fetch() semantics (returns Response, never throws).
   if (!token) {
-    return new Response(JSON.stringify({ error: 'Not authenticated' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return syntheticUnauthenticatedResponse();
   }
 
   const headers = buildAuthHeaders(input, init, token);
+  // 30s default timeout for everything EXCEPT the long-lived SSE event
+  // stream (see `withDefaultTimeout`) — a "Kortix as a Backend" wrapper must
+  // never have a hung sandbox/daemon request wedge its handler forever.
+  const signal = withDefaultTimeout(input, init);
 
   // When the OpenCode SDK passes a Request object (single arg, no init),
   // we must construct a new Request with the auth headers baked in.
@@ -181,7 +181,7 @@ export async function authenticatedFetch(
   // in production builds — Next.js's patched fetch and certain browser
   // implementations don't properly merge init.headers onto an existing
   // Request, causing the Authorization header to be silently dropped.
-  const response = await fetchWithAuth(input, init, headers);
+  const response = await fetchWithAuth(input, init, headers, signal);
 
   if (response.status === 401) {
     // The cached token is stale. Retry once with fresh token.
@@ -190,7 +190,7 @@ export async function authenticatedFetch(
       const newToken = await getAuthTokenWithRetry({ attempts: 2, baseDelayMs: 200 });
       if (newToken && newToken !== token) {
         const retryHeaders = buildAuthHeaders(input, init, newToken);
-        return fetchWithAuth(input, init, retryHeaders);
+        return fetchWithAuth(input, init, retryHeaders, signal);
       }
     }
   }

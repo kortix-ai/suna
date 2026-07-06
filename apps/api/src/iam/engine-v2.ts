@@ -658,11 +658,6 @@ export async function filterAccessibleProjectResources(
 
 // ─── List accessible resources ─────────────────────────────────────────────
 
-export type AccessibleResourcesV2 =
-  | { mode: 'all' }
-  | { mode: 'none' }
-  | { mode: 'allow_only'; allowed: Set<string> };
-
 /**
  * Returns the set of project IDs the user can perform `action` on.
  * Used by list endpoints to filter without N×authorize round-trips.
@@ -676,7 +671,11 @@ export async function listAccessibleProjectsV2(
   action: string,
   actingTokenId?: string,
   _requestCtx: RequestContext = {},
-): Promise<AccessibleResourcesV2> {
+): Promise<
+  | { mode: 'all' }
+  | { mode: 'none' }
+  | { mode: 'allow_only'; allowed: Set<string> }
+> {
   // Standing identity (opt-in): an activated agent-session SA lists the SA's
   // accessible projects; a role-less agent SA falls back to the launching user.
   // (Mirror authorizeV2 via the shared resolver.)

@@ -2,14 +2,17 @@
 
 import { backendApi, type ApiClientOptions } from '../api-client';
 import {
+  normalizeServerBackendBase,
+  serverTokenGet,
   unwrap,
-  type ProjectRole,
-  type ProjectGitConnection,
   type ProjectFileEntry,
+  type ProjectGitConnection,
+  type ProjectRole,
+  type ServerTokenOptions,
 } from './shared';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
-export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'meet' | 'llm_gateway';
+export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'meet' | 'llm_gateway' | 'review_center';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {
@@ -169,6 +172,49 @@ export async function inviteRepoCollaborator(
   );
 }
 
+export interface ManifestValidationIssue {
+  [key: string]: unknown;
+}
+
+export interface ManifestValidationResult {
+  valid: boolean;
+  issues: ManifestValidationIssue[];
+}
+
+/**
+ * Validate a `kortix.toml` manifest's raw TOML text server-side — the same
+ * schema the CLI (`kortix ship` pre-flight / `kortix validate`) and the CR-merge
+ * gate exercise. Always resolves (never throws on an invalid manifest) — the
+ * verdict is in the body.
+ */
+export async function validateProjectManifest(
+  projectId: string,
+  raw: string,
+): Promise<ManifestValidationResult> {
+  return unwrap(
+    await backendApi.post<ManifestValidationResult>(`/projects/${projectId}/manifest/validate`, { raw }),
+    'Failed to validate manifest',
+  );
+}
+
+export interface ProjectGitToken {
+  push_token: string;
+  repo_id: string | null;
+  repo_url: string | null;
+}
+
+/**
+ * Mint a fresh scoped git push token for a *managed* project (so the CLI can
+ * `kortix ship` without persisting credentials in git config). Throws (409)
+ * for BYO projects — they push with the user's own git remote auth.
+ */
+export async function getProjectGitToken(projectId: string): Promise<ProjectGitToken> {
+  return unwrap(
+    await backendApi.post<ProjectGitToken>(`/projects/${projectId}/git-token`, {}),
+    'Failed to mint git token',
+  );
+}
+
 /** True when this project's repo is a Kortix-managed GitHub repo (invitable). */
 export function isManagedGithubProject(project: { metadata?: Record<string, unknown> | null }): boolean {
   const git = (project.metadata as { git?: { provider?: string; managed?: boolean } } | undefined)?.git;
@@ -295,4 +341,67 @@ export async function archiveProject(projectId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}`),
   );
+}
+
+// ── Server-side explicit-token variants ──────────────────────────────────────
+// Next.js server actions / route handlers (post-signup first-project
+// bootstrap) run per-request with an already-resolved Supabase access token —
+// they must not rely on the SDK's process-wide `configureKortix()` seam.
+
+/**
+ * Server-side / explicit-token variant of {@link listProjectsForAccount}.
+ * Returns `null` on any failure.
+ */
+export async function fetchProjectsForAccountWithToken(
+  opts: ServerTokenOptions,
+  accountId: string,
+): Promise<KortixProject[] | null> {
+  return serverTokenGet<KortixProject[]>(
+    opts,
+    `/v1/projects?account_id=${encodeURIComponent(accountId)}`,
+  );
+}
+
+export type ProvisionProjectWithTokenResult =
+  | { ok: true; project: KortixProject }
+  | { ok: false; limitReached: boolean };
+
+/**
+ * Server-side / explicit-token variant of {@link provisionProject}. Mirrors
+ * the original bootstrap behavior: a 403 with `code: 'project_limit_reached'`
+ * is reported distinctly so the caller can fall back to re-listing existing
+ * projects instead of treating it as a hard failure.
+ */
+export async function provisionProjectWithToken(
+  opts: ServerTokenOptions,
+  input: ProvisionProjectInput,
+): Promise<ProvisionProjectWithTokenResult> {
+  if (!opts.backendUrl || !opts.accessToken) return { ok: false, limitReached: false };
+  const base = normalizeServerBackendBase(opts.backendUrl);
+  try {
+    const res = await fetch(`${base}/v1/projects/provision`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${opts.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ seed_starter: true, ...input }),
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 90_000),
+    });
+    if (res.ok) {
+      const project = (await res.json().catch(() => null)) as KortixProject | null;
+      // A 200 whose body doesn't actually carry a project_id is not a usable
+      // success — report it as not-ok instead of handing the caller a project
+      // it can't build a `/projects/{id}` path from.
+      if (!project?.project_id) return { ok: false, limitReached: false };
+      return { ok: true, project };
+    }
+    if (res.status === 403) {
+      const body = (await res.json().catch(() => null)) as { code?: string } | null;
+      return { ok: false, limitReached: body?.code === 'project_limit_reached' };
+    }
+    return { ok: false, limitReached: false };
+  } catch {
+    return { ok: false, limitReached: false };
+  }
 }

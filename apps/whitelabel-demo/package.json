@@ -8,7 +8,9 @@
     "dev": "next dev --port ${WHITELABEL_PORT:-3010}",
     "build": "next build",
     "start": "next start --port ${WHITELABEL_PORT:-3010}",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test tests/e2e",
+    "test:e2e": "bun test tests/e2e"
   },
   "dependencies": {
     "@kortix/sdk": "workspace:*",

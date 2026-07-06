@@ -44,7 +44,6 @@ interface UserDetails {
   user: {
     id: string;
     created_at: string;
-    billing_customers: Array<{ email: string }>;
     credit_accounts: Array<{
       balance: number;
       tier: string;
@@ -52,11 +51,6 @@ interface UserDetails {
       lifetime_purchased: number;
       lifetime_used: number;
       last_grant_date?: string;
-    }>;
-    billing_subscriptions: Array<{
-      status: string;
-      created: string;
-      current_period_end?: string;
     }>;
   };
   recent_activity: Array<{

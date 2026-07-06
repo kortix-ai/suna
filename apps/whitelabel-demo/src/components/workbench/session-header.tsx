@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions, qk } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
+import { isRuntimeReady } from '@kortix/sdk/session';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MoreVertical, Pencil, RotateCw, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -43,7 +44,7 @@ export function SessionHeader({ projectId, sessionId }: { projectId: string; ses
     refetchInterval: 15_000,
     retry: false,
   });
-  const ready = (health.data as any)?.ok && (health.data as any)?.health?.runtimeReady;
+  const ready = health.data?.ok && isRuntimeReady(health.data?.health ?? null);
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-5">

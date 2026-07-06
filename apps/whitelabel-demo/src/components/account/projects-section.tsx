@@ -18,7 +18,7 @@ export function ProjectsSection({ accountId }: { accountId: string }) {
     queryFn: () => kortix.projects.listForAccount(accountId),
   });
 
-  const items = (projects.data as any[]) ?? [];
+  const items = projects.data ?? [];
 
   return (
     <section className="space-y-3">

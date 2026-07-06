@@ -1,5 +1,9 @@
 import { type QueryClient } from '@tanstack/react-query';
-import type { Event as OpenCodeSdkEvent, Part } from '@opencode-ai/sdk/v2/client';
+import type {
+  Event as OpenCodeSdkEvent,
+  PermissionRequest,
+  QuestionRequest,
+} from '@opencode-ai/sdk/v2/client';
 import type { RefObject } from 'react';
 import {
   infoToast,
@@ -16,23 +20,25 @@ import { ptyKeys } from '../use-opencode-pty';
 import { type MessageWithParts, opencodeKeys, type Session } from '../use-opencode-sessions';
 import { applyPartDiagnostics } from './diagnostics';
 import {
+  asStringOrUndefined,
+  looksLikeAbortError,
   readSessionInfo,
   refetchKortixSessionMirrors,
   scheduleProjectMetadataRefetch,
 } from './helpers';
-import type { OpenCodeEvent } from './types';
+import type { NormalizeDiagnosticPaths, OpenCodeEvent } from './types';
 
 /** Builds the SSE event handler; all closure dependencies are injected. */
 export function createEventHandler(deps: {
   queryClient: QueryClient;
   client: ReturnType<typeof getClient>;
-  applySyncEvent: (event: any) => void;
+  applySyncEvent: (event: OpenCodeSdkEvent) => void;
   stopCompaction: (sessionID: string) => void;
-  addPermission: (req: any) => void;
+  addPermission: (req: PermissionRequest) => void;
   removePermission: (requestId: string) => void;
-  addQuestion: (req: any) => void;
+  addQuestion: (req: QuestionRequest) => void;
   removeQuestion: (requestId: string) => void;
-  normalizeDiagnosticPaths: RefObject<(diagsByFile: Record<string, any[]>) => Record<string, any[]>>;
+  normalizeDiagnosticPaths: RefObject<NormalizeDiagnosticPaths>;
   markSessionAbortedLocally: RefObject<(sessionID: string, message?: string) => void>;
   fetchLspDiagnosticsDebounced: RefObject<() => void>;
 }) {
@@ -52,12 +58,12 @@ export function createEventHandler(deps: {
 
   // Helper: look up a session title from the React Query cache for notifications
   function getSessionTitle(sessionID: string): string | undefined {
-    const sessions = queryClient.getQueryData<any[]>(opencodeKeys.sessions());
+    const sessions = queryClient.getQueryData<Session[]>(opencodeKeys.sessions());
     if (sessions) {
-      const s = sessions.find((s: any) => s.id === sessionID);
+      const s = sessions.find((s) => s.id === sessionID);
       if (s?.title) return s.title;
     }
-    const session = queryClient.getQueryData<any>(opencodeKeys.session(sessionID));
+    const session = queryClient.getQueryData<Session>(opencodeKeys.session(sessionID));
     return session?.title || undefined;
   }
 
@@ -65,6 +71,11 @@ export function createEventHandler(deps: {
     // Sync store is the SINGLE source of truth for messages & parts.
     // This matches OpenCode's architecture where the SolidJS store is
     // the only place message/part data lives.
+    //
+    // `event` also carries the frontend-synthesized `lsp.client.diagnostics`
+    // member (see `OpenCodeEvent`), which isn't a real wire event and doesn't
+    // match any `applyEvent` case (falls through to its `default`) — the
+    // assertion below just widens past that one extra union member.
     applySyncEvent(event as OpenCodeSdkEvent);
 
     switch (event.type) {
@@ -75,8 +86,7 @@ export function createEventHandler(deps: {
 
       case 'message.part.updated': {
         // Extract diagnostics from tool output and/or metadata
-        const part = (event.properties as any).part as Part;
-        applyPartDiagnostics(part, normalizeDiagnosticPaths);
+        applyPartDiagnostics(event.properties.part, normalizeDiagnosticPaths);
         break;
       }
 
@@ -164,7 +174,7 @@ export function createEventHandler(deps: {
       }
 
       case 'session.compacted': {
-        const sessionID = (event.properties as any).sessionID;
+        const sessionID = event.properties.sessionID;
         if (sessionID) {
           stopCompaction(sessionID);
           const client = getClient();
@@ -172,7 +182,7 @@ export function createEventHandler(deps: {
             .messages({ sessionID })
             .then((res) => {
               if (res.data) {
-                useSyncStore.getState().hydrate(sessionID, res.data as any);
+                useSyncStore.getState().hydrate(sessionID, res.data);
                 const s = useSyncStore.getState();
                 const msgs = s.messages[sessionID] ?? [];
                 if (msgs.length > 0) saveSessionToIDB(sessionID, msgs, s.parts);
@@ -185,7 +195,7 @@ export function createEventHandler(deps: {
             .get({ sessionID })
             .then((res) => {
               if (res.data) {
-                const session = res.data as Session;
+                const session = res.data;
                 queryClient.setQueryData(opencodeKeys.session(sessionID), session);
                 // Also update in session list
                 queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
@@ -205,7 +215,7 @@ export function createEventHandler(deps: {
 
       // ---- Session status ----
       case 'session.status': {
-        const { sessionID, status } = event.properties as any;
+        const { sessionID, status } = event.properties;
         if (sessionID && status) {
           // Detect busy/retry → idle transition BEFORE updating the store
           // (coalescing can drop intermediate busy events, so we check here)
@@ -223,7 +233,7 @@ export function createEventHandler(deps: {
       }
 
       case 'session.idle': {
-        const sessionID = (event.properties as any).sessionID;
+        const sessionID = event.properties.sessionID;
         if (sessionID) {
           const prevStatus = useSyncStore.getState().sessionStatus[sessionID];
           if (prevStatus && prevStatus.type !== 'idle') {
@@ -244,13 +254,18 @@ export function createEventHandler(deps: {
 
       // ---- Session errors ----
       case 'session.error': {
-        const props = event.properties as { sessionID?: string; error?: any };
+        const props = event.properties;
         if (props.sessionID && props.error) {
-          stopCompaction(props.sessionID);
+          const sessionID = props.sessionID;
+          const error = props.error;
+          stopCompaction(sessionID);
           // Fire browser notification
+          const rawMessage = error.data.message;
           const errorTitle =
-            props.error?.name || props.error?.data?.message || 'An error occurred';
-          notifySessionError(props.sessionID, errorTitle, getSessionTitle(props.sessionID));
+            error.name ||
+            (typeof rawMessage === 'string' ? rawMessage : undefined) ||
+            'An error occurred';
+          notifySessionError(sessionID, errorTitle, getSessionTitle(sessionID));
 
           // Patch the error onto the last assistant message in cache.
           // This is critical because:
@@ -258,18 +273,19 @@ export function createEventHandler(deps: {
           // 2. Some error paths (model-not-found, agent-not-found) never
           //    emit message.updated with .error at all
           // 3. Polling can race and overwrite the error from message.updated
-          const key = opencodeKeys.messages(props.sessionID);
+          const key = opencodeKeys.messages(sessionID);
           queryClient.cancelQueries({ queryKey: key });
           queryClient.setQueryData<MessageWithParts[]>(key, (old) => {
             if (!old || old.length === 0) return old;
             // Find the last assistant message and patch error onto it
             for (let i = old.length - 1; i >= 0; i--) {
-              if (old[i].info.role === 'assistant') {
-                if ((old[i].info as any).error) return old; // already has error
+              const info = old[i].info;
+              if (info.role === 'assistant') {
+                if (info.error) return old; // already has error
                 const updated = [...old];
                 updated[i] = {
                   ...old[i],
-                  info: { ...old[i].info, error: props.error } as any,
+                  info: { ...info, error },
                 };
                 return updated;
               }
@@ -288,28 +304,23 @@ export function createEventHandler(deps: {
           // may not have persisted the partial assistant response yet,
           // so hydrating would wipe the streamed content the user saw.
           // The error is already patched onto the message above.
-          const isAbortError =
-            props.error?.name === 'AbortError' ||
-            String(props.error?.data?.message || props.error?.message || '')
-              .toLowerCase()
-              .includes('abort');
-          const sid = props.sessionID;
+          const isAbortError = looksLikeAbortError(error);
           if (!isAbortError) {
             client.session
-              .messages({ sessionID: sid })
+              .messages({ sessionID })
               .then((res) => {
                 if (!res.data) return;
-                useSyncStore.getState().hydrate(sid, res.data as any);
-                useSyncStore.getState().clearOptimisticMessages(sid);
+                useSyncStore.getState().hydrate(sessionID, res.data);
+                useSyncStore.getState().clearOptimisticMessages(sessionID);
                 const s = useSyncStore.getState();
-                const msgs = s.messages[sid] ?? [];
-                if (msgs.length > 0) saveSessionToIDB(sid, msgs, s.parts);
+                const msgs = s.messages[sessionID] ?? [];
+                if (msgs.length > 0) saveSessionToIDB(sessionID, msgs, s.parts);
               })
               .catch(() => {});
           } else {
             // Still clear optimistic messages on abort — the real
             // user message should have arrived via SSE by now.
-            useSyncStore.getState().clearOptimisticMessages(sid);
+            useSyncStore.getState().clearOptimisticMessages(sessionID);
           }
         }
         break;
@@ -317,30 +328,36 @@ export function createEventHandler(deps: {
 
       // ---- Permissions ----
       case 'permission.asked': {
-        const props = event.properties as any;
+        const props = event.properties;
         if (props.id && props.sessionID) {
           addPermission(props);
-          // Fire browser notification for permission requests
-          const toolName = props.tool || props.type || 'a tool';
+          // Fire browser notification for permission requests. `tool` (when
+          // present) is `{messageID, callID}`, not a name — some historical
+          // wire shapes carried a bare string `type` field instead, which the
+          // current SDK types no longer declare. Duck-type both defensively
+          // rather than assume either is a string.
+          const rawProps: { tool?: unknown; type?: unknown } = props;
+          const toolName =
+            asStringOrUndefined(rawProps.tool) ?? asStringOrUndefined(rawProps.type) ?? 'a tool';
           notifyPermissionRequest(props.sessionID, toolName, getSessionTitle(props.sessionID));
         }
         break;
       }
       case 'permission.replied': {
-        const requestID = (event.properties as any).requestID;
+        const requestID = event.properties.requestID;
         if (requestID) removePermission(requestID);
         break;
       }
 
       // ---- Questions ----
       case 'question.asked': {
-        const props = event.properties as any;
+        const props = event.properties;
         if (props.id && props.sessionID) {
           addQuestion(props);
           // Fire browser notification for questions needing user input
           const questionText =
-            props.questions?.[0]?.question ||
-            props.questions?.[0]?.header ||
+            props.questions[0]?.question ||
+            props.questions[0]?.header ||
             'Kortix needs your input';
           notifyQuestion(props.sessionID, questionText, getSessionTitle(props.sessionID));
         }
@@ -348,14 +365,14 @@ export function createEventHandler(deps: {
       }
       case 'question.replied':
       case 'question.rejected': {
-        const requestID = (event.properties as any).requestID;
+        const requestID = event.properties.requestID;
         if (requestID) removeQuestion(requestID);
         break;
       }
 
       // ---- Session diff ----
       case 'session.diff': {
-        const props = event.properties as { sessionID: string; diff: any[] };
+        const props = event.properties;
         if (props.sessionID) {
           queryClient.setQueryData(['opencode', 'session-diff', props.sessionID], props.diff);
         }
@@ -364,7 +381,7 @@ export function createEventHandler(deps: {
 
       // ---- Todo updated ----
       case 'todo.updated': {
-        const props = event.properties as { sessionID: string; todos: any[] };
+        const props = event.properties;
         if (props.sessionID) {
           queryClient.setQueryData(['opencode', 'session-todo', props.sessionID], props.todos);
         }
@@ -373,7 +390,7 @@ export function createEventHandler(deps: {
 
       // ---- VCS branch ----
       case 'vcs.branch.updated': {
-        const props = event.properties as { branch: string };
+        const props = event.properties;
         queryClient.setQueryData(['opencode', 'vcs'], {
           branch: props.branch,
         });
@@ -462,7 +479,7 @@ export function createEventHandler(deps: {
 
       // ---- File edited (outside agent, e.g. user edits in editor) ----
       case 'file.edited': {
-        const fileProps = event.properties as { file?: string };
+        const fileProps = event.properties;
         queryClient.invalidateQueries({ queryKey: fileListKeys.all, type: 'active' });
         queryClient.invalidateQueries({ queryKey: gitStatusKeys.all, type: 'active' });
         if (fileProps.file) {
@@ -473,7 +490,7 @@ export function createEventHandler(deps: {
 
       // ---- Installation events ----
       case 'installation.updated': {
-        const installProps = event.properties as { version?: string };
+        const installProps = event.properties;
         const versionStr = installProps.version ? ` (v${installProps.version})` : '';
         infoToast(`Installation updated${versionStr}. Restart to apply changes.`, {
           duration: 10_000,
@@ -482,7 +499,7 @@ export function createEventHandler(deps: {
       }
 
       case 'installation.update-available': {
-        const updateProps = event.properties as { version?: string };
+        const updateProps = event.properties;
         const versionLabel = updateProps.version ? `v${updateProps.version}` : 'A new version';
         infoToast(`${versionLabel} is available. Update when you're ready.`, {
           duration: 15_000,

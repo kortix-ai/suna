@@ -19,6 +19,10 @@ export interface ChannelSelection {
 export interface ChannelCtx {
   teamId: string;
   channelId: string;
+  /** Defaults to 'slack' — every existing call site is Slack-only. The web
+   *  Channels API (routes/channel-bindings.ts) passes the binding's own
+   *  platform so these setters stay reusable without duplicating the queries. */
+  platform?: string;
 }
 
 /** The channel's bound project + its agent/model overrides, or null if unbound. */
@@ -35,7 +39,7 @@ export async function currentChannelSelection(ctx: ChannelCtx): Promise<ChannelS
       })
       .from(chatChannelBindings)
       .where(and(
-        eq(chatChannelBindings.platform, 'slack'),
+        eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
         eq(chatChannelBindings.workspaceId, ctx.teamId),
         eq(chatChannelBindings.channelId, ctx.channelId),
       ))
@@ -62,7 +66,7 @@ export async function setChannelConversationPolicy(ctx: ChannelCtx, conversation
       .update(chatChannelBindings)
       .set({ conversationPolicy })
       .where(and(
-        eq(chatChannelBindings.platform, 'slack'),
+        eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
         eq(chatChannelBindings.workspaceId, ctx.teamId),
         eq(chatChannelBindings.channelId, ctx.channelId),
       ))
@@ -75,28 +79,50 @@ export async function setChannelConversationPolicy(ctx: ChannelCtx, conversation
   }
 }
 
+export type SetChannelAgentResult =
+  | { ok: true }
+  | { ok: false; reason: 'no_binding' }
+  | { ok: false; reason: 'unknown_agent' };
+
 /**
  * Update the channel binding's agent (null clears the override → 'default').
- * Returns false when the channel has no binding to update — the caller tells
- * the user to bind a project first.
+ * `no_binding` means the channel has no binding to update — the caller tells
+ * the user to bind a project first. `unknown_agent` means the project has
+ * adopted `[[agents]]` (declarative governance) and `agentName` doesn't match
+ * any declared agent — enforced HERE, not left to individual callers, so the
+ * check can't be bypassed by a caller that forgets to validate (this is the
+ * same catalog check `PATCH /channels/bindings` runs via
+ * `loadProjectAgentGovernance`).
  */
-export async function setChannelAgent(ctx: ChannelCtx, agentName: string | null): Promise<boolean> {
-  if (!ctx.channelId) return false;
+export async function setChannelAgent(
+  ctx: ChannelCtx,
+  agentName: string | null,
+): Promise<SetChannelAgentResult> {
+  if (!ctx.channelId) return { ok: false, reason: 'no_binding' };
+  if (agentName !== null) {
+    const projectId = await currentChannelProjectId(ctx);
+    if (projectId) {
+      const governance = await loadProjectAgentGovernance(projectId);
+      if (governance.declared && !governance.agents.some((a) => a.name === agentName)) {
+        return { ok: false, reason: 'unknown_agent' };
+      }
+    }
+  }
   try {
     const rows = await db
       .update(chatChannelBindings)
       .set({ agentName })
       .where(and(
-        eq(chatChannelBindings.platform, 'slack'),
+        eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
         eq(chatChannelBindings.workspaceId, ctx.teamId),
         eq(chatChannelBindings.channelId, ctx.channelId),
       ))
       .returning({ id: chatChannelBindings.bindingId });
-    return rows.length > 0;
+    return rows.length > 0 ? { ok: true } : { ok: false, reason: 'no_binding' };
   } catch (err) {
     if (!isMissingSelectionColumnError(err)) throw err;
     console.warn('[slack-selection] agent override column missing; ignoring channel override update');
-    return false;
+    return { ok: false, reason: 'no_binding' };
   }
 }
 
@@ -108,7 +134,7 @@ export async function setChannelModel(ctx: ChannelCtx, opencodeModel: string | n
       .update(chatChannelBindings)
       .set({ opencodeModel })
       .where(and(
-        eq(chatChannelBindings.platform, 'slack'),
+        eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
         eq(chatChannelBindings.workspaceId, ctx.teamId),
         eq(chatChannelBindings.channelId, ctx.channelId),
       ))
@@ -126,7 +152,7 @@ async function currentChannelProjectId(ctx: ChannelCtx): Promise<string | null> 
     .select({ projectId: chatChannelBindings.projectId })
     .from(chatChannelBindings)
     .where(and(
-      eq(chatChannelBindings.platform, 'slack'),
+      eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
       eq(chatChannelBindings.workspaceId, ctx.teamId),
       eq(chatChannelBindings.channelId, ctx.channelId),
     ))
@@ -153,19 +179,33 @@ export interface ProjectAgent {
   mode: string | null;
 }
 
+export interface ProjectAgentGovernance {
+  agents: ProjectAgent[];
+  /**
+   * True when the project has adopted `kortix.toml [[agents]]` — the listed
+   * names are ENFORCED (an undeclared name isn't a real launchable agent), not
+   * merely discovered from `.kortix/opencode/agents/*.md`. Mirrors
+   * `ProjectConfigSummary.agent_discovery === 'declarative'`. Callers that
+   * validate a channel-binding's `agentName` against the catalog should only
+   * reject unknown names when this is true — a legacy (undeclared) project
+   * has no fixed catalog to validate against.
+   */
+  declared: boolean;
+}
+
 /**
  * The project's launchable agents from the server-side config summary:
  * declarative `kortix.toml [[agents]]` for adopted projects, OpenCode markdown
  * discovery for legacy projects. Touches git, so callers must use the async
  * slash response path (response_url) to stay inside Slack's 3s window.
  */
-export async function listProjectAgents(projectId: string): Promise<ProjectAgent[]> {
+export async function loadProjectAgentGovernance(projectId: string): Promise<ProjectAgentGovernance> {
   const [row] = await db
     .select()
     .from(projects)
     .where(eq(projects.projectId, projectId))
     .limit(1);
-  if (!row) return [];
+  if (!row) return { agents: [], declared: false };
   const gitProject = await withProjectGitAuth(row);
   let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
   try {
@@ -174,11 +214,83 @@ export async function listProjectAgents(projectId: string): Promise<ProjectAgent
     // Repo unreachable — fall back to whatever loadProjectConfig can infer.
   }
   const config = await loadProjectConfig(gitProject, files);
-  return config.agents.map((a) => ({
-    name: a.name,
-    description: a.description ?? null,
-    mode: a.mode ?? null,
-  }));
+  return {
+    agents: config.agents.map((a) => ({
+      name: a.name,
+      description: a.description ?? null,
+      mode: a.mode ?? null,
+    })),
+    declared: config.agent_discovery === 'declarative',
+  };
+}
+
+/** Back-compat convenience wrapper — just the agent list, no governance flag. */
+export async function listProjectAgents(projectId: string): Promise<ProjectAgent[]> {
+  return (await loadProjectAgentGovernance(projectId)).agents;
+}
+
+export interface ChannelBindingRow {
+  bindingId: string;
+  projectId: string;
+  platform: string;
+  workspaceId: string;
+  channelId: string;
+  channelName: string | null;
+  channelType: string | null;
+  agentName: string | null;
+  opencodeModel: string | null;
+  conversationPolicy: string;
+  installedAt: Date;
+}
+
+/** Every channel bound to a project — the web Channels surface's list source. */
+export async function listChannelBindingsForProject(projectId: string): Promise<ChannelBindingRow[]> {
+  const rows = await db
+    .select({
+      bindingId: chatChannelBindings.bindingId,
+      projectId: chatChannelBindings.projectId,
+      platform: chatChannelBindings.platform,
+      workspaceId: chatChannelBindings.workspaceId,
+      channelId: chatChannelBindings.channelId,
+      channelName: chatChannelBindings.channelName,
+      channelType: chatChannelBindings.channelType,
+      agentName: chatChannelBindings.agentName,
+      opencodeModel: chatChannelBindings.opencodeModel,
+      conversationPolicy: chatChannelBindings.conversationPolicy,
+      installedAt: chatChannelBindings.installedAt,
+    })
+    .from(chatChannelBindings)
+    .where(eq(chatChannelBindings.projectId, projectId))
+    .orderBy(chatChannelBindings.installedAt);
+  // `project_id` is nullable at the column level (unbound rows can exist
+  // transiently) but this query filters on it, so every row has one.
+  return rows.filter((r): r is ChannelBindingRow => Boolean(r.projectId));
+}
+
+/** A single binding scoped to a project — 404 surface for the PATCH route. */
+export async function getChannelBindingById(
+  projectId: string,
+  bindingId: string,
+): Promise<ChannelBindingRow | null> {
+  const [row] = await db
+    .select({
+      bindingId: chatChannelBindings.bindingId,
+      projectId: chatChannelBindings.projectId,
+      platform: chatChannelBindings.platform,
+      workspaceId: chatChannelBindings.workspaceId,
+      channelId: chatChannelBindings.channelId,
+      channelName: chatChannelBindings.channelName,
+      channelType: chatChannelBindings.channelType,
+      agentName: chatChannelBindings.agentName,
+      opencodeModel: chatChannelBindings.opencodeModel,
+      conversationPolicy: chatChannelBindings.conversationPolicy,
+      installedAt: chatChannelBindings.installedAt,
+    })
+    .from(chatChannelBindings)
+    .where(and(eq(chatChannelBindings.projectId, projectId), eq(chatChannelBindings.bindingId, bindingId)))
+    .limit(1);
+  if (!row?.projectId) return null;
+  return row as ChannelBindingRow;
 }
 
 /**

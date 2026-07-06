@@ -203,6 +203,13 @@ export default function AccountSettingsPage() {
   const accountStateQuery = useAccountState({ accountId, enabled: !!user && !!accountId });
   const entitlements = accountStateQuery.data?.tier?.entitlements;
   const enterpriseIdentityEnabled = !!(entitlements?.sso || entitlements?.scim);
+  // Groups/Roles/Policies stay visible for discoverability (unlike SSO/SCIM,
+  // which are hidden outright) but their create/grow actions are gated on
+  // this flag — mirrors the server's 402 (see requireEntitlement, 'rbac') so
+  // an admin never submits a create that the backend will reject. Reads,
+  // revokes, and deletes are deliberately left ungated server-side and stay
+  // fully functional regardless of this flag.
+  const rbacEnabled = !!entitlements?.rbac;
 
   // Granular capabilities sourced from the IAM engine. MUST be called
   // before any conditional return — moving these below the auth-loading
@@ -366,12 +373,20 @@ export default function AccountSettingsPage() {
             </TabsContent>
 
             <TabsContent value="groups" className="space-y-6">
-              <GroupsTab accountId={account.account_id} canCreate={canCreateGroup} />
+              <GroupsTab
+                accountId={account.account_id}
+                canCreate={canCreateGroup}
+                rbacEnabled={rbacEnabled}
+              />
             </TabsContent>
 
             {canManageRoles && (
               <TabsContent value="roles" className="space-y-6">
-                <RolesTab accountId={account.account_id} canManage={canManageRoles} />
+                <RolesTab
+                  accountId={account.account_id}
+                  canManage={canManageRoles}
+                  rbacEnabled={rbacEnabled}
+                />
               </TabsContent>
             )}
 
@@ -437,28 +452,33 @@ export default function AccountSettingsPage() {
                 </SettingsGroup>
 
                 {/* ── Identity & directory ─────────────────────── */}
-                {/* SAML SSO + SCIM are Enterprise-plan features. The cards
-                    render only when the account's tier carries the
-                    entitlement (sales-assigned `enterprise` tier); the
-                    SCIM/SSO API routes enforce the same gate server-side
-                    (402 for non-entitled accounts). */}
-                {enterpriseIdentityEnabled && (
-                  <SettingsGroup
-                    title={tI18nHardcoded.raw(
-                      'autoAppAppAccountsIdPageJsxAttrTitleIdentityDirectory6089983a',
-                    )}
-                    description={tI18nHardcoded.raw(
-                      'autoAppAppAccountsIdPageJsxAttrDescriptionBringMembersa0baf40c',
-                    )}
-                  >
-                    <EnterpriseDemoCard
-                      accountId={account.account_id}
-                      canManage={canWriteAccount}
-                    />
-                    <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
-                    <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
-                  </SettingsGroup>
-                )}
+                {/* The enterprise-demo toggle is ALWAYS shown to account admins
+                    so they can unlock the surface self-serve. SAML SSO + SCIM
+                    are Enterprise features and only render once the entitlement
+                    is on (the demo flag OR a real enterprise tier); their API
+                    routes enforce the same gate server-side (402 for non-entitled
+                    accounts). Keeping the toggle OUTSIDE the entitlement gate
+                    avoids a chicken-and-egg where the enabler is hidden behind
+                    the very thing it enables. */}
+                <SettingsGroup
+                  title={tI18nHardcoded.raw(
+                    'autoAppAppAccountsIdPageJsxAttrTitleIdentityDirectory6089983a',
+                  )}
+                  description={tI18nHardcoded.raw(
+                    'autoAppAppAccountsIdPageJsxAttrDescriptionBringMembersa0baf40c',
+                  )}
+                >
+                  <EnterpriseDemoCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                  {enterpriseIdentityEnabled && (
+                    <>
+                      <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
+                      <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
+                    </>
+                  )}
+                </SettingsGroup>
 
                 {/* ── Tokens & automation ──────────────────────── */}
                 <SettingsGroup

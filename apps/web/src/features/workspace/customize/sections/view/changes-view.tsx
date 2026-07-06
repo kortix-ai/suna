@@ -24,13 +24,13 @@ import { useCommits } from '@/features/project-files/hooks/use-commits';
 import { getProject, type ProjectCommit } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import {
+  Check,
+  CheckCircleSolid,
   ChevronRight,
-  GitMerge,
-  GitMergeSolid,
-  GitPullRequest,
   Refresh,
   XCircleSolid,
 } from '@mynaui/icons-react';
+import { FileDiff, History } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useMemo, useState } from 'react';
@@ -63,9 +63,9 @@ function relIso(iso: string | null | undefined): string {
 }
 
 function crStatusLabel(cr: ChangeRequest): string {
-  if (cr.status === 'merged' && cr.merged_at) return `merged ${relIso(cr.merged_at)}`;
-  if (cr.status === 'closed' && cr.closed_at) return `closed ${relIso(cr.closed_at)}`;
-  return `opened ${relIso(cr.created_at)}`;
+  if (cr.status === 'merged' && cr.merged_at) return `applied ${relIso(cr.merged_at)}`;
+  if (cr.status === 'closed' && cr.closed_at) return `dismissed ${relIso(cr.closed_at)}`;
+  return `proposed ${relIso(cr.created_at)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ function CheckpointRow({
         className="group hover:bg-muted/40 active:bg-muted/50 flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors"
       >
         <span className="bg-kortix-blue/15 flex size-9 shrink-0 items-center justify-center rounded-sm">
-          <GitPullRequest className="text-kortix-blue size-5" />
+          <History className="text-kortix-blue size-5" />
         </span>
 
         <span className="min-w-0 flex-1">
@@ -118,8 +118,6 @@ function CheckpointRow({
             </span>
             <span className="text-muted-foreground/40">&bull;</span>
             <span className="shrink-0">{relCommit(commit)}</span>
-            <span className="text-muted-foreground/40">&bull;</span>
-            <span className="shrink-0 font-mono tabular-nums">{commit.short_hash}</span>
           </span>
         </span>
 
@@ -141,22 +139,17 @@ function ChangeRequestRow({ cr, onOpen }: { cr: ChangeRequest; onOpen: (crId: st
 
   const onMerge = () =>
     merge.mutate(cr.cr_id, {
-      onSuccess: (res) =>
-        successToast(
-          res.merge.fast_forward
-            ? 'Merged (fast-forward)'
-            : `Merged ${res.merge.merge_commit_sha.slice(0, 7)}`,
-        ),
+      onSuccess: () => successToast('Changes applied'),
       onError: (err) => errorToast(err.message),
     });
   const onClose = () =>
     close.mutate(cr.cr_id, {
-      onSuccess: () => successToast('Change request rejected'),
+      onSuccess: () => successToast('Proposed change dismissed'),
       onError: (err) => errorToast(err.message),
     });
   const onReopen = () =>
     reopen.mutate(cr.cr_id, {
-      onSuccess: () => successToast('Change request reopened'),
+      onSuccess: () => successToast('Proposed change reopened'),
       onError: (err) => errorToast(err.message),
     });
 
@@ -173,11 +166,11 @@ function ChangeRequestRow({ cr, onOpen }: { cr: ChangeRequest; onOpen: (crId: st
         )}
       >
         {cr.status === 'merged' ? (
-          <GitMergeSolid className="text-kortix-green size-5" />
+          <CheckCircleSolid className="text-kortix-green size-5" />
         ) : cr.status === 'closed' ? (
           <XCircleSolid className="text-kortix-red size-5" />
         ) : (
-          <GitPullRequest className="text-kortix-blue size-5" />
+          <FileDiff className="text-kortix-blue size-5" />
         )}
       </span>
 
@@ -187,24 +180,23 @@ function ChangeRequestRow({ cr, onOpen }: { cr: ChangeRequest; onOpen: (crId: st
           <span className="text-foreground truncate text-sm font-medium">{cr.title}</span>
         </span>
         <span className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
-          <span className="max-w-[140px] truncate">{cr.head_ref}</span>
-          <span className="text-muted-foreground/40">&rarr;</span>
+          <span className="shrink-0">{crStatusLabel(cr)}</span>
+          <span className="text-muted-foreground/40">&bull;</span>
+          <span className="shrink-0">into</span>
           <Badge variant="kortix" size="xs">
             {cr.base_ref}
           </Badge>
-          <span className="text-muted-foreground/40">&bull;</span>
-          <span className="shrink-0">{crStatusLabel(cr)}</span>
         </span>
       </button>
 
       {cr.status === 'open' && (
         <div className="flex shrink-0 items-center gap-2">
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
-            Reject
+            Dismiss
           </Button>
           <Button size="sm" onClick={onMerge} disabled={busy}>
-            {busy ? <Loading className="size-3.5 shrink-0" /> : <GitMerge className="size-3.5" />}
-            Merge
+            {busy ? <Loading className="size-3.5 shrink-0" /> : <Check className="size-3.5" />}
+            Apply
           </Button>
         </div>
       )}
@@ -314,8 +306,8 @@ function ChangesTimeline({
 
   return (
     <CustomizeSectionWrapper
-      title="Checkpoint"
-      description="Review open change requests and browse every checkpoint your agents saved."
+      title="Changes"
+      description="Review changes your agents propose and browse every version they saved."
       action={hasContent ? refresh : undefined}
     >
       {loading ? (
@@ -347,18 +339,18 @@ function ChangesTimeline({
         />
       ) : !hasContent ? (
         <EmptyState
-          icon={GitPullRequest}
+          icon={FileDiff}
           size="sm"
           title="No changes yet"
-          description="When a session opens a change request or your agents save work, it shows up here."
+          description="When your agents save work or propose changes, it shows up here."
         />
       ) : (
         <div className="space-y-6">
           {(commitsFailed || crsFailed) && (
             <ErrorState
               size="sm"
-              title={commitsFailed ? "Couldn't load checkpoints" : "Couldn't load change requests"}
-              description="Showing what loaded — retry to refresh."
+              title={commitsFailed ? "Couldn't load version history" : "Couldn't load proposed changes"}
+              description="Showing what loaded. Retry to refresh."
               action={
                 <Button
                   variant="outline"
@@ -396,7 +388,7 @@ function ChangesTimeline({
           ))}
           {commitsQuery.data?.hasMore && (
             <p className="text-muted-foreground/60 px-1 text-xs">
-              Showing the {commits.length} most recent checkpoints.
+              Showing the {commits.length} most recent versions.
             </p>
           )}
         </div>

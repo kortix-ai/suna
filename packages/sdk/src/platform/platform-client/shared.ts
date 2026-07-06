@@ -8,6 +8,7 @@
 
 import { authenticatedFetch } from '../auth';
 import { platformConfig } from '../config';
+import { ApiError, parseBillingError } from '../api/errors';
 import {
   listProjectSessions,
   listProjects,
@@ -78,7 +79,11 @@ export const LOCAL_PLATFORM_CANDIDATES = [
 ];
 
 export function getLocalBridgeStatusUrl(baseUrl: string): string {
-  return `${baseUrl.replace(/\/+$/, '')}/platform/local-bridge/status`;
+  // Linear trailing-slash strip — the regex form (/\/+$/) backtracks
+  // quadratically on adversarial input (CodeQL js/polynomial-redos).
+  let end = baseUrl.length;
+  while (end > 0 && baseUrl.charCodeAt(end - 1) === 47 /* '/' */) end--;
+  return `${baseUrl.slice(0, end)}/platform/local-bridge/status`;
 }
 
 function normalizeSessionStatus(status: string | undefined): string {
@@ -99,7 +104,7 @@ export function projectSessionToSandboxInfo(
     sandbox_id: runtime?.sandbox_id || session.sandbox_id || session.session_id,
     external_id: externalId,
     name: session.name || `${project.name} session`,
-    provider: (runtime?.provider as SandboxProviderName | null) || (session.sandbox_provider as SandboxProviderName | null) || 'daytona',
+    provider: (runtime?.provider as SandboxProviderName | null) || (session.sandbox_provider as SandboxProviderName | null) || 'managed',
     base_url: runtime?.base_url || session.sandbox_url || (runtime?.external_id ? `${getPlatformUrl()}/p/${runtime.external_id}/${SANDBOX_PORTS.KORTIX_MASTER}` : ''),
     status: normalizeSessionStatus(runtime?.status || session.status),
     metadata: {
@@ -180,15 +185,46 @@ export async function platformFetch<T>(
     ...options.headers as Record<string, string>,
   };
 
+  // Default 30s timeout for this (non-streaming, request/response JSON) call —
+  // callers that need a different budget (or none) pass their own `signal`.
+  const signal = options.signal ?? AbortSignal.timeout(30_000);
+
   const res = await authenticatedFetch(`${getPlatformUrl()}${path}`, {
     ...options,
     headers,
+    signal,
   });
 
-  const body = await res.json();
+  // Defensively parse the body: a non-JSON error body (proxy/gateway HTML, an
+  // empty response, a truncated stream) used to throw an opaque SyntaxError
+  // out of `res.json()` here, masking the real HTTP failure. Read the body
+  // ONCE as text, then attempt to JSON-parse that string — reading text
+  // first (rather than trying `res.json()` and falling back to `res.text()`
+  // on failure) avoids a "body already used" error on the fallback read,
+  // since a `Response` body can only be consumed once.
+  const rawText = await res.text().catch(() => undefined);
+  let body: any;
+  if (rawText) {
+    try {
+      body = JSON.parse(rawText);
+    } catch {
+      /* not JSON — leave body undefined, rawText still available below */
+    }
+  }
 
   if (!res.ok) {
-    throw new Error(body?.error || body?.message || `Platform API error ${res.status}`);
+    const message = body?.error || body?.message || body?.detail || rawText || `Platform API error ${res.status}`;
+    let error: Error = new ApiError(message, {
+      status: res.status,
+      code: body?.code || body?.error_code || String(res.status),
+      details: body ?? (rawText ? { rawText } : undefined),
+      response: res,
+      endpoint: path,
+    });
+    if (res.status === 402) {
+      error = parseBillingError(Object.assign(error, { response: res, status: res.status, data: body }));
+    }
+    throw error;
   }
 
   return body as PlatformResponse<T>;

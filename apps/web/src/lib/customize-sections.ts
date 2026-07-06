@@ -10,6 +10,7 @@
 
 export type CustomizeSection =
   | 'changes'
+  | 'review'
   | 'files'
   | 'skills'
   | 'agents'
@@ -31,12 +32,14 @@ export type CustomizeSection =
   | 'meet'
   | 'sandbox'
   | 'dev'
-  | 'settings';
+  | 'settings'
+  | 'upgrade';
 
 export const DEFAULT_CUSTOMIZE_SECTION: CustomizeSection = 'files';
 
 export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'changes',
+  'review',
   'files',
   'skills',
   'agents',
@@ -59,11 +62,10 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'sandbox',
   'dev',
   'settings',
+  'upgrade',
 ];
 
 export function parseCustomizeSection(raw: string | null | undefined): CustomizeSection | null {
   if (!raw) return null;
-  return (CUSTOMIZE_SECTIONS as readonly string[]).includes(raw)
-    ? (raw as CustomizeSection)
-    : null;
+  return (CUSTOMIZE_SECTIONS as readonly string[]).includes(raw) ? (raw as CustomizeSection) : null;
 }
