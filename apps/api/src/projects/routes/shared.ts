@@ -296,6 +296,8 @@ export function sessionRuntimeUrlPath(externalId: string): string {
 
 const STALE_PENDING_PROVISIONING_MS = 10 * 60 * 1000;
 const STALE_STARTED_PROVISIONING_MS = 5 * 60 * 1000;
+const STALE_RUNTIME_WAKE_MS = 90 * 1000;
+const STALE_OPENCODE_READY_MS = 5 * 60 * 1000;
 
 function parseTimestampMs(value: unknown): number | null {
   if (value instanceof Date) return value.getTime();
@@ -331,6 +333,128 @@ function staleProvisioningReason(
   }
 
   return null;
+}
+
+function sandboxMetadata(
+  row: typeof sessionSandboxes.$inferSelect,
+): Record<string, unknown> {
+  return row.metadata && typeof row.metadata === 'object'
+    ? (row.metadata as Record<string, unknown>)
+    : {};
+}
+
+function staleRuntimeWakeReason(
+  row: typeof sessionSandboxes.$inferSelect,
+  providerStatus: SandboxStatus,
+  nowMs = Date.now(),
+): string | null {
+  if (row.status !== 'active' || !row.externalId) return null;
+  if (providerStatus === 'running' || providerStatus === 'removed') return null;
+  const metadata = sandboxMetadata(row);
+  const wakeStartedAtMs = parseTimestampMs(metadata.runtimeWakeStartedAt);
+  if (wakeStartedAtMs && nowMs - wakeStartedAtMs > STALE_RUNTIME_WAKE_MS) {
+    return providerStatus === 'stopped'
+      ? 'runtime_wake_timeout'
+      : 'runtime_status_unknown_timeout';
+  }
+
+  // Existing bad rows predate runtimeWakeStartedAt. If the provider status is
+  // unknown long after provider create succeeded, stop returning retriable
+  // "starting" forever and replace the runtime on this open.
+  const initSucceededAtMs = parseTimestampMs(metadata.initSucceededAt);
+  if (
+    !wakeStartedAtMs &&
+    providerStatus === 'unknown' &&
+    initSucceededAtMs &&
+    nowMs - initSucceededAtMs > STALE_RUNTIME_WAKE_MS
+  ) {
+    return 'runtime_status_unknown_timeout';
+  }
+  return null;
+}
+
+function staleOpencodeReadyReason(
+  row: typeof sessionSandboxes.$inferSelect,
+  reason: string,
+  nowMs = Date.now(),
+): string | null {
+  if (reason !== 'not_ready' && reason !== 'unreachable') return null;
+  const metadata = sandboxMetadata(row);
+  const readyWaitStartedAtMs = parseTimestampMs(
+    metadata.opencodeReadyWaitStartedAt,
+  );
+  if (
+    readyWaitStartedAtMs &&
+    nowMs - readyWaitStartedAtMs > STALE_OPENCODE_READY_MS
+  ) {
+    return reason === 'not_ready'
+      ? 'runtime_not_ready_timeout'
+      : 'runtime_unreachable_timeout';
+  }
+
+  const initSucceededAtMs = parseTimestampMs(metadata.initSucceededAt);
+  if (
+    !readyWaitStartedAtMs &&
+    initSucceededAtMs &&
+    nowMs - initSucceededAtMs > STALE_OPENCODE_READY_MS
+  ) {
+    return reason === 'not_ready'
+      ? 'runtime_not_ready_timeout'
+      : 'runtime_unreachable_timeout';
+  }
+  return null;
+}
+
+async function markRuntimeWakeStarted(
+  row: typeof sessionSandboxes.$inferSelect,
+  providerStatus: SandboxStatus,
+): Promise<void> {
+  const metadata = sandboxMetadata(row);
+  if (typeof metadata.runtimeWakeStartedAt === 'string') return;
+  try {
+    await db
+      .update(sessionSandboxes)
+      .set({
+        metadata: {
+          ...metadata,
+          runtimeWakeStartedAt: new Date().toISOString(),
+          runtimeWakeProviderStatus: providerStatus,
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+  } catch (err) {
+    console.warn(
+      `[start] failed to mark runtime wake for ${row.sandboxId}:`,
+      err,
+    );
+  }
+}
+
+async function markOpencodeReadyWaitStarted(
+  row: typeof sessionSandboxes.$inferSelect,
+  reason: string,
+): Promise<void> {
+  const metadata = sandboxMetadata(row);
+  if (typeof metadata.opencodeReadyWaitStartedAt === 'string') return;
+  try {
+    await db
+      .update(sessionSandboxes)
+      .set({
+        metadata: {
+          ...metadata,
+          opencodeReadyWaitStartedAt: new Date().toISOString(),
+          opencodeReadyWaitReason: reason,
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+  } catch (err) {
+    console.warn(
+      `[start] failed to mark OpenCode wait for ${row.sandboxId}:`,
+      err,
+    );
+  }
 }
 
 export function isMissingRuntimeError(error: unknown): boolean {
@@ -589,6 +713,18 @@ export async function openSession(args: {
   }
 
   if (providerStatus !== 'running') {
+    const staleWake = staleRuntimeWakeReason(row, providerStatus);
+    if (staleWake) {
+      return replaceStaleRuntimeOnOpen(
+        loaded,
+        visible,
+        projectId,
+        sessionId,
+        row,
+        staleWake,
+      );
+    }
+    await markRuntimeWakeStarted(row, providerStatus);
     // Idle auto-stop: kick the start in the background; the client keeps polling.
     void provider.start(row.externalId).catch(async (err) => {
       console.warn(
@@ -641,6 +777,20 @@ export async function openSession(args: {
   });
   const booting =
     ensured.reason === 'not_ready' || ensured.reason === 'unreachable';
+  if (booting) {
+    const staleBoot = staleOpencodeReadyReason(row, ensured.reason);
+    if (staleBoot) {
+      return replaceStaleRuntimeOnOpen(
+        loaded,
+        visible,
+        projectId,
+        sessionId,
+        row,
+        staleBoot,
+      );
+    }
+    await markOpencodeReadyWaitStarted(row, ensured.reason);
+  }
   return {
     stage: booting ? 'starting' : 'ready',
     agent_name: visible.row.agentName ?? 'default',

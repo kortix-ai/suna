@@ -22,11 +22,11 @@ mock.module('../../config', () => ({
 
 mock.module('../../shared/db', () => ({ db: {} }));
 
-let hangForever: () => Promise<never>;
+let getDaytonaSandbox: (_externalId: string) => Promise<unknown>;
 
 mock.module('../../shared/daytona', () => ({
   getDaytona: () => ({
-    get: (_externalId: string) => hangForever(),
+    get: (externalId: string) => getDaytonaSandbox(externalId),
   }),
   // Disk-quota-guard deps (fix(sandbox) #4072) — only referenced by
   // create()/start(), not by getStatus() under test here, but imported at
@@ -53,7 +53,7 @@ beforeEach(() => {
   // Below the code's own 1000ms floor (Math.max(1000, …)) would just get
   // clamped up — use a value comfortably above it.
   process.env.KORTIX_DAYTONA_CALL_TIMEOUT_MS = '1200';
-  hangForever = () => new Promise<never>(() => {});
+  getDaytonaSandbox = () => new Promise<never>(() => {});
 });
 
 test('getStatus() gives up on a hung Daytona call instead of hanging forever', async () => {
@@ -69,4 +69,18 @@ test('getStatus() gives up on a hung Daytona call instead of hanging forever', a
   // bounded, instead of hanging on the SDK's 24h-class default.
   expect(status).toBe('unknown');
   expect(elapsed).toBeLessThan(5_000);
+});
+
+test('getStatus() reports missing Daytona sandboxes as removed', async () => {
+  getDaytonaSandbox = async () => {
+    const err = new Error('sandbox not found');
+    (err as { status?: number; code?: string }).status = 404;
+    (err as { status?: number; code?: string }).code = 'not_found';
+    throw err;
+  };
+
+  const { DaytonaProvider } = await import('./daytona');
+  const provider = new DaytonaProvider();
+
+  await expect(provider.getStatus('sbx_missing')).resolves.toBe('removed');
 });

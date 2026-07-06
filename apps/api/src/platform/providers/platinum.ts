@@ -35,6 +35,27 @@ interface PlatinumSandbox {
 }
 type PlatinumExposedPort = { port: number; url: string; token?: string; public: boolean };
 
+function isMissingSandboxError(error: unknown): boolean {
+  const err = error as
+    | { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown }
+    | null
+    | undefined;
+  if (err?.status === 404 || err?.statusCode === 404) return true;
+  const code = typeof err?.code === 'string' ? err.code.toLowerCase() : '';
+  if (code === 'not_found' || code === 'notfound') return true;
+  const message =
+    typeof err?.message === 'string'
+      ? err.message.toLowerCase()
+      : String(error ?? '').toLowerCase();
+  return (
+    message.includes('-> 404') ||
+    message.includes('"code":"not_found"') ||
+    message.includes('not found') ||
+    message.includes('no such sandbox') ||
+    message.includes('sandbox does not exist')
+  );
+}
+
 export class PlatinumProvider implements SandboxProvider {
   readonly name: ProviderName = 'platinum';
 
@@ -183,7 +204,8 @@ export class PlatinumProvider implements SandboxProvider {
       if (state === 'stopped' || state === 'stopping' || state.includes('archiv')) return 'stopped';
       if (state === 'deleted' || state === 'failed-start' || state === 'lost') return 'removed';
       return 'unknown'; // provisioning / starting / resuming / migrating — transitional
-    } catch {
+    } catch (err) {
+      if (isMissingSandboxError(err)) return 'removed';
       return 'unknown';
     }
   }

@@ -100,6 +100,25 @@ import type {
 const STATUS_CACHE_TTL_MS = 1500;
 const runningStatusCache = new Map<string, number>(); // externalId → cachedAt (ms)
 
+function isMissingSandboxError(error: unknown): boolean {
+  const err = error as
+    | { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown }
+    | null
+    | undefined;
+  if (err?.status === 404 || err?.statusCode === 404) return true;
+  const code = typeof err?.code === 'string' ? err.code.toLowerCase() : '';
+  if (code === 'not_found' || code === 'notfound') return true;
+  const message =
+    typeof err?.message === 'string'
+      ? err.message.toLowerCase()
+      : String(error ?? '').toLowerCase();
+  return (
+    message.includes('not found') ||
+    message.includes('no such sandbox') ||
+    message.includes('sandbox does not exist')
+  );
+}
+
 /**
  * Daytona sandbox lifecycle policy, applied as SDK create() params so a box
  * self-manages even when the API/tunnel that created it dies — orphaned
@@ -294,7 +313,9 @@ export class DaytonaProvider implements SandboxProvider {
       runningStatusCache.delete(externalId);
       if (state.includes('stop') || state.includes('archive')) return 'stopped';
       return 'unknown';
-    } catch {
+    } catch (err) {
+      runningStatusCache.delete(externalId);
+      if (isMissingSandboxError(err)) return 'removed';
       return 'unknown';
     }
   }
