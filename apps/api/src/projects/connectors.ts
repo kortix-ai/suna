@@ -38,8 +38,7 @@
 import { createHash } from 'node:crypto';
 import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
 import { isValidSecretName } from './secrets';
-
-const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+import { CHANNEL_PLATFORMS, RESERVED_SLUG_PROVIDERS, SLUG_RE } from '@kortix/manifest-schema';
 
 export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
 const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 'graphql', 'http', 'channel', 'computer'];
@@ -56,14 +55,12 @@ const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 
  *  - `kortix_slack` → channel only (the Slack channel materializes under it; see
  *    executor/channels.ts SLACK_CHANNEL_CONNECTOR_SLUG).
  *  - `computer`     → computer only (the Agent Computer Tunnel connector).
- * See KORTIX-206 + docs/specs/computer-connector.md.
+ * See KORTIX-206 + docs/specs/computer-connector.md. The pairs themselves are
+ * canonically defined in `@kortix/manifest-schema` (imported above) — this
+ * `export` just preserves this module's existing public surface, since
+ * executor/manifest-crud.ts imports `RESERVED_SLUG_PROVIDERS` from here.
  */
-export const RESERVED_SLUG_PROVIDERS: Readonly<Record<string, ConnectorProvider>> = {
-  kortix_slack: 'channel',
-  kortix_email: 'channel',
-  kortix_meet: 'channel',
-  computer: 'computer',
-};
+export { RESERVED_SLUG_PROVIDERS };
 /** The reserved slug the built-in Slack channel materializes under. */
 export const SLACK_RESERVED_SLUG = 'kortix_slack';
 export const EMAIL_RESERVED_SLUG = 'kortix_email';
@@ -77,7 +74,6 @@ export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
 
 /** Chat platforms a `channel` connector can target. */
 export type ChannelPlatform = 'slack' | 'email' | 'meet';
-const CHANNEL_PLATFORMS: readonly ChannelPlatform[] = ['slack', 'email', 'meet'];
 
 type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'none';
 const AUTH_TYPES: readonly ConnectorAuthType[] = ['bearer', 'basic', 'custom', 'none'];

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { GRANTABLE_KORTIX_CLI_ACTIONS } from '@kortix/manifest-schema';
 
 import {
   KORTIX_CLI_CATALOG,
@@ -64,58 +65,15 @@ describe('Segmented control', () => {
   });
 });
 
-// The canonical grantable `kortix_cli` catalog — MUST be kept byte-for-byte in
-// sync with `GRANTABLE_KORTIX_CLI_ACTIONS` in packages/manifest-schema/src/constants.ts
-// and `GRANTABLE_KORTIX_CLI` in apps/api/src/projects/agents.ts (Object.values(
-// PROJECT_ACTIONS)). Hardcoded here rather than imported (the manifest-schema/
-// api packages aren't in the web bundle, same mirror discipline as
-// KORTIX_CLI_CATALOG itself) — a full-array equality check, not a partial
-// spot-check, so an entry silently added or removed on either side of the
-// mirror fails this test immediately instead of only showing up as a UI gap
-// someone notices later.
-const CANONICAL_GRANTABLE_KORTIX_CLI_ACTIONS = [
-  'project.read',
-  'project.write',
-  'project.deploy',
-  'project.delete',
-  'project.cr.open',
-  'project.cr.merge',
-  'project.session.read',
-  'project.session.start',
-  'project.session.stop',
-  'project.members.read',
-  'project.members.manage',
-  'project.trigger.read',
-  'project.trigger.create',
-  'project.trigger.update',
-  'project.trigger.delete',
-  'project.trigger.fire',
-  'project.gateway.logs.read',
-  'project.gateway.spend.read',
-  'project.gateway.budget.set',
-  'project.gateway.keys.manage',
-  'project.agent.read',
-  'project.agent.write',
-  'project.skill.read',
-  'project.skill.write',
-  'project.command.read',
-  'project.command.write',
-  'project.file.read',
-  'project.file.write',
-  'project.customize.read',
-  'project.customize.write',
-  'project.gitops.read',
-  'project.gitops.push',
-  'project.gitops.merge',
-  'project.secret.read',
-  'project.secret.write',
-  'project.connector.read',
-  'project.connector.write',
-  'project.review.read',
-  'project.review.submit',
-  'project.review.act',
-].sort();
-
+// KORTIX_CLI_CATALOG (the picker's grouped catalog) MUST expose exactly the
+// actions `GRANTABLE_KORTIX_CLI_ACTIONS` allows — imported from the real
+// @kortix/manifest-schema package (not a hand-copied array) so an action
+// silently added or removed on either side of the mirror fails this test
+// immediately instead of only showing up as a UI gap someone notices later.
+// bun:test files aren't bundled for the browser, so importing the package
+// here carries none of the "not in the web bundle" bundle-size concern that
+// keeps KORTIX_CLI_CATALOG itself hand-authored — apps/api's
+// unit-agents-parse.test.ts does the same cross-package import.
 describe('KORTIX_CLI_CATALOG — grantable action mirror', () => {
   const all = KORTIX_CLI_CATALOG.flatMap((g) => g.actions);
 
@@ -136,9 +94,9 @@ describe('KORTIX_CLI_CATALOG — grantable action mirror', () => {
     expect(all).toContain('project.gateway.keys.manage');
   });
 
-  test('full-array equality against the canonical grantable catalog (40 actions)', () => {
-    expect(all.length).toBe(CANONICAL_GRANTABLE_KORTIX_CLI_ACTIONS.length);
-    expect([...all].sort()).toEqual(CANONICAL_GRANTABLE_KORTIX_CLI_ACTIONS);
+  test('full-array equality against the real GRANTABLE_KORTIX_CLI_ACTIONS (order-independent)', () => {
+    expect(all.length).toBe(GRANTABLE_KORTIX_CLI_ACTIONS.length);
+    expect([...all].sort()).toEqual([...GRANTABLE_KORTIX_CLI_ACTIONS].sort());
   });
 
   test('has no duplicate actions across groups', () => {

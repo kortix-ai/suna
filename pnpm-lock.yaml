@@ -1111,6 +1111,9 @@ importers:
       '@eslint/eslintrc':
         specifier: ^3
         version: 3.3.5
+      '@kortix/manifest-schema':
+        specifier: workspace:*
+        version: link:../../packages/manifest-schema
       '@playwright/test':
         specifier: ^1.57.0
         version: 1.61.1

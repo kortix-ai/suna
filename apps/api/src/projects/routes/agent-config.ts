@@ -10,9 +10,9 @@
 // place that merges them into a single wire shape (`block.opencode = {...}`)
 // so the dashboard editor's data binding never has to know two files exist —
 // see agent-editor.tsx. GET reads both; PUT writes governance to kortix.yaml
-// and behavior to the `.md` (two commits, spec §2.2's explicitly-sanctioned
-// two-commit shape) after validating BOTH halves so a bad request never
-// partially lands.
+// and behavior to the `.md` in ONE atomic commit (commitMultipleFilesToBranch)
+// after validating BOTH halves, so a bad request never partially lands and a
+// mid-write failure can never strand kortix.yaml and the `.md` out of sync.
 //
 // Distinct from ./agent-scope.ts, which writes ONLY the grant subset
 // (secrets/connectors) into a v1 `[[agents]]` entry.
@@ -33,11 +33,17 @@ import { PROJECT_ACTIONS } from '../../iam/actions';
 import { validateAgentMdFrontmatter, type AgentBlockV2, type ManifestIssue } from '@kortix/manifest-schema';
 import { applyAgentBlockV2, readAgentBlockV2 } from '../lib/agent-config-v2';
 import { parseAgentMarkdown, serializeAgentMarkdown } from '../lib/agent-markdown';
-import { agentMarkdownPath } from '../lib/compile-agent-config';
+import {
+  KNOWN_BEHAVIOR_KEYS,
+  OpencodeAgentConfigSchema,
+  agentMarkdownPath,
+} from '../lib/compile-agent-config';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { withProjectGitAuth } from '../lib/git';
+import { commitMultipleFilesToBranch } from '../git/branches';
 import { projectsApp } from '../lib/app';
-import { commitManifest, commitRepoFile, loadManifestForEdit } from '../lib/triggers';
+import { loadManifestForEdit } from '../lib/triggers';
+import { MANIFEST_FILENAME, serializeManifest } from '../triggers';
 import { readRepoFile } from '../git';
 
 // A grant set on the wire: an allowlist, or the "all"/"none" sentinels. The
@@ -49,34 +55,11 @@ const GrantSetSchema = z.union([
   z.array(z.string().min(1).max(200)).max(500),
 ]);
 
-// The OpenCode BEHAVIOR half — every field that lives in the agent's own
-// `.md` frontmatter (+ `prompt`, which is the file's BODY, not a frontmatter
-// key). The permission tree is validated deeply by
-// `validateAgentMdFrontmatter` (@kortix/manifest-schema) after the request
-// shape is assembled — so here it's an open passthrough object/string, same
-// for `options`. This keeps the route from re-encoding schema rules that
-// already live (and are tested) in @kortix/manifest-schema.
-const OpencodeAgentConfigSchema = z
-  .object({
-    description: z.string().max(2000).optional(),
-    mode: z.enum(['primary', 'subagent', 'all']).optional(),
-    model: z.string().max(200).optional(),
-    variant: z.string().max(200).optional(),
-    temperature: z.number().optional(),
-    top_p: z.number().optional(),
-    /** The `.md` BODY (the system prompt text), not a file path. */
-    prompt: z.string().max(50_000).optional(),
-    hidden: z.boolean().optional(),
-    options: z.record(z.string(), z.any()).optional(),
-    color: z.string().max(64).optional(),
-    steps: z.number().optional(),
-    permission: z.any().optional(),
-  })
-  .strict();
-
 // The KORTIX layer — governance only (spec §2.2 redirect). No model, no
-// description, no behavior: those all moved into `opencode` above, which
-// this route writes to the `.md`, never to kortix.yaml.
+// description, no behavior: those all moved into `opencode` (defined in
+// ../lib/compile-agent-config alongside its canonical KNOWN_BEHAVIOR_KEYS —
+// see that module for why), which this route writes to the `.md`, never to
+// kortix.yaml.
 const AgentBlockSchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -88,24 +71,6 @@ const AgentBlockSchema = z
     opencode: OpencodeAgentConfigSchema.optional(),
   })
   .strict();
-
-/** Behavior-frontmatter keys the editor round-trips. Anything ELSE a human
- *  hand-authored directly into the `.md` (e.g. a native `disable`, or a
- *  field this editor doesn't expose yet) is preserved untouched on save —
- *  see `mergeFrontmatter`. */
-const KNOWN_BEHAVIOR_KEYS = [
-  'description',
-  'mode',
-  'model',
-  'variant',
-  'temperature',
-  'top_p',
-  'options',
-  'color',
-  'steps',
-  'hidden',
-  'permission',
-] as const;
 
 /** Read + parse an agent's `.md` (governance-declared or not — behavior and
  *  governance are independently addressable). Never throws: a missing file
@@ -295,26 +260,38 @@ projectsApp.openapi(
     }
 
     manifest.raw = applied.raw;
-    const committedYaml = await commitManifest(
-      loaded.row,
-      manifest,
-      `chore: update agent ${agentName} governance`,
-    );
-    if ('error' in committedYaml) {
-      return c.json({ error: committedYaml.error }, (committedYaml.status as 400) ?? 400);
-    }
+    const manifestPath = manifest.path || loaded.row.manifestPath || MANIFEST_FILENAME;
+    const behaviorWrite =
+      mdPath && nextFrontmatter && nextBody !== null
+        ? { path: mdPath, content: serializeAgentMarkdown(nextFrontmatter, nextBody) }
+        : null;
 
-    if (mdPath && nextFrontmatter && nextBody !== null) {
-      const content = serializeAgentMarkdown(nextFrontmatter, nextBody);
-      const committedMd = await commitRepoFile(
-        loaded.row,
-        mdPath,
-        content,
-        `chore: update agent ${agentName} behavior`,
+    // ONE atomic commit for both homes. Two sequential single-file commits
+    // (governance then behavior) would let a bad `.md` write fail AFTER the
+    // governance write already landed, stranding kortix.yaml and the agent's
+    // `.md` out of sync — commitMultipleFilesToBranch (git/branches.ts) commits
+    // every file in one tree/commit, same helper the marketplace install/
+    // uninstall paths use for their own atomic multi-file writes (r10.ts).
+    const files = [
+      { path: manifestPath, content: serializeManifest(manifest) },
+      ...(behaviorWrite ? [behaviorWrite] : []),
+    ];
+    const message = behaviorWrite
+      ? `chore: update agent ${agentName} governance + behavior`
+      : `chore: update agent ${agentName} governance`;
+
+    try {
+      const gitProject = await withProjectGitAuth(loaded.row);
+      await commitMultipleFilesToBranch(gitProject, {
+        files,
+        message,
+        branch: loaded.row.defaultBranch,
+      });
+    } catch (err) {
+      return c.json(
+        { error: `Failed to commit agent config: ${(err as Error).message || String(err)}` },
+        502,
       );
-      if ('error' in committedMd) {
-        return c.json({ error: committedMd.error }, (committedMd.status as 400) ?? 400);
-      }
     }
 
     const read = readAgentBlockV2(manifest, agentName);

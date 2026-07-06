@@ -32,6 +32,7 @@
  * read/parse/compile failure) resolves to `null`, which is the "v1 byte-for-
  * byte unaffected" contract the session-env wiring depends on.
  */
+import { z } from '@hono/zod-openapi';
 import {
   manifestCandidatePaths,
   manifestFormatForPath,
@@ -132,8 +133,12 @@ export function agentMarkdownPath(manifest: Record<string, unknown>, agentName: 
 }
 
 /** Behavioral frontmatter keys copied straight through onto the compiled
- *  OpenCode agent config — full `AgentConfig` parity, 1:1 by name. */
-const BEHAVIOR_FRONTMATTER_KEYS = [
+ *  OpenCode agent config — full `AgentConfig` parity, 1:1 by name. This is
+ *  the CANONICAL list: the agent-config editor route derives its own
+ *  `KNOWN_BEHAVIOR_KEYS` (this list minus `disable`, which the editor never
+ *  round-trips) and its wire schema from it, instead of hand-maintaining a
+ *  second/third copy — see `routes/agent-config.ts`. */
+export const BEHAVIOR_FRONTMATTER_KEYS = [
   'description',
   'mode',
   'model',
@@ -147,6 +152,43 @@ const BEHAVIOR_FRONTMATTER_KEYS = [
   'permission',
   'disable',
 ] as const;
+
+/** The agent-config editor's round-tripped subset of `BEHAVIOR_FRONTMATTER_KEYS`
+ *  — every field except `disable`, which the editor never round-trips (a
+ *  hand-authored `disable` already in the `.md` passes through untouched
+ *  instead — see `routes/agent-config.ts`'s `mergeFrontmatter`). A derivation,
+ *  not a second hand-maintained literal, so the editor's merge/GET-projection
+ *  key set can't silently drift from the compiler's. */
+export const KNOWN_BEHAVIOR_KEYS = BEHAVIOR_FRONTMATTER_KEYS.filter(
+  (key): key is Exclude<(typeof BEHAVIOR_FRONTMATTER_KEYS)[number], 'disable'> => key !== 'disable',
+);
+
+/** The agent-config editor's wire schema for the `opencode` (BEHAVIOR) half of
+ *  a PUT body — one field per `KNOWN_BEHAVIOR_KEYS` entry, typed for its real
+ *  frontmatter shape (a generic per-key schema can't express "temperature is
+ *  a number, permission is a tree, model is a string" from a flat string
+ *  array), PLUS `prompt` (the `.md` BODY, not a frontmatter key — see
+ *  `OpencodeAgentConfig.prompt` above). Kept beside `KNOWN_BEHAVIOR_KEYS`
+ *  rather than re-declared in the route so the two are visibly one thing;
+ *  `compile-agent-config.test.ts`'s coordination test fails loudly the moment
+ *  a field is added to one without the other. */
+export const OpencodeAgentConfigSchema = z
+  .object({
+    description: z.string().max(2000).optional(),
+    mode: z.enum(['primary', 'subagent', 'all']).optional(),
+    model: z.string().max(200).optional(),
+    variant: z.string().max(200).optional(),
+    temperature: z.number().optional(),
+    top_p: z.number().optional(),
+    /** The `.md` BODY (the system prompt text), not a file path. */
+    prompt: z.string().max(50_000).optional(),
+    hidden: z.boolean().optional(),
+    options: z.record(z.string(), z.any()).optional(),
+    color: z.string().max(64).optional(),
+    steps: z.number().optional(),
+    permission: z.any().optional(),
+  })
+  .strict();
 
 /**
  * Compile a manifest's declared agents into an OpenCode-native config.

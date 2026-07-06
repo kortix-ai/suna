@@ -21,7 +21,10 @@ mock.module('../git', () => ({
 }));
 
 const {
+  BEHAVIOR_FRONTMATTER_KEYS,
   CompileAgentConfigError,
+  KNOWN_BEHAVIOR_KEYS,
+  OpencodeAgentConfigSchema,
   agentMarkdownPath,
   compileAgentConfig,
   resolveCompiledAgentConfigForSession,
@@ -63,6 +66,33 @@ function parseYaml(raw: string): Record<string, unknown> {
 function supportMd(frontmatter: string, body: string): string {
   return `---\n${frontmatter}\n---\n\n${body}`;
 }
+
+// The behavior-frontmatter key set used to be hand-copied three ways (the
+// compiler's BEHAVIOR_FRONTMATTER_KEYS, the agent-config editor route's
+// KNOWN_BEHAVIOR_KEYS, and its wire schema's field list) and drifted subtly
+// out of sync. All three now live here, with KNOWN_BEHAVIOR_KEYS and
+// OpencodeAgentConfigSchema DERIVED from BEHAVIOR_FRONTMATTER_KEYS instead of
+// re-declared — these tests are the guard that catches the moment any of
+// them stops matching (the schema can't be derived key-for-key since each
+// field has a different type, so this coordination check is what keeps it
+// honest instead).
+describe('KNOWN_BEHAVIOR_KEYS / OpencodeAgentConfigSchema coordination', () => {
+  test('KNOWN_BEHAVIOR_KEYS is exactly BEHAVIOR_FRONTMATTER_KEYS minus `disable`', () => {
+    expect(new Set(KNOWN_BEHAVIOR_KEYS)).toEqual(
+      new Set(BEHAVIOR_FRONTMATTER_KEYS.filter((key) => key !== 'disable')),
+    );
+    expect(KNOWN_BEHAVIOR_KEYS).not.toContain('disable');
+    expect(BEHAVIOR_FRONTMATTER_KEYS).toContain('disable');
+  });
+
+  test("OpencodeAgentConfigSchema's fields are exactly KNOWN_BEHAVIOR_KEYS plus `prompt`", () => {
+    const schemaKeys = Object.keys(OpencodeAgentConfigSchema.shape);
+    expect(new Set(schemaKeys.filter((key) => key !== 'prompt'))).toEqual(
+      new Set(KNOWN_BEHAVIOR_KEYS),
+    );
+    expect(schemaKeys).toContain('prompt');
+  });
+});
 
 describe('agentMarkdownPath', () => {
   test('defaults to .kortix/opencode/agents/<name>.md', () => {
