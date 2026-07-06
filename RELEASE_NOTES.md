@@ -1,3 +1,3 @@
-Turn auto-resume for transient provider errors
+Fix session-page reconnect storm against stopped sandboxes
 
-Agent sessions now automatically resume a turn killed by a transient provider failure (e.g. a model host stall ending in "Upstream idle timeout exceeded", connection resets, 5xx after retries) instead of surfacing a dead error turn. Root sessions only, max 3 resumes per 15 minutes with backoff, never for user aborts or auth/credit errors, kill switch KORTIX_TURN_AUTO_RESUME=0. Completes the v0.9.94 GLM routing fix.
+Stops the infinite refresh/reconnect storm on the session page when a sandbox is stopped. A stopped box answers /kortix/health with 503; the frontend misread that as connected+booting and fast-polled every 150ms forever, which re-fired all health-gated file/SSE queries (walls of /global/event 503s, auth0 CORS redirects, /file/content?path=.opencode 400s). Now the 503 boot window is bounded (120s -> mark unreachable, 5s poll), and .opencode/.kortix/.git are never read as file content.
