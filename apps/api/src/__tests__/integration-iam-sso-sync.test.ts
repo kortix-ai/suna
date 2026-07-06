@@ -33,10 +33,16 @@ const SUPA_SSO = crypto.randomUUID(); // stands in for the Supabase auth.sso_pro
 const MKT_GROUP = crypto.randomUUID();
 const AAD_CLAIM = 'Marketing-AAD'; // what Entra ships in the memberOf claim
 
-// An Azure/Entra-shaped Supabase JWT: SAML attrs live under app_metadata, the
-// provider id under app_metadata.provider_id.
+// A real-shape Supabase SAML JWT: the auth sso_providers id rides in
+// `app_metadata.provider` as "sso:<uuid>" (NOT a bare provider_id — no real
+// Supabase token sets that), and the SAML group attribute (Entra `memberOf`)
+// is wrapped under app_metadata.
 const jwt = (memberOf: string[]) => ({
-  app_metadata: { provider_id: SUPA_SSO, memberOf },
+  app_metadata: {
+    provider: `sso:${SUPA_SSO}`,
+    providers: [`sso:${SUPA_SSO}`],
+    memberOf,
+  },
 });
 
 const canWrite = async (userId: string) =>
