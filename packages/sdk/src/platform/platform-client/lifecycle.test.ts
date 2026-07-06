@@ -48,7 +48,6 @@ beforeEach(() => {
   }) as unknown as typeof fetch;
 });
 
-const last = () => calls[calls.length - 1];
 const callsMatching = (re: RegExp) => calls.filter((c) => re.test(c.url));
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────

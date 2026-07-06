@@ -57,6 +57,12 @@ export async function GET(req: NextRequest) {
 
   const projects = await Promise.all(
     projectIds.map(async (projectId) => {
+      // Explicit per-item barrier right before the URL interpolation — the
+      // list is already UUID-filtered above, but static analysis needs the
+      // guard on the same control path as the fetch.
+      if (!isValidProjectId(projectId)) {
+        return { projectId, sessions: [], error: 'invalid project id' };
+      }
       try {
         const res = await fetch(`${upstream}/projects/${encodeURIComponent(projectId)}/gateway/sessions`, {
           headers: { authorization: `Bearer ${apiKey}` },

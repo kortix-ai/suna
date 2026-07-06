@@ -124,6 +124,17 @@ the result (`session.messages`, `session.send`, `session.isBusy`,
 The transcript itself scrolls via a plain `scrollRef` + `scrollTo` effect
 (`workbench-tabs.tsx`) — there's no dedicated scroll-container primitive.
 
+**Message rendering** goes through the SDK's headless chat kit: `classifyTurn`
+(`@kortix/sdk/turns`) normalizes every opencode part type into a typed
+`ClassifiedPart` (plus a normalized error for failed turns), and `renderParts`
+(`@kortix/sdk/react`) requires a renderer for every kind at compile time — see
+`src/components/chat/message-view.tsx`, the living reference the SDK README
+points at (one deliberate rendering decision per part kind, including the
+`null`s). For focused, runnable snippets of this and the other core SDK flows —
+send + stream, the wrapper-mode server pattern, cost pass-through, files +
+secrets — see **`packages/sdk/examples/`** (each file's header states how to
+run it).
+
 **Model selection** is server-side and pre-runtime, so it works before a
 sandbox exists and shares one source of truth between the new-session screen
 and the in-session picker: `useProjectModels(projectId)` reads the project's

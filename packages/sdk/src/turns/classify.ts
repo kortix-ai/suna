@@ -347,9 +347,9 @@ export interface TurnError {
 
 function normalizeTurnError(error: unknown): TurnError | undefined {
   if (!error) return undefined;
+  // (`!error` above already excludes null — no separate null check needed.)
   const name =
     typeof error === 'object' &&
-    error !== null &&
     'name' in error &&
     typeof (error as { name?: unknown }).name === 'string'
       ? (error as { name: string }).name

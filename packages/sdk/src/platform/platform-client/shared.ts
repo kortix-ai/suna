@@ -79,7 +79,11 @@ export const LOCAL_PLATFORM_CANDIDATES = [
 ];
 
 export function getLocalBridgeStatusUrl(baseUrl: string): string {
-  return `${baseUrl.replace(/\/+$/, '')}/platform/local-bridge/status`;
+  // Linear trailing-slash strip — the regex form (/\/+$/) backtracks
+  // quadratically on adversarial input (CodeQL js/polynomial-redos).
+  let end = baseUrl.length;
+  while (end > 0 && baseUrl.charCodeAt(end - 1) === 47 /* '/' */) end--;
+  return `${baseUrl.slice(0, end)}/platform/local-bridge/status`;
 }
 
 function normalizeSessionStatus(status: string | undefined): string {

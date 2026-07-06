@@ -1,11 +1,19 @@
 import { platformConfig } from '../../platform/config';
 
+// Linear trailing-slash strip — the regex form (/\/+$/) backtracks
+// quadratically on adversarial input (CodeQL js/polynomial-redos).
+function stripTrailingSlashes(s: string): string {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47 /* '/' */) end--;
+  return s.slice(0, end);
+}
+
 /**
  * The backend base URL. All sandbox traffic routes through the backend's
  * unified preview proxy: /v1/p/{sandboxId}/{port}/*
  */
 export function getBackendUrl(): string {
-  return (platformConfig().backendUrl || 'http://localhost:8008/v1').replace(/\/+$/, '');
+  return stripTrailingSlashes(platformConfig().backendUrl || 'http://localhost:8008/v1');
 }
 
 export function getDefaultSandboxUrl(): string {

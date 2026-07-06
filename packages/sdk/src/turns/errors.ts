@@ -33,7 +33,8 @@ export function unwrapError(raw: unknown): string {
     }
   }
 
-  if (typeof raw === 'object' && raw !== null) {
+  // (`!raw` at the top already excluded null — typeof alone suffices here.)
+  if (typeof raw === 'object') {
     return extractErrorFromObject(raw) || 'An error occurred';
   }
 
