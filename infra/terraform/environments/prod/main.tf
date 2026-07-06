@@ -43,6 +43,16 @@ locals {
   # "new-api.kortix.com" → "new-api"; for "api.kortix.com" → "api". (Single-label
   # subdomain on the kortix.com zone, which is all we use here.)
   dns_record_name = replace(var.api_domain, ".kortix.com", "")
+  # Cloudflare's published IPv4 edge ranges. Lock the public ALB to these so the
+  # origin can only be reached THROUGH Cloudflare — no direct-to-origin bypass of
+  # the WAF / rate limiting. Mirrors the EKS chart inboundCidrs and the
+  # devops/argocd ingress allowlist. Refresh from https://www.cloudflare.com/ips-v4.
+  cloudflare_ip_ranges = [
+    "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
+    "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
+    "197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
+    "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+  ]
   tags = {
     Environment = "prod"
     Service     = "kortix-api"
@@ -86,6 +96,9 @@ module "api" {
   certificate_arn = module.acm.certificate_arn
   environment     = var.api_environment
   secrets         = var.api_secrets
+
+  # Only Cloudflare's edge may reach the ALB (no direct-to-origin WAF bypass).
+  alb_ingress_cidrs = local.cloudflare_ip_ranges
 
   # prod sizing: bigger tasks, HA floor of 2, no spot, insights on
   task_cpu           = 1024
