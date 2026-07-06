@@ -16,10 +16,7 @@ import { parseImageOutput } from '@/features/session/image-output-path';
 import { QuestionPrompt } from '@/features/session/question-prompt';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import { isShowContentUnavailable, type ShowLoadStatus } from './show-availability';
-import {
-  SessionRetryDisplay,
-  TurnErrorDisplay,
-} from '@/features/session/session-error-banner';
+import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   cleanResultSnippet,
@@ -317,9 +314,7 @@ function ServicePreviewUrlFallback({ preview }: { preview: ServicePreviewState }
           disabled={!previewUrl}
           className={cn(
             'text-foreground inline-flex max-w-full items-center gap-2 rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium shadow-2xs transition-colors',
-            previewUrl
-              ? 'hover:bg-muted'
-              : 'cursor-not-allowed opacity-60',
+            previewUrl ? 'hover:bg-muted' : 'cursor-not-allowed opacity-60',
           )}
         >
           <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
@@ -483,7 +478,10 @@ interface ToolProps {
   forceOpen?: boolean;
   locked?: boolean;
   hasActiveQuestion?: boolean;
-  onPermissionReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void;
+  onPermissionReply?: (
+    requestId: string,
+    reply: 'once' | 'always' | 'reject',
+  ) => void | Promise<void>;
 }
 
 type ToolComponent = ComponentType<ToolProps>;
@@ -4012,7 +4010,9 @@ function ToolFailureCard({ heading, failure }: { heading: string; failure: Embed
     >
       <CircleAlert className={cn('mt-0.5 size-3.5 flex-shrink-0', STATUS_TEXT.destructive)} />
       <div className="min-w-0 flex-1 space-y-1">
-        <div className={cn('flex items-center gap-1.5 text-xs font-medium', STATUS_TEXT.destructive)}>
+        <div
+          className={cn('flex items-center gap-1.5 text-xs font-medium', STATUS_TEXT.destructive)}
+        >
           <span>{heading}</span>
           {typeof failure.status === 'number' && (
             <span className="font-mono text-xs opacity-70">HTTP {failure.status}</span>
@@ -8760,11 +8760,10 @@ export function GenericTool({ part }: ToolProps) {
 
 interface PermissionPromptInlineProps {
   permission: PermissionRequest;
-  onReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void;
+  onReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void | Promise<void>;
 }
 
 function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const [visible, setVisible] = useState(false);
   const [replying, setReplying] = useState(false);
 
@@ -8774,12 +8773,20 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
   }, []);
 
   const label = PERMISSION_LABELS[permission.permission] || permission.permission;
+  const detail = permission.patterns?.length ? permission.patterns.join('  ') : null;
 
   const handleReply = useCallback(
     (reply: 'once' | 'always' | 'reject') => {
       if (replying) return;
       setReplying(true);
-      onReply?.(permission.id, reply);
+      // A failed reply must leave the card answerable — on success the card
+      // unmounts (the permission leaves the pending store), so re-enabling
+      // only ever matters on failure. The full scope options (allow all this
+      // session / persist to config) live in the pinned prompt above the
+      // composer; this inline row keeps the quick decisions in context.
+      void Promise.resolve(onReply?.(permission.id, reply))
+        .catch(() => {})
+        .finally(() => setReplying(false));
     },
     [replying, permission.id, onReply],
   );
@@ -8788,8 +8795,13 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
 
   return (
     <div className={cn('flex items-center gap-2 px-2.5 py-2', STATUS_TEXT.warning)}>
-      <span className="text-foreground flex-1 text-xs">
+      <span className="text-foreground min-w-0 flex-1 text-xs">
         Permission: <span className="font-medium">{label}</span>
+        {detail ? (
+          <code title={detail} className="text-muted-foreground ml-1.5 font-mono text-[11px]">
+            {detail.length > 60 ? `${detail.slice(0, 57)}…` : detail}
+          </code>
+        ) : null}
       </span>
       <div className="flex items-center gap-1.5">
         <Button
@@ -8806,11 +8818,12 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
           onClick={() => handleReply('always')}
           variant="outline"
           size="xs"
+          title="Allow this action for the rest of this session — the agent won't ask again for it"
         >
-          {tHardcodedUi.raw('componentsSessionToolRenderers.line8026JsxTextAllowAlways')}
+          Allow for session
         </Button>
         <Button disabled={replying} onClick={() => handleReply('once')} variant="default" size="xs">
-          {tHardcodedUi.raw('componentsSessionToolRenderers.line8034JsxTextAllowOnce')}
+          Allow once
         </Button>
       </div>
     </div>
@@ -8825,7 +8838,10 @@ interface ToolPartRendererProps {
   part: ToolPart;
   permission?: PermissionRequest;
   question?: QuestionRequest;
-  onPermissionReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void;
+  onPermissionReply?: (
+    requestId: string,
+    reply: 'once' | 'always' | 'reject',
+  ) => void | Promise<void>;
   onQuestionReply?: (requestId: string, answers: string[][]) => void;
   onQuestionReject?: (requestId: string) => void;
   defaultOpen?: boolean;
