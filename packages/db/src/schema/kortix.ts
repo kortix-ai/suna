@@ -3390,6 +3390,11 @@ export const executorExecutions = kortixSchema.table(
   },
   (table) => [
     index('idx_executor_executions_project').on(table.projectId),
+    index('idx_executor_executions_project_session_created').on(
+      table.projectId,
+      table.sessionId,
+      table.createdAt.desc(),
+    ),
     index('idx_executor_executions_connector').on(table.connectorId),
     index('idx_executor_executions_status').on(table.status),
   ],
@@ -3465,4 +3470,3 @@ export const executorProjectSettingsRelations = relations(executorProjectSetting
     references: [projects.projectId],
   }),
 }));
-

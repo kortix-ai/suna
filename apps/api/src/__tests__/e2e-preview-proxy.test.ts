@@ -943,6 +943,18 @@ describe('Preview proxy: CORS', () => {
     expect(res.headers.get('access-control-allow-credentials')).toBe('true');
   });
 
+  test('sets CORS headers on proxy-generated sandbox auth errors', async () => {
+    mockFetchResponses = [{ status: 401, body: 'bad signed context' }];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/global/event`, {
+      headers: { Authorization: 'Bearer test', Origin: 'https://dev.kortix.com' },
+    });
+
+    expect(res.status).toBe(502);
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://dev.kortix.com');
+    expect(res.headers.get('access-control-allow-credentials')).toBe('true');
+  });
+
   test('does NOT set CORS headers when no Origin', async () => {
     mockFetchResponses = [{ status: 200, body: 'OK' }];
     const app = createProxyTestApp();
