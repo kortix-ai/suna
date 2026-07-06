@@ -1818,7 +1818,8 @@ function PDFViewerInner({
   const { state: zoomState, provides: zoom } = useZoom(documentId)
   const { provides: thumbnails } = useThumbnailCapability()
   const { plugin: thumbnailPlugin } = useThumbnailPlugin()
-  const [sidebarOpen, setSidebarOpen] = React.useState(false)
+  // Kortix divergence from upstream: thumbnail sidebar starts open.
+  const [sidebarOpen, setSidebarOpen] = React.useState(true)
   const [isPreparingDownload, setIsPreparingDownload] = React.useState(false)
   const [pageRotationDeltas, setPageRotationDeltas] =
     React.useState<PageRotationDeltas>(() => new Map())
