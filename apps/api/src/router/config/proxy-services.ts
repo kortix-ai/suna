@@ -85,8 +85,9 @@ export function getProxyServices(): Record<string, ProxyServiceConfig> {
     },
 
     // People search (Apify — LinkedIn profile search actor). Powers the sandbox
-    // `people_search` tool: default-included, billed to the account via Kortix's
-    // APIFY_TOKEN; users can also bring their own APIFY_TOKEN (passthrough).
+    // `people_search` tool: a marketplace opt-in (not default-included), billed
+    // to the account via Kortix's APIFY_TOKEN when installed; users can also
+    // bring their own APIFY_TOKEN (passthrough).
     // Locked to the one pinned actor's run endpoint so the shared key can't run
     // arbitrary (billable) Apify actors.
     apify: {
