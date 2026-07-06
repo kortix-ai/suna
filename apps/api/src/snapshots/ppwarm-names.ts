@@ -34,9 +34,13 @@ export function perProjectWarmImageName(projectId: string, tip: string, baseSnap
  * under the project's `kortix-ppwarm-<proj8>-` prefix that are NOT the current
  * tip. proj8-scoped so it can never match another project; the shared base
  * (`kortix-default-…`) never carries the ppwarm prefix so it's never a target;
- * returns [] when only the current tip exists (idempotent re-bake).
+ * returns [] when only the current tip exists (idempotent re-bake). Tombstones
+ * are excluded: Platinum's delete is a soft-delete that renames the row to
+ * `…__deleted_<id>` while KEEPING the ppwarm prefix, so an already-reaped tip
+ * would otherwise be re-selected (and re-DELETEd) on every later bake; those rows
+ * are already deprecated / not quota-counting, so there is nothing to reap.
  */
 export function ppwarmReapTargets(projectId: string, currentName: string, allNames: string[]): string[] {
   const prefix = `${PPWARM_PREFIX}${proj8(projectId)}-`;
-  return allNames.filter((n) => n.startsWith(prefix) && n !== currentName);
+  return allNames.filter((n) => n.startsWith(prefix) && n !== currentName && !n.includes('__deleted'));
 }

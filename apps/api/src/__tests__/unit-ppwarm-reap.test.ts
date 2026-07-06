@@ -54,4 +54,13 @@ describe('ppwarmReapTargets — on-bake reap selector', () => {
     // re-bake of the same tip: nothing to reap (live tip safe)
     expect(ppwarmReapTargets(PROJ_A, cur, [cur])).toEqual([]);
   });
+
+  test('never re-selects a Platinum soft-delete tombstone (…__deleted_<id>)', () => {
+    const names = [
+      'kortix-ppwarm-9ee8bc9c-aaaaaaaaaaaa', // current tip
+      'kortix-ppwarm-9ee8bc9c-bbbbbbbbbbbb__deleted_tpl_01ABC', // already-reaped tombstone
+      'kortix-ppwarm-9ee8bc9c-cccccccccccc__deleted__deleted', // double-tombstone (the observed regression)
+    ];
+    expect(ppwarmReapTargets(PROJ_A, CURRENT, names)).toEqual([]);
+  });
 });
