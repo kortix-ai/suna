@@ -12,9 +12,10 @@
  * path in sandbox-cloud.ts.
  */
 
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
+import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
@@ -604,14 +605,52 @@ export async function provisionSessionSandbox(opts: {
         finishUpdate.status = 'active';
       }
 
-      await db
+      // Conditional finish: `deleteSession()` is the ONLY place that sets a
+      // session_sandboxes row to 'archived', and it does so as soon as the
+      // user deletes the session — even while this provisioning IIFE is still
+      // in flight. Guard the write so a late-finishing provision can never
+      // resurrect a tombstoned row. If no row comes back, the session was
+      // deleted mid-provision: remove the box we just created and stop —
+      // no 'running' flip, no compute metering.
+      const [finished] = await db
         .update(sessionSandboxes)
         .set(finishUpdate)
-        .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, sandbox.sandboxId),
+            ne(sessionSandboxes.status, 'archived'),
+          ),
+        )
+        .returning();
+
+      if (!finished) {
+        console.warn(
+          `[session-sandbox] session ${sandbox.sandboxId} was deleted mid-provision — removing box ${result.externalId} instead of finishing provisioning`,
+        );
+        await provider.remove(result.externalId).catch((err) =>
+          console.warn(
+            `[session-sandbox] cleanup of ${result.externalId} after mid-provision delete failed:`,
+            err,
+          ),
+        );
+        tl.mark('row-deleted-mid-provision');
+        tl.log({ provider: providerName, attempts, deletedMidProvision: true });
+        const delTl = tl.summary();
+        recordProviderEvent({
+          provider: providerName, kind: 'provision', outcome: 'stopped',
+          totalMs: delTl.totalMs, marks: delTl.marks, attempts,
+          sessionId: sandbox.sandboxId, accountId,
+        });
+        return;
+      }
 
       // Mirror sandbox readiness onto the project_sessions row so the
       // sidebar's status dot stops spinning. session_id == sandbox_id by
-      // construction, so the lookup is direct.
+      // construction, so the lookup is direct. Only flip sessions that are
+      // still genuinely mid-provision (queued/branching/provisioning) —
+      // 'stopped' (deleted, or an explicit stop) and 'running' (won by the
+      // separate stopped→running resume path in routes/shared.ts) must not be
+      // clobbered back to 'running' by a provisioning attempt finishing late.
       await db
         .update(projectSessions)
         .set({
@@ -619,7 +658,12 @@ export async function provisionSessionSandbox(opts: {
           sandboxUrl: result.baseUrl || null,
           updatedAt: new Date(),
         })
-        .where(eq(projectSessions.sessionId, sandbox.sandboxId))
+        .where(
+          and(
+            eq(projectSessions.sessionId, sandbox.sandboxId),
+            inArray(projectSessions.status, [...PROVISIONING_SESSION_STATUSES]),
+          ),
+        )
         .catch(() => {});
 
       // Project warm snapshot: the baked workspace is at BAKE-time tip. Fast-

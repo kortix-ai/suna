@@ -35,6 +35,7 @@ const ACCOUNT_ID = '00000000-0000-4000-a000-000000009301';
 const PROJECT_ID = '00000000-0000-4000-a000-000000009302';
 const SANDBOX_STOPPED = '00000000-0000-4000-a000-000000009303';
 const SANDBOX_ACTIVE = '00000000-0000-4000-a000-000000009304';
+const SANDBOX_ACTIVE_DELETED = '00000000-0000-4000-a000-000000009305';
 
 // Sessions covering the full decision matrix. *_STUCK should be reconciled to
 // 'stopped'; *_KEEP should be left exactly as seeded.
@@ -44,9 +45,17 @@ const S_ACTIVE_BOX_KEEP = 'keep-active-box';
 const S_RECENT_USAGE_KEEP = 'keep-recent-usage';
 const S_INFLIGHT_TURN_KEEP = 'keep-inflight-turn';
 const S_WITHIN_TTL_KEEP = 'keep-within-ttl';
+// Session-resurrection backstop: metadata.deletedAt is set (the user deleted
+// it) but it still has a LIVE session_sandboxes row behind it — e.g. the
+// provision-finish race resurrected it to 'running' before the row-level
+// guard in session-sandbox.ts landed, or any other path that leaves a
+// deleted session pointing at a live box. This must be reaped even though an
+// active box would normally exclude it (that's the provider reaper's job).
+const S_DELETED_ACTIVE_BOX_STUCK = 'stuck-deleted-active-box';
 const ALL_SESSIONS = [
   S_NO_BOX_STUCK, S_STOPPED_BOX_STUCK, S_ACTIVE_BOX_KEEP,
   S_RECENT_USAGE_KEEP, S_INFLIGHT_TURN_KEEP, S_WITHIN_TTL_KEEP,
+  S_DELETED_ACTIVE_BOX_STUCK,
 ];
 
 let testDb: Database | null = null;
@@ -62,7 +71,7 @@ async function cleanup() {
   const d = db();
   await d.delete(usageEvents).where(inArray(usageEvents.sessionId, ALL_SESSIONS));
   await d.delete(chatTurnStreams).where(inArray(chatTurnStreams.sessionId, ALL_SESSIONS));
-  await d.delete(sessionSandboxes).where(inArray(sessionSandboxes.sandboxId, [SANDBOX_STOPPED, SANDBOX_ACTIVE]));
+  await d.delete(sessionSandboxes).where(inArray(sessionSandboxes.sandboxId, [SANDBOX_STOPPED, SANDBOX_ACTIVE, SANDBOX_ACTIVE_DELETED]));
   await d.delete(projectSessions).where(inArray(projectSessions.sessionId, ALL_SESSIONS));
   await d.delete(projects).where(eq(projects.projectId, PROJECT_ID));
   await d.delete(accounts).where(eq(accounts.accountId, ACCOUNT_ID));
@@ -88,13 +97,20 @@ async function seed(now: Date) {
     sess(S_RECENT_USAGE_KEEP, 'running', old),
     sess(S_INFLIGHT_TURN_KEEP, 'running', old),
     sess(S_WITHIN_TTL_KEEP, 'provisioning', now), // fresh → within TTL
+    {
+      ...sess(S_DELETED_ACTIVE_BOX_STUCK, 'running', old),
+      metadata: { deletedAt: old.toISOString(), deletedBy: 'user-1' },
+    },
   ]);
 
   // A stopped box behind one stuck session (must NOT keep it alive); an ACTIVE
-  // box behind the keep session (the provider reaper owns that one).
+  // box behind the keep session (the provider reaper owns that one); an ACTIVE
+  // box behind the deleted-but-resurrected session (must NOT keep it alive —
+  // metadata.deletedAt overrides the active-sandbox-row exclusion).
   await d.insert(sessionSandboxes).values([
     { sandboxId: SANDBOX_STOPPED, sessionId: S_STOPPED_BOX_STUCK, accountId: ACCOUNT_ID, projectId: PROJECT_ID, status: 'stopped', externalId: 'ext-stopped' },
     { sandboxId: SANDBOX_ACTIVE, sessionId: S_ACTIVE_BOX_KEEP, accountId: ACCOUNT_ID, projectId: PROJECT_ID, status: 'active', externalId: 'ext-active' },
+    { sandboxId: SANDBOX_ACTIVE_DELETED, sessionId: S_DELETED_ACTIVE_BOX_STUCK, accountId: ACCOUNT_ID, projectId: PROJECT_ID, status: 'active', externalId: 'ext-active-deleted' },
   ]);
 
   // Recent LLM usage → meaningful activity within the TTL window.
@@ -127,6 +143,9 @@ describeWithDb('reconcileStuckActiveSessions (real DB)', () => {
     // Both genuinely-stuck sessions reconciled to 'stopped'.
     expect(await statusOf(S_NO_BOX_STUCK)).toBe('stopped');
     expect(await statusOf(S_STOPPED_BOX_STUCK)).toBe('stopped');
+    // Deleted-but-resurrected session: metadata.deletedAt bypasses the
+    // active-sandbox-row exclusion, so it's reaped too.
+    expect(await statusOf(S_DELETED_ACTIVE_BOX_STUCK)).toBe('stopped');
 
     // Everything with a live box / recent activity / in-flight turn / within TTL
     // is untouched.
@@ -135,8 +154,8 @@ describeWithDb('reconcileStuckActiveSessions (real DB)', () => {
     expect(await statusOf(S_INFLIGHT_TURN_KEEP)).toBe('running');
     expect(await statusOf(S_WITHIN_TTL_KEEP)).toBe('provisioning');
 
-    // Reported exactly the two it changed.
-    expect(result.reconciled).toBe(2);
+    // Reported exactly the three it changed.
+    expect(result.reconciled).toBe(3);
     expect(result.errors).toBe(0);
   });
 
