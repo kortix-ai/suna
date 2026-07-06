@@ -88,11 +88,19 @@ export function extractGroupClaims(
   claimName: string,
 ): string[] {
   if (!payload) return [];
-  // Try app_metadata first (Supabase wraps SAML attributes there), then
-  // the top level for IdPs that don't.
+  const asObj = (v: unknown): Record<string, unknown> | undefined =>
+    v && typeof v === 'object' ? (v as Record<string, unknown>) : undefined;
+  const app = asObj(payload.app_metadata);
+  const user = asObj(payload.user_metadata);
+  // Supabase SSO nests the mapped SAML attributes under
+  // `user_metadata.custom_claims` (e.g. `custom_claims.groups`) — NOT at the top
+  // of user_metadata — so check custom_claims FIRST, then fall back to the flat
+  // locations other IdPs / non-SSO tokens use.
   const sources: Array<Record<string, unknown> | undefined> = [
-    payload.app_metadata as Record<string, unknown> | undefined,
-    payload.user_metadata as Record<string, unknown> | undefined,
+    asObj(user?.custom_claims),
+    asObj(app?.custom_claims),
+    app,
+    user,
     payload,
   ];
   for (const src of sources) {

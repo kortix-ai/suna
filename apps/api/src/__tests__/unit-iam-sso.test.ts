@@ -80,6 +80,15 @@ describe('extractGroupClaims', () => {
     expect(out).toEqual(['Engineers', 'Admins']);
   });
 
+  test('reads the real Supabase SSO location: user_metadata.custom_claims.groups', () => {
+    expect(
+      extractGroupClaims(
+        { user_metadata: { custom_claims: { groups: ['Everyone', 'Managers'] } } },
+        'groups',
+      ),
+    ).toEqual(['Everyone', 'Managers']);
+  });
+
   test('reads string claim and wraps as array', () => {
     expect(
       extractGroupClaims({ app_metadata: { groups: 'Engineers' } }, 'groups'),
