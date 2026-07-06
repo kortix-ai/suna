@@ -1,8 +1,13 @@
 import type { PdfDocumentObject, PdfEngine } from "@embedpdf/models"
 
 // Served from public/ (copied from @embedpdf/pdfium in postinstall) so PDF
-// rendering works self-hosted / air-gapped without a CDN dependency.
-const PDFIUM_WASM_URL = "/pdfium.wasm"
+// rendering works self-hosted / air-gapped without a CDN dependency. Must be
+// an ABSOLUTE URL: the engine fetches it from inside a blob:-URL worker,
+// where relative paths cannot resolve.
+const PDFIUM_WASM_URL =
+  typeof window === "undefined"
+    ? "/pdfium.wasm"
+    : new URL("/pdfium.wasm", window.location.origin).href
 
 let sharedEnginePromise: Promise<PdfEngine> | null = null
 const pdfDocumentCache = new Map<string, Promise<PdfDocumentObject>>()

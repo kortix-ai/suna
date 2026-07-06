@@ -30,6 +30,10 @@ export function DocxRenderer({ url, blob, fileName, className }: DocxRendererPro
   }, [blob]);
 
   const src = blob ? objectUrl : url;
+  // The viewer derives the document name from `src` when fileName is absent —
+  // for extensionless blob: URLs that fails react-docx's format check.
+  const effectiveFileName =
+    fileName && /\.docx?$/i.test(fileName) ? fileName : (fileName ?? 'document') + '.docx';
 
   if (!src) {
     return (
@@ -42,7 +46,7 @@ export function DocxRenderer({ url, blob, fileName, className }: DocxRendererPro
   return (
     <DocxViewerPreview
       src={src}
-      fileName={fileName}
+      fileName={effectiveFileName}
       isDark={isDark}
       onIsDarkChange={setIsDark}
       showUpload={false}
