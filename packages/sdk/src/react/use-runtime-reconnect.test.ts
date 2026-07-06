@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
 import {
+  BOOTING_GRACE_MS,
+  bootingExceededGrace,
   classifyProbeResult,
   computeFailureStatus,
   FAIL_THRESHOLD_FIRST,
@@ -139,6 +141,20 @@ describe('classifyProbeResult', () => {
       kind: 'healthy',
       health,
     });
+  });
+});
+
+describe('bootingExceededGrace — bounds the 503 fast-poll so a stopped box is abandoned', () => {
+  const t0 = 1_000_000;
+
+  test('within the grace window: keep fast-polling (still "booting")', () => {
+    expect(bootingExceededGrace(t0, t0)).toBe(false);
+    expect(bootingExceededGrace(t0, t0 + BOOTING_GRACE_MS)).toBe(false);
+  });
+
+  test('past the grace window: demote to unreachable', () => {
+    expect(bootingExceededGrace(t0, t0 + BOOTING_GRACE_MS + 1)).toBe(true);
+    expect(bootingExceededGrace(t0, t0 + BOOTING_GRACE_MS * 10)).toBe(true);
   });
 });
 

@@ -95,13 +95,31 @@ function BackgroundSessionStream({
  * intentionally minimal: no coalescing, no query-cache writes, no
  * notifications — just keep the session live.
  */
+/**
+ * A background stream that fails to even connect this many times in a row —
+ * without a single event and without holding the connection open — is treated
+ * as a stopped/unreachable sandbox and abandoned, rather than reconnecting
+ * forever. A stopped box answers /global/event with 503 (or 302→auth0 CORS)
+ * every time; without this, every open-but-stopped tab hammered its sandbox
+ * indefinitely, producing a wall of `/global/event` 503s on any session page.
+ * If the box comes back, the session-list query (30s) re-derives externalId and
+ * BackgroundSessionStream's effect remounts a fresh stream — so giving up is
+ * safe, not permanent.
+ */
+const BACKGROUND_STREAM_GIVE_UP_AFTER = 4;
+/** A connection open at least this long counts as "real box, just dropped" — reconnect. */
+const BACKGROUND_STREAM_ALIVE_MS = 10_000;
+
 async function runBackgroundStream(
   url: string,
   sessionId: string,
   signal: AbortSignal,
 ): Promise<void> {
   let retry = 0;
+  let connectFailures = 0;
   while (!signal.aborted) {
+    const startedAt = Date.now();
+    let sawEvent = false;
     try {
       const client = getClientForUrl(url);
       const result = await client.global.event({
@@ -112,6 +130,7 @@ async function runBackgroundStream(
       const { stream } = result;
       for await (const event of stream) {
         if (signal.aborted) break;
+        sawEvent = true;
         const raw = event as unknown as { payload?: OpenCodeEvent } & OpenCodeEvent;
         const e = (raw && typeof raw === 'object' && 'payload' in raw
           ? raw.payload
@@ -124,12 +143,28 @@ async function runBackgroundStream(
         }
       }
       retry = 0;
+      connectFailures = 0;
     } catch (err) {
       if (signal.aborted) break;
+      // Distinguish a real box that dropped (connected a while / streamed
+      // events) from a stopped box that fails fast every time.
+      if (sawEvent || Date.now() - startedAt >= BACKGROUND_STREAM_ALIVE_MS) {
+        connectFailures = 0;
+      } else {
+        connectFailures++;
+      }
       logger.warn('[session-stream-keeper] background stream error', {
         sessionId,
+        connectFailures,
         error: String(err),
       });
+      if (connectFailures >= BACKGROUND_STREAM_GIVE_UP_AFTER) {
+        logger.warn('[session-stream-keeper] abandoning unreachable background sandbox', {
+          sessionId,
+          connectFailures,
+        });
+        break;
+      }
     }
 
     if (signal.aborted) break;

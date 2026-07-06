@@ -106,7 +106,13 @@ export async function readFile(filePath: string): Promise<FileContent> {
   const baseUrl = getActiveOpenCodeUrl();
   const daemonPath = toDaemonPath(filePath);
   const response = await authenticatedFetch(`${baseUrl}/file/content?path=${encodeURIComponent(daemonPath)}`);
-  if (!response.ok) throw new Error(await errorMessage(response));
+  if (!response.ok) {
+    // Attach the HTTP status so callers can fail fast on 4xx (e.g. a directory
+    // read returns 400) instead of retrying a permanent error on a loop.
+    const err = new Error(await errorMessage(response)) as Error & { status?: number };
+    err.status = response.status;
+    throw err;
+  }
   return response.json() as Promise<FileContent>;
 }
 

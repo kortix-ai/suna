@@ -43,6 +43,31 @@ export const POLL_UNREACHABLE = 5_000; // 5s when confirmed unreachable
 
 export const CHECK_TIMEOUT = 20_000;
 
+/**
+ * How long a sandbox may keep answering 503 ("OpenCode still booting") before
+ * we stop treating it as progress and mark it unreachable.
+ *
+ * A live sandbox proxy returning 503 normally means OpenCode is mid-boot, so we
+ * fast-poll (POLL_FAILING) to flip `healthy` the instant it's ready. But a
+ * *stopped* sandbox — or one whose initial OpenCode session failed to boot
+ * (`initial_opencode_session_failed`) — answers 503 forever. Without a cap that
+ * held the loop at 150ms indefinitely, hammering the proxy and flapping
+ * `connected/healthy`, which in turn churned the SSE `/global/event` stream and
+ * the permission/question/status hydration open/closed on every tick. After
+ * this window of continuous 503s we demote to `unreachable` (5s poll, SSE gate
+ * closed) so the page settles into an honest offline state instead of a storm.
+ */
+export const BOOTING_GRACE_MS = 30_000;
+
+/**
+ * Whether a continuous "booting" (503) streak that began at `bootingSince` has
+ * outlasted BOOTING_GRACE_MS as of `now` — i.e. stop treating it as progress
+ * and demote to `unreachable`. Pure so it can be unit-tested.
+ */
+export function bootingExceededGrace(bootingSince: number, now: number): boolean {
+  return now - bootingSince > BOOTING_GRACE_MS;
+}
+
 /** Statuses whose HTTP response itself signals "nothing is home" — no threshold needed. */
 export function isImmediateOfflineStatus(status: number): boolean {
   return status === 502 || status === 503 || status === 504;
@@ -170,6 +195,10 @@ export function useRuntimeReconnect() {
     }
 
     let alive = true;
+    // Wall-clock start of the current continuous "booting" (503) streak, or
+    // null when the last probe was anything else. Bounds the fast-poll — see
+    // BOOTING_GRACE_MS. Lives in the effect closure so it resets on remount.
+    let bootingSince: number | null = null;
 
     async function check() {
       if (!alive) return;
@@ -205,29 +234,40 @@ export function useRuntimeReconnect() {
         const outcome = classifyProbeResult(result);
         switch (outcome.kind) {
           case 'auth-error': {
+            bootingSince = null;
             failed = true;
             immediateOffline = false;
             break;
           }
           case 'booting': {
-            resetSandboxFail();
-            setSandboxStatus('connected');
-            setOpenCodeHealth(
-              false,
-              outcome.health?.version,
-              outcome.health?.boot_error ?? outcome.health?.message ?? outcome.health?.reason ?? null,
-            );
+            const now = Date.now();
+            if (bootingSince === null) bootingSince = now;
             if (outcome.health?.version) {
               setSandboxVersion(outcome.health.version);
             }
+            const bootError =
+              outcome.health?.boot_error ?? outcome.health?.message ?? outcome.health?.reason ?? null;
+            if (bootingExceededGrace(bootingSince, now)) {
+              // Booting too long — a stopped box, or one whose initial OpenCode
+              // session failed. Stop fast-polling: mark unreachable so the loop
+              // drops to POLL_UNREACHABLE and the SSE/hydration gate closes.
+              setSandboxStatus('unreachable');
+              setOpenCodeHealth(false, outcome.health?.version, bootError);
+              break;
+            }
+            resetSandboxFail();
+            setSandboxStatus('connected');
+            setOpenCodeHealth(false, outcome.health?.version, bootError);
             break;
           }
           case 'failure': {
+            bootingSince = null;
             failed = true;
             immediateOffline = outcome.immediateOffline;
             break;
           }
           case 'healthy': {
+            bootingSince = null;
             resetSandboxFail();
             setSandboxStatus('connected');
             setOpenCodeHealth(
@@ -246,6 +286,7 @@ export function useRuntimeReconnect() {
         // classify, so this always counts as a plain (non-immediate) failure;
         // the threshold decides whether it flips the status.
         if (!alive) return;
+        bootingSince = null;
         failed = true;
         immediateOffline = false;
       } finally {
