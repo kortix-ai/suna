@@ -16,7 +16,7 @@ import { AlertCircle, ChevronRight } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { FormEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 
 import { AuthBrowserNoiseGuard } from '@/components/auth/auth-browser-noise-guard';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
@@ -27,7 +27,9 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import { authRedirectUrl } from '@/lib/desktop';
 import { getEnv } from '@/lib/env-config';
+import { emailDomain, isWorkEmail } from '@/lib/personal-email';
 import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -142,6 +144,50 @@ function AuthCardForm({
     }
     if (method === 'magic' && mode === 'signup') {
       formData.set('acceptedTerms', 'true');
+    }
+
+    // Enterprise home-realm discovery — zero-config. When the address is a WORK
+    // email (isWorkEmail skiplists gmail/outlook/… in-memory, so consumer logins
+    // never reach the network) whose domain is bound to a SAML provider, hand off
+    // to the IdP instead of magic-link/password. signInWithSSO returns
+    // { data: { url } } for a matching domain and an error otherwise, so a work
+    // domain with no provider — or a Supabase without SAML enabled — falls
+    // straight through to the email flow below. Runs in both sign-in and sign-up
+    // (an SSO user is JIT-provisioned on first login). `emailDomain` mirrors the
+    // parser isWorkEmail used, so we probe exactly the domain it validated.
+    // "SSO required" enforcement is a server-side concern; this is opportunistic
+    // routing with the email flow as the always-present fallback.
+    const email = String(formData.get('email') || '');
+    const domain = emailDomain(email);
+    if (domain && isWorkEmail(email)) {
+      try {
+        const supabase = createBrowserSupabaseClient();
+        const callbackParams = new URLSearchParams();
+        if (returnUrl) callbackParams.set('returnUrl', returnUrl);
+        if (mobileCallbackState) {
+          callbackParams.set('mobile_callback', '1');
+          callbackParams.set('state', mobileCallbackState);
+        }
+        const callbackPath = `${mobileCallbackState ? '/auth/mobile/callback' : '/auth/callback'}${
+          callbackParams.size ? `?${callbackParams.toString()}` : ''
+        }`;
+        const { data, error } = await supabase.auth.signInWithSSO({
+          domain,
+          // We own the redirect (below) so authRedirectUrl's desktop `?desktop=true`
+          // bounce stays authoritative; without skipBrowserRedirect, auth-js also
+          // calls window.location.assign(data.url) — a redundant double-navigation.
+          options: { redirectTo: authRedirectUrl(callbackPath), skipBrowserRedirect: true },
+        });
+        if (!error && data?.url) {
+          // Full navigation to the IdP; the callback route exchanges the code
+          // on return (same PKCE path as Google OAuth).
+          window.location.href = data.url;
+          return;
+        }
+        // Work domain with no SAML provider → fall through to magic/password.
+      } catch {
+        // SAML not enabled on this Supabase, or a transient error — fall through.
+      }
     }
 
     try {
@@ -665,7 +711,7 @@ function AuthContent() {
                 transition={
                   prefersReducedMotion
                     ? undefined
-                    : { duration: 1.8, repeat: Infinity, ease: 'easeInOut' }
+                    : { duration: 1.8, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }
                 }
               >
                 <ChevronRight className="text-foreground/20 size-3.5 rotate-90" />
