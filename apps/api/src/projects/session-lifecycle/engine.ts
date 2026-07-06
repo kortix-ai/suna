@@ -197,6 +197,7 @@ export async function continueSession(
       accountId: projectSessions.accountId,
       projectId: projectSessions.projectId,
       status: projectSessions.status,
+      metadata: projectSessions.metadata,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
@@ -204,6 +205,12 @@ export async function continueSession(
 
   if (!session) return 'no-session';
   if (session.status === 'failed') return 'failed';
+  // deleteSession() stamps metadata.deletedAt and leaves the row 'stopped' —
+  // the same status a normal hibernate uses. Without this check a queued
+  // follow-up (Slack reply, scheduled trigger, etc.) would revive a session
+  // the user explicitly deleted.
+  const sessionMeta = (session.metadata ?? {}) as Record<string, unknown>;
+  if (typeof sessionMeta.deletedAt === 'string') return 'no-session';
 
   const userId = command.userId ?? await resolveProjectAutomationActor(session.accountId);
   if (!userId) {
