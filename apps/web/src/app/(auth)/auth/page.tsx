@@ -16,7 +16,7 @@ import { AlertCircle, ChevronRight } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { FormEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 
 import { AuthBrowserNoiseGuard } from '@/components/auth/auth-browser-noise-guard';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
@@ -27,6 +27,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import { authRedirectUrl } from '@/lib/desktop';
 import { getEnv } from '@/lib/env-config';
 import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
 import { toast } from '@/lib/toast';
@@ -97,6 +98,17 @@ function AuthCardForm({
   }, []);
   const magicLinkEnabled = enabledMethods.includes('magic');
   const passwordEnabled = enabledMethods.includes('password');
+  // Enterprise SSO (SAML) home-realm discovery. Opt-in per deployment by adding
+  // `sso` to NEXT_PUBLIC_AUTH_METHODS — off by default so consumer sign-in pays
+  // no extra round-trip. `sso` is NOT an AuthMethod (no magic/password-style
+  // toggle); it's a discovery pass that runs on submit before the email flow.
+  const ssoEnabled = useMemo(() => {
+    const raw = getEnv().AUTH_METHODS || 'magic,password';
+    return raw
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .includes('sso');
+  }, []);
   const [method, setMethod] = useState<AuthMethod>(magicLinkEnabled ? 'magic' : 'password');
   const [pending, setPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -142,6 +154,44 @@ function AuthCardForm({
     }
     if (method === 'magic' && mode === 'signup') {
       formData.set('acceptedTerms', 'true');
+    }
+
+    // Enterprise home-realm discovery: if this email's domain is bound to a
+    // SAML provider, hand off to the IdP instead of magic-link/password.
+    // signInWithSSO returns { data: { url } } for a matching domain and an
+    // error otherwise, so non-SSO domains (and Supabase instances without SAML
+    // enabled) fall straight through to the normal email flow below. Applies to
+    // both sign-in and sign-up: an SSO user is JIT-provisioned on first login.
+    if (ssoEnabled) {
+      const email = String(formData.get('email') || '').trim();
+      const domain = email.split('@')[1]?.toLowerCase();
+      if (domain) {
+        try {
+          const supabase = createBrowserSupabaseClient();
+          const callbackParams = new URLSearchParams();
+          if (returnUrl) callbackParams.set('returnUrl', returnUrl);
+          if (mobileCallbackState) {
+            callbackParams.set('mobile_callback', '1');
+            callbackParams.set('state', mobileCallbackState);
+          }
+          const callbackPath = `${mobileCallbackState ? '/auth/mobile/callback' : '/auth/callback'}${
+            callbackParams.size ? `?${callbackParams.toString()}` : ''
+          }`;
+          const { data, error } = await supabase.auth.signInWithSSO({
+            domain,
+            options: { redirectTo: authRedirectUrl(callbackPath) },
+          });
+          if (!error && data?.url) {
+            // Full navigation to the IdP; the callback route exchanges the code
+            // on return (same PKCE path as Google OAuth).
+            window.location.href = data.url;
+            return;
+          }
+          // No provider for this domain → fall through to magic/password.
+        } catch {
+          // SAML not enabled on this Supabase, or a transient error — fall through.
+        }
+      }
     }
 
     try {
@@ -505,6 +555,12 @@ function AuthCardForm({
             </Button>
           </form>
 
+          {ssoEnabled && (
+            <p className="text-foreground/40 mt-3 text-center text-xs">
+              Enterprise SSO is enabled — sign in with your work email.
+            </p>
+          )}
+
           {magicLinkEnabled && passwordEnabled && (
             <div className="mt-4 text-center">
               <button
@@ -665,7 +721,7 @@ function AuthContent() {
                 transition={
                   prefersReducedMotion
                     ? undefined
-                    : { duration: 1.8, repeat: Infinity, ease: 'easeInOut' }
+                    : { duration: 1.8, repeat: Number.POSITIVE_INFINITY, ease: 'easeInOut' }
                 }
               >
                 <ChevronRight className="text-foreground/20 size-3.5 rotate-90" />
