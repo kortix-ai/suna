@@ -63,6 +63,7 @@ const fakeDb = {
 mock.module('drizzle-orm', () => ({
   eq: (column: string, value: unknown) => ({ column, value }),
   ne: (column: string, value: unknown) => ({ op: 'ne', column, value }),
+  asc: (column: string) => ({ op: 'asc', column }),
   and: (...parts: unknown[]) => ({ op: 'and', parts }),
   or: (...parts: unknown[]) => ({ op: 'or', parts }),
   isNull: (column: string) => ({ op: 'isNull', column }),

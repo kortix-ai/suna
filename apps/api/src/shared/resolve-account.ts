@@ -114,22 +114,23 @@ export async function resolveScopedAccountId(
 }
 
 export async function resolveAccountId(userId: string): Promise<string> {
-  try {
-    const [membership] = await db
-      .select({ accountId: accountMembers.accountId })
-      .from(accountMembers)
-      .where(eq(accountMembers.userId, userId))
-      // Deterministic "primary account" = the user's earliest-joined account
-      // (their original). No personal/team flag — there is no such thing now;
-      // a bare (account-agnostic) lookup must be stable, not pick-whatever-row.
-      .orderBy(accountMembers.joinedAt)
-      .limit(1);
+  // NOTE: a failing membership lookup must THROW, not fall through — silently
+  // treating a DB error as "no membership" would mis-scope a multi-account
+  // user to their personal account id below.
+  const [membership] = await db
+    .select({ accountId: accountMembers.accountId })
+    .from(accountMembers)
+    .where(eq(accountMembers.userId, userId))
+    // Deterministic "primary account" = the user's earliest-joined account
+    // (their original). No personal/team flag — there is no such thing now;
+    // a bare (account-agnostic) lookup must be stable, not pick-whatever-row.
+    .orderBy(accountMembers.joinedAt)
+    .limit(1);
 
-    if (membership) {
-      await syncLegacySubscription(membership.accountId);
-      return membership.accountId;
-    }
-  } catch {}
+  if (membership) {
+    await syncLegacySubscription(membership.accountId);
+    return membership.accountId;
+  }
 
   // First-time signup → create the user's personal account (id == userId) and a
   // self-membership. Pending account invitations are auto-claimed on the first
