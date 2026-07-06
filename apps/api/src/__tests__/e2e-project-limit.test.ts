@@ -81,6 +81,11 @@ mock.module('../projects/git-backends', () => ({
 mock.module('../shared/account-limits', () => ({
   maxProjectsForAccount: async () => projectLimit,
   maxConcurrentSessionsForTier: () => Number.MAX_SAFE_INTEGER,
+  resolveAccountSessionLimit: async () => ({
+    tier: 'free',
+    limit: Number.MAX_SAFE_INTEGER,
+    source: 'tier',
+  }),
   resolveAccountTier: async () => 'free',
   accountEntitledToLlmGateway: async () => true,
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),

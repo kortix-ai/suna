@@ -1936,6 +1936,13 @@ export const creditAccounts = kortixSchema.table(
     autoTopupCustomized: boolean('auto_topup_customized').default(false).notNull(),
     autoTopupConsecutiveFailures: integer('auto_topup_consecutive_failures').default(0).notNull(),
     autoTopupDisabledReason: text('auto_topup_disabled_reason'),
+    // Operator-set concurrent-session cap for this account. NULL (the default)
+    // means "no override" — the account's plan tier decides the limit
+    // (TierConfig.concurrentSessionLimit). When set, it takes precedence over
+    // the tier limit in BOTH directions (raise for enterprise deals, lower for
+    // abuse containment). Set out-of-band (data migration / operator SQL),
+    // like tier='enterprise'.
+    maxConcurrentSessions: integer('max_concurrent_sessions'),
   },
   (table) => [
     index('kortix_credit_accounts_account_id_idx').on(table.accountId),
