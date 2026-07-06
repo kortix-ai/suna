@@ -34,7 +34,12 @@ export async function resolveFirstProjectPathForNewUser(opts: {
 
   const result = await provisionProjectWithToken(
     { ...tokenOpts, timeoutMs: PROVISION_TIMEOUT_MS },
-    { account_id: accountId, name: 'My First Project', seed_starter: true },
+    {
+      account_id: accountId,
+      name: 'My First Project',
+      seed_starter: true,
+      starter_template: 'general-knowledge-worker',
+    },
   );
 
   if (result.ok) {
