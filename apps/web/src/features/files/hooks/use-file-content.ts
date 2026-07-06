@@ -5,6 +5,7 @@ import { useServerStore } from '@/stores/server-store';
 import { readFile } from '../api/opencode-files';
 import type { FileContent } from '../types';
 import { fileReadRetryDelayMs, shouldRetryFileRead } from './file-read-retry';
+import { isSystemDirectoryPath } from './system-dir';
 
 export const fileContentKeys = {
   all: ['opencode-files', 'content'] as const,
@@ -27,7 +28,10 @@ export function useFileContent(
   return useQuery<FileContent>({
     queryKey: filePath ? fileContentKeys.file(serverUrl, filePath) : [],
     queryFn: () => readFile(filePath!),
-    enabled: !!filePath && options?.enabled !== false,
+    enabled:
+      !!filePath &&
+      !isSystemDirectoryPath(filePath) &&
+      options?.enabled !== false,
     staleTime: options?.staleTime ?? 10_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,

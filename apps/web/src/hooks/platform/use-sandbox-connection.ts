@@ -13,6 +13,9 @@ import {
 	useSandboxConnectionStore,
 } from "@/stores/sandbox-connection-store";
 import { useServerStore } from "@/stores/server-store";
+// Boot-grace bound lives in a standalone pure module so it can be unit-tested
+// without this 'use client' hook's React/store dependencies.
+import { isBootGraceExpired } from "./boot-grace";
 
 /**
  * Number of consecutive failures before marking as unreachable
@@ -80,6 +83,10 @@ export function useSandboxConnection() {
 	const isMountRef = useRef(true);
 	const prevServerVersionRef = useRef(serverVersion);
 	const portsFetchedRef = useRef(false);
+	// When the sandbox first started reporting "not ready" (503/booting). Reset to
+	// null on any healthy response. Used to bound the fast-poll boot window so a
+	// stopped box that answers 503 forever isn't hammered at POLL_FAILING forever.
+	const unhealthySinceRef = useRef<number | null>(null);
 
 	useEffect(() => {
 		const isFirstMount = isMountRef.current;
@@ -92,6 +99,7 @@ export function useSandboxConnection() {
 			// Each instance starts with a clean slate.
 			resetForServerSwitch();
 			portsFetchedRef.current = false;
+			unhealthySinceRef.current = null;
 		}
 
 		let alive = true;
@@ -148,8 +156,30 @@ export function useSandboxConnection() {
 					} catch {
 						parsed = null;
 					}
-					resetSandboxFail();
-					setSandboxStatus("connected");
+
+					// Track how long we've been "not ready". A genuine boot flips
+					// healthy well within BOOT_GRACE_MS; a stopped/stuck box answers
+					// 503 forever. Past the grace window, stop treating this as a
+					// transient boot (which fast-polls at 150ms and keeps re-firing
+					// every health-gated query) and mark it unreachable so we back
+					// off to POLL_UNREACHABLE. If it later returns a healthy 200 we
+					// reconnect normally.
+					const now = Date.now();
+					if (unhealthySinceRef.current === null) {
+						unhealthySinceRef.current = now;
+					}
+					const bootedTooLong = isBootGraceExpired(
+						unhealthySinceRef.current,
+						now,
+					);
+
+					if (bootedTooLong) {
+						incrementSandboxFail();
+						setSandboxStatus("unreachable");
+					} else {
+						resetSandboxFail();
+						setSandboxStatus("connected");
+					}
 					setOpenCodeHealth(
 						false,
 						parsed?.version,
@@ -176,8 +206,17 @@ export function useSandboxConnection() {
 				resetSandboxFail();
 				setSandboxStatus("connected");
 				const healthData = await res.json().catch(() => null) as SandboxHealthResponse | null;
+				const runtimeReady = isRuntimeReady(healthData);
+				// A ready runtime clears the boot-grace clock so a later transient
+				// blip starts its own fresh grace window instead of inheriting an
+				// old one and being wrongly escalated to unreachable.
+				if (runtimeReady) {
+					unhealthySinceRef.current = null;
+				} else if (unhealthySinceRef.current === null) {
+					unhealthySinceRef.current = Date.now();
+				}
 				setOpenCodeHealth(
-					isRuntimeReady(healthData),
+					runtimeReady,
 					healthData?.version,
 					healthData?.boot_error ?? healthData?.message ?? healthData?.reason ?? null,
 				);
