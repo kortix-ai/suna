@@ -235,8 +235,8 @@ ok "Docker Compose started"
 
 section "Schema Bootstrap (migrate one-shot)"
 # The kortix-migrate one-shot must complete (exit 0) before the API starts. On a
-# fresh DB it installs the non-kortix prerequisites (basejump etc.) then applies
-# all migrations. Assert it ran and provisioned the managed schema.
+# fresh DB it installs the non-kortix prerequisites then applies all
+# migrations. Assert it ran and provisioned the managed schema.
 MIGRATE_EXIT=$(docker inspect -f '{{.State.ExitCode}}' "kortix-$INSTANCE-kortix-migrate-1" 2>/dev/null || echo "missing")
 [ "$MIGRATE_EXIT" = "0" ] || die "kortix-migrate one-shot did not succeed (exit=$MIGRATE_EXIT)"
 ok "kortix-migrate one-shot completed (exit 0)"
@@ -245,9 +245,7 @@ section "HTTP Health"
 wait_for_json "API" "$API_PUBLIC_URL/v1/health" 180
 wait_for_json "frontend runtime config" "$PUBLIC_URL/api/runtime-config" 180
 wait_for_db_table "Kortix schema" "kortix.project_snapshot_builds" 180
-# basejump must exist too — it's the account framework the schema is built on,
-# and the regression we guard against was a DB with empty kortix + no basejump.
-wait_for_db_table "basejump accounts" "basejump.account_user" 60
+wait_for_db_table "Kortix accounts" "kortix.account_members" 60
 
 source "$CONFIG_DIR/.env"
 curl -fsS -H "apikey: $SUPABASE_ANON_KEY" "$SUPABASE_PUBLIC_URL/auth/v1/health" >/dev/null

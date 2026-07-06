@@ -2,7 +2,7 @@ import { Context } from 'hono';
 import { z } from '@hono/zod-openapi';
 import { and, asc, count, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { makeOpenApiApp } from '../../openapi';
-import { accountInvitations, accountMembers, accountUser, accounts } from '@kortix/db';
+import { accountInvitations, accountMembers, accounts } from '@kortix/db';
 import type { AppEnv } from '../../types';
 import { db } from '../../shared/db';
 import { getSupabase } from '../../shared/supabase';
@@ -261,50 +261,6 @@ export async function resolveAccountDisplayNames(
     const ownerId = ownerByAccount.get(accountId);
     const email = !ownerId || ownerId === caller.userId
       ? caller.email // ownerless account: caller email beats a bare 'Account'
-      : ownerEmails.get(ownerId) ?? caller.email;
-    names.set(accountId, defaultAccountName(email));
-  }
-  return names;
-}
-
-// Same idea for legacy basejump memberships (no kortix.accounts row to carry a
-// name at all): resolve each account's basejump owner and name it after them.
-export async function resolveLegacyAccountDisplayNames(
-  accountIds: string[],
-  caller: { userId: string; email: string | null | undefined },
-): Promise<Map<string, string>> {
-  const names = new Map<string, string>();
-  if (accountIds.length === 0) return names;
-
-  const ownerByAccount = new Map<string, string>();
-  try {
-    const owners = await db
-      .select({ accountId: accountUser.accountId, userId: accountUser.userId })
-      .from(accountUser)
-      .where(and(
-        inArray(accountUser.accountId, accountIds),
-        eq(accountUser.accountRole, 'owner'),
-      ));
-    for (const o of owners) {
-      // Basejump personal accounts use account_id == user_id; prefer that
-      // owner, otherwise first one wins (no join timestamp to order by).
-      if (o.accountId === o.userId || !ownerByAccount.has(o.accountId)) {
-        ownerByAccount.set(o.accountId, o.userId);
-      }
-    }
-  } catch {
-    // basejump may not exist — fall through to caller email below.
-  }
-
-  const foreignOwnerIds = [...new Set(ownerByAccount.values())].filter(
-    (id) => id !== caller.userId,
-  );
-  const ownerEmails = await lookupEmailsByUserIds(foreignOwnerIds);
-
-  for (const accountId of accountIds) {
-    const ownerId = ownerByAccount.get(accountId);
-    const email = !ownerId || ownerId === caller.userId
-      ? caller.email
       : ownerEmails.get(ownerId) ?? caller.email;
     names.set(accountId, defaultAccountName(email));
   }

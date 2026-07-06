@@ -38,10 +38,14 @@ node-pg-migrate records the migration *name*, not a content checksum — so it w
 The baseline assumes these already exist (they do on every Supabase env):
 
 - Supabase Auth: `auth.users`, `auth.uid()`, `auth.role()`
-- Basejump accounts: `basejump.account_user` (+ `basejump.account_role` enum)
+- A minimal `basejump.account_user` STUB (+ `basejump.account_role` enum) —
+  retired legacy: the baseline still creates RLS policies that reference it
+  (rewritten by `20260706120000000_retire_basejump` right after). No data, no
+  triggers; dropped entirely by the follow-up drop-schema migration.
 - Roles: `anon`, `authenticated`, `service_role`
 
-On a truly bare Postgres you must install Supabase Auth + Basejump first.
+On a truly bare Postgres run `scripts/test-prereqs.sql` first (the self-host
+bootstrap does the equivalent automatically).
 
 ---
 

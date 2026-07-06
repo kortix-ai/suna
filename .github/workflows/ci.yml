@@ -237,7 +237,7 @@ jobs:
   # Always-on gate against the self-host schema-bootstrap regression class: a
   # fresh `kortix self-host` database must come up fully provisioned. Boots the
   # data plane (Postgres + Supabase + the kortix-migrate one-shot + the API) and
-  # asserts the migrate one-shot installs basejump + all migrations and the
+  # asserts the migrate one-shot applies all migrations and the
   # owner/account flow works. The frontend/gateway + a live agent session +
   # the update mechanism are covered by the nightly full e2e (self-host-e2e.yml).
   self-host-schema:

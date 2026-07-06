@@ -11,7 +11,7 @@ import { resolveAccountId } from '../../shared/resolve-account';
 import { getSupabase } from '../../shared/supabase';
 import { ttlMemo } from '../../shared/ttl-memo';
 import { effectiveProjectRole, roleAllows, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
-import { accountMembers, accountUser, accounts, projectMembers, projectSessions, projects } from '@kortix/db';
+import { accountMembers, projectMembers, projectSessions, projects } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -249,37 +249,6 @@ export async function ensureOrgMembership(
   return 'member';
 }
 
-async function repairLegacyRequestedAccountMembership(userId: string, accountId: string) {
-  try {
-    const [legacy] = await db
-      .select({ accountId: accountUser.accountId })
-      .from(accountUser)
-      .where(and(eq(accountUser.userId, userId), eq(accountUser.accountId, accountId)))
-      .limit(1);
-    if (!legacy) return null;
-
-    await db
-      .insert(accounts)
-      .values({ accountId, name: 'Account' })
-      .onConflictDoNothing();
-    await db
-      .insert(accountMembers)
-      .values({
-        userId,
-        accountId,
-        accountRole: 'owner',
-        isSuperAdmin: true,
-      })
-      .onConflictDoNothing();
-
-    return await getAccountMembership(userId, accountId);
-  } catch (err) {
-    console.warn('[projects] Failed to repair legacy account membership:', err);
-    return null;
-  }
-}
-
-
 export interface UserIdentity {
   /** Email from the auth provider, or null if the user has none. */
   email: string | null;
@@ -336,10 +305,7 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
   );
   const accountId = requested ?? await resolveAccountId(userId);
 
-  const existingMembership = await getAccountMembership(userId, accountId);
-  const membership =
-    existingMembership ??
-    (requested ? await repairLegacyRequestedAccountMembership(userId, accountId) : null);
+  const membership = await getAccountMembership(userId, accountId);
   if (!membership) {
     throw new HTTPException(403, { message: 'You do not have access to this account' });
   }
