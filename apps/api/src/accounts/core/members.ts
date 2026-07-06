@@ -55,6 +55,16 @@ export function registerMemberRoutes(): void {
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
 
+      // Full-roster visibility is a member-management capability. Owners,
+      // admins, and anyone granted member.invite by a custom policy see every
+      // member plus the sensitive columns (PATs, MFA, groups, project grants).
+      // Plain members only see who runs the account — owners/admins — and
+      // themselves: an account can host unrelated invitees (e.g. one demo
+      // account with several prospect orgs), and a bare membership must not
+      // enumerate the other invitees' emails or security posture.
+      const canManageMembers = (await authorize(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE))
+        .allowed;
+
       const rows = await db
         .select({
           userId: accountMembers.userId,
@@ -64,6 +74,10 @@ export function registerMemberRoutes(): void {
         })
         .from(accountMembers)
         .where(eq(accountMembers.accountId, accountId));
+
+      const visibleRows = canManageMembers
+        ? rows
+        : rows.filter((r) => r.userId === userId || r.accountRole !== 'member');
 
       const emails = await lookupEmailsByUserIds(rows.map((r) => r.userId));
       const projectGrantRows = await db
@@ -143,7 +157,7 @@ export function registerMemberRoutes(): void {
       }
 
       return c.json(
-        rows
+        visibleRows
           // Hide phantom self-memberships: a row where user_id == account_id whose
           // user_id has no auth user (no email). These are minted when a Kortix
           // token — which the auth middleware maps to userId == accountId — hits
@@ -153,17 +167,25 @@ export function registerMemberRoutes(): void {
           // email==null guard is narrow (real members have user_id != account_id),
           // so a transient email-lookup miss never hides a real teammate.
           .filter((r) => !(r.userId === accountId && (emails.get(r.userId) ?? null) === null))
-          .map((r) => ({
-            user_id: r.userId,
-            email: emails.get(r.userId) ?? null,
-            account_role: r.accountRole,
-            is_super_admin: r.isSuperAdmin,
-            explicit_project_count: projectGrantCountByUser.get(r.userId) ?? 0,
-            groups: groupsByUser.get(r.userId) ?? [],
-            active_pat_count: patCountByUser.get(r.userId) ?? 0,
-            has_verified_mfa: mfaByUser.get(r.userId) ?? false,
-            joined_at: r.joinedAt.toISOString(),
-          })),
+          .map((r) => {
+            // Sensitive columns (PATs, MFA, groups, grants) are visible on a
+            // member's own row and to member-managers — never across rows for
+            // plain members.
+            const showSensitive = canManageMembers || r.userId === userId;
+            return {
+              user_id: r.userId,
+              email: emails.get(r.userId) ?? null,
+              account_role: r.accountRole,
+              is_super_admin: r.isSuperAdmin,
+              explicit_project_count: showSensitive
+                ? (projectGrantCountByUser.get(r.userId) ?? 0)
+                : 0,
+              groups: showSensitive ? (groupsByUser.get(r.userId) ?? []) : [],
+              active_pat_count: showSensitive ? (patCountByUser.get(r.userId) ?? 0) : 0,
+              has_verified_mfa: showSensitive ? (mfaByUser.get(r.userId) ?? false) : false,
+              joined_at: r.joinedAt.toISOString(),
+            };
+          }),
       );
     },
   );
@@ -314,6 +336,13 @@ export function registerMemberRoutes(): void {
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
+
+      // Pending invites are member-management data — emails of people who
+      // haven't even joined yet. Plain members get an empty list (not a 403)
+      // so the members page renders without a special error path.
+      const canManageMembers = (await authorize(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE))
+        .allowed;
+      if (!canManageMembers) return c.json([]);
 
       const rows = await db
         .select()
