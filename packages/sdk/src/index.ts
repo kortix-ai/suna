@@ -92,3 +92,201 @@ export {
   type OpenCodeEvent,
   type OpenEventStreamOptions,
 } from './state/event-stream';
+
+/**
+ * Typed error classes for the REST surface — isomorphic (no DOM/React deps),
+ * so a server-side "Kortix as a Backend" wrapper can `catch` a call into
+ * `backendApi`/`createKortix(...)`, `instanceof BillingError` a 402 and pass
+ * the cost/upgrade payload straight through to its own client, or
+ * `instanceof ApiError` to branch on `.status`/`.code`. Same classes the
+ * React host uses (`@kortix/sdk/react` re-exports from this same module) —
+ * one error hierarchy across every host.
+ */
+export {
+  ApiError,
+  AuthError,
+  BillingError,
+  RequestTooLargeError,
+  parseBillingError,
+  isBillingError,
+  formatBillingErrorForUI,
+  type ApiErrorFields,
+  type BillingErrorUI,
+} from './platform/api/errors';
+
+/**
+ * Exhaustive part/turn classification for building chat UIs — framework-free.
+ * `classifyPart` normalizes every opencode `Part` variant (text, reasoning,
+ * tool, file, subtask, patch, snapshot, agent, retry, compaction, step) into
+ * a `ClassifiedPart`, with a compile-time exhaustiveness check plus a runtime
+ * 'unknown' fallback for forward-compat. `classifyTurn` classifies every part
+ * of a message and normalizes its `info.error` into a `TurnError`, so a host
+ * doesn't have to special-case "assistant message with zero parts but a
+ * failure" as silent nothingness. `toolInfo` is a zero-icon tool-name ->
+ * {label, category} registry a host maps to its own icon set. Also available
+ * from `@kortix/sdk/turns`.
+ */
+export {
+  type ClassifiedAgentPart,
+  type ClassifiedCompactionPart,
+  type ClassifiedFilePart,
+  type ClassifiedPart,
+  type ClassifiedPatchPart,
+  type ClassifiedReasoningPart,
+  type ClassifiedRetryPart,
+  type ClassifiedSnapshotPart,
+  type ClassifiedStepPart,
+  type ClassifiedSubtaskPart,
+  type ClassifiedTextPart,
+  type ClassifiedToolPart,
+  type ClassifiedTurn,
+  type ClassifiedUnknownPart,
+  type ToolCategory,
+  type ToolInfoEntry,
+  type ToolStatus,
+  type ToolView,
+  type TurnError,
+  classifyPart,
+  classifyTurn,
+  humanizeToolName,
+  toolInfo,
+} from './turns/index';
+
+/**
+ * The curated chat-event union — narrows the full `OpenCodeEvent` wire union
+ * down to the ~12 events a product chat UI needs (message/part updates,
+ * session status/idle/error, question asked/answered, permission
+ * asked/replied, todo updated, connection, heartbeat-gap), reshaped into
+ * purpose-built payloads. Also available from `@kortix/sdk/event-stream`.
+ */
+export {
+  heartbeatGapEvent,
+  narrowChatEvent,
+  type KortixChatEvent,
+  type KortixChatEventConnection,
+  type KortixChatEventHeartbeatGap,
+  type KortixChatEventMessageRemoved,
+  type KortixChatEventMessageUpdated,
+  type KortixChatEventPartRemoved,
+  type KortixChatEventPartUpdated,
+  type KortixChatEventPermissionAsked,
+  type KortixChatEventPermissionReplied,
+  type KortixChatEventQuestionAnswered,
+  type KortixChatEventQuestionAsked,
+  type KortixChatEventSessionError,
+  type KortixChatEventSessionIdle,
+  type KortixChatEventSessionStatus,
+  type KortixChatEventTodoUpdated,
+  type KortixChatQuestionInfo,
+  type KortixChatQuestionOption,
+  type KortixChatToolRef,
+} from './state/chat-events';
+
+/**
+ * Domain result types from the REST facade (`kortix.project(id).*` /
+ * `kortix.session(...)` / `kortix.accounts.*` / `kortix.billing.*`), re-exported
+ * type-only so a consumer can name what a facade call returns without a
+ * second import from `@kortix/sdk/projects-client`. Additive — no runtime
+ * cost, and every name here already lives in `./platform/projects-client`
+ * (this is a convenience re-export, not a new surface).
+ */
+export type {
+  // Projects
+  KortixProject,
+  ProjectConfigSummary,
+  ProjectDetail,
+  ProjectLlmCatalogResponse,
+  // Accounts / IAM
+  KortixAccount,
+  AccountDetail,
+  AccountMember,
+  AccountRole,
+  ProjectRole,
+  ProjectAccessMember,
+  ProjectAccessRequest,
+  ProjectGroupGrant,
+  ProjectResourceGrant,
+  PendingProjectInvite,
+  PendingApproval,
+  // Secrets / connectors
+  ProjectSecret,
+  ProjectGitConnection,
+  ConnectorSharing,
+  AdminConnector,
+  ConnectorConfig,
+  // Sessions
+  ProjectSession,
+  ProjectOpenCodeSession,
+  SessionPublicShare,
+  SessionAudit,
+  SessionTranscript,
+  SessionTranscriptMessage,
+  // Change requests / git
+  ChangeRequest,
+  ChangeRequestDiffResponse,
+  ChangeRequestMergePreview,
+  ProjectCommit,
+  ProjectCommitDetail,
+  ProjectCommitFile,
+  ProjectBranch,
+  // Triggers
+  ProjectTrigger,
+  ProjectTriggerListing,
+  // Sandbox
+  SandboxTemplate,
+  ProjectSandboxHealth,
+  ProjectSnapshotBuild,
+  // Gateway (LLM observability / budgets)
+  GatewayLogRow,
+  GatewayLogDetail,
+  GatewayOverview,
+  GatewayBudgetRow,
+  GatewayKeyRow,
+  // Tokens (CLI PATs)
+  AccountToken,
+  CreatedAccountToken,
+  ProjectCliToken,
+  CreatedProjectCliToken,
+  // Billing
+  AccountState,
+  BillingTransaction,
+  BillingTransactionsPage,
+  BillingTransactionsSummary,
+  BillingCreditBreakdown,
+  BillingTierConfiguration,
+  // Marketplace / registry
+  MarketplaceInstalledItem,
+  MarketplaceInstallResult,
+  MarketplaceUpdateStatusEntry,
+  MarketplaceUpdatesResponse,
+  // Account audit
+  AuditEvent,
+  AuditEventList,
+  AuditWebhook,
+  // Setup links (secret-entry / connect-request)
+  SecretRequestLink,
+  ConnectorRequestLink,
+  // Manifest validate / git token
+  ManifestValidationResult,
+  ProjectGitToken,
+  // Gateway playground
+  GatewayPlaygroundResponse,
+  // Billing mutations
+  CheckoutSessionResult,
+  PortalSessionResult,
+  AutoTopupSettings,
+  // Public marketplace catalog (top-level `kortix.marketplace.*`)
+  MarketplaceCatalogItem,
+  MarketplaceItemsResponse,
+  MarketplaceEntry,
+  MarketplaceSource,
+  // Auth validate helper
+  AccountIdentity,
+  ValidateTokenResult,
+} from './platform/projects-client';
+
+/**
+ * Linear-time trailing-slash strip shared with hosts — see
+ * `platform/strings.ts` for why this replaces the regex idiom.
+ */
+export { stripTrailingSlashes } from './platform/strings';

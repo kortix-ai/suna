@@ -35,8 +35,14 @@ export function normalizeProviderList(
     };
   }
 
-  const legacyProviders = Array.isArray((providers as any).providers)
-    ? (providers as any).providers
+  // Legacy responses carried providers under `.providers` instead of `.all` —
+  // not part of the modern `ProviderListResponse` type, so duck-type via
+  // `unknown` rather than assume that (long-gone) legacy shape is still real.
+  const maybeLegacy = (providers as unknown as { providers?: unknown }).providers;
+  const legacyProviders: Array<{ id: string; models?: Record<string, unknown> }> = Array.isArray(
+    maybeLegacy,
+  )
+    ? maybeLegacy
     : [];
   if (legacyProviders.length === 0) {
     return {
@@ -49,7 +55,7 @@ export function normalizeProviderList(
   return {
     ...providers,
     all: legacyProviders,
-    connected: legacyProviders.map((provider: { id: string }) => provider.id),
+    connected: legacyProviders.map((provider) => provider.id),
   } as ProviderListResponse;
 }
 

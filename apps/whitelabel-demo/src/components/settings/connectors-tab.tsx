@@ -24,6 +24,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { cn } from '@/lib/utils';
+import type { AdminConnector } from '@kortix/sdk/projects-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plug, RefreshCw, Settings2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -65,9 +66,8 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
   const sync = useMutation({
     mutationFn: () => kortix.project(projectId).connectors.sync(),
     onSuccess: (res) => {
-      const r = res as any;
       refresh();
-      toast.success(`Synced ${r?.synced ?? 0} connector(s)`);
+      toast.success(`Synced ${res.synced} connector(s)`);
     },
     onError: () => toast.error('Sync failed'),
   });
@@ -99,8 +99,7 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
     onError: () => toast.error('Could not remove connector'),
   });
 
-  const raw = connectors.data as any;
-  const items: any[] = Array.isArray(raw) ? raw : (raw?.connectors ?? []);
+  const items: AdminConnector[] = connectors.data?.connectors ?? [];
 
   return (
     <div className="space-y-4">
@@ -253,7 +252,7 @@ function ConnectorConfigDialog({
     enabled: open,
   });
 
-  const data = config.data as any;
+  const data = config.data;
   const rows: Array<[string, unknown]> = data
     ? Object.entries(data).filter(([, v]) => v !== null && typeof v !== 'object')
     : [];

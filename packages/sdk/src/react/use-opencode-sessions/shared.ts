@@ -42,17 +42,23 @@ export function activeServerKey(): string {
 
 export function unwrap<T>(result: { data?: T; error?: unknown; response?: Response }): T {
   if (result.error) {
-    const err = result.error as any;
+    const err = result.error;
     const status = (result.response as Response | undefined)?.status;
-    // Try to extract the most specific error message from the SDK response
+    // Try to extract the most specific error message from the SDK response.
+    // `error` is genuinely `unknown` here — its shape varies by which SDK
+    // call produced it (typed error unions differ per endpoint) — so this
+    // duck-types defensively instead of assuming a shape.
+    const errRec = err && typeof err === 'object' ? (err as Record<string, unknown>) : undefined;
+    const dataRec =
+      errRec?.data && typeof errRec.data === 'object' ? (errRec.data as Record<string, unknown>) : undefined;
     const msg =
-      err?.data?.message ||
-      err?.message ||
-      err?.error ||
+      dataRec?.message ||
+      errRec?.message ||
+      errRec?.error ||
       (typeof err === 'string' ? err : null) ||
       (typeof err === 'object' ? JSON.stringify(err) : null) ||
       (status ? `Server returned ${status}` : 'SDK request failed');
-    throw new Error(msg);
+    throw new Error(String(msg));
   }
   return result.data as T;
 }
@@ -84,7 +90,7 @@ const agentsCache = new ScopedCache<Agent[]>(LS_AGENTS, 8);
 const commandsCache = new ScopedCache<Command[]>(LS_COMMANDS, 4);
 const providersCache = new ScopedCache<SdkProviderListResponse>(LS_PROVIDERS, 2);
 
-const cacheByFamily: Record<string, ScopedCache<any>> = {
+const cacheByFamily: Record<string, ScopedCache<unknown>> = {
   [LS_SESSIONS]: sessionsCache,
   [LS_AGENTS]: agentsCache,
   [LS_COMMANDS]: commandsCache,

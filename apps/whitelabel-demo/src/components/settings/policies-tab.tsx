@@ -52,16 +52,10 @@ export function PoliciesTab({ projectId }: { projectId: string }) {
 
   // Seed local editable state from the server whenever a fresh listing arrives.
   useEffect(() => {
-    const data = policies.data as any;
+    const data = policies.data;
     if (!data) return;
-    const list: any[] = Array.isArray(data) ? data : (data?.policies ?? []);
-    setRules(
-      list.map((p) => ({
-        match: String(p?.match ?? ''),
-        action: (p?.action ?? 'require_approval') as PolicyAction,
-      })),
-    );
-    setDefaultMode((data?.defaultMode ?? 'risk') as DefaultMode);
+    setRules(data.policies.map((p) => ({ match: p.match, action: p.action })));
+    setDefaultMode(data.defaultMode);
   }, [policies.data]);
 
   const save = useMutation({

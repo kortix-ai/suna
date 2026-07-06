@@ -10,9 +10,6 @@
  *   kortix.project(id).files.read(path, ref?) → the monospace viewer (right pane)
  *   kortix.project(id).files.history(path, …) → the per-file "History" popover
  *   kortix.project(id).files.archive(ref, …)  → the "Download" button
- *
- * Shapes are read defensively (cast to `any`) so backend shape variance never
- * breaks the build or the UI.
  */
 
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +22,11 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { cn } from '@/lib/utils';
+import type {
+  ProjectCommit,
+  ProjectFileEntry,
+  ProjectFileSearchMatch,
+} from '@kortix/sdk/projects-client';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   Download,
@@ -101,17 +103,14 @@ export function FilesPanel({ projectId }: { projectId: string }) {
     onError: () => toast.error('Could not download archive'),
   });
 
-  const listRaw = list.data as any;
-  const listItems: any[] = Array.isArray(listRaw)
-    ? listRaw
-    : (listRaw?.items ?? listRaw?.files ?? []);
+  const listItems: ProjectFileEntry[] = list.data ?? [];
+  const searchItems: ProjectFileSearchMatch[] = search.data?.results ?? [];
 
-  const searchRaw = search.data as any;
-  const searchItems: any[] = Array.isArray(searchRaw)
-    ? searchRaw
-    : (searchRaw?.results ?? searchRaw?.items ?? []);
-
-  const rows = searching ? searchItems : listItems;
+  // Normalize the two distinct row shapes (workspace tree vs search match) to
+  // the handful of fields the list below actually renders.
+  const rows: Array<{ path: string; lineText?: string }> = searching
+    ? searchItems.map((m) => ({ path: m.path, lineText: m.line_text }))
+    : listItems.map((f) => ({ path: f.path }));
   const rowsLoading = searching ? search.isLoading : list.isLoading;
   const rowsReady = searching ? search.isSuccess : list.isSuccess;
 
@@ -176,9 +175,9 @@ export function FilesPanel({ projectId }: { projectId: string }) {
               )}
 
               {rows.map((item, i) => {
-                const path: string = item?.path ?? item?.name ?? String(i);
+                const path = item.path;
                 const active = path === selected;
-                const lineText: string | undefined = item?.line_text;
+                const lineText = item.lineText;
                 return (
                   <div
                     key={`${path}-${i}`}
@@ -248,7 +247,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
                 )}
                 {content.isSuccess && (
                   <pre className="whitespace-pre-wrap break-words p-4 font-mono text-[0.7rem] leading-relaxed text-foreground/80">
-                    {(content.data as any)?.content ?? ''}
+                    {content.data?.content ?? ''}
                   </pre>
                 )}
               </ScrollArea>
@@ -275,8 +274,7 @@ function FileHistory({ projectId, path }: { projectId: string; path: string }) {
     enabled: open,
   });
 
-  const raw = history.data as any;
-  const commits: any[] = Array.isArray(raw) ? raw : (raw?.commits ?? raw?.items ?? []);
+  const commits: ProjectCommit[] = history.data?.commits ?? [];
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

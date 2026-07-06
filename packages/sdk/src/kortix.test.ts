@@ -1,6 +1,8 @@
 import { test, expect, beforeEach, mock } from 'bun:test';
 import { createKortix, SessionNotReadyError } from './kortix';
 import { isConfigured } from './platform/config';
+import { listFiles as globalListFiles } from './files/client';
+import { ApiError } from './platform/api/errors';
 
 // Capture every outbound request the facade makes.
 let calls: { url: string; method: string }[] = [];
@@ -327,6 +329,282 @@ test('kortix.transcribe hits the top-level /transcription endpoint (not project-
   expect(last().method).toBe('POST');
 });
 
+// ── wave 5: token minting, billing read surface, marketplace/registry
+// install, session transcript, CR request-changes, account audit — closing
+// the gaps a coverage audit found against the ~499 API routes ──────────────
+
+test('kortix.accounts.tokens covers list/create/revoke (account-scoped CLI PATs)', async () => {
+  await kortix.accounts.tokens.list('ACC1');
+  expect(last().url).toContain('/accounts/tokens?account_id=ACC1');
+  expect(last().method).toBe('GET');
+
+  await kortix.accounts.tokens.create({ name: 'ci-key', accountId: 'ACC1', projectId: 'PID1' });
+  expect(last().url).toContain('/accounts/tokens');
+  expect(last().method).toBe('POST');
+
+  await kortix.accounts.tokens.revoke('TOK1', 'ACC1');
+  expect(last().url).toContain('/accounts/tokens/TOK1?account_id=ACC1');
+  expect(last().method).toBe('DELETE');
+});
+
+test('project(id).tokens covers list/create/revoke (project-scoped CLI PATs)', async () => {
+  await kortix.project('PID123').tokens.list();
+  expect(last().url).toContain('/projects/PID123/cli-token');
+  expect(last().method).toBe('GET');
+
+  await kortix.project('PID123').tokens.create({ name: 'agent-token' });
+  expect(last().url).toContain('/projects/PID123/cli-token');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').tokens.revoke('TOK1');
+  expect(last().url).toContain('/projects/PID123/cli-token/TOK1');
+  expect(last().method).toBe('DELETE');
+});
+
+test('kortix.billing covers the read surface (account-state, transactions, credits, tiers)', async () => {
+  await kortix.billing.accountState();
+  expect(last().url).toContain('/billing/account-state');
+
+  await kortix.billing.accountStateMinimal();
+  expect(last().url).toContain('/billing/account-state/minimal');
+
+  await kortix.billing.transactions({ accountId: 'ACC1', limit: 10 });
+  expect(last().url).toContain('/billing/transactions?account_id=ACC1&limit=10');
+
+  await kortix.billing.transactionsSummary({ days: 7 });
+  expect(last().url).toContain('/billing/transactions/summary?days=7');
+
+  await kortix.billing.creditBreakdown();
+  expect(last().url).toContain('/billing/credit-breakdown');
+
+  await kortix.billing.usageHistory(14);
+  expect(last().url).toContain('/billing/usage-history?days=14');
+
+  await kortix.billing.tierConfigurations();
+  expect(last().url).toContain('/billing/tier-configurations');
+});
+
+test('project(id).marketplace covers list/install/updates/update/updateAll/remove', async () => {
+  await kortix.project('PID123').marketplace.list();
+  expect(last().url).toContain('/projects/PID123/marketplace');
+  expect(last().method).toBe('GET');
+
+  await kortix.project('PID123').marketplace.install('kortix:researcher');
+  expect(last().url).toContain('/projects/PID123/marketplace/install');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').marketplace.updates();
+  expect(last().url).toContain('/projects/PID123/marketplace/updates');
+
+  await kortix.project('PID123').marketplace.update('researcher');
+  expect(last().url).toContain('/projects/PID123/marketplace/update');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').marketplace.updateAll();
+  expect(last().url).toContain('/projects/PID123/marketplace/update-all');
+
+  await kortix.project('PID123').marketplace.remove('researcher');
+  expect(last().url).toContain('/projects/PID123/marketplace/researcher');
+  expect(last().method).toBe('DELETE');
+});
+
+test('project(id).registry is the compatibility alias of marketplace (same paths, /registry prefix)', async () => {
+  await kortix.project('PID123').registry.list();
+  expect(last().url).toContain('/projects/PID123/registry');
+
+  await kortix.project('PID123').registry.install('kortix:researcher');
+  expect(last().url).toContain('/projects/PID123/registry/install');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').registry.updates();
+  expect(last().url).toContain('/projects/PID123/registry/updates');
+
+  await kortix.project('PID123').registry.update('researcher');
+  expect(last().url).toContain('/projects/PID123/registry/update');
+
+  await kortix.project('PID123').registry.updateAll();
+  expect(last().url).toContain('/projects/PID123/registry/update-all');
+
+  await kortix.project('PID123').registry.remove('researcher');
+  expect(last().url).toContain('/projects/PID123/registry/researcher');
+  expect(last().method).toBe('DELETE');
+});
+
+test('session(...).transcript hits the compact transcript endpoint with limit/chars', async () => {
+  await kortix.session('PID123', 'SID456').transcript({ limit: 10, chars: 200 });
+  expect(last().url).toContain('/projects/PID123/sessions/SID456/transcript?limit=10&chars=200');
+  expect(last().method).toBe('GET');
+});
+
+test('project(id).changeRequests.requestChanges hits the request-changes endpoint', async () => {
+  await kortix.project('PID123').changeRequests.requestChanges('CR1', 'please fix the tests');
+  expect(last().url).toContain('/projects/PID123/change-requests/CR1/request-changes');
+  expect(last().method).toBe('POST');
+});
+
+test('kortix.accounts.audit covers log/export/webhooks CRUD', async () => {
+  await kortix.accounts.audit.log('ACC1', { action: 'iam.', limit: 20 });
+  expect(last().url).toContain('/accounts/ACC1/audit?action=iam.&limit=20');
+  expect(last().method).toBe('GET');
+
+  await kortix.accounts.audit.export('ACC1', { format: 'csv' });
+  expect(last().url).toContain('/accounts/ACC1/audit/export?format=csv');
+
+  await kortix.accounts.audit.webhooks.list('ACC1');
+  expect(last().url).toContain('/accounts/ACC1/audit/webhooks');
+  expect(last().method).toBe('GET');
+
+  await kortix.accounts.audit.webhooks.create('ACC1', { name: 'siem', url: 'https://siem.example.com/hook' });
+  expect(last().url).toContain('/accounts/ACC1/audit/webhooks');
+  expect(last().method).toBe('POST');
+
+  await kortix.accounts.audit.webhooks.update('ACC1', 'WH1', { enabled: false });
+  expect(last().url).toContain('/accounts/ACC1/audit/webhooks/WH1');
+  expect(last().method).toBe('PATCH');
+
+  await kortix.accounts.audit.webhooks.remove('ACC1', 'WH1');
+  expect(last().url).toContain('/accounts/ACC1/audit/webhooks/WH1');
+  expect(last().method).toBe('DELETE');
+});
+
+// ── setup links / manifest validate / git token / slack files / meet speak /
+// gateway playground / billing mutations / public marketplace / validateToken
+// — closing the LAST projects-client coverage gaps ─────────────────────────
+
+test('project(id).setupLinks mints secret-entry and connect-request links', async () => {
+  await kortix.project('PID123').setupLinks.requestSecret({ names: ['STRIPE_KEY'] });
+  expect(last().url).toContain('/projects/PID123/secret-requests');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').setupLinks.requestConnector({ slug: 'github' });
+  expect(last().url).toContain('/projects/PID123/connect-requests');
+  expect(last().method).toBe('POST');
+});
+
+test('project(id).validateManifest posts the raw TOML text', async () => {
+  await kortix.project('PID123').validateManifest('[project]\nname = "x"');
+  expect(last().url).toContain('/projects/PID123/manifest/validate');
+  expect(last().method).toBe('POST');
+});
+
+test('project(id).gitToken mints a scoped push token', async () => {
+  await kortix.project('PID123').gitToken();
+  expect(last().url).toContain('/projects/PID123/git-token');
+  expect(last().method).toBe('POST');
+});
+
+test('project(id).channels.slack covers file download + upload proxies', async () => {
+  await kortix.project('PID123').channels.slack.getFile('https://files.slack.com/x');
+  expect(last().url).toContain('/projects/PID123/channels/slack/file?url=');
+  expect(last().method).toBe('GET');
+
+  await kortix.project('PID123').channels.slack.uploadFile({
+    channel: 'C1',
+    filename: 'report.pdf',
+    contentBase64: 'YWJj',
+  });
+  expect(last().url).toContain('/projects/PID123/channels/slack/file/upload');
+  expect(last().method).toBe('POST');
+});
+
+test('project(id).channels.meet.speak posts bot id + text', async () => {
+  await kortix.project('PID123').channels.meet.speak('bot-1', 'hello there');
+  expect(last().url).toContain('/projects/PID123/channels/meet/speak');
+  expect(last().method).toBe('POST');
+});
+
+test('project(id).gateway.playground posts prompt + models', async () => {
+  await kortix.project('PID123').gateway.playground('Say hi', ['gpt-4o', 'claude-3']);
+  expect(last().url).toContain('/projects/PID123/gateway/playground');
+  expect(last().method).toBe('POST');
+});
+
+test('kortix.billing.checkout covers create + confirm session', async () => {
+  await kortix.billing.checkout.createSession({
+    tierKey: 'pro',
+    successUrl: 'https://app.example.com/success',
+    cancelUrl: 'https://app.example.com/cancel',
+  });
+  expect(last().url).toContain('/billing/create-checkout-session');
+  expect(last().method).toBe('POST');
+
+  await kortix.billing.checkout.confirmSession('cs_123');
+  expect(last().url).toContain('/billing/confirm-checkout-session');
+  expect(last().method).toBe('POST');
+});
+
+test('kortix.billing.subscription covers portal/cancel/reactivate/downgrade/proration', async () => {
+  await kortix.billing.subscription.createPortalSession('https://app.example.com/billing');
+  expect(last().url).toContain('/billing/create-portal-session');
+  expect(last().method).toBe('POST');
+
+  await kortix.billing.subscription.cancel('too expensive');
+  expect(last().url).toContain('/billing/cancel-subscription');
+
+  await kortix.billing.subscription.reactivate();
+  expect(last().url).toContain('/billing/reactivate-subscription');
+
+  await kortix.billing.subscription.scheduleDowngrade('starter');
+  expect(last().url).toContain('/billing/schedule-downgrade');
+
+  await kortix.billing.subscription.cancelScheduledChange();
+  expect(last().url).toContain('/billing/cancel-scheduled-change');
+
+  await kortix.billing.subscription.prorationPreview('price_123');
+  expect(last().url).toContain('/billing/proration-preview?new_price_id=price_123');
+  expect(last().method).toBe('GET');
+});
+
+test('kortix.billing.credits covers purchase + auto-topup get/configure', async () => {
+  await kortix.billing.credits.purchase({ amount: 20 });
+  expect(last().url).toContain('/billing/purchase-credits');
+  expect(last().method).toBe('POST');
+
+  await kortix.billing.credits.autoTopupSettings();
+  expect(last().url).toContain('/billing/auto-topup/settings');
+  expect(last().method).toBe('GET');
+
+  await kortix.billing.credits.configureAutoTopup({ enabled: true, threshold: 5, amount: 20 });
+  expect(last().url).toContain('/billing/auto-topup/configure');
+  expect(last().method).toBe('POST');
+});
+
+test('kortix.marketplace covers public catalog browse + authed sources CRUD (top-level, not project-scoped)', async () => {
+  await kortix.marketplace.items({ query: 'slack' });
+  expect(last().url).toContain('/marketplace/items?query=slack');
+  expect(last().method).toBe('GET');
+
+  await kortix.marketplace.item('kortix:researcher');
+  expect(last().url).toContain('/marketplace/items/kortix%3Aresearcher');
+
+  await kortix.marketplace.itemFile('kortix:researcher', 'agent.md');
+  expect(last().url).toContain('/marketplace/items/kortix%3Aresearcher/file?path=agent.md');
+
+  await kortix.marketplace.marketplaces();
+  expect(last().url).toContain('/marketplace/marketplaces');
+
+  await kortix.marketplace.featured();
+  expect(last().url).toContain('/marketplace/marketplaces/featured');
+
+  await kortix.marketplace.sources.list();
+  expect(last().url).toContain('/marketplace/sources');
+  expect(last().method).toBe('GET');
+
+  await kortix.marketplace.sources.add({ address: 'https://github.com/acme/registry' });
+  expect(last().url).toContain('/marketplace/sources');
+  expect(last().method).toBe('POST');
+
+  await kortix.marketplace.sources.remove('SRC1');
+  expect(last().url).toContain('/marketplace/sources/SRC1');
+  expect(last().method).toBe('DELETE');
+});
+
+test('kortix.validateToken hits /accounts/me and never throws', async () => {
+  const result = await kortix.validateToken();
+  expect(last().url).toContain('/accounts/me');
+  expect(result.valid).toBe(true);
+});
+
 // ── per-handle runtime isolation (regression: two session handles used to
 // share the module-global "active runtime", so the second handle's
 // ensureReady() silently redirected the first handle's send/health/preview
@@ -501,4 +779,158 @@ test('restart clears the registry entry so a subsequent send re-resolves the run
   const promptCall = calls.find((c) => c.url.includes('/message'));
   expect(promptCall?.url).toContain('/p/sb-reg2-new/8000');
   expect(startCount).toBe(2);
+});
+
+// ── ensureReady() in-flight dedup (P0 robustness fix: two concurrent
+// ensureReady() calls for the SAME (projectId, sessionId) used to both drive
+// their own `/start` long-poll — a real hazard for a "Kortix as a Backend"
+// server handling concurrent requests against one session) ─────────────────
+
+test('ensureReady() dedupes concurrent starts for the same session: only one /start POST fires, both callers resolve', async () => {
+  let startCalls = 0;
+  let releaseStart!: (res: Response) => void;
+  const deferredStart = new Promise<Response>((resolve) => {
+    releaseStart = resolve;
+  });
+
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'POST' });
+    if (url.includes('/sessions/SESS-DEDUP/start')) {
+      startCalls += 1;
+      return deferredStart;
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const handle = k.session('PROJ', 'SESS-DEDUP');
+
+  // Fire twice concurrently, before the (deferred) /start response arrives.
+  const p1 = handle.ensureReady();
+  const p2 = handle.ensureReady();
+
+  // Let both calls reach (and park at) the deferred /start request before
+  // releasing it — proves they're genuinely in flight together, not just
+  // sequentially resolved.
+  await new Promise((r) => setTimeout(r, 0));
+  releaseStart(jsonResponse(sessionStartPayload('sb-dedup', 'ocs-dedup')));
+
+  const [r1, r2] = await Promise.all([p1, p2]);
+  expect(startCalls).toBe(1); // only ONE /start POST fired for both concurrent callers
+  expect(r1.sandboxId).toBe('sb-dedup');
+  expect(r2.sandboxId).toBe('sb-dedup');
+});
+
+test('ensureReady() dedup also covers TWO DIFFERENT handles for the same session', async () => {
+  let startCalls = 0;
+  let releaseStart!: (res: Response) => void;
+  const deferredStart = new Promise<Response>((resolve) => {
+    releaseStart = resolve;
+  });
+
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'POST' });
+    if (url.includes('/sessions/SESS-DEDUP-2/start')) {
+      startCalls += 1;
+      return deferredStart;
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const handleA = k.session('PROJ', 'SESS-DEDUP-2');
+  const handleB = k.session('PROJ', 'SESS-DEDUP-2'); // fresh handle, same (project, session) id
+
+  const p1 = handleA.ensureReady();
+  const p2 = handleB.ensureReady();
+
+  await new Promise((r) => setTimeout(r, 0));
+  releaseStart(jsonResponse(sessionStartPayload('sb-dedup-2', 'ocs-dedup-2')));
+  await Promise.all([p1, p2]);
+  expect(startCalls).toBe(1);
+});
+
+test('ensureReady() clears the in-flight entry on failure, so a retry issues a fresh /start', async () => {
+  let startCalls = 0;
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'POST' });
+    if (url.includes('/sessions/SESS-DEDUP-FAIL/start')) {
+      startCalls += 1;
+      // First attempt: a failure shape (no sandbox / not ready).
+      if (startCalls === 1) return jsonResponse({ stage: 'failed', retriable: true, sandbox: null, opencode_session_id: null, agent_name: 'agent' });
+      return jsonResponse(sessionStartPayload('sb-retry', 'ocs-retry'));
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const handle = k.session('PROJ', 'SESS-DEDUP-FAIL');
+
+  await expect(handle.ensureReady()).rejects.toBeInstanceOf(ApiError);
+  expect(startCalls).toBe(1);
+
+  const ready = await handle.ensureReady();
+  expect(ready.sandboxId).toBe('sb-retry');
+  expect(startCalls).toBe(2);
+});
+
+// ── session(...).files — bound to THIS session's own runtime, never the
+// module-global "active" sandbox the top-level `@kortix/sdk` `files` export
+// follows (P0 fix: cross-session bleed for a host juggling multiple open
+// sessions concurrently) ─────────────────────────────────────────────────────
+
+test("session(...).files hits THIS session's own runtime URL, not whichever session is globally \"active\"", async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'GET' });
+    if (url.includes('/sessions/FILES-A/start')) return jsonResponse(sessionStartPayload('sb-files-a', 'ocs-files-a'));
+    if (url.includes('/sessions/FILES-B/start')) return jsonResponse(sessionStartPayload('sb-files-b', 'ocs-files-b'));
+    if (url.includes('/file?path=')) return jsonResponse([]);
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const a = k.session('PROJ', 'FILES-A');
+  const b = k.session('PROJ', 'FILES-B');
+
+  await a.ensureReady();
+  await b.ensureReady(); // resolves LAST — the module-global "active runtime" now points at B
+
+  calls.length = 0;
+  await a.files.list('/workspace');
+  const aFileCall = calls.find((c) => c.url.includes('/file?path='));
+  expect(aFileCall?.url).toContain('/p/sb-files-a/8000/file');
+  expect(aFileCall?.url).not.toContain('sb-files-b');
+
+  // The module-global `files` export (used directly, not through a session
+  // handle) follows the "active runtime" pointer — which B's later
+  // `ensureReady()` last set. This is the documented, PRE-EXISTING behavior of
+  // the global export; the point of this test is that `a.files` does NOT
+  // share that behavior.
+  calls.length = 0;
+  await globalListFiles('/workspace');
+  const globalFileCall = calls.find((c) => c.url.includes('/file?path='));
+  expect(globalFileCall?.url).toContain('/p/sb-files-b/8000/file');
+});
+
+test('session(...).files auto-provisions via ensureReady() if not already ready', async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    calls.push({ url, method: 'GET' });
+    if (url.includes('/sessions/FILES-AUTO/start')) return jsonResponse(sessionStartPayload('sb-files-auto', 'ocs-files-auto'));
+    if (url.includes('/file/mkdir')) return jsonResponse(true);
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const s = k.session('PROJ', 'FILES-AUTO');
+
+  // Never called ensureReady() directly — mkdir should still resolve against
+  // this session's own runtime.
+  await s.files.mkdir('/workspace/new-dir');
+  const mkdirCall = calls.find((c) => c.url.includes('/file/mkdir'));
+  expect(mkdirCall?.url).toContain('/p/sb-files-auto/8000/file/mkdir');
 });

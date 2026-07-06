@@ -3,6 +3,7 @@
  */
 
 import { authenticatedFetch } from '../auth';
+import { stripTrailingSlashes } from '../strings';
 import type { SandboxInfo } from './types';
 import { getSandboxUrl } from './urls';
 
@@ -150,7 +151,7 @@ async function fetchKortixMaster<T>(
   init?: RequestInit,
 ): Promise<T> {
   const base = getSandboxUrl(sandbox);
-  const res = await authenticatedFetch(`${base.replace(/\/+$/, '')}${path}`, {
+  const res = await authenticatedFetch(`${stripTrailingSlashes(base)}${path}`, {
     signal: AbortSignal.timeout(8_000),
     headers: { 'Content-Type': 'application/json' },
     ...init,

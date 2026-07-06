@@ -25,6 +25,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { kortix } from '@/lib/kortix';
+import type { ChangeRequest } from '@kortix/sdk/projects-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, GitMerge, GitPullRequest, Loader2, Plus, RotateCcw, X } from 'lucide-react';
 import { useState } from 'react';
@@ -52,7 +53,7 @@ export function ChangeRequestsView({
     queryFn: () => kortix.project(projectId).changeRequests.list(),
   });
 
-  const items: any[] = (list.data as any)?.change_requests ?? [];
+  const items: ChangeRequest[] = list.data?.change_requests ?? [];
 
   if (selectedCrId) {
     return (
@@ -185,9 +186,9 @@ function ChangeRequestDetail({
   });
 
   // changeRequests.get() returns { change_request: ChangeRequest } — unwrap it.
-  const cr = (detail.data as any)?.change_request;
-  const mp = mergePreview.data as any;
-  const df = diff.data as any;
+  const cr = detail.data?.change_request;
+  const mp = mergePreview.data;
+  const df = diff.data;
   const status: string = cr?.status ?? 'open';
   const busy = merge.isPending || close.isPending || reopen.isPending;
 

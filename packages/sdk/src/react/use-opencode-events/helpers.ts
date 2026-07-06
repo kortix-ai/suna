@@ -19,10 +19,37 @@ let projectMetadataRefetchTimer: ReturnType<typeof setTimeout> | null = null;
  * shipped (apps/mobile commit 7f31102fe "fix: session title updates").
  */
 export function readSessionInfo(event: OpenCodeEvent): Session | undefined {
-  const props = (event as any)?.properties;
-  if (!props) return undefined;
-  if (props.info) return props.info as Session;
-  return typeof props.id === 'string' ? (props as Session) : undefined;
+  const props: unknown = event.properties;
+  if (!props || typeof props !== 'object') return undefined;
+  const rec = props as Record<string, unknown>;
+  if (rec.info) return rec.info as Session;
+  return typeof rec.id === 'string' ? (props as Session) : undefined;
+}
+
+/** Reads `value` back out only if it's genuinely a string — used for wire
+ *  fields whose declared type may be an object (or absent) depending on
+ *  which request shape produced them. */
+export function asStringOrUndefined(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * Some servers emit an "AbortError"-shaped `session.error` whose `name`/message
+ * live wherever the server put them — not part of the SDK's typed error union
+ * (`ProviderAuthError | UnknownError | ... | ApiError`). Duck-type via
+ * `unknown` rather than assuming a shape; checks `.name`, `.data.message`, and
+ * a top-level `.message` for a case-insensitive "abort" substring.
+ */
+export function looksLikeAbortError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const rec = error as Record<string, unknown>;
+  if (rec.name === 'AbortError') return true;
+  const data = rec.data;
+  const dataMessage =
+    data && typeof data === 'object' ? (data as Record<string, unknown>).message : undefined;
+  return String(dataMessage ?? rec.message ?? '')
+    .toLowerCase()
+    .includes('abort');
 }
 
 export function reserveMessageRehydrate(sessionID: string): boolean {

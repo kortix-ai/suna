@@ -1,12 +1,13 @@
-// Billing account-state — the single source of truth for credits,
-// subscription, models, and limits. This is the entitlement-gating read: it
-// drives `accountHasAppAccess` and the app-access redirect on login. Stripe
-// checkout/portal/credits/auto-topup mutations are product-UI and stay
-// web-local (apps/web/src/lib/api/billing.ts) — only the account-state read
-// (and its server-side explicit-token variant) lives here.
+// Billing — account-state read (the single source of truth for credits,
+// subscription, models, and limits; drives `accountHasAppAccess` and the
+// app-access redirect on login) PLUS the checkout/subscription/credits
+// mutation surface (Stripe-backed). Wraps a deliberately curated subset of
+// apps/api/src/billing/routes — the ones a "Kortix as a Backend" host needs to
+// drive billing itself; Stripe-webhook-only routes and legacy/per-seat-claim
+// internals stay unwired.
 
 import { backendApi } from '../api-client';
-import { serverTokenGet, type ServerTokenOptions } from './shared';
+import { serverTokenGet, unwrap, type ServerTokenOptions } from './shared';
 
 export interface AccountState {
   credits: {
@@ -262,6 +263,150 @@ export async function getAccountState(options?: GetAccountStateOptions): Promise
   return response.data!;
 }
 
+/**
+ * Minimal variant of {@link getAccountState} (`/billing/account-state/minimal`)
+ * — same response shape (`AccountState`), a cheaper server-side build for
+ * surfaces that only need a subset (e.g. a header credit indicator). Same
+ * graceful-degradation behavior as the full read.
+ */
+export async function getAccountStateMinimal(options?: GetAccountStateOptions): Promise<AccountState> {
+  const search = new URLSearchParams();
+  if (options?.skipCache) search.set('skip_cache', 'true');
+  if (options?.accountId) search.set('account_id', options.accountId);
+  const query = search.toString();
+  const params = query ? `?${query}` : '';
+  const response = await backendApi.get<AccountState>(`/billing/account-state/minimal${params}`, {
+    showErrors: false,
+  });
+  const isGracefulDisabledResponse =
+    response.error?.status === 404 && /billing is not enabled/i.test(response.error.message || '');
+  if (response.error && response.error.status !== 401 && !isGracefulDisabledResponse) {
+    throw response.error;
+  }
+  if (response.error) {
+    return getDefaultAccountState();
+  }
+  return response.data!;
+}
+
+// ── Transactions / credit ledger ─────────────────────────────────────────────
+
+export interface BillingTransaction {
+  id: string;
+  created_at: string;
+  amount: number;
+  balance_after: number;
+  type: string;
+  description: string | null;
+  is_expiring: boolean | null;
+  expires_at: string | null;
+  metadata: unknown;
+}
+
+export interface BillingTransactionsPage {
+  transactions: BillingTransaction[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    has_more: boolean;
+  };
+}
+
+export interface ListBillingTransactionsOptions {
+  accountId?: string;
+  limit?: number;
+  offset?: number;
+  /** A single type, or several (comma-joined on the wire). */
+  typeFilter?: string | string[];
+}
+
+export async function listBillingTransactions(
+  options?: ListBillingTransactionsOptions,
+): Promise<BillingTransactionsPage> {
+  const search = new URLSearchParams();
+  if (options?.accountId) search.set('account_id', options.accountId);
+  if (options?.limit != null) search.set('limit', String(options.limit));
+  if (options?.offset != null) search.set('offset', String(options.offset));
+  if (options?.typeFilter) {
+    search.set(
+      'type_filter',
+      Array.isArray(options.typeFilter) ? options.typeFilter.join(',') : options.typeFilter,
+    );
+  }
+  const query = search.toString();
+  return unwrap(
+    await backendApi.get<BillingTransactionsPage>(`/billing/transactions${query ? `?${query}` : ''}`),
+  );
+}
+
+/** Credits-in / credits-out totals over a trailing window of days (default 30). */
+export interface BillingTransactionsSummary {
+  totalCredits: number;
+  totalDebits: number;
+  count: number;
+}
+
+export async function getBillingTransactionsSummary(options?: {
+  accountId?: string;
+  days?: number;
+}): Promise<BillingTransactionsSummary> {
+  const search = new URLSearchParams();
+  if (options?.accountId) search.set('account_id', options.accountId);
+  if (options?.days != null) search.set('days', String(options.days));
+  const query = search.toString();
+  return unwrap(
+    await backendApi.get<BillingTransactionsSummary>(
+      `/billing/transactions/summary${query ? `?${query}` : ''}`,
+    ),
+  );
+}
+
+// ── Credits / tiers ───────────────────────────────────────────────────────────
+
+export interface BillingCreditBreakdown {
+  total: number;
+  expiring: number;
+  non_expiring: number;
+  daily: number;
+}
+
+/** Balance breakdown for the CALLER's own account (no `accountId` scoping —
+ *  the backend keys this read off the authenticated user directly). */
+export async function getBillingCreditBreakdown(): Promise<BillingCreditBreakdown> {
+  return unwrap(await backendApi.get<BillingCreditBreakdown>('/billing/credit-breakdown'));
+}
+
+/**
+ * Credit usage summary over a trailing window of days (default 30) — same
+ * shape as {@link getBillingTransactionsSummary}, but for the CALLER's own
+ * account (no `accountId` scoping).
+ */
+export async function getBillingUsageHistory(days?: number): Promise<BillingTransactionsSummary> {
+  const qs = days != null ? `?days=${days}` : '';
+  return unwrap(await backendApi.get<BillingTransactionsSummary>(`/billing/usage-history${qs}`));
+}
+
+export interface BillingTierConfiguration {
+  name: string;
+  display_name: string;
+  monthly_price: number;
+  yearly_price: number;
+  monthly_credits: number;
+  can_purchase_credits: boolean;
+}
+
+export interface BillingTierConfigurationsResponse {
+  tiers: BillingTierConfiguration[];
+}
+
+/** Publicly visible pricing tiers (for a plans/pricing page). */
+export async function getBillingTierConfigurations(): Promise<BillingTierConfigurationsResponse> {
+  return unwrap(
+    await backendApi.get<BillingTierConfigurationsResponse>('/billing/tier-configurations'),
+  );
+}
+
 // ── Server-side explicit-token variant ──────────────────────────────────────
 
 /**
@@ -293,4 +438,218 @@ export async function fetchAccountStateWithToken(
 ): Promise<AccountStateAppAccessView | null> {
   const query = opts.accountId ? `?account_id=${encodeURIComponent(opts.accountId)}` : '';
   return serverTokenGet<AccountStateAppAccessView>(opts, `/v1/billing/account-state${query}`);
+}
+
+// ── Checkout / subscription / credits mutations ─────────────────────────────
+//
+// All bodies accept an optional `account_id` (the backend falls back to the
+// caller's own account when omitted) plus opaque Stripe-service fields the
+// server forwards mostly as-is — responses are intentionally loose
+// (`Record<string, unknown>`-ish) since the server schemas are opaque
+// (`z.record(...)`) on purpose.
+
+export interface CreateCheckoutSessionInput {
+  accountId?: string;
+  tierKey: string;
+  successUrl: string;
+  cancelUrl: string;
+  commitmentType?: string;
+  locale?: string;
+  serverType?: string;
+  location?: string;
+}
+
+export interface CheckoutSessionResult {
+  url?: string | null;
+  session_id?: string;
+  [key: string]: unknown;
+}
+
+/** Create a Stripe checkout session for a subscription tier. */
+export async function createCheckoutSession(
+  input: CreateCheckoutSessionInput,
+): Promise<CheckoutSessionResult> {
+  return unwrap(
+    await backendApi.post<CheckoutSessionResult>('/billing/create-checkout-session', {
+      account_id: input.accountId,
+      tier_key: input.tierKey,
+      success_url: input.successUrl,
+      cancel_url: input.cancelUrl,
+      commitment_type: input.commitmentType,
+      locale: input.locale,
+      server_type: input.serverType,
+      location: input.location,
+    }),
+    'Failed to create checkout session',
+  );
+}
+
+export interface ConfirmCheckoutSessionResult {
+  ok?: boolean;
+  [key: string]: unknown;
+}
+
+/** Confirm a completed Stripe checkout session (post-redirect). */
+export async function confirmCheckoutSession(
+  sessionId: string,
+  accountId?: string,
+): Promise<ConfirmCheckoutSessionResult> {
+  return unwrap(
+    await backendApi.post<ConfirmCheckoutSessionResult>('/billing/confirm-checkout-session', {
+      account_id: accountId,
+      session_id: sessionId,
+    }),
+    'Failed to confirm checkout session',
+  );
+}
+
+export interface PortalSessionResult {
+  url?: string | null;
+  [key: string]: unknown;
+}
+
+/** Create a Stripe customer-portal session (manage payment method / invoices / cancel). */
+export async function createPortalSession(
+  returnUrl: string,
+  accountId?: string,
+): Promise<PortalSessionResult> {
+  return unwrap(
+    await backendApi.post<PortalSessionResult>('/billing/create-portal-session', {
+      account_id: accountId,
+      return_url: returnUrl,
+    }),
+    'Failed to create portal session',
+  );
+}
+
+export interface SubscriptionMutationResult {
+  ok?: boolean;
+  [key: string]: unknown;
+}
+
+/** Cancel the active subscription (optionally recording cancellation feedback). */
+export async function cancelSubscription(
+  feedback?: string,
+  accountId?: string,
+): Promise<SubscriptionMutationResult> {
+  return unwrap(
+    await backendApi.post<SubscriptionMutationResult>('/billing/cancel-subscription', {
+      account_id: accountId,
+      feedback,
+    }),
+    'Failed to cancel subscription',
+  );
+}
+
+/** Reactivate a subscription that was scheduled for cancellation. */
+export async function reactivateSubscription(accountId?: string): Promise<SubscriptionMutationResult> {
+  return unwrap(
+    await backendApi.post<SubscriptionMutationResult>('/billing/reactivate-subscription', {
+      account_id: accountId,
+    }),
+    'Failed to reactivate subscription',
+  );
+}
+
+/** Schedule a downgrade to a lower tier, effective at the current period end. */
+export async function scheduleDowngrade(
+  targetTierKey: string,
+  commitmentType?: string,
+  accountId?: string,
+): Promise<SubscriptionMutationResult> {
+  return unwrap(
+    await backendApi.post<SubscriptionMutationResult>('/billing/schedule-downgrade', {
+      account_id: accountId,
+      target_tier_key: targetTierKey,
+      commitment_type: commitmentType,
+    }),
+    'Failed to schedule downgrade',
+  );
+}
+
+/** Cancel a previously scheduled downgrade/plan change. */
+export async function cancelScheduledChange(accountId?: string): Promise<SubscriptionMutationResult> {
+  return unwrap(
+    await backendApi.post<SubscriptionMutationResult>('/billing/cancel-scheduled-change', {
+      account_id: accountId,
+    }),
+    'Failed to cancel scheduled change',
+  );
+}
+
+export interface ProrationPreviewResult {
+  [key: string]: unknown;
+}
+
+/** Preview proration for a price change (new Stripe price id) before committing to it. */
+export async function getProrationPreview(
+  newPriceId: string,
+  accountId?: string,
+): Promise<ProrationPreviewResult> {
+  const search = new URLSearchParams({ new_price_id: newPriceId });
+  if (accountId) search.set('account_id', accountId);
+  return unwrap(
+    await backendApi.get<ProrationPreviewResult>(`/billing/proration-preview?${search.toString()}`),
+    'Failed to load proration preview',
+  );
+}
+
+export interface PurchaseCreditsInput {
+  amount: number;
+  accountId?: string;
+  successUrl?: string;
+  cancelUrl?: string;
+}
+
+export interface PurchaseCreditsResult {
+  checkout_url: string | null;
+}
+
+/** Create a Stripe checkout session to purchase a one-off credit top-up. */
+export async function purchaseCredits(input: PurchaseCreditsInput): Promise<PurchaseCreditsResult> {
+  return unwrap(
+    await backendApi.post<PurchaseCreditsResult>('/billing/purchase-credits', {
+      amount: input.amount,
+      account_id: input.accountId,
+      success_url: input.successUrl,
+      cancel_url: input.cancelUrl,
+    }),
+    'Failed to purchase credits',
+  );
+}
+
+export interface AutoTopupSettings {
+  enabled: boolean;
+  threshold: number;
+  amount: number;
+  [key: string]: unknown;
+}
+
+/** Get the account's auto-topup settings (enabled/threshold/amount). */
+export async function getAutoTopupSettings(accountId?: string): Promise<AutoTopupSettings> {
+  const query = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
+  return unwrap(
+    await backendApi.get<AutoTopupSettings>(`/billing/auto-topup/settings${query}`),
+    'Failed to load auto-topup settings',
+  );
+}
+
+export interface ConfigureAutoTopupInput {
+  accountId?: string;
+  enabled: boolean;
+  threshold: number;
+  amount: number;
+}
+
+/** Configure (enable/disable, threshold, amount) auto-topup — recurring credit purchases. */
+export async function configureAutoTopup(input: ConfigureAutoTopupInput): Promise<AutoTopupSettings> {
+  return unwrap(
+    await backendApi.post<AutoTopupSettings>('/billing/auto-topup/configure', {
+      account_id: input.accountId,
+      enabled: input.enabled,
+      threshold: input.threshold,
+      amount: input.amount,
+    }),
+    'Failed to configure auto-topup',
+  );
 }

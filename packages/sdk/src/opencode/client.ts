@@ -30,6 +30,7 @@ export type { OpencodeClient };
 import { authenticatedFetch } from "../platform/auth";
 import { isConfigured } from "../platform/config";
 import { getActiveOpenCodeUrl } from "../state/server-store/active";
+import { ApiError } from "../platform/api/errors";
 
 // Sandbox env/secrets client (`GET/PUT/DELETE /env`), the `/kortix/triggers`
 // wrapper, and the kortix-master project-management client (`/kortix/tasks`,
@@ -212,7 +213,9 @@ export interface SystemReloadResult {
 export async function systemReload(mode: SystemReloadMode): Promise<SystemReloadResult> {
 	const url = getActiveOpenCodeUrl();
 	if (!url) {
-		throw new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
+		throw new ApiError('[opencode-sdk] Server URL not ready — sandbox is still loading', {
+			code: 'RUNTIME_UNAVAILABLE',
+		});
 	}
 	const response = await authenticatedFetch(`${url}/kortix/services/system/reload`, {
 		method: 'POST',
@@ -220,7 +223,11 @@ export async function systemReload(mode: SystemReloadMode): Promise<SystemReload
 		body: JSON.stringify({ mode }),
 	});
 	if (!response.ok) {
-		throw new Error(`System reload failed (${response.status}): ${await daemonErrorMessage(response)}`);
+		throw new ApiError(`System reload failed (${response.status}): ${await daemonErrorMessage(response)}`, {
+			status: response.status,
+			response,
+			code: 'RUNTIME_UNAVAILABLE',
+		});
 	}
 	return response.json() as Promise<SystemReloadResult>;
 }

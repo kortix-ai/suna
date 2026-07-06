@@ -85,3 +85,20 @@ export {
   type SendCallOptions,
   type UseSessionSendResult,
 } from './use-session-send';
+
+// The headless chat kit — `useChatTurns` (memoized `classifyTurn` over a
+// message list) + `renderParts` (compile-time-exhaustive part -> T
+// dispatcher). Framework-free classification lives in `@kortix/sdk/turns`;
+// this is the thin React binding over it. Kept inside the `react` barrel
+// rather than a new `@kortix/sdk/react/chat` subpath — no package.json
+// exports-map change needed to reach it.
+export { useChatTurns, type TurnView, renderParts, type PartRenderers } from './chat';
+
+// Domain hooks — thin React Query bindings over `projects-client` CRUD
+// surfaces (secrets, triggers, change requests) that previously had no
+// SDK-owned hook (only the client fn). Each owns its own query key + the
+// mutations a settings/workbench screen actually needs, with invalidation
+// wired so writes reflect without a manual refetch.
+export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
+export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
+export { useChangeRequests, changeRequestsKey } from './use-change-requests';

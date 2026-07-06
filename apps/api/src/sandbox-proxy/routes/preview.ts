@@ -535,22 +535,44 @@ export async function forwardToSandbox(
         );
       }
 
-      const upstream = await fetch(targetUrl, {
-        method,
-        headers,
-        body,
-        redirect: 'manual',
-        // Bound a wedged first connection to a freshly-restored microVM (residual
-        // CH RX stall) so the attempt fails fast → retry on a fresh connection,
-        // instead of hanging the whole proxy. `body` is buffered (line ~576, not
-        // a stream) so aborting only kills the in-flight attempt, never truncates
-        // an upload mid-stream.
-        signal: AbortSignal.timeout(proxyAttemptTimeoutMs(budgetRemainingMs)),
-        // Bun extensions: no decompression (raw byte passthrough), duplex streaming —
-        // not in the lib RequestInit type.
-        decompress: false,
-        duplex: 'half',
-      } as RequestInit);
+      // Bound a wedged first connection to a freshly-restored microVM (residual
+      // CH RX stall) so the attempt fails fast → retry on a fresh connection,
+      // instead of hanging the whole proxy. `body` is buffered (line ~576, not
+      // a stream) so aborting only kills the in-flight attempt, never truncates
+      // an upload mid-stream.
+      //
+      // CRITICAL: the timeout bounds ONLY the connect/header phase — the timer
+      // is cleared the moment `fetch` resolves. The previous
+      // `AbortSignal.timeout(...)` bounded the ENTIRE fetch lifecycle, which
+      // severed every streaming response body at ~15s: the `/global/event` SSE
+      // stream (each open session tab then reconnected ~250ms later, forever —
+      // a fleet-wide reconnect storm, ~240 reconnects/hour/tab), long-polls,
+      // and any proxied download slower than 15s. The retry loop only ever
+      // needed to retry attempts whose CONNECTION wedged, which this still does.
+      const attemptController = new AbortController();
+      const connectTimer = setTimeout(
+        () =>
+          attemptController.abort(
+            new DOMException('proxy attempt connect timeout', 'TimeoutError'),
+          ),
+        proxyAttemptTimeoutMs(budgetRemainingMs),
+      );
+      let upstream: Response;
+      try {
+        upstream = await fetch(targetUrl, {
+          method,
+          headers,
+          body,
+          redirect: 'manual',
+          signal: attemptController.signal,
+          // Bun extensions: no decompression (raw byte passthrough), duplex streaming —
+          // not in the lib RequestInit type.
+          decompress: false,
+          duplex: 'half',
+        } as RequestInit);
+      } finally {
+        clearTimeout(connectTimer);
+      }
 
       if (upstream.status >= 300 && upstream.status < 400) {
         const respHeaders = clientResponseHeaders(upstream.headers, origin);

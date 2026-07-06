@@ -61,9 +61,20 @@ export function unwrap<T>(
 // without ever wiring) the SDK's process-wide `configureKortix()` seam — and
 // even where the host app has called `configureKortix()`, that singleton
 // must not be trusted to carry one request's bearer token across concurrent
-// requests on the same server process. These callers already resolved the
-// caller's access token themselves (e.g. from a Supabase server session), so
-// they fetch with it directly instead of going through `backendApi`.
+// requests on the same server process (the last `configureKortix()` call
+// wins for every other in-flight request). These callers already resolved
+// the caller's access token themselves (e.g. from a Supabase server
+// session), so they fetch with it directly instead of going through
+// `backendApi`.
+//
+// A general-purpose fix for this class of problem — any "Kortix as a
+// Backend" server wrapping Kortix on behalf of multiple concurrent
+// users/tenants, not just this one explicit-token pattern — lives at
+// `@kortix/sdk/server`: `runWithKortix(config, fn)` / `createScopedKortix(config)`
+// isolate each call's config in a Node `AsyncLocalStorage` context instead of
+// the shared global, so concurrent requests with different tokens never
+// clobber each other. Prefer that over hand-rolling more explicit-token
+// helpers like the ones below for new server-side call sites.
 
 export interface ServerTokenOptions {
   /** Absolute backend base URL, with or without a trailing `/v1`. */

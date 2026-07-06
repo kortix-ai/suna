@@ -19,7 +19,7 @@ import {
 } from "../../channels/agentmail-api";
 import { config } from "../../config";
 import { getCachedAccountTier } from "../../billing/services/entitlements";
-import { tierGrantsAllModels } from "../../billing/services/tiers";
+import { accountIsFreeTierForModels } from "../../billing/services/tiers";
 import {
   downloadSlackFile,
   uploadSlackFile,
@@ -1466,7 +1466,7 @@ projectsApp.openapi(
     // synthetic AUTO stay hidden from the picker.
     const freeManagedOnly =
       config.KORTIX_BILLING_INTERNAL_ENABLED && ownerAccountId
-        ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))
+        ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
         : false;
     const models = gatewayModelCatalog(projectId, { freeManagedOnly });
     return c.json({ models });
@@ -1507,7 +1507,7 @@ projectsApp.openapi(
     const defaults = await getAccountModelDefaults(ownerAccountId);
     const freeTier =
       config.KORTIX_BILLING_INTERNAL_ENABLED
-        ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))
+        ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
         : false;
     // Honest project-level resolution (project → account → platform) + where it
     // came from, so the UI can show "Sonnet 4.6 · project default". The
@@ -1577,7 +1577,7 @@ projectsApp.openapi(
     }
 
     const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))
+      ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
       : false;
     const servable = await isModelServableForAccount({
       userId,

@@ -273,6 +273,49 @@ export async function getSessionAudit(
   );
 }
 
+export interface SessionTranscriptToolCall {
+  tool: string;
+  status: string | null;
+}
+
+export interface SessionTranscriptMessage {
+  role: string;
+  created: string | null;
+  completed: string | null;
+  text: string;
+  tools: SessionTranscriptToolCall[];
+  files: Array<{ filename: string | null; mime: string | null }>;
+  reasoning_omitted: boolean;
+  error: { name?: string; message?: string } | null;
+}
+
+/** Compact server-side transcript read — text + tool calls, stripped of tool
+ *  inputs/outputs, for project automation (callable with project-scoped
+ *  session tokens, unlike the raw sandbox proxy). */
+export interface SessionTranscript {
+  available: boolean;
+  reason: string | null;
+  opencode_session_id: string | null;
+  message_count: number;
+  messages: SessionTranscriptMessage[];
+}
+
+export async function getSessionTranscript(
+  projectId: string,
+  sessionId: string,
+  options?: { limit?: number; chars?: number },
+) {
+  const search = new URLSearchParams();
+  if (options?.limit != null) search.set('limit', String(options.limit));
+  if (options?.chars != null) search.set('chars', String(options.chars));
+  const qs = search.toString();
+  return unwrap(
+    await backendApi.get<SessionTranscript>(
+      `/projects/${projectId}/sessions/${sessionId}/transcript${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
 export async function updateProjectSession(
   projectId: string,
   sessionId: string,

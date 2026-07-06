@@ -18,7 +18,7 @@ export function InvitesSection({ accountId }: { accountId: string }) {
     queryFn: () => kortix.accounts.invites(accountId),
   });
 
-  const items = (invites.data as any[]) ?? [];
+  const items = invites.data ?? [];
 
   // Quiet when there's nothing pending and the load succeeded.
   if (invites.isSuccess && items.length === 0) return null;

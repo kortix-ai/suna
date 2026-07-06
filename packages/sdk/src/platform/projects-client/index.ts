@@ -27,6 +27,11 @@ export * from './transcription';
 export * from './review';
 export * from './sandbox-shares';
 export * from './public-session-shares';
+export * from './tokens';
+export * from './marketplace';
+export * from './audit';
+export * from './setup-links';
+export * from './marketplace-catalog';
 
 // Cross-cutting types that originally lived in this module. Re-exported
 // explicitly (not the internal `unwrap` helper) to keep the surface identical.

@@ -7,10 +7,9 @@ import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useState } fro
 import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
+import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
-import { useSidebar } from '@/components/ui/sidebar';
-import { desktopShellPlatform } from '@/lib/desktop';
-import { PanelLeft } from 'lucide-react';
+import { SidebarEdgePeek, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
 import { CustomizPanel } from '@/features/workspace/customize/customize-panel';
@@ -20,11 +19,13 @@ import { useGatewayCatalogSync } from '@/hooks/opencode/use-gateway-catalog-sync
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
 import { parseCustomizeSection } from '@/lib/customize-sections';
-import { getProjectDetail } from '@kortix/sdk/projects-client';
+import { desktopShellPlatform } from '@/lib/desktop';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import { getProjectDetail } from '@kortix/sdk/projects-client';
+import { PanelLeft } from 'lucide-react';
 
 const CommandPalette = lazy(() =>
   import('@/features/workspace/command-palette').then((mod) => ({
@@ -157,36 +158,48 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
 }
 
 const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
-  const { state, toggleSidebar } = useSidebar();
+  const { state, toggleSidebar, peek, peekEnter, peekLeave } = useSidebar();
   const isExpanded = state === 'expanded';
-  // Desktop shell: the sidebar hides fully (offcanvas, no icon rail), so a
-  // hidden sidebar means no seam border/nudge, and the reopen control lives
-  // up in the title-bar band next to the OS window controls. Client-only
-  // tree (ProjectShell gates on auth), so reading the UA at first render is
-  // safe.
+  // The sidebar hides fully when collapsed (offcanvas everywhere, no icon
+  // rail), so a hidden sidebar means no seam border. The reopen control lives
+  // in the title-bar band next to the OS window controls on the desktop
+  // shell, and in a top-left cluster aligned with the session site header on
+  // the web. Client-only tree (ProjectShell gates on auth), so reading the UA
+  // at first render is safe.
   const [desktopShell] = useState(() => desktopShellPlatform());
-  const hideSeam = desktopShell !== null && !isExpanded;
   return (
     <div
       className={cn(
         'bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden',
-        !hideSeam && 'border-border border-l-[1.5px]',
-        !isExpanded && desktopShell === null && 'ml-0.5',
+        isExpanded && 'border-border border-l-[1.5px]',
       )}
     >
+      {/* Collapsed: an invisible strip on the viewport's left edge summons
+          the sidebar as a hover flyout; it self-hides while docked open. */}
+      <SidebarEdgePeek />
+      {/* Mobile: the sidebar is a sheet with no docked affordance, and view
+          headers come and go (sessions render theirs only once booted) — so
+          the opener lives here, always mounted, on every project view. The
+          session header indents its leading buttons past it below md. */}
+      <SidebarTrigger
+        aria-label="Open sidebar"
+        className="text-muted-foreground hover:text-foreground absolute top-2 left-2 z-30 size-8 md:hidden"
+      />
       {desktopShell && !isExpanded && (
-        <Hint label="Open sidebar" side="bottom">
-          <button
+        <Hint label={peek ? 'Pin sidebar' : 'Open sidebar'} side="bottom">
+          <Button
             type="button"
-            aria-label="Open sidebar"
+            aria-label={peek ? 'Pin sidebar' : 'Open sidebar'}
             onClick={toggleSidebar}
+            onPointerEnter={peekEnter}
+            onPointerLeave={peekLeave}
             className={cn(
               // top-[12px] + 28px box centers the button on the traffic
               // lights' midline (y=26 — the app draws its own lights there;
               // see DesktopChrome → MacTrafficLights). px values on purpose:
               // the lights are positioned in window px, while rem sizes
               // drift with the root font size.
-              'kx-fade-up hover:bg-accent/60 text-muted-foreground hover:text-foreground fixed top-[12px] z-50 flex h-[28px] w-[28px] [-webkit-app-region:no-drag] cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96] [app-region:no-drag]',
+              'kx-fade-up  text-muted-foreground hover:text-foreground fixed top-[12px] z-50 flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out [-webkit-app-region:no-drag] [app-region:no-drag] active:scale-[0.96] shrink-0',
               // macOS: sit just past the traffic lights (they end at x≈62),
               // mirroring their own 10px inset. Win/Linux: controls live
               // top-right, so hug the left edge instead.
@@ -194,7 +207,26 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
             )}
           >
             <PanelLeft className="cn-rtl-flip size-4" />
-          </button>
+          </Button>
+        </Hint>
+      )}
+      {!desktopShell && !isExpanded && (
+        // Same row as the session site header's leading cluster (p-2 +
+        // size-8 buttons), so the toggle reads as part of it. Hovering it
+        // also summons the flyout, mirroring the edge strip.
+        <Hint label={peek ? 'Pin sidebar' : 'Open sidebar'} side="bottom">
+          <Button
+            type="button"
+            aria-label={peek ? 'Pin sidebar' : 'Open sidebar'}
+            onClick={toggleSidebar}
+            onPointerEnter={peekEnter}
+            onPointerLeave={peekLeave}
+            variant="ghost"
+            size="icon"
+            className="kx-fade-up text-muted-foreground hover:text-foreground absolute top-2 left-2 z-30 hidden shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96] md:flex"
+          >
+            <PanelLeft className="cn-rtl-flip size-4" />
+          </Button>
         </Hint>
       )}
       {children}

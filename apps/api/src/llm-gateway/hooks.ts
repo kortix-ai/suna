@@ -8,7 +8,7 @@ import type {
 import { assertBillingActive } from '../billing/services/billing-gate';
 import { deductForLlmUsage } from '../billing/services/credits';
 import { getCachedAccountTier } from '../billing/services/entitlements';
-import { llmPriceMarkup, tierGrantsAllModels } from '../billing/services/tiers';
+import { accountIsFreeTierForModels, llmPriceMarkup } from '../billing/services/tiers';
 import { attributeYoloToken } from '../billing/services/yolo-tokens';
 import { config } from '../config';
 import { validateAccountToken } from '../repositories/account-tokens';
@@ -74,7 +74,7 @@ async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrinc
   const tiered: AuthedPrincipal = config.KORTIX_BILLING_INTERNAL_ENABLED
     ? await (async () => {
         const tier = await getCachedAccountTier(principal.accountId);
-        return { ...principal, tier, freeModelsOnly: !tierGrantsAllModels(tier) };
+        return { ...principal, tier, freeModelsOnly: accountIsFreeTierForModels(tier) };
       })()
     : { ...principal, freeModelsOnly: false };
   // Resolve the account/project/agent-configured default model once, here, so it
