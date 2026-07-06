@@ -284,3 +284,9 @@ export type {
   AccountIdentity,
   ValidateTokenResult,
 } from './platform/projects-client';
+
+/**
+ * Linear-time trailing-slash strip shared with hosts — see
+ * `platform/strings.ts` for why this replaces the regex idiom.
+ */
+export { stripTrailingSlashes } from './platform/strings';

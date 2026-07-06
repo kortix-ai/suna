@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { stripTrailingSlashes } from '../platform/strings';
 import { getClient } from '../opencode/client';
 import { getActiveOpenCodeUrl } from '../state/server-store';
 import { getAuthToken } from '../platform/auth';
@@ -139,7 +140,7 @@ export async function getPtyWebSocketUrl(ptyId: string, serverUrl?: string): Pro
         parsed.protocol = 'wss:';
       }
 
-      return parsed.toString().replace(/\/+$/, '');
+      return stripTrailingSlashes(parsed.toString());
     } catch {
       return baseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
     }
