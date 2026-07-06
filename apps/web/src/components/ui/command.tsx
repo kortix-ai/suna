@@ -92,6 +92,7 @@ function CommandInput({
         )}
         {...props}
       />
+      {rightElement}
     </div>
   );
 }
