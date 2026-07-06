@@ -714,6 +714,47 @@ function kickBackgroundWarmBuild(
 }
 
 /**
+ * Build-on-push warm prebake. Fire-and-forget: when a commit lands on a project's
+ * default branch (a successful push to the managed git), kick the per-project warm
+ * bake for the CURRENT tip so the FIRST session on the new commit boots warm —
+ * instead of waiting for a session to MISS and trigger the bake on demand (which
+ * leaves that first session cold). Reuses the exact resolve-tip + dedup path the
+ * session-start trigger uses: gated to the shared default, keyed on the
+ * default-branch tip, deduped by the target warm name. Idempotent — it no-ops when
+ * the default-branch tip is unchanged (the warm image for that tip is already
+ * active) or a bake for it is already in flight. Best-effort: never throws, never
+ * blocks the push; the session-start on-demand trigger remains the fallback.
+ */
+export async function kickProjectWarmPrebake(
+  project: GitBackedProject,
+  opts: { accountId?: string; provider?: string } = {},
+): Promise<void> {
+  try {
+    const template = await resolveTemplateBySlug(project, undefined);
+    if (!template.isShared) return; // same gate as the session-start warm trigger
+    const buildProvider = opts.provider ?? config.getDefaultProvider();
+    const provider = getSandboxProvider(buildProvider);
+    if (!provider.isConfigured()) return;
+    const identity = await computeTemplateIdentity(project, template);
+    const tip = await resolveCommitSha(project, project.defaultBranch);
+    if (!tip) return;
+    const warmName = perProjectWarmImageName(project.projectId, tip, identity.snapshotName);
+    // Tip unchanged (or already warm for this commit) → nothing to do.
+    if ((await provider.getSnapshotState(warmName)) === 'active') return;
+    kickBackgroundWarmBuild(project, { accountId: opts.accountId, provider: buildProvider, snapshotName: warmName });
+    console.log(
+      `[snapshots] warm prebake-on-push kicked: project ${project.projectId.slice(0, 8)} ` +
+      `tip ${tip.slice(0, 8)} (${buildProvider})`,
+    );
+  } catch (err) {
+    console.warn(
+      `[snapshots] warm prebake-on-push skipped for ${project.projectId}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
+/**
  * Fire-and-forget pre-build. Used at project-create and CR-merge time so the
  * first session for a new commit can boot off a cache hit.
  */
