@@ -69,6 +69,7 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { SectionCard } from '@/components/ui/section-card';
 import {
   Select,
@@ -78,7 +79,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -976,8 +976,11 @@ function ConnectorDetail({
             </TabsContent>
           )}
           <TabsContent value="permissions" className="space-y-5">
-            <SensitiveSection projectId={projectId} connector={connector} onChanged={onChanged} />
-            <PermissionsSection projectId={projectId} connector={connector} />
+            <PermissionsSection
+              projectId={projectId}
+              connector={connector}
+              onChanged={onChanged}
+            />
           </TabsContent>
         </Tabs>
 
@@ -1888,63 +1891,6 @@ export function SlackConnectForm({
   );
 }
 
-/**
- * The connector-wide permission default: `sensitive` gates READS too — every
- * action asks before it runs (for email/files/secrets where reading is itself
- * an exfiltration surface). Lives at the top of the Permissions tab since it's
- * the baseline the per-tool rules below override.
- */
-function SensitiveSection({
-  projectId,
-  connector,
-  onChanged,
-}: {
-  projectId: string;
-  connector: AdminConnector;
-  onChanged: () => void;
-}) {
-  // Sensitive toggle — its own commit (writes kortix.toml + re-syncs), so it
-  // applies immediately without a separate save flow.
-  const sensitiveMut = useMutation({
-    mutationFn: (next: boolean) => setConnectorSensitive(projectId, connector.slug, next),
-    onSuccess: (_r, next) => {
-      successToast(next ? 'Marked sensitive — reads now ask' : 'No longer sensitive');
-      onChanged();
-    },
-    onError: (e: Error) => errorToast(e.message || 'Failed to update sensitivity'),
-  });
-
-  return (
-    <SectionCard
-      title="Sensitive connector"
-      description="The permission baseline for every tool on this connector."
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <ShieldCheck className="text-muted-foreground/70 size-3.5 shrink-0" />
-            <span className="text-foreground/80 text-xs font-medium">
-              Gate reads too — everything asks first
-            </span>
-          </div>
-          <p className="text-muted-foreground/60 mt-1 text-[11px] leading-relaxed">
-            Every action — including <span className="text-foreground/70 font-medium">reads</span>{' '}
-            — asks before it runs (approve once, or “allow for session”). For email/files/secrets
-            where reading is itself risky. A per-tool rule below can still open a specific action.
-          </p>
-        </div>
-        <Switch
-          checked={connector.sensitive}
-          disabled={sensitiveMut.isPending}
-          onCheckedChange={(next) => sensitiveMut.mutate(next)}
-          className="mt-0.5 shrink-0"
-          aria-label="Toggle sensitive connector"
-        />
-      </div>
-    </SectionCard>
-  );
-}
-
 function configToDraft(cfg: ConnectorConfig): ConnectorDraftInput {
   return {
     slug: cfg.slug,
@@ -2182,14 +2128,25 @@ function tsSignature(slug: string, action: ConnectorAction): string {
 function PermissionsSection({
   projectId,
   connector,
+  onChanged,
 }: {
   projectId: string;
   connector: AdminConnector;
+  onChanged: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const tools = connector.actions;
   const toolPaths = useMemo(() => new Set(tools.map((t) => t.path)), [tools]);
+
+  const sensitiveMut = useMutation({
+    mutationFn: (next: boolean) => setConnectorSensitive(projectId, connector.slug, next),
+    onSuccess: (_r, next) => {
+      successToast(next ? 'Marked sensitive — reads now ask' : 'No longer sensitive');
+      onChanged();
+    },
+    onError: (e: Error) => errorToast(e.message || 'Failed to update sensitivity'),
+  });
 
   const policiesQuery = useQuery({
     queryKey: ['connector-policies', projectId, connector.slug],
@@ -2327,6 +2284,42 @@ function PermissionsSection({
       }
     >
       <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Default</Label>
+          <RadioGroup
+            value={connector.sensitive ? 'ask_first' : 'follow_rules'}
+            onValueChange={(v) => sensitiveMut.mutate(v === 'ask_first')}
+            className="space-y-2"
+          >
+            <RadioGroupItem
+              value="follow_rules"
+              id={`connector-default-follow-${connector.slug}`}
+              label="Follow global rules & risk"
+              description="Reads run automatically; writes and destructive actions still ask, per the rules below."
+              size="lg"
+              variant="outline"
+              disabled={sensitiveMut.isPending}
+            />
+            <RadioGroupItem
+              value="ask_first"
+              id={`connector-default-ask-${connector.slug}`}
+              label="Ask first"
+              description={
+                <>
+                  Every action — including{' '}
+                  <span className="text-foreground font-medium">reads</span> — asks before it runs
+                  (approve once, or “allow for session”). For email, files, or secrets, where
+                  reading is itself risky. A per-tool rule below can still override a specific
+                  action.
+                </>
+              }
+              size="lg"
+              variant="outline"
+              disabled={sensitiveMut.isPending}
+            />
+          </RadioGroup>
+        </div>
+
         {tools.length === 0 ? (
           <InfoBanner
             tone="neutral"
