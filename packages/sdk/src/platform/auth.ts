@@ -24,6 +24,13 @@
  * do something.
  */
 
+import {
+	buildAuthHeaders,
+	syntheticUnauthenticatedResponse,
+	withDefaultTimeout,
+	withTokenRetry,
+	type TokenRetryOptions,
+} from './auth-core';
 import { platformConfig } from './config';
 
 /**
@@ -32,10 +39,6 @@ import { platformConfig } from './config';
  */
 export async function getSupabaseAccessToken(): Promise<string | null> {
 	return platformConfig().getToken();
-}
-
-function delay(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -54,25 +57,12 @@ function delay(ms: number): Promise<void> {
  * wires `invalidateTokenCache`/`setCachedAuthToken` to it, per this file's
  * top-of-file doc comment) gets invalidated between attempts as intended.
  */
-export async function getSupabaseAccessTokenWithRetry(options?: {
-	attempts?: number;
-	baseDelayMs?: number;
-	invalidateBetweenAttempts?: boolean;
-}): Promise<string | null> {
-	const attempts = Math.max(1, options?.attempts ?? 1);
-	const baseDelayMs = options?.baseDelayMs ?? 0;
-	const invalidateBetweenAttempts = options?.invalidateBetweenAttempts ?? false;
-
-	let token: string | null = null;
-	for (let attempt = 0; attempt < attempts; attempt++) {
-		if (attempt > 0) {
-			if (invalidateBetweenAttempts) invalidateTokenCache();
-			if (baseDelayMs > 0) await delay(baseDelayMs);
-		}
-		token = await platformConfig().getToken();
-		if (token) return token;
-	}
-	return token;
+export async function getSupabaseAccessTokenWithRetry(
+	options?: TokenRetryOptions,
+): Promise<string | null> {
+	// The retry loop itself lives in `auth-core.ts` (pure, un-mockable in
+	// tests) — this delegate just binds it to the live platform config.
+	return withTokenRetry(() => platformConfig().getToken(), options, invalidateTokenCache);
 }
 
 /**
@@ -108,11 +98,9 @@ export async function getAuthToken(): Promise<string | null> {
   return getSupabaseAccessToken();
 }
 
-export async function getAuthTokenWithRetry(options?: {
-	attempts?: number;
-	baseDelayMs?: number;
-	invalidateBetweenAttempts?: boolean;
-}): Promise<string | null> {
+export async function getAuthTokenWithRetry(
+	options?: TokenRetryOptions,
+): Promise<string | null> {
 	return getSupabaseAccessTokenWithRetry(options);
 }
 
@@ -145,64 +133,9 @@ function fetchWithAuth(
   return fetch(input, { ...init, headers, ...(signal ? { signal } : {}) });
 }
 
-const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
-
-/**
- * The one long-lived streaming call reached through this fetch injection
- * point — `openEventStream` (`state/event-stream.ts`) drives the opencode
- * client's `global.event(...)` SSE endpoint, which hits `GET {runtimeUrl}/global/event`.
- * It manages its own lifecycle (a 15s heartbeat watchdog + explicit
- * abort/reconnect loop) and is meant to stay open far longer than any request
- * timeout — `withDefaultTimeout` exempts it below so a blanket timeout doesn't
- * tear the stream down every 30s.
- */
-function isStreamingRequest(input: RequestInfo | URL): boolean {
-  const url = input instanceof Request ? input.url : String(input);
-  return url.includes('/global/event');
-}
-
-/**
- * Compose the request's own abort signal — a `Request` always carries one
- * (the caller's real signal, or a spec-default one that never fires) — with a
- * default 30s timeout, so a hung non-streaming call can't wedge a "Kortix as
- * a Backend" server-side handler forever. The SSE event stream is exempted
- * (see `isStreamingRequest`). Falls back to the caller's bare signal on a
- * runtime without `AbortSignal.any` (older Node/engines) — guarded so a
- * caller-supplied signal is never silently dropped.
- */
-function withDefaultTimeout(input: RequestInfo | URL, init: RequestInit | undefined): AbortSignal | undefined {
-  const callerSignal = input instanceof Request ? input.signal : init?.signal;
-  if (isStreamingRequest(input)) return callerSignal ?? undefined;
-
-  const timeoutSignal = AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS);
-  if (!callerSignal) return timeoutSignal;
-  if (typeof AbortSignal.any === 'function') {
-    return AbortSignal.any([callerSignal, timeoutSignal]);
-  }
-  return callerSignal;
-}
-
-/**
- * Build a Headers object from request input + init, injecting the auth token.
- */
-function buildAuthHeaders(
-  input: RequestInfo | URL,
-  init?: RequestInit,
-  token?: string | null,
-): Headers {
-  const headers = new Headers(
-    input instanceof Request ? input.headers : undefined,
-  );
-  if (init?.headers) {
-    new Headers(init.headers).forEach((value, key) => {
-      headers.set(key, value);
-    });
-  }
-  if (token && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
-  return headers;
-}
+// Timeout composition, streaming exemption, and header building live in
+// `auth-core.ts` (pure + directly unit-tested there); this file wires them to
+// the live token seam.
 
 /**
  * Shared authenticated fetch — injects auth tokens and handles 401 responses.
@@ -233,10 +166,7 @@ export async function authenticatedFetch(
   // naked request. Safe for all callers including the OpenCode SDK which
   // expects fetch() semantics (returns Response, never throws).
   if (!token) {
-    return new Response(JSON.stringify({ error: 'Not authenticated' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return syntheticUnauthenticatedResponse();
   }
 
   const headers = buildAuthHeaders(input, init, token);
