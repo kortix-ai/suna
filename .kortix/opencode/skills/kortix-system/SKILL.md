@@ -174,13 +174,28 @@ or closes it).
 
 When you, as an agent, have changes you believe should persist:
 
-1. **Commit on the session branch.** Small, working commits. No
-   force-pushes, no rewriting upstream history.
-2. **Push the branch.**
+1. **Sync with the base first.** `main` may have advanced while you
+   worked (other sessions merge CRs, the dashboard commits config):
+   ```sh
+   git fetch origin && git log HEAD..origin/main --oneline
+   ```
+   If the base moved, rebase onto it (`git rebase origin/main`) and
+   resolve any conflicts NOW — a CR whose head is behind or in conflict
+   with base can't be applied, and the conflict is yours to fix, not
+   the reviewer's.
+2. **Commit on the session branch.** Small, working commits. Never
+   rewrite history that isn't yours.
+3. **Push the branch.** This step is NOT optional — a commit that
+   never leaves the sandbox produces an empty, un-appliable CR:
    ```sh
    git push origin HEAD
    ```
-3. **Open a CR.** From inside the sandbox the CLI reads
+   If the push is rejected because the remote session branch moved
+   (the platform can advance it to the latest base), run
+   `git fetch origin` then `git push --force-with-lease origin HEAD`.
+   Force-pushing is acceptable ONLY for your own session branch —
+   never for `main` or anyone else's branch.
+4. **Open a CR.** From inside the sandbox the CLI reads
    `$KORTIX_BRANCH_NAME`, `$KORTIX_SESSION_ID`, and `$KORTIX_SANDBOX_TOKEN`
    (deprecated alias: `$KORTIX_TOKEN`) automatically:
    ```sh
@@ -188,12 +203,22 @@ When you, as an agent, have changes you believe should persist:
      --title  "Short, imperative summary" \
      --description "What changed and why. Test plan. Risks."
    ```
-4. **Surface the CR to the user.** Print the CR number so they can
+   The API refuses an empty CR (`422 CR_HEAD_NOT_AHEAD`) — that error
+   always means your push didn't land (or your branch has nothing new
+   over base). Fix the push and retry; don't work around it.
+5. **Verify the CR carries your diff.**
+   ```sh
+   kortix cr diff <n>
+   ```
+   If it shows no changes, your push didn't land — push and re-check
+   the SAME CR (the diff recomputes live from the refs). Never open a
+   duplicate CR for the same work.
+6. **Surface the CR to the user.** Print the CR number so they can
    review:
    ```sh
    kortix cr ls
    ```
-5. **Wait.** The user merges via dashboard, CLI (`kortix cr merge
+7. **Wait.** The user merges via dashboard, CLI (`kortix cr merge
    <n>`), or asks for changes. *You do not merge your own CRs.*
 
 ### Don't bypass this

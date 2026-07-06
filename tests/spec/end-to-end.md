@@ -257,7 +257,7 @@ Repo files are read-only over the project API; live edits happen in the sandbox 
 DB `change_requests` (per-project `number`, `status open|merged|closed`).
 
 `CR-1` `GET /projects/:id/change-requests?status=open|merged|closed|all` → `read`.
-`CR-2` `POST /projects/:id/change-requests {title,head_ref,base_ref?,description?,session_id?}` → `write` → 201, head/base SHAs anchored. Missing `title` → 400; missing `head_ref` → 400; `base_ref==head_ref` → 400.
+`CR-2` `POST /projects/:id/change-requests {title,head_ref,base_ref?,description?,session_id?}` → `write` → 201, head/base SHAs anchored. Missing `title` → 400; missing `head_ref` → 400; `base_ref==head_ref` → 400; head with no commits ahead of base (equal tip, or merge-base == head behind an advanced base) → 422 `CR_HEAD_NOT_AHEAD` — an empty CR can never be created (the resolver force-refreshes the mirror before rejecting, so a just-pushed head never bounces).
 `CR-3` `GET …/:crId` → `read` (auto-refreshes branch tips).
 `CR-4` `PATCH …/:crId` → `write`, open only.
 `CR-5` `GET …/:crId/diff` → `read` → file list + unified patch.
