@@ -235,9 +235,9 @@ export function useSummarizeOpenCodeSession() {
       if (!providerID || !modelID) {
         try {
           const configResult = await client.global.config.get();
-          const config = configResult.data as any;
+          const config = configResult.data;
           if (config?.model) {
-            const parts = (config.model as string).split('/');
+            const parts = config.model.split('/');
             if (parts.length >= 2) {
               providerID = providerID || parts[0];
               modelID = modelID || parts.slice(1).join('/');
@@ -269,11 +269,19 @@ export function useSummarizeOpenCodeSession() {
       // 3. Try first available provider/model from provider list
       if (!providerID || !modelID) {
         try {
+          // The provider list's typed shape is `{ all, default, connected }`,
+          // but this fallback has historically walked it as a plain
+          // `{ [providerID]: { models } }` map — keep that exact (best-effort,
+          // try/catch-guarded) duck-typed read via `unknown` rather than
+          // assert a shape that may not match what's actually on the wire.
           const providerResult = await client.provider.list();
-          const providers = providerResult.data as any;
+          const providers: unknown = providerResult.data;
           if (providers && typeof providers === 'object') {
-            for (const [pid, providerInfo] of Object.entries(providers)) {
-              const models = (providerInfo as any)?.models;
+            for (const [pid, providerInfo] of Object.entries(providers as Record<string, unknown>)) {
+              const models =
+                providerInfo && typeof providerInfo === 'object'
+                  ? (providerInfo as Record<string, unknown>).models
+                  : undefined;
               if (models && typeof models === 'object') {
                 const firstModelId = Object.keys(models)[0];
                 if (firstModelId) {
@@ -384,8 +392,17 @@ export function useInitSession() {
         arguments: '',
       });
       if (result.error) {
-        const err = result.error as any;
-        throw new Error(err?.data?.message || err?.message || 'Failed to initialize project');
+        // The error union here (`BadRequest | InvalidRequestError |
+        // NotFoundError`) doesn't share a `.message`/`.data.message` shape
+        // across all members — duck-type defensively rather than assume one.
+        const err = result.error;
+        const errRec = err && typeof err === 'object' ? (err as Record<string, unknown>) : undefined;
+        const dataRec =
+          errRec?.data && typeof errRec.data === 'object'
+            ? (errRec.data as Record<string, unknown>)
+            : undefined;
+        const message = dataRec?.message ?? errRec?.message;
+        throw new Error(typeof message === 'string' ? message : 'Failed to initialize project');
       }
       return sessionId;
     },

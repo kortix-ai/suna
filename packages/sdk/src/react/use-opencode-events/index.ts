@@ -1,5 +1,6 @@
 'use client';
 
+import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
 import { clearConfigOverrides } from '../use-opencode-config';
 import { saveSessionToIDB } from '../../state/idb-sync-cache';
 import { logger } from '../../platform/logger';
@@ -153,12 +154,15 @@ export function useOpenCodeEventStream() {
         .status()
         .then((res) => {
           if (res.data) {
-            const statuses = res.data as Record<string, any>;
+            const statuses = res.data;
             for (const [sessionID, status] of Object.entries(statuses)) {
+              // Locally-synthesized event (this is a REST poll, not an SSE
+              // frame) — omits the `id` field every real `Event` union member
+              // carries, hence the assertion.
               applySyncEvent({
                 type: 'session.status',
                 properties: { sessionID, status },
-              } as any);
+              } as unknown as OpenCodeSdkEvent);
             }
             reconcileMissingBusySessions.current(statuses);
           } else {
@@ -193,7 +197,7 @@ export function useOpenCodeEventStream() {
             .messages({ sessionID: sid })
             .then((res) => {
               if (res.data) {
-                useSyncStore.getState().hydrate(sid, res.data as any);
+                useSyncStore.getState().hydrate(sid, res.data);
                 const s = useSyncStore.getState();
                 const msgs = s.messages[sid] ?? [];
                 if (msgs.length > 0) saveSessionToIDB(sid, msgs, s.parts);

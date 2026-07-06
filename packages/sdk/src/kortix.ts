@@ -150,6 +150,68 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     cancelInvite: P.cancelAccountInvite,
     /** Resend a pending account invite (accountId still known/scoped). */
     resendInvite: P.resendAccountInvite,
+    /** CLI PAT minting — account-scoped personal access tokens (`kortix_pat_...`). */
+    tokens: {
+      list: P.listAccountTokens,
+      create: P.createAccountToken,
+      revoke: P.revokeAccountToken,
+    },
+    /** Enterprise audit log — events + CSV/JSONL export + SIEM webhooks. */
+    audit: {
+      log: P.listAccountAudit,
+      export: P.exportAccountAudit,
+      webhooks: {
+        list: P.listAccountAuditWebhooks,
+        create: P.createAccountAuditWebhook,
+        update: P.updateAccountAuditWebhook,
+        remove: P.removeAccountAuditWebhook,
+      },
+    },
+  };
+
+  /**
+   * Billing read surface — credits, subscription, tier, and transaction
+   * history for entitlement-gating + a billing/usage UI. Checkout/portal/
+   * credit-purchase/subscription MUTATIONS stay app-owned (Stripe flows) —
+   * this is reads only.
+   */
+  const billing = {
+    accountState: P.getAccountState,
+    accountStateMinimal: P.getAccountStateMinimal,
+    transactions: P.listBillingTransactions,
+    transactionsSummary: P.getBillingTransactionsSummary,
+    creditBreakdown: P.getBillingCreditBreakdown,
+    usageHistory: P.getBillingUsageHistory,
+    tierConfigurations: P.getBillingTierConfigurations,
+
+    /** Stripe checkout — start a subscription and confirm it post-redirect. */
+    checkout: {
+      createSession: (input: Parameters<typeof P.createCheckoutSession>[0]) =>
+        P.createCheckoutSession(input),
+      confirmSession: (sessionId: string, accountId?: string) =>
+        P.confirmCheckoutSession(sessionId, accountId),
+    },
+
+    /** Manage an existing subscription (portal, cancel/reactivate, downgrade). */
+    subscription: {
+      createPortalSession: (returnUrl: string, accountId?: string) =>
+        P.createPortalSession(returnUrl, accountId),
+      cancel: (feedback?: string, accountId?: string) => P.cancelSubscription(feedback, accountId),
+      reactivate: (accountId?: string) => P.reactivateSubscription(accountId),
+      scheduleDowngrade: (targetTierKey: string, commitmentType?: string, accountId?: string) =>
+        P.scheduleDowngrade(targetTierKey, commitmentType, accountId),
+      cancelScheduledChange: (accountId?: string) => P.cancelScheduledChange(accountId),
+      prorationPreview: (newPriceId: string, accountId?: string) =>
+        P.getProrationPreview(newPriceId, accountId),
+    },
+
+    /** One-off credit purchases + recurring auto-topup configuration. */
+    credits: {
+      purchase: (input: Parameters<typeof P.purchaseCredits>[0]) => P.purchaseCredits(input),
+      autoTopupSettings: (accountId?: string) => P.getAutoTopupSettings(accountId),
+      configureAutoTopup: (input: Parameters<typeof P.configureAutoTopup>[0]) =>
+        P.configureAutoTopup(input),
+    },
   };
 
   /**
@@ -203,6 +265,26 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   /** Deployment-wide flag: is the easy-connect (Pipedream) provider configured? Not project-scoped. */
   const connectStatus = P.getConnectStatus;
 
+  /**
+   * Public marketplace catalog browse (`/v1/marketplace/*`) — top-level and
+   * distinct from `project(id).marketplace`, which is install-scoped (commits
+   * an item onto a specific project's branch). This is read-only browsing +
+   * the authed "add a marketplace source" surface.
+   */
+  const marketplace = {
+    items: (options?: Parameters<typeof P.listMarketplaceCatalogItems>[0]) =>
+      P.listMarketplaceCatalogItems(options),
+    item: (id: string) => P.getMarketplaceCatalogItem(id),
+    itemFile: (id: string, path: string) => P.getMarketplaceCatalogItemFile(id, path),
+    marketplaces: () => P.listMarketplaces(),
+    featured: () => P.listFeaturedMarketplaces(),
+    sources: {
+      list: () => P.listMarketplaceSources(),
+      add: (input: Parameters<typeof P.addMarketplaceSource>[0]) => P.addMarketplaceSource(input),
+      remove: (id: string) => P.removeMarketplaceSource(id),
+    },
+  };
+
   /** Id-bound handle for a single project: every sub-resource, projectId pre-applied. */
   function project(projectId: string) {
     return {
@@ -214,6 +296,48 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       sandboxHealth: () => P.getProjectSandboxHealth(projectId),
       onboardingComplete: (...a: DropFirst<Parameters<typeof P.setProjectOnboardingComplete>>) =>
         P.setProjectOnboardingComplete(projectId, ...a),
+
+      /** Project-scoped CLI PATs (auto-minted at session-create as `KORTIX_TOKEN`; can also be minted by hand). */
+      tokens: {
+        list: () => P.listProjectCliTokens(projectId),
+        create: (input?: Parameters<typeof P.createProjectCliToken>[1]) =>
+          P.createProjectCliToken(projectId, input),
+        revoke: (tokenId: string) => P.revokeProjectCliToken(projectId, tokenId),
+      },
+
+      /** Agent-minted setup links — hand a human a link to enter a secret value or 1-click connect an app. */
+      setupLinks: {
+        requestSecret: (input: Parameters<typeof P.requestProjectSecret>[1]) =>
+          P.requestProjectSecret(projectId, input),
+        requestConnector: (input: Parameters<typeof P.requestProjectConnector>[1]) =>
+          P.requestProjectConnector(projectId, input),
+      },
+
+      /** Validate a `kortix.toml` manifest's raw TOML text server-side (same schema `kortix ship`/CR-merge use). */
+      validateManifest: (raw: string) => P.validateProjectManifest(projectId, raw),
+
+      /** Mint a fresh scoped git push token for a managed project (409 for BYO repos). */
+      gitToken: () => P.getProjectGitToken(projectId),
+
+      /** Marketplace install/updates — commits an item's files (+ lock) straight onto the default branch. */
+      marketplace: {
+        list: () => P.listInstalledMarketplaceItems(projectId),
+        install: (id: string) => P.installMarketplaceItem(projectId, id),
+        updates: () => P.getMarketplaceUpdates(projectId),
+        update: (name: string) => P.updateMarketplaceItem(projectId, name),
+        updateAll: () => P.updateAllMarketplaceItems(projectId),
+        remove: (name: string) => P.removeMarketplaceItem(projectId, name),
+      },
+
+      /** `registry.*` — compatibility alias of `marketplace.*` (identical server-side handlers). */
+      registry: {
+        list: () => P.listInstalledRegistryItems(projectId),
+        install: (id: string) => P.installRegistryItem(projectId, id),
+        updates: () => P.getRegistryUpdates(projectId),
+        update: (name: string) => P.updateRegistryItem(projectId, name),
+        updateAll: () => P.updateAllRegistryItems(projectId),
+        remove: (name: string) => P.removeRegistryItem(projectId, name),
+      },
 
       secrets: {
         list: () => P.listProjectSecrets(projectId),
@@ -360,6 +484,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.closeChangeRequest(projectId, ...a),
         reopen: (...a: DropFirst<Parameters<typeof P.reopenChangeRequest>>) =>
           P.reopenChangeRequest(projectId, ...a),
+        /** Request changes on a CR (Review Center) — records feedback + optionally delivers it back to the originating session. */
+        requestChanges: (...a: DropFirst<Parameters<typeof P.requestChangesOnChangeRequest>>) =>
+          P.requestChangesOnChangeRequest(projectId, ...a),
       },
 
       sessions: {
@@ -405,6 +532,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         keys: () => P.getGatewayKeys(projectId),
         createKey: (name: string) => P.createGatewayKey(projectId, name),
         revokeKey: (keyId: string) => P.revokeGatewayKey(projectId, keyId),
+        /** Run one prompt against up to 6 models side by side (a model-comparison playground). */
+        playground: (prompt: string, models: string[]) =>
+          P.runGatewayPlayground(projectId, prompt, models),
       },
 
       /** Slack + email + Meet channel integrations. */
@@ -415,6 +545,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           mode: () => P.getSlackMode(projectId),
           manifest: () => P.getSlackManifest(projectId),
           disconnect: () => P.disconnectSlack(projectId),
+          /** Download a Slack-hosted file through the server-side proxy (bot token stays server-side). */
+          getFile: (url: string) => P.getSlackChannelFile(projectId, url),
+          /** Upload a file to Slack through the server-side 3-step external-upload proxy. */
+          uploadFile: (input: Parameters<typeof P.uploadSlackChannelFile>[1]) =>
+            P.uploadSlackChannelFile(projectId, input),
         },
         email: {
           installation: (connectorSlug?: string | null) =>
@@ -430,6 +565,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           setVoice: (voice: string) => P.setMeetVoice(projectId, voice),
           setBotName: (name: string) => P.setMeetBotName(projectId, name),
           previewVoice: (voiceId: string) => P.previewMeetVoice(projectId, voiceId),
+          /** Make the meeting bot speak text (text → ElevenLabs → Recall `output_audio`). */
+          speak: (botId: string, text: string, voice?: string) =>
+            P.speakInMeeting(projectId, botId, text, voice),
         },
       },
 
@@ -625,6 +763,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Per-session audit trail of executor-gated agent actions. */
       audit: (limit?: number, options?: { showErrors?: boolean }) =>
         P.getSessionAudit(projectId, sessionId, limit, options),
+      /** Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens. */
+      transcript: (options?: Parameters<typeof P.getSessionTranscript>[2]) =>
+        P.getSessionTranscript(projectId, sessionId, options),
 
       /**
        * Resolve THIS handle's own runtime (idempotent): provisions/resumes the
@@ -777,12 +918,18 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     session,
     /** GitHub App installation + repository linking (account-scoped). */
     github,
+    /** Billing read surface — credits/subscription/tier/transactions (not project-scoped). */
+    billing,
     /** Public share links for a sandbox port (`/v1/p/share`, sandbox-scoped). */
     sandboxShares,
     /** Speech-to-text transcription (`/transcription` — not project-scoped). */
     transcribe: P.transcribeAudio,
     /** Deployment-wide Pipedream/easy-connect availability flag (not project-scoped). */
     connectStatus,
+    /** Public marketplace catalog browse + sources (`/v1/marketplace/*`, not project-scoped). */
+    marketplace,
+    /** The pasted-API-key UX check — `GET /accounts/me`, never throws. */
+    validateToken: P.validateToken,
     /** Escape hatch: the typed opencode client for the active sandbox. */
     runtime,
   };

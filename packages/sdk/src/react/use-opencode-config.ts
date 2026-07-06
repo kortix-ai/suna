@@ -13,8 +13,14 @@ export const configKeys = {
 
 function unwrap<T>(result: { data?: T; error?: unknown }): T {
   if (result.error) {
-    const err = result.error as any;
-    throw new Error(err?.data?.message || err?.message || 'Request failed');
+    // `error`'s shape varies per endpoint's typed error union — duck-type
+    // defensively via `unknown` rather than assume a shape.
+    const err = result.error;
+    const errRec = err && typeof err === 'object' ? (err as Record<string, unknown>) : undefined;
+    const dataRec =
+      errRec?.data && typeof errRec.data === 'object' ? (errRec.data as Record<string, unknown>) : undefined;
+    const message = dataRec?.message ?? errRec?.message;
+    throw new Error(typeof message === 'string' ? message : 'Request failed');
   }
   return result.data as T;
 }
@@ -40,7 +46,9 @@ export function useUpdateOpenCodeConfig() {
   return useMutation({
     mutationFn: async (config: Partial<Config>) => {
       const client = getClient();
-      const result = await client.global.config.update({ config } as any);
+      // The SDK's `update` param type wants a full `Config`, but the server
+      // accepts (and this hook always sends) a partial merge patch.
+      const result = await client.global.config.update({ config: config as Config });
       return unwrap(result) as Config;
     },
     onMutate: async (config) => {

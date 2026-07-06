@@ -181,3 +181,106 @@ export {
   type KortixChatQuestionOption,
   type KortixChatToolRef,
 } from './state/chat-events';
+
+/**
+ * Domain result types from the REST facade (`kortix.project(id).*` /
+ * `kortix.session(...)` / `kortix.accounts.*` / `kortix.billing.*`), re-exported
+ * type-only so a consumer can name what a facade call returns without a
+ * second import from `@kortix/sdk/projects-client`. Additive — no runtime
+ * cost, and every name here already lives in `./platform/projects-client`
+ * (this is a convenience re-export, not a new surface).
+ */
+export type {
+  // Projects
+  KortixProject,
+  ProjectConfigSummary,
+  ProjectDetail,
+  ProjectLlmCatalogResponse,
+  // Accounts / IAM
+  KortixAccount,
+  AccountDetail,
+  AccountMember,
+  AccountRole,
+  ProjectRole,
+  ProjectAccessMember,
+  ProjectAccessRequest,
+  ProjectGroupGrant,
+  ProjectResourceGrant,
+  PendingProjectInvite,
+  PendingApproval,
+  // Secrets / connectors
+  ProjectSecret,
+  ProjectGitConnection,
+  ConnectorSharing,
+  AdminConnector,
+  ConnectorConfig,
+  // Sessions
+  ProjectSession,
+  ProjectOpenCodeSession,
+  SessionPublicShare,
+  SessionAudit,
+  SessionTranscript,
+  SessionTranscriptMessage,
+  // Change requests / git
+  ChangeRequest,
+  ChangeRequestDiffResponse,
+  ChangeRequestMergePreview,
+  ProjectCommit,
+  ProjectCommitDetail,
+  ProjectCommitFile,
+  ProjectBranch,
+  // Triggers
+  ProjectTrigger,
+  ProjectTriggerListing,
+  // Sandbox
+  SandboxTemplate,
+  ProjectSandboxHealth,
+  ProjectSnapshotBuild,
+  // Gateway (LLM observability / budgets)
+  GatewayLogRow,
+  GatewayLogDetail,
+  GatewayOverview,
+  GatewayBudgetRow,
+  GatewayKeyRow,
+  // Tokens (CLI PATs)
+  AccountToken,
+  CreatedAccountToken,
+  ProjectCliToken,
+  CreatedProjectCliToken,
+  // Billing
+  AccountState,
+  BillingTransaction,
+  BillingTransactionsPage,
+  BillingTransactionsSummary,
+  BillingCreditBreakdown,
+  BillingTierConfiguration,
+  // Marketplace / registry
+  MarketplaceInstalledItem,
+  MarketplaceInstallResult,
+  MarketplaceUpdateStatusEntry,
+  MarketplaceUpdatesResponse,
+  // Account audit
+  AuditEvent,
+  AuditEventList,
+  AuditWebhook,
+  // Setup links (secret-entry / connect-request)
+  SecretRequestLink,
+  ConnectorRequestLink,
+  // Manifest validate / git token
+  ManifestValidationResult,
+  ProjectGitToken,
+  // Gateway playground
+  GatewayPlaygroundResponse,
+  // Billing mutations
+  CheckoutSessionResult,
+  PortalSessionResult,
+  AutoTopupSettings,
+  // Public marketplace catalog (top-level `kortix.marketplace.*`)
+  MarketplaceCatalogItem,
+  MarketplaceItemsResponse,
+  MarketplaceEntry,
+  MarketplaceSource,
+  // Auth validate helper
+  AccountIdentity,
+  ValidateTokenResult,
+} from './platform/projects-client';

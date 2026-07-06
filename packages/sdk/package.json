@@ -1,6 +1,6 @@
 {
   "name": "@kortix/sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Official Kortix frontend TypeScript SDK — one typed client for the Kortix agent platform. Unifies project/session lifecycle and live agent streaming behind a single ergonomic Session handle, so web, mobile, and white-label apps never touch the raw HTTP API or OpenCode semantics.",
   "type": "module",
   "license": "Elastic-2.0",
@@ -127,7 +127,7 @@
   },
   "files": ["dist", "src", "README.md"],
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p examples/tsconfig.json",
     "test": "bun test src",
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
     "prepublishOnly": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths"

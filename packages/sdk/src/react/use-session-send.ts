@@ -34,9 +34,11 @@
  *    pure functions directly instead, as apps/web's `session-chat.tsx` does.
  */
 
+import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 import { useCallback, useState } from 'react';
 import { getClient } from '../opencode/client';
 import { ascendingId, useSyncStore } from '../state/sync-store';
+import type { MessageError } from '../state/sync-store/types';
 import { classifySendError, type KortixSendError } from './use-session';
 import {
   promptOpenCodeMessage,
@@ -63,24 +65,27 @@ export function beginOptimisticSend(
   text: string,
   partIds?: string[],
 ): void {
-  const parts = text.trim()
+  const parts: Part[] = text.trim()
     ? [
         {
           id: partIds?.[0] ?? ascendingId('prt'),
           sessionID: sessionId,
           messageID: messageId,
-          type: 'text',
+          type: 'text' as const,
           text,
         },
       ]
     : [];
+  // Minimal optimistic stub — omits `agent`/`model` (required on the real
+  // `UserMessage`) since the server fills those in; same stub-message
+  // convention used by the sync store's own SSE handlers.
   const info = {
     id: messageId,
     sessionID: sessionId,
     role: 'user',
     time: { created: Date.now() },
-  };
-  useSyncStore.getState().optimisticAdd(sessionId, info as any, parts as any);
+  } as Message;
+  useSyncStore.getState().optimisticAdd(sessionId, info, parts);
   useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
 }
 
@@ -107,6 +112,12 @@ export interface OpenCodeMessagesClient {
     messages: (args: { sessionID: string }) => Promise<{ data?: unknown }>;
   };
 }
+
+/** Shape `useSyncStore.getState().hydrate()` actually needs. `data` on
+ *  `OpenCodeMessagesClient['session']['messages']` is deliberately `unknown`
+ *  (hosts inject their own stub client in tests) — narrow at the one real
+ *  call site below instead of widening that public interface. */
+type HydrateInput = Array<{ info: Message; parts: Part[] }>;
 
 export interface SendRecoveryOptions {
   /** Resolve the client used to rehydrate messages on failure. Defaults to
@@ -159,7 +170,7 @@ export function recoverFromSendFailure(
         // the server hasn't persisted yet, that wipes the user's typed text
         // and leaves an empty bubble. Keeping the optimistic message means
         // the user always still sees what they sent.
-        useSyncStore.getState().hydrate(sessionId, res.data as any);
+        useSyncStore.getState().hydrate(sessionId, res.data as HydrateInput);
       } else {
         // No server data — just remove the optimistic message.
         useSyncStore.getState().optimisticRemove(sessionId, messageId);
@@ -234,11 +245,22 @@ export function applyOptimisticAbort(sessionId: string): void {
   const msgs = store.messages[sessionId];
   if (!msgs) return;
   for (let i = msgs.length - 1; i >= 0; i--) {
-    if (msgs[i].role === 'assistant' && !(msgs[i] as any).error) {
-      store.upsertMessage(sessionId, {
-        ...msgs[i],
-        error: { name: 'AbortError', data: { message: 'The operation was aborted.' } },
-      } as any);
+    const msg = msgs[i];
+    if (msg.role === 'assistant' && !msg.error) {
+      // Typed as the wider `MessageError` (not just the literal shape below)
+      // so the assertion further down overlaps with `AssistantMessage.error`'s
+      // real union — see `MessageError` in the sync store.
+      const error: MessageError = {
+        name: 'AbortError',
+        data: { message: 'The operation was aborted.' },
+      };
+      // `error`'s shape (`SyntheticAbortError`) isn't part of the SDK's
+      // `AssistantMessage.error` union — see `MessageError` in the sync
+      // store. TS flags the direct assertion as an insufficient-overlap
+      // mistake because it narrows the literal's `error` field back down to
+      // `SyntheticAbortError`; route through `unknown` as TS itself suggests.
+      const patched = { ...msg, error } as unknown as Message;
+      store.upsertMessage(sessionId, patched);
       break;
     }
   }

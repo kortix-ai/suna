@@ -28,8 +28,14 @@ export const ptyKeys = {
 
 function unwrap<T>(result: { data?: T; error?: unknown }): T {
   if (result.error) {
-    const err = result.error as any;
-    throw new Error(err?.data?.message || err?.message || 'SDK request failed');
+    // `error`'s shape varies per endpoint's typed error union — duck-type
+    // defensively via `unknown` rather than assume a shape.
+    const err = result.error;
+    const errRec = err && typeof err === 'object' ? (err as Record<string, unknown>) : undefined;
+    const dataRec =
+      errRec?.data && typeof errRec.data === 'object' ? (errRec.data as Record<string, unknown>) : undefined;
+    const message = dataRec?.message ?? errRec?.message;
+    throw new Error(typeof message === 'string' ? message : 'SDK request failed');
   }
   return result.data as T;
 }
@@ -68,7 +74,7 @@ export function useCreatePty() {
       env?: Record<string, string>;
     }) => {
       const client = getClient();
-      const result = await client.pty.create(options as any);
+      const result = await client.pty.create(options);
       return unwrap(result);
     },
     onSuccess: () => {
@@ -84,7 +90,7 @@ export function useRemovePty() {
   return useMutation({
     mutationFn: async (id: string) => {
       const client = getClient();
-      const result = await client.pty.remove({ ptyID: id } as any);
+      const result = await client.pty.remove({ ptyID: id });
       unwrap(result);
     },
     onSuccess: () => {
@@ -106,7 +112,7 @@ export function useUpdatePty() {
       size?: { rows: number; cols: number };
     }) => {
       const client = getClient();
-      const result = await client.pty.update({ ptyID: id, title, size } as any);
+      const result = await client.pty.update({ ptyID: id, title, size });
       return unwrap(result);
     },
   });

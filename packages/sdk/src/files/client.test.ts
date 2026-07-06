@@ -1,18 +1,26 @@
 import { test, expect, beforeEach, mock } from 'bun:test';
-import * as realServerStore from '../state/server-store';
 import * as realAuth from '../platform/auth';
+import { setCurrentRuntime } from '../state/current-runtime';
 
-// Capture daemon requests by overriding ONLY the two seams the file client uses
-// (spread the real module so every other importer's exports stay intact).
+// Capture daemon requests by overriding ONLY the auth seam the file client
+// uses (spread the real module so every other importer's exports stay
+// intact). The active-sandbox base URL ('http://sbx.test') is driven through
+// the REAL `state/current-runtime` seam (`setCurrentRuntime`, in `beforeEach`
+// below) rather than a `mock.module('../state/server-store', ...)` override —
+// this used to mock that whole module away, but `getActiveOpenCodeUrl` is
+// re-exported from `./server-store/active` (`export { getActiveOpenCodeUrl }
+// from './server-store/active'` in `server-store.ts`), and mocking either the
+// barrel or the submodule collides process-wide with ANY other file that
+// imports/tests `state/server-store/active` directly (e.g. a direct unit test
+// of that module's real fallback logic). Driving the real
+// `getActiveOpenCodeUrl()` via its own real dependency (current-runtime)
+// avoids the collision entirely — same observable 'http://sbx.test' default
+// for every test below, no mock needed.
 let calls: { url: string; method: string; body?: string }[] = [];
 // When set, the mocked `authenticatedFetch` responds with THIS status instead
 // of a 200 — lets individual tests exercise the daemon-failure path.
 let mockFailStatus: number | null = null;
 
-mock.module('../state/server-store', () => ({
-  ...realServerStore,
-  getActiveOpenCodeUrl: () => 'http://sbx.test',
-}));
 mock.module('../platform/auth', () => ({
   ...realAuth,
   getAuthToken: async () => 'tok',
@@ -34,6 +42,7 @@ const last = () => calls[calls.length - 1];
 beforeEach(() => {
   calls = [];
   mockFailStatus = null;
+  setCurrentRuntime('http://sbx.test', 'sbx-test');
 });
 
 test('list hits GET /file with worktree-relative path', async () => {
