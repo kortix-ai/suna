@@ -2,16 +2,11 @@ import { and, eq } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolvePreviewLink } from '../../sandbox-proxy/backend';
-import { resolveShareSubject } from '../../executor/share';
 import { config } from '../../config';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
-import {
-  listProjectSecretsForUser,
-  loadSecretAgentScopes,
-  projectSecretsRevision,
-  secretNamesDeniedForAgent,
-} from '../secrets';
+import { listProjectSecretsSnapshotForUser, projectSecretsRevision } from '../secrets';
+import { grantFromLoadedAgents, loadProjectAgents } from '../agents';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
 import { daytonaPreviewHeaders, waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
 
@@ -36,24 +31,35 @@ async function resolveOwnerRawEnv(
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   if (!row?.createdBy) return null;
-  const subject = await resolveShareSubject(row.createdBy);
-  // Resolved AS the launching user, so per-member/department secret scoping is
-  // already applied here (the share model, isSecretUsableBy) — a secret shared
-  // only with specific members/depts never enters the live-sync env for a user
-  // outside its allow-list. Same single source of truth as session start.
-  const env = await listProjectSecretsForUser(projectId, subject);
-  // Apply the SAME secret→agent scope filter as sandbox boot
-  // (buildSessionSandboxEnvVars). A hot-push must not deliver an agent-scoped
-  // secret to a session whose running agent isn't on its allow-list — otherwise
-  // a secret restricted to agent A leaks into a running agent-B sandbox on the
-  // next secret update / per-prompt sync. All-agents secrets are never denied.
-  const agentScopes = await loadSecretAgentScopes(projectId);
-  if (agentScopes.size > 0) {
-    for (const name of secretNamesDeniedForAgent(agentScopes, row.agentName ?? '')) {
-      delete env[name];
-    }
+
+  // Resolve the running agent's `secrets` grant (by identifier) — the SAME gate
+  // applied at sandbox boot (buildSessionSandboxEnvVars). A hot-push must not
+  // deliver an identifier a scoped agent isn't granted; back-compat/no-git-
+  // context sessions default to 'all' (undefined).
+  const [project] = await db
+    .select({
+      repoUrl: projects.repoUrl,
+      defaultBranch: projects.defaultBranch,
+      manifestPath: projects.manifestPath,
+    })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+
+  let grantEnv: string[] | 'all' | undefined;
+  if (project?.defaultBranch) {
+    const loadedAgents = await loadProjectAgents({
+      projectId,
+      repoUrl: project.repoUrl ?? '',
+      defaultBranch: project.defaultBranch,
+      manifestPath: project.manifestPath ?? 'kortix.toml',
+      gitAuthToken: null,
+    }).catch(() => null);
+    const grant = loadedAgents ? grantFromLoadedAgents(row.agentName ?? '', loadedAgents) : null;
+    grantEnv = grant?.env;
   }
-  return env;
+
+  return (await listProjectSecretsSnapshotForUser(projectId, row.createdBy, grantEnv)).env;
 }
 
 export async function resolveSandboxEnvSnapshot(

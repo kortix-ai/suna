@@ -5,8 +5,9 @@
  * MCP, OpenAPI, GraphQL, or raw HTTP. The manifest holds the *definition*
  * (provider, endpoint/spec, auth method + which project-secret to use) and,
  * for the policy layer, the connector-scoped `[[connectors.policies]]`. The
- * secret *value* and Pipedream OAuth live in the platform, never in git;
- * who-can-use-it (sharing) is platform-side too.
+ * secret *value* and Pipedream OAuth live in the platform, never in git.
+ * Connectors are project-wide visible — the only access gate is which AGENTS
+ * may call it (`[[agents]].connectors`, declared on the agent, in git).
  *
  * Example:
  *
@@ -123,11 +124,6 @@ export interface ConnectorSpec {
   /** Sensitive connector (email/files/secrets-bearing): reads gate too — every
    *  action defaults to require_approval unless an explicit policy opens it. */
   sensitive: boolean;
-  /** Which AGENTS may call this connector (the connector-side agent gate, mirror
-   *  of the secret agent_scope). null / empty = ALL agents; a list of agent NAMES
-   *  restricts it to those agents' sessions. Reconciled to executor_connectors.
-   *  agent_scope every sync (toml-authoritative for declared connectors). */
-  agentScope: string[] | null;
   // ── provider-specific ──
   /** pipedream: app slug (`gmail`, `slack`). */
   app: string | null;
@@ -223,8 +219,6 @@ export function connectorSpecToTomlEntry(spec: ConnectorSpec): Record<string, un
   };
   // `shared` is the only mode and the implicit default for every provider —
   // never emit `credential` (mirrors how `sensitive: false` is omitted).
-  // Restrict which agents may call it — omit when all-agents (the default).
-  if (spec.agentScope && spec.agentScope.length > 0) entry.agent_scope = spec.agentScope;
   // Provider-specific keys — only emit what carries information.
   if (spec.provider === 'pipedream') {
     if (spec.app) entry.app = spec.app;
@@ -324,20 +318,6 @@ function parseConnectorEntry(entry: unknown, index: number): ParseOk | ParseErr 
   const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;
   const enabled = coerceBool(row.enabled, true);
   const sensitive = coerceBool(row.sensitive, false);
-  // agent_scope = which agents may call this connector. A hand-written list of
-  // agent names; empty/absent = all agents (null). Any string accepted (not
-  // validated against declared [[agents]], mirroring how connectors aren't
-  // validated against the catalog) so a typo simply scopes to a nonexistent agent.
-  const agentScopeList = Array.isArray(row.agent_scope)
-    ? Array.from(
-        new Set(
-          row.agent_scope
-            .filter((x): x is string => typeof x === 'string' && x.trim() !== '')
-            .map((x) => x.trim()),
-        ),
-      )
-    : [];
-  const agentScope = agentScopeList.length > 0 ? agentScopeList : null;
 
   // Credential mode — `shared` is the only mode. `per_user` is tolerated as a
   // legacy value (existing manifests that still say `credential = "per_user"`
@@ -358,7 +338,6 @@ function parseConnectorEntry(entry: unknown, index: number): ParseOk | ParseErr 
     provider: provider as ConnectorProvider,
     credentialMode,
     sensitive,
-    agentScope,
     app: null,
     account: null,
     url: null,

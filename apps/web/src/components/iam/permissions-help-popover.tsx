@@ -97,7 +97,7 @@ export function PermissionsHelpPopover({
             {tI18nHardcoded.raw(
               'autoComponentsIamPermissionsHelpPopoverJsxTextOwnersAndAdmins9e16f219',
             )}
-            <strong>Manager</strong>{' '}
+            <strong>Editor</strong>{' '}
             {tI18nHardcoded.raw(
               'autoComponentsIamPermissionsHelpPopoverJsxTextOnEveryProject7532e737',
             )}{' '}

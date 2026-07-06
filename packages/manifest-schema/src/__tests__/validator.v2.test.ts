@@ -389,6 +389,122 @@ connectors:
 `);
     expect(valid).toBe(true);
   });
+
+  // The runtime (apps/api connectors.ts `parseConnectorEntry`) hard-rejects
+  // ANY credential value that isn't "shared"/"per_user" — a parse error, not
+  // advisory. v2 mirrors that as a real error; v1 keeps it a warning (same
+  // as this function's other v1-only soft checks).
+  test('v1 tolerates a garbage credential value as a warning, still valid', () => {
+    const { valid, errorPaths, warningPaths } = summarize(
+      'kortix_version = 1\n[[connectors]]\nslug = "gmail"\nprovider = "pipedream"\napp = "gmail"\ncredential = "team"',
+      'toml',
+    );
+    expect(valid).toBe(true);
+    expect(errorPaths).not.toContain('connectors[0].credential');
+    expect(warningPaths).toContain('connectors[0].credential');
+  });
+
+  test('v2 hard-rejects a garbage credential value (not just "per_user")', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w: {}
+connectors:
+  - slug: gmail
+    provider: pipedream
+    app: gmail
+    credential: team
+`);
+    expect(valid).toBe(false);
+    expect(errorPaths).toContain('connectors[0].credential');
+  });
+});
+
+// The connector-side agent gate (`[[connectors]].agent_scope`) was removed
+// 2026-07 (wave-2 of the agent-first cut, docs/specs/
+// 2026-07-05-agent-first-config-unification.md §2.5): connector access is now
+// purely the agent's own `connectors` grant. The runtime (apps/api's
+// connectors.ts `parseConnectorEntry`) no longer parses `agent_scope` at all —
+// it is silently ignored, never round-tripped back into git. Same
+// legacy-tolerated pattern as `credential: per_user`: v1 warns, v2 hard-errors.
+describe('validateManifest — connector `agent_scope` removal', () => {
+  test('v1 tolerates a legacy agent_scope as a warning, still valid', () => {
+    const { valid, errorPaths, warningPaths } = summarize(
+      'kortix_version = 1\n[[connectors]]\nslug = "gmail"\nprovider = "pipedream"\napp = "gmail"\nagent_scope = ["support"]',
+      'toml',
+    );
+    expect(valid).toBe(true);
+    expect(errorPaths).not.toContain('connectors[0].agent_scope');
+    expect(warningPaths).toContain('connectors[0].agent_scope');
+  });
+
+  test('v2 rejects agent_scope outright', () => {
+    const { valid, errorPaths, issues } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w: {}
+connectors:
+  - slug: gmail
+    provider: pipedream
+    app: gmail
+    agent_scope: [support]
+`);
+    expect(valid).toBe(false);
+    expect(errorPaths).toContain('connectors[0].agent_scope');
+    expect(issues.find((i) => i.path === 'connectors[0].agent_scope')?.message).toContain(
+      'kortix_version 2',
+    );
+  });
+
+  test('v1 connector without agent_scope has no warning', () => {
+    const { warningPaths } = summarize(
+      'kortix_version = 1\n[[connectors]]\nslug = "gmail"\nprovider = "pipedream"\napp = "gmail"',
+      'toml',
+    );
+    expect(warningPaths).not.toContain('connectors[0].agent_scope');
+  });
+});
+
+// The 10 actions removed from IAM enforcement (dead-catalog cleanup) are
+// still parseable in an existing v1 manifest (warning only — the audit
+// found nothing asserts them on any route, so tolerating them is a no-op).
+// v2 is a NEW schema version, so it gets the clean break: no tolerance.
+describe('validateManifest — kortix_cli LEGACY_TOLERATED_KORTIX_CLI_ACTIONS clean break', () => {
+  test('v1 tolerates a legacy-removed action as a warning, still valid', () => {
+    const { valid, errorPaths, warningPaths } = summarize(
+      'kortix_version = 1\n[[agents]]\nname = "w"\nkortix_cli = ["project.schedule.read"]\n',
+      'toml',
+    );
+    expect(valid).toBe(true);
+    expect(errorPaths).not.toContain('agents[0].kortix_cli[0]');
+    expect(warningPaths).toContain('agents[0].kortix_cli[0]');
+  });
+
+  test('v2 hard-rejects the same legacy-removed action', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    kortix_cli: [project.schedule.read]
+`);
+    expect(valid).toBe(false);
+    expect(errorPaths).toContain('agents.w.kortix_cli[0]');
+  });
+
+  test('v2 still hard-rejects a truly unknown (never-was-valid) action, same as before', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version: 2
+default_agent: w
+agents:
+  w:
+    kortix_cli: [project.frobnicate]
+`);
+    expect(valid).toBe(false);
+    expect(errorPaths).toContain('agents.w.kortix_cli[0]');
+  });
 });
 
 describe('validateManifest — kortix_version 2 channels removal', () => {

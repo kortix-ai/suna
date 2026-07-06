@@ -17,6 +17,30 @@
 
 import { TomlError } from 'smol-toml';
 import { type ManifestFormat, parseManifestText } from './format';
+import {
+  AGENT_MODES_V2,
+  AGENT_THEME_COLORS_V2,
+  CHANNEL_PLATFORMS,
+  CONNECTOR_AUTH_TYPES,
+  CONNECTOR_POLICY_ACTIONS,
+  CONNECTOR_PROVIDERS,
+  ENV_NAME_RE,
+  GRANTABLE_KORTIX_CLI_ACTIONS,
+  HEX_COLOR_RE_V2,
+  LEGACY_SANDBOX_KEYS,
+  LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
+  PERMISSION_ACTION_ONLY_KEYS_V2,
+  PERMISSION_ACTIONS_V2,
+  RESERVED_SANDBOX_SLUG,
+  RESERVED_SLUG_PROVIDERS,
+  SANDBOX_CPU_BOUNDS,
+  SANDBOX_DISK_BOUNDS,
+  SANDBOX_MEMORY_BOUNDS,
+  SLUG_RE,
+  TRIGGER_TYPES,
+  V2_RUNTIME_VALUES,
+  WORKSPACE_MODES_V2,
+} from './constants';
 
 export {
   type ManifestFormat,
@@ -28,6 +52,34 @@ export {
   parseManifestText,
   serializeManifestObject,
 } from './format';
+
+// Re-exported for backward compatibility — these lived as local `const`s in
+// this file until the `constants.ts` extraction (see that module's doc for
+// why: it broke an index.ts ⇄ json-schema.ts import cycle).
+export {
+  AGENT_MODES_V2,
+  AGENT_THEME_COLORS_V2,
+  CHANNEL_PLATFORMS,
+  CONNECTOR_AUTH_TYPES,
+  CONNECTOR_POLICY_ACTIONS,
+  CONNECTOR_PROVIDERS,
+  ENV_NAME_RE,
+  GRANTABLE_KORTIX_CLI_ACTIONS,
+  HEX_COLOR_RE_V2,
+  LEGACY_SANDBOX_KEYS,
+  LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
+  PERMISSION_ACTION_ONLY_KEYS_V2,
+  PERMISSION_ACTIONS_V2,
+  RESERVED_SANDBOX_SLUG,
+  RESERVED_SLUG_PROVIDERS,
+  SANDBOX_CPU_BOUNDS,
+  SANDBOX_DISK_BOUNDS,
+  SANDBOX_MEMORY_BOUNDS,
+  SLUG_RE,
+  TRIGGER_TYPES,
+  V2_RUNTIME_VALUES,
+  WORKSPACE_MODES_V2,
+} from './constants';
 
 /**
  * Maximum manifest schema version this validator understands.
@@ -43,39 +95,6 @@ export {
  */
 const KNOWN_SCHEMA_VERSION = 2;
 
-/** The slug reserved for the platform-shared default sandbox template. */
-const RESERVED_SANDBOX_SLUG = 'default';
-
-/** Regex matching every user-defined slug (triggers, sandboxes, apps, connectors). */
-const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
-
-/** Regex matching every legal env-var name. */
-export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
-
-const TRIGGER_TYPES = ['cron', 'webhook'] as const;
-// Providers a kortix.toml may declare. `channel` is included because the
-// platform itself writes `[[connectors]] provider="channel"` into the manifest
-// when a Slack/email channel is connected (see executor/channel-manifest.ts), so
-// the gate must accept what the backend produces. MUST stay in sync with the
-// runtime parser's PROVIDERS in apps/api/src/projects/connectors.ts — enforced
-// by apps/api/src/__tests__/unit-connectors-parse.test.ts. `computer` is
-// deliberately absent: it is synth-only and never written to a manifest.
-const CONNECTOR_PROVIDERS = ['pipedream', 'mcp', 'openapi', 'graphql', 'http', 'channel'] as const;
-const CONNECTOR_AUTH_TYPES = ['bearer', 'basic', 'custom', 'none'] as const;
-/** Platforms a `channel` connector can target — mirrors connectors.ts CHANNEL_PLATFORMS. */
-const CHANNEL_PLATFORMS = ['slack', 'email'] as const;
-/**
- * Platform-owned slugs and the only provider allowed to use each — mirrors
- * connectors.ts RESERVED_SLUG_PROVIDERS so a user app can't shadow the built-in
- * catalog (the bug that made `slack thread` 404; see KORTIX-206).
- */
-const RESERVED_SLUG_PROVIDERS: Readonly<Record<string, string>> = {
-  kortix_slack: 'channel',
-  kortix_email: 'channel',
-  computer: 'computer',
-};
-const CONNECTOR_POLICY_ACTIONS = ['always_run', 'require_approval', 'block'] as const;
-
 /**
  * True when `v` is a value the runtime's `coerceBool` recognizes for an
  * `enabled` flag (apps/api/.../triggers.ts coerceBool). The runtime accepts
@@ -90,10 +109,6 @@ function isEnabledValue(v: unknown): boolean {
   }
   return false;
 }
-
-const SANDBOX_CPU_BOUNDS = { min: 1, max: 32 } as const;
-const SANDBOX_MEMORY_BOUNDS = { min: 1, max: 128 } as const;
-const SANDBOX_DISK_BOUNDS = { min: 1, max: 500 } as const;
 
 /** One diagnostic finding. */
 export interface ManifestIssue {
@@ -232,93 +247,24 @@ export function formatIssues(issues: ManifestIssue[], opts: { color?: boolean } 
 // ─── Section validators ───────────────────────────────────────────────────
 
 /**
- * The actions an agent's `[[agents]].kortix_cli` may grant — the project-scoped
- * surface. MUST stay in sync with apps/api/src/iam/actions.ts PROJECT_ACTIONS.
- * Account-scoped admin actions (member.*, billing.*, token.*, project.create, …)
- * are deliberately excluded: they are the hard ceiling and can never be granted
- * to an agent. The channel.* resource actions (channel.send, …) and the
- * project.gateway.routing.edit / project.session.exec / project.schedule.* /
- * project.webhook.* leaves were removed from the catalog (IAM enforcement
- * audit, 2026-07): none of them were ever asserted on any route, so granting
- * or omitting them was a silent no-op.
+ * Validate a `connectors` / `kortix_cli` grant value (array | "all" | "none").
+ *
+ * `version` only changes how a `kortix_cli` entry from
+ * `LEGACY_TOLERATED_KORTIX_CLI_ACTIONS` is treated (only reachable when
+ * `checkAction` is true): v1 keeps it a warning (these actions were REMOVED
+ * from enforcement, not from v1's manifest shape — an existing manifest that
+ * still lists one must keep validating, just with a deprecation nudge). v2 is
+ * a clean break, same as its other removed-field rejections (`per_user`
+ * credential, the `[[channels]]` section, the pre-redirect agent-block
+ * fields): a legacy action in a NEW schema version is a hard error.
  */
-// MUST stay in sync with apps/api iam/actions.ts GRANTABLE_KORTIX_CLI (= all
-// PROJECT_ACTIONS). The unit-agents-parse drift-guard test fails loudly if
-// these diverge (this package can't import apps/api).
-export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
-  'project.read',
-  'project.write',
-  'project.delete',
-  'project.deploy',
-  'project.cr.open',
-  'project.cr.merge',
-  'project.session.read',
-  'project.session.start',
-  'project.session.stop',
-  'project.members.read',
-  'project.members.manage',
-  'project.trigger.read',
-  'project.trigger.create',
-  'project.trigger.update',
-  'project.trigger.delete',
-  'project.trigger.fire',
-  'project.gateway.logs.read',
-  'project.gateway.spend.read',
-  'project.gateway.budget.set',
-  'project.gateway.keys.manage',
-  // IAM v1 per-capability leaves.
-  'project.agent.read',
-  'project.agent.write',
-  'project.skill.read',
-  'project.skill.write',
-  'project.command.read',
-  'project.command.write',
-  'project.file.read',
-  'project.file.write',
-  'project.customize.read',
-  'project.customize.write',
-  'project.gitops.read',
-  'project.gitops.push',
-  'project.gitops.merge',
-  'project.secret.read',
-  'project.secret.write',
-  'project.connector.read',
-  'project.connector.write',
-  'project.review.read',
-  'project.review.submit',
-  'project.review.act',
-];
-
-/**
- * Actions removed from the enforcement catalog (IAM dead-catalog cleanup,
- * 2026-07) but that older project manifests may still list under
- * `kortix_cli`. None of them were ever asserted on any route, so granting or
- * omitting them was always a no-op — but a manifest merge/ship must not start
- * hard-failing for projects that happen to still mention one. Kept out of
- * `GRANTABLE_KORTIX_CLI_ACTIONS` (they must never appear in the role editor
- * or be recommended for new manifests) and instead surfaced as a
- * deprecation warning by `validateGrantList`.
- */
-export const LEGACY_TOLERATED_KORTIX_CLI_ACTIONS: readonly string[] = [
-  'project.session.exec',
-  'project.gateway.routing.edit',
-  'project.schedule.read',
-  'project.schedule.write',
-  'project.webhook.read',
-  'project.webhook.write',
-  'channel.read',
-  'channel.connect',
-  'channel.send',
-  'channel.disconnect',
-];
-
-/** Validate a `connectors` / `kortix_cli` grant value (array | "all" | "none"). */
 function validateGrantList(
   value: unknown,
   where: string,
   label: string,
   issues: ManifestIssue[],
   checkAction: boolean,
+  version: 1 | 2 = 1,
 ): void {
   if (value === undefined || value === null) return;
   if (typeof value === 'string') {
@@ -355,8 +301,11 @@ function validateGrantList(
       if (LEGACY_TOLERATED_KORTIX_CLI_ACTIONS.includes(s)) {
         issues.push({
           path: `${where}[${k}]`,
-          message: `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement — granting or omitting it has no effect). Remove it from the manifest.`,
-          severity: 'warning',
+          message:
+            version === 2
+              ? `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement) and is not tolerated in kortix_version 2 — remove it from the manifest.`
+              : `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement — granting or omitting it has no effect). Remove it from the manifest.`,
+          severity: version === 2 ? 'error' : 'warning',
         });
       } else {
         issues.push({
@@ -550,19 +499,8 @@ function validateSandbox(node: unknown, path: string, issues: ManifestIssue[]): 
   }
   // Legacy singular `[sandbox]` shape: image/build keys set directly on the
   // table instead of inside a `[[sandbox.templates]]` entry. Reject with a
-  // migration hint rather than silently ignoring them.
-  const LEGACY_SANDBOX_KEYS = [
-    'image',
-    'dockerfile',
-    'slug',
-    'cpu',
-    'memory',
-    'disk',
-    'entrypoint',
-    'context',
-    'context_dir',
-    'gpu',
-  ];
+  // migration hint rather than silently ignoring them. `LEGACY_SANDBOX_KEYS`
+  // lives in constants.ts (shared with json-schema.ts's `sandboxSchema`).
   const stray = LEGACY_SANDBOX_KEYS.filter((k) => node[k] !== undefined);
   if (stray.length > 0) {
     issues.push({
@@ -1018,12 +956,43 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
           severity: version === 2 ? 'error' : 'warning',
         });
       } else if (cm !== 'shared') {
+        // The runtime (apps/api's connectors.ts `parseConnectorEntry`)
+        // HARD-REJECTS any credential value that isn't "shared" or the
+        // tolerated legacy "per_user" — the whole `[[connectors]]` entry
+        // fails to parse there, it is not advisory. v2 mirrors that as a
+        // real error (same clean-break intent as the `per_user` branch
+        // above and every other v2 removed-field rejection). v1 keeps this
+        // a warning — consistent with this function's other v1-only soft
+        // checks (mcp `transport`, openapi `spec`) — so a hand-edited v1
+        // manifest is never hard-blocked by the CR-merge gate over a value
+        // the runtime would separately reject at sync time; the author
+        // still sees the warning either way.
         issues.push({
           path: `${where}.credential`,
           message: `credential should be "shared" (got "${cm || 'unset'}"); the runtime rejects anything else.`,
-          severity: 'warning',
+          severity: version === 2 ? 'error' : 'warning',
         });
       }
+    }
+    if (entry.agent_scope !== undefined) {
+      // The connector-side agent gate was removed 2026-07 (wave-2 of the
+      // agent-first cut, docs/specs/2026-07-05-agent-first-config-unification.md
+      // §2.5): connector access is now purely the agent's own `connectors`
+      // grant (`[[agents]].connectors` in v1, `agents.<name>.connectors` in
+      // v2). The runtime (apps/api's connectors.ts `parseConnectorEntry`) no
+      // longer reads `agent_scope` at all — it parses fine and is simply
+      // dropped, never round-tripped back into git (unit-connectors-parse
+      // "agent_scope is retired" test). Same clean-break pattern as the
+      // `credential: per_user` removal above: v1 tolerates the stray legacy
+      // key as a deprecation warning, v2 is a hard error.
+      issues.push({
+        path: `${where}.agent_scope`,
+        message:
+          version === 2
+            ? 'agent_scope is not supported in kortix_version 2 — connector access is set on the agent (`connectors` grant); remove this key.'
+            : 'agent_scope is no longer used — connector access is set on the agent (`connectors` grant), not on the connector. This key is ignored at runtime; remove it from the manifest.',
+        severity: version === 2 ? 'error' : 'warning',
+      });
     }
     if (provider === 'pipedream' && entry.auth !== undefined) {
       issues.push({
@@ -1369,6 +1338,14 @@ export interface AgentBlockV2 {
    *  see compile-agent-config.ts. */
   enabled?: boolean;
   connectors?: GrantSetV2;
+  /** Which project secrets this agent may receive as sandbox env (and read via
+   *  the secrets API) — a list of secret IDENTIFIERS (project_secrets.identifier),
+   *  NOT raw env-var keys. For a project where every secret's identifier equals
+   *  its key (the default/migrated case) this reads exactly like a key list.
+   *  'all' (default when omitted) = every secret in the project; 'none'/[] =
+   *  none. Two granted identifiers resolving to the same env var key is a
+   *  configuration error (ambiguous) — see resolveGrantedSecretEnv. This is the
+   *  SOLE authorization gate on agent secret access. */
   secrets?: GrantSetV2;
   /** Which of the project's `.kortix/opencode/skills/*` this agent may invoke —
    *  same grant-set shape as connectors/secrets (names | "all" | "none"), v2
@@ -1422,29 +1399,6 @@ export function resolveGrantSet(value: unknown, defaultWhenOmitted: 'all' | 'non
   }
   return defaultWhenOmitted;
 }
-
-const V2_RUNTIME_VALUES = ['opencode'] as const;
-const AGENT_MODES_V2 = ['primary', 'subagent', 'all'] as const;
-const WORKSPACE_MODES_V2 = ['runtime', 'read', 'branch'] as const;
-const PERMISSION_ACTIONS_V2 = ['ask', 'allow', 'deny'] as const;
-/** Keys that only ever take a bare action (no glob-map form) — mirrors upstream. */
-const PERMISSION_ACTION_ONLY_KEYS_V2 = [
-  'todowrite',
-  'question',
-  'webfetch',
-  'websearch',
-  'doom_loop',
-] as const;
-const AGENT_THEME_COLORS_V2 = [
-  'primary',
-  'secondary',
-  'accent',
-  'success',
-  'warning',
-  'error',
-  'info',
-] as const;
-const HEX_COLOR_RE_V2 = /^#[0-9a-fA-F]{6}$/;
 
 function validateRuntimeV2(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node === undefined || node === null) return;
@@ -1676,12 +1630,14 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   }
 
   // Kortix governance — same grant-set shape/action rules as v1, reused as-is.
-  validateGrantList(entry.connectors, `${where}.connectors`, 'connectors', issues, false);
-  validateGrantList(entry.secrets, `${where}.secrets`, 'secrets', issues, false);
+  validateGrantList(entry.connectors, `${where}.connectors`, 'connectors', issues, false, 2);
+  validateGrantList(entry.secrets, `${where}.secrets`, 'secrets', issues, false, 2);
   // No fixed catalog to check entries against (skill names are project-defined,
   // like connectors) — same shape/validation, no `checkAction`.
-  validateGrantList(entry.skills, `${where}.skills`, 'skills', issues, false);
-  validateGrantList(entry.kortix_cli, `${where}.kortix_cli`, 'kortix_cli', issues, true);
+  validateGrantList(entry.skills, `${where}.skills`, 'skills', issues, false, 2);
+  // v2 clean break: a LEGACY_TOLERATED action is a hard error here, not a
+  // warning (see `validateGrantList`'s doc comment).
+  validateGrantList(entry.kortix_cli, `${where}.kortix_cli`, 'kortix_cli', issues, true, 2);
 
   if (entry.workspace !== undefined) {
     const w = typeof entry.workspace === 'string' ? entry.workspace.trim() : '';
@@ -1916,3 +1872,23 @@ function expectBoundedIntOrAbsent(
     });
   }
 }
+
+// The canonical, public JSON Schema (`./json-schema.ts`) is built FROM the
+// constants above (GRANTABLE_KORTIX_CLI_ACTIONS, CONNECTOR_PROVIDERS,
+// AGENT_MODES_V2, …), so it imports this module — this re-export must stay
+// the LAST statement in the file: json-schema.ts's own top-level code calls
+// its builder functions eagerly (`export const KORTIX_V1_JSON_SCHEMA =
+// buildManifestV1Schema()`), so by the time this circular import resolves
+// (whichever module loads first), every constant it needs must already be
+// initialized — which only holds if everything above has already run.
+export {
+  type JsonSchemaFragment,
+  KORTIX_SCHEMA_BASE_URL,
+  KORTIX_V1_JSON_SCHEMA,
+  KORTIX_V2_JSON_SCHEMA,
+  KORTIX_JSON_SCHEMA,
+  buildManifestV1Schema,
+  buildManifestV2Schema,
+  buildManifestSchema,
+  manifestJsonSchema,
+} from './json-schema';

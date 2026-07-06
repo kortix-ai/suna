@@ -22,18 +22,18 @@
  */
 import {
   type AgentBlockV2,
+  SLUG_RE,
   validateManifest,
   type ManifestIssue,
 } from '@kortix/manifest-schema';
 import type { ParsedManifest } from '../triggers';
 
-/** Slug rule for an agent name — same as every other manifest slug (see
- *  `@kortix/manifest-schema`'s `SLUG_RE`, kept in lockstep here since that
- *  regex isn't exported). */
-const AGENT_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
-
+/** Slug rule for an agent name — same as every other manifest slug. Reuses
+ *  `@kortix/manifest-schema`'s exported `SLUG_RE` directly (it used to be
+ *  re-derived here as a local copy under the mistaken assumption that the
+ *  regex wasn't exported). */
 export function isValidAgentName(name: string): boolean {
-  return AGENT_NAME_RE.test(name);
+  return SLUG_RE.test(name);
 }
 
 export type ReadAgentBlockResult =

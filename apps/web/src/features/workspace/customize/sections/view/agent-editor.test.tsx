@@ -64,6 +64,55 @@ describe('Segmented control', () => {
   });
 });
 
+// The canonical grantable `kortix_cli` catalog — MUST be kept byte-for-byte in
+// sync with `GRANTABLE_KORTIX_CLI_ACTIONS` in packages/manifest-schema/src/constants.ts
+// and `GRANTABLE_KORTIX_CLI` in apps/api/src/projects/agents.ts (Object.values(
+// PROJECT_ACTIONS) minus ACCOUNT_ONLY_PROJECT_ACTIONS). Hardcoded here rather
+// than imported (the manifest-schema/api packages aren't in the web bundle,
+// same mirror discipline as KORTIX_CLI_CATALOG itself) — a full-array equality
+// check, not a partial spot-check, so an entry silently added or removed on
+// either side of the mirror fails this test immediately instead of only
+// showing up as a UI gap someone notices later.
+const CANONICAL_GRANTABLE_KORTIX_CLI_ACTIONS = [
+  'project.read',
+  'project.write',
+  'project.deploy',
+  'project.cr.open',
+  'project.cr.merge',
+  'project.session.read',
+  'project.session.start',
+  'project.session.stop',
+  'project.members.read',
+  'project.trigger.read',
+  'project.trigger.create',
+  'project.trigger.update',
+  'project.trigger.delete',
+  'project.trigger.fire',
+  'project.gateway.logs.read',
+  'project.gateway.spend.read',
+  'project.gateway.budget.set',
+  'project.agent.read',
+  'project.agent.write',
+  'project.skill.read',
+  'project.skill.write',
+  'project.command.read',
+  'project.command.write',
+  'project.file.read',
+  'project.file.write',
+  'project.customize.read',
+  'project.customize.write',
+  'project.gitops.read',
+  'project.gitops.push',
+  'project.gitops.merge',
+  'project.secret.read',
+  'project.secret.write',
+  'project.connector.read',
+  'project.connector.write',
+  'project.review.read',
+  'project.review.submit',
+  'project.review.act',
+].sort();
+
 describe('KORTIX_CLI_CATALOG — grantable action mirror', () => {
   const all = KORTIX_CLI_CATALOG.flatMap((g) => g.actions);
 
@@ -76,18 +125,17 @@ describe('KORTIX_CLI_CATALOG — grantable action mirror', () => {
     expect(all).not.toContain('project.create');
   });
 
-  test('covers the core grantable leaves the editor must offer', () => {
-    for (const expected of [
-      'project.session.start',
-      'project.cr.open',
-      'project.cr.merge',
-      'project.deploy',
-      'project.secret.write',
-      'project.connector.write',
-      'project.review.act',
-    ]) {
-      expect(all).toContain(expected);
-    }
+  // The three former "manager-only" leaves are account-only now — never
+  // offered in the editor's grant picker (IAM enforcement audit, 2026-07).
+  test('the three account-only project leaves are absent', () => {
+    expect(all).not.toContain('project.delete');
+    expect(all).not.toContain('project.members.manage');
+    expect(all).not.toContain('project.gateway.keys.manage');
+  });
+
+  test('full-array equality against the canonical grantable catalog (37 actions)', () => {
+    expect(all.length).toBe(CANONICAL_GRANTABLE_KORTIX_CLI_ACTIONS.length);
+    expect([...all].sort()).toEqual(CANONICAL_GRANTABLE_KORTIX_CLI_ACTIONS);
   });
 
   test('has no duplicate actions across groups', () => {

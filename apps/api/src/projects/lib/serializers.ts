@@ -1,6 +1,6 @@
 import { config, type SandboxProviderName } from '../../config';
 import type { Project, ProjectSession, Secret } from '@kortix/api-contract';
-import { isSecretUsableBy, loadGrants, scopeToIntent, type SecretGrant, type ShareSubject, visibilityToIntent } from '../../executor/share';
+import { type SecretGrant, visibilityToIntent } from '../../executor/share';
 import { db } from '../../shared/db';
 import { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
 import { type ProjectRole } from '../access';
@@ -225,43 +225,30 @@ export function requestAuditContext(c: Context): RequestAuditContext {
 export type SecretRow = typeof projectSecrets.$inferSelect;
 
 /**
- * The per-user view of one secret KEY: the shared/project row (what editors
- * control + who it's shared with) merged with the requesting member's own
- * private override, plus which one actually wins for them at runtime. This is
- * what powers the "use shared / use mine" choice in the UI.
+ * The view of one project secret (one IDENTIFIER): the shared/project row
+ * merged with the requesting member's own private override (used today only by
+ * the CODEX_AUTH_JSON per-user provider login), plus which one wins at runtime.
+ * Authorization is centralized on the agent grant (by identifier — see
+ * agentMayUseEnv); every project member with read access sees every secret —
+ * there is no per-secret member/group sharing and no resource-side agent
+ * allow-list.
  */
 
 export function buildSecretView(input: {
+  identifier: string;
   name: string;
   shared?: SecretRow;
-  sharedGrants?: SecretGrant[];
   personal?: SecretRow;
-  subject: ShareSubject;
   canManageShared: boolean;
-  /** Secrets the subject INHERITS via an agent they're assigned to (the "assign
-   *  human → agent" pyramid): name → the agents that declare it. Usable to them
-   *  even if the share scope wouldn't otherwise reach them, and surfaced as
-   *  `inherited_from` so the UI can explain WHY it's usable. */
-  inheritedSources?: ReadonlyMap<string, string[]>;
 }): Secret {
-  const { name, shared, sharedGrants = [], personal, subject, canManageShared, inheritedSources } = input;
+  const { identifier, name, shared, personal, canManageShared } = input;
   const system = isSystemProjectSecretName(name);
   const isGitAuth = name === PROJECT_GIT_AUTH_SECRET_NAME;
-  // Does the share scope alone reach me (project-wide, or a member/dept grant)?
-  const directlyUsable = shared
-    ? isSecretUsableBy(shared.shareScope as 'project' | 'restricted', sharedGrants, subject)
-    : false;
-  // Agents I'm assigned to that DECLARE this secret. `inherited_from` names them
-  // only when inheritance is the REASON I can use it — i.e. the share scope
-  // wouldn't otherwise reach me. A project-wide secret I'd have anyway is NOT
-  // labelled inherited. Requires a configured value to inherit (a shared row).
-  const declaredBy = shared ? inheritedSources?.get(name) ?? null : null;
-  const inheritedFrom = !directlyUsable && declaredBy ? declaredBy : null;
-  const usableByMe = directlyUsable || inheritedFrom !== null;
   const mineActive = Boolean(personal?.active);
   const effectiveSource: 'mine' | 'shared' | 'none' =
-    personal && mineActive ? 'mine' : usableByMe ? 'shared' : 'none';
+    personal && mineActive ? 'mine' : shared ? 'shared' : 'none';
   return {
+    identifier,
     name,
     project_id: (shared ?? personal)!.projectId,
     secret_id: shared?.secretId ?? null,
@@ -273,22 +260,11 @@ export function buildSecretView(input: {
     purpose: isGitAuth ? 'git_auth' : null,
     can_rotate: isGitAuth,
     managed_by: isGitAuth ? 'project_secret' : null,
-    // The SHARED row: is a project value set, who can use it, and can it reach me.
+    // Is a shared project value set at all.
     configured: Boolean(shared),
-    share_scope: shared?.shareScope ?? 'project',
-    sharing: shared ? scopeToIntent(shared.shareScope as 'project' | 'restricted', sharedGrants) : null,
-    // Which agents may use this secret. null / [] = ALL agents (default); a list
-    // of agent names restricts it to those agents' sessions. The single control
-    // the Secrets page exposes now that per-member "only me" is retired.
-    agent_scope: shared?.agentScope ?? null,
-    usable_by_me: usableByMe,
-    // Provenance for usable_by_me: the agent(s) I'm assigned to that declare this
-    // secret. Non-null means I can use it BECAUSE of that assignment (the
-    // inheritance pyramid), which the UI surfaces as an "Inherited from" badge.
-    inherited_from: inheritedFrom,
     // MY private override (value never returned), and whether I'm using it.
     mine: personal ? { active: personal.active, updated_at: personal.updatedAt.toISOString() } : null,
-    // What actually gets injected into my sessions for this key.
+    // What actually gets injected into my sessions for this identifier.
     effective_source: effectiveSource,
     // Members manage only their own override; editors also manage the shared row.
     can_manage_shared: canManageShared && !system,
@@ -296,43 +272,39 @@ export function buildSecretView(input: {
 }
 
 /**
- * Load every secret KEY in a project as the per-user view (shared + my own
- * override merged). Used by the secrets list + returned after a write.
+ * Load every secret IDENTIFIER in a project as the per-user view (shared + my
+ * own override merged). Used by the secrets list + returned after a write.
  */
 
 export async function loadSecretViewsForUser(
   projectId: string,
-  subject: ShareSubject,
+  userId: string,
   canManageShared: boolean,
-  inheritedSources?: ReadonlyMap<string, string[]>,
 ): Promise<ReturnType<typeof buildSecretView>[]> {
   const rows = await db
     .select()
     .from(projectSecrets)
     .where(and(
       eq(projectSecrets.projectId, projectId),
-      or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, subject.userId)),
+      or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId)),
     ))
     .orderBy(desc(projectSecrets.updatedAt));
 
-  const byName = new Map<string, { shared?: SecretRow; personal?: SecretRow }>();
+  const byIdentifier = new Map<string, { shared?: SecretRow; personal?: SecretRow }>();
   for (const row of rows) {
-    const slot = byName.get(row.name) ?? {};
+    const slot = byIdentifier.get(row.identifier) ?? {};
     if (row.ownerUserId === null) slot.shared = row;
     else slot.personal = row;
-    byName.set(row.name, slot);
+    byIdentifier.set(row.identifier, slot);
   }
-  const grants = await loadGrants(rows.filter((r) => r.ownerUserId === null).map((r) => r.secretId));
 
-  return [...byName.entries()].map(([name, slot]) =>
+  return [...byIdentifier.entries()].map(([identifier, slot]) =>
     buildSecretView({
-      name,
+      identifier,
+      name: (slot.shared ?? slot.personal)!.name,
       shared: slot.shared,
-      sharedGrants: slot.shared ? grants.get(slot.shared.secretId) ?? [] : [],
       personal: slot.personal,
-      subject,
       canManageShared,
-      inheritedSources,
     }),
   );
 }

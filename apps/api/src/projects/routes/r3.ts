@@ -1,4 +1,4 @@
-import { parseSharingIntent, resolveShareSubject, setSecretSharing } from '../../executor/share';
+import { parseSharingIntent } from '../../executor/share';
 import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
@@ -9,9 +9,8 @@ import { getTemplateById } from '../../snapshots/templates';
 import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
-import { decryptProjectSecret, encryptProjectSecret, isValidSecretName, setSecretAgentScope } from '../secrets';
+import { decryptProjectSecret, encryptProjectSecret, identifierKeyConflicts, isValidIdentifier, isValidSecretName } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
-import { resolveInheritedResourceNames } from '../lib/agent-inheritance';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -374,10 +373,12 @@ projectsApp.openapi(
 );
 
 // GET /v1/projects/:projectId/secrets
-// Readable by any project member: returns each secret KEY as the per-user view
-// (the shared row + that member's own override, names only, no plaintext) plus
-// the manifest-declared required/optional env keys. Members manage only their
-// own override; managers additionally manage the shared row (`can_manage_shared`).
+// Readable by any project member: returns each secret IDENTIFIER as the
+// per-user view (the shared row + that member's own override, no plaintext)
+// plus the manifest-declared required/optional env KEYS. Every project member
+// with read access sees every secret — there is no per-secret member/group
+// sharing. Members manage only their own override; managers additionally
+// manage the shared row (`can_manage_shared`).
 
 projectsApp.openapi(
   createRoute({
@@ -402,7 +403,6 @@ projectsApp.openapi(
   // the central agent-grant fold, an agent token must hold it in its kortixCli.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
 
-  const subject = await resolveShareSubject(loaded.userId);
   const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
 
   // Manifest is optional — a project without kortix.toml just gets empty
@@ -427,33 +427,16 @@ projectsApp.openapi(
     });
   }
 
-  // Per-agent env scoping: a scoped agent token only sees the secret NAMES it's
-  // granted (mirrors the env-injection narrowing), so it can't enumerate keys
-  // outside its allowlist. No-op for non-agent tokens / 'all' / null grants.
+  // Per-agent secrets scoping: a scoped agent token only sees the IDENTIFIERS
+  // it's granted (mirrors the env-injection narrowing), so it can't enumerate
+  // secrets outside its allowlist. No-op for non-agent tokens / 'all' / null
+  // grants. This is the ONLY gate — every project member with read access sees
+  // every secret; there is no per-secret member/group sharing.
   const agentGrant = getAgentGrant(c);
 
-  // Inheritance pyramid (read side): secrets declared by an agent the caller is
-  // assigned to become genuinely theirs — surfaced here as usable_by_me, and
-  // tagged with `inherited_from` (the agents that grant them) so the UI can
-  // explain WHY. Provenance is HUMAN-facing governance data: an AGENT token must
-  // not learn which agents declare a secret, so it gets no inherited_from (and we
-  // skip the config read entirely). Fast-paths to empty with no assignments.
-  const inheritedSources = agentGrant
-    ? new Map<string, string[]>()
-    : (await resolveInheritedResourceNames(loaded.row, loaded.userId, subject.groupIds)).secretSources;
-
-  const allItems = (await loadSecretViewsForUser(projectId, subject, canManageShared, inheritedSources))
+  const items = (await loadSecretViewsForUser(projectId, loaded.userId, canManageShared))
     .filter((item) => !item.system)
-    .filter((item) => agentMayUseEnv(agentGrant, item.name));
-
-  // Per-member / department scoping (share model, isSecretUsableBy). A MANAGER
-  // sees every shared row so they can edit its sharing; a plain member sees only
-  // what they can actually use (or have a personal override for) — restricted
-  // secrets they aren't granted are hidden, name and all. One source of truth,
-  // shared with the Members "Resource access" card.
-  const items = canManageShared
-    ? allItems
-    : allItems.filter((i) => i.usable_by_me || i.mine);
+    .filter((item) => agentMayUseEnv(agentGrant, item.identifier));
 
   return c.json({
     items,
@@ -507,49 +490,37 @@ projectsApp.openapi(
     return c.json({ error: `${CODEX_AUTH_JSON_SECRET_NAME} is managed by ChatGPT subscription onboarding` }, 400);
   }
 
+  // Identifier — the unique-per-project handle agents grant + the UI shows.
+  // Defaults to the KEY when omitted (the simple/migrated case).
+  const identifier = normalizeString(body.identifier) ?? name;
+  if (!isValidIdentifier(identifier)) {
+    return c.json({ error: 'identifier must be alphanumeric (A-Z, 0-9, _, ., -; max 128 chars)' }, 400);
+  }
+
   const value = typeof body.value === 'string' ? body.value : null;
 
-  // Optional sharing intent (project | private | members). Absent → leave
-  // sharing as-is (column defaults to 'project' on first insert).
-  let sharing: ReturnType<typeof parseSharingIntent> | undefined;
-  if (body.sharing != null) {
-    sharing = parseSharingIntent(body.sharing, loaded.userId);
-    if (!sharing) {
-      return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
-    }
-  }
-
-  // Optional agent allowlist — the secret-side "which agents may use this"
-  // control. `agent_scope: null | []` = all agents (default); an array of agent
-  // names restricts it to those agents' sessions. Absent (undefined) → leave
-  // as-is, so a value-only edit doesn't silently clear the scope.
-  let agentScope: string[] | null | undefined;
-  if (body.agent_scope !== undefined) {
-    if (body.agent_scope === null) {
-      agentScope = null;
-    } else if (
-      Array.isArray(body.agent_scope) &&
-      body.agent_scope.every((a: unknown) => typeof a === 'string')
-    ) {
-      agentScope = body.agent_scope as string[];
-    } else {
-      return c.json({ error: 'agent_scope must be null or an array of agent names' }, 400);
-    }
-  }
-
-  // Look up the existing SHARED row so a sharing-only edit doesn't force
-  // re-entering the value. Creating a brand-new secret still requires a value.
+  // Look up the existing SHARED row by IDENTIFIER so a key-unchanged edit
+  // doesn't force re-entering the value. Creating a brand-new secret still
+  // requires a value.
   const [existing] = await db
-    .select({ secretId: projectSecrets.secretId })
+    .select({ secretId: projectSecrets.secretId, name: projectSecrets.name })
     .from(projectSecrets)
     .where(and(
       eq(projectSecrets.projectId, projectId),
-      eq(projectSecrets.name, name),
+      eq(projectSecrets.identifier, identifier),
       isNull(projectSecrets.ownerUserId),
     ))
     .limit(1);
   if (!existing && value === null) {
     return c.json({ error: 'value is required' }, 400);
+  }
+  // An identifier is a stable handle to ONE secret — redefining its underlying
+  // KEY via upsert would silently retarget every agent grant that references
+  // it. Reject instead of a surprising in-place key swap.
+  if (identifierKeyConflicts(existing?.name ?? null, name)) {
+    return c.json({
+      error: `identifier "${identifier}" already exists with key "${existing!.name}" — delete it first to reuse the identifier with a different key`,
+    }, 409);
   }
 
   const now = new Date();
@@ -559,14 +530,15 @@ projectsApp.openapi(
       .insert(projectSecrets)
       .values({
         projectId,
+        identifier,
         name,
         valueEnc: encryptProjectSecret(projectId, value),
         createdBy: loaded.userId,
         updatedAt: now,
       })
       .onConflictDoUpdate({
-        // The shared row is unique on (project, name) WHERE owner_user_id IS NULL.
-        target: [projectSecrets.projectId, projectSecrets.name],
+        // The shared row is unique on (project, identifier) WHERE owner_user_id IS NULL.
+        target: [projectSecrets.projectId, projectSecrets.identifier],
         targetWhere: isNull(projectSecrets.ownerUserId),
         set: {
           valueEnc: encryptProjectSecret(projectId, value),
@@ -576,16 +548,14 @@ projectsApp.openapi(
       .returning({ secretId: projectSecrets.secretId });
     secretId = row.secretId;
   } else {
-    // Sharing-only update — touch updatedAt so the list reflects the change.
+    // No value change (identifier/name unchanged) — nothing to do besides
+    // touching updatedAt so the list reflects the write.
     await db
       .update(projectSecrets)
       .set({ updatedAt: now })
       .where(eq(projectSecrets.secretId, existing!.secretId));
     secretId = existing!.secretId;
   }
-
-  if (sharing) await setSecretSharing(secretId, sharing);
-  if (agentScope !== undefined) await setSecretAgentScope(projectId, name, agentScope);
 
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
 
@@ -601,15 +571,9 @@ projectsApp.openapi(
     });
   }
 
-  const subject = await resolveShareSubject(loaded.userId);
-  // Provenance so the write response carries the same inherited_from as GET
-  // /secrets (no post-write flicker). Agent tokens get none (see GET handler).
-  const inheritedSources = getAgentGrant(c)
-    ? undefined
-    : (await resolveInheritedResourceNames(loaded.row, loaded.userId, subject.groupIds)).secretSources;
-  const views = await loadSecretViewsForUser(projectId, subject, true, inheritedSources);
-  const view = views.find((v) => v.name === name);
-  return c.json(view ?? { name }, 200);
+  const views = await loadSecretViewsForUser(projectId, loaded.userId, true);
+  const view = views.find((v) => v.identifier === identifier);
+  return c.json(view ?? { identifier, name }, 200);
 },
 );
 
@@ -642,9 +606,12 @@ const DEVICE_AUTH_TTL_MS = 15 * 60 * 1000;
 // Floor for the client poll cadence (OpenAI returns its own suggested interval).
 const OAUTH_POLL_INTERVAL_MS = 3000;
 
-// Persists the Codex auth.json as the CODEX_AUTH_JSON project secret with the
-// requested sharing, then returns the caller's view of it. Codex-specific on
-// purpose: a generic OPENCODE_AUTH_JSON row is never overwritten by this.
+// Persists the Codex auth.json as the CODEX_AUTH_JSON project secret — private
+// (the caller's own per-user OAuth login, ownerUserId-scoped) when `sharing`
+// says so, else the project-wide shared row — then returns the caller's view
+// of it. Codex-specific on purpose: a generic OPENCODE_AUTH_JSON row is never
+// overwritten by this. `sharing` only ever chooses private-vs-shared here —
+// member/group secret sharing was retired (see projects/secrets.ts).
 async function writeCodexAuthSecret(input: {
   projectId: string;
   userId: string;
@@ -659,6 +626,7 @@ async function writeCodexAuthSecret(input: {
       .insert(projectSecrets)
       .values({
         projectId,
+        identifier: CODEX_AUTH_JSON_SECRET_NAME,
         name: CODEX_AUTH_JSON_SECRET_NAME,
         valueEnc: encryptProjectSecret(projectId, value),
         ownerUserId: userId,
@@ -680,38 +648,27 @@ async function writeCodexAuthSecret(input: {
       .insert(projectSecrets)
       .values({
         projectId,
+        identifier: CODEX_AUTH_JSON_SECRET_NAME,
         name: CODEX_AUTH_JSON_SECRET_NAME,
         valueEnc: encryptProjectSecret(projectId, value),
         createdBy: userId,
         updatedAt: now,
       })
       .onConflictDoUpdate({
-        target: [projectSecrets.projectId, projectSecrets.name],
+        target: [projectSecrets.projectId, projectSecrets.identifier],
         targetWhere: isNull(projectSecrets.ownerUserId),
         set: {
           valueEnc: encryptProjectSecret(projectId, value),
           updatedAt: now,
         },
       });
-
-    const [row] = await db
-      .select({ secretId: projectSecrets.secretId })
-      .from(projectSecrets)
-      .where(and(
-        eq(projectSecrets.projectId, projectId),
-        eq(projectSecrets.name, CODEX_AUTH_JSON_SECRET_NAME),
-        isNull(projectSecrets.ownerUserId),
-      ))
-      .limit(1);
-    if (sharing && row) await setSecretSharing(row.secretId, sharing);
   }
 
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: true });
 
-  const subject = await resolveShareSubject(userId);
-  const views = await loadSecretViewsForUser(projectId, subject, true);
-  return views.find((v) => v.name === CODEX_AUTH_JSON_SECRET_NAME)
-    ?? { name: CODEX_AUTH_JSON_SECRET_NAME };
+  const views = await loadSecretViewsForUser(projectId, userId, true);
+  return views.find((v) => v.identifier === CODEX_AUTH_JSON_SECRET_NAME)
+    ?? { identifier: CODEX_AUTH_JSON_SECRET_NAME, name: CODEX_AUTH_JSON_SECRET_NAME };
 }
 
 // Best-effort token expiry (ms remaining) from a stored auth.json, for display.
@@ -966,14 +923,16 @@ projectsApp.openapi(
 },
 );
 
-// DELETE /v1/projects/:projectId/secrets/:name
+// DELETE /v1/projects/:projectId/secrets/:identifier
+// `:identifier` addresses the secret's unique IDENTIFIER (defaults to its KEY
+// for the simple/migrated case, so a plain key-name delete keeps working).
 
 projectsApp.openapi(
   createRoute({
     method: 'delete',
     path: '/{projectId}/secrets/{name}',
     tags: ['secrets'],
-    summary: 'DELETE /:projectId/secrets/:name',
+    summary: 'DELETE /:projectId/secrets/:identifier',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), name: z.string() }),
@@ -985,28 +944,31 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const name = c.req.param('name')?.trim().toUpperCase();
+  const identifier = c.req.param('name')?.trim();
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
-  if (!name || !isValidSecretName(name)) {
-    return c.json({ error: 'Invalid secret name' }, 400);
+  if (!identifier || !isValidIdentifier(identifier)) {
+    return c.json({ error: 'Invalid secret identifier' }, 400);
   }
-  if (isSystemProjectSecretName(name)) {
-    return c.json({ error: `${name} is managed by Kortix and cannot be removed` }, 403);
+  // A system row's identifier always equals its reserved KORTIX_* key (the
+  // manifest never lets a human create one), so this alone protects it — no
+  // DB read needed before the delete.
+  if (isSystemProjectSecretName(identifier)) {
+    return c.json({ error: `${identifier} is managed by Kortix and cannot be removed` }, 403);
   }
 
-  // Only the shared row — members' personal overrides for this key are theirs to
-  // remove (via the /personal route) and are left intact.
+  // Only the shared row — members' personal overrides for this identifier are
+  // theirs to remove (via the /personal route) and are left intact.
   await db
     .delete(projectSecrets)
     .where(and(
       eq(projectSecrets.projectId, projectId),
-      eq(projectSecrets.name, name),
+      eq(projectSecrets.identifier, identifier),
       isNull(projectSecrets.ownerUserId),
     ));
 
-  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
+  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(identifier) });
 
   return c.json({ ok: true });
 },
@@ -1073,6 +1035,7 @@ projectsApp.openapi(
     }
     await db.insert(projectSecrets).values({
       projectId,
+      identifier: name,
       name,
       valueEnc: encryptProjectSecret(projectId, value),
       ownerUserId: loaded.userId,
@@ -1093,12 +1056,7 @@ projectsApp.openapi(
 
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
 
-  const subject = await resolveShareSubject(loaded.userId);
-  // Provenance so the write response matches GET /secrets; agent tokens get none.
-  const inheritedSources = getAgentGrant(c)
-    ? undefined
-    : (await resolveInheritedResourceNames(loaded.row, loaded.userId, subject.groupIds)).secretSources;
-  const views = await loadSecretViewsForUser(projectId, subject, roleAllows(loaded.effectiveRole, 'manage'), inheritedSources);
+  const views = await loadSecretViewsForUser(projectId, loaded.userId, roleAllows(loaded.effectiveRole, 'manage'));
   return c.json(views.find((v) => v.name === name) ?? { name }, 200);
 },
 );

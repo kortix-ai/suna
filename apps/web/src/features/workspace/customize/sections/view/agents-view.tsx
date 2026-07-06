@@ -6,6 +6,11 @@ import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
 import { AgentConfigEditor } from '@/features/workspace/customize/sections/view/agent-editor';
 import { ConfigEntityView } from '@/features/workspace/customize/sections/component/config-entity-view';
+import {
+  detectManifestVersion,
+  type ManifestVersion,
+  useProjectManifestVersion,
+} from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { formatMode } from '@/features/workspace/customize/shared/utils';
 import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
@@ -67,7 +72,11 @@ export function AgentsView({ projectId }: { projectId: string }) {
           ) : null}
           {agent.source ? (
             <Badge variant="outline" size="sm" className="text-muted-foreground font-mono">
-              {agent.source === 'kortix.toml' ? 'kortix.toml' : 'OpenCode'}
+              {agent.source === 'opencode'
+                ? 'OpenCode'
+                : detectManifestVersion(config.manifest_raw) === 2
+                  ? 'kortix.yaml'
+                  : 'kortix.toml'}
             </Badge>
           ) : null}
           {config.open_code_default_agent === agent.name ? (
@@ -258,12 +267,13 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
 }
 
 /**
- * An agent's `kortix.toml [[agents]]` allowlists — which secrets it receives in
- * $ENV, which connectors it may call, which Kortix-CLI powers it has. Managers
- * EDIT secrets + connectors here (persisted straight to kortix.toml); everyone
+ * An agent's manifest allowlist (`agents:` in kortix.yaml, or the legacy
+ * `[[agents]]` in kortix.toml) — which secrets it receives in $ENV, which
+ * connectors it may call, which Kortix-CLI powers it has. Editors EDIT
+ * secrets + connectors here (persisted straight to the manifest); everyone
  * else sees the read-only mirror. `kortix_cli` stays read-only (a sharper
- * escalation, kortix.toml-only). Absent for OpenCode-discovered agents, which
- * aren't governed by [[agents]].
+ * escalation, manifest-only). Absent for OpenCode-discovered agents, which
+ * aren't governed by the manifest.
  */
 function AgentScope({
   projectId,
@@ -290,6 +300,7 @@ function AgentScopeCard({
   scope: NonNullable<Agent['scope']>;
 }) {
   const queryClient = useQueryClient();
+  const { version: manifestVersion } = useProjectManifestVersion(projectId);
   const accessQuery = useQuery({
     queryKey: ['project-access', projectId],
     queryFn: () => listProjectAccess(projectId),
@@ -351,7 +362,7 @@ function AgentScopeCard({
   if (!canManage) {
     return (
       <div className="border-border/60 bg-muted/20 space-y-2.5 rounded-lg border p-4">
-        <ScopeHeader />
+        <ScopeHeader manifestVersion={manifestVersion} />
         <ScopeRow label="Secrets" value={scope.env} />
         <ScopeRow label="Connectors" value={scope.connectors} />
         <ScopeRow label="CLI" value={scope.kortix_cli} />
@@ -366,7 +377,7 @@ function AgentScopeCard({
 
   return (
     <div className="border-border/60 bg-muted/20 space-y-4 rounded-lg border p-4">
-      <ScopeHeader />
+      <ScopeHeader manifestVersion={manifestVersion} />
       <ScopeEditor
         key={`env-${editorNonce}`}
         label="Secrets"
@@ -389,7 +400,7 @@ function AgentScopeCard({
       <div className="border-border/50 flex items-center justify-between gap-3 border-t pt-3">
         <p className="text-muted-foreground/60 text-[11px] leading-relaxed">
           Members assigned to this agent inherit exactly these secrets &amp; connectors. Saved to{' '}
-          <span className="font-mono">kortix.toml</span>.
+          <span className="font-mono">{manifestVersion === 2 ? 'kortix.yaml' : 'kortix.toml'}</span>.
         </p>
         <div className="flex shrink-0 items-center gap-2">
           {dirty && (
@@ -422,13 +433,13 @@ function AgentScopeCard({
   );
 }
 
-function ScopeHeader() {
+function ScopeHeader({ manifestVersion }: { manifestVersion: ManifestVersion | null }) {
   return (
     <div className="flex items-center gap-2">
       <ShieldCheck className="text-muted-foreground/70 size-3.5 shrink-0" />
       <span className="text-foreground/80 text-xs font-medium">Access scope</span>
       <Badge variant="muted" size="xs" className="font-mono">
-        kortix.toml [[agents]]
+        {manifestVersion === 2 ? 'kortix.yaml agents:' : 'kortix.toml [[agents]]'}
       </Badge>
     </div>
   );

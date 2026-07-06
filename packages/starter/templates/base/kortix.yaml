@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
+#
 # Kortix project manifest. Source of truth for project-wide config that
 # lives in git alongside the code. `kortix_version` pins the schema so
 # the platform can evolve safely. v2 manifests are YAML-only, with one
@@ -118,9 +120,11 @@ triggers:
     timezone: UTC
     prompt: |
       Load the `kortix-memory` skill, then reflect on the last 24h of
-      project activity (git log, merged CRs). Update `.kortix/memory/` per
-      the rubric and open a single CR titled `memory: …`. Exit silently if
-      nothing is worth changing.
+      project activity: git log, merged CRs, and every session that ran
+      in the window (`kortix sessions digest --since 24h` — analyze what
+      each session actually did). Update `.kortix/memory/` per the rubric
+      and open a single CR titled `memory: …`. Exit silently if nothing is
+      worth changing.
 
   # Cron trigger — fires on a 6-field croner expression
   # (second minute hour day month weekday).
@@ -160,27 +164,9 @@ triggers:
 # `provider: channel` once you connect one — that part is unchanged.
 
 # ─── Apps ────────────────────────────────────────────────────────────────
-# Each `apps` entry is a deployable website. Kortix builds it and serves
-# it on a free `*.style.dev` URL (or your own domain). Manage these from the
-# dashboard's Apps panel, or edit here by hand. Experimental — gated by the
-# platform flag KORTIX_APPS_EXPERIMENTAL.
-#
-# No app ships by default. Add one by pointing `root_path` at a folder in this
-# repo (or set `repo`/`branch` for another repo), and add a `build`
-# (command + out_dir) + `env` for frameworks like Next or Vite:
-#
-# apps:
-#   - slug: marketing-site
-#     name: Marketing site
-#     framework: next            # optional hint; omit to auto-detect
-#     # domains: [marketing.example.com]
-#     source:
-#       type: git
-#       repo: https://github.com/me/site
-#       branch: main
-#       root_path: apps/site
-#     build:
-#       command: pnpm build
-#       out_dir: dist
-#     env:
-#       NEXT_PUBLIC_API_URL: https://api.example.com
+# Each `apps` entry is a deployable website. Kortix builds it and serves it
+# on a free `*.style.dev` URL (or your own domain). Experimental — gated by
+# the platform flag KORTIX_APPS_EXPERIMENTAL, not available in prod. No app
+# ships by default; manage these from the dashboard's Apps panel once the
+# flag is on for your project, or see docs/reference/manifest.mdx for the
+# field reference.

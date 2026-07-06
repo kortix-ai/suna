@@ -1,62 +1,17 @@
 /**
- * Connector access + credentials — the split model. Access (who can use a
- * connector) lives on the connector (share_scope + executor_connector_grants).
- * Credentials are separate (executor_credentials), one row per (connector, user)
- * — user NULL is the shared project credential, the only mode written today
- * (`per_user` — a set user, each member's own — was removed 2026-07-05; every
- * caller here passes `userId: null`). Values are encrypted with the project
- * key and resolved server-side only. See docs/specs/executor.md §5–6.
+ * Connector credentials. A connector is project-wide visible — the only
+ * ACCESS gate is the agent-side `[[agents]].connectors` grant (iam/agent-scope.ts),
+ * not anything stored on the connector itself. Credentials (executor_credentials)
+ * are one row per (connector, user) — user NULL is the shared project
+ * credential, the only mode written today (`per_user` — a set user, each
+ * member's own — was removed 2026-07-05; every caller here passes
+ * `userId: null`). Values are encrypted with the project key and resolved
+ * server-side only. See docs/specs/executor.md §5–6.
  */
-import { and, eq, inArray, isNull } from 'drizzle-orm';
-import {
-  executorConnectorGrants,
-  executorConnectors,
-  executorCredentials,
-} from '@kortix/db';
+import { and, eq, isNull } from 'drizzle-orm';
+import { executorConnectors, executorCredentials } from '@kortix/db';
 import { db } from '../shared/db';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
-import { intentToScope, type SecretGrant, type ShareScope, type SharingIntent } from './share';
-
-/* ─── access (connector sharing) ──────────────────────────────────────────── */
-
-export async function loadConnectorGrants(connectorId: string): Promise<SecretGrant[]> {
-  const rows = await db
-    .select({ principalType: executorConnectorGrants.principalType, principalId: executorConnectorGrants.principalId })
-    .from(executorConnectorGrants)
-    .where(eq(executorConnectorGrants.connectorId, connectorId));
-  return rows.map((r) => ({ principalType: r.principalType as 'member' | 'group', principalId: r.principalId }));
-}
-
-export async function loadGrantsForMany(connectorIds: string[]): Promise<Map<string, SecretGrant[]>> {
-  const out = new Map<string, SecretGrant[]>();
-  if (connectorIds.length === 0) return out;
-  const rows = await db
-    .select({
-      connectorId: executorConnectorGrants.connectorId,
-      principalType: executorConnectorGrants.principalType,
-      principalId: executorConnectorGrants.principalId,
-    })
-    .from(executorConnectorGrants)
-    .where(inArray(executorConnectorGrants.connectorId, connectorIds));
-  for (const r of rows) {
-    const list = out.get(r.connectorId) ?? [];
-    list.push({ principalType: r.principalType as 'member' | 'group', principalId: r.principalId });
-    out.set(r.connectorId, list);
-  }
-  return out;
-}
-
-/** Set a connector's access: scope + grants (replace). */
-export async function setConnectorSharingDb(connectorId: string, intent: SharingIntent): Promise<void> {
-  const { shareScope, grants } = intentToScope(intent);
-  await db.update(executorConnectors).set({ shareScope, updatedAt: new Date() }).where(eq(executorConnectors.connectorId, connectorId));
-  await db.delete(executorConnectorGrants).where(eq(executorConnectorGrants.connectorId, connectorId));
-  if (grants.length > 0) {
-    await db.insert(executorConnectorGrants).values(
-      grants.map((g) => ({ connectorId, principalType: g.principalType, principalId: g.principalId })),
-    );
-  }
-}
 
 /* ─── credentials (split per user) ────────────────────────────────────────── */
 
@@ -140,5 +95,3 @@ export async function deleteCredential(connectorId: string, userId: string | nul
       .where(eq(executorConnectors.connectorId, connectorId));
   }
 }
-
-export type { ShareScope };

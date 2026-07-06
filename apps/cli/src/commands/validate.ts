@@ -25,10 +25,10 @@ import { C, status } from '../style.ts';
 
 const HELP = `Usage: kortix validate [options]
 
-Statically validate the project's kortix.toml against the canonical schema.
+Statically validate the project's kortix.yaml against the canonical schema.
 
 Options:
-  --file <path>   Validate this file instead of ./kortix.toml.
+  --file <path>   Validate this file instead of ./kortix.yaml.
   --json          Emit a machine-readable JSON report (no color).
   --scopes        Print the full grantable kortix_cli action enum and exit.
   -h, --help      Show this help.
@@ -66,7 +66,7 @@ function describeAgents(parsed: Record<string, unknown> | null): string {
     const env = a?.env === undefined || a?.env === null ? 'all' : a?.env;
     return `  ${C.cyan}${name}${C.reset}  connectors=[${show(a?.connectors)}]  kortix_cli=[${show(a?.kortix_cli)}]  env=[${show(env)}]`;
   });
-  return `\n${C.dim}Per-agent scope (kortix.toml [[agents]]):${C.reset}\n${lines.join('\n')}\n`;
+  return `\n${C.dim}Per-agent scope (kortix.yaml [[agents]]):${C.reset}\n${lines.join('\n')}\n`;
 }
 
 export function runValidate(argv: string[]): number {

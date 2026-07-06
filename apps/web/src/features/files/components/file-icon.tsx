@@ -77,7 +77,7 @@ function getMonochromeIcon(fileName: string, ic: string, isDirectory?: boolean, 
   const name = fileName.toLowerCase();
   const ext = name.split('.').pop() || '';
 
-  if (name === 'kortix.toml') {
+  if (name === 'kortix.toml' || name === 'kortix.yaml') {
     return (
       <svg
         width="24"

@@ -136,21 +136,29 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
 
 /**
  * The grantable `kortix_cli` action catalog, grouped for the picker. MUST stay
- * in sync with `GRANTABLE_KORTIX_CLI_ACTIONS` in @kortix/manifest-schema (= all
- * PROJECT_ACTIONS in apps/api iam/actions.ts). Mirrored here (not imported)
- * because the manifest-schema/api packages aren't in the web bundle — same
- * mirror discipline as apps/web/src/lib/project-actions.ts. Account-scoped
- * admin actions are deliberately absent: they're the hard ceiling and can never
- * be granted to an agent.
+ * in sync with `GRANTABLE_KORTIX_CLI_ACTIONS` in @kortix/manifest-schema (=
+ * PROJECT_ACTIONS in apps/api iam/actions.ts MINUS ACCOUNT_ONLY_PROJECT_ACTIONS
+ * — project.delete / project.members.manage / project.gateway.keys.manage,
+ * promoted to ACCOUNT owner/admin authority by the project-role collapse, see
+ * apps/api/src/iam/role-perms.ts). Mirrored here (not imported) because the
+ * manifest-schema/api packages aren't in the web bundle — same mirror
+ * discipline as apps/web/src/lib/project-actions.ts.
+ *
+ * Account-scoped admin actions (member.*, billing.*, token.*, project.create,
+ * …) are ALSO absent — but that omission is a UX curation choice, not the
+ * security boundary: every agent-session token is project-scoped, and
+ * apps/api's IAM v2 engine refuses any account-scope action for a
+ * project-bound token before an agent's grant is even consulted (see
+ * `iam/engine-v2.ts`'s `computeTokenScope`).
  */
 export const KORTIX_CLI_CATALOG: { group: string; actions: string[] }[] = [
-  { group: 'Project', actions: ['project.read', 'project.write', 'project.delete', 'project.deploy'] },
+  { group: 'Project', actions: ['project.read', 'project.write', 'project.deploy'] },
   { group: 'Change requests', actions: ['project.cr.open', 'project.cr.merge'] },
   {
     group: 'Sessions',
     actions: ['project.session.read', 'project.session.start', 'project.session.stop'],
   },
-  { group: 'Members', actions: ['project.members.read', 'project.members.manage'] },
+  { group: 'Members', actions: ['project.members.read'] },
   {
     group: 'Triggers',
     actions: [
@@ -167,7 +175,6 @@ export const KORTIX_CLI_CATALOG: { group: string; actions: string[] }[] = [
       'project.gateway.logs.read',
       'project.gateway.spend.read',
       'project.gateway.budget.set',
-      'project.gateway.keys.manage',
     ],
   },
   {
@@ -746,9 +753,9 @@ function AgentEditorModal({
   });
   const secretOptions = useMemo(
     () =>
-      [...new Set((secretsQuery.data?.items ?? []).map((s) => s.name))]
+      [...new Set((secretsQuery.data?.items ?? []).map((s) => s.identifier))]
         .sort()
-        .map((name) => ({ id: name, label: name })),
+        .map((identifier) => ({ id: identifier, label: identifier })),
     [secretsQuery.data],
   );
   const connectorOptions = useMemo(

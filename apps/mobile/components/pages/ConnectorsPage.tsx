@@ -42,9 +42,6 @@ import {
   Plug,
   Unplug,
   ShieldCheck,
-  Share2,
-  Lock,
-  Users,
   Check,
   Search,
   Plus,
@@ -61,8 +58,6 @@ import {
   useSyncConnectors,
   useDeleteConnector,
   useDisconnectConnector,
-  useSetConnectorSharing,
-  useProjectAccess,
   useProjectPolicies,
   useSetProjectPolicies,
   usePipedreamApps,
@@ -79,7 +74,6 @@ import type {
   AdminConnector,
   ConnectorAction,
   ConnectorProvider,
-  ConnectorSharing,
   ConnectorDraftInput,
   PipedreamApp,
   PolicyAction,
@@ -196,7 +190,6 @@ function ConnectorDetail({
   connector,
   onClose,
   onDelete,
-  onEditSharing,
   onSetCredential,
   deleting,
 }: {
@@ -204,7 +197,6 @@ function ConnectorDetail({
   connector: AdminConnector;
   onClose: () => void;
   onDelete: () => void;
-  onEditSharing: () => void;
   onSetCredential: () => void;
   deleting: boolean;
 }) {
@@ -361,18 +353,6 @@ function ConnectorDetail({
         contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Sharing / access */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 18 }}>
-          <Share2 size={15} color={muted} style={{ marginRight: 10 }} />
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 1 }}>Access</Text>
-            <Text style={{ fontSize: 14, lineHeight: 17, color: fg }}>{sharingLabel(connector.sharing)}</Text>
-          </View>
-          <TouchableOpacity onPress={() => { haptics.tap(); onEditSharing(); }} activeOpacity={0.7} style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: border }}>
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted }}>Manage</Text>
-          </TouchableOpacity>
-        </View>
-
         <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
           {connector.actions.length} {connector.actions.length === 1 ? 'tool' : 'tools'}
         </Text>
@@ -710,209 +690,6 @@ function AddConnectorView({
   );
 }
 
-// ─── Sharing editor (project / private / members) ────────────────────────────
-
-const SHARE_OPTIONS: { mode: 'project' | 'private' | 'members'; label: string; desc: string; icon: LucideIcon }[] = [
-  { mode: 'project', label: 'Project-wide', desc: 'Every member of this project', icon: Globe },
-  { mode: 'private', label: 'Only me', desc: 'Just you', icon: Lock },
-  { mode: 'members', label: 'Select members', desc: 'A chosen list of members', icon: Users },
-];
-
-function sharingLabel(sharing: ConnectorSharing | null): string {
-  if (!sharing || sharing.mode === 'project') return 'Project-wide';
-  if (sharing.mode === 'private') return 'Only me';
-  const n = sharing.memberIds?.length ?? 0;
-  return n === 1 ? '1 member' : `${n} members`;
-}
-
-function ShareOptionRow({
-  option,
-  selected,
-  onPress,
-  isDark,
-  primary,
-  primaryLight,
-}: {
-  option: (typeof SHARE_OPTIONS)[number];
-  selected: boolean;
-  onPress: () => void;
-  isDark: boolean;
-  primary: string;
-  primaryLight: string;
-}) {
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
-  const Icon = option.icon;
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.7}
-      style={{
-        flexDirection: 'row', alignItems: 'center', gap: 12,
-        paddingHorizontal: 14, paddingVertical: 12, borderRadius: 14, marginBottom: 8,
-        borderWidth: 1.5, borderColor: selected ? primary : border,
-        backgroundColor: selected ? primaryLight : 'transparent',
-      }}
-    >
-      <Icon size={18} color={selected ? primary : muted} />
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}>{option.label}</Text>
-        <Text style={{ fontSize: 12.5, color: muted, marginTop: 1 }}>{option.desc}</Text>
-      </View>
-      <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: selected ? 0 : 1.5, borderColor: border, backgroundColor: selected ? primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-        {selected && <Check size={13} color="#fff" strokeWidth={3} />}
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-function SharingEditor({
-  projectId,
-  connector,
-  onBack,
-}: {
-  projectId: string;
-  connector: AdminConnector;
-  onBack: () => void;
-}) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
-  const theme = useThemeColors();
-
-  const access = useProjectAccess(projectId);
-  const saveMutation = useSetConnectorSharing(projectId);
-
-  const initial = connector.sharing;
-  const [mode, setMode] = useState<'project' | 'private' | 'members'>(initial?.mode ?? 'project');
-  const [memberIds, setMemberIds] = useState<string[]>(
-    initial?.mode === 'members' ? (initial.memberIds ?? []) : [],
-  );
-  const [memberSearch, setMemberSearch] = useState('');
-
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
-
-  const members = access.data?.members ?? [];
-  const selectedSet = useMemo(() => new Set(memberIds), [memberIds]);
-  const filteredMembers = useMemo(() => {
-    const q = memberSearch.trim().toLowerCase();
-    const list = q ? members.filter((m) => (m.email ?? m.user_id).toLowerCase().includes(q)) : members;
-    return [...list].sort((a, b) => {
-      const d = (selectedSet.has(a.user_id) ? 0 : 1) - (selectedSet.has(b.user_id) ? 0 : 1);
-      return d !== 0 ? d : (a.email ?? a.user_id).localeCompare(b.email ?? b.user_id);
-    });
-  }, [members, memberSearch, selectedSet]);
-
-  const toggleMember = (id: string) =>
-    setMemberIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-
-  const incomplete = mode === 'members' && memberIds.length === 0;
-
-  const handleSave = () => {
-    if (incomplete || saveMutation.isPending) return;
-    const intent: ConnectorSharing =
-      mode === 'project'
-        ? { mode: 'project' }
-        : mode === 'private'
-          ? { mode: 'private', ownerId: '' }
-          : { mode: 'members', memberIds };
-    haptics.tap();
-    saveMutation.mutate(
-      { slug: connector.slug, intent },
-      {
-        onSuccess: onBack,
-        onError: (err: any) => Alert.alert('Save failed', err?.message || 'Could not update sharing.'),
-      },
-    );
-  };
-
-  return (
-    <View style={{ flex: 1 }}>
-      <View style={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: border }}>
-        <Text style={{ fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>Who can use it?</Text>
-      </View>
-
-      <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        {SHARE_OPTIONS.map((opt) => (
-          <ShareOptionRow
-            key={opt.mode}
-            option={opt}
-            selected={mode === opt.mode}
-            onPress={() => { haptics.selection(); setMode(opt.mode); }}
-            isDark={isDark}
-            primary={theme.primary}
-            primaryLight={theme.primaryLight}
-          />
-        ))}
-
-        {mode === 'members' && (
-          <View style={{ marginTop: 6, borderRadius: 14, borderWidth: 1, borderColor: border, overflow: 'hidden' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, height: 42, borderBottomWidth: 1, borderBottomColor: border, backgroundColor: inputBg }}>
-              <Search size={15} color={muted} />
-              <BottomSheetTextInput
-                value={memberSearch}
-                onChangeText={setMemberSearch}
-                placeholder="Search members…"
-                placeholderTextColor={muted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert', color: fg, padding: 0 }}
-              />
-            </View>
-            {access.isLoading ? (
-              <View style={{ padding: 20, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>
-            ) : filteredMembers.length === 0 ? (
-              <View style={{ padding: 20, alignItems: 'center' }}><Text style={{ fontSize: 13, color: muted }}>No members.</Text></View>
-            ) : (
-              filteredMembers.map((m) => {
-                const on = selectedSet.has(m.user_id);
-                return (
-                  <TouchableOpacity
-                    key={m.user_id}
-                    onPress={() => { haptics.selection(); toggleMember(m.user_id); }}
-                    activeOpacity={0.6}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10 }}
-                  >
-                    <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: theme.primaryLight, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: theme.primary }}>
-                        {(m.email ?? m.user_id).charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-                    <Text style={{ flex: 1, fontSize: 14, color: fg }} numberOfLines={1}>{m.email ?? m.user_id}</Text>
-                    <View style={{ width: 20, height: 20, borderRadius: 6, borderWidth: on ? 0 : 1.5, borderColor: border, backgroundColor: on ? theme.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                      {on && <Check size={13} color="#fff" strokeWidth={3} />}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })
-            )}
-          </View>
-        )}
-      </BottomSheetScrollView>
-
-      {/* Sticky Save (primary theme color) */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 8, borderTopWidth: 1, borderTopColor: border }}>
-        <TouchableOpacity
-          onPress={handleSave}
-          disabled={incomplete || saveMutation.isPending}
-          activeOpacity={0.8}
-          style={{
-            height: 42, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
-            backgroundColor: theme.primary, opacity: incomplete || saveMutation.isPending ? 0.5 : 1,
-          }}
-        >
-          {saveMutation.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
-          <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save sharing</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
-
 // ─── Custom connector form (MCP / OpenAPI / GraphQL / HTTP) ───────────────────
 
 function Segmented<T extends string>({
@@ -1005,7 +782,6 @@ function CustomConnectorForm({
       const draft: ConnectorDraftInput = {
         slug: slug.trim(),
         provider,
-        sharing: { mode: 'project' },
         auth: { type: authType, ...(authType === 'custom' ? { name: authName.trim(), in: 'header' } : {}) },
         ...(provider === 'openapi' ? { spec: spec.trim() } : {}),
         ...(provider === 'graphql' ? { endpoint: endpoint.trim(), ...(spec.trim() ? { spec: spec.trim() } : {}) } : {}),
@@ -1436,7 +1212,6 @@ export function ConnectorsPage({
   const [pageTab, setPageTab] = useState<'connectors' | 'policies'>('connectors');
   const addSheetRef = useRef<BottomSheetModal>(null);
   const detailSheetRef = useRef<BottomSheetModal>(null);
-  const sharingSheetRef = useRef<BottomSheetModal>(null);
   const credentialSheetRef = useRef<BottomSheetModal>(null);
 
   const { data, isLoading, isError, error, refetch } = useConnectors(projectId);
@@ -1609,33 +1384,8 @@ export function ConnectorsPage({
             connector={selected}
             onClose={() => detailSheetRef.current?.dismiss()}
             onDelete={() => handleDelete(selected)}
-            onEditSharing={() => sharingSheetRef.current?.present()}
             onSetCredential={() => credentialSheetRef.current?.present()}
             deleting={deleteMutation.isPending}
-          />
-        ) : (
-          <View style={{ height: 1 }} />
-        )}
-      </BottomSheetModal>
-
-      {/* Sharing — its own sheet, stacked over the detail sheet */}
-      <BottomSheetModal
-        ref={sharingSheetRef}
-        snapPoints={['80%']}
-        enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
-        keyboardBehavior="interactive"
-        keyboardBlurBehavior="restore"
-        backdropComponent={(props) => (
-          <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
-        )}
-      >
-        {selected ? (
-          <SharingEditor
-            projectId={projectId}
-            connector={selected}
-            onBack={() => sharingSheetRef.current?.dismiss()}
           />
         ) : (
           <View style={{ height: 1 }} />

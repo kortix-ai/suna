@@ -1,6 +1,10 @@
 # Agent-First Configuration & Authorization Unification
 
-**Status:** Draft for review — Marko + Fable, 2026-07-05
+**Status:** Shipped — Marko + Fable, 2026-07-05. Phases 0–2 (hygiene, schema v2 +
+compiler, mandatory agents) are live, and `per_user` credential removal (part of
+Phase 3's original scope) shipped early. Still open: secrets v2 (named secrets
+with per-agent values), the `kortix_cli` approval tier, and Phase 4 (the git
+boundary) — see §3 and §4.
 **Depends on:** IAM/RBAC v1 (shipped, `feat/iam-rbac-v1`), `docs/AUTHZ_MODEL_FINAL_PLAN.md`, `docs/specs/2026-06-28-token-session-agent-identity.md`
 **Supersedes in part:** `docs/specs/2026-06-28-project-authorization-runtime-governance.md` (the config-compilation direction; the ACL model it sketched was replaced by IAM v1)
 
@@ -62,9 +66,11 @@ Facts established by direct code inspection — each of these shapes a decision 
     into connectors would forfeit the role ceiling. What CLI *lacks* is the
     approval tier: `project.gitops.merge` and `project.deploy` are pure
     allow/deny today.
-11. **The Members-page grant flow is already agent-only** (picker hardcoded to
-    agents; pyramid comment in code), but the backend still accepts
-    `skill`-type grants via raw API and secrets live in a separate share model.
+11. **The Members-page grant flow is agent-only** (picker hardcoded to agents;
+    pyramid comment in code). **RESOLVED 2026-07-05**: `POST
+    /resource-grants` now rejects any `resource_type` other than `agent`
+    (`resource_type must be agent`); pre-existing `skill`/`secret` rows still
+    read/list/revoke. Secrets remain on their separate share model.
 12. **Enterprise gating asymmetry**: SSO/SCIM are visually gated on entitlement;
     Groups/Roles/Policies were functionally gated (402) but visually open —
     fixed in the IAM-finalisation branch this spec ships with.
@@ -196,7 +202,10 @@ Rules:
   remains recorded as the *initiator* — attribution and authorization stop
   sharing one field.
 
-### 2.3 Runtime-agnostic by construction: the compiler
+### 2.3 Runtime-agnostic by construction: the compiler — SHIPPED
+
+`compileAgentConfig` + `resolveCompiledAgentConfigForSession` are live in
+`apps/api/src/projects/lib/compile-agent-config.ts`, exactly as designed below.
 
 ```
 kortix.yaml (governance) ─┐
@@ -252,11 +261,10 @@ agent." Target:
   this secret at all," then "which value does it get."
 - UI: secrets manager gets display name + a per-value "applies to" agent picker.
   CLI: `kortix secrets set STRIPE_KEY --agent billing`.
-- **Starter hygiene** (do immediately, independent of the rest):
-  remove `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` from `[env] optional` in
-  `kortix.toml`, `packages/starter/templates/base/kortix.toml`, and the doc
-  prose that showcases them. They confuse BYOK with platform credentials; the
-  platform already hard-forbids its own keys of those names from sandboxes.
+- **Starter hygiene — DONE.** `packages/starter/templates/base/kortix.toml` no
+  longer exists (the starter ships `kortix.yaml`, v2, directly); the
+  `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` platform-credential examples are gone
+  from it and from the doc prose that used to showcase them.
 
 ### 2.5 Connector profiles, channels, and the meaning of "ALL"
 
@@ -393,9 +401,9 @@ The complexity Marko flagged collapses under one rule:
   into the session token; `authorizeGitProxy` honoring them) — the one
   already-documented deferral. This spec sequences it, it does not re-defer it.
 - Member-facing resource scoping stays **agent-only** (the pyramid): you assign
-  people to agents; agents carry the resources. Backend follow-through: stop
-  accepting new `skill`-type rows in `iam_resource_grants` POST (UI already
-  can't create them), keep legacy rows readable/revocable.
+  people to agents; agents carry the resources. **RESOLVED 2026-07-05**: the
+  backend `iam_resource_grants` POST rejects new `skill`-type rows (UI already
+  can't create them); legacy rows stay readable/revocable.
 
 ## 3. Phased plan
 
@@ -403,10 +411,10 @@ Each phase is independently shippable; order minimizes rework.
 
 | Phase | Scope | Size |
 |---|---|---|
-| **0. Hygiene** (now, with IAM finalisation) | Starter key examples removed; Members copy fix; Groups/Roles visual gating; manifest.mdx agents/channels docs; CLI-leaf enforcement audit | S |
-| **1. Schema v2 + compiler skeleton** | `kortix_version: 2` YAML schema (governance-only agent block, `secrets` rename, deny-by-default, `runtime` enum, `[[channels]]` removal); server-side `compileAgentConfig` for opencode reading behavior from each agent's native `.md` frontmatter (redirected 2026-07-05 — no illegal-frontmatter gate, no nested `opencode:` block); dead-field removal; `manifest-edit`/validate-endpoint format fixes | L |
-| **2. Mandatory agents + trigger identity** | `KORTIX_REQUIRE_DECLARED_AGENTS` flag (on for new projects); default-sentinel-must-resolve rule; trigger/channel sessions attributed to agent SA; web Channels management surface | M |
-| **3. Secrets v2 + approvals + per_user removal** | display name + per-agent values (schema + resolution + UI/CLI); CLI-action approval tier via Review Center (default set: `project.gitops.merge`); remove `per_user` credential mode per §2.5 (migration + reconnect-required UX + account comms) | L |
+| **0. Hygiene** — SHIPPED | Starter key examples removed; Members copy fix; Groups/Roles visual gating; manifest.mdx agents/channels docs; CLI-leaf enforcement audit | S |
+| **1. Schema v2 + compiler skeleton** — SHIPPED | `kortix_version: 2` YAML schema (governance-only agent block, `secrets` rename, deny-by-default, `runtime` enum, `[[channels]]` removal); server-side `compileAgentConfig` for opencode reading behavior from each agent's native `.md` frontmatter (redirected 2026-07-05 — no illegal-frontmatter gate, no nested `opencode:` block); dead-field removal; `manifest-edit`/validate-endpoint format fixes | L |
+| **2. Mandatory agents + trigger identity** — SHIPPED | `KORTIX_REQUIRE_DECLARED_AGENTS` flag (on for new projects); default-sentinel-must-resolve rule; trigger/channel sessions attributed to agent SA; web Channels management surface | M |
+| **3. Secrets v2 + approvals** — OPEN (`per_user` removal shipped early, see §2.5) | display name + per-agent values (schema + resolution + UI/CLI); CLI-action approval tier via Review Center (default set: `project.gitops.merge`) | L |
 | **4. Git boundary** | `workspace`/`git` powers per agent; resource caps stamped into session token; `authorizeGitProxy` enforces; auto-clone policy per agent | L |
 | **5. Migration & sunset** | `kortix migrate` CR generator; dashboard banner; v1 write-freeze; eventually flip remaining projects | M |
 

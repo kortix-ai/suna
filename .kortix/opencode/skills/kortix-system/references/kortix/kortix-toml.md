@@ -9,6 +9,19 @@ Instead, bad triggers and apps go into an `errors` list returned
 alongside the good ones, so a single typo doesn't break the whole
 file.
 
+**This page documents `kortix_version: 1`** (the `[[agents]]`
+array + `[[channels]]` shape below). New projects default to
+`kortix_version: 2` (YAML-only, `agents:` is a governance-only
+name→block map, `[[channels]]` removed, `env` renamed `secrets`) — see
+the `<canonical-schema>` section of this skill's `SKILL.md` and
+`docs/specs/2026-07-05-agent-first-config-unification.md`. Either way,
+the authoritative, always-current structural spec is the public JSON
+Schema, not this page: `https://kortix.com/schema/kortix.v1.schema.json`
+(this shape), `https://kortix.com/schema/kortix.v2.schema.json`, or
+`https://kortix.com/schema/kortix.schema.json` (both, dispatched by
+`kortix_version`) — also available offline via `kortix schema
+--version 1`.
+
 ## Full example
 
 ```toml
@@ -121,11 +134,20 @@ kortix_cli = ["project.deploy", "project.cr.open"]   # may OPEN a CR, but not me
 ```
 
 **Grantable `kortix_cli` actions** (project-scoped only — account-level admin
-actions can never be granted to an agent; run `kortix validate --scopes`):
-`project.read|write|delete|deploy`, `project.cr.open|merge`,
-`project.session.read|start|stop`, `project.members.read|manage`,
-`project.trigger.read|create|update|delete|fire`, `project.connector.read|write`
-(channels — Slack/meet/email send + connect — are gated on `project.connector.write`).
+actions can never be granted to an agent, nor can `project.delete` /
+`project.members.manage` / `project.gateway.keys.manage`, which the project-role
+collapse promoted to ACCOUNT owner/admin authority; run `kortix validate --scopes`
+for the live list):
+`project.read|write|deploy`, `project.cr.open|merge`,
+`project.session.read|start|stop`, `project.members.read`,
+`project.trigger.read|create|update|delete|fire`,
+`project.gateway.logs.read|spend.read|budget.set`,
+`project.agent.read|write`, `project.skill.read|write`,
+`project.command.read|write`, `project.file.read|write`,
+`project.customize.read|write`, `project.gitops.read|push|merge`,
+`project.secret.read|write`, `project.connector.read|write`
+(channels — Slack/meet/email send + connect — are gated on `project.connector.write`),
+`project.review.read|submit|act`.
 
 **Resolution at session start:** no `[[agents]]` section → legacy mode: no
 agent-grant restriction and older paths may discover agents directly from

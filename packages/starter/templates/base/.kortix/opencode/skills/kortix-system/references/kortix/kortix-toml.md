@@ -9,6 +9,19 @@ Instead, bad triggers and apps go into an `errors` list returned
 alongside the good ones, so a single typo doesn't break the whole
 file.
 
+**This page documents `kortix_version: 1`** (the `[[agents]]`
+array + `[[channels]]` shape below). This project's own `kortix.yaml`
+is `kortix_version: 2` (YAML-only, `agents:` is a governance-only
+name→block map, `[[channels]]` removed, `env` renamed `secrets`) — see
+the `<canonical-schema>` section of this skill's `SKILL.md` and
+`docs/specs/2026-07-05-agent-first-config-unification.md`. Either way,
+the authoritative, always-current structural spec is the public JSON
+Schema, not this page: `https://kortix.com/schema/kortix.v1.schema.json`
+(this shape), `https://kortix.com/schema/kortix.v2.schema.json` (this
+project's version), or `https://kortix.com/schema/kortix.schema.json`
+(both, dispatched by `kortix_version`) — also available offline via
+`kortix schema --version 2`.
+
 ## Full example
 
 ```toml
@@ -80,7 +93,7 @@ slug = "marketing-site"
 name = "Marketing site"
 enabled = true
 framework = "next"
-domains = ["marketing.example.com"]    # required, must be non-empty
+domains = ["marketing.example.com"]    # optional — omit it and Freestyle issues a free *.style.dev URL
 
   [apps.source]
   type = "git"
@@ -387,7 +400,7 @@ Entries sort alphabetically by slug. Slug uniqueness is per-section
 | `slug`     | yes      | string     | URL-safe, unique among apps.                           |
 | `name`     | no       | string     | Display name. Defaults to slug.                        |
 | `enabled`  | no       | bool       | Defaults to `true`. Disabled apps are skipped.         |
-| `domains`  | **yes**  | `string[]` | Must be non-empty. The parser rejects entries that omit or empty this. |
+| `domains`  | no       | `string[]` | Custom hostnames. Omit / empty → Freestyle issues a `*.style.dev` subdomain and persists it back into `deployments.live_url`. |
 | `framework`| no       | string     | Hint for the provider adapter (e.g. `"next"`).         |
 
 ### `[apps.source]`

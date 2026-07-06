@@ -5,13 +5,13 @@ import {
   hkdfSync,
   randomBytes,
 } from 'node:crypto';
-import { and, eq, inArray, isNull, or } from 'drizzle-orm';
-import { projectSecretGrants, projectSecrets } from '@kortix/db';
+import { and, desc, eq, isNull, or } from 'drizzle-orm';
+import { projectSecrets } from '@kortix/db';
 import { config } from '../config';
 import { db } from '../shared/db';
-import { isSecretUsableBy, loadGrants, type ShareSubject } from '../executor/share';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
+const IDENTIFIER_REGEX = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
 const ENVELOPE_VERSION = 'v1';
 const GCM_AUTH_TAG_LENGTH = 16;
 
@@ -25,6 +25,25 @@ function fromB64url(input: string): Buffer {
 
 export function isValidSecretName(name: string): boolean {
   return SECRET_NAME_REGEX.test(name);
+}
+
+/** A secret's `identifier` — the unique-per-project handle agents grant + the
+ *  UI shows. More permissive than the env-var-shaped `name` (KEY): letters,
+ *  digits, `_`, `.`, `-`, starting with an alphanumeric, max 128 chars. */
+export function isValidIdentifier(identifier: string): boolean {
+  return IDENTIFIER_REGEX.test(identifier);
+}
+
+/**
+ * True if writing `newKey` under an identifier that ALREADY exists with a
+ * DIFFERENT key (`existingKey`) would silently retarget it — an identifier is
+ * a stable handle (agents grant it, the DB uniquely keys on it), so redefining
+ * its underlying env-var KEY via upsert is rejected rather than allowed as a
+ * surprising in-place swap. `existingKey === null` means no row exists yet
+ * (never a conflict — this is the create path).
+ */
+export function identifierKeyConflicts(existingKey: string | null, newKey: string): boolean {
+  return existingKey !== null && existingKey !== newKey;
 }
 
 function projectSecretKey(projectId: string): Buffer {
@@ -75,23 +94,27 @@ export function decryptProjectSecret(projectId: string, valueEnc: string): strin
 
 /**
  * Upsert the SHARED (owner_user_id IS NULL) row for a project secret to a new
- * value. Mirrors the POST /secrets handler's insert/onConflict, factored out so
- * the public setup-link intake endpoint (no authenticated user) can write the
- * value a human supplied via a minted link. `scope` is only set on first insert
- * — an existing connector-scoped row keeps its scope on re-submit.
+ * value, keyed by IDENTIFIER (defaults to the KEY when omitted — the migrated/
+ * simple case). Mirrors the POST /secrets handler's insert/onConflict, factored
+ * out so the public setup-link intake endpoint (no authenticated user) can write
+ * the value a human supplied via a minted link. `scope` is only set on first
+ * insert — an existing connector-scoped row keeps its scope on re-submit.
  */
 export async function writeSharedProjectSecret(input: {
   projectId: string;
   name: string;
+  identifier?: string;
   value: string;
   scope?: 'runtime' | 'connector';
   createdBy?: string | null;
 }): Promise<void> {
   const now = new Date();
+  const identifier = input.identifier ?? input.name;
   await db
     .insert(projectSecrets)
     .values({
       projectId: input.projectId,
+      identifier,
       name: input.name,
       valueEnc: encryptProjectSecret(input.projectId, input.value),
       scope: input.scope ?? 'runtime',
@@ -99,9 +122,10 @@ export async function writeSharedProjectSecret(input: {
       updatedAt: now,
     })
     .onConflictDoUpdate({
-      target: [projectSecrets.projectId, projectSecrets.name],
+      target: [projectSecrets.projectId, projectSecrets.identifier],
       targetWhere: isNull(projectSecrets.ownerUserId),
       set: {
+        name: input.name,
         valueEnc: encryptProjectSecret(input.projectId, input.value),
         updatedAt: now,
       },
@@ -109,97 +133,170 @@ export async function writeSharedProjectSecret(input: {
 }
 
 /**
- * Decrypted key->value map of the project's SHARED runtime secrets (owner_user_id
- * IS NULL). Platform-reserved KORTIX_* rows are excluded so legacy system secrets
- * can never leak into the sandbox as user-controlled env vars. This is the
- * project-scoped view used by non-sandbox callers (e.g. Slack install lookup);
- * sandbox boot uses `listProjectSecretsForUser` so per-user overrides and
- * share-scope restrictions are honored.
+ * Decrypted KEY->value map of the project's SHARED runtime secrets
+ * (owner_user_id IS NULL). Platform-reserved KORTIX_* rows are excluded so
+ * legacy system secrets can never leak into the sandbox as user-controlled env
+ * vars. Since a KEY is no longer unique (multiple identifiers may share one),
+ * ties are broken deterministically: the row whose identifier equals the key
+ * wins (the common/migrated case), else the most-recently-updated row. This is
+ * the general project-scoped view used by non-sandbox callers (e.g. Slack
+ * install lookup, the LLM-gateway provider picker); sandbox boot uses
+ * `listProjectSecretsSnapshotForUser` so the running agent's `secrets` grant
+ * (by identifier) is honored.
  */
 export async function listProjectSecrets(projectId: string): Promise<Record<string, string>> {
   const rows = await db
     .select({
+      identifier: projectSecrets.identifier,
       name: projectSecrets.name,
       valueEnc: projectSecrets.valueEnc,
       scope: projectSecrets.scope,
+      updatedAt: projectSecrets.updatedAt,
     })
     .from(projectSecrets)
-    .where(and(eq(projectSecrets.projectId, projectId), isNull(projectSecrets.ownerUserId)));
+    .where(and(eq(projectSecrets.projectId, projectId), isNull(projectSecrets.ownerUserId)))
+    .orderBy(desc(projectSecrets.updatedAt));
 
   const env: Record<string, string> = {};
+  const winnerIsCanonical = new Set<string>();
   for (const row of rows) {
     if (row.name.toUpperCase().startsWith('KORTIX_')) continue;
     // Connector credentials / Pipedream bindings are resolved server-side by the
     // Executor gateway — never injected into the sandbox env.
     if (row.scope === 'connector') continue;
+    const canonical = row.identifier === row.name;
+    if (row.name in env && winnerIsCanonical.has(row.name) && !canonical) continue;
     env[row.name] = decryptProjectSecret(projectId, row.valueEnc);
+    if (canonical) winnerIsCanonical.add(row.name);
   }
   return env;
 }
 
 /**
- * Decrypted runtime-secret env map AS SEEN BY a specific user launching a
- * session. This is the authoritative sandbox-boot resolver. For each key:
- *
- *   1. the user's own ACTIVE personal override wins ("use mine"), else
- *   2. the shared project row, but only if it's shared with the user
- *      (project-wide, or the user is in the allow-list), else
- *   3. the key is not injected.
- *
- * Enforcing (2) is what makes "Only me" / "Select members" sharing actually
- * restrict what lands in a member's sandbox env.
+ * One project secret resolved for a specific launching user: the shared
+ * (project-wide) row, shadowed by that user's own ACTIVE personal override of
+ * the SAME identifier if one exists (used today only by the CODEX_AUTH_JSON
+ * per-user provider login — see project_secrets.ownerUserId doc comment).
  */
-export async function listProjectSecretsForUser(
+export interface ResolvedProjectSecret {
+  identifier: string;
+  key: string;
+  value: string;
+}
+
+/**
+ * Every runtime-scope project secret, resolved AS a specific user (their own
+ * active override wins per identifier), grouped by IDENTIFIER — the unit an
+ * agent's `secrets` grant addresses. KORTIX_* (reserved) and connector-scoped
+ * rows are never included. `userId` may be null for contexts with no acting
+ * human (e.g. a webhook-triggered session) — only shared rows apply then.
+ */
+export async function listResolvedProjectSecrets(
   projectId: string,
-  subject: ShareSubject,
-): Promise<Record<string, string>> {
+  userId: string | null,
+): Promise<ResolvedProjectSecret[]> {
   const rows = await db
     .select({
-      secretId: projectSecrets.secretId,
+      identifier: projectSecrets.identifier,
       name: projectSecrets.name,
       valueEnc: projectSecrets.valueEnc,
       scope: projectSecrets.scope,
-      shareScope: projectSecrets.shareScope,
       ownerUserId: projectSecrets.ownerUserId,
       active: projectSecrets.active,
     })
     .from(projectSecrets)
     .where(and(
       eq(projectSecrets.projectId, projectId),
-      or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, subject.userId)),
+      eq(projectSecrets.scope, 'runtime'),
+      userId ? or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId)) : isNull(projectSecrets.ownerUserId),
     ));
 
   type Row = (typeof rows)[number];
-  const byName = new Map<string, { shared?: Row; personal?: Row }>();
+  const byIdentifier = new Map<string, { shared?: Row; personal?: Row }>();
   for (const row of rows) {
-    const slot = byName.get(row.name) ?? {};
+    if (row.name.toUpperCase().startsWith('KORTIX_')) continue;
+    const slot = byIdentifier.get(row.identifier) ?? {};
     if (row.ownerUserId === null) slot.shared = row;
     else slot.personal = row;
-    byName.set(row.name, slot);
+    byIdentifier.set(row.identifier, slot);
   }
 
-  // Grants only matter for shared rows that are restricted.
-  const grants = await loadGrants(
-    rows.filter((r) => r.ownerUserId === null).map((r) => r.secretId),
-  );
+  const out: ResolvedProjectSecret[] = [];
+  for (const [identifier, slot] of byIdentifier) {
+    const chosen = slot.personal && slot.personal.active ? slot.personal : slot.shared;
+    if (!chosen) continue;
+    out.push({ identifier, key: chosen.name, value: decryptProjectSecret(projectId, chosen.valueEnc) });
+  }
+  return out;
+}
+
+/**
+ * Thrown when an agent's EXPLICIT `secrets` grant (a concrete identifier list,
+ * not `'all'`) names two-or-more identifiers that resolve to the SAME env var
+ * KEY — there's no principled way to pick a winner for a deliberate selection,
+ * so this is a configuration error the caller must surface, not silently
+ * resolve. An `'all'` grant never throws (see resolveGrantedSecretEnv).
+ */
+export class AmbiguousSecretGrantError extends Error {
+  constructor(
+    public readonly key: string,
+    public readonly identifiers: string[],
+  ) {
+    super(
+      `secrets grant is ambiguous: key "${key}" is provided by multiple granted identifiers (${identifiers.join(', ')})`,
+    );
+    this.name = 'AmbiguousSecretGrantError';
+  }
+}
+
+/**
+ * The whole security decision for injecting secrets into an agent's sandbox
+ * env: given every secret resolved for the launching user (by identifier) and
+ * the running agent's `secrets` grant, which identifiers are allowed and what
+ * KEY=value env results. Pure — DB-free, fully unit-testable.
+ *
+ *   grant === undefined | 'all' → every identifier is allowed. If two allowed
+ *     identifiers share a KEY (e.g. GMAPS-primary / GMAPS-backup both
+ *     GOOGLE_MAPS_API_KEY), a deterministic winner is picked (identifier sort
+ *     order) rather than erroring — 'all' is a default, not a deliberate
+ *     per-identifier choice.
+ *   grant === string[] (explicit list, case-insensitive match on identifier)
+ *     → only those identifiers are allowed. Two ALLOWED identifiers sharing a
+ *     KEY is an AmbiguousSecretGrantError — a deliberate list naming both is a
+ *     misconfiguration, not something to silently resolve.
+ */
+export function resolveGrantedSecretEnv(
+  rows: ResolvedProjectSecret[],
+  grant: string[] | 'all' | undefined,
+): { env: Record<string, string>; identifiers: string[] } {
+  const allowAll = grant === undefined || grant === 'all';
+  const allowSet = allowAll ? null : new Set(grant.map((g) => g.toUpperCase()));
+  const allowed = allowAll ? rows : rows.filter((r) => allowSet!.has(r.identifier.toUpperCase()));
+
+  const byKey = new Map<string, ResolvedProjectSecret[]>();
+  for (const row of allowed) {
+    const list = byKey.get(row.key) ?? [];
+    list.push(row);
+    byKey.set(row.key, list);
+  }
 
   const env: Record<string, string> = {};
-  for (const [name, slot] of byName) {
-    if (name.toUpperCase().startsWith('KORTIX_')) continue;
-    let chosen: Row | undefined;
-    if (slot.personal && slot.personal.active) {
-      chosen = slot.personal;
-    } else if (
-      slot.shared &&
-      isSecretUsableBy(slot.shared.shareScope, grants.get(slot.shared.secretId) ?? [], subject)
-    ) {
-      chosen = slot.shared;
+  for (const [key, candidates] of byKey) {
+    if (candidates.length === 1) {
+      env[key] = candidates[0]!.value;
+      continue;
     }
-    if (!chosen) continue;
-    if (chosen.scope === 'connector') continue;
-    env[name] = decryptProjectSecret(projectId, chosen.valueEnc);
+    if (!allowAll) {
+      throw new AmbiguousSecretGrantError(
+        key,
+        candidates.map((c) => c.identifier).sort(),
+      );
+    }
+    const winner = [...candidates].sort((a, b) => a.identifier.localeCompare(b.identifier))[0]!;
+    env[key] = winner.value;
   }
-  return env;
+
+  return { env, identifiers: allowed.map((r) => r.identifier) };
 }
 
 export function projectSecretsRevision(env: Record<string, string>): string {
@@ -227,12 +324,18 @@ export async function listProjectSecretsSnapshot(projectId: string): Promise<{
   };
 }
 
-/** Per-user snapshot — the sandbox-boot view (overrides + share-scope applied). */
+/**
+ * Per-user, per-agent-grant snapshot — the sandbox-boot view. `grantEnv` is the
+ * running agent's `secrets` grant (`AgentGrant.env`); omitted/`'all'` = every
+ * secret in the project reaches this session (see resolveGrantedSecretEnv).
+ */
 export async function listProjectSecretsSnapshotForUser(
   projectId: string,
-  subject: ShareSubject,
+  userId: string | null,
+  grantEnv?: string[] | 'all',
 ): Promise<{ env: Record<string, string>; names: string[]; revision: string }> {
-  const env = await listProjectSecretsForUser(projectId, subject);
+  const rows = await listResolvedProjectSecrets(projectId, userId);
+  const { env } = resolveGrantedSecretEnv(rows, grantEnv);
   const names = Object.keys(env).sort();
   return { env, names, revision: projectSecretsRevision(env) };
 }
@@ -242,225 +345,18 @@ export async function getProjectSecretValue(
   name: string,
 ): Promise<string | null> {
   const normalizedName = name.trim().toUpperCase();
-  const [row] = await db
-    .select({ valueEnc: projectSecrets.valueEnc })
+  const rows = await db
+    .select({ identifier: projectSecrets.identifier, valueEnc: projectSecrets.valueEnc, updatedAt: projectSecrets.updatedAt })
     .from(projectSecrets)
     .where(and(
       eq(projectSecrets.projectId, projectId),
       eq(projectSecrets.name, normalizedName),
       isNull(projectSecrets.ownerUserId),
-    ))
-    .limit(1);
-
-  return row ? decryptProjectSecret(projectId, row.valueEnc) : null;
-}
-
-/**
- * Decrypted values for the named SHARED secrets — used ONLY for agent-resource
- * inheritance (an `inherit`=true agent that an EXPLICITLY-ASSIGNED launcher
- * runs). This deliberately BYPASSES the per-user share scope: the agent DECLARED
- * (in kortix.toml, PR-reviewed) that it needs these, and the launcher is
- * explicitly assigned to it. Bounded to the caller's name list; KORTIX_* and
- * connector-scoped rows are never returned. Do NOT use for general secret reads.
- */
-export async function resolveDeclaredSharedSecrets(
-  projectId: string,
-  names: string[],
-): Promise<Record<string, string>> {
-  if (names.length === 0) return {};
-  const rows = await db
-    .select({ name: projectSecrets.name, valueEnc: projectSecrets.valueEnc, scope: projectSecrets.scope })
-    .from(projectSecrets)
-    .where(and(
-      eq(projectSecrets.projectId, projectId),
-      isNull(projectSecrets.ownerUserId),
-      inArray(projectSecrets.name, names),
     ));
-  const env: Record<string, string> = {};
-  for (const row of rows) {
-    if (row.name.toUpperCase().startsWith('KORTIX_')) continue;
-    if (row.scope === 'connector') continue;
-    env[row.name] = decryptProjectSecret(projectId, row.valueEnc);
-  }
-  return env;
-}
-
-// ─── Secret → agent access (the secret-side allowlist) ──────────────────────
-// Which agents may use a shared secret. NULL/empty `agent_scope` = all agents
-// (project-wide, default); a non-empty list of agent NAMES restricts it to those
-// agents' sessions. The executor (buildSessionSandboxEnvVars) reads the scopes
-// and drops any secret whose allowlist excludes the running agent — an ADDITIVE
-// narrowing on top of the share model, never a widening.
-
-/**
- * Secret NAME → agent-name allowlist, for every shared project secret RESTRICTED
- * to specific agents (non-empty `agent_scope`). All-agents secrets (NULL/empty)
- * are omitted — the executor only needs the restricted ones to know what to drop.
- */
-export async function loadSecretAgentScopes(projectId: string): Promise<Map<string, string[]>> {
-  const rows = await db
-    .select({ name: projectSecrets.name, agentScope: projectSecrets.agentScope })
-    .from(projectSecrets)
-    .where(and(eq(projectSecrets.projectId, projectId), isNull(projectSecrets.ownerUserId)));
-  const map = new Map<string, string[]>();
-  for (const row of rows) {
-    const scope = row.agentScope;
-    if (Array.isArray(scope) && scope.length > 0) map.set(row.name, scope);
-  }
-  return map;
-}
-
-/**
- * Given the project's secret→agent scopes (name → allowed agent names) and the
- * agent a session runs AS, the set of secret names that agent may NOT use — a
- * secret is denied iff it's scoped (present in the map) and its allowlist
- * excludes the agent. All-agents secrets never enter the map, so they're never
- * denied. Pure: this is the whole security decision the executor applies.
- */
-export function secretNamesDeniedForAgent(
-  scopes: ReadonlyMap<string, string[]>,
-  agentName: string,
-): Set<string> {
-  const denied = new Set<string>();
-  for (const [name, allowed] of scopes) {
-    if (!allowed.includes(agentName)) denied.add(name);
-  }
-  return denied;
-}
-
-/**
- * Set (or clear) the agent allowlist for a shared secret. `agents = null` or an
- * empty array clears it → usable by ALL agents again. Names are trimmed, empties
- * dropped, deduped. Returns false when the shared secret row doesn't exist.
- */
-export async function setSecretAgentScope(
-  projectId: string,
-  name: string,
-  agents: string[] | null,
-): Promise<boolean> {
-  const normalizedName = name.trim().toUpperCase();
-  const cleaned = agents ? Array.from(new Set(agents.map((a) => a.trim()).filter(Boolean))) : [];
-  const res = await db
-    .update(projectSecrets)
-    .set({ agentScope: cleaned.length > 0 ? cleaned : null, updatedAt: new Date() })
-    .where(and(
-      eq(projectSecrets.projectId, projectId),
-      eq(projectSecrets.name, normalizedName),
-      isNull(projectSecrets.ownerUserId),
-    ))
-    .returning({ secretId: projectSecrets.secretId });
-  return res.length > 0;
-}
-
-// ─── Secret access as resource grants ───────────────────────────────────────
-// The "Resource access" card (Members) and the Secret "Who can access this"
-// dialog both operate on ONE source of truth for secret audience: the share
-// model (project_secret_grants + share_scope). These helpers expose that model
-// in the resource-grant shape the card speaks, so a change in either surface
-// shows in both. (Agents/skills still live in iam_resource_grants.)
-
-export interface SecretResourceGrant {
-  grantId: string;
-  /** The secret NAME — the resource id the card keys on. */
-  name: string;
-  principalType: 'member' | 'group';
-  principalId: string;
-  createdAt: Date;
-}
-
-/** Every member/department grant on the project's SHARED, restricted secrets. */
-export async function listSecretResourceGrants(projectId: string): Promise<SecretResourceGrant[]> {
-  const rows = await db
-    .select({
-      grantId: projectSecretGrants.grantId,
-      name: projectSecrets.name,
-      principalType: projectSecretGrants.principalType,
-      principalId: projectSecretGrants.principalId,
-      createdAt: projectSecretGrants.createdAt,
-    })
-    .from(projectSecretGrants)
-    .innerJoin(projectSecrets, eq(projectSecrets.secretId, projectSecretGrants.secretId))
-    .where(and(eq(projectSecrets.projectId, projectId), isNull(projectSecrets.ownerUserId)));
-  return rows.map((r) => ({ ...r, principalType: r.principalType as 'member' | 'group' }));
-}
-
-/**
- * Grant a shared secret to a member/department. Adding the first grant flips the
- * secret from project-wide to restricted (its allow-list) — the same semantic as
- * the dialog's "Specific members or departments". Idempotent on (secret,principal).
- * Returns null if the secret doesn't exist.
- */
-export async function addSecretResourceGrant(input: {
-  projectId: string;
-  name: string;
-  principalType: 'member' | 'group';
-  principalId: string;
-}): Promise<{ grantId: string } | null> {
-  // One transaction with a row lock on the secret so a concurrent add/remove on
-  // the same secret can't interleave (which could strand a live grant on a
-  // project-wide — i.e. open — scope). onConflictDoUpdate (no-op set) makes the
-  // insert idempotent AND always RETURN the grant id.
-  return db.transaction(async (tx) => {
-    const [secret] = await tx
-      .select({ secretId: projectSecrets.secretId })
-      .from(projectSecrets)
-      .where(and(
-        eq(projectSecrets.projectId, input.projectId),
-        eq(projectSecrets.name, input.name),
-        isNull(projectSecrets.ownerUserId),
-      ))
-      .for('update')
-      .limit(1);
-    if (!secret) return null;
-    const [grant] = await tx
-      .insert(projectSecretGrants)
-      .values({ secretId: secret.secretId, principalType: input.principalType, principalId: input.principalId })
-      .onConflictDoUpdate({
-        target: [projectSecretGrants.secretId, projectSecretGrants.principalType, projectSecretGrants.principalId],
-        set: { principalId: input.principalId },
-      })
-      .returning({ grantId: projectSecretGrants.grantId });
-    await tx
-      .update(projectSecrets)
-      .set({ shareScope: 'restricted', updatedAt: new Date() })
-      .where(eq(projectSecrets.secretId, secret.secretId));
-    return grant ? { grantId: grant.grantId } : null;
-  });
-}
-
-/**
- * Remove a secret grant by id (scoped to the project so a guessed id can't touch
- * a foreign project). When the last grant goes, the secret reverts to
- * project-wide (open) — the empty-allow-list-collapses-to-project rule.
- */
-export async function removeSecretResourceGrant(grantId: string, projectId: string): Promise<boolean> {
-  return db.transaction(async (tx) => {
-    const [row] = await tx
-      .select({ secretId: projectSecretGrants.secretId })
-      .from(projectSecretGrants)
-      .innerJoin(projectSecrets, eq(projectSecrets.secretId, projectSecretGrants.secretId))
-      .where(and(eq(projectSecretGrants.grantId, grantId), eq(projectSecrets.projectId, projectId)))
-      .limit(1);
-    if (!row) return false;
-    // Lock the secret so the delete + remaining-count + revert is atomic against
-    // a concurrent addSecretResourceGrant on the same secret.
-    await tx
-      .select({ id: projectSecrets.secretId })
-      .from(projectSecrets)
-      .where(eq(projectSecrets.secretId, row.secretId))
-      .for('update');
-    await tx.delete(projectSecretGrants).where(eq(projectSecretGrants.grantId, grantId));
-    const remaining = await tx
-      .select({ id: projectSecretGrants.grantId })
-      .from(projectSecretGrants)
-      .where(eq(projectSecretGrants.secretId, row.secretId))
-      .limit(1);
-    if (remaining.length === 0) {
-      await tx
-        .update(projectSecrets)
-        .set({ shareScope: 'project', updatedAt: new Date() })
-        .where(eq(projectSecrets.secretId, row.secretId));
-    }
-    return true;
-  });
+  if (rows.length === 0) return null;
+  // Deterministic pick when multiple identifiers share this key: the canonical
+  // (identifier === key) row wins, else the most-recently-updated one.
+  const canonical = rows.find((r) => r.identifier === normalizedName);
+  const row = canonical ?? [...rows].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]!;
+  return decryptProjectSecret(projectId, row.valueEnc);
 }

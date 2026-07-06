@@ -3,8 +3,9 @@
  * flow (mirrors triggers/apps). The manifest holds the connector definition.
  * Credential MODE is always `shared` (`per_user` — each member brings their
  * own — was removed 2026-07-05, docs/specs/2026-07-05-agent-first-config-
- * unification.md §2.5). ACCESS (who can use) is dynamic and stored on the
- * connector (not git). Credentials live in the split store. See
+ * unification.md §2.5). Connectors are project-wide visible — the only ACCESS
+ * gate is the agent-side `[[agents]].connectors` grant (declared in git, on
+ * the agent, not the connector). Credentials live in the split store. See
  * docs/specs/executor.md §3, §5–6.
  */
 import { and, eq } from 'drizzle-orm';
@@ -21,8 +22,7 @@ import {
   type DefaultMode,
 } from '../projects/policies';
 import { syncProjectConnectors, type SyncResult } from './sync';
-import { setConnectorSharingDb, upsertCredential } from './credentials';
-import type { SharingIntent } from './share';
+import { upsertCredential } from './credentials';
 import { resolveExperimentalFeature } from '../experimental/features';
 
 export interface ConnectorDraft {
@@ -95,12 +95,11 @@ async function connectorIdFor(projectId: string, slug: string): Promise<string |
   return row?.connectorId ?? null;
 }
 
-/** Create/update a connector in kortix.toml, materialize it, then apply access. */
+/** Create/update a connector in kortix.toml, then materialize it. */
 export async function upsertConnectorInManifest(
   projectId: string,
   accountId: string,
   draft: ConnectorDraft,
-  sharing?: SharingIntent,
 ): Promise<CrudResult> {
   // Slack is a first-class channel connector — reserve its namespace so a new
   // Pipedream/OpenAPI app can't take the `slack` name (and shadow the built-in
@@ -165,12 +164,6 @@ export async function upsertConnectorInManifest(
   if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
 
   const sync = await syncProjectConnectors(projectId, accountId);
-
-  // Apply access (who can use) — dynamic, lives on the connector, not in git.
-  if (sharing) {
-    const connectorId = await connectorIdFor(projectId, draft.slug);
-    if (connectorId) await setConnectorSharingDb(connectorId, sharing);
-  }
   return { ok: true, sync };
 }
 
@@ -283,83 +276,6 @@ export async function setConnectorSensitiveInManifest(
   if (err) return { ok: false, error: err.error, status: 400 };
 
   const committed = await commitManifest(row, manifest, `chore: mark ${slug} ${sensitive ? 'sensitive' : 'not sensitive'}`);
-  if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
-
-  const sync = await syncProjectConnectors(projectId, accountId);
-  return { ok: true, sync };
-}
-
-/**
- * Set which AGENTS may call a connector (the connector-side agent gate, mirror of
- * the secret agent_scope). `agentScope = null | []` = all agents.
- *
- * Two write paths, one entry point — picked by whether the connector is DECLARED:
- *   • DECLARED (in kortix.toml): write `[[connectors]].agent_scope`, commit, and
- *     re-sync. The sync reconciles executor_connectors.agent_scope from the toml,
- *     so git stays the source of truth (toml-authoritative).
- *   • SYNTHETIC (channel/computer — no manifest entry): write the column directly.
- *     Sync deliberately preserves it (upsertConnector skips agent_scope for those
- *     providers), so a direct edit survives.
- */
-export async function setConnectorAgentScope(
-  projectId: string,
-  accountId: string,
-  slug: string,
-  agentScope: string[] | null,
-): Promise<CrudResult> {
-  const row = await loadRow(projectId);
-  if (!row) return { ok: false, error: 'project not found', status: 404 };
-
-  const cleaned =
-    agentScope && agentScope.length > 0
-      ? Array.from(new Set(agentScope.map((a) => a.trim()).filter(Boolean)))
-      : [];
-  const value = cleaned.length > 0 ? cleaned : null;
-
-  let manifest;
-  try {
-    manifest = await loadManifestForEdit(row);
-  } catch (e) {
-    return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
-  }
-
-  const current = Array.isArray(manifest.raw.connectors)
-    ? (manifest.raw.connectors as Record<string, unknown>[])
-    : [];
-  const entry = current.find((c) => c?.slug === slug);
-
-  // Synthetic connector (no manifest entry, e.g. a channel/computer install):
-  // there's nothing in git to author — set the column directly. Guard on the
-  // connector actually existing in this project so a typo can't no-op silently.
-  if (!entry) {
-    const [existing] = await db
-      .select({ connectorId: executorConnectors.connectorId })
-      .from(executorConnectors)
-      .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
-      .limit(1);
-    if (!existing) return { ok: false, error: 'connector not found', status: 404 };
-    await db
-      .update(executorConnectors)
-      .set({ agentScope: value, updatedAt: new Date() })
-      .where(eq(executorConnectors.connectorId, existing.connectorId));
-    return { ok: true, sync: { synced: 1, errors: [] } };
-  }
-
-  // Declared connector — toml is authoritative. Omit the key when all-agents so
-  // the emitted TOML stays minimal (mirrors how `sensitive` is dropped on false).
-  if (value) entry.agent_scope = value;
-  else delete entry.agent_scope;
-  manifest.raw.connectors = current;
-
-  const parsed = extractConnectors(manifest);
-  const err = parsed.errors.find((e) => e.slug === slug);
-  if (err) return { ok: false, error: err.error, status: 400 };
-
-  const committed = await commitManifest(
-    row,
-    manifest,
-    `chore: scope ${slug} to ${value ? value.join(', ') : 'all agents'}`,
-  );
   if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
 
   const sync = await syncProjectConnectors(projectId, accountId);

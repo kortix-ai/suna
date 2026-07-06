@@ -157,7 +157,7 @@ const AGENT_PICK_INTRO: Line[] = [
   [t('  Pick your local coding agent to configure this Kortix project.', 'dim')],
   [],
   [t('  It picks up the Kortix skill — ask it to scaffold triggers,', 'dim')],
-  [t('  custom agents, or edit kortix.toml for you.', 'dim')],
+  [t('  custom agents, or edit kortix.yaml for you.', 'dim')],
   [t('  (Kortix itself runs opencode inside every sandbox session.)', 'dim')],
   [],
 ];
@@ -169,7 +169,7 @@ const initTail = (name: string): Line[] => [
   [],
   [t('Initialized Kortix project '), t(`"${name}"`, 'fg'), t(' in '), t(`~/${name}`, 'faded')],
   [t('Wrote 9 files:')],
-  [t('  + ', 'faded'), t('kortix.toml')],
+  [t('  + ', 'faded'), t('kortix.yaml')],
   [t('  + ', 'faded'), t('.kortix/Dockerfile')],
   [t('  + ', 'faded'), t('.kortix/opencode/opencode.jsonc')],
   [t('  + ', 'faded'), t('.kortix/opencode/agents/kortix.md')],
@@ -198,7 +198,7 @@ const SCRIPT: Step[] = [
   {
     input: 'kortix ship',
     out: [
-      ok(t('kortix.toml verified')),
+      ok(t('kortix.yaml verified')),
       [],
       [t('  '), t('kortix ship', 'kortix'), t('  new project → managed Kortix git', 'dim')],
       [t('  name    ', 'dim'), t('my-app')],

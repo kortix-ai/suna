@@ -1,7 +1,9 @@
-// Executor connectors — connector CRUD, sharing, credentials, Pipedream.
+// Executor connectors — connector CRUD, credentials, Pipedream. Connectors are
+// project-wide visible; the only access gate is the agent's `connectors`
+// grant (kortix.yaml [[agents]].connectors), not anything configured here.
 
 import { backendApi } from '../api-client';
-import { unwrap, type ConnectorSharing } from './shared';
+import { unwrap } from './shared';
 
 // ─── Executor connectors ──────────────────────────────────────────────────
 
@@ -26,13 +28,8 @@ export interface AdminConnector {
   credentialMode: 'shared';
   /** Marked sensitive — its reads gate too (require_approval by default). */
   sensitive: boolean;
-  /** Which agents may call it. null / [] = ALL agents (default); a list of agent
-   *  names restricts it to those agents' sessions. The connector-side agent gate
-   *  (mirror of the secret agent_scope). */
-  agentScope: string[] | null;
   actions: ConnectorAction[];
   authSecret: string | null;
-  sharing: ConnectorSharing | null;
   secretSet: boolean;
 }
 
@@ -54,19 +51,6 @@ export async function listConnectors(projectId: string) {
 export async function syncConnectors(projectId: string) {
   return unwrap(
     await backendApi.post<ConnectorSyncResult>(`/executor/projects/${projectId}/connectors/sync`, {}),
-  );
-}
-
-export async function setConnectorSharing(
-  projectId: string,
-  slug: string,
-  intent: ConnectorSharing,
-) {
-  return unwrap(
-    await backendApi.put<{ ok: boolean }>(
-      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/sharing`,
-      intent,
-    ),
   );
 }
 
@@ -92,22 +76,6 @@ export async function setConnectorSensitive(projectId: string, slug: string, sen
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
       `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/sensitive`,
       { sensitive },
-    ),
-  );
-}
-
-/** Set which AGENTS may call a connector (the connector-side agent gate, mirror
- *  of the secret agent_scope). `agentScope = null | []` = all agents; a list of
- *  agent names restricts it. Writes kortix.toml for declared connectors. */
-export async function setConnectorAgentScope(
-  projectId: string,
-  slug: string,
-  agentScope: string[] | null,
-) {
-  return unwrap(
-    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/agent-scope`,
-      { agent_scope: agentScope },
     ),
   );
 }
@@ -192,8 +160,6 @@ export interface ConnectorDraftInput {
   /** Credential storage mode. `shared` is the only mode (`per_user` was
    *  removed 2026-07-05). */
   credential?: 'shared';
-  /** Access — who can use it (applied after create). */
-  sharing?: ConnectorSharing;
   auth?: {
     type?: 'none' | 'bearer' | 'basic' | 'custom';
     in?: 'header' | 'query';

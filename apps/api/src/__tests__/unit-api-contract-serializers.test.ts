@@ -87,13 +87,12 @@ function secretRow(
   return {
     secretId: 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff',
     projectId: PROJECT_ID,
+    identifier: overrides.name ?? 'OPENAI_API_KEY',
     name: 'OPENAI_API_KEY',
     valueEnc: 'enc:v1:abc',
     scope: 'runtime',
-    shareScope: 'project',
     ownerUserId: null,
     active: true,
-    agentScope: null,
     createdBy: USER_ID,
     createdAt: NOW,
     updatedAt: NOW,
@@ -181,21 +180,39 @@ describe('serializeSandboxRow ⇄ ProjectSessionSandboxSchema', () => {
 describe('buildSecretView ⇄ SecretSchema', () => {
   test('shared project secret parses strictly and round-trips unchanged', () => {
     const out = buildSecretView({
+      identifier: 'OPENAI_API_KEY',
       name: 'OPENAI_API_KEY',
       shared: secretRow(),
-      sharedGrants: [],
-      subject: { userId: USER_ID, groupIds: [] },
       canManageShared: true,
     });
     expect(SecretSchema.strict().parse(out)).toEqual(out);
     expect(out.effective_source).toBe('shared');
   });
 
+  test('two identifiers sharing the same key parse as independent secrets', () => {
+    const primary = buildSecretView({
+      identifier: 'GMAPS-primary',
+      name: 'GOOGLE_MAPS_API_KEY',
+      shared: secretRow({ identifier: 'GMAPS-primary', name: 'GOOGLE_MAPS_API_KEY' }),
+      canManageShared: true,
+    });
+    const backup = buildSecretView({
+      identifier: 'GMAPS-backup',
+      name: 'GOOGLE_MAPS_API_KEY',
+      shared: secretRow({ identifier: 'GMAPS-backup', name: 'GOOGLE_MAPS_API_KEY' }),
+      canManageShared: true,
+    });
+    expect(SecretSchema.strict().parse(primary)).toEqual(primary);
+    expect(SecretSchema.strict().parse(backup)).toEqual(backup);
+    expect(primary.name).toBe(backup.name);
+    expect(primary.identifier).not.toBe(backup.identifier);
+  });
+
   test('personal override view parses', () => {
     const out = buildSecretView({
+      identifier: 'OPENAI_API_KEY',
       name: 'OPENAI_API_KEY',
       personal: secretRow({ ownerUserId: USER_ID }),
-      subject: { userId: USER_ID, groupIds: [] },
       canManageShared: false,
     });
     const parsed = SecretSchema.strict().parse(out);
@@ -204,12 +221,11 @@ describe('buildSecretView ⇄ SecretSchema', () => {
     expect(parsed.mine).toEqual({ active: true, updated_at: NOW.toISOString() });
   });
 
-  test('system git-auth secret parses with restricted sharing', () => {
+  test('system git-auth secret parses and cannot be managed even by an editor', () => {
     const out = buildSecretView({
+      identifier: 'KORTIX_GIT_AUTH_TOKEN',
       name: 'KORTIX_GIT_AUTH_TOKEN',
-      shared: secretRow({ name: 'KORTIX_GIT_AUTH_TOKEN', shareScope: 'restricted' }),
-      sharedGrants: [{ principalType: 'member', principalId: USER_ID }],
-      subject: { userId: USER_ID, groupIds: [] },
+      shared: secretRow({ identifier: 'KORTIX_GIT_AUTH_TOKEN', name: 'KORTIX_GIT_AUTH_TOKEN' }),
       canManageShared: true,
     });
     const parsed = SecretSchema.strict().parse(out);

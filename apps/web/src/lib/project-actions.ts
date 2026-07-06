@@ -12,9 +12,9 @@
  * its custom role a permission set that OMITS the capability's leaf. The UI
  * reflects that by hiding/disabling the section whose `read`/`write` leaf the
  * role no longer grants. Therefore every `read` leaf used below MUST be one the
- * built-in Viewer role is seeded with (role-perms.ts `VIEWER_BASELINE`) and
- * every `write` leaf one Editor is seeded with — otherwise a normal
- * viewer/editor would be stranded out of a section they should still see.
+ * built-in Member role is seeded with (role-perms.ts `PROJECT_MEMBER_BASELINE`)
+ * and every `write` leaf one Editor is seeded with — otherwise a normal
+ * member/editor would be stranded out of a section they should still see.
  */
 
 import type { CustomizeSection } from '@/lib/customize-sections';
@@ -60,7 +60,7 @@ export type ProjectAction = (typeof PROJECT_ACTIONS)[keyof typeof PROJECT_ACTION
  * Per-section gating leaves.
  *
  * `read`  — gates whether the section is VISIBLE (rail item + deep-link). Must
- *           be a Viewer-seeded leaf so a viewer never loses a section.
+ *           be a Member-seeded leaf so a member never loses a section.
  * `write` — gates the mutating controls INSIDE the section (create/edit/delete).
  *           A user with `read` but not `write` sees the section read-only.
  *

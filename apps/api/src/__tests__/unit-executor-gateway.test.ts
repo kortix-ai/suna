@@ -1,9 +1,9 @@
 /**
- * Gateway orchestrator — full decision+execution path with fakes. Access lives on
- * the connector (shareScope + grants); the credential is always the one shared
- * project credential (`per_user` was removed 2026-07-05) via resolveCredential.
- * Covers success, not-found, sharing denial, needs-auth, audit, pipedream, and
- * policy enforcement.
+ * Gateway orchestrator — full decision+execution path with fakes. A connector
+ * is project-wide visible (no per-connector member/agent scoping); the
+ * credential is always the one shared project credential (`per_user` was
+ * removed 2026-07-05) via resolveCredential. Covers success, not-found,
+ * needs-auth, audit, pipedream, and policy enforcement.
  */
 import { describe, expect, test } from 'bun:test';
 import {
@@ -25,8 +25,6 @@ const STRIPE: GatewayConnector = {
   baseUrl: 'https://api.stripe.com',
   auth: { type: 'bearer', in: 'header', name: null, prefix: null },
   hasAuth: true,
-  shareScope: 'project',
-  grants: [],
   credentialMode: 'shared',
   enabled: true,
 };
@@ -141,33 +139,6 @@ describe('handleCall — denials', () => {
     });
   });
 
-  test('not shared (restricted to another member) → denied, no upstream', async () => {
-    const { deps, fetchCalls } = makeDeps({
-      connector: {
-        ...STRIPE,
-        shareScope: 'restricted',
-        grants: [{ principalType: 'member', principalId: 'someone-else' }],
-      },
-    });
-    expect(await handleCall(deps, baseInput)).toEqual({ status: 'denied', reason: 'not_shared' });
-    expect(fetchCalls).toHaveLength(0);
-  });
-
-  test('shared via group membership', async () => {
-    const { deps } = makeDeps({
-      connector: {
-        ...STRIPE,
-        shareScope: 'restricted',
-        grants: [{ principalType: 'group', principalId: 'g1' }],
-      },
-    });
-    const res = await handleCall(deps, {
-      ...baseInput,
-      subject: { userId: ALICE, groupIds: ['g1'] },
-    });
-    expect(res.status).toBe('ok');
-  });
-
   test('credential not set → needs_auth', async () => {
     const { deps } = makeDeps({ secret: null });
     expect(await handleCall(deps, baseInput)).toEqual({ status: 'denied', reason: 'needs_auth' });
@@ -201,8 +172,6 @@ describe('handleCall — pipedream path', () => {
     baseUrl: null,
     auth: { type: 'none', in: 'header', name: null, prefix: null },
     hasAuth: true,
-    shareScope: 'project',
-    grants: [],
     credentialMode: 'shared',
     enabled: true,
   };

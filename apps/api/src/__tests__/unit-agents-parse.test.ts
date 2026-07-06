@@ -35,6 +35,35 @@ describe('[[agents]] — grantable enum drift guard', () => {
   test('API GRANTABLE_KORTIX_CLI === manifest-schema GRANTABLE_KORTIX_CLI_ACTIONS', () => {
     expect([...GRANTABLE_KORTIX_CLI_ACTIONS].sort()).toEqual([...GRANTABLE_KORTIX_CLI].sort());
   });
+
+  // The exact size pins the catalog down so a silent addition/removal on
+  // either side is caught even if it happens to keep the two sides equal to
+  // EACH OTHER but wrong in absolute terms (both sides sourced from the same
+  // stale copy-paste, say).
+  test('37 grantable project actions (PROJECT_ACTIONS minus the 3 ACCOUNT_ONLY_PROJECT_ACTIONS)', () => {
+    expect(GRANTABLE_KORTIX_CLI.size).toBe(37);
+  });
+
+  // The three former "manager-only" project leaves were promoted to ACCOUNT
+  // owner/admin authority by the project-role collapse (see
+  // iam/role-perms.ts's ACCOUNT_ONLY_PROJECT_ACTIONS) — never grantable to
+  // any project role, so never grantable to an agent either.
+  test('the three account-only project leaves are excluded from the grantable set', () => {
+    expect(GRANTABLE_KORTIX_CLI.has('project.delete')).toBe(false);
+    expect(GRANTABLE_KORTIX_CLI.has('project.members.manage')).toBe(false);
+    expect(GRANTABLE_KORTIX_CLI.has('project.gateway.keys.manage')).toBe(false);
+  });
+});
+
+describe('[[agents]] — the 3 account-only project leaves are rejected as account-scoped, not unknown', () => {
+  for (const action of ['project.delete', 'project.members.manage', 'project.gateway.keys.manage']) {
+    test(`kortix_cli = ["${action}"] is rejected with the account-scoped message`, () => {
+      const { specs, errors } = parse(`\n[[agents]]\nname = "a"\nkortix_cli = ["${action}"]\n`);
+      expect(specs).toHaveLength(0);
+      expect(errors).toHaveLength(1);
+      expect(errors[0].error).toContain('account-scoped');
+    });
+  }
 });
 
 describe('[[agents]] — happy paths', () => {

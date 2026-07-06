@@ -6,8 +6,8 @@ import { listAgentMailInstalls, loadMeetInstall, loadSlackInstall } from '../cha
  * kortix.toml — connecting the platform IS the registration. When a project has
  * a Slack install but hasn't explicitly declared a `channel` connector for it,
  * we synthesize a ConnectorSpec here so the materializer treats it like any
- * other connector: it gets DB rows, a fixed action catalog, sharing, policies,
- * and shows up in the Executor/Connectors surface. The credential is the
+ * other connector: it gets DB rows, a fixed action catalog, policies, and
+ * shows up in the Executor/Connectors surface. The credential is the
  * existing install token (resolved server-side at call time) — no copy, no
  * executor_credentials row, no migration. See KORTIX-206.
  */
@@ -31,10 +31,6 @@ function channelSpec(platform: ChannelPlatform, slug: string, name = channelLabe
     // surface, so its actions ask before running (silence per-session with "allow
     // for session"). Slack/meet aren't gated by default.
     sensitive: platform === 'email',
-    // Synthetic — no manifest entry. agent_scope is set DB-side and preserved
-    // across syncs (upsertConnector skips reconciling it for channel/computer),
-    // so this null is only the initial value, never overwrites a later DB edit.
-    agentScope: null,
     app: null,
     account: null,
     url: null,

@@ -695,10 +695,6 @@
       "path": "/v1/executor/projects/:projectId/connectors/:slug"
     },
     {
-      "method": "PUT",
-      "path": "/v1/executor/projects/:projectId/connectors/:slug/agent-scope"
-    },
-    {
       "method": "GET",
       "path": "/v1/executor/projects/:projectId/connectors/:slug/config"
     },
@@ -737,10 +733,6 @@
     {
       "method": "PUT",
       "path": "/v1/executor/projects/:projectId/connectors/:slug/sensitive"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/executor/projects/:projectId/connectors/:slug/sharing"
     },
     {
       "method": "POST",

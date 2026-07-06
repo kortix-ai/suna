@@ -58,7 +58,6 @@ import {
   provisionProject,
   readProjectFile,
   reopenChangeRequest,
-  setConnectorSharing,
   setPersonalProjectSecret,
   setProjectPolicies,
   syncConnectors,
@@ -291,16 +290,6 @@ export function useDisconnectConnector(projectId: string) {
   });
 }
 
-/** Change who can use a connector (project / private / members). */
-export function useSetConnectorSharing(projectId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ slug, intent }: { slug: string; intent: ConnectorSharing }) =>
-      setConnectorSharing(projectId, slug, intent),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) }),
-  });
-}
-
 /** Tool-approval policies for a project. */
 export function useProjectPolicies(projectId: string | null) {
   return useQuery({
@@ -325,7 +314,7 @@ export function useSetProjectPolicies(projectId: string) {
   });
 }
 
-/** Project members (for the connector sharing member picker + Members page). */
+/** Project members (for the Members page). */
 export function useProjectAccess(projectId: string | null) {
   return useQuery({
     queryKey: projectKeys.projectAccess(projectId),

@@ -1,0 +1,835 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kortix.com/schema/kortix.v1.schema.json",
+  "title": "Kortix manifest (kortix_version 1)",
+  "description": "kortix.toml / kortix.yaml, schema version 1 — `[[agents]]` is a per-agent governance OVERLAY (connectors/kortix_cli/env grants); absence means an unrestricted default agent (adopt-to-govern back-compat). `[[channels]]` is accepted (validated, though dead at runtime — see docs/specs/2026-07-05-agent-first-config-unification.md §1.5).",
+  "type": "object",
+  "required": [
+    "kortix_version"
+  ],
+  "properties": {
+    "kortix_version": {
+      "const": 1
+    },
+    "project": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "env": {
+      "type": "object",
+      "properties": {
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          }
+        },
+        "optional": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "opencode": {
+      "type": "object",
+      "properties": {
+        "config_dir": {
+          "type": "string",
+          "minLength": 1,
+          "not": {
+            "pattern": "^/|(^|/)\\.\\.($|/)"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "sandbox": {
+      "type": "object",
+      "properties": {
+        "image": false,
+        "dockerfile": false,
+        "slug": false,
+        "cpu": false,
+        "memory": false,
+        "disk": false,
+        "entrypoint": false,
+        "context": false,
+        "context_dir": false,
+        "gpu": false,
+        "templates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "slug"
+            ],
+            "properties": {
+              "slug": {
+                "allOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                  },
+                  {
+                    "not": {
+                      "const": "default"
+                    }
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "entrypoint": {
+                "type": "string"
+              },
+              "image": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dockerfile": {
+                "type": "string",
+                "minLength": 1,
+                "not": {
+                  "pattern": "^/|(^|/)\\.\\.($|/)"
+                }
+              },
+              "cpu": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "memory": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "disk": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "image"
+                ],
+                "not": {
+                  "required": [
+                    "dockerfile"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "dockerfile"
+                ],
+                "not": {
+                  "required": [
+                    "image"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "default": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "sandboxes": false,
+    "triggers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "slug",
+          "type"
+        ],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "cron",
+              "webhook"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agent_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "enabled": {
+            "oneOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?:[tT][rR][uU][eE]|[fF][aA][lL][sS][eE]|1|0|[yY][eE][sS]|[nN][oO]|[oO][nN]|[oO][fF][fF])$"
+              }
+            ]
+          },
+          "session_mode": {
+            "type": "string",
+            "enum": [
+              "fresh",
+              "reuse"
+            ]
+          },
+          "sessionMode": {
+            "type": "string",
+            "enum": [
+              "fresh",
+              "reuse"
+            ]
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "prompt_template": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cron": {
+            "type": "string",
+            "minLength": 1
+          },
+          "schedule": {
+            "type": "string",
+            "minLength": 1
+          },
+          "run_at": {
+            "type": "string",
+            "minLength": 1
+          },
+          "runAt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "secret_env": {
+            "type": "string",
+            "pattern": "^[A-Z_][A-Z0-9_]*$"
+          },
+          "secretEnv": {
+            "type": "string",
+            "pattern": "^[A-Z_][A-Z0-9_]*$"
+          }
+        },
+        "additionalProperties": true,
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "prompt"
+                ]
+              },
+              {
+                "required": [
+                  "prompt_template"
+                ]
+              }
+            ]
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "cron"
+                }
+              }
+            },
+            "then": {
+              "anyOf": [
+                {
+                  "required": [
+                    "cron"
+                  ]
+                },
+                {
+                  "required": [
+                    "schedule"
+                  ]
+                },
+                {
+                  "required": [
+                    "run_at"
+                  ]
+                },
+                {
+                  "required": [
+                    "runAt"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "webhook"
+                }
+              }
+            },
+            "then": {
+              "anyOf": [
+                {
+                  "required": [
+                    "secret_env"
+                  ]
+                },
+                {
+                  "required": [
+                    "secretEnv"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "connectors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "slug",
+          "provider"
+        ],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "pipedream",
+              "mcp",
+              "openapi",
+              "graphql",
+              "http",
+              "channel"
+            ]
+          },
+          "app": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "transport": {
+            "type": "string",
+            "enum": [
+              "http",
+              "sse"
+            ]
+          },
+          "spec": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "slack",
+              "email",
+              "meet"
+            ]
+          },
+          "credential": {},
+          "agent_scope": {},
+          "auth": {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "bearer",
+                  "basic",
+                  "custom",
+                  "none"
+                ]
+              },
+              "secret": false
+            },
+            "additionalProperties": true
+          },
+          "policies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "match",
+                "action"
+              ],
+              "properties": {
+                "match": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "always_run",
+                    "require_approval",
+                    "block"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "additionalProperties": true,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "slug": {
+                  "const": "kortix_slack"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "provider": {
+                  "const": "channel"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "slug": {
+                  "const": "kortix_email"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "provider": {
+                  "const": "channel"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "slug": {
+                  "const": "kortix_meet"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "provider": {
+                  "const": "channel"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "slug": {
+                  "const": "computer"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "provider": {
+                  "const": "computer"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "provider": {
+                  "const": "pipedream"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "app"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "provider": {
+                  "const": "mcp"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "url"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "provider": {
+                  "const": "graphql"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "endpoint"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "provider": {
+                  "const": "http"
+                }
+              }
+            },
+            "then": {
+              "anyOf": [
+                {
+                  "required": [
+                    "base_url"
+                  ]
+                },
+                {
+                  "required": [
+                    "baseUrl"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "provider": {
+                  "const": "channel"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "platform"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "provider": {
+                  "const": "channel"
+                }
+              },
+              "required": [
+                "auth"
+              ]
+            },
+            "then": {
+              "properties": {
+                "auth": {
+                  "properties": {
+                    "type": {
+                      "const": "none"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "apps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "slug"
+        ],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "framework": {
+            "type": "string"
+          },
+          "enabled": {
+            "oneOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?:[tT][rR][uU][eE]|[fF][aA][lL][sS][eE]|1|0|[yY][eE][sS]|[nN][oO]|[oO][nN]|[oO][fF][fF])$"
+              }
+            ]
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "git",
+                  "tar"
+                ]
+              },
+              "repo": {
+                "type": "string"
+              },
+              "branch": {
+                "type": "string"
+              },
+              "root_path": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "build": {
+            "type": "object"
+          },
+          "env": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "agents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+          },
+          "connectors": {
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "none"
+                ]
+              }
+            ]
+          },
+          "kortix_cli": {
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "project.read",
+                    "project.write",
+                    "project.deploy",
+                    "project.cr.open",
+                    "project.cr.merge",
+                    "project.session.read",
+                    "project.session.start",
+                    "project.session.stop",
+                    "project.members.read",
+                    "project.trigger.read",
+                    "project.trigger.create",
+                    "project.trigger.update",
+                    "project.trigger.delete",
+                    "project.trigger.fire",
+                    "project.gateway.logs.read",
+                    "project.gateway.spend.read",
+                    "project.gateway.budget.set",
+                    "project.agent.read",
+                    "project.agent.write",
+                    "project.skill.read",
+                    "project.skill.write",
+                    "project.command.read",
+                    "project.command.write",
+                    "project.file.read",
+                    "project.file.write",
+                    "project.customize.read",
+                    "project.customize.write",
+                    "project.gitops.read",
+                    "project.gitops.push",
+                    "project.gitops.merge",
+                    "project.secret.read",
+                    "project.secret.write",
+                    "project.connector.read",
+                    "project.connector.write",
+                    "project.review.read",
+                    "project.review.submit",
+                    "project.review.act",
+                    "project.session.exec",
+                    "project.gateway.routing.edit",
+                    "project.schedule.read",
+                    "project.schedule.write",
+                    "project.webhook.read",
+                    "project.webhook.write",
+                    "channel.read",
+                    "channel.connect",
+                    "channel.send",
+                    "channel.disconnect",
+                    "*"
+                  ]
+                }
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "none"
+                ]
+              }
+            ]
+          },
+          "env": {
+            "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "none"
+                ]
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "channels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "platform"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "minLength": 1
+          },
+          "enabled": {
+            "oneOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?:[tT][rR][uU][eE]|[fF][aA][lL][sS][eE]|1|0|[yY][eE][sS]|[nN][oO]|[oO][nN]|[oO][fF][fF])$"
+              }
+            ]
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

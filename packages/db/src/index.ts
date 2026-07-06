@@ -39,7 +39,6 @@ export {
   projectMembers,
   projectAccessRequests,
   projectSecrets,
-  projectSecretGrants,
   secretShareScopeEnum,
   secretGrantPrincipalEnum,
   projectSecretScopeEnum,
@@ -182,7 +181,6 @@ export {
   executorConnectorPoliciesRelations,
   executorProjectPoliciesRelations,
   executorProjectSettingsRelations,
-  projectSecretGrantsRelations,
 } from './schema/kortix';
 export type { AgentGrant } from './schema/kortix';
 

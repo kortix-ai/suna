@@ -49,7 +49,7 @@ const HELP = `Usage: kortix init [project-name] [options]
 Start a new Kortix project.
 
 A fresh, self-contained workspace your agents can run from day one — the
-full OpenCode runtime, project memory, and a kortix.toml to make it yours.
+full OpenCode runtime, project memory, and a kortix.yaml to make it yours.
 Standalone by design: like create-next-app, init always spins up a new
 project in its own directory; it never touches an existing one.
 
@@ -226,7 +226,7 @@ function printAgentPreamble(): void {
     '',
     `  ${dim}Each one is symlinked to the project's OpenCode config dir, so it${reset}`,
     `  ${dim}shares the same skills + agents — ask it to scaffold triggers,${reset}`,
-    `  ${dim}custom agents, or edit kortix.toml for you.${reset}`,
+    `  ${dim}custom agents, or edit kortix.yaml for you.${reset}`,
     `  ${dim}(Kortix itself runs opencode inside every sandbox session.)${reset}`,
     '',
     `  ${opts}`,

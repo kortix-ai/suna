@@ -14,20 +14,21 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
 ## A scheduled example
 
-Triggers live in your project's manifest (`kortix.toml`) as `[[triggers]]` entries. This one runs every weekday morning and writes a digest:
+Triggers live in your project's manifest (`kortix.yaml`) as `triggers` entries. This one runs every weekday morning and writes a digest:
 
-```toml
-[[triggers]]
-slug     = "daily-digest"
-name     = "Daily digest"
-type     = "cron"
-enabled  = true
-cron     = "0 0 9 * * 1-5"
-timezone = "America/Los_Angeles"
-prompt   = """
-Summarize yesterday's activity and save it as a daily note.
-"""
+```yaml
+triggers:
+  - slug: daily-digest
+    name: Daily digest
+    type: cron
+    enabled: true
+    cron: "0 0 9 * * 1-5"
+    timezone: America/Los_Angeles
+    prompt: |
+      Summarize yesterday's activity and save it as a daily note.
 ```
+
+(Legacy `kortix.toml` declares the same thing as `[[triggers]]`, an array of tables with the same fields.)
 
 When the schedule fires, Kortix starts a fresh session and gives the agent the `prompt` as its first message.
 

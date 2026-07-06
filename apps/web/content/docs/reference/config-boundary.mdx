@@ -1,37 +1,38 @@
 ---
 title: Kortix vs OpenCode config
-description: The strict ownership boundary between kortix.toml and the .kortix/opencode/ config directory.
+description: The strict ownership boundary between the manifest and the .kortix/opencode/ config directory.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
 A Kortix project's config has two owners, and the boundary is strict.
 
-- **Kortix owns** `kortix.toml` and `.kortix/Dockerfile` — what a project is, its sandbox, secrets, triggers, apps, and which agents the platform may launch/authorize.
+- **Kortix owns** the manifest (`kortix.yaml`) and `.kortix/Dockerfile` — what a project is, its sandbox, secrets, triggers, apps, and which agents the platform may launch/authorize.
 - **OpenCode owns** `.kortix/opencode/` — how the runtime behaves. `opencode.jsonc` remains the native registry for plugins, MCP servers, providers, models, permissions, and default OpenCode behavior.
 
-The config dir is declared via `[opencode] config_dir` (default `.kortix/opencode`); the agent daemon launches OpenCode with `OPENCODE_CONFIG_DIR` pointed there.
+The config dir is declared via `opencode.config_dir` (default `.kortix/opencode`); the agent daemon launches OpenCode with `OPENCODE_CONFIG_DIR` pointed there.
 
-Legacy projects can still rely on OpenCode-native discovery. Projects that adopt
-`[[agents]]` in `kortix.toml` opt into declarative, server-side agent governance:
-Kortix product surfaces should list registered agents from the API, not directly
-from a sandbox OpenCode `/app/agents` response. This is not a rule that every
-native file under `.kortix/opencode/agents/` must be registered; unregistered
-files can still exist for local experiments or runtime internals.
+In `kortix.yaml`, `agents:` is a map keyed by agent name, and it is **governance only** — `connectors`, `secrets`, `kortix_cli`, `skills`, `workspace`, `enabled`. There is no `model`, `mode`, `description`, `permission`, or `prompt` field on the manifest side at all: every behavioral concern lives in that agent's own `.kortix/opencode/agents/<name>.md` frontmatter and body. The agent's *name* is the only join between the two files — the manifest key must match the `.md` filename. This is a stricter split than it sounds: there's no field on either side that can express the other's concern, so there's nothing to accidentally duplicate.
+
+`agents:` is also deny-by-default in `kortix.yaml`: an agent with no `connectors`/`secrets`/`kortix_cli`/`skills` key gets none of them. Any agent name not declared in the map is fully denied — no connectors, no `kortix_cli` powers, no secrets — though it still runs whatever its `.md` file says.
+
+<Callout type="info" title="Legacy: kortix.toml">
+v1 projects (`kortix.toml`) express the same governance idea with `[[agents]]` — an array of tables instead of a name→block map, secrets are called `env` instead of `secrets`, and defaults run the other way: an omitted field on a declared agent falls back to permissive per-field defaults rather than "none," and a project with **no** `[[agents]]` section at all skips governance entirely (every agent inherits the launching user's full role). See [kortix.toml](/docs/reference/manifest) for the v1 field table.
+</Callout>
 
 ## Ownership table
 
 | Concern | Lives in | Read by |
 | --- | --- | --- |
-| Project metadata (`name`, `description`) | `kortix.toml` `[project]` | Kortix |
-| Env / secrets spec | `kortix.toml` `[env]` | Kortix |
-| Sandbox base image | `kortix.toml` `[sandbox]` + `.kortix/Dockerfile` | Kortix |
-| Where the OpenCode config dir lives | `kortix.toml` `[opencode] config_dir` | Kortix |
-| Triggers (cron + webhook) | `kortix.toml` `[[triggers]]` | Kortix |
-| Apps (experimental) | `kortix.toml` `[[apps]]` | Kortix |
-| Platform-launchable agents and grants | `kortix.toml` `[[agents]]` | Kortix |
-| Channels (validated, not wired to runtime — see [manifest reference](/docs/reference/manifest#channels)) | `kortix.toml` `[[channels]]` | Kortix (parses only; live routing is the `chat_channel_bindings` table, managed via Slack/dashboard) |
-| Agent personas | `.kortix/opencode/agents/` | OpenCode |
+| Project metadata (`name`, `description`) | `kortix.yaml` `project:` | Kortix |
+| Env / secrets spec | `kortix.yaml` `env:` | Kortix |
+| Sandbox base image | `kortix.yaml` `sandbox:` + `.kortix/Dockerfile` | Kortix |
+| Where the OpenCode config dir lives | `kortix.yaml` `opencode.config_dir` | Kortix |
+| Triggers (cron + webhook) | `kortix.yaml` `triggers:` | Kortix |
+| Apps (experimental) | `kortix.yaml` `apps:` | Kortix |
+| Platform-launchable agents and grants | `kortix.yaml` `agents:` (governance only) | Kortix |
+| Channels | Not in the manifest — dashboard/CLI-managed (`kortix channels`). The connector itself (`provider: channel`) is still declared under `connectors:` once you connect one. | Kortix (live routing is the `chat_channel_bindings` table) |
+| Agent personas | `.kortix/opencode/agents/<name>.md` | OpenCode |
 | Skills | `.kortix/opencode/skills/` | OpenCode |
 | Slash commands | `.kortix/opencode/` (commands) | OpenCode |
 | Custom tools | `.kortix/opencode/` (tools) | OpenCode |
@@ -40,10 +41,10 @@ files can still exist for local experiments or runtime internals.
 | Model / provider config | `.kortix/opencode/opencode.jsonc` | OpenCode runtime; product model pickers should come from the server / LLM gateway catalog |
 
 <Callout type="info" title="Rule of thumb">
-If it describes the project, the sandbox, when work runs, what gets deployed, or what the platform is allowed to launch/authorize, it belongs in `kortix.toml`. If it describes how OpenCode executes that agent, it belongs under `.kortix/opencode/`.
+If it describes the project, the sandbox, when work runs, what gets deployed, or what the platform is allowed to launch/authorize, it belongs in `kortix.yaml`. If it describes how OpenCode executes that agent, it belongs under `.kortix/opencode/`.
 </Callout>
 
-Full `kortix.toml` field reference: [kortix.toml](/docs/reference/manifest). The `.kortix/opencode/` directory follows OpenCode's standard layout; see [opencode.ai/docs](https://opencode.ai/docs/) for each primitive.
+Full manifest field reference: [the manifest](/docs/reference/manifest). The `.kortix/opencode/` directory follows OpenCode's standard layout; see [opencode.ai/docs](https://opencode.ai/docs/) for each primitive.
 
 ## Where the agent runs
 

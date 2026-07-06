@@ -420,7 +420,7 @@ export function AppForm({ projectId, existing, onDone }: AppFormProps) {
       <div className="border-border/60 flex shrink-0 items-center justify-between gap-3 border-t px-5 py-3">
         <p className="text-muted-foreground hidden truncate text-xs sm:block">
           {tI18nHardcoded.raw('autoComponentsProjectsAppsAppFormJsxTextSavesToa1795d11')}
-          <code className="font-mono">kortix.toml</code>{' '}
+          <code className="font-mono">kortix.yaml</code>{' '}
           {tI18nHardcoded.raw('autoComponentsProjectsAppsAppFormJsxTextDeployWhenYou063c0c34')}
         </p>
         <div className="flex items-center gap-2">

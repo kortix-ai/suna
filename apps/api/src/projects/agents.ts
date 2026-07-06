@@ -33,11 +33,11 @@
 import { createHash } from 'node:crypto';
 import type { ParsedManifest } from './triggers';
 import { PROJECT_ACTIONS, VALID_ACTIONS } from '../iam/actions';
+import { ACCOUNT_ONLY_PROJECT_ACTIONS } from '../iam/role-perms';
 import type { GitBackedProject } from './git';
 import type { AgentGrant } from '@kortix/db';
-import { resolveGrantSet, type GrantSetV2 } from '@kortix/manifest-schema';
+import { resolveGrantSet, SLUG_RE, type GrantSetV2 } from '@kortix/manifest-schema';
 
-const NAME_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 const MANIFEST_FILENAME = 'kortix.toml';
 
 /**
@@ -51,16 +51,28 @@ export const DEFAULT_AGENT_SENTINEL = 'default';
 
 /**
  * The actions an agent's `kortix_cli` may grant — the project-scoped surface.
- * Account-scoped admin actions (member.*, billing.*, token.*, project.create, …)
- * are deliberately excluded: they're the hard ceiling and can never be granted
- * to an agent. CR actions live in PROJECT_ACTIONS. The channel.* resource
- * actions (channel.send, …) were removed from the catalog (IAM enforcement
- * audit): they were never wired to any route, so granting them did nothing —
- * see iam/actions.ts.
+ * `Object.values(PROJECT_ACTIONS)` MINUS `ACCOUNT_ONLY_PROJECT_ACTIONS`
+ * (`project.delete`, `project.members.manage`, `project.gateway.keys.manage`
+ * — the three former "manager-only" project leaves the project-role collapse
+ * promoted to ACCOUNT owner/admin authority; see iam/role-perms.ts). CR
+ * actions live in PROJECT_ACTIONS. The channel.* resource actions
+ * (channel.send, …) were removed from the catalog (IAM enforcement audit):
+ * they were never wired to any route, so granting them did nothing — see
+ * iam/actions.ts.
+ *
+ * Account-scoped admin actions (member.*, billing.*, token.*, project.create,
+ * …) are ALSO excluded — but simply omitting them from this list is not what
+ * stops an agent from calling them. Every agent-session token is
+ * project-scoped (`account_tokens.project_id`); the IAM v2 engine
+ * (`iam/engine-v2.ts` `computeTokenScope`) refuses ANY account-scope action
+ * for a project-bound token BEFORE this grant is even loaded. This set is a
+ * curation/UX surface (the CLI/editor's offered catalog, and what
+ * `validateKortixAction` below flags as a bad `kortix_cli` entry), not the
+ * enforcement boundary itself.
  */
-export const GRANTABLE_KORTIX_CLI: ReadonlySet<string> = new Set([
-  ...Object.values(PROJECT_ACTIONS),
-]);
+export const GRANTABLE_KORTIX_CLI: ReadonlySet<string> = new Set(
+  Object.values(PROJECT_ACTIONS).filter((a) => !(ACCOUNT_ONLY_PROJECT_ACTIONS as readonly string[]).includes(a)),
+);
 
 /** Sorted list for `kortix validate` / error messages / the UI picker. */
 export const GRANTABLE_KORTIX_CLI_LIST: readonly string[] = [...GRANTABLE_KORTIX_CLI].sort();
@@ -79,10 +91,11 @@ export interface AgentSpec {
   connectors: GrantSet;
   /** Kortix CLI/API powers (project-scoped iam actions). `[]` = none (default). */
   kortixCli: GrantSet;
-  /** Project-secret names this agent receives as sandbox env + may read via the
-   *  secrets API. `'all'` = every secret the launching user can see (default when
-   *  the `env` key is omitted — a NEW dimension, so omitting it must not starve
-   *  existing agents); an explicit list narrows it; `[]` = none. */
+  /** Project-secret IDENTIFIERS (project_secrets.identifier, not raw env-var
+   *  keys) this agent receives as sandbox env + may read via the secrets API.
+   *  `'all'` = every secret in the project (default when the `env` key is
+   *  omitted — a NEW dimension, so omitting it must not starve existing
+   *  agents); an explicit list narrows it; `[]` = none. */
   env: GrantSet;
   /** Optional behavior-file path override (defaults to the conventional `.md` by name). */
   file: string | null;
@@ -515,7 +528,7 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
 
   const name = typeof row.name === 'string' ? row.name.trim() : '';
   if (!name) return err(`(index-${index})`, `[[agents]] entry #${index + 1} is missing a name`);
-  if (!NAME_RE.test(name)) {
+  if (!SLUG_RE.test(name)) {
     return err(name, `Invalid agent name "${name}" — lowercase letters, digits, dashes, underscores only`);
   }
 
@@ -567,7 +580,7 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
 function parseAgentEntryV2(name: string, block: unknown, filename: string): ParseOk | ParseErr {
   const err = (n: string, message: string): ParseErr => makeAgentError(n, message, filename);
 
-  if (!NAME_RE.test(name)) {
+  if (!SLUG_RE.test(name)) {
     return err(name, `Invalid agent name "${name}" — lowercase letters, digits, dashes, underscores only`);
   }
   if (!block || typeof block !== 'object' || Array.isArray(block)) {

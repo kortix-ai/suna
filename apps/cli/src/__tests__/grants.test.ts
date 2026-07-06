@@ -214,7 +214,7 @@ describe('kortix grants', () => {
     });
   });
 
-  test('assign --type secret POSTs a secret grant', async () => {
+  test('assign --type secret is rejected — only agent grants are assignable now', async () => {
     const code = await runGrants([
       'assign',
       'DB_URL',
@@ -225,9 +225,38 @@ describe('kortix grants', () => {
       '--project',
       PROJECT,
     ]);
+    expect(code).toBe(2);
+    expect(requests.find((r) => r.method === 'POST')).toBeUndefined();
+    expect(stripAnsi(stderr)).toContain('--type must be agent');
+  });
+
+  test('assign --type skill is rejected the same way', async () => {
+    const code = await runGrants([
+      'assign',
+      'triage',
+      '--type',
+      'skill',
+      '--to',
+      'alice@corp.com',
+      '--project',
+      PROJECT,
+    ]);
+    expect(code).toBe(2);
+    expect(requests.find((r) => r.method === 'POST')).toBeUndefined();
+  });
+
+  test('assign without --type defaults to agent and still works', async () => {
+    const code = await runGrants([
+      'assign',
+      'support-bot',
+      '--to',
+      'alice@corp.com',
+      '--project',
+      PROJECT,
+    ]);
     expect(code).toBe(0);
     const post = requests.find((r) => r.method === 'POST');
-    expect(post?.body).toMatchObject({ resource_type: 'secret', resource_id: 'DB_URL' });
+    expect(post?.body).toMatchObject({ resource_type: 'agent', resource_id: 'support-bot' });
   });
 
   test('assign without --to fails with exit 2 and no request', async () => {

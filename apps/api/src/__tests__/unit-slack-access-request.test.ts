@@ -183,8 +183,11 @@ describe('notifyAdminsOfAccessRequest', () => {
   test('links admins directly to the project Members review surface', async () => {
     dbResults = [
       [{ name: 'Slack Auth' }], // email notification project lookup
+      // Reviewers are account owners/admins only — the former "explicit
+      // project manager" (project_members.project_role === 'manager') cohort
+      // query was retired with the project-role collapse (access-requests.ts),
+      // so there's no longer a second parallel query here.
       [{ userId: 'admin-1' }], // email notification account managers
-      [], // email notification explicit project managers
       [{ userId: 'admin-1' }], // Slack DM account admins
       [{ slackUserId: 'UADMIN' }], // lookupSlackUserIdForKortixUser
     ];

@@ -187,7 +187,6 @@ export {
   listConnectors,
   syncConnectors,
   deleteConnector,
-  setConnectorSharing,
   setConnectorCredential,
   createConnector,
   pipedreamFinalize,

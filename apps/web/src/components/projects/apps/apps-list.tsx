@@ -13,6 +13,8 @@ import { toast } from '@/lib/toast';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useState } from 'react';
 
+import { useAppsEnabled } from '@/hooks/projects/use-apps-enabled';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -61,10 +63,21 @@ interface AppsListProps {
 export function AppsList({ projectId, data, isLoading, onAdd, onEdit, onLogs }: AppsListProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [confirmSlug, setConfirmSlug] = useState<string | null>(null);
+  const appsEnabled = useAppsEnabled(projectId);
 
   const deployMut = useDeployProjectApp(projectId);
   const stopMut = useStopProjectApp(projectId);
   const deleteMut = useDeleteProjectApp(projectId);
+
+  if (!appsEnabled) {
+    return (
+      <EmptyState
+        icon={IconApp}
+        title="Apps is an experimental feature"
+        description="This project doesn't have Apps turned on. Enable it in Customize → Settings → Experimental to deploy from this project."
+      />
+    );
+  }
 
   if (isLoading) {
     return (

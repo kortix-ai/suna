@@ -135,6 +135,10 @@ function triggerFixture(overrides: Record<string, unknown> = {}) {
 
 function secretFixture(overrides: Record<string, unknown> = {}) {
   return {
+    // Unique per project — the handle an agent's `secrets` grant references.
+    // Authorization moved to the agent grant (by identifier); the old
+    // share_scope/sharing/usable_by_me per-member sharing model was retired.
+    identifier: 'openai-api-key-primary',
     name: 'OPENAI_API_KEY',
     project_id: '11111111-2222-4333-8444-555555555555',
     secret_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
@@ -147,9 +151,6 @@ function secretFixture(overrides: Record<string, unknown> = {}) {
     can_rotate: false,
     managed_by: null,
     configured: true,
-    share_scope: 'project',
-    sharing: { mode: 'project' },
-    usable_by_me: true,
     mine: null,
     effective_source: 'shared',
     can_manage_shared: true,
@@ -292,8 +293,6 @@ describe('SecretSchema', () => {
           configured: false,
           secret_id: null,
           created_by: null,
-          sharing: null,
-          usable_by_me: false,
           mine: { active: true, updated_at: NOW },
           effective_source: 'mine',
         }),

@@ -325,7 +325,10 @@ export interface ProjectResourceGrantsResponse {
   resources: {
     agents: ProjectAgentResourceItem[];
     skills: ProjectResourceItem[];
-    secrets: ProjectResourceItem[];
+    /** Secret sharing was retired (a secret is always project-wide; the only
+     *  access gate is the agent-side `secrets` grant) — never populated, kept
+     *  optional for older API responses. */
+    secrets?: ProjectResourceItem[];
   };
   grants: ProjectResourceGrant[];
 }

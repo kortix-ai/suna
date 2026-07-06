@@ -233,20 +233,66 @@ The location of OpenCode's config dir is declared in `kortix.toml` under `[openc
 Do not duplicate OpenCode-native config in `kortix.toml`. `opencode.jsonc` owns plugins, MCP, providers, model/provider config, and OpenCode runtime defaults. `kortix.toml` owns the project/platform manifest and, when adopted, the server-side registry of launchable agents and their Kortix grants. Dashboard edits to triggers / env / apps are read-modify-writes on `kortix.toml` — they round-trip cleanly with edits made inside a session.
 </contract>
 
+<canonical-schema>
+## The canonical manifest schema — one URL, always correct
+
+The manifest (`kortix.toml` or `kortix.yaml`) has a public, versioned JSON
+Schema, generated straight from `@kortix/manifest-schema` (the same package
+that backs `kortix validate` and the CR-merge gate — one source of truth, no
+separate spec to keep in sync by hand):
+
+| URL | Covers |
+| --- | --- |
+| `https://kortix.com/schema/kortix.v2.schema.json` | `kortix_version: 2` only (current default for new projects) |
+| `https://kortix.com/schema/kortix.v1.schema.json` | `kortix_version: 1` only (legacy `[[agents]]` array + `[[channels]]`) |
+| `https://kortix.com/schema/kortix.schema.json` | Both — dispatches on `kortix_version` |
+
+New `kortix.yaml` files should carry this header so editors validate and
+autocomplete live:
+
+```yaml
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
+kortix_version: 2
+```
+
+`kortix schema` (from any session — the CLI is always pre-authenticated, see
+`<cli>` above) prints the same document locally: `kortix schema --version 2`,
+or `kortix schema --url` for just the URL. If you are AUTHORING or EDITING a
+manifest and unsure whether a field/shape is legal, this schema — not this
+skill's prose, which can drift — is the authoritative structural spec;
+`kortix validate` is the authoritative behavioral one (it also catches
+cross-field rules the static schema can't express, e.g. `default_agent` must
+name a declared agent).
+
+**v2 in one paragraph** (see `<agent-authorization>` below for the fuller
+write-up, and `docs/specs/2026-07-05-agent-first-config-unification.md`
+for the design rationale): `agents:` is a name→block MAP (not the v1
+`[[agents]]` array), and every block is **governance only** —
+`enabled`/`connectors`/`secrets`/`skills`/`kortix_cli`/`workspace`. `env` was
+renamed `secrets`. There is no `model`/`mode`/`description`/`permission`/
+`prompt` on the manifest side at all in v2 — every one of those is OpenCode
+behavior and lives in that agent's own `.kortix/opencode/agents/<name>.md`
+frontmatter, joined by name. `default_agent` is required and must resolve to
+a declared, enabled agent. `[[channels]]` is removed outright (channel↔agent
+routing is dashboard-managed, not git). v2 is YAML-only and deny-by-default
+on every grant set (an omitted `connectors`/`secrets`/`skills`/`kortix_cli`
+resolves to `none`, not `all`).
+</canonical-schema>
+
 <agent-authorization>
-## Per-agent governance — `[[agents]]`
+## Per-agent governance — `agents:` (v2) / `[[agents]]` (v1, legacy)
 
 An agent **is** its OpenCode `.md` (front matter + system prompt). Everything about
-*how an agent behaves* stays OpenCode-native in that file. `kortix.toml`'s optional
-`[[agents]]` block is the Kortix-side declaration for **launchability and authority**,
-keyed by the agent's name. Today it primarily adds the two things OpenCode's agent
-config cannot express:
+*how an agent behaves* stays OpenCode-native in that file. The manifest's optional
+`agents:` map (v2 — `kortix.yaml`) is the Kortix-side declaration for **launchability
+and authority**, keyed by the agent's name — and in v2 it is **governance only**: no
+`model`/`mode`/`description`/`permission`/`prompt` on the manifest side at all.
 
-```toml
-[[agents]]
-name       = "release-bot"            # = the agent's .md name (e.g. .kortix/opencode/agents/release-bot.md)
-connectors = ["github"]               # which connector profiles it may call   (default: none)
-kortix_cli = ["project.deploy", "project.cr.open"]   # what it may do via the Kortix CLI/API (default: none)
+```yaml
+agents:
+  release-bot:                          # = the agent's .md name (.kortix/opencode/agents/release-bot.md)
+    connectors: [github]                # which connector profiles it may call   (default: none)
+    kortix_cli: [project.deploy, project.cr.open]   # what it may do via the Kortix CLI/API (default: none)
 ```
 
 **Which file owns what — never duplicate across the boundary:**
@@ -255,32 +301,41 @@ kortix_cli = ["project.deploy", "project.cr.open"]   # what it may do via the Ko
 | --- | --- |
 | system prompt, `model`, `mode`, `tools`, **`permission`** (incl. `permission.skill` to scope **skills**) | the agent's **`.md`** / `opencode.jsonc` (OpenCode-native) |
 | plugins, MCP servers, providers, runtime model catalog/defaults | **`opencode.jsonc`** (OpenCode-native) |
-| **`connectors`** (integration access) + **`kortix_cli`** (Kortix CLI/API powers) | **`kortix.toml` `[[agents]]`** |
+| **`connectors`** (integration access) + **`secrets`** (env-var access) + **`kortix_cli`** (Kortix CLI/API powers) + **`skills`** | the manifest's **`agents:`** map (v2) / **`[[agents]]`** array (v1) |
 
-**How the grant resolves at session start (v1, backward-compatible):**
-- Manifest has **no `[[agents]]`** at all → legacy mode: no agent-grant restriction, and older UI/runtime paths may discover agents directly from OpenCode. Existing projects are unchanged.
-- Agent **is listed** → its `connectors` + `kortix_cli` (default each = none if omitted).
-- Manifest **has `[[agents]]` but this agent isn't listed** → default-**deny** for Kortix grants (it can still be a native OpenCode file, but Kortix should not expose it as a platform-launchable agent unless it is listed).
-- **Your default agent:** with no `[[agents]]` it has **full access** (merge / deploy / spawn sub-agents, ∩ the user). The moment you adopt `[[agents]]`, **declare it too** — `[[agents]] name = "kortix"`, `kortix_cli = "all"`, `connectors = "all"` — or it falls under the unlisted-deny rule above. So: keep the default agent `"all"` and scope the *specialists* down.
-- The effective grant is always **∩ the launching user's role** — an agent can never exceed the human who launched it. Editing `kortix.toml` only takes effect once the **CR is merged** (read from the default branch).
+**How the grant resolves at session start:**
+- v2 (`kortix.yaml`) is **deny-by-default**: an omitted `connectors`/`secrets`/`skills`/`kortix_cli` on a declared agent resolves to `none`, not `all`. `default_agent` is required and must resolve to a declared, enabled agent — give it `connectors: all`, `secrets: all`, `kortix_cli: all`, `skills: all` explicitly if it should keep full access.
+- v1 (`kortix.toml`, legacy) is **backward-compatible** instead: manifest has **no `[[agents]]`** at all → no agent-grant restriction, agents discovered straight from OpenCode. Agent **is listed** → its `connectors`/`kortix_cli` (default each = none if omitted). Manifest **has `[[agents]]` but this agent isn't listed** → default-deny for Kortix grants. The v1 default agent keeps **full access** only while `[[agents]]` is unadopted — the moment you add `[[agents]]`, declare the default agent too or it falls under the unlisted-deny rule.
+- The effective grant is always **∩ the launching user's role** — an agent can never exceed the human who launched it. Editing the manifest only takes effect once the **CR is merged** (read from the default branch).
 
 **Discovery contract:**
-- `[[agents]]` is an opt-in to declarative, server-side agent discovery. It is not a validation rule that every file under `.kortix/opencode/agents/` must be registered. Unregistered native files can exist for local experiments or runtime internals.
+- Declaring `agents:` (v2) or `[[agents]]` (v1) is an opt-in to declarative, server-side agent discovery. It is not a validation rule that every file under `.kortix/opencode/agents/` must be registered. Unregistered native files can exist for local experiments or runtime internals.
 - Once a project adopts declarative agents, Kortix chat inputs, trigger/channel pickers, and other product UI should fetch agents from the server-side Kortix registry, not directly from the sandbox OpenCode `/app/agents` result.
 - Model lists should follow the same direction: UI fetches the server/LLM-gateway model catalog, not a sandbox-local OpenCode provider list, so connected-provider policy and billing stay server-owned.
-- Future manifest versions / new project templates may default to declarative discovery. Older projects stay in legacy OpenCode-discovery mode until they opt in or are migrated.
+- New projects default to `kortix.yaml` (v2) declarative discovery. Older `kortix.toml` (v1) projects stay in legacy mode until they migrate (see the in-app "Upgrade to kortix.yaml" flow).
 
 **`kortix_cli` — the grantable enum** (project-scoped only; account-level admin actions
-like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agent). Run
-`kortix validate --scopes` to print this list:
+like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agent — nor can
+`project.delete` / `project.members.manage` / `project.gateway.keys.manage`: the project-role
+collapse promoted those three to ACCOUNT owner/admin authority even though they still target a
+specific project). Run `kortix validate --scopes` to print this list:
 
 ```
-project.read  project.write  project.delete  project.deploy
+project.read  project.write  project.deploy
 project.cr.open  project.cr.merge          # opening a CR ≠ merging it (merge lands code on main)
 project.session.read  project.session.start  project.session.stop
-project.members.read  project.members.manage
+project.members.read
 project.trigger.read  project.trigger.create  project.trigger.update  project.trigger.delete  project.trigger.fire
+project.gateway.logs.read  project.gateway.spend.read  project.gateway.budget.set
+project.agent.read  project.agent.write
+project.skill.read  project.skill.write
+project.command.read  project.command.write
+project.file.read  project.file.write
+project.customize.read  project.customize.write
+project.gitops.read  project.gitops.push  project.gitops.merge
+project.secret.read  project.secret.write
 project.connector.read  project.connector.write   # channels (Slack/meet/email) send + connect are gated here
+project.review.read  project.review.submit  project.review.act
 ```
 
 `kortix validate` validates `[[agents]]` (rejecting unknown / account-scoped actions) and

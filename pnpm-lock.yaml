@@ -1327,6 +1327,9 @@ importers:
       '@types/bun':
         specifier: ^1.1.0
         version: 1.3.14
+      ajv:
+        specifier: 8.18.0
+        version: 8.18.0
       typescript:
         specifier: ^5.0.0
         version: 5.9.3

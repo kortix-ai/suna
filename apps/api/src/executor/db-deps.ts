@@ -22,21 +22,8 @@ import { db } from '../shared/db';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { authorize } from '../iam';
 import { loadProjectForUser } from '../projects/lib/access';
-import {
-  connectorDeniedForAgent,
-  isSecretUsableBy,
-  resolveShareSubject,
-  scopeToIntent,
-  type SharingIntent,
-} from './share';
-import {
-  credentialExists,
-  deleteCredential,
-  loadConnectorGrants,
-  loadGrantsForMany,
-  resolveCredentialValue,
-  setConnectorSharingDb,
-} from './credentials';
+import { resolveShareSubject } from './share';
+import { credentialExists, deleteCredential, resolveCredentialValue } from './credentials';
 import {
   resolveEffectiveAction,
   type DefaultMode,
@@ -58,7 +45,6 @@ import { meetRealtimeJoinPatch } from '../channels/meet-realtime';
 import { deriveWakeWord, resolveProjectBotName } from '../channels/meet-voices';
 import { hideSupersededSlack } from './channel-rules';
 import { agentMayUseConnector } from '../iam/agent-scope';
-import { resolveInheritedConnectorSlugs } from '../projects/lib/agent-inheritance';
 import {
   finalizePipedreamConnection,
   pipedreamConfigured,
@@ -74,7 +60,6 @@ import {
   setConnectorCredentialShared,
   setConnectorCredentialModeInManifest,
   setConnectorSensitiveInManifest,
-  setConnectorAgentScope,
   setConnectorNameInManifest,
   getConnectorPoliciesFromManifest,
   getConnectorConfigFromManifest,
@@ -228,7 +213,7 @@ async function connectorConnected(row: ConnectorRow, userId: string | null): Pro
     : credentialExists(row.connectorId, userId);
 }
 
-function toGatewayConnector(row: ConnectorRow, grants: Awaited<ReturnType<typeof loadConnectorGrants>>): GatewayConnector {
+function toGatewayConnector(row: ConnectorRow): GatewayConnector {
   const { auth, hasAuth } = authOf(row);
   return {
     connectorId: row.connectorId,
@@ -238,17 +223,11 @@ function toGatewayConnector(row: ConnectorRow, grants: Awaited<ReturnType<typeof
     baseUrl: baseUrlOf(row),
     auth,
     hasAuth,
-    shareScope: row.shareScope as 'project' | 'restricted',
-    grants,
     // `per_user` was removed 2026-07-05; every row is `shared` (DB-enforced by
     // a CHECK constraint), so this is a defensive cast, not a live branch.
     credentialMode: 'shared',
     enabled: row.enabled,
     sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
-    // Connector-side agent gate — a dedicated column (reconciled every sync from
-    // the toml for declared connectors), NOT config jsonb (which only rewrites on
-    // a catalog re-fetch). NULL = all agents.
-    agentScope: row.agentScope ?? undefined,
   };
 }
 
@@ -266,7 +245,7 @@ function makeDbGatewayDeps(): GatewayDeps {
         .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
         .limit(1);
       if (!row) return null;
-      return toGatewayConnector(row, await loadConnectorGrants(row.connectorId));
+      return toGatewayConnector(row);
     },
     loadAction: async (connectorId, relPath) => {
       const [a] = await db
@@ -331,16 +310,6 @@ function makeDbGatewayDeps(): GatewayDeps {
             botName,
           }
         : null;
-    },
-    inheritedConnectorSlugs: (projectId, subject) =>
-      resolveInheritedConnectorSlugs(projectId, subject.userId, subject.groupIds),
-    sessionAgentName: async (sessionId) => {
-      const [row] = await db
-        .select({ agentName: projectSessions.agentName })
-        .from(projectSessions)
-        .where(eq(projectSessions.sessionId, sessionId))
-        .limit(1);
-      return row?.agentName ?? null;
     },
     loadPolicies: loadConnectorPoliciesFor,
     loadProjectPolicies: loadProjectPoliciesFor,
@@ -480,7 +449,7 @@ async function resolveProjectPrincipal(c: Context, projectId: string): Promise<E
   };
 }
 
-/** The catalog a principal can actually use (access + credential present + not blocked). */
+/** The catalog a principal can actually use (agent grant + credential present + not blocked). */
 async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
   const conns = hideSupersededSlack(
     await db
@@ -488,7 +457,6 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
       .from(executorConnectors)
       .where(and(eq(executorConnectors.projectId, p.projectId), eq(executorConnectors.enabled, true))),
   );
-  const grantsByConnector = await loadGrantsForMany(conns.map((c) => c.connectorId));
 
   // Project-scoped layer is the same for every connector in this list — load once.
   const [projectPolicies, defaultMode] = await Promise.all([
@@ -496,44 +464,13 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
     loadDefaultModeFor(p.projectId),
   ]);
 
-  // Inheritance pyramid (assign human → agent): resolved lazily and once, only
-  // when a restricted connector the subject can't directly use is encountered
-  // (project-scoped connectors short-circuit isSecretUsableBy). Mirrors the call
-  // gate so the list never shows a tool the caller couldn't actually invoke.
-  let inheritedConns: ReadonlySet<string> | null = null;
-  const inheritedConnsFor = async () => {
-    if (inheritedConns === null) {
-      inheritedConns = await resolveInheritedConnectorSlugs(p.projectId, p.userId, p.subject.groupIds);
-    }
-    return inheritedConns;
-  };
-
-  // The running agent's name (projectSessions.agent_name) for the connector
-  // agent_scope filter below — resolved once, from the SAME source the call gate
-  // (gateway.sessionAgentName) and the secret gate use, so the list never shows a
-  // connector the call gate would deny with `agent_not_scoped`.
-  let catalogAgentName: string | null = null;
-  if (p.sessionId) {
-    const [srow] = await db
-      .select({ agentName: projectSessions.agentName })
-      .from(projectSessions)
-      .where(eq(projectSessions.sessionId, p.sessionId))
-      .limit(1);
-    catalogAgentName = srow?.agentName ?? null;
-  }
-
   const out: CatalogConnector[] = [];
   for (const row of conns) {
     // Per-agent assignment: an agent only sees connectors its grant lists —
     // consistent with the call gate, so it never lists a tool it can't invoke.
+    // This is the ONLY access gate — connectors are project-wide visible to
+    // every human with project access (no per-connector member scoping).
     if (!agentMayUseConnector(p.agentGrant ?? null, row.slug)) continue;
-    // Connector-side agent_scope: an agent doesn't see a connector restricted to
-    // OTHER agents (mirrors the call gate's connectorUsable agent check).
-    if (connectorDeniedForAgent(row.agentScope, catalogAgentName)) continue;
-    const grants = grantsByConnector.get(row.connectorId) ?? [];
-    if (!isSecretUsableBy(row.shareScope as 'project' | 'restricted', grants, p.subject)) {
-      if (!(await inheritedConnsFor()).has(row.slug)) continue;
-    }
     const { hasAuth } = authOf(row);
     if (hasAuth) {
       // Always the shared credential — `per_user` was removed 2026-07-05.
@@ -603,10 +540,8 @@ async function listConnectors(projectId: string, viewerUserId: string): Promise<
     }
   }
   const conns = hideSupersededSlack(rows);
-  const grantsByConnector = await loadGrantsForMany(conns.map((c) => c.connectorId));
   const out: AdminConnectorView[] = [];
   for (const row of conns) {
-    const grants = grantsByConnector.get(row.connectorId) ?? [];
     const { hasAuth } = authOf(row);
     let secretSet = !hasAuth;
     if (hasAuth) {
@@ -621,25 +556,12 @@ async function listConnectors(projectId: string, viewerUserId: string): Promise<
       status: row.status,
       credentialMode: 'shared',
       sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
-      agentScope: row.agentScope ?? null,
       actions: actions.map((a) => ({ path: a.path, name: a.name, description: a.description ?? '', risk: a.risk, inputSchema: a.inputSchema ?? null })),
       authSecret: hasAuth ? 'credential' : null,
-      sharing: scopeToIntent(row.shareScope as 'project' | 'restricted', grants),
       secretSet,
     });
   }
   return out;
-}
-
-async function setSharing(projectId: string, slug: string, intent: SharingIntent): Promise<boolean> {
-  const [row] = await db
-    .select({ connectorId: executorConnectors.connectorId })
-    .from(executorConnectors)
-    .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
-    .limit(1);
-  if (!row) return false;
-  await setConnectorSharingDb(row.connectorId, intent);
-  return true;
 }
 
 /**
@@ -714,9 +636,8 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   // The manual "Sync" button re-pulls catalogs unconditionally (force) — the
   // user is explicitly asking to refresh, e.g. an MCP server gained new tools.
   syncConnectors: (projectId, accountId) => syncProjectConnectors(projectId, accountId, { force: true }),
-  setSharing,
   createConnector: (projectId, accountId, draft) =>
-    upsertConnectorInManifest(projectId, accountId, draft as unknown as ConnectorDraft, (draft as any)?.sharing as SharingIntent | undefined),
+    upsertConnectorInManifest(projectId, accountId, draft as unknown as ConnectorDraft),
   deleteConnector: (projectId, slug) => deleteConnectorFromManifest(projectId, slug),
   setConnectorCredential: (projectId, slug, value) => setConnectorCredentialShared(projectId, slug, value),
   deleteConnectorCredential: async (projectId, slug) => {
@@ -732,7 +653,6 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   },
   setCredentialMode: (projectId, accountId, slug, mode) => setConnectorCredentialModeInManifest(projectId, accountId, slug, mode),
   setSensitive: (projectId, accountId, slug, sensitive) => setConnectorSensitiveInManifest(projectId, accountId, slug, sensitive),
-  setAgentScope: (projectId, accountId, slug, agentScope) => setConnectorAgentScope(projectId, accountId, slug, agentScope),
   setConnectorName: (projectId, accountId, slug, name) => setConnectorNameInManifest(projectId, accountId, slug, name),
   getConnectorPolicies,
   getConnectorConfig,

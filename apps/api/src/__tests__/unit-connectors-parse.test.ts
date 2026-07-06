@@ -174,52 +174,19 @@ spec = ".kortix/executor/internal.http.toml"
   });
 });
 
-describe('[[connectors]] — agent_scope (connector-side agent gate)', () => {
-  test('parses agent_scope into a deduped name list; toml round-trips', () => {
+describe('[[connectors]] — agent_scope is retired (connector-side agent gate removed)', () => {
+  test('a legacy agent_scope key is ignored — parses fine, never round-trips back', () => {
     const { specs, errors } = parseAndExtract(`
 [[connectors]]
 slug = "github"
 provider = "http"
 base_url = "https://api.github.com"
-agent_scope = ["pr-bot", "release-bot", "pr-bot"]
+agent_scope = ["pr-bot", "release-bot"]
 `);
     expect(errors).toEqual([]);
-    expect(specs[0]!.agentScope).toEqual(['pr-bot', 'release-bot']);
-    // Round-trips back to the [[connectors]] block.
-    expect(connectorSpecToTomlEntry(specs[0]!).agent_scope).toEqual(['pr-bot', 'release-bot']);
-  });
-
-  test('omitted / empty agent_scope = all agents (null), and is not emitted', () => {
-    const { specs } = parseAndExtract(`
-[[connectors]]
-slug = "a"
-provider = "http"
-base_url = "https://x.test"
-`);
-    expect(specs[0]!.agentScope).toBeNull();
+    expect(specs[0]).not.toHaveProperty('agentScope');
+    // Never re-emitted — the only remaining agent gate is `[[agents]].connectors`.
     expect(connectorSpecToTomlEntry(specs[0]!)).not.toHaveProperty('agent_scope');
-
-    const { specs: emptySpecs } = parseAndExtract(`
-[[connectors]]
-slug = "b"
-provider = "http"
-base_url = "https://x.test"
-agent_scope = []
-`);
-    expect(emptySpecs[0]!.agentScope).toBeNull();
-  });
-
-  test('agent_scope is NOT in the manifest hash (a scope change is a cheap reconcile, no catalog re-fetch)', () => {
-    const base = `
-[[connectors]]
-slug = "c"
-provider = "http"
-base_url = "https://x.test"
-`;
-    const scoped = `${base}agent_scope = ["only-me"]\n`;
-    const h1 = manifestHashForConnector(parseAndExtract(base).specs[0]!);
-    const h2 = manifestHashForConnector(parseAndExtract(scoped).specs[0]!);
-    expect(h1).toBe(h2);
   });
 });
 
@@ -617,4 +584,53 @@ describe('[[connectors]] — runtime parser ⇄ schema gate provider agreement',
       expect(schemaOk).toBe(accept);
     });
   }
+
+  // Table-tests below iterate the SCHEMA package's own exported constants
+  // (rather than a hand-copied list here) so a platform/reserved-slug added
+  // to `@kortix/manifest-schema` — or to this module's own `RESERVED_SLUG_PROVIDERS`
+  // — is automatically covered without anyone remembering to add a case.
+  const {
+    CHANNEL_PLATFORMS: SCHEMA_CHANNEL_PLATFORMS,
+    RESERVED_SLUG_PROVIDERS: SCHEMA_RESERVED_SLUG_PROVIDERS,
+  } = require('@kortix/manifest-schema') as typeof import('@kortix/manifest-schema');
+
+  describe('every CHANNEL_PLATFORMS value materializes a valid `channel` connector on both sides', () => {
+    for (const platform of SCHEMA_CHANNEL_PLATFORMS) {
+      test(`platform="${platform}"`, () => {
+        const body = `[[connectors]]\nslug = "kortix_${platform}"\nprovider = "channel"\nplatform = "${platform}"`;
+        expect(parseAndExtract(body).errors).toEqual([]);
+        expect(schemaConnectorErrors(body)).toEqual([]);
+      });
+    }
+  });
+
+  describe('every RESERVED_SLUG_PROVIDERS pair: the matching provider is accepted, a mismatched one is rejected on both sides', () => {
+    for (const [slug, provider] of Object.entries(SCHEMA_RESERVED_SLUG_PROVIDERS)) {
+      const matchingBody =
+        provider === 'channel'
+          ? `[[connectors]]\nslug = "${slug}"\nprovider = "channel"\nplatform = "slack"`
+          : `[[connectors]]\nslug = "${slug}"\nprovider = "${provider}"`;
+      const mismatchedBody = `[[connectors]]\nslug = "${slug}"\nprovider = "pipedream"\napp = "x"`;
+
+      test(`slug="${slug}" + provider="${provider}" (matching) is accepted`, () => {
+        // `provider="computer"` is itself always rejected (synth-only) —
+        // the reserved-slug/provider PAIRING still agrees on both sides even
+        // though the overall connector is invalid for the unrelated reason.
+        const runtimeErrors = parseAndExtract(matchingBody).errors;
+        const schemaErrors = schemaConnectorErrors(matchingBody);
+        if (provider === 'computer') {
+          expect(runtimeErrors.length > 0).toBe(true);
+          expect(schemaErrors.length > 0).toBe(true);
+        } else {
+          expect(runtimeErrors).toEqual([]);
+          expect(schemaErrors).toEqual([]);
+        }
+      });
+
+      test(`slug="${slug}" + a mismatched provider is rejected on both sides`, () => {
+        expect(parseAndExtract(mismatchedBody).errors.length > 0).toBe(true);
+        expect(schemaConnectorErrors(mismatchedBody).length > 0).toBe(true);
+      });
+    }
+  });
 });
