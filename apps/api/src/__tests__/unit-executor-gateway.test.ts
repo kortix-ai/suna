@@ -390,7 +390,9 @@ describe('handleCall — policy layer', () => {
     expect(res.status).toBe('ok');
     expect(fetchCalls.length).toBeGreaterThan(0); // the call actually ran
     expect(waited).toBe(false); // no new hold — the grant was already given
-    expect(claims).toEqual([{ sessionId: 'sess-1', actionPath: 'charges.create' }]);
+    // QUALIFIED path — must match how audit() records executor_executions rows
+    // (the relative form would never find the approved row).
+    expect(claims).toEqual([{ sessionId: 'sess-1', actionPath: 'stripe.charges.create' }]);
   });
 
   test('carry-over miss → normal pending flow (asks like before)', async () => {

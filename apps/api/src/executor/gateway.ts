@@ -435,6 +435,12 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       // for THIS connector + action, skip the gate — run it silently, no hold,
       // no re-prompt. Audited as `ok` (reason session_allow) so the timeline
       // still shows the call happened + why it wasn't asked.
+      // PATH FORM MATTERS: session grants store the CONNECTOR-RELATIVE path
+      // (`create_folder`) — the same form `input.actionPath` carries for any
+      // call that got past loadAction. The audit trail (executor_executions)
+      // stores the QUALIFIED form (`google_drive.create_folder`), so the
+      // carry-over lookup below must use that. Mixing the two silently breaks
+      // matching — it's exactly the bug that made "Allow for session" a no-op.
       const sessionAllowed =
         input.sessionId && deps.isSessionToolApproved
           ? await deps.isSessionToolApproved(
@@ -457,7 +463,8 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
           ? await deps.consumeApprovedExecution({
               sessionId: input.sessionId,
               connectorId: connector.connectorId,
-              actionPath: input.actionPath,
+              // The audit-row form (see audit() below), NOT the relative form.
+              actionPath: `${input.connectorSlug}.${input.actionPath}`,
             })
           : false;
       if (sessionAllowed || carriedOver) {

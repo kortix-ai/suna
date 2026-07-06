@@ -43,9 +43,12 @@ import { ShieldAlert } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
-/** `${slug}.${path}` — the fully-qualified tool path project policies match. */
+/** The fully-qualified tool path project policies match (`slug.path`). The
+ *  audit trail already stores the qualified form in `action`; the slug is only
+ *  prepended defensively if a row ever carries the relative form. */
 function qualifiedAction(a: SessionAuditAction): string | null {
-  return a.connector ? `${a.connector}.${a.action}` : null;
+  if (!a.connector) return null;
+  return a.action.startsWith(`${a.connector}.`) ? a.action : `${a.connector}.${a.action}`;
 }
 
 export function SessionApprovalPrompt() {

@@ -4,6 +4,7 @@ export {
   continueSession,
   drainSessionLifecycleQueue,
 } from './engine';
+export { enqueueContinueSessionCommand } from './store';
 export { deleteSession, restartSession } from './actions';
 export { stopSession } from './stop';
 export { resolveProjectAutomationActor, resolveAgentRunAttribution } from './actor';

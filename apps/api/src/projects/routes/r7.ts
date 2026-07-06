@@ -23,7 +23,12 @@ import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, 
 import { sendSessionCreateError } from '../lib/sessions';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
-import { continueSession, createSession, deleteSession } from '../session-lifecycle';
+import {
+  createSession,
+  deleteSession,
+  drainSessionLifecycleQueue,
+  enqueueContinueSessionCommand,
+} from '../session-lifecycle';
 import { requireEntitlement } from '../../accounts/iam/helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 
@@ -1035,13 +1040,27 @@ projectsApp.openapi(
     // "Allow for this session": record (session, connector, action) so the
     // gateway auto-runs the same tool for the rest of the session. Best-effort +
     // idempotent — a failure here doesn't undo the (already-committed) approval.
+    // The execution row's actionPath is the QUALIFIED audit form
+    // (`google_drive.create_folder`); the gateway's session-allow check matches
+    // the CONNECTOR-RELATIVE form (`create_folder`) — strip the slug prefix or
+    // the grant never matches and "Allow for session" keeps re-asking (the bug
+    // this comment is a headstone for).
     if (decision === 'approve' && scope === 'session' && row.sessionId && row.connectorId) {
       try {
+        const [conn] = await db
+          .select({ slug: executorConnectors.slug })
+          .from(executorConnectors)
+          .where(eq(executorConnectors.connectorId, row.connectorId))
+          .limit(1);
+        const relativeActionPath =
+          conn && row.actionPath.startsWith(`${conn.slug}.`)
+            ? row.actionPath.slice(conn.slug.length + 1)
+            : row.actionPath;
         await recordSessionToolApproval({
           sessionId: row.sessionId,
           projectId,
           connectorId: row.connectorId,
-          actionPath: row.actionPath,
+          actionPath: relativeActionPath,
           grantedBy: loaded.userId,
         });
       } catch (err) {
@@ -1089,47 +1108,42 @@ projectsApp.openapi(
     // waiting (an older sandbox image without the pause loop, or a decision
     // after the ~30min poll budget), the resolve would otherwise change
     // nothing the agent can see: its turn already ended on `pending_approval`.
-    // So after a grace window we check the consumed marker and, if the
-    // decision is still unclaimed, deliver the continuation prompt into the
-    // session ourselves (approval carry-over then lets the retried call run
-    // without re-asking). Detached on purpose: this response must not wait on
-    // a sandbox wake — continueSession can take minutes on a stopped runtime.
+    // So we enqueue a DURABLE continue_session command with a grace-window
+    // schedule: the drain re-checks the consumed marker at execution time and
+    // either no-ops (a live waiter got there first) or delivers the
+    // continuation prompt into the session (approval carry-over then lets the
+    // retried call run without re-asking). Queue-backed so it survives this
+    // pod dying; idempotency-keyed so a double-resolve can't double-prompt.
     if (row.sessionId) {
-      const resumeSessionId = row.sessionId;
-      const resumeUserId = loaded.userId;
       const resumeText =
         decision === 'approve'
           ? `Your pending approval to run ${row.actionPath} was approved — continue.`
           : `Your request to run ${row.actionPath} was denied — continue without it.`;
-      void (async () => {
-        // > the waiter's 1s decision poll + hold re-issue latency, with margin.
-        await new Promise((r) => setTimeout(r, 6_000));
-        const [fresh] = await db
-          .select({ resultSummary: executorExecutions.resultSummary })
-          .from(executorExecutions)
-          .where(eq(executorExecutions.executionId, executionId))
-          .limit(1);
-        const summary = (fresh?.resultSummary ?? {}) as Record<string, unknown>;
-        if (summary.consumed_at) return; // a live waiter resumed the turn in-band
-        const outcome = await continueSession({
+      try {
+        await enqueueContinueSessionCommand({
           source: 'system:approval-resume',
-          sessionId: resumeSessionId,
+          projectId,
+          accountId: loaded.row.accountId,
+          sessionId: row.sessionId,
+          actorUserId: loaded.userId,
           text: resumeText,
-          userId: resumeUserId,
+          executionId,
+          // > the waiter's 1s decision poll + hold re-issue latency, with margin.
+          availableAt: new Date(Date.now() + 6_000),
+          idempotencyKey: `approval-resume:${executionId}`,
         });
-        if (outcome !== 'delivered') {
-          console.warn('[approvals] resume delivery not confirmed', {
-            executionId,
-            sessionId: resumeSessionId,
-            outcome,
-          });
-        }
-      })().catch((err) => {
-        console.warn('[approvals] resume delivery failed', {
+        // Best-effort fast path: the scheduler drains every ~60s; kick one
+        // drain shortly after the grace window so the resume usually lands in
+        // seconds. If this pod dies first, the scheduler still delivers.
+        setTimeout(() => {
+          drainSessionLifecycleQueue({ limit: 5 }).catch(() => {});
+        }, 7_000).unref?.();
+      } catch (err) {
+        console.warn('[approvals] failed to enqueue resume', {
           executionId,
           error: err instanceof Error ? err.message : String(err),
         });
-      });
+      }
     }
 
     return c.json({ ok: true, scope });
