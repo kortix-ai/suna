@@ -56,7 +56,24 @@ export interface ToolView {
   input?: Record<string, unknown>;
   output?: string;
   error?: string;
+  /**
+   * `JSON.parse` of a string `output` when it parses as JSON; a non-string
+   * output value passes through unchanged (defensive — the wire type is
+   * always `string`, but nothing stops a future/plugin tool from handing
+   * back a structured value directly). `undefined` when parsing fails or
+   * there's no output. Bounded — strings over ~256KB are never parsed (a
+   * huge blob is never meaningfully "structured" for view-model purposes,
+   * and JSON.parse on it would be wasted work on every render).
+   */
+  outputParsed?: unknown;
+  /** The raw output text, unconditionally — same value as `output` (kept as
+   *  its own field so `outputParsed`/`outputText` read as a matched pair). */
+  outputText?: string;
 }
+
+/** Never parse (or diff/pretty-print) an output blob larger than this — a
+ *  cheap circuit breaker against pathological huge tool outputs. */
+const MAX_PARSEABLE_OUTPUT_LENGTH = 256 * 1024;
 
 function toolStatus(state: ToolState): ToolStatus {
   switch (state.status) {
@@ -75,15 +92,69 @@ function toolStatus(state: ToolState): ToolStatus {
   }
 }
 
+function parseToolOutput(rawOutput: string | undefined): {
+  outputParsed?: unknown;
+  outputText?: string;
+} {
+  if (rawOutput === undefined) return {};
+  if (rawOutput.length > MAX_PARSEABLE_OUTPUT_LENGTH) return { outputText: rawOutput };
+  try {
+    return { outputParsed: JSON.parse(rawOutput), outputText: rawOutput };
+  } catch {
+    return { outputText: rawOutput };
+  }
+}
+
+/**
+ * Detect the "completed but actually failed" shape router/executor tools
+ * (web_search, image_search, connector calls) commonly return: the wire's
+ * `state.status` says `completed`, but the JSON output body itself carries
+ * `success: false` or a top-level `error`. Without this, a real prod failure
+ * (e.g. a 402 "Insufficient credits" from the search router) renders as a
+ * successful tool call with raw JSON garbage inside.
+ */
+function detectEmbeddedFailure(outputParsed: unknown): string | undefined {
+  if (typeof outputParsed !== 'object' || outputParsed === null || Array.isArray(outputParsed)) {
+    return undefined;
+  }
+  const obj = outputParsed as Record<string, unknown>;
+  const failedFlag = obj.success === false;
+  const errorField = obj.error;
+  const hasErrorField =
+    (typeof errorField === 'string' && errorField.length > 0) ||
+    (typeof errorField === 'object' && errorField !== null);
+  if (!failedFlag && !hasErrorField) return undefined;
+
+  if (hasErrorField) return unwrapError(errorField);
+  if (typeof obj.message === 'string' && obj.message) return obj.message;
+  return 'Tool reported failure';
+}
+
 function classifyToolState(tool: string, state: ToolState): ToolView {
   const liveTitle = 'title' in state ? state.title : undefined;
+  const rawOutput = state.status === 'completed' ? state.output : undefined;
+  const { outputParsed, outputText } = parseToolOutput(rawOutput);
+
+  let status = toolStatus(state);
+  let error = state.status === 'error' ? state.error : undefined;
+
+  if (status === 'done') {
+    const embeddedError = detectEmbeddedFailure(outputParsed);
+    if (embeddedError) {
+      status = 'error';
+      error = embeddedError;
+    }
+  }
+
   return {
     name: tool,
     title: liveTitle || toolInfo(tool).label,
-    status: toolStatus(state),
+    status,
     input: state.input,
-    output: state.status === 'completed' ? state.output : undefined,
-    error: state.status === 'error' ? state.error : undefined,
+    output: rawOutput,
+    outputParsed,
+    outputText,
+    error,
   };
 }
 

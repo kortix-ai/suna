@@ -29,7 +29,13 @@ export function unwrapError(raw: unknown): string {
       }
       return extractErrorFromObject(parsed) || str;
     } catch {
-      return str;
+      // Not directly parseable as JSON — router/executor errors commonly wrap
+      // a JSON body inside a plain-text prefix, e.g. router tool credit
+      // failures: `Error: 402 Error: {"error":true,"message":"Insufficient
+      // credits","status":402}`. Extract the outermost {...} substring (if
+      // any) and try that instead of surfacing the raw prefixed string.
+      const embedded = extractEmbeddedJsonMessage(str);
+      return embedded ?? str;
     }
   }
 
@@ -39,6 +45,26 @@ export function unwrapError(raw: unknown): string {
   }
 
   return String(raw);
+}
+
+/**
+ * Best-effort extraction of a human message from a JSON object embedded
+ * somewhere inside a larger non-JSON string. Takes the substring spanning
+ * the first `{` to the last `}` — correct for the common single-object case
+ * (nested double-wrapped errors don't nest braces inside the outer text) and
+ * cheap; falls back to `undefined` (never throws) if that substring isn't
+ * valid JSON or has no recognizable error shape.
+ */
+function extractEmbeddedJsonMessage(str: string): string | undefined {
+  const start = str.indexOf('{');
+  const end = str.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return undefined;
+  try {
+    const parsed = JSON.parse(str.slice(start, end + 1));
+    return extractErrorFromObject(parsed);
+  } catch {
+    return undefined;
+  }
 }
 
 function extractErrorFromObject(obj: unknown): string | undefined {

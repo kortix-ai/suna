@@ -30,6 +30,7 @@ export type * from './types';
 export { unwrapError } from './errors';
 export * from './tool-registry';
 export * from './classify';
+export * from './view-model';
 
 import { unwrapError } from './errors';
 
