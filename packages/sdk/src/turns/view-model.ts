@@ -177,9 +177,48 @@ function webSearchViewModel(tool: ToolView): Extract<ToolViewModel, { kind: 'web
 // shell (bash)
 // ============================================================================
 
-const BASH_METADATA_TAG_RE = /<bash_metadata>[\s\S]*?<\/bash_metadata>/g;
-const INTERNAL_TAG_TAIL_RE = /<\/?(?:system_info|exit_code|stderr_note)>[\s\S]*?(?:<\/\w+>)?$/g;
 const EXIT_CODE_RE = /<exit_code>\s*(-?\d+)\s*<\/exit_code>/;
+
+// Linear (indexOf-based) tag strippers — the regex forms
+// (`/<bash_metadata>[\s\S]*?<\/bash_metadata>/g` and a lazy tail matcher)
+// backtrack polynomially on adversarial output (CodeQL js/polynomial-redos),
+// and shell output is arbitrary user/tool-controlled text.
+
+/** Remove every `<open>…</close>` block; an unterminated block is left as-is
+ *  (matching the old lazy-regex behavior, which required the closing tag). */
+function stripTagBlocks(s: string, open: string, close: string): string {
+  let out = '';
+  let i = 0;
+  for (;;) {
+    const start = s.indexOf(open, i);
+    if (start === -1) return out + s.slice(i);
+    const end = s.indexOf(close, start + open.length);
+    if (end === -1) return out + s.slice(i);
+    out += s.slice(i, start);
+    i = end + close.length;
+  }
+}
+
+const INTERNAL_TAG_MARKERS = [
+  '<system_info>',
+  '</system_info>',
+  '<exit_code>',
+  '</exit_code>',
+  '<stderr_note>',
+  '</stderr_note>',
+];
+
+/** Cut the trailing internal-protocol tag block: everything from the FIRST
+ *  internal tag marker onward. These tags are appended by the bash tool AFTER
+ *  the real output, so first-marker-to-end is the whole machine tail. */
+function stripInternalTagTail(s: string): string {
+  let cut = -1;
+  for (const marker of INTERNAL_TAG_MARKERS) {
+    const idx = s.indexOf(marker);
+    if (idx !== -1 && (cut === -1 || idx < cut)) cut = idx;
+  }
+  return cut === -1 ? s : s.slice(0, cut);
+}
 
 // Minimal local ANSI stripper mirroring `stripAnsi` in turns/index.ts —
 // duplicated (rather than imported) to avoid a circular import between this
@@ -198,7 +237,7 @@ function shellViewModel(tool: ToolView): Extract<ToolViewModel, { kind: 'shell' 
   const exitMatch = raw.match(EXIT_CODE_RE);
   const exitCode = exitMatch ? Number(exitMatch[1]) : undefined;
   const cleaned = stripAnsiLocal(
-    raw.replace(BASH_METADATA_TAG_RE, '').replace(INTERNAL_TAG_TAIL_RE, ''),
+    stripInternalTagTail(stripTagBlocks(raw, '<bash_metadata>', '</bash_metadata>')),
   ).trim();
   const stdout = cleaned || (tool.status === 'error' ? tool.error : undefined);
   return { kind: 'shell', command, stdout: stdout || undefined, exitCode };
@@ -283,7 +322,11 @@ function fileEditViewModel(tool: ToolView): Extract<ToolViewModel, { kind: 'file
 
 const GREP_HEADER_RE = /^Found\s+(\d+)\s+match/i;
 const GREP_FILE_HEADER_RE = /^(\/[^:]+?):\s*/;
-const GREP_LINE_RE = /Line\s+(\d+):\s*([\s\S]*?)(?=\s*(?:Line\s+\d+:|$))/g;
+// Header-only matcher — content between consecutive headers is sliced out
+// positionally below. The previous single-regex form captured content with a
+// lazy `[\s\S]*?` + lookahead-alternation, which backtracks polynomially on
+// adversarial output like repeated "Line\t0:" (CodeQL js/polynomial-redos).
+const GREP_LINE_HEADER_RE = /Line\s+(\d+):/g;
 
 function parseGrepMatches(output: string): SearchMatch[] {
   const text = output.trim();
@@ -299,10 +342,22 @@ function parseGrepMatches(output: string): SearchMatch[] {
     if (!fileMatch) continue;
     const path = fileMatch[1];
     const rest = trimmed.slice(fileMatch[0].length);
+    // Scan headers linearly, then slice each entry's content as the span up
+    // to the next header (or end) — no backtracking-prone content capture.
+    const headers: { line: number; contentStart: number; headerStart: number }[] = [];
     let m: RegExpExecArray | null;
-    GREP_LINE_RE.lastIndex = 0;
-    while ((m = GREP_LINE_RE.exec(rest)) !== null) {
-      matches.push({ path, line: Number(m[1]), content: m[2].trim().replace(/;$/, '') });
+    GREP_LINE_HEADER_RE.lastIndex = 0;
+    while ((m = GREP_LINE_HEADER_RE.exec(rest)) !== null) {
+      headers.push({ line: Number(m[1]), contentStart: m.index + m[0].length, headerStart: m.index });
+    }
+    for (let i = 0; i < headers.length; i++) {
+      const end = i + 1 < headers.length ? headers[i + 1].headerStart : rest.length;
+      const content = rest.slice(headers[i].contentStart, end).trim();
+      matches.push({
+        path,
+        line: headers[i].line,
+        content: content.endsWith(';') ? content.slice(0, -1) : content,
+      });
     }
   }
   return matches;
