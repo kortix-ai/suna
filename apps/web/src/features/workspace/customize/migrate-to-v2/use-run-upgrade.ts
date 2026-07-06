@@ -15,7 +15,7 @@ import { useCallback, useState } from 'react';
 
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { writeStartStash, type StartStash } from '@kortix/sdk/react';
+import { type StartStash, writeStartStash } from '@kortix/sdk/react';
 
 /** Pure — the exact stash payload an upgrade session is seeded with. */
 export function buildUpgradeStash(prompt: string): StartStash {

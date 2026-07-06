@@ -109,4 +109,35 @@ describe('MIGRATE_TO_V2_PROMPT — the core migration artifact', () => {
     expect(MIGRATE_TO_V2_PROMPT).toContain('kortix cr diff');
     expect(MIGRATE_TO_V2_PROMPT.toLowerCase()).toContain('do not open a second one');
   });
+
+  test('refreshes the marketplace baseline before touching the manifest', () => {
+    expect(MIGRATE_TO_V2_PROMPT).toContain('kortix marketplace updates');
+    expect(MIGRATE_TO_V2_PROMPT).toContain('kortix marketplace update --all');
+    const refresh = MIGRATE_TO_V2_PROMPT.indexOf('kortix marketplace update --all');
+    const shape = MIGRATE_TO_V2_PROMPT.indexOf('The v2 shape');
+    expect(refresh).toBeGreaterThan(-1);
+    expect(shape).toBeGreaterThan(refresh);
+  });
+
+  test('warns that marketplace update commits directly to main, outside the CR', () => {
+    expect(MIGRATE_TO_V2_PROMPT).toMatch(/commits directly to `main`/i);
+  });
+
+  test('scopes the baseline refresh to marketplace-tracked items only', () => {
+    expect(MIGRATE_TO_V2_PROMPT.toLowerCase()).toContain('orphaned');
+    expect(MIGRATE_TO_V2_PROMPT).toContain('leave every one of them untouched');
+  });
+
+  test('handles an advanced main: rebase, and redo the conversion on conflict rather than reverting', () => {
+    expect(MIGRATE_TO_V2_PROMPT).toContain('git fetch origin');
+    expect(MIGRATE_TO_V2_PROMPT).toContain('git rebase origin/main');
+    expect(MIGRATE_TO_V2_PROMPT).toContain('git rebase --abort');
+    expect(MIGRATE_TO_V2_PROMPT.toLowerCase()).toContain('redo the conversion');
+    expect(MIGRATE_TO_V2_PROMPT).toContain('--force-with-lease');
+  });
+
+  test('section numbering is unique and sequential', () => {
+    const numbers = [...MIGRATE_TO_V2_PROMPT.matchAll(/^## (\d+)\./gm)].map((m) => Number(m[1]));
+    expect(numbers).toEqual(Array.from({ length: numbers.length }, (_, i) => i + 1));
+  });
 });

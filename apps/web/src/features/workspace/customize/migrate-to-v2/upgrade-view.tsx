@@ -28,7 +28,7 @@ import { useState } from 'react';
 import CustomizeSectionWrapper from '../sections/component/section-wrapper';
 import type { ManifestVersion } from './manifest-version';
 import { useProjectManifestVersion } from './manifest-version';
-import { applicableUpgrades, buildOneOffUpgradePrompt, type ProjectUpgrade } from './upgrade-defs';
+import { type ProjectUpgrade, applicableUpgrades, buildOneOffUpgradePrompt } from './upgrade-defs';
 import { useRunUpgrade } from './use-run-upgrade';
 
 /** Presentational only — no data fetching, so every state renders under
@@ -45,8 +45,7 @@ export function UpgradesViewContent({
   pending: boolean;
 }) {
   const [oneOff, setOneOff] = useState('');
-  const upgrades =
-    version === null ? null : applicableUpgrades({ manifestVersion: version });
+  const upgrades = version === null ? null : applicableUpgrades({ manifestVersion: version });
 
   return (
     <CustomizeSectionWrapper
@@ -103,8 +102,8 @@ export function UpgradesViewContent({
         <Label>One-off upgrade</Label>
         <div className="bg-popover space-y-3 rounded-md border px-4 py-5">
           <p className="text-muted-foreground text-xs text-pretty">
-            Describe a single change to this project. An agent session makes it, validates,
-            and opens a change request — it never merges on its own.
+            Describe a single change to this project. An agent session makes it, validates, and
+            opens a change request — it never merges on its own.
           </p>
           <Textarea
             value={oneOff}

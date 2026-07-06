@@ -195,15 +195,19 @@ Do not open, edit, or reformat any \`.kortix/opencode/agents/*.md\` file as part
 
 Run \`kortix validate\` (it auto-detects \`kortix.yaml\`). Fix every error it reports — do not open the change request with a manifest that fails validation. Warnings are fine to leave if they're informational, but read them. If an error surprises you, cross-check the field against \`kortix schema --version 2\`.
 
-## 9. Land it as a change request — never merge
+## 10. Land it as a change request — never merge
 
-Commit on your session's branch, **push the branch, then** open the change request. A commit that is never pushed leaves the CR empty ("No changes detected") and un-appliable — the push is not optional:
+First, re-sync: \`git fetch origin\` and check whether \`origin/main\` advanced while you worked (\`git log HEAD..origin/main --oneline\`) — on active projects it will (connectors added from the dashboard, other sessions merging). If it moved, rebase; if the rebase conflicts on \`kortix.toml\` (main changed the manifest you deleted), don't fight it — \`git rebase --abort\`, \`git reset --hard origin/main\`, and redo the conversion against the CURRENT manifest, then continue. Never revert main's changes to win a conflict.
+
+Then commit, **push the branch**, and open the change request. A commit that is never pushed leaves the CR empty ("No changes detected") and un-appliable — the platform refuses such a CR outright (\`422 CR_HEAD_NOT_AHEAD\`):
 
 \`\`\`
 git add -A && git commit -m "Migrate manifest to kortix_version 2 (kortix.yaml)"
 git push origin HEAD
 kortix cr open --head <your-branch> --title "Migrate manifest to kortix_version 2 (kortix.yaml)" --description "<what you converted, which agent you picked as default_agent and why, every legacy key you removed, and any grant you had to leave narrowed>"
 \`\`\`
+
+If the push is rejected because the remote session branch moved, \`git fetch origin\` then \`git push --force-with-lease origin HEAD\` — your own session branch only, never any other branch.
 
 Then verify the CR actually carries your diff: run \`kortix cr diff <number>\` — if it reports no changes, your push didn't land; push again and re-check (the CR updates automatically, do not open a second one).
 
