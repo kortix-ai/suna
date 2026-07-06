@@ -37,8 +37,8 @@ export function SessionApprovalPrompt() {
   // user is actively waiting on.
   const { data } = useSessionAudit(projectId, projectSessionId, { refetchInterval: 5_000 });
   const resolve = useResolveApproval(projectId, projectSessionId);
-  // Which button on which row is loading: 'deny' | 'once' | 'session'.
-  const [busy, setBusy] = useState<Record<string, 'deny' | 'once' | 'session'>>({});
+  // Which button on which row is loading: 'deny' | 'once' | 'session' | 'session_all'.
+  const [busy, setBusy] = useState<Record<string, 'deny' | 'once' | 'session' | 'session_all'>>({});
 
   const pending = (data?.actions ?? []).filter(isPendingAction);
   if (pending.length === 0) return null;
@@ -46,7 +46,7 @@ export function SessionApprovalPrompt() {
   const decide = (
     executionId: string,
     decision: 'approve' | 'deny',
-    scope: 'once' | 'session' = 'once',
+    scope: 'once' | 'session' | 'session_all' = 'once',
   ) => {
     const key = decision === 'deny' ? 'deny' : scope;
     setBusy((b) => ({ ...b, [executionId]: key }));
@@ -57,9 +57,11 @@ export function SessionApprovalPrompt() {
           successToast(
             decision === 'deny'
               ? 'Denied'
-              : scope === 'session'
-                ? "Allowed — won't ask again for this action this session"
-                : 'Approved — the agent will continue',
+              : scope === 'session_all'
+                ? "Allowed — won't ask again for anything this session"
+                : scope === 'session'
+                  ? "Allowed — won't ask again for this action this session"
+                  : 'Approved — the agent will continue',
           ),
         onError: (e: unknown) =>
           errorToast(e instanceof Error ? e.message : 'Failed to resolve approval'),
@@ -71,6 +73,14 @@ export function SessionApprovalPrompt() {
           }),
       },
     );
+  };
+
+  // "Allow all for this session": approve every pending action AND record the
+  // blanket session grant (scope 'session_all' is idempotent), so nothing in
+  // this session prompts again.
+  const anyBusy = Object.keys(busy).length > 0;
+  const allowAllThisSession = () => {
+    for (const a of pending) decide(a.execution_id, 'approve', 'session_all');
   };
 
   return (
@@ -143,6 +153,24 @@ export function SessionApprovalPrompt() {
           );
         })}
       </ul>
+      {/* Session-wide controls, visually separated from the per-action rows:
+          a blanket "allow all this session", plus where to manage it for good. */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-amber-500/20 border-t px-3 py-2">
+        <span className="text-muted-foreground text-[11px]">
+          Default: <span className="text-foreground font-medium">Ask</span> — change what needs
+          approval in project Settings → Permissions.
+        </span>
+        <Button
+          size="xs"
+          variant="outline"
+          className="border-amber-500/50 hover:bg-amber-500/10"
+          title="Approve everything for the rest of this session — the agent won't ask again"
+          disabled={anyBusy}
+          onClick={allowAllThisSession}
+        >
+          Allow all for this session
+        </Button>
+      </div>
     </div>
   );
 }
