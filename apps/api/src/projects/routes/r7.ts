@@ -23,7 +23,7 @@ import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, 
 import { sendSessionCreateError } from '../lib/sessions';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
-import { createSession, deleteSession } from '../session-lifecycle';
+import { continueSession, createSession, deleteSession } from '../session-lifecycle';
 import { requireEntitlement } from '../../accounts/iam/helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 
@@ -1080,6 +1080,56 @@ projectsApp.openapi(
           error: err instanceof Error ? err.message : String(err),
         });
       }
+    }
+
+    // Server-side resume — the reliability backstop. A LIVE gated call (the
+    // sandbox CLI/MCP pause loop, or an approve within the gateway's 45s hold)
+    // picks this decision out of the DB within ~1s, marks it consumed, and the
+    // agent's turn resumes in-band — no message needed. When nobody was
+    // waiting (an older sandbox image without the pause loop, or a decision
+    // after the ~30min poll budget), the resolve would otherwise change
+    // nothing the agent can see: its turn already ended on `pending_approval`.
+    // So after a grace window we check the consumed marker and, if the
+    // decision is still unclaimed, deliver the continuation prompt into the
+    // session ourselves (approval carry-over then lets the retried call run
+    // without re-asking). Detached on purpose: this response must not wait on
+    // a sandbox wake — continueSession can take minutes on a stopped runtime.
+    if (row.sessionId) {
+      const resumeSessionId = row.sessionId;
+      const resumeUserId = loaded.userId;
+      const resumeText =
+        decision === 'approve'
+          ? `Your pending approval to run ${row.actionPath} was approved — continue.`
+          : `Your request to run ${row.actionPath} was denied — continue without it.`;
+      void (async () => {
+        // > the waiter's 1s decision poll + hold re-issue latency, with margin.
+        await new Promise((r) => setTimeout(r, 6_000));
+        const [fresh] = await db
+          .select({ resultSummary: executorExecutions.resultSummary })
+          .from(executorExecutions)
+          .where(eq(executorExecutions.executionId, executionId))
+          .limit(1);
+        const summary = (fresh?.resultSummary ?? {}) as Record<string, unknown>;
+        if (summary.consumed_at) return; // a live waiter resumed the turn in-band
+        const outcome = await continueSession({
+          source: 'system:approval-resume',
+          sessionId: resumeSessionId,
+          text: resumeText,
+          userId: resumeUserId,
+        });
+        if (outcome !== 'delivered') {
+          console.warn('[approvals] resume delivery not confirmed', {
+            executionId,
+            sessionId: resumeSessionId,
+            outcome,
+          });
+        }
+      })().catch((err) => {
+        console.warn('[approvals] resume delivery failed', {
+          executionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
     }
 
     return c.json({ ok: true, scope });

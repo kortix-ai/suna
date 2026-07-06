@@ -4953,39 +4953,10 @@ export function SessionChat({
     return () => unregisterSender(sessionId);
   }, [sessionId, handleSend, registerSender, unregisterSender]);
 
-  // ---- Auto-continue after a connector approval resolves ----
-  // The happy path never needs this: the gateway HOLDS a require_approval call
-  // and the sandbox CLI/MCP re-polls, so the agent's turn is still in-flight
-  // (isBusy) when the human decides and resumes by itself. But when the agent
-  // already gave up waiting — an older sandbox image without the CLI pause
-  // loop, or a decision after the ~30min poll budget — the approve only stamps
-  // a row nobody is watching. Detect that: the pending set just drained while
-  // the session sits idle → nudge the agent so the human never has to type
-  // "continue" (approval carry-over server-side makes the retried call run
-  // without re-asking).
-  const prevPendingApprovalsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    const actions = approvalAudit?.actions ?? [];
-    const pendingNow = new Set(actions.filter(isPendingAction).map((a) => a.execution_id));
-    const prev = prevPendingApprovalsRef.current;
-    prevPendingApprovalsRef.current = pendingNow;
-    if (prev.size === 0 || pendingNow.size > 0) return;
-    // Only count entries we can SEE resolved — a vanished row (data blip,
-    // trail truncation) must not fire a nudge.
-    const resolved = [...prev]
-      .map((id) => actions.find((a) => a.execution_id === id))
-      .filter((a): a is NonNullable<typeof a> => !!a && !isPendingAction(a));
-    if (resolved.length === 0) return;
-    if (isBusy) return; // turn still in-flight — the held call resumes itself
-    const denied = resolved.filter((a) => a.status === 'denied');
-    const text =
-      denied.length === resolved.length
-        ? 'I denied the pending approval — continue without that action.'
-        : denied.length > 0
-          ? 'I resolved the pending approvals (some denied) — continue accordingly.'
-          : 'Approved — continue.';
-    void handleSend(text);
-  }, [approvalAudit, isBusy, handleSend]);
+  // NOTE: no client-side "auto-continue after approval" here — resuming the
+  // agent when nobody was holding the gated call is the RESOLVE ENDPOINT's job
+  // (server-side continueSession delivery in r7.ts), so it works with zero
+  // browsers open. A web-side nudge would just double-send.
 
   const handleStop = useCallback(() => {
     // Guard against rapid clicks — ignore if an abort is already in flight

@@ -485,6 +485,12 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         if (executionId && input.sessionId && deps.waitForApprovalDecision) {
           const outcome = await deps.waitForApprovalDecision(executionId, APPROVAL_WAIT_MS);
           if (outcome === 'denied') {
+            // Mark the decision as consumed by this live waiter — the resolve
+            // endpoint's server-side resume uses that marker to know the turn
+            // already got the answer in-band (no follow-up prompt needed).
+            if (deps.markApprovalConsumed) {
+              await deps.markApprovalConsumed(executionId).catch(() => {});
+            }
             return { status: 'denied', reason: 'denied_by_user' };
           }
           if (outcome === 'timeout') {

@@ -434,6 +434,22 @@ describe('handleCall — policy layer', () => {
     expect(res.status).toBe('ok');
     expect(markedIds).toEqual(['exec-held']);
   });
+
+  test('a deny received by the held request is marked consumed too (in-band — no server resume)', async () => {
+    const { deps } = makeDeps({
+      policies: [{ match: '*', action: 'require_approval' }],
+      enforcePolicies: true,
+    });
+    deps.recordExecution = async () => 'exec-held';
+    deps.waitForApprovalDecision = async () => 'denied';
+    const markedIds: string[] = [];
+    deps.markApprovalConsumed = async (id) => {
+      markedIds.push(id);
+    };
+    const res = await handleCall(deps, baseInput);
+    expect(res).toEqual({ status: 'denied', reason: 'denied_by_user' });
+    expect(markedIds).toEqual(['exec-held']);
+  });
 });
 
 describe('handleCall — layered policies (project → connector → default)', () => {
