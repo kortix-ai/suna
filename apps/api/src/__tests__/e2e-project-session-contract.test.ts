@@ -1521,6 +1521,59 @@ describe('project session API contract', () => {
     expect(lastProvisionInput?.sandboxId).toBe(SESSION_ID);
   });
 
+  test('dashboard start gives a freshly-created active runtime grace when provider status is removed', async () => {
+    const app = createApp();
+    const initSucceededAt = new Date().toISOString();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'platinum',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-fresh-eventual-404',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          initSucceededAt,
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'starting',
+      retriable: true,
+      sandbox: null,
+      reason: 'runtime_removed_checking',
+    });
+
+    expect(providerStartCalls).toBe(0);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows).toHaveLength(1);
+    expect(sessionSandboxRows[0]?.externalId).toBe('box-fresh-eventual-404');
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>)
+        .runtimeWakeStartedAt,
+    ).toEqual(expect.any(String));
+  });
+
   test('dashboard start retires a provider-removed sandbox and reallocates through the canonical runtime path', async () => {
     const app = createApp();
     sessionRow = {

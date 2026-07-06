@@ -405,6 +405,20 @@ function staleOpencodeReadyReason(
   return null;
 }
 
+function removedRuntimeStillInGrace(
+  row: typeof sessionSandboxes.$inferSelect,
+  nowMs = Date.now(),
+): boolean {
+  const metadata = sandboxMetadata(row);
+  const graceStartedAtMs =
+    parseTimestampMs(metadata.runtimeWakeStartedAt) ??
+    parseTimestampMs(metadata.initSucceededAt);
+  return (
+    graceStartedAtMs != null &&
+    nowMs - graceStartedAtMs <= STALE_RUNTIME_WAKE_MS
+  );
+}
+
 async function markRuntimeWakeStarted(
   row: typeof sessionSandboxes.$inferSelect,
   providerStatus: SandboxStatus,
@@ -702,6 +716,18 @@ export async function openSession(args: {
   }
 
   if (providerStatus === 'removed') {
+    if (removedRuntimeStillInGrace(row)) {
+      await markRuntimeWakeStarted(row, providerStatus);
+      return {
+        stage: 'starting',
+        agent_name: visible.row.agentName ?? 'default',
+        retriable: true,
+        sandbox: null,
+        opencode_session_id: null,
+        runtime_url: sessionRuntimeUrlPath(row.externalId),
+        reason: 'runtime_removed_checking',
+      };
+    }
     return replaceStaleRuntimeOnOpen(
       loaded,
       visible,
