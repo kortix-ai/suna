@@ -2,7 +2,7 @@ import { checkBillingActive } from '../../billing/services/billing-gate';
 import { config, type SandboxProviderName } from '../../config';
 import { resolveSessionProvider } from './provider-precedence';
 import { auth, json } from '../../openapi';
-import { maxConcurrentSessionsForTier, resolveAccountTier } from '../../shared/account-limits';
+import { resolveAccountSessionLimit } from '../../shared/account-limits';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
@@ -71,8 +71,7 @@ export async function countProvisioningProjectSessions(projectId: string): Promi
 
 
 export async function enforceConcurrentSessionCap(accountId: string, userId: string, request?: RequestAuditContext): Promise<SessionCreateError | null> {
-  const tier = await resolveAccountTier(accountId);
-  const limit = maxConcurrentSessionsForTier(tier);
+  const { tier, limit, source } = await resolveAccountSessionLimit(accountId);
   const activeSessions = await countActiveProjectSessions(accountId);
   if (activeSessions < limit) return null;
 
@@ -88,12 +87,14 @@ export async function enforceConcurrentSessionCap(accountId: string, userId: str
       limiter: 'concurrent_sessions',
       tier,
       limit,
+      limit_source: source,
       active_sessions: activeSessions,
     },
   }).catch((error) => {
     console.error('[projects] Failed to record session cap audit event:', error);
   });
 
+  const message = `You've reached your plan's concurrent-session limit (${limit}). Upgrade your plan for a higher limit, or contact the Kortix team to raise it for your account.`;
   return {
     status: 429,
     headers: {
@@ -101,8 +102,8 @@ export async function enforceConcurrentSessionCap(accountId: string, userId: str
       'X-RateLimit-Remaining': '0',
     },
     body: {
-      error: `You're at your ${limit}-session limit. Close a running session or upgrade for more.`,
-      message: `You're at your ${limit}-session limit. Close a running session or upgrade for more.`,
+      error: message,
+      message,
       code: 'concurrent_session_limit',
       limit,
       active_sessions: activeSessions,
@@ -115,8 +116,7 @@ export async function checkConcurrentSessionCap(accountId: string, userId: strin
   error?: SessionCreateError;
   headers: Record<string, string>;
 }> {
-  const tier = await resolveAccountTier(accountId);
-  const limit = maxConcurrentSessionsForTier(tier);
+  const { limit } = await resolveAccountSessionLimit(accountId);
   const activeSessions = await countActiveProjectSessions(accountId);
   const remainingAfterCreate = Math.max(limit - activeSessions - 1, 0);
   const headers = {

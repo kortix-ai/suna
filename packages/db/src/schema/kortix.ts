@@ -1944,6 +1944,13 @@ export const creditAccounts = kortixSchema.table(
     // the enterprise surface. NOT a real Enterprise plan (sales-assigned);
     // production use requires a signed agreement. Default false → fail-closed.
     demoEnterprise: boolean('demo_enterprise').default(false).notNull(),
+    // Operator-set concurrent-session cap for this account. NULL (the default)
+    // means "no override" — the account's plan tier decides the limit
+    // (TierConfig.concurrentSessionLimit). When set, it takes precedence over
+    // the tier limit in BOTH directions (raise for enterprise deals, lower for
+    // abuse containment). Set out-of-band (data migration / operator SQL),
+    // like tier='enterprise'.
+    maxConcurrentSessions: integer('max_concurrent_sessions'),
   },
   (table) => [
     index('kortix_credit_accounts_account_id_idx').on(table.accountId),

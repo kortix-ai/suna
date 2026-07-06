@@ -227,7 +227,13 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     limits: {
       concurrent_sessions: {
         active: await countActiveSessions(accountId).catch(() => 0),
-        limit: maxConcurrentSessionsForTier(tierName),
+        // Per-account override (credit_accounts.max_concurrent_sessions) wins
+        // over the tier limit — mirrors resolveAccountSessionLimit, reusing the
+        // `sub` row already fetched above instead of a second read.
+        limit:
+          typeof sub?.maxConcurrentSessions === 'number' && sub.maxConcurrentSessions > 0
+            ? Math.floor(sub.maxConcurrentSessions)
+            : maxConcurrentSessionsForTier(tierName),
       },
     },
   };

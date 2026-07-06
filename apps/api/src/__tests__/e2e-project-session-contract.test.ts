@@ -369,6 +369,7 @@ mock.module('../deployments/providers/freestyle', () => ({
 mock.module('../shared/account-limits', () => ({
   resolveAccountTier: async () => 'free',
   maxConcurrentSessionsForTier: () => 1,
+  resolveAccountSessionLimit: async () => ({ tier: 'free', limit: 1, source: 'tier' }),
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
   maxProjectsForAccount: async () => 100,
   accountEntitledToLlmGateway: async () => true,

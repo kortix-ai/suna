@@ -253,11 +253,12 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
       typeof v2Detail?.active_sessions === 'number' ? v2Detail.active_sessions : undefined;
     const title =
       limit !== undefined
-        ? `You're at your session limit (${active ?? limit}/${limit})`
-        : 'Session limit reached';
+        ? `You've reached your plan's concurrent-session limit (${active ?? limit}/${limit})`
+        : 'Concurrent-session limit reached';
     if (!shouldSuppressDuplicate(v2Status, title)) {
       warningToast(title, {
-        description: 'Close a running session, or upgrade your plan for more.',
+        description:
+          'Upgrade your plan for a higher limit, or contact the Kortix team to raise it for your account.',
         duration: 6000,
         button: (
           <Button
