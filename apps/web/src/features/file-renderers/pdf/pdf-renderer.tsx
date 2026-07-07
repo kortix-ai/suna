@@ -1,11 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useTranslations } from 'next-intl';
-import { AlertTriangle } from 'lucide-react';
-import { PDFViewer } from '@/components/ui/extend/pdf-viewer';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
+import { AlertTriangle } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useEffect, useState } from 'react';
 import { PDFViewer } from './pdf-viewer';
 
 export function base64PdfContentToBlob(fileContent: string): Blob {
@@ -22,13 +21,18 @@ interface PdfRendererProps {
   fileContent?: string | null;
   /** Existing PDF object URL fallback. */
   url?: string | null;
-  fileName?: string;
   className?: string;
   compact?: boolean;
   fileName?: string;
 }
 
-export function PdfRenderer({ fileContent, url, className, compact = false, fileName }: PdfRendererProps) {
+export function PdfRenderer({
+  fileContent,
+  url,
+  className,
+  compact = false,
+  fileName,
+}: PdfRendererProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -71,17 +75,24 @@ export function PdfRenderer({ fileContent, url, className, compact = false, file
 
   if (status === 'error' || !pdfUrl) {
     return (
-      <div className={cn('flex h-full w-full flex-col items-center justify-center gap-3 p-8 text-center', className)}>
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
-          <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+      <div
+        className={cn(
+          'flex h-full w-full flex-col items-center justify-center gap-3 p-8 text-center',
+          className,
+        )}
+      >
+        <div className="bg-muted flex h-10 w-10 items-center justify-center rounded-full">
+          <AlertTriangle className="text-muted-foreground h-4 w-4" />
         </div>
         <div>
-          <p className="text-sm font-medium text-foreground">
+          <p className="text-foreground text-sm font-medium">
             {tHardcodedUi.raw('componentsFileRenderersPdfRenderer.line277JsxTextFailedToLoadPdf')}
           </p>
           {!compact && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              {tHardcodedUi.raw('componentsFileRenderersPdfRenderer.line278JsxTextTheFileMayBeCorruptedOrInaccessible')}
+            <p className="text-muted-foreground mt-1 text-xs">
+              {tHardcodedUi.raw(
+                'componentsFileRenderersPdfRenderer.line278JsxTextTheFileMayBeCorruptedOrInaccessible',
+              )}
             </p>
           )}
         </div>
@@ -90,13 +101,6 @@ export function PdfRenderer({ fileContent, url, className, compact = false, file
   }
 
   return (
-    <PDFViewer
-      src={pdfUrl}
-      fileName={fileName}
-      showToolbar={!compact}
-      showUpload={false}
-      className={cn('h-full w-full', className)}
-    />
     <PDFViewer
       src={pdfUrl}
       fileName={fileName}

@@ -13,43 +13,51 @@ import {
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useFilesStore } from '@/features/file-browser/store/files-store';
+import type { FileNode } from '@/features/file-browser/types';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { FolderOpen } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { downloadFile } from '../api/opencode-files';
 import { useProjectContext } from '../context';
+import { buildGitStatusMap, useFileEventInvalidation, useFileList, useGitStatus } from '../hooks';
 import { useChangeRequests } from '../hooks/use-change-requests';
 import { useDirectoryDownload } from '../hooks/use-directory-download';
-import { useFileCopy, useFileDelete, useFileMkdir, useFileRename } from '../hooks/use-file-mutations';
-import { useFilesStore } from '@/features/file-browser/store/files-store';
-import type { FileNode } from '@/features/file-browser/types';
+import {
+  useFileCopy,
+  useFileDelete,
+  useFileMkdir,
+  useFileRename,
+} from '../hooks/use-file-mutations';
 import { ChangeRequestDetailDialog } from './change-request-detail-dialog';
 import { ChangeRequestsPanel } from './change-requests-panel';
 import { CheckpointsPanel } from './checkpoints-panel';
-import { DriveExplorer } from './drive-explorer';
-import { OpenChangeRequestDialog } from './open-change-request-dialog';
 import { DriveGridView } from './drive-grid-view';
 import { DriveHeader } from './drive-header';
 import { DriveListView } from './drive-list-view';
 import { DriveToolbar } from './drive-toolbar';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
-import { useFileEventInvalidation } from '../hooks';
 
-type RightPanel = 'checkpoints' | 'change-requests' | null;
-
-/**
- * Project git-ref file explorer page (customize → Files). Thin wrapper over
- * the shared <DriveExplorer> that adds the git-only chrome: version selector,
- * checkpoints panel, change-request panel + dialogs. Requires both a
- * <ProjectFilesProvider> and a git-ref <FileExplorerSourceProvider>.
- */
 export function FileExplorerPage() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const currentPath = useFilesStore((s) => s.currentPath);
+  const navigateToPath = useFilesStore((s) => s.navigateToPath);
+  const viewMode = useFilesStore((s) => s.viewMode);
+  const sortBy = useFilesStore((s) => s.sortBy);
+  const sortOrder = useFilesStore((s) => s.sortOrder);
+  const openFileWithList = useFilesStore((s) => s.openFileWithList);
+
+  const clipboard = useFilesStore((s) => s.clipboard);
+  const copyToClipboard = useFilesStore((s) => s.copyToClipboard);
+  const cutToClipboard = useFilesStore((s) => s.cutToClipboard);
+  const clearClipboard = useFilesStore((s) => s.clearClipboard);
+
   const projectCtx = useProjectContext();
   const projectId = projectCtx?.projectId ?? '';
-
   const projectRef = projectCtx?.ref ?? '';
 
   useFileEventInvalidation();
@@ -317,7 +325,6 @@ export function FileExplorerPage() {
   const openCrCountQuery = useChangeRequests('open', { refetchInterval: 10_000 });
   const openCrCount = openCrCountQuery.data?.change_requests.length ?? 0;
 
-  // Deep link: /…?cr=<id> opens the change-request detail dialog once.
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -331,49 +338,224 @@ export function FileExplorerPage() {
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }, [searchParams, pathname, router]);
 
+  const isEmpty =
+    !isLoading &&
+    !error &&
+    Boolean(files) &&
+    elevatedDirs.length === 0 &&
+    dirs.length === 0 &&
+    fileItems.length === 0;
+
   return (
-    <DriveExplorer
-      toolbar={{
-        showVersionSelector: true,
-        checkpointsToggle: {
-          open: rightPanel === 'checkpoints',
-          onToggle: () => toggleRightPanel('checkpoints'),
-        },
-        changeRequestsToggle: {
-          open: rightPanel === 'change-requests',
-          onToggle: () => toggleRightPanel('change-requests'),
+    <div className="bg-background relative flex h-full flex-col">
+      <DriveHeader
+        historyToggle={{
+          open: rightPanel === 'history',
+          onToggle: () => toggleRightPanel('history'),
+        }}
+        reviewsToggle={{
+          open: rightPanel === 'proposed-changes',
+          onToggle: () => toggleRightPanel('proposed-changes'),
           openCount: openCrCount,
-        },
-        openChangeRequestAction: {
-          onClick: () => setOpenCrDialogShown(true),
-        },
-      }}
-      panels={
-        <>
-          <CheckpointsPanel
-            open={rightPanel === 'checkpoints'}
-            onClose={() => setRightPanel(null)}
-          />
-          <ChangeRequestsPanel
-            open={rightPanel === 'change-requests'}
-            onClose={() => setRightPanel(null)}
-          />
-        </>
-      }
-    >
-      <OpenChangeRequestDialog
-        open={openCrDialogShown}
-        onOpenChange={setOpenCrDialogShown}
-        projectId={projectId}
-        defaultBranch={defaultBranchForCrs}
-        initialHeadRef={canOpenChangeRequest ? activeRefForCrs : undefined}
-        onCreated={(crId) => {
-          setRightPanel('change-requests');
-          setCreatedCrId(crId);
         }}
       />
 
+      <DriveToolbar
+        showVersionSelector
+        onDownloadDir={() => {
+          const dirName = isRootPath
+            ? 'workspace'
+            : currentPath.split('/').filter(Boolean).pop() || 'directory';
+          const dirPath = isRootPath ? '/workspace' : currentPath;
+          downloadDir(dirPath, dirName);
+        }}
+        isDownloading={isDirDownloading(isRootPath ? '/workspace' : currentPath)}
+        onRefresh={() => refetchFiles()}
+      />
+
+      <div className="relative min-h-0 flex-1">
+        <div className="absolute inset-0 overflow-y-auto">
+          {isLoading && showSkeleton && (
+            <div className="animate-in fade-in-0 p-4 duration-200">
+              {viewMode === 'grid' ? (
+                <div className="space-y-6">
+                  <div>
+                    <Skeleton className="mb-3 h-4 w-16" />
+                    <div
+                      className="grid gap-2"
+                      style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}
+                    >
+                      {Array.from({ length: 6 }).map((_, i) => (
+                        <Skeleton key={`f${i}`} className="h-10 rounded-lg" />
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <Skeleton className="mb-3 h-4 w-12" />
+                    <div
+                      className="grid gap-2.5"
+                      style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}
+                    >
+                      {Array.from({ length: 8 }).map((_, i) => (
+                        <Skeleton key={`fi${i}`} className="h-[138px] rounded-lg" />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {Array.from({ length: 10 }).map((_, i) => (
+                    <Skeleton key={i} className="h-10 w-full rounded" />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {error && !isLoading && (
+            <ErrorState
+              title={tHardcodedUi.raw(
+                'featuresProjectFilesComponentsFileExplorerPage.line658JsxTextFailedToLoadFiles',
+              )}
+              description={error instanceof Error ? error.message : 'Unknown error'}
+              action={
+                <Button variant="outline" size="sm" onClick={() => refetchFiles()}>
+                  Retry
+                </Button>
+              }
+            />
+          )}
+
+          {isEmpty && (
+            <EmptyState
+              icon={FolderOpen}
+              title={tHardcodedUi.raw(
+                'featuresProjectFilesComponentsDriveListView.line396JsxTextThisFolderIsEmpty',
+              )}
+              description={tHardcodedUi.raw(
+                'featuresProjectFilesComponentsDriveListView.line398JsxTextNoFilesOrSubfoldersAtThisPathIn',
+              )}
+            />
+          )}
+
+          {!isLoading && !error && files && !isEmpty && (
+            <>
+              {viewMode === 'grid' ? (
+                <DriveGridView
+                  elevatedDirs={elevatedDirs}
+                  dirs={dirs}
+                  files={fileItems}
+                  onNavigateToDir={handleNavigateToDir}
+                  onOpenFile={handleOpenFile}
+                  onPreviewFile={handlePreviewFile}
+                  onDownload={handleDownload}
+                  onDownloadDir={handleDownloadDir}
+                  onRename={handleRename}
+                  onDelete={handleDelete}
+                  onHistory={handleHistory}
+                  onCopy={handleCopy}
+                  onCut={handleCut}
+                  onDropMove={handleDropMove}
+                  gitStatusMap={gitStatusMap}
+                  clipboardPath={clipboard?.path}
+                  clipboardOperation={clipboard?.operation}
+                  isDirDownloading={isDirDownloading}
+                  readOnly
+                />
+              ) : (
+                <DriveListView
+                  elevatedDirs={elevatedDirs}
+                  dirs={dirs}
+                  files={fileItems}
+                  onNavigateToDir={handleNavigateToDir}
+                  onOpenFile={handleOpenFile}
+                  onPreviewFile={handlePreviewFile}
+                  onDownload={handleDownload}
+                  onDownloadDir={handleDownloadDir}
+                  onRename={handleRename}
+                  onDelete={handleDelete}
+                  onHistory={handleHistory}
+                  onCopy={handleCopy}
+                  onCut={handleCut}
+                  onDropMove={handleDropMove}
+                  gitStatusMap={gitStatusMap}
+                  clipboardPath={clipboard?.path}
+                  clipboardOperation={clipboard?.operation}
+                  isDirDownloading={isDirDownloading}
+                  readOnly
+                />
+              )}
+            </>
+          )}
+        </div>
+
+        <CheckpointsPanel open={rightPanel === 'history'} onClose={() => setRightPanel(null)} />
+
+        <ChangeRequestsPanel
+          open={rightPanel === 'proposed-changes'}
+          onClose={() => setRightPanel(null)}
+        />
+      </div>
+
       <ChangeRequestDetailDialog crId={createdCrId} onClose={() => setCreatedCrId(null)} />
-    </DriveExplorer>
+
+      <FilePreviewModal />
+
+      {historyPopoverPath && (
+        <div className="bg-popover border-border animate-in slide-in-from-bottom-4 fade-in-0 fixed right-4 bottom-4 z-50 overflow-hidden rounded-md border shadow-2xl duration-200">
+          <FileHistoryPopoverContent
+            filePath={historyPopoverPath}
+            onClose={() => setHistoryPopoverPath(null)}
+          />
+        </div>
+      )}
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+        <AlertDialogContent
+          className="sm:max-w-md"
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            deleteButtonRef.current?.focus();
+          }}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {deleteTarget?.type === 'directory' ? 'folder' : 'file'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {tHardcodedUi.raw(
+                'featuresProjectFilesComponentsFileExplorerPage.line806JsxTextAreYouSureYouWantToDelete',
+              )}{' '}
+              <span className="text-foreground font-semibold">
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsFileExplorerPage.line807JsxTextQuot',
+                )}
+                {deleteTarget?.name}
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsFileExplorerPage.line807JsxTextQuot32c14d98',
+                )}
+              </span>
+              {tHardcodedUi.raw(
+                'featuresProjectFilesComponentsFileExplorerPage.line807JsxTextThisActionCannotBeUndone',
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              ref={deleteButtonRef}
+              onClick={(e) => {
+                e.preventDefault();
+                confirmDelete();
+              }}
+              disabled={deleteMutation.isPending}
+              className="bg-destructive hover:bg-destructive/90 text-white"
+            >
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }
