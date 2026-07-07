@@ -72,6 +72,12 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   }, [authLoading, user, router]);
 
   useEffect(() => {
+    // Files graduated out of Customize into its own page — send legacy
+    // ?customize=files links there instead of opening the overlay.
+    if (searchParams.get('customize') === 'files') {
+      router.replace(`/projects/${projectId}/files`);
+      return;
+    }
     const section = parseCustomizeSection(searchParams.get('customize'));
     if (!section) return;
     useCustomizeStore.getState().openCustomize(section);

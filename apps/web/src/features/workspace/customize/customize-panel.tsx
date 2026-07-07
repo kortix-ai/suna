@@ -35,7 +35,6 @@ import {
   Bot,
   Boxes,
   Container,
-  FolderOpen,
   History,
   Inbox,
   KeyRound,
@@ -50,7 +49,6 @@ import { LuSettings, LuUsersRound } from 'react-icons/lu';
 import { detectManifestVersion } from './migrate-to-v2/manifest-version';
 import { UpgradesView } from './migrate-to-v2/upgrade-view';
 import { isRailItemActive } from './rail';
-import { FilesSection } from './sections/files-section';
 import { LlmManagementView } from './sections/gateway-view';
 import { ChangesView } from './sections/view/changes-view';
 import { DevView } from './sections/view/dev-view';
@@ -84,7 +82,6 @@ const GROUPS: readonly RailGroup[] = [
   {
     label: 'Workspace',
     items: [
-      { section: 'files', label: 'Files', icon: FolderOpen },
       { section: 'changes', label: 'Changes', icon: History },
       { section: 'sandbox', label: 'Sandbox', icon: Container },
       { section: 'dev', label: 'Dev', icon: Terminal },
@@ -186,7 +183,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   );
   // A section is permitted when its GATE leaf resolved to allowed:true. Every
   // customize section gates on WRITE (editor+) — a plain `member` sees none of
-  // them; `files` is the exception (gates on read), so it stays reachable. Until
+  // them (Files lives on its own /projects/[id]/files page, not in here). Until
   // the probe resolves (or if it errored) we permit everything (optimistic).
   const isSectionAllowed = useCallback(
     (s: CustomizeSection) => {
@@ -483,8 +480,6 @@ function SectionContent({
       return <ChangesView projectId={projectId} />;
     case 'review':
       return <ReviewView projectId={projectId} />;
-    case 'files':
-      return <FilesSection projectId={projectId} />;
     case 'sandbox':
       return <SandboxView projectId={projectId} />;
     case 'dev':

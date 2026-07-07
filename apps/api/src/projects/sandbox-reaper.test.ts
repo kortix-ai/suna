@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSessions, sessionSandboxes, chatTurnStreams, usageEvents } from '@kortix/db';
+import { projectSessions, sessionSandboxes, usageEvents } from '@kortix/db';
 
 // ── mock state ──────────────────────────────────────────────────────────────
 let candidates: any[] = [];
-let activeTurns: Array<{ sessionId: string }> = [];
 let usageRows: Array<{ sessionId: string; last: string }> = [];
 let throwOnUsageLookup = false;
 let statusByExternal: Record<string, 'running' | 'stopped' | 'removed' | 'unknown'> = {};
@@ -32,7 +31,12 @@ function hybrid(rows: any[], throwOnGroupBy = false) {
 // test doesn't import the real config, which calls process.exit on incomplete
 // local env. Run this file in its own `bun test <file>` invocation (as CI does)
 // so the mock never leaks into a sibling file that uses the real config.
-mock.module('../config', () => ({ config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15, DAYTONA_API_KEY: 'test-key' } }));
+mock.module('../config', () => ({ config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15, KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: 5, DAYTONA_API_KEY: 'test-key' } }));
+
+let busyByExternal: Record<string, 'busy' | 'idle' | 'unknown'> = {};
+mock.module('./sandbox-busy-probe', () => ({
+  probeSandboxBusy: async ({ externalId }: { externalId: string }) => busyByExternal[externalId] ?? 'unknown',
+}));
 
 mock.module('../shared/db', () => ({
   db: {
@@ -42,13 +46,11 @@ mock.module('../shared/db', () => ({
           hybrid(
             table === sessionSandboxes
               ? candidates
-              : table === chatTurnStreams
-                ? activeTurns
-                : table === usageEvents
-                  ? usageRows
-                  : table === projectSessions
-                    ? stuckSessions
-                    : [],
+              : table === usageEvents
+                ? usageRows
+                : table === projectSessions
+                  ? stuckSessions
+                  : [],
             table === usageEvents && throwOnUsageLookup,
           ),
       }),
@@ -102,13 +104,12 @@ mock.module('../billing/services/compute-metering', () => ({
   },
 }));
 
-const { decideReap, lastMeaningfulAt, reapAndReconcileSandboxes, buildIdleStopMetadata, reapOrphanProviderBoxes, reconcileStuckActiveSessions } = await import('./sandbox-reaper');
+const { decideReconcile, decideIdleConfirm, idleObservedAtOf, lastMeaningfulAt, reapAndReconcileSandboxes, buildIdleStopMetadata, reapOrphanProviderBoxes, reconcileStuckActiveSessions, isTriggerSession, triggerAutoStopTtlMs } = await import('./sandbox-reaper');
 
 const TTL = 15 * 60_000;
 
 beforeEach(() => {
   candidates = [];
-  activeTurns = [];
   usageRows = [];
   throwOnUsageLookup = false;
   statusByExternal = {};
@@ -120,39 +121,50 @@ beforeEach(() => {
   endedCompute = [];
   updateCalls = [];
   stuckSessions = [];
+  busyByExternal = {};
 });
 
-// ── pure decision matrix (the money + UX correctness lives here) ─────────────
-describe('decideReap', () => {
+// ── pure decision functions (the money + UX correctness lives here) ──────────
+describe('decideReconcile', () => {
   test('never acts on unknown provider state', () => {
-    expect(decideReap({ providerStatus: 'unknown', meaningfulIdleMs: 10 * TTL, hasActiveTurn: false, ttlMs: TTL, provider: 'daytona' }).action).toBe('none');
+    expect(decideReconcile('unknown')).toBe('none');
   });
-
-  test('removed → reconcile-removed + reprovision', () => {
-    const d = decideReap({ providerStatus: 'removed', meaningfulIdleMs: 0, hasActiveTurn: false, ttlMs: TTL, provider: 'platinum' });
-    expect(d.action).toBe('reconcile-removed');
-    expect(d.reprovisionOnResume).toBe(true);
+  test('removed → reconcile-removed', () => {
+    expect(decideReconcile('removed')).toBe('reconcile-removed');
   });
-
   test('provider already stopped → reconcile-stopped', () => {
-    expect(decideReap({ providerStatus: 'stopped', meaningfulIdleMs: 0, hasActiveTurn: false, ttlMs: TTL, provider: 'daytona' }).action).toBe('reconcile-stopped');
+    expect(decideReconcile('stopped')).toBe('reconcile-stopped');
   });
-
-  test('running + idle past TTL → stop-idle', () => {
-    expect(decideReap({ providerStatus: 'running', meaningfulIdleMs: TTL + 1, hasActiveTurn: false, ttlMs: TTL, provider: 'daytona' }).action).toBe('stop-idle');
+  test('running is not a reconcile concern', () => {
+    expect(decideReconcile('running')).toBe('none');
   });
+});
 
-  test('running + idle but a turn is in flight → none', () => {
-    expect(decideReap({ providerStatus: 'running', meaningfulIdleMs: 10 * TTL, hasActiveTurn: true, ttlMs: TTL, provider: 'daytona' }).action).toBe('none');
+describe('decideIdleConfirm', () => {
+  const now = new Date('2026-07-07T12:00:00Z');
+  test('no prior observation → arm the countdown', () => {
+    expect(decideIdleConfirm({ idleObservedAt: null, now, ttlMs: TTL })).toBe('arm');
   });
-
-  test('running + within TTL → none', () => {
-    expect(decideReap({ providerStatus: 'running', meaningfulIdleMs: TTL - 1, hasActiveTurn: false, ttlMs: TTL, provider: 'daytona' }).action).toBe('none');
+  test('observed idle but countdown not elapsed → wait', () => {
+    expect(decideIdleConfirm({ idleObservedAt: new Date(now.getTime() - TTL + 1), now, ttlMs: TTL })).toBe('wait');
   });
+  test('observed idle for the full TTL → stop', () => {
+    expect(decideIdleConfirm({ idleObservedAt: new Date(now.getTime() - TTL), now, ttlMs: TTL })).toBe('stop');
+  });
+  test('future stamp (clock skew) → re-arm', () => {
+    expect(decideIdleConfirm({ idleObservedAt: new Date(now.getTime() + 60_000), now, ttlMs: TTL })).toBe('arm');
+  });
+});
 
-  test('Daytona idle stop resumes in place; Platinum must reprovision', () => {
-    expect(decideReap({ providerStatus: 'running', meaningfulIdleMs: TTL + 1, hasActiveTurn: false, ttlMs: TTL, provider: 'daytona' }).reprovisionOnResume).toBe(false);
-    expect(decideReap({ providerStatus: 'running', meaningfulIdleMs: TTL + 1, hasActiveTurn: false, ttlMs: TTL, provider: 'platinum' }).reprovisionOnResume).toBe(true);
+describe('idleObservedAtOf', () => {
+  test('reads a valid stamp', () => {
+    expect(idleObservedAtOf({ idleObservedAt: '2026-07-07T11:00:00.000Z' })?.toISOString()).toBe('2026-07-07T11:00:00.000Z');
+  });
+  test('null / missing / cleared / garbage → null', () => {
+    expect(idleObservedAtOf(null)).toBeNull();
+    expect(idleObservedAtOf({})).toBeNull();
+    expect(idleObservedAtOf({ idleObservedAt: null })).toBeNull();
+    expect(idleObservedAtOf({ idleObservedAt: 'not-a-date' })).toBeNull();
   });
 });
 
@@ -169,6 +181,27 @@ describe('lastMeaningfulAt', () => {
   test('ignores a stamp older than creation (clock skew / stale)', () => {
     const created = new Date('2026-06-01T10:00:00Z');
     expect(lastMeaningfulAt({ metadata: { lastTurnAt: '2026-06-01T00:00:00Z' }, createdAt: created }).getTime()).toBe(created.getTime());
+  });
+});
+
+describe('isTriggerSession', () => {
+  test('trigger:* sources are unattended', () => {
+    expect(isTriggerSession({ source: 'trigger:webhook' })).toBe(true);
+    expect(isTriggerSession({ source: 'trigger:cron' })).toBe(true);
+    expect(isTriggerSession({ source: 'trigger:manual' })).toBe(true);
+  });
+  test('interactive and unknown sources are not', () => {
+    expect(isTriggerSession({ source: 'ui' })).toBe(false);
+    expect(isTriggerSession({ source: 'slack' })).toBe(false);
+    expect(isTriggerSession({})).toBe(false);
+    expect(isTriggerSession(null)).toBe(false);
+    expect(isTriggerSession({ source: 42 })).toBe(false);
+  });
+});
+
+describe('triggerAutoStopTtlMs', () => {
+  test('reads the trigger-specific knob', () => {
+    expect(triggerAutoStopTtlMs()).toBe(5 * 60_000);
   });
 });
 
@@ -223,6 +256,95 @@ describe('reapAndReconcileSandboxes', () => {
     expect(updateCalls.some((c) => c.table === projectSessions && c.updates.status === 'stopped')).toBe(true);
   });
 
+  test('trigger box idles out on the short TTL while an interactive twin survives', async () => {
+    const sixMinAgo = new Date(NOW.getTime() - 6 * 60_000);
+    candidates = [
+      candidate({ sandboxId: 'sb-t', sessionId: 'sess-t', externalId: 'ext-t', metadata: { source: 'trigger:webhook' }, createdAt: sixMinAgo }),
+      candidate({ sandboxId: 'sb-u', sessionId: 'sess-u', externalId: 'ext-u', metadata: { source: 'ui' }, createdAt: sixMinAgo }),
+    ];
+    statusByExternal['ext-t'] = 'running';
+    statusByExternal['ext-u'] = 'running';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(stops).toEqual(['ext-t']);
+    expect(r.stopped).toBe(1);
+    expect(r.skipped).toBe(1);
+  });
+
+  test('busy probe vetoes the stop and resets the idle clock', async () => {
+    candidates = [candidate()];
+    statusByExternal['ext-1'] = 'running';
+    busyByExternal['ext-1'] = 'busy';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(r.busyVetoed).toBe(1);
+    expect(r.stopped).toBe(0);
+    expect(stops).toEqual([]);
+    expect(pausedCompute).toEqual([]);
+    const sbUpdate = updateCalls.find((c) => c.table === sessionSandboxes);
+    expect(sbUpdate?.updates.metadata).toBeDefined();
+    expect(sbUpdate?.updates.status).toBeUndefined();
+  });
+
+  test('first idle observation arms the countdown instead of stopping', async () => {
+    candidates = [candidate()];
+    statusByExternal['ext-1'] = 'running';
+    busyByExternal['ext-1'] = 'idle';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(r.idleArmed).toBe(1);
+    expect(r.stopped).toBe(0);
+    expect(stops).toEqual([]);
+    const sbUpdate = updateCalls.find((c) => c.table === sessionSandboxes);
+    expect(sbUpdate?.updates.metadata).toBeDefined();
+    expect(sbUpdate?.updates.status).toBeUndefined();
+  });
+
+  test('observed idle for less than the TTL → wait, no writes', async () => {
+    candidates = [candidate({ metadata: { idleObservedAt: new Date(NOW.getTime() - TTL + 60_000).toISOString() } })];
+    statusByExternal['ext-1'] = 'running';
+    busyByExternal['ext-1'] = 'idle';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(r.skipped).toBe(1);
+    expect(r.stopped).toBe(0);
+    expect(updateCalls).toEqual([]);
+  });
+
+  test('observed idle for the full TTL → shut down', async () => {
+    candidates = [candidate({ metadata: { idleObservedAt: new Date(NOW.getTime() - TTL).toISOString() } })];
+    statusByExternal['ext-1'] = 'running';
+    busyByExternal['ext-1'] = 'idle';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(r.stopped).toBe(1);
+    expect(stops).toEqual(['ext-1']);
+    expect(pausedCompute).toEqual(['sb-1']);
+  });
+
+  test('trigger boxes confirm idle on the shorter TTL', async () => {
+    const sixMinAgo = new Date(NOW.getTime() - 6 * 60_000).toISOString();
+    candidates = [
+      candidate({ sandboxId: 'sb-t', sessionId: 'sess-t', externalId: 'ext-t', metadata: { source: 'trigger:webhook', idleObservedAt: sixMinAgo } }),
+      candidate({ sandboxId: 'sb-u', sessionId: 'sess-u', externalId: 'ext-u', metadata: { source: 'ui', idleObservedAt: sixMinAgo } }),
+    ];
+    statusByExternal['ext-t'] = 'running';
+    statusByExternal['ext-u'] = 'running';
+    busyByExternal['ext-t'] = 'idle';
+    busyByExternal['ext-u'] = 'idle';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(stops).toEqual(['ext-t']);
+    expect(r.stopped).toBe(1);
+    expect(r.skipped).toBe(1);
+  });
+
   test('Platinum idle stop flags reprovision (resume is broken)', async () => {
     candidates = [candidate({ provider: 'platinum', externalId: 'ext-p', sandboxId: 'sb-p' })];
     statusByExternal['ext-p'] = 'running';
@@ -265,17 +387,6 @@ describe('reapAndReconcileSandboxes', () => {
     candidates = [candidate()]; // created 2h ago
     statusByExternal['ext-1'] = 'running';
     usageRows = [{ sessionId: 'sess-1', last: new Date(NOW.getTime() - 60_000).toISOString() }];
-
-    const r = await reapAndReconcileSandboxes(NOW);
-
-    expect(r.skipped).toBe(1);
-    expect(stops).toEqual([]);
-  });
-
-  test('never reaps a box with a turn in flight', async () => {
-    candidates = [candidate()]; // idle by timestamp
-    statusByExternal['ext-1'] = 'running';
-    activeTurns = [{ sessionId: 'sess-1' }];
 
     const r = await reapAndReconcileSandboxes(NOW);
 
@@ -326,8 +437,8 @@ describe('reapAndReconcileSandboxes', () => {
     expect(stops).toEqual([]); // never poke a removed box
   });
 
-  test('FAIL-SAFE: when the activity lookup fails, never stop a running box', async () => {
-    candidates = [candidate()]; // idle by timestamp (created 2h ago)
+  test('FAIL-SAFE: unreachable box + failed usage lookup → never stop', async () => {
+    candidates = [candidate()]; // idle by timestamp (created 2h ago), probe defaults to unknown
     statusByExternal['ext-1'] = 'running';
     throwOnUsageLookup = true; // simulate a DB/transient failure
 
@@ -336,6 +447,18 @@ describe('reapAndReconcileSandboxes', () => {
     expect(stops).toEqual([]); // uncertain → do not stop
     expect(pausedCompute).toEqual([]);
     expect(r.stopped).toBe(0);
+  });
+
+  test('probe-confirmed idle still counts down even when the usage lookup fails', async () => {
+    candidates = [candidate({ metadata: { idleObservedAt: new Date(NOW.getTime() - TTL).toISOString() } })];
+    statusByExternal['ext-1'] = 'running';
+    busyByExternal['ext-1'] = 'idle';
+    throwOnUsageLookup = true;
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(r.stopped).toBe(1);
+    expect(stops).toEqual(['ext-1']);
   });
 });
 

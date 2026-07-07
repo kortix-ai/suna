@@ -1,5 +1,12 @@
 'use client';
 
+/**
+ * Standalone project Files view — the Google-Drive-style browser over the
+ * project repo. Rendered by the /projects/[id]/files page inside the regular
+ * ProjectShell (NOT the Customize overlay — Files is a top-level surface any
+ * member can open, so it lives outside customization entirely).
+ */
+
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   FileExplorerPage,
@@ -10,7 +17,7 @@ import {
 import { getProject } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
 
-export function FilesSection({ projectId }: { projectId: string }) {
+export function ProjectFilesView({ projectId }: { projectId: string }) {
   const projectQuery = useQuery({
     queryKey: ['projects', projectId, 'meta'],
     queryFn: () => getProject(projectId),

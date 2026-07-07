@@ -29,11 +29,11 @@ describe('isRailItemActive', () => {
 
   test('the llm-management item is not active for a non-llm section', () => {
     expect(isRailItemActive(item('llm-management'), 'agents')).toBe(false);
-    expect(isRailItemActive(item('llm-management'), 'files')).toBe(false);
+    expect(isRailItemActive(item('llm-management'), 'changes')).toBe(false);
   });
 
   test('a plain item does not match a different section', () => {
     expect(isRailItemActive(item('secrets'), 'connectors')).toBe(false);
-    expect(isRailItemActive(item('files'), 'sandbox')).toBe(false);
+    expect(isRailItemActive(item('changes'), 'sandbox')).toBe(false);
   });
 });
