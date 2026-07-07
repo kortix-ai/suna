@@ -1,42 +1,19 @@
 import { describe, expect, test } from 'bun:test';
-import { visibleMemberRows } from '../accounts/core/member-visibility';
+import { canSeeSensitiveMemberColumns } from '../accounts/core/member-visibility';
 
-// The roster is deliberately filtered for plain members so an account that
-// hosts unrelated invitees doesn't leak the rest of the roster. These lock in
-// that cut — the same cut the members list AND its header count rely on.
-const rows = [
-  { userId: 'owner-1', accountRole: 'owner' },
-  { userId: 'admin-1', accountRole: 'admin' },
-  { userId: 'member-me', accountRole: 'member' },
-  { userId: 'member-other', accountRole: 'member' },
-];
-
-describe('visibleMemberRows', () => {
-  test('managers see every member', () => {
-    expect(visibleMemberRows(rows, 'member-me', true)).toHaveLength(4);
+// The member DIRECTORY is visible to everyone in the account (all rows are
+// returned). This gate is ONLY about the sensitive per-member columns — PAT
+// count, MFA, groups, project grants — which stay manager-only + own-row.
+describe('canSeeSensitiveMemberColumns', () => {
+  test('member-managers (owner/admin/member.invite) see sensitive columns on every row', () => {
+    expect(canSeeSensitiveMemberColumns('mgr', 'someone-else', true)).toBe(true);
+    expect(canSeeSensitiveMemberColumns('mgr', 'mgr', true)).toBe(true);
   });
 
-  test('a plain member sees owners/admins + themselves, never other bare members', () => {
-    const seen = visibleMemberRows(rows, 'member-me', false).map((r) => r.userId);
-    expect(seen).toContain('owner-1');
-    expect(seen).toContain('admin-1');
-    expect(seen).toContain('member-me');
-    // The roster-leak guard: another plain member is NOT visible, so neither
-    // the list nor the count (members.length) exposes them or the true size.
-    expect(seen).not.toContain('member-other');
-    expect(seen).toHaveLength(3);
-  });
-
-  test('a plain member who is not themselves a member still sees only owners/admins', () => {
-    // e.g. a viewer who was just removed; they never see other bare members.
-    const seen = visibleMemberRows(rows, 'ghost', false).map((r) => r.userId);
-    expect(seen).toEqual(['owner-1', 'admin-1']);
-  });
-
-  test('does not mutate the input rows', () => {
-    const snapshot = JSON.parse(JSON.stringify(rows));
-    visibleMemberRows(rows, 'member-me', false);
-    visibleMemberRows(rows, 'anyone', true);
-    expect(rows).toEqual(snapshot);
+  test('a plain member sees sensitive columns only on their OWN row', () => {
+    expect(canSeeSensitiveMemberColumns('me', 'me', false)).toBe(true);
+    // Another member's PAT count / MFA / groups stay hidden from a plain member,
+    // even though that member IS visible in the directory.
+    expect(canSeeSensitiveMemberColumns('me', 'someone-else', false)).toBe(false);
   });
 });

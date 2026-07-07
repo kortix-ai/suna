@@ -1318,7 +1318,8 @@ function MembersCard({
                   <InlineMeta>
                     <span>Joined {formatDate(member.joined_at)}</span>
                     {member.account_role === 'member' &&
-                    typeof member.explicit_project_count === 'number' ? (
+                    typeof member.explicit_project_count === 'number' &&
+                    member.explicit_project_count > 0 ? (
                       <span>
                         {member.explicit_project_count} project
                         {member.explicit_project_count === 1 ? '' : 's'}

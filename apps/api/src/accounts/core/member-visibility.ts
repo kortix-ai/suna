@@ -1,21 +1,20 @@
 /**
- * Which account-member rows a given viewer is allowed to see.
+ * The member DIRECTORY (who is in the account — email, role, group names) is
+ * visible to EVERY member of the account, the way Slack / GitHub / Notion show
+ * teammates within one company. But one member's SECURITY POSTURE is not
+ * something every teammate should see.
  *
- * Full-roster visibility is a member-management capability. Managers (owners,
- * admins, or anyone granted `member.invite`) see every member. A plain member
- * sees only who runs the account — owners/admins — and themselves; it must
- * NOT enumerate the other bare members, because one account can host unrelated
- * invitees (e.g. a demo account with several prospect orgs) and a bare
- * membership must not leak the rest of the roster (identities OR its size).
+ * `canSeeSensitiveMemberColumns` decides who may see the sensitive per-member
+ * columns — active PAT count, verified-MFA flag, group memberships, and explicit
+ * project grants: only member-managers (owners/admins, or anyone granted
+ * `member.invite`) and the viewer's OWN row.
  *
- * Pure and dependency-free so it can be unit-tested in isolation and reused by
- * anything that needs the "what can this viewer see" cut (list rows AND count).
+ * Pure and dependency-free so it can be unit-tested in isolation.
  */
-export function visibleMemberRows<T extends { userId: string; accountRole: string }>(
-  rows: readonly T[],
+export function canSeeSensitiveMemberColumns(
   viewerUserId: string,
+  rowUserId: string,
   canManageMembers: boolean,
-): T[] {
-  if (canManageMembers) return [...rows];
-  return rows.filter((r) => r.userId === viewerUserId || r.accountRole !== 'member');
+): boolean {
+  return canManageMembers || viewerUserId === rowUserId;
 }
