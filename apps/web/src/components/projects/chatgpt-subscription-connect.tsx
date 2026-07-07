@@ -161,7 +161,7 @@ export function ChatGptSubscriptionConnect({
           setPhase('done');
           toast.success('ChatGPT subscription connected to this project');
           queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
-          refreshProjectProviderState(queryClient, projectId);
+          refreshProjectProviderState(queryClient, projectId, { expectProviderId: 'codex' });
           onConnected?.();
           return;
         }
