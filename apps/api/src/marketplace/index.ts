@@ -11,6 +11,7 @@ import {
   _resetExternalCache,
   assertAllowedSourceAddress,
   catalogStatus,
+  clampMarketplaceItemsLimit,
   getCatalogItemDetail,
   getCatalogItemFile,
   listCatalogItemsLive,
@@ -58,13 +59,15 @@ marketplaceApp.openapi(
     // absent/non-numeric `limit` must still return the full filtered list
     // (existing callers, e.g. the web's default-project-skills lookup, filter
     // client-side and rely on getting everything back). A present-but-out-of-
-    // range `limit` (e.g. 0, negative, >100) still opts in, clamped to [1,100].
+    // range `limit` (e.g. 0, negative, >200) still opts in, clamped to [1,200].
+    // 200 (not 100) so the explore landing's `MARKETPLACE_EXPLORE_LANDING_LIMIT`
+    // (120) is actually honored instead of silently truncated by this clamp.
     const parsedLimit = q.limit !== undefined ? Number.parseInt(q.limit, 10) : NaN;
     const hasLimit = Number.isFinite(parsedLimit);
     const parsedOffset = q.offset !== undefined ? Number.parseInt(q.offset, 10) : NaN;
     const offset = Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
     if (hasLimit) {
-      const limit = Math.min(Math.max(parsedLimit, 1), 100);
+      const limit = clampMarketplaceItemsLimit(parsedLimit);
       const { items, total } = await listCatalogItemsPage({
         query: q.query,
         type: q.type,

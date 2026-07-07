@@ -65,10 +65,15 @@ Three complementary layers, each earning its place:
   filtered count *before* slicing; the route slices `[offset, offset+limit)`.
 - Route response gains `total` and `hasMore` (`offset + items.length < total`)
   alongside the existing `{ loading, pending, sources }`. Ordering is the existing
-  merged-catalog order (base first, external appended as sources resolve) — stable
-  enough for offset paging because earlier pages don't reorder; while `loading`,
-  `total` reflects the count resolved so far and the client's existing 1500ms poll
-  reconciles.
+  merged-catalog order — **not** stable across a cold load: `mergedCatalog()`
+  re-sorts the whole list (bundles-first, then `name.localeCompare`) every time
+  base + external items are merged, so as external sources stream in, items can
+  shift pages and offset-based paging can see the same item at two offsets (or
+  skip one) mid-stream. The client mitigates this by de-duping the flattened
+  pages by `item.id` (`flattenMarketplaceItems`, keeping the first occurrence)
+  before rendering; while `loading`, `total` reflects the count resolved so far
+  and the client's existing 1500ms poll reconciles the rest once streaming
+  settles.
 
 **A2 — Client data layer (`apps/web/src/lib/{marketplace-client.ts,marketplace-public.ts}`,
 `apps/web/src/hooks/marketplace.ts`).**

@@ -28,6 +28,7 @@ import { Icon } from '../icon/icon';
 import { AddMarketplaceModal } from './add-marketplace-modal';
 import {
   buildMarketplaceGridRows,
+  flattenMarketplaceItems,
   marketplaceGridRowKey,
   resolveEffectiveMarketplaceType,
   resolveMarketplaceQueryParams,
@@ -103,7 +104,7 @@ export function MarketplaceBrowser({
     resolveMarketplaceQueryParams({ debounced, effectiveType, source, publicOnly }),
   );
   const items = useMemo(
-    () => itemsQuery.data?.pages.flatMap((p) => p.items) ?? [],
+    () => flattenMarketplaceItems(itemsQuery.data?.pages ?? []),
     [itemsQuery.data],
   );
   const grouped = effectiveType === 'all' && !debounced && source === 'all';
@@ -301,10 +302,17 @@ export function MarketplaceBrowser({
               );
             })}
           </div>
+          {/* Rendered INSIDE the scroll container so it's a descendant of the
+              IntersectionObserver's `root` (see below) on both paths — the
+              production path where `scrollElement` is the external ancestor
+              this whole div already sits inside, and the `/debug/marketplace`
+              fallback path where `scrollElement` IS this div. A sibling
+              sentinel would never intersect on the fallback path, since an
+              IO root only ever reports intersections for its own
+              descendants. */}
+          {hasNextPage && <div ref={sentinelRef} className="h-1" />}
         </div>
       )}
-
-      {items.length > 0 && hasNextPage && <div ref={sentinelRef} className="h-1" />}
 
       {items.length > 0 && isFetchingNextPage && (
         <div className="text-muted-foreground/70 flex items-center justify-center gap-2 py-1 text-xs">

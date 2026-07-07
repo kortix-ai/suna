@@ -14,6 +14,7 @@ import Loading from '../../components/ui/loading';
 import { MarketplaceExploreCard } from './marketplace-explore-card';
 import {
   buildMarketplaceGridRows,
+  flattenMarketplaceItems,
   marketplaceGridRowKey,
   shouldFetchNextMarketplacePage,
   shouldVirtualizeMarketplacePagedGrid,
@@ -77,7 +78,7 @@ export function MarketplacePagedGrid({
     { initialData },
   );
   const items = useMemo(
-    () => itemsQuery.data?.pages.flatMap((p) => p.items) ?? [],
+    () => flattenMarketplaceItems(itemsQuery.data?.pages ?? []),
     [itemsQuery.data],
   );
   const total = itemsQuery.data?.pages[0]?.total ?? items.length;

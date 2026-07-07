@@ -17,6 +17,27 @@ function chunk<T>(list: T[], size: number): T[][] {
   return out;
 }
 
+/** Flattens paged `{ items }[]` (react-query's `infiniteQuery.data.pages`)
+ *  into a single item list, keeping only the first occurrence of each `id`.
+ *  The catalog re-sorts alphabetically as external sources stream in during
+ *  cold load, so page-seam offsets can shift between fetches — a plain
+ *  `pages.flatMap(p => p.items)` can then yield the same `item.id` twice
+ *  (duplicate React keys) or, less visibly, skip one. De-duping here is cheap
+ *  insurance; the poll while `loading` still heals ordering once streaming
+ *  settles. */
+export function flattenMarketplaceItems(pages: { items: MarketplaceItem[] }[]): MarketplaceItem[] {
+  const seen = new Set<string>();
+  const out: MarketplaceItem[] = [];
+  for (const page of pages) {
+    for (const item of page.items) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      out.push(item);
+    }
+  }
+  return out;
+}
+
 /** Groups items by their `TYPE_SECTIONS` label, preserving section order and
  *  bucketing anything unmatched into "Other". Extracted from the old
  *  `sections` useMemo so it's independently testable. */

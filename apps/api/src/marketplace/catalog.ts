@@ -1462,6 +1462,20 @@ function filterCatalogItems(
   });
 }
 
+/** Maximum `limit` the `/marketplace/items` route accepts, once a caller opts
+ *  into pagination. Bounds the payload/memory a single request can demand
+ *  while leaving headroom above `MARKETPLACE_EXPLORE_LANDING_LIMIT` (120, in
+ *  the web's `marketplace-public.ts`) so that SSR fetch is actually honored
+ *  instead of silently truncated by this clamp. */
+export const MARKETPLACE_ITEMS_MAX_LIMIT = 200;
+
+/** Clamps a parsed `limit` query value into `[1, MARKETPLACE_ITEMS_MAX_LIMIT]`.
+ *  Extracted from the route handler so the clamp boundary is unit-testable
+ *  without spinning up an HTTP server or a catalog with 200+ real items. */
+export function clampMarketplaceItemsLimit(parsedLimit: number): number {
+  return Math.min(Math.max(parsedLimit, 1), MARKETPLACE_ITEMS_MAX_LIMIT);
+}
+
 /** Pure filter + optional slice — the sliceable core of `listCatalogItemsPage`,
  *  factored out so it can be unit-tested against an injected `CatalogItem[]`
  *  without touching `mergedCatalog()` (which does a live GitHub scan).

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { pageCatalogItems, type CatalogItem } from './catalog';
+import { clampMarketplaceItemsLimit, pageCatalogItems, type CatalogItem } from './catalog';
 
 function item(overrides: Partial<CatalogItem> = {}): CatalogItem {
   return {
@@ -95,5 +95,29 @@ describe('pageCatalogItems', () => {
     expect(result.items).toEqual([]);
     expect(result.total).toBe(5);
     expect(50 + result.items.length < result.total).toBe(false);
+  });
+});
+
+describe('clampMarketplaceItemsLimit', () => {
+  test('passes an in-range limit through unchanged', () => {
+    expect(clampMarketplaceItemsLimit(30)).toBe(30);
+  });
+
+  test('passes the explore-landing limit (120) through unchanged', () => {
+    expect(clampMarketplaceItemsLimit(120)).toBe(120);
+  });
+
+  test('passes the ceiling itself (200) through unchanged', () => {
+    expect(clampMarketplaceItemsLimit(200)).toBe(200);
+  });
+
+  test('clamps a limit above 200 down to 200', () => {
+    expect(clampMarketplaceItemsLimit(201)).toBe(200);
+    expect(clampMarketplaceItemsLimit(5000)).toBe(200);
+  });
+
+  test('clamps a non-positive limit up to 1', () => {
+    expect(clampMarketplaceItemsLimit(0)).toBe(1);
+    expect(clampMarketplaceItemsLimit(-3)).toBe(1);
   });
 });

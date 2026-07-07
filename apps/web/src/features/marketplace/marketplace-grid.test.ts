@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   buildMarketplaceGridRows,
+  flattenMarketplaceItems,
   MARKETPLACE_GRID_COLUMNS,
   marketplaceGridRowKey,
   resolveEffectiveMarketplaceType,
@@ -60,6 +61,39 @@ describe('buildMarketplaceGridRows', () => {
   test('an empty item list produces no rows', () => {
     expect(buildMarketplaceGridRows({ items: [], grouped: true })).toEqual([]);
     expect(buildMarketplaceGridRows({ items: [], grouped: false })).toEqual([]);
+  });
+});
+
+describe('flattenMarketplaceItems', () => {
+  test('concatenates pages in order when no ids repeat', () => {
+    const pageA = makeItems('registry:skill', ['a', 'b']);
+    const pageB = makeItems('registry:skill', ['c', 'd']);
+
+    const result = flattenMarketplaceItems([{ items: pageA }, { items: pageB }]);
+
+    expect(result.map((i) => i.id)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  test('drops later duplicates by id, keeping the first occurrence', () => {
+    const pageA = makeItems('registry:skill', ['a', 'b']);
+    const pageB = makeItems('registry:skill', ['b', 'c']);
+
+    const result = flattenMarketplaceItems([{ items: pageA }, { items: pageB }]);
+
+    expect(result.map((i) => i.id)).toEqual(['a', 'b', 'c']);
+    expect(result[1]).toBe(pageA[1]);
+  });
+
+  test('an empty page list produces no items', () => {
+    expect(flattenMarketplaceItems([])).toEqual([]);
+  });
+
+  test('a single page passes through unchanged', () => {
+    const page = makeItems('registry:skill', ['a', 'b', 'c']);
+
+    const result = flattenMarketplaceItems([{ items: page }]);
+
+    expect(result).toEqual(page);
   });
 });
 
