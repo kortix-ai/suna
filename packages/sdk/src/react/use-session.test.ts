@@ -42,7 +42,10 @@ import {
   classifySendError,
   sendStateOnStart,
   sendStateOnError,
+  shouldRetrySessionStart,
 } from './use-session';
+import { clearSessionFresh, markSessionFresh } from '../platform/fresh-sessions';
+import { SessionStartError } from '../platform/projects-client';
 
 function seedQuestion(id: string, sessionID = 'sess-1') {
   useOpenCodePendingStore.getState().addQuestion({
@@ -205,5 +208,41 @@ describe('send state transitions (sendStateOnStart / sendStateOnError)', () => {
     const restarted = sendStateOnStart('a new message');
     expect(restarted.sendError).toBeNull();
     expect(restarted.pending).toBe('a new message');
+  });
+});
+
+describe('shouldRetrySessionStart', () => {
+  const startError = (status: number) => new SessionStartError('nope', { status, terminal: true });
+
+  test('retries a 404 for a fresh session within the grace window, then gives up', () => {
+    markSessionFresh('fresh');
+    try {
+      expect(shouldRetrySessionStart(0, startError(404), 'fresh')).toBe(true);
+      expect(shouldRetrySessionStart(11, startError(404), 'fresh')).toBe(true);
+      expect(shouldRetrySessionStart(12, startError(404), 'fresh')).toBe(false);
+    } finally {
+      clearSessionFresh('fresh');
+    }
+  });
+
+  test('does NOT retry a 404 for a non-fresh session (genuinely missing / no access)', () => {
+    expect(shouldRetrySessionStart(0, startError(404), 'stale')).toBe(false);
+  });
+
+  test('does not retry other terminal start errors even when fresh', () => {
+    markSessionFresh('fresh');
+    try {
+      expect(shouldRetrySessionStart(0, startError(403), 'fresh')).toBe(false);
+      expect(shouldRetrySessionStart(0, startError(402), 'fresh')).toBe(false);
+    } finally {
+      clearSessionFresh('fresh');
+    }
+  });
+
+  test('retries a few times on transient (non-start) errors', () => {
+    const transient = new Error('network blip');
+    expect(shouldRetrySessionStart(0, transient, 'x')).toBe(true);
+    expect(shouldRetrySessionStart(2, transient, 'x')).toBe(true);
+    expect(shouldRetrySessionStart(3, transient, 'x')).toBe(false);
   });
 });

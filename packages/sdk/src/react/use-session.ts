@@ -36,6 +36,7 @@ import {
   sessionStartKey,
   startProjectSession,
 } from '../platform/projects-client';
+import { isSessionFresh } from '../platform/fresh-sessions';
 import { BillingError, parseBillingError } from '../platform/api/errors';
 import { formatOpenCodeRuntimeError } from '../platform/opencode-errors';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
@@ -60,6 +61,30 @@ import {
 
 /** Coarse session lifecycle for the host's top-level gating. */
 export type SessionPhase = 'starting' | 'ready' | 'error';
+
+// Grace window for the optimistic create-vs-start race: how long /start keeps
+// retrying a 404 for a freshly-minted session before treating it as terminal.
+// ~12 × 800ms ≈ 9.6s, comfortably past the sub-second create POST.
+const FRESH_START_404_RETRIES = 12;
+const FRESH_START_404_RETRY_DELAY_MS = 800;
+
+/**
+ * Whether the `/start` poll should retry. A 404 on a freshly-minted session is
+ * the optimistic create-vs-start race (the create POST hasn't landed yet), so
+ * retry it for the grace window; a 404 on any other (non-fresh) session is a
+ * genuinely-missing/no-access session and is terminal at once. Other terminal
+ * SessionStartErrors never retry; transient transport failures retry a few times.
+ */
+export function shouldRetrySessionStart(
+  failureCount: number,
+  error: unknown,
+  sessionId: string,
+): boolean {
+  if (isSessionStartError(error) && error.status === 404 && isSessionFresh(sessionId)) {
+    return failureCount < FRESH_START_404_RETRIES;
+  }
+  return !isSessionStartError(error) && failureCount < 3;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Send-error classification. `send`/the reply actions below never throw for
@@ -253,7 +278,11 @@ export function useSession(
     queryKey: sessionStartKey(projectId, sessionId),
     queryFn: () => startProjectSession(projectId, sessionId, waitMs),
     enabled: enabled && !!projectId && !!sessionId,
-    retry: (failureCount, error) => !isSessionStartError(error) && failureCount < 3,
+    retry: (failureCount, error) => shouldRetrySessionStart(failureCount, error, sessionId),
+    retryDelay: (failureCount, error) =>
+      isSessionStartError(error) && error.status === 404
+        ? FRESH_START_404_RETRY_DELAY_MS
+        : Math.min(1000 * 2 ** failureCount, 5000),
     refetchInterval: (q) => {
       if (isSessionStartError(q.state.error)) return false;
       const stage = (q.state.data as SessionStartResult | null | undefined)?.stage;
