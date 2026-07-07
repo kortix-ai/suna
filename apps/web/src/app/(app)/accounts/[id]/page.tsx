@@ -1122,7 +1122,12 @@ function MembersCard({
   return (
     <SectionCard
       title="Members"
-      count={account.member_count}
+      // Count what THIS caller can actually see, not the raw total. The roster
+      // is visibility-filtered server-side for plain members (owners/admins +
+      // self), while account.member_count is the unfiltered COUNT(*) — using it
+      // would leak the roster size and mismatch the list below. Owners/admins
+      // see everyone, so for them members.length === member_count anyway.
+      count={members.length}
       description={tHardcodedUi.raw(
         'appAccountsIdPage.line761JsxAttrDescriptionPeopleWithAccessToThisAccount',
       )}
