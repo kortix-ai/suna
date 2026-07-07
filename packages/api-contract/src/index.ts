@@ -76,10 +76,8 @@ export const PROJECT_ROLES = ['manager', 'editor', 'member'] as const;
 export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
 export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
 
-/** Every provider that can appear on session/sandbox rows. 'managed' is the
- *  canonical name for the managed cloud backend; 'daytona' is its legacy alias,
- *  kept so existing rows / callers stay valid. */
-export const SANDBOX_PROVIDERS = ['managed', 'daytona', 'local_docker', 'justavps', 'platinum'] as const;
+/** Every provider that can appear on session/sandbox rows. */
+export const SANDBOX_PROVIDERS = ['daytona', 'local_docker', 'justavps', 'platinum'] as const;
 export const SandboxProviderSchema = z.enum(SANDBOX_PROVIDERS);
 export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
 

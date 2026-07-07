@@ -18,7 +18,7 @@ import { projectSnapshotBuilds } from '@kortix/db';
 import { db } from '../shared/db';
 import { resolveCommitSha, type GitBackedProject } from '../projects/git';
 import { getSandboxProvider, type ProviderState, type SandboxProviderAdapter } from './providers';
-import { config, normalizeProviderName, type SandboxProviderName } from '../config';
+import { config, type SandboxProviderName } from '../config';
 import { warmPrebakeProviders } from '../projects/lib/provider-precedence';
 import { perProjectWarmImageName, ppwarmReapTargets } from './ppwarm-names';
 import {
@@ -744,11 +744,10 @@ export async function kickProjectWarmPrebake(
   const providers = opts.provider
     ? [opts.provider]
     : warmPrebakeProviders({
-        // Canonicalise the stored pin (legacy 'daytona' → 'managed') so it matches
-        // ALLOWED_SANDBOX_PROVIDERS — exactly what session creation does before it
-        // routes on the pin. Without this a legacy-pinned project would fall through
-        // to the all-enabled branch (harmless, but not true parity).
-        projectPin: opts.projectPin ? normalizeProviderName(opts.projectPin) : null,
+        // Pre-warm the provider(s) a session on this project could land on —
+        // exactly what session creation resolves from the pin (an enabled pin ⇒
+        // that provider; no/stale pin ⇒ every enabled provider).
+        projectPin: opts.projectPin ?? null,
         allowed: config.ALLOWED_SANDBOX_PROVIDERS,
         isEnabled: (p) => config.isProviderEnabled(p as SandboxProviderName),
       });
