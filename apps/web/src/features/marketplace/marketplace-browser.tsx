@@ -3,7 +3,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { PackageSearch } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -44,7 +44,7 @@ export function MarketplaceBrowser({
   sourceFilter,
   publicOnly = false,
   readOnly = false,
-  scrollParentRef,
+  scrollContainerRef,
 }: {
   onAdd?: (item: MarketplaceItem) => void;
   installedNames?: Set<string>;
@@ -63,7 +63,7 @@ export function MarketplaceBrowser({
    * renders its own bounded, scrollable wrapper instead — used by routes
    * (like `/debug/marketplace`) that don't sit inside that layout.
    */
-  scrollParentRef?: RefObject<HTMLElement | null>;
+  scrollContainerRef?: RefObject<HTMLElement | null>;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [query, setQuery] = useState('');
@@ -115,16 +115,24 @@ export function MarketplaceBrowser({
   const rows = useMemo(() => buildMarketplaceGridRows({ items, grouped }), [items, grouped]);
 
   // Resolve the scroll element the virtualizer measures against. Prefer the
-  // caller-supplied ancestor (`scrollParentRef`, forwarded from
+  // caller-supplied ancestor (`scrollContainerRef`, forwarded from
   // `CustomizeSectionWrapper`'s scrollable div in production) over a
   // class-name lookup, which silently breaks if that class ever changes or
   // is absent (e.g. `/debug/marketplace`, which has no such ancestor). When
   // no external ref is supplied, the browser owns and bounds its own scroll
   // container below.
-  const [externalScrollElement, setExternalScrollElement] = useState<HTMLElement | null>(null);
-  useEffect(() => {
-    setExternalScrollElement(scrollParentRef?.current ?? null);
-  }, [scrollParentRef]);
+  //
+  // Lazy initial state captures an already-attached ref (e.g. on a `browse`
+  // tab remount, where `CustomizeSectionWrapper` stays mounted) synchronously
+  // during render, and `useLayoutEffect` corrects the first mount (where the
+  // ancestor ref isn't attached yet) BEFORE paint — so the production path
+  // never renders the self-owned fallback wrapper for a frame.
+  const [externalScrollElement, setExternalScrollElement] = useState<HTMLElement | null>(
+    () => scrollContainerRef?.current ?? null,
+  );
+  useLayoutEffect(() => {
+    setExternalScrollElement(scrollContainerRef?.current ?? null);
+  }, [scrollContainerRef]);
 
   const [ownScrollElement, setOwnScrollElement] = useState<HTMLDivElement | null>(null);
   const scrollElement = externalScrollElement ?? ownScrollElement;

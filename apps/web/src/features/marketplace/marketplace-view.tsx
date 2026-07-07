@@ -103,7 +103,7 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
               installedNames={installedNames}
               onAdd={setAddItem}
               sourceFilter={sourceFilter}
-              scrollParentRef={browseScrollContainerRef}
+              scrollContainerRef={browseScrollContainerRef}
             />
           </TabsContent>
           <TabsContent value="installed" className="mt-0">
