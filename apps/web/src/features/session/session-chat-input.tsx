@@ -1123,6 +1123,16 @@ export interface SessionChatInputProps {
   sessionId?: string;
   /** If true, disables the input (e.g. during session creation redirect) */
   disabled?: boolean;
+  /**
+   * Clear the composer optimistically on send (default true). Set false when the
+   * send navigates the composer away (project-home → new session): the component
+   * is about to unmount, so clearing first only flashes an empty box before the
+   * route swaps — and would discard the user's text if the send is gated (e.g. a
+   * paywall) instead of navigating. The instant session shell then carries the
+   * message across as its optimistic turn, so the text reads as "moving" into the
+   * thread rather than vanishing.
+   */
+  clearOnSend?: boolean;
   /** If true, a concrete model must be selected before a chat/command send. */
   modelRequired?: boolean;
   /** Auto-focus the textarea on mount (default: true on desktop) */
@@ -1221,6 +1231,7 @@ export function SessionChatInput({
   messages,
   sessionId,
   disabled = false,
+  clearOnSend = true,
   modelRequired = false,
   autoFocus,
   placeholder = 'Ask anything...',
@@ -1701,15 +1712,17 @@ export function SessionChatInput({
     if (stagedCommand) {
       const args = text.trim();
       onCommand?.(stagedCommand, args || undefined);
-      setText('');
-      setStagedCommand(null);
-      setAttachedFiles((prev) => {
-        for (const file of prev) {
-          if (file.kind === 'local') URL.revokeObjectURL(file.localUrl);
-        }
-        return [];
-      });
-      if (textareaRef.current) textareaRef.current.style.height = 'auto';
+      if (clearOnSend) {
+        setText('');
+        setStagedCommand(null);
+        setAttachedFiles((prev) => {
+          for (const file of prev) {
+            if (file.kind === 'local') URL.revokeObjectURL(file.localUrl);
+          }
+          return [];
+        });
+        if (textareaRef.current) textareaRef.current.style.height = 'auto';
+      }
       return;
     }
 
@@ -1738,17 +1751,23 @@ export function SessionChatInput({
     const filesToSend = attachedFiles.length > 0 ? [...attachedFiles] : undefined;
     const mentionsToSend = mentions.length > 0 ? [...mentions] : undefined;
 
-    // Optimistically clear input
-    setText('');
-    setSlashFilter(null);
-    setMentionQuery(null);
-    setMentions([]);
-    for (const af of attachedFiles) {
-      if (af.kind === 'local') URL.revokeObjectURL(af.localUrl);
-    }
-    setAttachedFiles([]);
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
+    // Optimistically clear input — UNLESS this send navigates the composer away
+    // (project-home → new session, `clearOnSend={false}`). There, clearing first
+    // only flashes an empty box before the route swaps, discards the text on a
+    // gated send, and would revoke the local file URLs the instant shell still
+    // needs to preview. The text/files ride across via the start-stash instead.
+    if (clearOnSend) {
+      setText('');
+      setSlashFilter(null);
+      setMentionQuery(null);
+      setMentions([]);
+      for (const af of attachedFiles) {
+        if (af.kind === 'local') URL.revokeObjectURL(af.localUrl);
+      }
+      setAttachedFiles([]);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
     }
 
     // Send directly. The OpenCode server serializes concurrent prompt_async
@@ -1759,13 +1778,15 @@ export function SessionChatInput({
     } catch {
       // Restore the text so the user can retry. The failure itself is surfaced
       // by the persistent typed banner (commandError → TurnErrorDisplay) set in
-      // handleSend's catch — a toast here would double-display it.
-      setText(trimmed);
+      // handleSend's catch — a toast here would double-display it. (No-op when
+      // clearOnSend is false: the text was never cleared.)
+      if (clearOnSend) setText(trimmed);
     }
   }, [
     text,
     submitDisabled,
     modelUnavailable,
+    clearOnSend,
     onSend,
     onCommand,
     stagedCommand,
