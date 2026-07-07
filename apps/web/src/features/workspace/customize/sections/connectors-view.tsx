@@ -2670,7 +2670,7 @@ function AddAppPanel({
     'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnect19ca1c01',
   );
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 px-6 py-10 pb-20 lg:py-20">
+    <div className="mx-auto w-full max-w-4xl space-y-6 p-4">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-foreground text-xl font-medium">Add a connector</h2>
       </header>
