@@ -111,4 +111,16 @@ describe('marketplace HTTP contract', () => {
     expect(body.files.some((file) => file.target.endsWith('kortix-system/SKILL.md'))).toBe(true);
     expect(body.readme).toContain('Kortix');
   });
+
+  test('GET /marketplace/items honors a limit of 120 (below the 200 clamp ceiling)', async () => {
+    const res = await fetch(`${baseUrl}/marketplace/items?source=kortix&limit=120&offset=0`, {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json() as { items: unknown[]; total: number };
+    // Fewer kortix items exist than 120, so this pins that the full available
+    // set came back — i.e. the request wasn't clamped down below its total.
+    expect(body.items.length).toBe(body.total);
+    expect(body.items.length).toBeGreaterThan(0);
+  });
 });

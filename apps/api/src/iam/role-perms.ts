@@ -113,19 +113,27 @@ const EDITOR_EXTRAS: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
   PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
 
+  // Sensitive READS — moved out of the floor `member` role. A plain member can
+  // use the project (run the agent/chat) but can't browse the file tree via the
+  // files page or view secret values; editor+ retains both. Makes "project
+  // access without files/secrets" expressible as the built-in `member` role.
+  PROJECT_ACTIONS.PROJECT_FILE_READ,
+  PROJECT_ACTIONS.PROJECT_SECRET_READ,
+
   // Acting on a review item (approve / reject / answer) is a decision on agent
   // work — editor-tier, alongside gitops.
   PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
 ];
 
 /** Baseline for the floor project role. `member` is the base *usable* role:
- *  it can read everything AND start / run / stop sessions — i.e. actually use
- *  the agent and the chat. A role that can't open a session is useless, and
- *  this is the role new members get by default, so it has to be able to drive
- *  Kortix. What it CANNOT do is customize the project: edit settings, deploy,
- *  manage members, or create/delete triggers — those live in EDITOR_EXTRAS /
- *  MANAGER_ONLY above. Named PROJECT_MEMBER_* to avoid colliding with the
- *  account-role MEMBER_BASELINE above. */
+ *  it can read the project and start / run / stop sessions — i.e. actually use
+ *  the agent and the chat — but NOT view secret values or browse the file tree
+ *  (those moved to editor-tier). A role that can't open a session is useless,
+ *  and this is the role new members get by default, so it has to be able to
+ *  drive Kortix. What it CANNOT do is customize the project (edit settings,
+ *  deploy, manage members, create/delete triggers) OR read files/secrets —
+ *  those live in EDITOR_EXTRAS / MANAGER_ONLY above. Named PROJECT_MEMBER_* to
+ *  avoid colliding with the account-role MEMBER_BASELINE above. */
 const PROJECT_MEMBER_BASELINE: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_READ,
   PROJECT_ACTIONS.PROJECT_SESSION_READ,
@@ -138,15 +146,16 @@ const PROJECT_MEMBER_BASELINE: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ,
   PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
 
-  // Per-capability read leaves (IAM v1). The floor role keeps everything it
-  // can read today (these previously collapsed to project.read).
+  // Per-capability read leaves (IAM v1). NOTE: project.file.read and
+  // project.secret.read are DELIBERATELY NOT here — they moved to EDITOR_EXTRAS
+  // so a floor `member` can run the agent/chat but can't browse the file tree or
+  // view secret values (the sensitive reads are an editor concern). This is the
+  // one place `member ⊂ editor` is a real capability difference on reads.
   PROJECT_ACTIONS.PROJECT_AGENT_READ,
   PROJECT_ACTIONS.PROJECT_SKILL_READ,
   PROJECT_ACTIONS.PROJECT_COMMAND_READ,
-  PROJECT_ACTIONS.PROJECT_FILE_READ,
   PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
   PROJECT_ACTIONS.PROJECT_GITOPS_READ,
-  PROJECT_ACTIONS.PROJECT_SECRET_READ,
   PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
 
   // Review Center: the floor role can see the inbox and (via its agent) submit

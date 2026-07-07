@@ -22,7 +22,7 @@ const kortix = createKortix({
 const projects = await kortix.projects.list();
 
 const s = kortix.session(projectId, sessionId);
-await s.start();
+await s.ensureReady();         // provision/resume, long-poll until ready
 await s.health();              // is the runtime ready?
 s.previewUrl(3000, '/docs');   // proxy URL for a port the agent exposed
 ```
@@ -43,6 +43,7 @@ The SDK gives you an **imperative** client for actions and **reactive** hooks fo
 
 <Cards>
   <Card title="Getting started" href="/docs/sdk/getting-started">Install, configure, authenticate, and make your first calls.</Card>
+  <Card title="Auth" href="/docs/sdk/auth">API keys vs Supabase JWTs — the two ways to authenticate the SDK.</Card>
   <Card title="The client" href="/docs/sdk/the-client">The full `createKortix` facade — accounts, projects, and the project handle.</Card>
   <Card title="Sessions" href="/docs/sdk/sessions">The session handle: lifecycle, runtime health, previews, and the typed opencode runtime.</Card>
   <Card title="React hooks" href="/docs/sdk/react">`@kortix/sdk/react` — reactive data: live messages, events, config, PTY.</Card>

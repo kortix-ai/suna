@@ -308,9 +308,9 @@ describe('sandboxes table', () => {
     expect(primaryColumn(sandboxes)).toBe('sandbox_id');
   });
 
-  test('provider defaults to managed', () => {
+  test('provider defaults to daytona', () => {
     const col = getTableConfig(sandboxes).columns.find((c) => c.name === 'provider');
-    expect(col?.default).toBe('managed');
+    expect(col?.default).toBe('daytona');
   });
 
   test('status defaults to provisioning', () => {

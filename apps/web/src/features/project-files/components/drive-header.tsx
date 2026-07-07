@@ -4,14 +4,22 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
+import { useSidebar } from '@/components/ui/sidebar';
+import { useFilesStore } from '@/features/file-browser/store/files-store';
 import { cn } from '@/lib/utils';
 import { ListSolid } from '@mynaui/icons-react';
 import { FileDiff, History, LayoutGrid } from 'lucide-react';
-import { useFilesStore } from '@/features/file-browser/store/files-store';
 
 interface DriveHeaderProps {
   historyToggle: { open: boolean; onToggle: () => void };
   reviewsToggle: { open: boolean; onToggle: () => void; openCount?: number };
+  /**
+   * Reserve room for the floating "open sidebar" toggle that the project shell
+   * renders over the top-left corner when the sidebar is collapsed (desktop) or
+   * on mobile (always). Only the standalone Files page sits directly under it;
+   * the embedded session view has its own header above, so it opts out.
+   */
+  offsetForSidebarToggle?: boolean;
 }
 
 /**
@@ -19,14 +27,29 @@ interface DriveHeaderProps {
  * title + purpose line on the left, version-history / proposed-changes
  * toggles and the list⇄grid switch on the right.
  */
-export function DriveHeader({ historyToggle, reviewsToggle }: DriveHeaderProps) {
+export function DriveHeader({
+  historyToggle,
+  reviewsToggle,
+  offsetForSidebarToggle = false,
+}: DriveHeaderProps) {
   const viewMode = useFilesStore((s) => s.viewMode);
   const setViewMode = useFilesStore((s) => s.setViewMode);
+  const { state } = useSidebar();
+  const sidebarCollapsed = state === 'collapsed';
 
   const reviewCount = reviewsToggle.openCount ?? 0;
 
   return (
-    <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 pt-5 pb-4">
+    <header
+      className={cn(
+        'flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 pb-4',
+        // Mobile: the shell's open-sidebar trigger always sits top-left, so drop
+        // the title below it. Desktop: only the collapsed-sidebar toggle overlaps,
+        // so inset the title left only then (keeps it aligned when expanded).
+        offsetForSidebarToggle ? 'pt-14 md:pt-3' : 'pt-5',
+        offsetForSidebarToggle && sidebarCollapsed && 'md:pl-14',
+      )}
+    >
       <div className="min-w-0 space-y-1">
         <h2 className="text-foreground text-xl font-medium">Files</h2>
         <p className="text-muted-foreground text-sm text-pretty">

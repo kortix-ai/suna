@@ -32,7 +32,7 @@ import {
  * Get available sandbox providers from the platform service.
  */
 export async function getProviders(): Promise<ProvidersInfo> {
-  return { providers: ['managed'], default: 'managed' };
+  return { providers: ['daytona'], default: 'daytona' };
 }
 
 /**

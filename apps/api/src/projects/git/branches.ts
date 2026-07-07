@@ -4,6 +4,7 @@
 
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { mapLimit } from '@kortix/registry';
 import { createBranchRef, getBranchCommitSha, parseGitHubRepoUrl } from '../github';
 import { validateRef } from '../git-ref';
 import {
@@ -17,6 +18,37 @@ import {
 } from './mirror';
 import { FIELD_SEP } from './commits';
 import type { GitBackedProject, GitBranchInfo } from './types';
+
+// Bounded concurrency for blob hashing below — enough to cut many-file
+// install wall-clock time without spawning an unbounded pile of `git
+// hash-object` subprocesses per commit.
+const HASH_CONCURRENCY = 8;
+
+/**
+ * Hash every file's content into a git blob object (`git hash-object -w`),
+ * with bounded concurrency — this used to be one subprocess at a time, which
+ * dominated wall-clock time for many-file marketplace installs. Each file
+ * gets its own uniquely-named temp file so concurrent writes never collide,
+ * and the returned array preserves input order regardless of completion
+ * order (downstream index construction must stay deterministic).
+ */
+export async function hashBlobs(
+  files: Array<{ path: string; content: string }>,
+  tempDir: string,
+  repoPath: string,
+): Promise<Array<{ path: string; sha: string }>> {
+  return mapLimit(
+    files.map((file, i) => ({ file, i })),
+    HASH_CONCURRENCY,
+    async ({ file, i }) => {
+      const blobFile = join(tempDir, `blob-${i}`);
+      await writeFile(blobFile, file.content, { flag: 'wx' });
+      const sha = (await runGit(['hash-object', '-w', blobFile], repoPath, false)).stdout.trim();
+      if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('git hash-object did not return a blob SHA');
+      return { path: file.path, sha };
+    },
+  );
+}
 
 export async function listBranches(project: GitBackedProject): Promise<GitBranchInfo[]> {
   const repoPath = await refreshMirror(project);
@@ -238,16 +270,10 @@ export async function commitMultipleFilesToBranch(
   const indexEnv = { GIT_INDEX_FILE: indexFile };
 
   try {
-    // Hash every blob into the object store first.
-    const blobs: Array<{ path: string; sha: string }> = [];
-    let i = 0;
-    for (const file of files) {
-      const blobFile = join(tempDir, `blob-${i++}`);
-      await writeFile(blobFile, file.content, { flag: 'wx' });
-      const sha = (await runGit(['hash-object', '-w', blobFile], repoPath, false)).stdout.trim();
-      if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('git hash-object did not return a blob SHA');
-      blobs.push({ path: file.path, sha });
-    }
+    // Hash every blob into the object store first (bounded concurrency —
+    // see hashBlobs above). Everything from here on stays sequential: it all
+    // shares the one throwaway index file.
+    const blobs = await hashBlobs(files, tempDir, repoPath);
 
     // Seed the throwaway index from the parent tree (or empty), splice all files.
     if (parentSha) await runGit(['read-tree', parentSha], repoPath, false, null, indexEnv);

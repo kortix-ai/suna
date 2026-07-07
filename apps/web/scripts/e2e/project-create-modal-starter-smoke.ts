@@ -11,8 +11,42 @@ type ProvisionPayload = {
 
 const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:3300';
 
+const DEFAULT_ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
+const TEAM_ACCOUNT_ID = '00000000-0000-4000-a000-000000000202';
+
+const ACCOUNTS = [
+  {
+    account_id: DEFAULT_ACCOUNT_ID,
+    name: 'Personal',
+    slug: 'personal',
+    account_role: 'owner',
+    is_primary_owner: true,
+  },
+  {
+    account_id: TEAM_ACCOUNT_ID,
+    name: 'Acme Team',
+    slug: 'acme-team',
+    account_role: 'admin',
+    is_primary_owner: false,
+  },
+];
+
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
+}
+
+async function mockAccounts(page: Page) {
+  await page.route(/\/accounts$/, async (route) => {
+    assert(
+      route.request().headers().authorization === 'Bearer debug-project-create-token',
+      'accounts request should include the debug bootstrap auth token',
+    );
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(ACCOUNTS),
+    });
+  });
 }
 
 async function openHarness(page: Page) {
@@ -156,7 +190,34 @@ async function main() {
     assert(optOutPayload.starter_template === 'minimal', 'opt-out payload should still use minimal starter_template');
     assert(JSON.stringify(optOutPayload.marketplace_items) === JSON.stringify([]), 'opt-out payload should omit starter pack skills');
 
-    console.log('[project-create-modal] ok: starter template and marketplace item payloads verified');
+    await mockAccounts(page);
+    await openHarness(page);
+    const accountField = page.getByTestId('project-create-account');
+    await accountField.waitFor({ state: 'visible', timeout: 30_000 });
+    assert(
+      (await accountField.textContent())?.includes('Personal'),
+      'account field should show the default account before switching',
+    );
+    const defaultAccountPayload = await submitProjectCreate(page, 'default-account-visible', false);
+    assert(
+      defaultAccountPayload.account_id === DEFAULT_ACCOUNT_ID,
+      'payload should target the displayed default account',
+    );
+
+    await openHarness(page);
+    await page.getByRole('button', { name: /personal/i }).click();
+    await page.getByRole('menuitem', { name: /acme team/i }).click();
+    assert(
+      (await page.getByTestId('project-create-account').textContent())?.includes('Acme Team'),
+      'account field should show the switched account',
+    );
+    const switchedPayload = await submitProjectCreate(page, 'switched-account', false);
+    assert(
+      switchedPayload.account_id === TEAM_ACCOUNT_ID,
+      'payload should target the account picked in the modal',
+    );
+
+    console.log('[project-create-modal] ok: starter template, marketplace item, and account picker payloads verified');
   } finally {
     await browser.close();
   }
