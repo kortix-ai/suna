@@ -256,6 +256,13 @@ oauthApp.use('/authorize/consent', supabaseAuth);
 oauthApp.use('/userinfo', oauthTokenAuth);
 oauthApp.use('/claimable-machines', oauthTokenAuth);
 
+// oauth_clients.client_id is a uuid column. These endpoints are public (the
+// client authenticates via client_secret per the OAuth spec), so scanners probe
+// them with junk ids ("notreal"); an unvalidated string reaches Postgres as a
+// uuid parameter and throws 22P02 — surfacing as a prod "Failed query" 500
+// instead of the spec-correct invalid_client. Gate before the DB.
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // ─── GET /authorize ─────────────────────────────────────────────────────────
 
 oauthApp.openapi(
@@ -295,6 +302,10 @@ oauthApp.openapi(
 
   if (codeChallengeMethod !== 'S256') {
     return c.json({ error: 'invalid_request', error_description: 'Only code_challenge_method=S256 is supported' }, 400);
+  }
+
+  if (!UUID_REGEX.test(clientId)) {
+    return c.json({ error: 'invalid_client', error_description: 'Client not found or inactive' }, 400);
   }
 
   const [client] = await db
@@ -512,6 +523,10 @@ oauthApp.openapi(
 
   if (!checkTokenRateLimit(clientId)) {
     return c.json({ error: 'rate_limit_exceeded', error_description: 'Too many token requests' }, 429);
+  }
+
+  if (!UUID_REGEX.test(clientId)) {
+    return c.json({ error: 'invalid_client' }, 401);
   }
 
   const [client] = await db

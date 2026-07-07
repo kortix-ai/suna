@@ -131,7 +131,9 @@ app.use('*', async (c, next) => {
     await next();
     status = c.res.status;
   } catch (err) {
-    status = 500;
+    // Record the thrown status (e.g. the request-deadline 503), not a blanket
+    // 500 — otherwise deadline hits are unattributable per route in metrics.
+    status = err instanceof HTTPException ? err.status : 500;
     throw err;
   } finally {
     decInFlight();

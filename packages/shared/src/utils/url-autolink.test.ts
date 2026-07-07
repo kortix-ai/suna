@@ -91,4 +91,28 @@ describe('autoLinkUrls', () => {
     expect(autoLinkUrls(null as any)).toBeNull();
     expect(autoLinkUrls(undefined as any)).toBeUndefined();
   });
+
+  test('skips a bare domain immediately after a slash (file path, old lookbehind semantics)', () => {
+    expect(autoLinkUrls('see /etc/config.com for details')).toBe('see /etc/config.com for details');
+  });
+
+  test('still links a protocol url even when preceded by a slash', () => {
+    expect(autoLinkUrls('mirror /https://example.com')).toBe(
+      'mirror /[https://example.com](https://example.com)',
+    );
+  });
+
+  test('protects adjacent inline math spans without consuming separators', () => {
+    expect(autoLinkUrls('$a.com$$b.org$')).toBe('$a.com$$b.org$');
+  });
+
+  test('escaped dollars do not open math spans, so following urls still link', () => {
+    expect(autoLinkUrls('costs \\$5 at example.com today')).toBe(
+      'costs \\$5 at [example.com](https://example.com) today',
+    );
+  });
+
+  test('inline math spanning a url keeps it unlinked', () => {
+    expect(autoLinkUrls('math $x = example.com$ end')).toBe('math $x = example.com$ end');
+  });
 });

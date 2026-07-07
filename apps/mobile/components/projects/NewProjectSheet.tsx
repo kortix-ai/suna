@@ -31,6 +31,9 @@ import {
 } from '@/lib/projects/hooks';
 import type { KortixProject } from '@/lib/projects/projects-client';
 
+// Mirrors the API's PROJECT_NAME_MAX_LENGTH (projects.name is varchar(255)).
+const PROJECT_NAME_MAX_LENGTH = 120;
+
 interface NewProjectSheetProps {
   open: boolean;
   accountId: string | null;
@@ -120,6 +123,9 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
     if (!accountId) return toast.error('Select an account first');
     const cleaned = name.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
     if (!cleaned) return toast.error('Project name is required');
+    if (cleaned.length > PROJECT_NAME_MAX_LENGTH) {
+      return toast.error(`Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`);
+    }
     try {
       haptics.medium();
       const project = await provision.mutateAsync({

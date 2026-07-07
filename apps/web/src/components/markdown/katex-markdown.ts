@@ -43,11 +43,14 @@ const katexSanitizeSchema = {
  * does not pair them as inline LaTeX delimiters. Real math (`$E = mc^2$`, `$\frac{a}{b}$`)
  * is unchanged because the character after `$` is not a digit.
  */
-const CURRENCY_DOLLAR = /(?<![\\$])\$(?=\d)/g;
+// No lookbehind: a regex literal with (?<!…) is a parse-time SyntaxError on
+// Safari <16.4 that kills the WHOLE chunk (chat + public share page). The
+// optional prefix capture + replacer check is the lookbehind-free equivalent.
+const CURRENCY_DOLLAR = /([\\$]?)\$(?=\d)/g;
 
 export function escapeCurrencyDollars(text: string): string {
   if (!text || typeof text !== 'string') return text;
-  return text.replace(CURRENCY_DOLLAR, '\\$');
+  return text.replace(CURRENCY_DOLLAR, (match, prefix: string) => (prefix ? match : '\\$'));
 }
 
 /**

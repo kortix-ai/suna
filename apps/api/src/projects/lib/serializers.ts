@@ -420,6 +420,15 @@ export function deriveKortixApiRoot(kortixUrl: string): string {
 }
 
 
+// Display cap for user-supplied project names. Well under the projects.name
+// varchar(255) column so every write path (provision, GitHub link, PAT link)
+// fits the schema even after a linked repo's derived name is substituted.
+export const PROJECT_NAME_MAX_LENGTH = 120;
+
+export function clampProjectName(name: string): string {
+  return name.length > PROJECT_NAME_MAX_LENGTH ? name.slice(0, PROJECT_NAME_MAX_LENGTH).trimEnd() : name;
+}
+
 export function deriveProjectName(repoUrl: string): string {
   const cleaned = repoUrl.replace(/\/+$/, '').replace(/\.git$/, '');
   const tail = cleaned.split(/[/:]/).filter(Boolean).pop();

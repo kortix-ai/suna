@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto';
 import { grantProjectRole } from './access';
 import { ttlMemo } from '../../shared/ttl-memo';
 import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
-import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, deriveProjectName, normalizeJsonObject, normalizeString } from './serializers';
+import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, clampProjectName, deriveProjectName, normalizeJsonObject, normalizeString } from './serializers';
 
 // Memoized briefly (positive hits only): this runs on every project-scoped
 // request, and prod pays a cross-region roundtrip per DB statement. A revoked
@@ -712,7 +712,7 @@ export async function registerGitHubLinkedProject(input: {
   defaultBranch: string;
   manifestPath: string;
 }): Promise<ProjectRow> {
-  const projectName = input.name ?? deriveProjectName(input.repo.full_name);
+  const projectName = clampProjectName(input.name ?? deriveProjectName(input.repo.full_name));
   const now = new Date();
   const metadata = {
     git: {
@@ -845,7 +845,7 @@ export async function registerPatLinkedProject(input: {
   defaultBranch: string;
   manifestPath: string;
 }): Promise<ProjectRow> {
-  const projectName = input.name ?? deriveProjectName(input.repo.full_name);
+  const projectName = clampProjectName(input.name ?? deriveProjectName(input.repo.full_name));
   const now = new Date();
   const metadata = {
     git: {
