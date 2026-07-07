@@ -134,7 +134,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
                   <View className="h-2.5 w-2.5 rounded-full mr-3" style={{ backgroundColor: '#FBBF24' }} />
                   <View className="flex-1">
                     <Text className="font-roobert-medium text-[15px] text-foreground" numberOfLines={1}>
-                      Local Docker
+                      Sandbox
                     </Text>
                     <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">
                       {creatingProgress.message}

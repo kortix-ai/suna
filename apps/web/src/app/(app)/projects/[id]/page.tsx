@@ -1,22 +1,23 @@
 'use client';
 
-import { buildNewSessionCreateInput } from '@/features/co-worker/project-layout/new-session-create';
+import { buildNewSessionCreateInput } from '@/features/workspace/project-layout/new-session-create';
 import {
   ProjectHome,
   type ProjectHomeSendOptions,
-} from '@/features/co-worker/project-layout/project-home';
-import { ProjectShell } from '@/features/co-worker/project-layout/project-shell';
+} from '@/features/workspace/project-layout/project-home';
+import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { useAccountState } from '@/hooks/billing';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { isBillingEnabled } from '@/lib/config';
-import { getProjectDetail } from '@/lib/projects-client';
+import { getProjectDetail } from '@kortix/sdk/projects-client';
+import { writeStartStash } from '@kortix/sdk/react';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 const FREE_ONBOARDING_UPGRADE_MODAL_KEY = 'kortix:free-onboarding-upgrade-modal-shown';
 
@@ -34,6 +35,9 @@ export default function ProjectIndexPage() {
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
   const newSession = useNewProjectSession(projectId);
+  // Composer sending state: spans Enter → create confirmed → navigation. Reset
+  // only on create failure (success navigates this page away).
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     if (!isBillingEnabled() || !accountState || !projectAccountId) return;
@@ -69,31 +73,37 @@ export default function ProjectIndexPage() {
         return;
       }
 
-      // Identical optimistic path to every other new-session entry point: mint the
-      // id, paint the instant shell, and let the session page auto-send `text` once
-      // the box is ready. No server-side initial_prompt — the shell shows the
+      // Identical create-first path to every other new-session entry point: the
+      // composer shows a sending spinner for the create RTT (~one round trip),
+      // then navigates into the instant shell, which auto-sends `text` once the
+      // box is ready. No server-side initial_prompt — the shell shows the
       // message + inline boot status, matching the global dashboard composer.
       // Bind the chosen agent at session birth so it matches the `agent` the
       // composer sends on the first prompt — sessions are agent-immutable and the
       // API proxy 409s any prompt whose agent differs from the bound one, which
       // defaults to "default" when unset (see buildNewSessionCreateInput).
+      setSending(true);
       newSession({
         create: buildNewSessionCreateInput(options),
+        // Create failed (already surfaced by the hook) — we never left this
+        // page, so just unlock the composer with the text still in it.
+        onError: () => setSending(false),
         onNavigate: (sessionId) => {
-          sessionStorage.setItem(`project_pending_prompt:${sessionId}`, text);
+          // `sessionId` here is the route/Kortix session id, not the OpenCode
+          // pin the session page resolves later (`useCanonicalOpenCodeSession`
+          // /`ensureOpencodeSessionPin` mint a separate id). Stash under the
+          // route id via the SDK's canonical `writeStartStash` — the session
+          // page's `migrateStash` hands this off onto the resolved pin once it
+          // exists, and `readStartStash` (instant shell, `useSession`) reads it
+          // uniformly either side of that migration.
+          writeStartStash(sessionId, {
+            prompt: text,
+            agent: options?.agent ?? null,
+            model: options?.model ?? null,
+            variant: options?.variant ?? null,
+          });
           if (files?.length) {
             usePendingFilesStore.getState().setPendingFiles(files);
-          }
-          const pendingOptions = {
-            ...(options?.agent ? { agent: options.agent } : {}),
-            ...(options?.model ? { model: options.model } : {}),
-            ...(options?.variant ? { variant: options.variant } : {}),
-          };
-          if (Object.keys(pendingOptions).length > 0) {
-            sessionStorage.setItem(
-              `project_pending_options:${sessionId}`,
-              JSON.stringify(pendingOptions),
-            );
           }
         },
       });
@@ -103,7 +113,7 @@ export default function ProjectIndexPage() {
 
   return (
     <ProjectShell projectId={projectId}>
-      <ProjectHome projectId={projectId} onSend={handleSend} busy={false} />
+      <ProjectHome projectId={projectId} onSend={handleSend} busy={sending} />
     </ProjectShell>
   );
 }

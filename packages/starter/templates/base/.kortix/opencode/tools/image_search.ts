@@ -92,9 +92,10 @@ async function describeImage(
 async function enrichImages(images: EnrichedImage[]): Promise<EnrichedImage[]> {
   const replicateBaseUrl = getKortixRouterBase("replicate") ?? undefined;
   // Route through the Kortix router (derived from KORTIX_API_URL); auth with
-  // KORTIX_TOKEN. Fall back to a raw REPLICATE_API_TOKEN only when unset.
+  // KORTIX_SANDBOX_TOKEN (KORTIX_TOKEN kept as a legacy fallback). Fall back
+  // to a raw REPLICATE_API_TOKEN only when unset.
   const replicateToken = replicateBaseUrl
-    ? getEnv("KORTIX_TOKEN")
+    ? getEnv("KORTIX_SANDBOX_TOKEN") || getEnv("KORTIX_TOKEN")
     : getEnv("REPLICATE_API_TOKEN");
   if (!replicateToken || images.length === 0) return images;
 
@@ -143,12 +144,13 @@ export default tool({
   async execute(args, _context) {
     const serperUrlOverride = getKortixRouterBase("serper") ?? undefined;
     // Route through the Kortix router (derived from KORTIX_API_URL); auth with
-    // KORTIX_TOKEN. Fall back to a raw SERPER_API_KEY only when unset.
+    // KORTIX_SANDBOX_TOKEN (KORTIX_TOKEN kept as a legacy fallback). Fall back
+    // to a raw SERPER_API_KEY only when unset.
     const apiKey = serperUrlOverride
-      ? getEnv("KORTIX_TOKEN")
+      ? getEnv("KORTIX_SANDBOX_TOKEN") || getEnv("KORTIX_TOKEN")
       : getEnv("SERPER_API_KEY");
     if (!apiKey) return serperUrlOverride
-      ? "Error: KORTIX_TOKEN not set."
+      ? "Error: KORTIX_SANDBOX_TOKEN not set."
       : "Error: SERPER_API_KEY not set.";
 
     const numResults = Math.max(1, Math.min(args.num_results ?? 12, 100));

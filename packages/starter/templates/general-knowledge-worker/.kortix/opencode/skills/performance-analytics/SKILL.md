@@ -1,6 +1,7 @@
 ---
 name: performance-analytics
 description: "Frameworks for measuring, reporting, and optimizing marketing performance across channels and campaigns."
+defaultProjectInstall: true
 ---
 
 # Performance Analytics Skill

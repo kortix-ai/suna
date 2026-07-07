@@ -5,40 +5,10 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { ProgressRing } from '@/components/ui/progress-ring';
 import { STATUS_TEXT } from '@/components/ui/status';
-import { normalizeAppPathname } from '@/lib/instance-routes';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
-import {
-  ArrowUp,
-  ArrowUpLeft,
-  Check,
-  ChevronDown,
-  Folder,
-  ListTodo,
-  // Info,       // AutoContinue — commented out
-  // Infinity,   // AutoContinue — commented out
-  Loader2,
-  MessageSquare,
-  Paperclip,
-  Reply,
-  Terminal,
-  X,
-} from 'lucide-react';
-import { usePathname } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-/* AutoContinue — commented out
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
-*/
-import { VoiceRecorder } from '@/components/thread/chat-input/voice-recorder';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
 import { getFileIcon } from '@/features/files/components/file-icon';
+import { normalizeProviderList } from '@/hooks/opencode/provider-selection';
 import type {
   Agent,
   Command,
@@ -47,20 +17,42 @@ import type {
   ProviderListResponse,
   Session,
 } from '@/hooks/opencode/use-opencode-sessions';
-import { normalizeProviderList } from '@/hooks/opencode/provider-selection';
 import {
-  useOpenCodeSessions,
   useOpenCodeSessionTodo,
+  useOpenCodeSessions,
 } from '@/hooks/opencode/use-opencode-sessions';
+import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
+import { clearForkDraft, readForkDraft } from '@kortix/sdk/react';
+
+import { resolveComposerResetOnSend } from './composer-reset';
+import {
+  ArrowUp,
+  ArrowUpLeft,
+  Check,
+  ChevronDown,
+  Folder,
+  ListTodo,
+  Loader2,
+  MessageSquare,
+  Paperclip,
+  Reply,
+  Terminal,
+  X,
+} from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { usePathname } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
 import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
-  isModelRequiredButUnavailable,
   NO_MODEL_AVAILABLE_MESSAGE,
+  isModelRequiredButUnavailable,
 } from './model-availability';
-import { ModelSelector, type ModelDefaultControls } from './model-selector';
-import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
+import { type ModelDefaultControls, ModelSelector } from './model-selector';
+import { VoiceRecorder } from './voice-recorder';
 
 import {
   CommandGroup,
@@ -129,7 +121,9 @@ function catalogModelFor(providerID: string, modelID: string) {
       lookupModelID = modelID.slice(slash + 1);
     }
   }
-  return LLM_PROVIDER_BY_ID.get(lookupProviderID)?.models.find((model) => model.id === lookupModelID);
+  return LLM_PROVIDER_BY_ID.get(lookupProviderID)?.models.find(
+    (model) => model.id === lookupModelID,
+  );
 }
 
 export function flattenModels(providers: ProviderListResponse | undefined): FlatModel[] {
@@ -163,7 +157,10 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
             },
         contextWindow: (model as any).limit?.context,
         releaseDate:
-          (model as any).release_date ?? (model as any).released ?? catalogModel?.released ?? undefined,
+          (model as any).release_date ??
+          (model as any).released ??
+          catalogModel?.released ??
+          undefined,
         family: (model as any).family,
         cost: (model as any).cost
           ? {
@@ -254,7 +251,8 @@ export function AgentSelector({
                 'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium capitalize transition-colors duration-200',
                 flash && 'bg-primary/10 text-foreground',
                 open && 'bg-muted text-foreground',
-                disabled && 'cursor-not-allowed opacity-70 hover:bg-transparent hover:text-muted-foreground',
+                disabled &&
+                  'hover:text-muted-foreground cursor-not-allowed opacity-70 hover:bg-transparent',
               )}
             >
               <span className="max-w-[100px] truncate">{displayName}</span>
@@ -270,7 +268,9 @@ export function AgentSelector({
         <TooltipContent side="top" className="max-w-[240px] text-xs">
           {disabled ? (
             <p>
-              {"This agent is set when the session starts and can't be changed here. Start a new session to use a different agent."}
+              {
+                "This agent is set when the session starts and can't be changed here. Start a new session to use a different agent."
+              }
             </p>
           ) : (
             <p>
@@ -399,348 +399,6 @@ function VariantSelector({
     </Tooltip>
   );
 }
-
-/* AutoContinue — commented out
-// ============================================================================
-// AutoContinue Mode Selector
-// ============================================================================
-
-export type AutoContinueMode = 'goal' | 'goal1' | 'goal2' | 'goal3';
-
-interface AutoContinueAlgorithm {
-  id: AutoContinueMode;
-  label: string;
-  role: string;
-  description: string;
-  commandName: string;
-  bestFor: string;
-  strengths: string[];
-  weaknesses: string[];
-  howItWorks: string;
-}
-
-const AUTOCONTINUE_ALGORITHMS: AutoContinueAlgorithm[] = [
-  {
-    id: 'goal',
-    label: 'Kraemer',
-    role: 'Executor',
-    description: 'Fast TDD loop — reliable for clear specs',
-    commandName: 'goal',
-    bestFor: 'Clear specs, coding tasks, "just build it" work',
-    strengths: [
-      'Reliable and balanced speed/cost',
-      'Solid TDD discipline — writes tests first, implements, verifies',
-      'No overhead from extra validation passes',
-    ],
-    weaknesses: [
-      'Can miss subtle edge cases that need deeper second-pass reasoning',
-      'No adversarial self-review — trusts its own DONE claim',
-    ],
-    howItWorks: 'The goal algorithm runs an autonomous loop where the agent works until it can prove completion, then requests runtime-verified completion. Simple binary loop — no staged validators, no critic, no phase system. The agent drives its own process.',
-  },
-  {
-    id: 'goal1',
-    label: 'Kubet',
-    role: 'Validator',
-    description: 'Adversarial review — catches hidden issues',
-    commandName: 'goal1',
-    bestFor: 'Correctness-critical tasks — ops planning, complex logic, risk analysis',
-    strengths: [
-      'Catches hidden issues through forced adversarial self-review',
-      'Most reliable outcomes across all task types',
-      '3-level validator pipeline ensures nothing slips through',
-      'Async process critic monitors efficiency during work',
-    ],
-    weaknesses: [
-      'Slower and more expensive due to validation passes',
-      'May over-engineer simple tasks that don\'t need 3 levels of review',
-    ],
-    howItWorks: 'After the agent claims DONE, the system drives it through a 3-level validator pipeline:\n\nLevel 1 (Format) — Are all files valid? Does the build pass? Any syntax errors?\nLevel 2 (Quality) — Do tests pass? Are requirements traced? Any anti-patterns?\nLevel 3 (Top-Notch) — Adversarial edge cases, performance review, regression sweep.\n\nThe agent must pass each level before advancing. If a level fails, the agent fixes issues and retries that level.\n\nDuring the work phase, an async process critic fires periodically to check: is the agent going in circles? Skipping tests? Gold-plating? The critic injects course-correction prompts without interrupting the task itself.\n\nThe agent cannot skip validators by emitting DONE and VERIFIED together — the system forces the full pipeline.',
-  },
-  {
-    id: 'goal2',
-    label: 'Ino',
-    role: 'Decomposer',
-    description: 'Kanban cards — structured per-module work',
-    commandName: 'goal2',
-    bestFor: 'Multi-domain tasks — investigations, audits, research, modular systems',
-    strengths: [
-      'Strong structured breakdown into discrete work units',
-      'Each card goes through its own review/test cycle',
-      'Thorough coverage of individual domains',
-    ],
-    weaknesses: [
-      'Can underscope — if it doesn\'t create cards for all requirements, the system won\'t catch it',
-      'Integration mistakes between independently-built parts',
-      'Most expensive due to per-card overhead',
-    ],
-    howItWorks: 'Work is organized as a kanban board. The agent decomposes the task into cards, each prefixed with a stage:\n\n[BACKLOG] — Waiting to start\n[IN PROGRESS] — Currently being worked on (max 1 at a time)\n[REVIEW] — Self-review checkpoint\n[TESTING] — Run tests for this specific card\n[DONE] — Fully verified\n\nCards progress through stages in order. The system monitors todo items for these prefixes and provides stage-aware continuation prompts. If the agent claims DONE but cards aren\'t all in [DONE], the system rejects it.\n\nAfter all cards complete, a final integration check runs across the whole workspace.',
-  },
-  {
-    id: 'goal3',
-    label: 'Saumya',
-    role: 'Architect',
-    description: 'Entropy search — diverge then compress',
-    commandName: 'goal3',
-    bestFor: 'Design, strategy, architecture — problems with ambiguity',
-    strengths: [
-      'Fastest and cheapest across all tasks',
-      'Produces clean, well-architected solutions',
-      'Genuine strategic exploration — not fake variations',
-    ],
-    weaknesses: [
-      'Implementation detail correctness can slip',
-      'Upfront exploration adds no value on spec-driven tasks',
-      'Tests may validate internal components without catching integration bugs',
-    ],
-    howItWorks: 'Uses controlled entropy scheduling — high entropy in search, low entropy in execution.\n\nThe system drives the agent through 5 phases:\n\n1. EXPAND (high entropy) — Reframe the task 5+ ways, list hidden assumptions, generate diverse solution families across multiple lenses.\n\n2. BRANCH (high entropy) — Crystallize 3-5 materially different candidate approaches. Each must differ in strategy, not wording.\n\n3. ATTACK (medium entropy) — Candidates cross-attack each other. Find failure modes, blind spots, merge strongest parts.\n\n4. RANK (low entropy) — Score by robustness/novelty/feasibility. Pick ONE path. No hedging.\n\n5. COMPRESS (minimal entropy) — Execute the ranked winner with TDD. No re-exploring.\n\nThe agent emits phase markers (<phase>X-done</phase>) and the system advances it. DONE before the compress phase is rejected as premature convergence.',
-  },
-];
-
-function InfinityOff({ className, strokeWidth = 2 }: { className?: string; strokeWidth?: number }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z" />
-      <line x1="4" y1="4" x2="20" y2="20" />
-    </svg>
-  );
-}
-
-const DEFAULT_AUTOCONTINUE_MODE: AutoContinueMode = 'goal';
-
-function AutoContinueSelector({
-  selected,
-  onSelect,
-  commands,
-}: {
-  selected: AutoContinueMode | null;
-  onSelect: (mode: AutoContinueMode | null) => void;
-  commands: Command[];
-}) {
-  const [open, setOpen] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  const [explicitPick, setExplicitPick] = useState(false);
-  const [detailAlg, setDetailAlg] = useState<AutoContinueAlgorithm | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
-
-  const available = useMemo(
-    () =>
-      AUTOCONTINUE_ALGORITHMS.filter((alg) =>
-        Array.isArray(commands) && commands.some((c) => c.name === alg.commandName),
-      ),
-    [commands],
-  );
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-        setExpanded(false);
-      }
-    }
-    if (open) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [open]);
-
-  useEffect(() => {
-    if (open && selected !== null) {
-      setExpanded(true);
-    }
-  }, [open, selected]);
-
-  if (available.length === 0) return null;
-
-  const isActive = selected !== null;
-  const currentAlg = available.find((a) => a.id === selected);
-
-  return (
-    <>
-      <div className="relative" ref={ref}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={() => setOpen(!open)}
-              className={cn(
-                'inline-flex items-center gap-1 h-8 px-2 rounded-full text-xs font-medium transition-colors duration-200 cursor-pointer',
-                isActive
-                  ? 'text-primary bg-primary/10 hover:bg-primary/15'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted',
-              )}
-            >
-              {isActive ? (
-                <Infinity className="size-4" strokeWidth={2.5} />
-              ) : (
-                <InfinityOff className="size-4" />
-              )}
-              {isActive && (
-                <span className="text-xs">{explicitPick && currentAlg ? currentAlg.label : 'Auto'}</span>
-              )}
-              <ChevronDown className={cn('size-3 opacity-50 transition-transform duration-200', open && 'rotate-180')} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">
-            {isActive
-              ? `AutoContinue: ${currentAlg?.label}`
-              : 'AutoContinue off'}
-          </TooltipContent>
-        </Tooltip>
-
-        {open && (
-          <div
-            className="absolute bottom-full left-0 mb-1.5 z-50 w-80 bg-popover border border-border rounded-2xl overflow-hidden animate-in fade-in-0 slide-in-from-bottom-2 duration-150"
-          >
-            <div className="p-1">
-              <div className="px-2.5 pt-1.5 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                AutoContinue
-              </div>
-
-              <button
-                onClick={() => { onSelect(null); setExplicitPick(false); setExpanded(false); setOpen(false); }}
-                className={cn(
-                  'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm transition-colors cursor-pointer',
-                  !isActive ? 'bg-muted' : 'hover:bg-muted',
-                )}
-              >
-                <InfinityOff className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="font-medium flex-1 text-left">Off</span>
-                {!isActive && <Check className="size-3 text-foreground shrink-0" />}
-              </button>
-
-              <button
-                onClick={() => {
-                  if (!isActive) onSelect(DEFAULT_AUTOCONTINUE_MODE);
-                  setExpanded(true);
-                }}
-                className={cn(
-                  'w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm transition-colors cursor-pointer',
-                  isActive && !expanded ? 'bg-muted' : isActive ? 'bg-primary/5' : 'hover:bg-muted',
-                )}
-              >
-                <Infinity className="size-3.5 shrink-0" strokeWidth={2.5} />
-                <span className="font-medium flex-1 text-left">
-                  {isActive && explicitPick && currentAlg ? `On — ${currentAlg.label}` : 'On'}
-                </span>
-                {isActive && !expanded && <Check className="size-3 text-foreground shrink-0" />}
-                {!expanded && <ChevronDown className="size-3 text-muted-foreground shrink-0" />}
-              </button>
-
-              <div
-                className="overflow-hidden transition-colors duration-200 ease-out"
-                style={{
-                  maxHeight: expanded ? available.length * 40 + 16 : 0,
-                  opacity: expanded ? 1 : 0,
-                }}
-              >
-                <div className="mx-2 my-1 border-t border-border" />
-                {available.map((alg) => {
-                  const isSelected = selected === alg.id;
-                  return (
-                    <div
-                      key={alg.id}
-                      className={cn(
-                        'flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm transition-colors',
-                        isSelected ? 'bg-muted' : 'hover:bg-muted',
-                      )}
-                    >
-                      <button
-                        onClick={() => { onSelect(alg.id); setExplicitPick(true); setOpen(false); setExpanded(false); }}
-                        className="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
-                      >
-                        <span className="font-medium shrink-0">{alg.label}</span>
-                        <span className="text-xs text-muted-foreground/70 shrink-0">{alg.role}</span>
-                        <span className="text-xs text-muted-foreground truncate">{alg.description}</span>
-                        {isSelected && <Check className="size-3 text-foreground shrink-0 ml-auto" />}
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setDetailAlg(alg); setOpen(false); setExpanded(false); }}
-                        className="shrink-0 p-0.5 rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-muted-foreground/10 transition-colors cursor-pointer"
-                      >
-                        <Info className="size-3.5" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <Dialog open={detailAlg !== null} onOpenChange={(v) => { if (!v) setDetailAlg(null); }}>
-        <DialogContent className="max-w-lg" aria-describedby="alg-detail-desc">
-          {detailAlg && (
-            <>
-              <DialogHeader>
-                <div className="flex items-center gap-3">
-                  <Infinity className="size-5 text-primary" strokeWidth={2.5} />
-                  <DialogTitle className="text-lg">{detailAlg.label}</DialogTitle>
-                  <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full font-medium">
-                    {detailAlg.role}
-                  </span>
-                </div>
-                <DialogDescription id="alg-detail-desc">
-                  {detailAlg.description}
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="space-y-4 mt-2">
-                <div>
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Best for</h4>
-                  <p className="text-sm">{detailAlg.bestFor}</p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Strengths</h4>
-                    <ul className="space-y-1">
-                      {detailAlg.strengths.map((s, i) => (
-                        <li key={i} className="text-sm text-muted-foreground flex gap-1.5">
-                          <span className={cn('shrink-0 mt-0.5', STATUS_TEXT.success)}>+</span>
-                          <span>{s}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Weaknesses</h4>
-                    <ul className="space-y-1">
-                      {detailAlg.weaknesses.map((w, i) => (
-                        <li key={i} className="text-sm text-muted-foreground flex gap-1.5">
-                          <span className={cn('shrink-0 mt-0.5', STATUS_TEXT.warning)}>-</span>
-                          <span>{w}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">How it works</h4>
-                  <div className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line bg-muted/50 rounded-2xl p-3">
-                    {detailAlg.howItWorks}
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-*/
 
 // ============================================================================
 // Token Progress Circle
@@ -1447,6 +1105,13 @@ export interface SessionChatInputProps {
    * busy input shows a (non-clickable) stop button instead of nothing at all.
    */
   stopDisabled?: boolean;
+  /**
+   * The send is in flight but hasn't navigated/settled yet — swap the send
+   * button for a spinner (used by the project-home composer while the session
+   * create POST round-trips). Distinct from `isBusy`, which means "the agent is
+   * running" and shows a stop button instead.
+   */
+  isSending?: boolean;
   agents?: Agent[];
   selectedAgent?: string | null;
   onAgentChange?: (agentName: string | null | undefined) => void;
@@ -1467,6 +1132,16 @@ export interface SessionChatInputProps {
   sessionId?: string;
   /** If true, disables the input (e.g. during session creation redirect) */
   disabled?: boolean;
+  /**
+   * Clear the composer optimistically on send (default true). Set false when the
+   * send navigates the composer away (project-home → new session): the component
+   * is about to unmount, so clearing first only flashes an empty box before the
+   * route swaps — and would discard the user's text if the send is gated (e.g. a
+   * paywall) instead of navigating. The instant session shell then carries the
+   * message across as its optimistic turn, so the text reads as "moving" into the
+   * thread rather than vanishing.
+   */
+  clearOnSend?: boolean;
   /** If true, a concrete model must be selected before a chat/command send. */
   modelRequired?: boolean;
   /** Auto-focus the textarea on mount (default: true on desktop) */
@@ -1496,12 +1171,19 @@ export interface SessionChatInputProps {
   /** Slot rendered inline in the bottom toolbar, just left of the voice button */
   toolbarSlot?: React.ReactNode;
 
+  /** Extra classes for the input card — e.g. a radius override for the
+   *  project-home hero composer (`rounded-xl`). The drag overlay follows. */
+  cardClassName?: string;
+
   /** Reply context — shows a banner in the input indicating what's being replied to */
   replyTo?: { text: string } | null;
   /** Callback to clear the reply context */
   onClearReply?: () => void;
   /** When true, a structured question is active — send submits a custom answer instead of a chat message */
   lockForQuestion?: boolean;
+  /** When true, a connector action is awaiting your approval — the run is paused,
+   *  so the composer is locked until you approve/deny it above. */
+  lockForApproval?: boolean;
   /** Called instead of onSend when lockForQuestion is true and the user submits text */
   onCustomAnswer?: (text: string) => void;
   /** Label for the send button when a question is active (e.g. "Next", "Submit"). Null = default arrow icon. */
@@ -1512,10 +1194,6 @@ export interface SessionChatInputProps {
   onQuestionAction?: () => void;
   /** Number of ESC presses so far (0 = none, 1 = first, 2 = second). Triple-ESC to stop. */
   escCount?: number;
-}
-
-function forkDraftKey(sessionId: string) {
-  return `opencode_fork_prompt:${sessionId}`;
 }
 
 function parseForkDraft(parts: PromptPart[] | null | undefined) {
@@ -1546,6 +1224,7 @@ export function SessionChatInput({
   isBusy = false,
   onStop,
   stopDisabled = false,
+  isSending = false,
   agents = [],
   selectedAgent = null,
   onAgentChange,
@@ -1562,6 +1241,7 @@ export function SessionChatInput({
   messages,
   sessionId,
   disabled = false,
+  clearOnSend = true,
   modelRequired = false,
   autoFocus,
   placeholder = 'Ask anything...',
@@ -1573,9 +1253,11 @@ export function SessionChatInput({
   onContextClick,
   inputSlot,
   toolbarSlot,
+  cardClassName,
   replyTo,
   onClearReply,
   lockForQuestion = false,
+  lockForApproval = false,
   onCustomAnswer,
   questionButtonLabel = null,
   questionCanAct = true,
@@ -1610,7 +1292,6 @@ export function SessionChatInput({
   const [slashIndex, setSlashIndex] = useState(0);
   const [stagedCommand, setStagedCommand] = useState<Command | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
-  // const [autocontinueMode, setAutocontinueMode] = useState<AutoContinueMode | null>(null); // AutoContinue — commented out
   const [isDragOver, setIsDragOver] = useState(false);
   const pathname = normalizeAppPathname(usePathname());
   const isOnboarding = pathname?.startsWith('/onboarding');
@@ -1683,10 +1364,8 @@ export function SessionChatInput({
 
   useEffect(() => {
     if (!sessionId || typeof window === 'undefined') return;
-    const raw = sessionStorage.getItem(forkDraftKey(sessionId));
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as PromptPart[];
+    const parsed = readForkDraft(sessionId);
+    if (parsed) {
       const next = parseForkDraft(parsed);
       setText(next.text);
       setAttachedFiles((prev) => {
@@ -1699,10 +1378,8 @@ export function SessionChatInput({
       setMentionQuery(null);
       setMentions([]);
       requestAnimationFrame(() => textareaRef.current?.focus());
-    } catch {
-      // ignore malformed stored draft
     }
-    sessionStorage.removeItem(forkDraftKey(sessionId));
+    clearForkDraft(sessionId);
   }, [sessionId]);
 
   // ChatGPT-like behavior: if the user starts typing while the textarea is not
@@ -2025,7 +1702,7 @@ export function SessionChatInput({
     lockForQuestion,
   });
   const canSubmit = text.trim().length > 0 || attachedFiles.length > 0;
-  const submitDisabled = disabled || modelUnavailable;
+  const submitDisabled = disabled || modelUnavailable || lockForApproval;
 
   const handleSubmit = useCallback(async () => {
     if (modelUnavailable) {
@@ -2035,19 +1712,27 @@ export function SessionChatInput({
       return;
     }
 
+    // The run is paused on a connector approval — resolve it above first.
+    if (lockForApproval) {
+      toast.error('Approve or deny the pending action to continue.');
+      return;
+    }
+
     // If a command is staged, execute it with the current text as args
     if (stagedCommand) {
       const args = text.trim();
       onCommand?.(stagedCommand, args || undefined);
-      setText('');
-      setStagedCommand(null);
-      setAttachedFiles((prev) => {
-        for (const file of prev) {
-          if (file.kind === 'local') URL.revokeObjectURL(file.localUrl);
-        }
-        return [];
-      });
-      if (textareaRef.current) textareaRef.current.style.height = 'auto';
+      if (clearOnSend) {
+        setText('');
+        setStagedCommand(null);
+        setAttachedFiles((prev) => {
+          for (const file of prev) {
+            if (file.kind === 'local') URL.revokeObjectURL(file.localUrl);
+          }
+          return [];
+        });
+        if (textareaRef.current) textareaRef.current.style.height = 'auto';
+      }
       return;
     }
 
@@ -2072,44 +1757,27 @@ export function SessionChatInput({
     const trimmed = text.trim();
     if ((!trimmed && attachedFiles.length === 0) || submitDisabled) return;
 
-    /* AutoContinue — commented out
-    // AutoContinue intercept: when a mode is armed, route through the
-    // corresponding slash command instead of a plain send. The user's
-    // text becomes the command's args (= the task description).
-    if (autocontinueMode && onCommand) {
-      const alg = AUTOCONTINUE_ALGORITHMS.find((a) => a.id === autocontinueMode);
-      const cmd = alg && commands.find((c) => c.name === alg.commandName);
-      if (cmd) {
-        onCommand(cmd, trimmed || undefined);
-        setText('');
-        setSlashFilter(null);
-        setMentionQuery(null);
-        setMentions([]);
-        for (const af of attachedFiles) {
-          if (af.kind === 'local') URL.revokeObjectURL(af.localUrl);
-        }
-        setAttachedFiles([]);
-        if (textareaRef.current) textareaRef.current.style.height = 'auto';
-        return;
-      }
-    }
-    */
-
     // Snapshot files and mentions before clearing
     const filesToSend = attachedFiles.length > 0 ? [...attachedFiles] : undefined;
     const mentionsToSend = mentions.length > 0 ? [...mentions] : undefined;
 
-    // Optimistically clear input
-    setText('');
-    setSlashFilter(null);
-    setMentionQuery(null);
-    setMentions([]);
-    for (const af of attachedFiles) {
-      if (af.kind === 'local') URL.revokeObjectURL(af.localUrl);
-    }
-    setAttachedFiles([]);
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
+    // Optimistically clear input — UNLESS this send navigates the composer away
+    // (project-home → new session, `clearOnSend={false}`). There, clearing first
+    // only flashes an empty box before the route swaps, discards the text on a
+    // gated send, and would revoke the local file URLs the instant shell still
+    // needs to preview. The text/files ride across via the start-stash instead.
+    // (Decision + which URLs to revoke extracted to `resolveComposerResetOnSend`.)
+    const reset = resolveComposerResetOnSend(clearOnSend, attachedFiles);
+    if (reset.clear) {
+      setText('');
+      setSlashFilter(null);
+      setMentionQuery(null);
+      setMentions([]);
+      for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
+      setAttachedFiles([]);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
     }
 
     // Send directly. The OpenCode server serializes concurrent prompt_async
@@ -2117,27 +1785,25 @@ export function SessionChatInput({
     // server queues it. (No client-side message queue.)
     try {
       await onSend(trimmed, filesToSend, mentionsToSend);
-    } catch (err) {
-      // Restore the text so the user can retry — AND surface why. Previously
-      // this catch was silent, so a failed send looked like the message simply
-      // "bounced back" into the box with no explanation.
-      setText(trimmed);
-      toast.error(
-        err instanceof Error && err.message
-          ? err.message
-          : 'Couldn’t send your message. Please try again.',
-      );
+    } catch {
+      // Restore the text so the user can retry. The failure itself is surfaced
+      // by the persistent typed banner (commandError → TurnErrorDisplay) set in
+      // handleSend's catch — a toast here would double-display it. (No-op when
+      // clearOnSend is false: the text was never cleared.)
+      if (clearOnSend) setText(trimmed);
     }
   }, [
     text,
     submitDisabled,
     modelUnavailable,
+    clearOnSend,
     onSend,
     onCommand,
     stagedCommand,
     attachedFiles,
     mentions,
     lockForQuestion,
+    lockForApproval,
     onCustomAnswer,
     onQuestionAction,
   ]);
@@ -2360,12 +2026,18 @@ export function SessionChatInput({
         onDrop={handleDropFiles}
         className={cn(
           'bg-card border-border relative z-10 w-full overflow-visible rounded-[24px] border transition-colors',
+          cardClassName,
           isDragOver && 'border-primary',
         )}
       >
         <div className="relative flex w-full flex-col gap-2 overflow-visible">
           {isDragOver && (
-            <div className="border-primary/70 bg-primary/5 pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[24px] border-2 border-dashed">
+            <div
+              className={cn(
+                'border-primary/70 bg-primary/5 pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[24px] border-2 border-dashed',
+                cardClassName,
+              )}
+            >
               <span className="bg-background/90 text-foreground rounded-md px-3 py-1 text-xs font-medium">
                 {tHardcodedUi.raw(
                   'componentsSessionSessionChatInput.line2038JsxTextDropFilesToAttach',
@@ -2482,7 +2154,11 @@ export function SessionChatInput({
                   aria-hidden
                   className="text-muted-foreground pointer-events-none absolute top-4 left-0.5 h-6 w-[calc(100%-0.5rem)] overflow-hidden text-base sm:text-sm"
                 >
-                  {lockForQuestion ? (
+                  {lockForApproval ? (
+                    <div className="absolute inset-0 text-amber-600 dark:text-amber-400">
+                      Approve or deny the action above to continue…
+                    </div>
+                  ) : lockForQuestion ? (
                     <div className="absolute inset-0">
                       {questionButtonLabel ? 'Or type your own answer...' : 'Type your answer...'}
                     </div>
@@ -2552,7 +2228,7 @@ export function SessionChatInput({
                 }}
                 placeholder=""
                 rows={1}
-                disabled={disabled}
+                disabled={disabled || lockForApproval}
                 className={cn(
                   'placeholder:text-muted-foreground relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto rounded-[24px] border-none bg-transparent px-0.5 pt-4 pb-6 text-base shadow-none outline-none focus-visible:ring-0 disabled:opacity-50 sm:text-sm',
                   highlightSegments && 'caret-foreground text-transparent',
@@ -2619,19 +2295,6 @@ export function SessionChatInput({
                   onSelect={onVariantChange}
                 />
               )}
-
-              {/* AutoContinue — commented out
-              {commands.length > 0 && onCommand && !isOnboarding && (
-                <>
-
-                  <AutoContinueSelector
-                    selected={autocontinueMode}
-                    onSelect={setAutocontinueMode}
-                    commands={commands}
-                  />
-                </>
-              )}
-              */}
             </div>
 
             {/* RIGHT: TokenProgress + Voice + Submit/Stop */}
@@ -2645,9 +2308,17 @@ export function SessionChatInput({
 
               {toolbarSlot}
 
-              <VoiceRecorder onTranscription={handleTranscription} disabled={submitDisabled || isBusy} />
+              <VoiceRecorder
+                onTranscription={handleTranscription}
+                disabled={submitDisabled || isBusy}
+              />
 
-              {isBusy && (onStop || stopDisabled) && !lockForQuestion && (
+              {isSending && !lockForQuestion && (
+                <Button size="sm" disabled className="h-8 w-8 flex-shrink-0 rounded-full p-0">
+                  <Loader2 className="size-4 animate-spin" />
+                </Button>
+              )}
+              {!isSending && isBusy && (onStop || stopDisabled) && !lockForQuestion && (
                 <div className="relative flex items-center">
                   {/* ESC hint — matches Kortix tooltip styling (bg-primary rounded-2xl) */}
                   {escCount > 0 && (
@@ -2687,7 +2358,7 @@ export function SessionChatInput({
                   </Tooltip>
                 </div>
               )}
-              {(!isBusy || lockForQuestion) && (
+              {!isSending && (!isBusy || lockForQuestion) && (
                 <div className="opacity-100">
                   {lockForQuestion && questionButtonLabel && !text.trim() ? (
                     <Button
@@ -2711,9 +2382,7 @@ export function SessionChatInput({
                             }
                             onClick={handleSubmit}
                             aria-label={
-                              modelUnavailable
-                                ? NO_MODEL_AVAILABLE_ACTION_MESSAGE
-                                : 'Send message'
+                              modelUnavailable ? NO_MODEL_AVAILABLE_ACTION_MESSAGE : 'Send message'
                             }
                             className="h-8 w-8 flex-shrink-0 rounded-full p-0"
                           >

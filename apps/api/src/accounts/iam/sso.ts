@@ -22,6 +22,7 @@ import {
   SsoMappingSchema,
 } from './app';
 import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
+import { registerSupabaseSamlProvider } from './sso-provisioning';
 
 function ssoProviderResponse(p: NonNullable<Awaited<ReturnType<typeof getSsoProvider>>>) {
   return {
@@ -31,6 +32,7 @@ function ssoProviderResponse(p: NonNullable<Awaited<ReturnType<typeof getSsoProv
     primary_domain: p.primaryDomain,
     group_claim_name: p.groupClaimName,
     auto_create_members: p.autoCreateMembers,
+    auto_provision_groups: p.autoProvisionGroups,
     created_at: p.createdAt.toISOString(),
     updated_at: p.updatedAt.toISOString(),
   };
@@ -66,7 +68,7 @@ iamRouter.openapi(
     tags: ['iam'],
     summary: 'Create or update the SSO provider',
     ...auth,
-    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ supabase_sso_provider_id: z.string().optional(), supabaseSsoProviderId: z.string().optional(), name: z.string().optional(), primary_domain: z.string().optional(), primaryDomain: z.string().optional(), group_claim_name: z.string().optional(), groupClaimName: z.string().optional(), auto_create_members: z.boolean().optional(), autoCreateMembers: z.boolean().optional() }) } } } },
+    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ supabase_sso_provider_id: z.string().optional(), supabaseSsoProviderId: z.string().optional(), name: z.string().optional(), primary_domain: z.string().optional(), primaryDomain: z.string().optional(), group_claim_name: z.string().optional(), groupClaimName: z.string().optional(), auto_create_members: z.boolean().optional(), autoCreateMembers: z.boolean().optional(), auto_provision_groups: z.boolean().optional(), autoProvisionGroups: z.boolean().optional() }) } } } },
     responses: {
       200: json(z.object({ provider: SsoProviderSchema }), 'The upserted SSO provider'),
       ...errors(400, 401, 402, 403),
@@ -85,6 +87,7 @@ iamRouter.openapi(
   const primaryDomain = (body.primary_domain ?? body.primaryDomain) as unknown;
   const groupClaimName = (body.group_claim_name ?? body.groupClaimName) as unknown;
   const autoCreateMembers = (body.auto_create_members ?? body.autoCreateMembers) as unknown;
+  const autoProvisionGroups = (body.auto_provision_groups ?? body.autoProvisionGroups) as unknown;
 
   if (typeof supabaseSsoProviderId !== 'string' || !/^[0-9a-f-]{36}$/i.test(supabaseSsoProviderId)) {
     return c.json({ error: 'supabase_sso_provider_id must be a UUID' }, 400);
@@ -111,7 +114,8 @@ iamRouter.openapi(
     primaryDomain: primaryDomain.trim(),
     groupClaimName: typeof groupClaimName === 'string' ? groupClaimName : undefined,
     autoCreateMembers: typeof autoCreateMembers === 'boolean' ? autoCreateMembers : undefined,
-  createdBy: userId,
+    autoProvisionGroups: typeof autoProvisionGroups === 'boolean' ? autoProvisionGroups : undefined,
+    createdBy: userId,
   });
 
   await auditIam(c, {
@@ -126,6 +130,7 @@ iamRouter.openapi(
           primary_domain: before.primaryDomain,
           group_claim_name: before.groupClaimName,
           auto_create_members: before.autoCreateMembers,
+          auto_provision_groups: before.autoProvisionGroups,
         }
       : null,
     after: {
@@ -134,10 +139,131 @@ iamRouter.openapi(
       primary_domain: provider.primaryDomain,
       group_claim_name: provider.groupClaimName,
       auto_create_members: provider.autoCreateMembers,
+      auto_provision_groups: provider.autoProvisionGroups,
     },
   });
 
   return c.json({ provider: ssoProviderResponse(provider) });
+  },
+);
+
+// Self-serve: register the customer's Entra/IdP SAML metadata with Supabase Auth
+// server-side (no operator `supabase sso add`), then store the resulting UUID.
+// The admin pastes their metadata XML (or URL) in the dashboard and never sees
+// Supabase. One IdP per account in v1 — remove the existing one to re-import.
+iamRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/iam/sso/provider/from-metadata',
+    tags: ['iam'],
+    summary: 'Register a SAML provider from IdP metadata (self-serve)',
+    ...auth,
+    request: {
+      params: AccountIdParam,
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              metadata_xml: z.string().optional(),
+              metadata_url: z.string().optional(),
+              name: z.string(),
+              primary_domain: z.string(),
+              group_claim_name: z.string().optional(),
+              auto_create_members: z.boolean().optional(),
+              auto_provision_groups: z.boolean().optional(),
+              domains: z.array(z.string()).optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.object({ provider: SsoProviderSchema }), 'The registered SSO provider'),
+      ...errors(400, 401, 402, 403, 409),
+    },
+  }),
+  async (c: any) => {
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    const denied = await requireEntitlement(c, accountId, 'sso');
+    if (denied) return denied;
+
+    const body = await readBody(c);
+    const name = body.name as unknown;
+    const primaryDomain = (body.primary_domain ?? body.primaryDomain) as unknown;
+    const metadataXml = (body.metadata_xml ?? body.metadataXml) as unknown;
+    const metadataUrl = (body.metadata_url ?? body.metadataUrl) as unknown;
+    const groupClaimName = (body.group_claim_name ?? body.groupClaimName) as unknown;
+    const autoCreateMembers = (body.auto_create_members ?? body.autoCreateMembers) as unknown;
+    const autoProvisionGroups = (body.auto_provision_groups ?? body.autoProvisionGroups) as unknown;
+
+    if (typeof name !== 'string' || name.trim().length === 0) {
+      return c.json({ error: 'name is required' }, 400);
+    }
+    if (
+      typeof primaryDomain !== 'string' ||
+      !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(primaryDomain.trim())
+    ) {
+      return c.json({ error: 'primary_domain must be a valid domain' }, 400);
+    }
+    if (groupClaimName !== undefined && (typeof groupClaimName !== 'string' || groupClaimName.length > 128)) {
+      return c.json({ error: 'group_claim_name must be a short string' }, 400);
+    }
+
+    // One IdP per account (v1). Registering again would orphan the old Supabase
+    // provider — make the admin delete first (which also frees the domain).
+    const existing = await getSsoProvider(accountId);
+    if (existing) {
+      return c.json(
+        { error: 'An SSO provider already exists — remove it before importing a new one.' },
+        409,
+      );
+    }
+
+    // Additional email domains beyond the primary (e.g. subsidiaries) may be
+    // passed; always include the primary so sign-in routing works.
+    const extra = Array.isArray(body.domains)
+      ? (body.domains as unknown[]).filter((d): d is string => typeof d === 'string')
+      : [];
+    const domains = [...new Set([primaryDomain.trim().toLowerCase(), ...extra.map((d) => d.trim().toLowerCase())])];
+
+    const registered = await registerSupabaseSamlProvider({
+      metadataXml: typeof metadataXml === 'string' ? metadataXml : undefined,
+      metadataUrl: typeof metadataUrl === 'string' ? metadataUrl : undefined,
+      domains,
+    });
+    if (!registered.ok) return c.json({ error: registered.error }, registered.status as 400);
+
+    const provider = await upsertSsoProvider({
+      accountId,
+      supabaseSsoProviderId: registered.providerId,
+      name: name.trim(),
+      primaryDomain: primaryDomain.trim(),
+      groupClaimName: typeof groupClaimName === 'string' ? groupClaimName : undefined,
+      autoCreateMembers: typeof autoCreateMembers === 'boolean' ? autoCreateMembers : undefined,
+      autoProvisionGroups: typeof autoProvisionGroups === 'boolean' ? autoProvisionGroups : undefined,
+      createdBy: userId,
+    });
+
+    await auditIam(c, {
+      accountId,
+      action: 'iam.sso.provider.create',
+      resourceType: 'sso_provider',
+      resourceId: provider.ssoProviderId,
+      before: null,
+      after: {
+        supabase_sso_provider_id: provider.supabaseSsoProviderId,
+        name: provider.name,
+        primary_domain: provider.primaryDomain,
+        group_claim_name: provider.groupClaimName,
+        auto_create_members: provider.autoCreateMembers,
+        auto_provision_groups: provider.autoProvisionGroups,
+        source: 'metadata_import',
+      },
+    });
+
+    return c.json({ provider: ssoProviderResponse(provider) });
   },
 );
 
@@ -151,15 +277,15 @@ iamRouter.openapi(
     request: { params: AccountIdParam },
     responses: {
       200: json(z.object({ deleted: z.boolean() }), 'Deletion result'),
-      ...errors(401, 402, 403, 404),
+      ...errors(401, 403, 404),
     },
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-  const denied = await requireEntitlement(c, accountId, 'sso');
-  if (denied) return denied;
+  // Disconnecting SSO must never 402 — an account that lost its entitlement
+  // still needs to be able to turn the IdP integration off.
 
   const before = await getSsoProvider(accountId);
   const ok = await deleteSsoProvider(accountId);
@@ -300,7 +426,7 @@ iamRouter.openapi(
     request: { params: z.object({ accountId: z.string(), mappingId: z.string() }) },
     responses: {
       200: json(z.object({ deleted: z.boolean() }), 'Deletion result'),
-      ...errors(401, 402, 403, 404),
+      ...errors(401, 403, 404),
     },
   }),
   async (c: any) => {
@@ -308,8 +434,7 @@ iamRouter.openapi(
   const accountId = c.req.param('accountId');
   const mappingId = c.req.param('mappingId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
-  const denied = await requireEntitlement(c, accountId, 'sso');
-  if (denied) return denied;
+  // Reduction-only action (removes a group mapping) — must never 402.
 
   const ok = await deleteSsoGroupMapping(accountId, mappingId);
   if (!ok) return c.json({ error: 'mapping not found' }, 404);

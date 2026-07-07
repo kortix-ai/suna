@@ -1,6 +1,6 @@
 import { config } from '../config';
 import { getSubscriptionInfo } from '../billing/repositories/credit-accounts';
-import { getTier, isPaidTier, isPerSeatAccount, tierGrantsAllModels, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
+import { accountIsFreeTierForModels, getTier, isPaidTier, isPerSeatAccount, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
 import type { RateLimitPolicy } from './rate-limit';
 
 // Managed cloud is paid-only: new accounts resolve to tier 'none' and must
@@ -97,7 +97,7 @@ export async function resolveAccountTier(accountId: string): Promise<string | nu
 export async function accountEntitledToLlmGateway(accountId: string): Promise<boolean> {
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return true;
   const tier = await resolveAccountTier(accountId);
-  return tierGrantsAllModels(tier ?? 'free');
+  return !accountIsFreeTierForModels(tier ?? 'free');
 }
 
 export function sessionLlmPolicyForTier(tier: string | null | undefined): RateLimitPolicy {

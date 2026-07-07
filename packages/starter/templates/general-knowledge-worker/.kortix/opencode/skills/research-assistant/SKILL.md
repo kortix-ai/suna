@@ -1,6 +1,7 @@
 ---
 name: research-assistant
 description: "Use for deep, multi-source research that requires synthesis, structured analysis, and iterative evidence gathering before writing the final answer or report."
+defaultProjectInstall: true
 ---
 
 # Research Assistant

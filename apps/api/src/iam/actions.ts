@@ -55,7 +55,6 @@ export const ACCOUNT_ACTIONS = {
   TOKEN_CREATE: 'token.create',
   TOKEN_REVOKE: 'token.revoke',
 
-
   // "Create a brand-new project" must live at account scope (the project
   // doesn't exist yet to scope to).
   PROJECT_CREATE: 'project.create',
@@ -79,7 +78,6 @@ export const PROJECT_ACTIONS = {
 
   PROJECT_SESSION_READ: 'project.session.read',
   PROJECT_SESSION_START: 'project.session.start',
-  PROJECT_SESSION_EXEC: 'project.session.exec',
   PROJECT_SESSION_STOP: 'project.session.stop',
 
   PROJECT_MEMBERS_READ: 'project.members.read',
@@ -93,36 +91,67 @@ export const PROJECT_ACTIONS = {
 
   PROJECT_GATEWAY_LOGS_READ: 'project.gateway.logs.read',
   PROJECT_GATEWAY_SPEND_READ: 'project.gateway.spend.read',
-  PROJECT_GATEWAY_ROUTING_EDIT: 'project.gateway.routing.edit',
   PROJECT_GATEWAY_BUDGET_SET: 'project.gateway.budget.set',
   PROJECT_GATEWAY_KEYS_MANAGE: 'project.gateway.keys.manage',
+
+  // ── Per-capability leaf actions (IAM v1) ────────────────────────────────
+  // Each project feature gets its own read/write leaf so a custom role can
+  // DEACTIVATE one capability (omit the leaf) without losing the rest. Until a
+  // route is migrated to assert these, it keeps gating on project.read/write,
+  // so adding them is additive: every write leaf is also seeded into the Editor
+  // built-in role and every read leaf into the User floor role (see
+  // role-perms.ts), so no existing editor/user loses a capability. All resolve to 'project' scope
+  // (prefix = 'project') via resourceTypeForAction.
+  PROJECT_AGENT_READ: 'project.agent.read',
+  PROJECT_AGENT_WRITE: 'project.agent.write',
+  PROJECT_SKILL_READ: 'project.skill.read',
+  PROJECT_SKILL_WRITE: 'project.skill.write',
+  PROJECT_COMMAND_READ: 'project.command.read',
+  PROJECT_COMMAND_WRITE: 'project.command.write',
+  PROJECT_FILE_READ: 'project.file.read',
+  PROJECT_FILE_WRITE: 'project.file.write',
+  PROJECT_CUSTOMIZE_READ: 'project.customize.read',
+  PROJECT_CUSTOMIZE_WRITE: 'project.customize.write',
+  PROJECT_GITOPS_READ: 'project.gitops.read',
+  PROJECT_GITOPS_PUSH: 'project.gitops.push',
+  PROJECT_GITOPS_MERGE: 'project.gitops.merge',
+  PROJECT_SECRET_READ: 'project.secret.read',
+  PROJECT_SECRET_WRITE: 'project.secret.write',
+  PROJECT_CONNECTOR_READ: 'project.connector.read',
+  PROJECT_CONNECTOR_WRITE: 'project.connector.write',
+
+  // Review Center. `read` = see the inbox (floor user). `submit` = an agent puts
+  // an output / decision / batch up for human review (floor user + their agent).
+  // `act` = approve / reject / request-changes / answer — a consequential
+  // decision on agent work, so it sits with the editor tier (like gitops).
+  PROJECT_REVIEW_READ: 'project.review.read',
+  PROJECT_REVIEW_SUBMIT: 'project.review.submit',
+  PROJECT_REVIEW_ACT: 'project.review.act',
 } as const;
 
 // ─── Trigger-scoped actions (when scoped to an individual trigger) ─────────
 
-export const TRIGGER_ACTIONS = {
+const TRIGGER_ACTIONS = {
   TRIGGER_READ: 'trigger.read',
   TRIGGER_UPDATE: 'trigger.update',
   TRIGGER_DELETE: 'trigger.delete',
   TRIGGER_FIRE: 'trigger.fire',
 } as const;
 
-// ─── Channel-scoped actions ────────────────────────────────────────────────
-
-export const CHANNEL_ACTIONS = {
-  CHANNEL_READ: 'channel.read',
-  CHANNEL_CONNECT: 'channel.connect',
-  CHANNEL_SEND: 'channel.send',
-  CHANNEL_DISCONNECT: 'channel.disconnect',
-} as const;
+// Channel-scoped actions (channel.read/connect/send/disconnect) were removed
+// (dead-catalog cleanup, IAM enforcement audit): they were cataloged with
+// resource_type='channel' but never wired to assertProjectCapability (which
+// only ever asserts project-scoped actions), so granting or omitting them in
+// a custom role was a silent no-op. The two routes that needed a real
+// send-primitive gate (Slack file upload, meet/speak) were moved onto
+// project.connector.write instead — see r4.ts.
 
 // ─── Aggregate type for all valid action strings ───────────────────────────
 
-export const ALL_ACTIONS = {
+const ALL_ACTIONS = {
   ...ACCOUNT_ACTIONS,
   ...PROJECT_ACTIONS,
   ...TRIGGER_ACTIONS,
-  ...CHANNEL_ACTIONS,
 } as const;
 
 export type Action = (typeof ALL_ACTIONS)[keyof typeof ALL_ACTIONS];
@@ -134,7 +163,6 @@ export const VALID_ACTIONS: ReadonlySet<string> = new Set([
   ...Object.values(ACCOUNT_ACTIONS),
   ...Object.values(PROJECT_ACTIONS),
   ...Object.values(TRIGGER_ACTIONS),
-  ...Object.values(CHANNEL_ACTIONS),
 ]);
 
 /**
@@ -170,18 +198,13 @@ export const ACTION_CATALOG: ActionCatalogEntry[] = [
     label: label(a),
     resourceType: resourceTypeForAction(a),
   })),
-  ...Object.values(CHANNEL_ACTIONS).map((a) => ({
-    action: a,
-    label: label(a),
-    resourceType: resourceTypeForAction(a),
-  })),
 ];
 
 /**
  * Returns the resource_type the engine should match against for a given
  * action. Derived from the dotted prefix.
  *
- * project.session.exec   → 'project'
+ * project.session.stop   → 'project'
  * sandbox.start          → 'sandbox'
  * member.invite          → 'account'  (account-level member admin)
  */

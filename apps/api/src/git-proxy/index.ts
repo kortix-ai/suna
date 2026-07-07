@@ -32,6 +32,8 @@ import {
   scopeForService,
 } from './parse';
 import { makeOpenApiApp } from '../openapi';
+import { loadGitProject } from '../projects/lib/git';
+import { kickProjectWarmPrebake } from '../snapshots/builder';
 
 export const gitProxyApp = makeOpenApiApp();
 
@@ -124,6 +126,35 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
   res.headers.forEach((value, key) => {
     if (!STRIP_RESPONSE_HEADERS.has(key.toLowerCase())) respHeaders.set(key, value);
   });
+
+  // Build-on-push warm prebake: a successful push (git-receive-pack) to the
+  // managed git may have advanced the project's default-branch tip. Kick a
+  // fire-and-forget per-project warm bake so the FIRST session on the new commit
+  // boots warm instead of cold ("starting agent…"). Never blocks or fails the
+  // push; kickProjectWarmPrebake resolves the current tip and is idempotent, so it
+  // no-ops unless the default-branch tip actually moved. The session-start
+  // on-demand trigger stays the fallback for projects that never push.
+  //
+  // Pass the per-project provider PIN so the prebake warms the provider(s) a
+  // session on this project will actually use (pinned provider ⇒ that one; no
+  // pin ⇒ every enabled provider) — full parity, not just the default provider.
+  if (suffix === '/git-receive-pack' && res.status >= 200 && res.status < 300) {
+    void (async () => {
+      try {
+        const gitProject = await loadGitProject({ row: auth.project });
+        const projectPin =
+          typeof (auth.project.metadata as Record<string, unknown> | null)?.default_sandbox_provider === 'string'
+            ? ((auth.project.metadata as Record<string, unknown>).default_sandbox_provider as string)
+            : null;
+        await kickProjectWarmPrebake(gitProject, { accountId: auth.project.accountId, projectPin });
+      } catch (err) {
+        console.warn(
+          `[git-proxy] warm prebake-on-push skipped for ${projectId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    })();
+  }
 
   return new Response(res.body, { status: res.status, headers: respHeaders });
 }

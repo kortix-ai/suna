@@ -3,7 +3,7 @@ import {
   listProjectsForAccount,
   provisionProject,
   type KortixProject,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 
 export type FirstProjectAutoCreateState = {
   bootstrapRequested: boolean;
@@ -49,7 +49,7 @@ export async function ensureFirstProject(accountId: string): Promise<KortixProje
     return await provisionProject({
       account_id: accountId,
       name: 'My First Project',
-      starter_template: 'minimal',
+      starter_template: 'general-knowledge-worker',
       marketplace_items: marketplaceItems.map((item) => item.id),
     });
   } catch (err) {

@@ -30,5 +30,14 @@ export function mockIamEngineAllowAll(): void {
     authorize: async () => ({ allowed: true }),
     assertAuthorized: async () => {},
     listAccessibleResources: async () => ({ mode: 'all', ids: [] }),
+    // Per-resource (agent/skill) list filter, re-exported from the dispatcher.
+    // Allow-all → no filtering: every resource id passes through.
+    filterAccessibleProjectResources: async (
+      _userId: string,
+      _accountId: string,
+      _projectId: string,
+      _type: string,
+      ids: readonly string[],
+    ) => [...ids],
   }));
 }

@@ -34,7 +34,8 @@
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
       }
-    }
+    },
+    "files": ["dist", "README.md"]
   },
   "devDependencies": {
     "typescript": "^5.4.0"

@@ -50,6 +50,23 @@ flow(
       r.status(200).body().exists("$.schemas").exists("$.patch.supported").exists("$.authenticationSchemes");
     });
 
+    await ctx.step("ResourceTypes → 200 with User + Group (Azure AD probes this)", async () => {
+      const r = await scim.get("/scim/v2/accounts/:accountId/ResourceTypes", { params: { accountId: team.id } });
+      r.status(200)
+        .body()
+        .has("$.totalResults", 2)
+        .has("$.Resources[0].id", "User")
+        .has("$.Resources[1].id", "Group");
+    });
+
+    await ctx.step("Schemas → 200 with the core User schema + its attributes", async () => {
+      const r = await scim.get("/scim/v2/accounts/:accountId/Schemas", { params: { accountId: team.id } });
+      r.status(200)
+        .body()
+        .has("$.Resources[0].id", "urn:ietf:params:scim:schemas:core:2.0:User")
+        .exists("$.Resources[0].attributes");
+    });
+
     await ctx.step("OWNER JWT (not a SCIM token) → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -104,14 +121,16 @@ flow(
       r.status(400).body().exists("$.detail");
     });
 
-    await ctx.step("POST Users for an unknown email → 201 placeholder invite (active:false)", async () => {
+    await ctx.step("POST Users for an unknown email → 201 invite, active:true", async () => {
       const userName = `${ctx.fixtures.name("scim-user")}@ke2e.kortix.test`;
       const r = await scim.post(
         "/scim/v2/accounts/:accountId/Users",
         { userName, externalId: "ext-ke2e-1" },
         { params: { accountId: team.id } },
       );
-      r.status(201).body().has("$.active", false).has("$.userName", userName).exists("$.id");
+      // active:true — an invited account is enabled; returning false made Okta
+      // loop "reactivating" the user it had just pushed.
+      r.status(201).body().has("$.active", true).has("$.userName", userName).exists("$.id");
     });
 
     await ctx.step("GET unknown user → 404 SCIM error", async () => {
@@ -143,6 +162,22 @@ flow(
       const r = await scim.del("/scim/v2/accounts/:accountId/Users/:userId", {
         params: { accountId: team.id, userId: "00000000-0000-4000-8000-000000000000" },
       });
+      r.status(204);
+    });
+
+    await ctx.step("PUT is implemented (Okta profile push) — active:false → idempotent 204", async () => {
+      // Regression guard: PUT used to be unrouted, so Okta's "Push Profile
+      // Updates" (a PUT) got a bare 404 "Not Found". It now routes through the
+      // shared write path.
+      const r = await scim.put(
+        "/scim/v2/accounts/:accountId/Users/:userId",
+        {
+          schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"],
+          userName: "x@ke2e.kortix.test",
+          active: false,
+        },
+        { params: { accountId: team.id, userId: "00000000-0000-4000-8000-000000000000" } },
+      );
       r.status(204);
     });
 

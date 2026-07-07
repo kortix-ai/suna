@@ -32,6 +32,8 @@ import { GroupsTab } from '@/components/iam/groups-tab';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
+import { RolesTab } from '@/components/iam/roles-tab';
+import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
 import { ScimCard } from '@/components/iam/scim-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
 import { SessionControlsCard } from '@/components/iam/session-controls-card';
@@ -56,7 +58,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
@@ -97,7 +99,7 @@ import {
   resendAccountInvite,
   updateAccountMemberRole,
   updateAccountName,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { usePermissions } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
@@ -113,6 +115,7 @@ const ACCOUNT_PERMISSION_PROBES = [
   { action: 'member.update' },
   { action: 'group.create' },
   { action: 'audit.read' },
+  { action: 'role.create' },
 ];
 
 const ROLE_LABEL: Record<AccountRole, string> = {
@@ -200,6 +203,13 @@ export default function AccountSettingsPage() {
   const accountStateQuery = useAccountState({ accountId, enabled: !!user && !!accountId });
   const entitlements = accountStateQuery.data?.tier?.entitlements;
   const enterpriseIdentityEnabled = !!(entitlements?.sso || entitlements?.scim);
+  // Groups/Roles/Policies stay visible for discoverability (unlike SSO/SCIM,
+  // which are hidden outright) but their create/grow actions are gated on
+  // this flag — mirrors the server's 402 (see requireEntitlement, 'rbac') so
+  // an admin never submits a create that the backend will reject. Reads,
+  // revokes, and deletes are deliberately left ungated server-side and stay
+  // fully functional regardless of this flag.
+  const rbacEnabled = !!entitlements?.rbac;
 
   // Granular capabilities sourced from the IAM engine. MUST be called
   // before any conditional return — moving these below the auth-loading
@@ -219,6 +229,7 @@ export default function AccountSettingsPage() {
     { allowed: canUpdateMember },
     { allowed: canCreateGroup },
     { allowed: canReadAudit },
+    { allowed: canManageRoles },
   ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
 
   if (authLoading || !user) {
@@ -230,6 +241,7 @@ export default function AccountSettingsPage() {
   const VALID_TABS = [
     'members',
     'groups',
+    'roles',
     'billing',
     'transactions',
     'git',
@@ -242,7 +254,10 @@ export default function AccountSettingsPage() {
   const tabParam = (rawTab === 'overview' ? 'billing' : rawTab) as
     | (typeof VALID_TABS)[number]
     | null;
-  const initialTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'members';
+  const requestedTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'members';
+  // The 'roles' tab trigger + panel are gated on canManageRoles; a non-manager
+  // deep-linking ?tab=roles would otherwise land on an empty panel.
+  const initialTab = requestedTab === 'roles' && !canManageRoles ? 'members' : requestedTab;
 
   return (
     <main className="w-full flex-1 px-4 py-8">
@@ -293,6 +308,7 @@ export default function AccountSettingsPage() {
                 {tHardcodedUi.raw('appAccountsIdPage.line262JsxTextAllMembers')}
               </TabsTrigger>
               <TabsTrigger value="groups">Groups</TabsTrigger>
+              {canManageRoles && <TabsTrigger value="roles">Roles</TabsTrigger>}
               {/* Billing holds plan + limits + wallet + spend; Credits ledger
                     holds the per-transaction history. Both are gated on
                     account.write so non-admins don't see money surfaces. */}
@@ -357,8 +373,22 @@ export default function AccountSettingsPage() {
             </TabsContent>
 
             <TabsContent value="groups" className="space-y-6">
-              <GroupsTab accountId={account.account_id} canCreate={canCreateGroup} />
+              <GroupsTab
+                accountId={account.account_id}
+                canCreate={canCreateGroup}
+                rbacEnabled={rbacEnabled}
+              />
             </TabsContent>
+
+            {canManageRoles && (
+              <TabsContent value="roles" className="space-y-6">
+                <RolesTab
+                  accountId={account.account_id}
+                  canManage={canManageRoles}
+                  rbacEnabled={rbacEnabled}
+                />
+              </TabsContent>
+            )}
 
             {canReadAudit && (
               <TabsContent value="audit" className="space-y-6">
@@ -422,24 +452,33 @@ export default function AccountSettingsPage() {
                 </SettingsGroup>
 
                 {/* ── Identity & directory ─────────────────────── */}
-                {/* SAML SSO + SCIM are Enterprise-plan features. The cards
-                    render only when the account's tier carries the
-                    entitlement (sales-assigned `enterprise` tier); the
-                    SCIM/SSO API routes enforce the same gate server-side
-                    (402 for non-entitled accounts). */}
-                {enterpriseIdentityEnabled && (
-                  <SettingsGroup
-                    title={tI18nHardcoded.raw(
-                      'autoAppAppAccountsIdPageJsxAttrTitleIdentityDirectory6089983a',
-                    )}
-                    description={tI18nHardcoded.raw(
-                      'autoAppAppAccountsIdPageJsxAttrDescriptionBringMembersa0baf40c',
-                    )}
-                  >
-                    <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
-                    <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
-                  </SettingsGroup>
-                )}
+                {/* The enterprise-demo toggle is ALWAYS shown to account admins
+                    so they can unlock the surface self-serve. SAML SSO + SCIM
+                    are Enterprise features and only render once the entitlement
+                    is on (the demo flag OR a real enterprise tier); their API
+                    routes enforce the same gate server-side (402 for non-entitled
+                    accounts). Keeping the toggle OUTSIDE the entitlement gate
+                    avoids a chicken-and-egg where the enabler is hidden behind
+                    the very thing it enables. */}
+                <SettingsGroup
+                  title={tI18nHardcoded.raw(
+                    'autoAppAppAccountsIdPageJsxAttrTitleIdentityDirectory6089983a',
+                  )}
+                  description={tI18nHardcoded.raw(
+                    'autoAppAppAccountsIdPageJsxAttrDescriptionBringMembersa0baf40c',
+                  )}
+                >
+                  <EnterpriseDemoCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                  {enterpriseIdentityEnabled && (
+                    <>
+                      <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
+                      <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
+                    </>
+                  )}
+                </SettingsGroup>
 
                 {/* ── Tokens & automation ──────────────────────── */}
                 <SettingsGroup
@@ -1083,7 +1122,12 @@ function MembersCard({
   return (
     <SectionCard
       title="Members"
-      count={account.member_count}
+      // Count what THIS caller can actually see, not the raw total. The roster
+      // is visibility-filtered server-side for plain members (owners/admins +
+      // self), while account.member_count is the unfiltered COUNT(*) — using it
+      // would leak the roster size and mismatch the list below. Owners/admins
+      // see everyone, so for them members.length === member_count anyway.
+      count={members.length}
       description={tHardcodedUi.raw(
         'appAccountsIdPage.line761JsxAttrDescriptionPeopleWithAccessToThisAccount',
       )}
@@ -1274,7 +1318,8 @@ function MembersCard({
                   <InlineMeta>
                     <span>Joined {formatDate(member.joined_at)}</span>
                     {member.account_role === 'member' &&
-                    typeof member.explicit_project_count === 'number' ? (
+                    typeof member.explicit_project_count === 'number' &&
+                    member.explicit_project_count > 0 ? (
                       <span>
                         {member.explicit_project_count} project
                         {member.explicit_project_count === 1 ? '' : 's'}

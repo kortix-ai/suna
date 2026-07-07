@@ -132,10 +132,8 @@ jq -e '
 
 if [ "$GATE5_SLO_SANDBOX_PROVIDER" = "daytona" ]; then
   sandbox_active_limit_ms=45000
-elif [ "$GATE5_SLO_SANDBOX_PROVIDER" = "local_docker" ]; then
-  sandbox_active_limit_ms=15000
 else
-  echo "[gate5-slo] GATE5_SLO_SANDBOX_PROVIDER must be daytona or local_docker" >&2
+  echo "[gate5-slo] GATE5_SLO_SANDBOX_PROVIDER must be daytona" >&2
   exit 1
 fi
 validate_evidence_list "$GATE5_TARGET_EVIDENCE_DIR" "$GATE5_SLO_EVIDENCE"

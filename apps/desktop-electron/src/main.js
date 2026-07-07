@@ -426,6 +426,13 @@ function createMainWindow() {
     },
   });
 
+  // macOS: hide the native traffic lights — on macOS 26 (Tahoe) they render
+  // permanently gray/inactive for hidden-title-bar Electron windows (even
+  // focused, even on hover). The web app draws its own colored lights in the
+  // same spot (DesktopChrome → MacTrafficLights), wired to the kortix:window
+  // IPC, so close/minimize/zoom keep working.
+  if (isMac) mainWindow.setWindowButtonVisibility(false);
+
   // Reveal once content is in. did-finish-load fires when the document + its
   // subresources are loaded — good enough to swap the splash for real chrome
   // instead of a blank window.

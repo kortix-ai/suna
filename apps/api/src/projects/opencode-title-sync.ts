@@ -23,6 +23,11 @@ import type { ProjectSessionRow } from './lib/serializers';
 //   2. PER-ITEM isolation — one unreachable / throttled / archived sandbox must
 //      never reject the whole batch. Each row falls back to its unchanged value.
 const TITLE_SYNC_CONCURRENCY = 6;
+const DEFAULT_TITLE_SYNC_DEADLINE_MS = 2_500;
+
+function timeout<T>(ms: number, value: T): Promise<T> {
+  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
+}
 
 /** Map with a bounded worker pool, preserving input order. Never rejects: a
  *  failing item resolves via the caller's own try/catch to a fallback value. */
@@ -195,6 +200,7 @@ export async function syncOpenCodeTitlesForSessions(input: {
   projectId: string;
   accountId: string;
   userId?: string;
+  deadlineMs?: number;
 }): Promise<ProjectSessionRow[]> {
   if (input.rows.length === 0) return input.rows;
   const sessionIds = input.rows.map((row) => row.sessionId);
@@ -222,7 +228,7 @@ export async function syncOpenCodeTitlesForSessions(input: {
   );
   if (externalBySessionId.size === 0) return input.rows;
 
-  const updated = await mapBounded(input.rows, TITLE_SYNC_CONCURRENCY, async (row) => {
+  const sync = mapBounded(input.rows, TITLE_SYNC_CONCURRENCY, async (row) => {
     const externalId = externalBySessionId.get(row.sessionId);
     if (!externalId) return row;
     try {
@@ -240,5 +246,19 @@ export async function syncOpenCodeTitlesForSessions(input: {
     }
   });
 
-  return updated;
+  const deadlineMs =
+    Number.isFinite(input.deadlineMs) && input.deadlineMs! > 0
+      ? input.deadlineMs!
+      : DEFAULT_TITLE_SYNC_DEADLINE_MS;
+  return Promise.race([
+    sync,
+    timeout(deadlineMs, input.rows).then((rows) => {
+      appLogger.warn('[title-sync] deadline exceeded; returning cached session metadata', {
+        projectId: input.projectId,
+        rowCount: input.rows.length,
+        deadlineMs,
+      });
+      return rows;
+    }),
+  ]);
 }

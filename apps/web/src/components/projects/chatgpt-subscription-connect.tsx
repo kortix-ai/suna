@@ -1,8 +1,8 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, ExternalLink, Loader2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -13,23 +13,27 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { ProviderLogo } from '@/features/providers/provider-branding';
 import {
   type SharingSelection,
   isSharingComplete,
   selectionToIntent,
-} from '@/features/co-worker/shared/sharing-picker';
-import { ProviderLogo } from '@/features/providers/provider-branding';
+} from '@/features/workspace/shared/sharing-picker';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { isBillingEnabled } from '@/lib/config';
-import { listProjectSecrets, pollProjectProviderOAuth, startProjectProviderOAuth } from '@/lib/projects-client';
+import {
+  listProjectSecrets,
+  pollProjectProviderOAuth,
+  startProjectProviderOAuth,
+} from '@kortix/sdk/projects-client';
 import { toast } from '@/lib/toast';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 export const LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';
 
-const DEFAULT_PROJECT_SHARING: SharingSelection = { mode: 'project', memberIds: [] };
+const DEFAULT_PROJECT_SHARING: SharingSelection = { mode: 'project', memberIds: [], groupIds: [] };
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -54,9 +58,10 @@ export function useChatGptSubscriptionConnected(projectId: string, enabled = tru
   const connected = secretsQuery.data
     ? isChatGptSubscriptionConnected(
         new Set(
-          (Array.isArray(secretsQuery.data) ? secretsQuery.data : (secretsQuery.data?.items ?? [])).map(
-            (item) => item.name,
-          ),
+          (Array.isArray(secretsQuery.data)
+            ? secretsQuery.data
+            : (secretsQuery.data?.items ?? [])
+          ).map((item) => item.name),
         ),
       )
     : false;
@@ -81,12 +86,7 @@ export function useShowChatGptConnectPrompt(projectId: string) {
     isBillingEnabled() && isFreeTier && billingReady,
   );
 
-  const show =
-    isBillingEnabled() &&
-    billingReady &&
-    isFreeTier &&
-    !secretsLoading &&
-    !connected;
+  const show = isBillingEnabled() && billingReady && isFreeTier && !secretsLoading && !connected;
 
   return { show, connected, isLoading: accountLoading || secretsLoading };
 }
@@ -289,7 +289,13 @@ export function ChatGptSubscriptionConnect({
               Cancel
             </Button>
           ) : (
-            <Button type="button" size="sm" variant="outline" className="px-4" onClick={handleConnect}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="px-4"
+              onClick={handleConnect}
+            >
               {error || phase === 'done' ? 'Reconnect ChatGPT' : 'Connect ChatGPT'}
             </Button>
           )}

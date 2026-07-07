@@ -1,6 +1,7 @@
 ---
 name: customer-research
 description: "You are an expert at conducting multi-source research to answer customer questions, investigate account contexts, and build comprehensive understanding of customer situations. Y..."
+defaultProjectInstall: true
 ---
 
 # Customer Research Skill

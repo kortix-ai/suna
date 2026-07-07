@@ -15,11 +15,10 @@ Use real SDKs and real environment variables. Do not assume proxy credentials or
 
 ## Environment Variables
 
-Typical examples:
-
-- `OPENAI_API_KEY`
-- `ANTHROPIC_API_KEY`
-- provider-specific keys for image, audio, or video services
+Typical examples: whatever key name the chosen provider's SDK expects
+(e.g. an LLM provider key, or a provider-specific key for image, audio, or
+video services). Don't reuse a Kortix platform credential name for a
+project's own BYOK key — they're different things.
 
 If a project needs these services, document the required env vars clearly and fail fast when they are missing.
 

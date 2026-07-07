@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useServerStore } from '@/stores/server-store';
 import { getFileStatus } from '../api/opencode-files';
-import type { GitFileStatus } from '../types';
+import type { GitFileStatus } from '@/features/file-browser/types';
 import { useCurrentProject, useServerHealth } from './use-server-health';
 
 export const gitStatusKeys = {

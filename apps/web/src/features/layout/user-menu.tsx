@@ -33,7 +33,7 @@ import { SupportModal } from '@/features/layout/support-modal';
 import { isBillingEnabled } from '@/lib/config';
 import { openExternalRoute } from '@/lib/desktop';
 import { type SettingsTabId } from '@/lib/menu-registry';
-import { listAccounts } from '@/lib/projects-client';
+import { listAccounts } from '@kortix/sdk/projects-client';
 import { createClient } from '@/lib/supabase/client';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
@@ -91,6 +91,15 @@ export function UserMenu({
       setSelectedAccountId(accounts[0].account_id);
     }
   }, [accountsQuery.data, selectedAccountId, setSelectedAccountId]);
+
+  // In the collapsed sidebar's hover flyout, the menu content portals outside
+  // the panel — hovering it fires the panel's pointer-leave and would collapse
+  // the flyout out from under the open menu. Pin the flyout open while it's up.
+  useEffect(() => {
+    if (variant !== 'sidebar' || !menuOpen) return;
+    sidebar?.holdPeek(true);
+    return () => sidebar?.holdPeek(false);
+  }, [menuOpen, variant, sidebar]);
 
   const currentAccount =
     accountsQuery.data?.find((a) => a.account_id === selectedAccountId) ?? null;

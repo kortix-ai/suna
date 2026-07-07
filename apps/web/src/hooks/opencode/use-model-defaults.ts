@@ -18,7 +18,7 @@ import {
   getModelDefaults,
   type ModelDefaultsResponse,
   setModelDefault,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import {
   type ModelKey,
   modelKeyToWire,

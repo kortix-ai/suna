@@ -107,6 +107,22 @@ flow(
         .get("/v1/accounts/:accountId/members", { params: { accountId: team.id } });
       r.status(403);
     });
+    await ctx.step("plain MEMBER sees owners/admins + self only, sensitive columns redacted", async () => {
+      const memberA = await team.addMember("member");
+      const memberB = await team.addMember("member");
+      const r = await ctx.client
+        .as(memberA)
+        .get("/v1/accounts/:accountId/members", { params: { accountId: team.id } });
+      r.status(200);
+      const list = r.json<any[]>();
+      if (!list.some((m) => m.user_id === memberA.userId)) throw new Error("member cannot see their own row");
+      if (list.some((m) => m.user_id === memberB.userId)) throw new Error("member can enumerate other plain members");
+      for (const m of list) {
+        if (m.user_id === memberA.userId) continue;
+        if (m.active_pat_count !== 0 || m.has_verified_mfa !== false || m.groups.length !== 0)
+          throw new Error("sensitive member columns leaked to plain member");
+      }
+    });
   },
 );
 
@@ -191,6 +207,12 @@ flow("INV-1", { domain: "accounts", routes: ["GET /v1/accounts/:accountId/invite
   await ctx.step("list pending invites", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).get("/v1/accounts/:accountId/invites", { params: { accountId: team.id } });
     r.status(200);
+  });
+  await ctx.step("plain MEMBER sees no pending invites", async () => {
+    const member = await team.addMember("member");
+    const r = await ctx.client.as(member).get("/v1/accounts/:accountId/invites", { params: { accountId: team.id } });
+    r.status(200);
+    if (r.json<any[]>().length !== 0) throw new Error("pending invites leaked to plain member");
   });
 });
 

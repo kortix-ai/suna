@@ -6,15 +6,17 @@ import {
   tierHasEntitlement,
 } from '../billing/services/tiers';
 
-// Locks in the plan-gating contract for the enterprise identity surfaces
-// (SAML SSO + SCIM). Only the sales-assigned `enterprise` tier unlocks them;
-// every self-serve / legacy tier is fully gated. The IAM route guard
-// (requireEntitlement) and the /scim/v2 data-plane middleware both key off
-// tierHasEntitlement, so these invariants ARE the access-control policy.
+// Locks in the plan-gating contract for the enterprise surfaces (SAML SSO,
+// SCIM, custom RBAC, audit access). Only the sales-assigned `enterprise` tier
+// unlocks them; every self-serve / legacy tier is fully gated. The IAM route
+// guard (requireEntitlement) and the /scim/v2 data-plane middleware both key
+// off tierHasEntitlement, so these invariants ARE the access-control policy.
 describe('tier entitlements (enterprise gating)', () => {
-  test('enterprise tier unlocks SSO + SCIM', () => {
+  test('enterprise tier unlocks SSO + SCIM + RBAC + audit access', () => {
     expect(tierHasEntitlement('enterprise', 'sso')).toBe(true);
     expect(tierHasEntitlement('enterprise', 'scim')).toBe(true);
+    expect(tierHasEntitlement('enterprise', 'rbac')).toBe(true);
+    expect(tierHasEntitlement('enterprise', 'auditAccess')).toBe(true);
   });
 
   test('every non-enterprise tier is fully gated', () => {
@@ -34,13 +36,20 @@ describe('tier entitlements (enterprise gating)', () => {
     ]) {
       expect(tierHasEntitlement(t, 'sso')).toBe(false);
       expect(tierHasEntitlement(t, 'scim')).toBe(false);
+      expect(tierHasEntitlement(t, 'rbac')).toBe(false);
+      expect(tierHasEntitlement(t, 'auditAccess')).toBe(false);
     }
   });
 
   test('unknown tier names fail closed (default tier = none, no entitlements)', () => {
     expect(tierHasEntitlement('does-not-exist', 'sso')).toBe(false);
     expect(tierHasEntitlement('does-not-exist', 'scim')).toBe(false);
-    expect(getTierEntitlements('does-not-exist')).toEqual({ sso: false, scim: false });
+    expect(getTierEntitlements('does-not-exist')).toEqual({
+      sso: false,
+      scim: false,
+      rbac: false,
+      auditAccess: false,
+    });
   });
 
   test('the Team (per_seat) plan kept its $40 anchor — gating did not touch price', () => {

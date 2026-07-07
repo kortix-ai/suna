@@ -18,12 +18,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useServerStore } from '@/stores/server-store';
 import { findText } from '../api/opencode-files';
-import type { FindMatch } from '../types';
+import type { FindMatch } from '@/features/file-browser/types';
 import {
   type WorkspaceSearchEntry,
   parseWorkspacePaths,
   rankWorkspaceSearchEntry,
-} from '../search/workspace-search-core';
+} from '@/features/file-browser/search/workspace-search-core';
 import {
   searchWorkspaceFileEntries,
   searchWorkspaceFilePaths,

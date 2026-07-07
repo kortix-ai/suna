@@ -52,13 +52,13 @@ function baseConfig(over: Partial<Config> = {}): Config {
 
 function fakeOpencode(
   state: 'ok' | 'starting' | 'down' = 'starting',
-  hooks: { restart?: () => void } = {},
+  hooks: { restart?: () => void; internalUrl?: string } = {},
 ): Opencode {
   // Loose cast — buildOpencodeApp only touches these three methods.
   return {
     getState: () => state,
     getPid: () => null,
-    getInternalUrl: () => 'http://127.0.0.1:1', // unreachable on purpose
+    getInternalUrl: () => hooks.internalUrl ?? 'http://127.0.0.1:1', // unreachable by default
     restart: async () => hooks.restart?.(),
   } as unknown as Opencode
 }
@@ -332,34 +332,41 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('reports runtime not ready and blocks OpenCode proxy when repo materialization failed', async () => {
-    const app = buildOpencodeApp(
-      baseConfig({ autoClone: true }),
-      fakeOpencode('ok'),
-      Date.now(),
-      { repoMaterializationError: 'git clone failed: authentication required', timeline: [] },
-    )
+    const root = mkdtempSync(join(tmpdir(), 'kortix-repo-failed-'))
+    try {
+      const target = join(root, 'workspace')
+      mkdirSync(target)
+      const app = buildOpencodeApp(
+        baseConfig({ autoClone: true, projectTarget: target }),
+        fakeOpencode('ok'),
+        Date.now(),
+        { repoMaterializationError: 'git clone failed: authentication required', timeline: [] },
+      )
 
-    const health = await app.request('/kortix/health')
-    expect(health.status).toBe(200)
-    const healthBody = (await health.json()) as {
-      status: string
-      runtimeReady: boolean
-      repo_ready: boolean
-      boot_error: string
+      const health = await app.request('/kortix/health')
+      expect(health.status).toBe(200)
+      const healthBody = (await health.json()) as {
+        status: string
+        runtimeReady: boolean
+        repo_ready: boolean
+        boot_error: string
+      }
+      expect(healthBody.status).toBe('error')
+      expect(healthBody.runtimeReady).toBe(false)
+      expect(healthBody.repo_ready).toBe(false)
+      expect(healthBody.boot_error).toContain('git clone failed')
+
+      const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
+      const res = await app.request('/session?directory=%2Fworkspace', {
+        headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
+      })
+      expect(res.status).toBe(503)
+      const body = (await res.json()) as { error: string; reason: string }
+      expect(body.error).toBe('sandbox runtime not ready')
+      expect(body.reason).toBe('repo_materialization_failed')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
-    expect(healthBody.status).toBe('error')
-    expect(healthBody.runtimeReady).toBe(false)
-    expect(healthBody.repo_ready).toBe(false)
-    expect(healthBody.boot_error).toContain('git clone failed')
-
-    const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
-    const res = await app.request('/session?directory=%2Fworkspace', {
-      headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
-    })
-    expect(res.status).toBe(503)
-    const body = (await res.json()) as { error: string; reason: string }
-    expect(body.error).toBe('sandbox runtime not ready')
-    expect(body.reason).toBe('repo_materialization_failed')
   })
 
   it('keeps runtime not ready until the boot OpenCode session is pinned', async () => {
@@ -487,6 +494,43 @@ describe('daemon proxy auth gate', () => {
     expect(body.error).toBe('upstream unreachable')
   })
 
+  it(
+    'fails fast with 502 instead of hanging forever when opencode accepts the connection but never responds',
+    async () => {
+      // Simulates a wedged opencode: the TCP connection is accepted (unlike the
+      // "connect refused" case above) but the handler never resolves — the
+      // failure mode that left real sessions stuck at "Starting the agent" with
+      // no error surfaced until this fix.
+      const hungUpstream = Bun.serve({
+        port: 0,
+        fetch: () => new Promise<Response>(() => {}),
+      })
+      try {
+        const app = buildOpencodeApp(
+          baseConfig(),
+          fakeOpencode('ok', { internalUrl: `http://127.0.0.1:${hungUpstream.port}` }),
+          Date.now(),
+        )
+        const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
+        const startedAt = Date.now()
+        const res = await app.request('/global/event', {
+          headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
+        })
+        const elapsedMs = Date.now() - startedAt
+
+        expect(res.status).toBe(502)
+        // Well under the old unbounded hang (and under the ALB's 60s idle cap) —
+        // proves the internal fetch actually aborts instead of waiting forever.
+        expect(elapsedMs).toBeLessThan(15_000)
+        const body = (await res.json()) as { error: string }
+        expect(body.error).toBe('upstream unreachable')
+      } finally {
+        hungUpstream.stop(true)
+      }
+    },
+    20_000,
+  )
+
   it('rejects /kortix/refresh without a signed user context', async () => {
     const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
     const res = await app.request('/kortix/refresh', { method: 'POST' })
@@ -494,6 +538,37 @@ describe('daemon proxy auth gate', () => {
     const body = (await res.json()) as { error: string; reason: string }
     expect(body.error).toBe('unauthorized')
     expect(body.reason).toBe('malformed')
+  })
+
+  it('rejects /kortix/abort without a signed user context', async () => {
+    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const res = await app.request('/kortix/abort', { method: 'POST' })
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as { error: string; reason: string }
+    expect(body.error).toBe('unauthorized')
+    expect(body.reason).toBe('malformed')
+  })
+
+  it('rejects /kortix/abort when the sandbox token is unset', async () => {
+    const app = buildOpencodeApp(baseConfig({ sandboxToken: undefined }), fakeOpencode('ok'), Date.now())
+    const res = await app.request('/kortix/abort', { method: 'POST' })
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as { error: string; detail: string }
+    expect(body.error).toBe('daemon not configured')
+    expect(body.detail).toContain('KORTIX_TOKEN')
+  })
+
+  it('lets signed /kortix/abort reach the abort handler', async () => {
+    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
+    const res = await app.request('/kortix/abort', {
+      method: 'POST',
+      headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
+    })
+    expect(res.status).toBe(409)
+    const body = (await res.json()) as { ok: boolean; error: string }
+    expect(body.ok).toBe(false)
+    expect(body.error).toContain('No opencode session pinned')
   })
 
   it('refreshes the project repo and restarts opencode', async () => {

@@ -10,13 +10,16 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "generate:schema": "bun run scripts/generate-schema.ts"
   },
   "dependencies": {
-    "smol-toml": "^1.4.2"
+    "smol-toml": "^1.4.2",
+    "yaml": "^2.8.2"
   },
   "devDependencies": {
     "@types/bun": "^1.1.0",
+    "ajv": "^8.17.1",
     "typescript": "^5.0.0"
   }
 }

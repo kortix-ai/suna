@@ -278,39 +278,28 @@ Use `allowed_domains: ["sec.gov"]` when targeting SEC filings specifically.
 
 ## Finance Data Tools
 
-When fact-checking `verify_public_data` claims about publicly traded companies, finance data tools provide structured financial data that is more reliable than web search for standardized metrics.
+When fact-checking `verify_public_data` claims about publicly traded companies, structured financial data is more reliable than web search for standardized metrics. Two paths, in order of preference:
 
-### Availability Check
+1. **A finance-data connector (if configured).** If the project has a market-data / financials connector set up through Kortix connectors, query it for the metric — it returns standardized, as-reported figures. Resolve the ticker first, pin the fiscal period from the document's date, then fetch.
+2. **Web search (always available).** If no finance connector is configured, fact-check every finance claim with `web_search` using the Search Strategy guidance above.
 
-At the start of Phase 3, call `list_external_tools(queries=["finance"])` once. If the result contains tools with `source_id="finance"`, call `describe_external_tools(source_id="finance", tool_names=["finance_tickers_lookup", "finance_quotes", "finance_financials", "finance_earnings", "finance_ohlcv_histories"])` and then use the workflow below. If empty or the call fails, skip this section and use web search for all claims.
+### When structured finance data helps vs. web search
 
-### When to Use Finance Tools vs. Web Search
-
-**Use finance tools for:**
-- Revenue, net income, EPS, margins, EBITDA, cash flow, debt, and other standardized financial statement metrics
+**Prefer structured finance data for:**
+- Revenue, net income, EPS, margins, EBITDA, cash flow, debt, and other standardized financial-statement metrics
 - Historical stock prices and market data
-- Earnings call transcripts (management guidance, segment KPIs, non-GAAP metrics, beat/miss history)
+- Earnings-call detail (management guidance, segment KPIs, non-GAAP metrics, beat/miss history)
 
 **Use web search for:**
 - SEC filing footnotes (debt maturity schedules, lease obligations, acquisition details)
-- Proxy statement data (executive compensation, board composition)
-- Market size and industry reports from third parties (Gartner, McKinsey, IBISWorld)
-- Index and benchmark returns (S&P 500, Treasury yields)
-- Credit ratings
-- Private company data
-- Transaction details (M&A terms, deal multiples) unless discussed in earnings transcripts
+- Proxy-statement data (executive compensation, board composition)
+- Market-size and industry reports from third parties (Gartner, McKinsey, IBISWorld)
+- Index and benchmark returns (S&P 500, Treasury yields), credit ratings, private-company data
+- Transaction details (M&A terms, deal multiples) unless covered in earnings transcripts
 
-### Workflow
+### Reference-date discipline
 
-**Step 1: Resolve tickers.** Always call `finance_tickers_lookup` before any other finance tool. Never assume ticker symbols — standard tickers may not resolve correctly.
-
-```
-call_external_tool(tool_name="finance_tickers_lookup", source_id="finance", arguments={
-    "queries": ["Kimberly-Clark"]
-})
-```
-
-**Step 2: Determine the reference date.** Use the document's date (headers, footers, "as of" statements) to derive fiscal period parameters:
+Finance figures are only correct for a specific fiscal period. Derive the period from the document's date (headers, footers, "as of" statements) before fetching — never compare a claim to the wrong quarter:
 
 | Document Reference Month | Fiscal Quarter |
 | --- | --- |
@@ -319,77 +308,13 @@ call_external_tool(tool_name="finance_tickers_lookup", source_id="finance", argu
 | July–September | Q3 |
 | October–December | Q4 |
 
-**Step 3: Fetch data.** Match the claim to the right tool:
-
-| Claim About | Tool | Key Parameters |
-| --- | --- | --- |
-| Revenue, net income, margins, EPS, debt, cash, capex | `finance_financials` | `ticker_symbols`, `period` ("annual"/"quarter"/"ttm"), `as_of_fiscal_year`, `as_of_fiscal_quarter`, metric lists (`income_statement_metrics`, `balance_sheet_metrics`, `cash_flow_metrics`) |
-| Management guidance, non-GAAP metrics, segment KPIs | `finance_earnings` | `ticker_symbol`, `as_of_fiscal_year`, `as_of_fiscal_quarter`, `data_types: ["transcript_processed"]` |
-| EPS beat/miss history | `finance_earnings` | `data_types: ["earnings_history"]` |
-| Historical stock prices | `finance_ohlcv_histories` | `ticker_symbols`, `query`, `start_date_yyyy_mm_dd`, `end_date_yyyy_mm_dd`, `fields: ["close"]` |
-
-**Step 4: Fall back to web search.** If a finance tool returns no data for a claim, or the claim is outside finance tool scope (see "Use web search for" above), use `web_search` with the Search Strategy guidance above.
-
 ### Rules
 
-- Always pass `as_of_fiscal_year` and `as_of_fiscal_quarter` to `finance_financials` and `finance_earnings` — never omit them.
-- Always resolve tickers with `finance_tickers_lookup` first.
-- All finance tools use `call_external_tool(tool_name="<name>", source_id="finance", arguments={...})`.
-- Finance tool calls count toward the Phase 3 parallelism limit (up to 4 tool calls per turn). Combine finance tool calls with `bash` calculations and `web_search` in the same turn when possible.
-- If a finance tool returns unexpected or empty results, fall back to web search. Do not retry the same finance tool call more than once.
-
-### Examples
-
-**Verify annual revenue:**
-
-Claim: "KMB reported revenue of $20.4B in FY2023"
-
-```
-call_external_tool(tool_name="finance_tickers_lookup", source_id="finance", arguments={
-    "queries": ["Kimberly-Clark"]
-})
-```
-```
-call_external_tool(tool_name="finance_financials", source_id="finance", arguments={
-    "ticker_symbols": ["KMB"],
-    "period": "annual",
-    "as_of_fiscal_year": 2023,
-    "as_of_fiscal_quarter": 4,
-    "limit": 1,
-    "income_statement_metrics": ["revenue"]
-})
-```
-
-**Verify non-GAAP metric via earnings transcript:**
-
-Claim: "Adjusted EBITDA margin expanded 150bps year-over-year"
-
-```
-call_external_tool(tool_name="finance_earnings", source_id="finance", arguments={
-    "ticker_symbol": "KMB",
-    "as_of_fiscal_year": 2023,
-    "as_of_fiscal_quarter": 4,
-    "data_types": ["transcript_processed"]
-})
-```
-
-Non-GAAP metrics like adjusted EBITDA are typically discussed in earnings calls, not in standardized financial statements.
-
-**Verify stock price change:**
-
-Claim: "The stock price declined 15% in 2023"
-
-```
-call_external_tool(tool_name="finance_ohlcv_histories", source_id="finance", arguments={
-    "ticker_symbols": ["KMB"],
-    "query": "KMB stock price 2023",
-    "start_date_yyyy_mm_dd": "2023-01-03",
-    "end_date_yyyy_mm_dd": "2023-12-29",
-    "fields": ["close"]
-})
-```
-
-Then use `bash` with `python -c` to calculate the percentage change from the first to last close price.
+- Resolve the ticker before fetching metrics — don't assume symbols.
+- Always pin the fiscal year + quarter; an unqualified figure isn't verifiable.
+- Non-GAAP metrics (e.g. adjusted EBITDA) live in earnings commentary, not standardized statements — check transcripts/press releases.
+- If structured data is unavailable or empty for a claim, fall back to web search; don't retry the same lookup repeatedly.
+- For a stock-price change, fetch the start and end close, then use `bash` with `python -c` to compute the percentage change.
 
 ## Evidence Examples
 

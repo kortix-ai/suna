@@ -1,12 +1,13 @@
 'use client';
 
+import '@/lib/kortix-config'; // configure @kortix/sdk before any data-layer call
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { handleApiError } from '@/lib/error-handler';
 import { registerQueryClient } from '@/lib/query-client-singleton';
 
-import { isBillingError } from '@/lib/api/errors';
+import { isBillingError } from '@kortix/sdk/react';
 
 export function ReactQueryProvider({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => {

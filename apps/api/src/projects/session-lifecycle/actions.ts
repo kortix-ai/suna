@@ -183,6 +183,8 @@ export async function restartSession(input: {
           agentName: session.agentName ?? 'default',
           initialPrompt,
           opencodeModel,
+          defaultBranch: loaded.row.defaultBranch,
+          manifestPath: loaded.row.manifestPath,
           llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
         }),
       resolveGitAuthToken: async () =>
@@ -268,6 +270,19 @@ export async function restartSession(input: {
     })();
 
     return { status: 202, body: { ok: true, session_id: sessionId, status: 'provisioning' } };
+  }
+
+  if (existingSandbox) {
+    // Row exists but never reached a real provider sandbox (e.g. the original
+    // provision failed before an externalId was assigned) — there's nothing to
+    // stop/start, and leaving it in place would collide with the fresh insert
+    // provisionReplacementRuntime() is about to do on the same sandboxId PK.
+    await retireSessionSandboxRow(existingSandbox, 'restart_never_provisioned').catch((err) =>
+      console.warn(
+        `[projects] failed to retire never-provisioned sandbox row for session ${sessionId}:`,
+        err,
+      ),
+    );
   }
 
   await provisionReplacementRuntime();

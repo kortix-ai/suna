@@ -22,14 +22,11 @@
  * {@link buildExperimentalCatalog}, so a new entry lights up everywhere.
  */
 import { config } from '../config';
+import type { ExperimentalFeatureKey } from '@kortix/api-contract';
 
-/** Stable identifiers for experimental features. */
-export type ExperimentalFeatureKey =
-  | 'apps'
-  | 'agent_tunnel'
-  | 'marketplace'
-  | 'agentmail_email'
-  | 'llm_gateway';
+/** Stable identifiers for experimental features — wire contract is the SoT.
+ *  `review_center` is added to the contract map (ExperimentalFeatureMapSchema). */
+export type { ExperimentalFeatureKey } from '@kortix/api-contract';
 
 /** How settled a feature is — surfaced as a badge so users know what to expect. */
 type ExperimentalStability = 'experimental' | 'beta';
@@ -76,10 +73,10 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     name: 'Marketplace',
     description:
       'Browse and 1-click install skills from a marketplace of community & vendor registries (any SKILL.md repo). Sources, updates, and team scopes are still in flux.',
-    stability: 'experimental',
+    stability: 'beta',
     available: () => true,
-    // Off by default — experimental / WIP.
-    platformDefault: () => false,
+    // On by default for every project — no longer gated behind an opt-in toggle.
+    platformDefault: () => true,
   },
   {
     key: 'agent_tunnel',
@@ -103,6 +100,18 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     platformDefault: () => false,
   },
   {
+    key: 'meet',
+    name: 'Meetings',
+    description:
+      'Send a notetaker bot to your calls — Google Meet, Zoom, or Microsoft Teams — to record, transcribe with speaker labels, answer when addressed, and speak back in a voice you choose. Powered by Recall.ai; the agent drives it through the `meet` channel CLI.',
+    stability: 'experimental',
+    // Master kill switch (the global gate): when off, Meet disappears platform-wide
+    // and every project falls back to no meeting bot — mirrors LLM Gateway.
+    available: () => config.MEET_ENABLED,
+    // Explicit opt-in: a project enables Meet in Settings.
+    platformDefault: () => false,
+  },
+  {
     key: 'llm_gateway',
     name: 'LLM Gateway',
     description:
@@ -115,6 +124,18 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     // project, while explicit project overrides still win and the master
     // availability gate above remains the emergency kill switch.
     platformDefault: () => config.LLM_GATEWAY_DEFAULT_ENABLED,
+  },
+  {
+    key: 'review_center',
+    name: 'Review Center',
+    description:
+      'A friendly inbox for change requests, approvals, and agent outputs — review and act (approve, reject, ask for changes) from one place, on the web or from Slack. The surface and what feeds it are still expanding.',
+    stability: 'experimental',
+    // Pure web/DB surface — the routes + table ship with the app, so no operator
+    // env gates it. Always available; a project opts in per Settings.
+    available: () => true,
+    // Explicit opt-in: hidden unless a project enables it in Settings.
+    platformDefault: () => false,
   },
 ];
 

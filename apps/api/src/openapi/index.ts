@@ -7,18 +7,12 @@
  * served at /v1/openapi.json and rendered by Scalar at /v1/docs.
  */
 import { OpenAPIHono, z, type RouteConfig } from "@hono/zod-openapi";
+import { ErrorEnvelopeSchema } from "@kortix/api-contract";
 import type { Env } from "hono";
 import { Scalar } from "@scalar/hono-api-reference";
 
 /** Permissive error envelope — matches the platform's `{error,message,status}` 404 shape. */
-export const ErrorSchema = z
-  .object({
-    error: z.union([z.boolean(), z.string()]).optional(),
-    message: z.string().optional(),
-    code: z.string().optional(),
-    status: z.number().optional(),
-  })
-  .openapi("Error");
+export const ErrorSchema = ErrorEnvelopeSchema.openapi("Error");
 
 const STATUS_TEXT: Record<number, string> = {
   400: "Bad request",
@@ -87,7 +81,11 @@ export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: strin
     info: {
       title: "Kortix API",
       version,
-      description: "The Kortix platform REST API — typed schemas via @hono/zod-openapi.",
+      description:
+        "The Kortix platform REST API — typed schemas via @hono/zod-openapi. " +
+        "For application code, prefer the TypeScript SDK (`@kortix/sdk`), which wraps " +
+        "this API and the OpenCode runtime behind one session-scoped client — " +
+        "docs at https://kortix.com/docs/sdk.",
     },
     servers: [{ url: new URL(c.req.url).origin }],
   }));

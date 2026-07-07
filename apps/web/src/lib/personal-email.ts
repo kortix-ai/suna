@@ -72,10 +72,13 @@ const PERSONAL_EMAIL_DOMAINS = new Set<string>([
 ]);
 
 /** Domain portion of an email, lowercased — or `null` if unparseable. */
-function emailDomain(email?: string | null): string | null {
+export function emailDomain(email?: string | null): string | null {
   const at = email?.trim().toLowerCase().lastIndexOf('@') ?? -1;
   if (!email || at < 0) return null;
-  const domain = email.trim().toLowerCase().slice(at + 1);
+  const domain = email
+    .trim()
+    .toLowerCase()
+    .slice(at + 1);
   return domain || null;
 }
 

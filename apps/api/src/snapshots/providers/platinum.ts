@@ -115,7 +115,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
    *  staging and the S3 upload self-heals (mirrors the daytona adapter). */
   private async buildOnce(input: BuildableTemplate, userDockerfile: string, tap?: BuildLogTap): Promise<void> {
     // Stage the SAME context Daytona builds (Dockerfile + agent/cli/entrypoint/…).
-    const ctx = await stageBuildContext(input.snapshotName, userDockerfile);
+    const ctx = await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo);
     const tarPath = join(ctx.contextDir, '..', `${input.snapshotName.replace(/[^a-zA-Z0-9_.-]/g, '_')}.tar.gz`);
     try {
       const tar = Bun.spawn(['tar', '-czf', tarPath, '-C', ctx.contextDir, '.']);
@@ -156,19 +156,6 @@ class PlatinumAdapter implements SandboxProviderAdapter {
           default_ram_mb: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
           default_disk_gb: diskGb,
           entrypoint: (input.entrypoint ?? [KORTIX_ENTRYPOINT]).join(' '),
-          // Stateful warm template (shared default): Platinum boots it, waits for
-          // the readiness probe, snapshots the RUNNING VM, and serves sessions as
-          // CoW forks (~2 s). If the probe never passes, Platinum falls back to a
-          // cold spawn — so this is strictly an optimization, never a break.
-          ...(input.capture === 'stateful'
-            ? {
-                capture: 'stateful',
-                capture_condition: input.captureCondition ?? {
-                  http: { port: 8000, path: '/kortix/health', timeoutSec: 180 },
-                },
-                ...(input.captureEnv ? { capture_env: input.captureEnv } : {}),
-              }
-            : {}),
         }),
       });
       await this.waitForActive(input.snapshotName, tap);

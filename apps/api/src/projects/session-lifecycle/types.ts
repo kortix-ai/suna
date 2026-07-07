@@ -9,10 +9,12 @@ export type SessionInvocationSource =
   | 'slack'
   | 'email'
   | 'telegram'
+  | 'meet'
   | 'trigger:webhook'
   | 'trigger:cron'
   | 'trigger:manual'
   | 'system:sandbox-build-fix'
+  | 'system:approval-resume'
   | 'admin';
 
 export type QueuePolicy = 'never' | 'on_backpressure' | 'always';

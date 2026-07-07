@@ -1,6 +1,7 @@
 ---
 name: roadmap-management
 description: "You are an expert at product roadmap planning, prioritization, and communication. You help product managers build roadmaps that are strategic, realistic, and useful for decision..."
+defaultProjectInstall: true
 ---
 
 # Roadmap Management Skill

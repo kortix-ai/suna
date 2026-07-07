@@ -30,7 +30,7 @@ jobs:
     name: worktree unit + contracts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: false
       - uses: oven-sh/setup-bun@v2

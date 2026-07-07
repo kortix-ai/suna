@@ -16,7 +16,7 @@ Always available inside a session sandbox, no setup:
 ```sh
 kortix whoami                       # confirms what project + account this token has
 kortix projects info                # the project you're running inside
-kortix secrets ls                   # encrypted env vars + manifest [env] spec
+kortix secrets ls                   # encrypted env vars + manifest env spec
 kortix sessions ls                  # every session on this project (incl. you)
 kortix cr ls                        # open change requests
 kortix cr open --title "..."        # propose merging your branch into main
@@ -108,7 +108,7 @@ Encrypted env vars stored on the project, injected as plain env into every sessi
 
 | Command | Effect |
 | --- | --- |
-| `kortix secrets ls` | List secret names + manifest `[env]` spec; marks required-but-missing. |
+| `kortix secrets ls` | List secret names + manifest `env` spec (`env:` in `kortix.yaml`, `[env]` in legacy `kortix.toml`); marks required-but-missing. |
 | `kortix secrets set NAME=VALUE …` | Upsert one or more. `NAME=-` reads VALUE from stdin (so values never appear in shell history). |
 | `kortix secrets unset NAME …` | Remove. |
 
@@ -133,13 +133,14 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 | `kortix sessions rm <id>` | Stop + delete. |
 | `kortix sessions open <id>` | Open the dashboard URL for a session. |
 | `kortix sessions chat [<id>] [--prompt "<text>"] [--new]` | Talk to a session's agent — interactive REPL, or one-shot with `--prompt`. Alias: `talk`. |
+| `kortix sessions connect [<id>] [-- <opencode attach args>]` | Attach your local OpenCode TUI to the OpenCode server already running inside the session sandbox. |
 | `kortix sessions preview <id> [port]` | Print a clickable preview URL for a port in the session's sandbox (default `3000`). |
 
 Inside a sandbox, `KORTIX_SESSION_ID` is your session; `kortix sessions info $KORTIX_SESSION_ID` is the live view of yourself.
 
 ### Triggers
 
-Round-trip through `kortix.toml`'s `[[triggers]]`; the dashboard sees the same state.
+Round-trip through the manifest's `triggers:` (v2 `kortix.yaml`) or `[[triggers]]` (legacy `kortix.toml`); the dashboard sees the same state.
 
 | Command | Effect |
 | --- | --- |
@@ -201,10 +202,17 @@ The agent does not merge its own CR — that's the user's call, in the dashboard
 
 | Command | Effect |
 | --- | --- |
-| `kortix init` | Scaffold a Kortix project in the current directory. Writes `kortix.toml`, `.kortix/Dockerfile`, and the OpenCode config dir (default agent + the kortix-system skill + tools), and wires the Kortix skill into any local coding agents it finds (`.opencode/`, `.claude/`, `AGENTS.md`, `.cursor/`). It does **not** write `.kortix/link.json` — that's created later by `projects link` or `ship`. |
+| `kortix init` | Scaffold a Kortix project in the current directory. Writes `kortix.yaml` (the v2 manifest), `.kortix/Dockerfile`, and the OpenCode config dir (default agent + the kortix-system skill + tools), and wires the Kortix skill into any local coding agents it finds (`.opencode/`, `.claude/`, `AGENTS.md`, `.cursor/`). It does **not** write `.kortix/link.json` — that's created later by `projects link` or `ship`. |
 | `kortix <project-name>` | Same as `init` but scaffolds into a new directory next to cwd. |
 
 Other commands: `ship` (alias `deploy`) pushes your local commits to the project's cloud repo, provisioning a managed repo on first run — despite the alias, it's a git push, not app deployment. `channels` connects Slack to a project. Run `kortix help` for the full list.
+
+### Manifest validation
+
+| Command | Effect |
+| --- | --- |
+| `kortix validate [--file <path>]` | Statically validate the project's manifest against the canonical schema. Resolves `kortix.yaml` first, falling back to legacy `kortix.toml`, unless `--file` names a specific path. Prints per-agent scope (connectors / `kortix_cli` / secrets) on success. `--json` for a machine-readable report; `--scopes` prints the full grantable `kortix_cli` action enum and exits. Exit codes: `0` valid, `1` validation errors, `2` file missing/unreadable. This is the same validator `kortix ship` runs as a pre-flight check and the CR-merge gate runs server-side — one schema, three call sites. |
+| `kortix schema [--version 1\|2] [--url]` | Print the canonical JSON Schema for the manifest — the same document served at `https://kortix.com/schema/kortix.v2.schema.json` (and the `v1` / combined variants). `--version 2` (or `1`) prints just that version; omit it for the combined document that dispatches on `kortix_version`. `--url` prints the schema URL instead of the body — paste it as a `kortix.yaml`'s first-line `# yaml-language-server: $schema=…` comment for editor validation + autocomplete. |
 
 ## Token scope
 
@@ -240,7 +248,7 @@ A sandbox's project token is minted at session create and lives for that sandbox
 ### Spin up a fresh session with custom env
 
 ```sh
-kortix secrets set OPENAI_API_KEY=sk-… ANTHROPIC_API_KEY=sk-…
+kortix secrets set STRIPE_API_KEY=sk_live_… WEBHOOK_SLACK_SECRET=whsec_…
 kortix sessions new --prompt "Audit the auth module and propose a fix"
 ```
 

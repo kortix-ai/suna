@@ -9,6 +9,7 @@ mock.module('../config', () => ({
     KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: 1,
     KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: 2,
     KORTIX_PROXY_REQS_PER_MIN: 1,
+    KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: 1,
   },
 }));
 
@@ -25,6 +26,7 @@ mock.module('../shared/db', () => ({
 const {
   createInviteAcceptRateLimitMiddleware,
   createSandboxProxyRateLimitMiddleware,
+  createPublicSessionShareRateLimitMiddleware,
   resetRateLimiters,
 } = await import('../shared/rate-limit');
 const { sessionLlmPolicyForTier } = await import('../shared/account-limits');
@@ -88,6 +90,39 @@ describe('audited rate limits', () => {
       resourceType: 'sandbox_proxy',
       resourceId: 'sandbox-1',
       metadata: { limiter: 'sandbox_proxy' },
+    });
+  });
+
+  test('limits anonymous public session-share reads by shareId, not by IP', async () => {
+    const app = new Hono();
+    app.use('/v1/public/session-shares/:shareId', createPublicSessionShareRateLimitMiddleware());
+    app.use('/v1/public/session-shares/:shareId/messages', createPublicSessionShareRateLimitMiddleware());
+    app.get('/v1/public/session-shares/:shareId', (c) => c.json({ ok: true }));
+    app.get('/v1/public/session-shares/:shareId/messages', (c) => c.json({ ok: true }));
+
+    const first = await app.request('/v1/public/session-shares/share-1', {
+      headers: { 'X-Forwarded-For': '203.0.113.20' },
+    });
+    expect(first.status).toBe(200);
+
+    const second = await app.request('/v1/public/session-shares/share-1', {
+      headers: { 'X-Forwarded-For': '203.0.113.20' },
+    });
+    expect(second.status).toBe(429);
+
+    // A DIFFERENT share id from the exact same IP is a separate bucket — every
+    // visitor to one shared link is legitimately behind the same limiter, but
+    // one caller shouldn't be able to starve every other share from the same
+    // (possibly shared) IP.
+    const otherShare = await app.request('/v1/public/session-shares/share-2', {
+      headers: { 'X-Forwarded-For': '203.0.113.20' },
+    });
+    expect(otherShare.status).toBe(200);
+
+    expect(auditRows.at(-1)).toMatchObject({
+      resourceType: 'public_session_share',
+      resourceId: 'share-1',
+      metadata: { limiter: 'public_session_share' },
     });
   });
 

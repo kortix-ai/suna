@@ -48,6 +48,7 @@ export {
   searchRepoFileNames,
   grepRepoFiles,
   readRepoFile,
+  readManifestFromRepo,
   archiveRepoSubtree,
   getFileAtRef,
   getFileHistory,
@@ -75,6 +76,7 @@ export {
   previewMerge,
   mergeBranches,
   diffStat,
+  resolveBranchAheadState,
 } from './git/merge';
 
 export { loadProjectConfig } from './git/config';

@@ -1,5 +1,5 @@
 import { resolveCatalogUpstream } from '@kortix/llm-gateway';
-import { CATALOG, type CatalogModel, MANAGED_MODELS } from '@kortix/shared/llm-catalog';
+import { CATALOG, type CatalogModel, MANAGED_MODELS } from '@kortix/llm-catalog';
 import { toWireModel } from '../resolution/effective';
 
 // PURE catalog logic for the model picker — no DB, no config, so it's unit-

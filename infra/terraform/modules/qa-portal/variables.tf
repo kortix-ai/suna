@@ -53,6 +53,12 @@ variable "per_run_retention_days" {
   default     = 30
 }
 
+variable "pr_report_retention_days" {
+  description = "Expire old per-PR reports under reports/pr/<n>/<run>/ after N days — every PR run uploads a full report, so without this the bucket grows without bound."
+  type        = number
+  default     = 30
+}
+
 variable "noncurrent_version_retention_days" {
   description = "Expire noncurrent (overwritten) object versions after N days — versioning keeps the last write recoverable without hoarding every revision forever."
   type        = number

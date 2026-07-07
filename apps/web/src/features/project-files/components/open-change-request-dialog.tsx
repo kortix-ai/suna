@@ -2,17 +2,18 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -20,10 +21,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import Loading from '@/components/ui/loading';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
-import type { ProjectBranch, ProjectSession } from '@/lib/projects-client';
-import { GitBranch, GitPullRequest, Loader2 } from 'lucide-react';
+import type { ProjectBranch, ProjectSession } from '@kortix/sdk/projects-client';
+import { Layers } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBranches } from '../hooks/use-branches';
@@ -33,32 +35,19 @@ import { DiffPreviewBanner } from './diff-preview-banner';
 interface OpenChangeRequestDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The project the change request belongs to. */
   projectId: string;
-  /** The branch a change request merges into by default (e.g. `main`). */
   defaultBranch: string;
-  /**
-   * When set, the dialog opens a change request straight from an agent
-   * session: the head is the session's branch and the base is `defaultBranch`,
-   * both fixed — so there's no version picker, just a read-only summary.
-   * Leaving this unset shows the From / Into branch picker.
-   */
   session?: ProjectSession | null;
-  /** Picker mode only — preselect the head version (toolbar shortcut). */
   initialHeadRef?: string;
-  /** Invoked with the new CR id so the caller can deep-link to it. */
   onCreated?: (crId: string) => void;
 }
 
-// Branch names from agent sessions are UUIDs (`a1b2c3d4-...`) — too long for a
-// dropdown trigger. We collapse anything matching the UUID shape down to the
-// first 8 chars (enough to disambiguate). Human-named branches keep their name.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function displayBranchName(name: string): string {
   return UUID_RE.test(name) ? name.slice(0, 8) : name;
 }
 
-/** A labelled row inside the From / Into block — one shape for both modes. */
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-3 px-3 py-2.5">
@@ -70,42 +59,41 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
-/** Read-only branch value (session mode). */
 function BranchValue({ name }: { name: string }) {
   return (
     <div className="flex min-w-0 items-center gap-1.5">
-      <GitBranch className="text-muted-foreground h-3 w-3 shrink-0" />
+      <Layers className="text-muted-foreground size-3 shrink-0" />
       <span className="text-foreground truncate font-mono text-xs">{name}</span>
     </div>
   );
 }
 
-/** Branch option inside the picker dropdown (picker mode). */
 function BranchRow({ branch }: { branch: ProjectBranch }) {
   return (
-    <div className="flex flex-col gap-0.5 py-0.5">
-      <div className="flex items-center gap-1.5">
-        <GitBranch className="text-muted-foreground h-3 w-3 shrink-0" />
-        <span className="text-foreground truncate font-mono text-xs">
-          {displayBranchName(branch.name)}
-        </span>
-        {branch.is_default && (
-          <Badge variant="secondary" size="sm" className="shrink-0">
-            default
-          </Badge>
+    <div className="flex items-center justify-start gap-2 py-0.5">
+      <Layers className="text-muted-foreground size-4 shrink-0" />
+
+      <div className="flex flex-col items-start gap-0">
+        {branch.subject && (
+          <span className="text-muted-foreground/80 truncate text-xs">{branch.subject}</span>
         )}
+        <div className="flex items-center gap-1.5">
+          <span className="text-foreground truncate font-mono text-xs">
+            {displayBranchName(branch.name)}
+          </span>
+          {branch.is_default && (
+            <Badge variant="kortix" size="xs" className="shrink-0 text-[11px]">
+              default
+            </Badge>
+          )}
+        </div>
       </div>
-      {branch.subject && (
-        <span className="text-muted-foreground/80 ml-[18px] truncate text-xs">
-          {branch.subject}
-        </span>
-      )}
     </div>
   );
 }
 
 const PICKER_TRIGGER_CLASS =
-  'h-10 flex-1 min-w-0 border-0 bg-transparent px-2 hover:bg-muted/40 focus:ring-0';
+  'py-2 flex-1 min-w-0 rounded-sm border-0 bg-transparent px-2 hover:bg-muted/40 focus:ring-0';
 
 export function OpenChangeRequestDialog({
   open,
@@ -117,14 +105,11 @@ export function OpenChangeRequestDialog({
   onCreated,
 }: OpenChangeRequestDialogProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  // Callers clear `session` at the same moment they close the dialog; keep the
-  // last one so the read-only summary doesn't flip to the picker mid-close.
   const lastSessionRef = useRef<ProjectSession | null>(session);
   if (session) lastSessionRef.current = session;
   const activeSession = session ?? lastSessionRef.current;
   const sessionMode = activeSession !== null;
 
-  // Branches are only needed for the picker — skip the fetch in session mode.
   const branchesQuery = useBranches({ enabled: open && !sessionMode, projectId });
   const branches = branchesQuery.data?.branches ?? [];
   const branchMap = useMemo(() => {
@@ -142,12 +127,9 @@ export function OpenChangeRequestDialog({
   const [pickedHeadRef, setPickedHeadRef] = useState('');
   const [pickedBaseRef, setPickedBaseRef] = useState(defaultBranch);
 
-  // In session mode head/base are fixed; in picker mode they come from state.
   const headRef = sessionMode ? activeSession!.branch_name : pickedHeadRef;
   const baseRef = sessionMode ? defaultBranch : pickedBaseRef;
 
-  // Reset the form (and picker defaults) each time the dialog opens so drafts
-  // don't leak between sessions / branches.
   useEffect(() => {
     if (!open) return;
     setTitle('');
@@ -171,8 +153,6 @@ export function OpenChangeRequestDialog({
 
   const openMutation = useOpenChangeRequest({ projectId });
 
-  // Live diff between the two refs — the user sees the file-count and +/- before
-  // submitting, and we block submit when there's nothing to merge.
   const diffQuery = useVersionDiff(
     open && headRef && baseRef && headRef !== baseRef ? { from: headRef, into: baseRef } : null,
     { enabled: open, projectId },
@@ -203,7 +183,7 @@ export function OpenChangeRequestDialog({
       },
       {
         onSuccess: (cr) => {
-          successToast(`Opened change request #${cr.number}`);
+          successToast(`Change #${cr.number} proposed for review`);
           onOpenChange(false);
           onCreated?.(cr.cr_id);
         },
@@ -217,16 +197,15 @@ export function OpenChangeRequestDialog({
   const selectedBaseBranch = branchMap.get(baseRef);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
-        <DialogHeader className="space-y-1 px-5 pt-5 pb-3">
-          <DialogTitle className="flex items-center gap-2 text-base font-medium">
-            <GitPullRequest className="text-muted-foreground h-4 w-4" />
+    <Modal open={open} onOpenChange={onOpenChange}>
+      <ModalContent className="gap-0 overflow-hidden p-0 lg:max-w-lg">
+        <ModalHeader>
+          <ModalTitle>
             {tHardcodedUi.raw(
               'featuresProjectFilesComponentsOpenChangeRequestDialog.line226JsxTextOpenChangeRequest',
             )}
-          </DialogTitle>
-          <DialogDescription className="text-xs">
+          </ModalTitle>
+          <ModalDescription className="text-balance">
             {sessionMode ? (
               <>
                 {tHardcodedUi.raw(
@@ -238,37 +217,36 @@ export function OpenChangeRequestDialog({
                 )}
               </>
             ) : (
-              <>
-                {tHardcodedUi.raw(
-                  'featuresProjectFilesComponentsOpenChangeRequestDialog.line237JsxTextProposeMergingOneVersionIntoAnotherTheMerge',
-                )}
-              </>
+              tHardcodedUi.raw(
+                'featuresProjectFilesComponentsOpenChangeRequestDialog.line237JsxTextProposeMergingOneVersionIntoAnotherTheMerge',
+              )
             )}
-          </DialogDescription>
-        </DialogHeader>
+          </ModalDescription>
+        </ModalHeader>
 
         {hasOnlyDefaultBranch ? (
-          <div className="space-y-3 px-5 pb-5">
-            <InfoBanner
-              tone="warning"
-              title={tHardcodedUi.raw(
-                'featuresProjectFilesComponentsOpenChangeRequestDialog.line246JsxAttrTitleNoNonDefaultVersionsYet',
-              )}
-            >
-              {tHardcodedUi.raw(
-                'featuresProjectFilesComponentsOpenChangeRequestDialog.line247JsxTextStartASessionEachSessionLivesOnIts',
-              )}
-            </InfoBanner>
-            <div className="flex justify-end">
-              <Button variant="ghost" onClick={() => onOpenChange(false)}>
+          <>
+            <ModalBody className="space-y-3 pt-0">
+              <InfoBanner
+                tone="warning"
+                title={tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsOpenChangeRequestDialog.line246JsxAttrTitleNoNonDefaultVersionsYet',
+                )}
+              >
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsOpenChangeRequestDialog.line247JsxTextStartASessionEachSessionLivesOnIts',
+                )}
+              </InfoBanner>
+            </ModalBody>
+            <ModalFooter className="sm:justify-end">
+              <Button variant="outline-ghost" size="sm" onClick={() => onOpenChange(false)}>
                 Close
               </Button>
-            </div>
-          </div>
+            </ModalFooter>
+          </>
         ) : (
           <>
-            <div className="space-y-4 px-5 pb-4">
-              {/* Title */}
+            <ModalBody className="space-y-4 pt-0">
               <div className="space-y-1.5">
                 <Label htmlFor="cr-title" className="text-foreground text-xs font-medium">
                   Title
@@ -290,9 +268,7 @@ export function OpenChangeRequestDialog({
                 />
               </div>
 
-              {/* From / Into — read-only summary in session mode, branch pickers
-                  in picker mode. Same container shape either way. */}
-              <div className="border-border/60 divide-border/40 divide-y rounded-2xl border">
+              <div className="border-border divide-border bg-popover divide-y rounded-md border">
                 {sessionMode ? (
                   <>
                     <FieldRow label="From">
@@ -356,8 +332,6 @@ export function OpenChangeRequestDialog({
                 )}
               </div>
 
-              {/* Live diff preview — shows whether there's anything to merge
-                  BEFORE submit. */}
               {headRef && baseRef && headRef !== baseRef && (
                 <DiffPreviewBanner
                   loading={diffQuery.isLoading}
@@ -373,7 +347,6 @@ export function OpenChangeRequestDialog({
                 </InfoBanner>
               )}
 
-              {/* Description */}
               <div className="space-y-1.5">
                 <Label htmlFor="cr-description" className="text-foreground text-xs font-medium">
                   Description <span className="text-muted-foreground font-normal">(optional)</span>
@@ -389,26 +362,33 @@ export function OpenChangeRequestDialog({
                   className="resize-none"
                 />
               </div>
-            </div>
+            </ModalBody>
 
-            <DialogFooter>
+            <ModalFooter className="sm:justify-between">
               <Button
-                variant="ghost"
+                variant="outline-ghost"
+                size="sm"
+                className="w-full sm:w-auto"
                 onClick={() => onOpenChange(false)}
                 disabled={openMutation.isPending}
               >
                 Cancel
               </Button>
-              <Button disabled={!canSubmit || openMutation.isPending} onClick={handleSubmit}>
-                {openMutation.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+              <Button
+                size="sm"
+                className="w-full sm:w-auto"
+                disabled={!canSubmit || openMutation.isPending}
+                onClick={handleSubmit}
+              >
+                {openMutation.isPending && <Loading className="size-3.5 shrink-0" />}
                 {tHardcodedUi.raw(
                   'featuresProjectFilesComponentsOpenChangeRequestDialog.line386JsxTextOpenChangeRequest',
                 )}
               </Button>
-            </DialogFooter>
+            </ModalFooter>
           </>
         )}
-      </DialogContent>
-    </Dialog>
+      </ModalContent>
+    </Modal>
   );
 }

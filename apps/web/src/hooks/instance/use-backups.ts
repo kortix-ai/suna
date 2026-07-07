@@ -6,7 +6,7 @@ import {
   createBackup,
   restoreBackup,
   deleteBackup,
-} from '@/lib/platform-client';
+} from '@kortix/sdk/platform-client';
 
 export function useBackups(sandboxId: string | undefined) {
   const queryClient = useQueryClient();

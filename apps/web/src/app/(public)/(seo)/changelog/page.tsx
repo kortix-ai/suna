@@ -157,7 +157,7 @@ export default async function ChangelogPage() {
           // Reveal/IntersectionObserver wrapper — a very long release body (v0.9.0
           // is ~60KB) is taller than the observer's threshold can ever satisfy, so
           // it would stay at opacity:0 forever and read as a huge blank gap.
-          <div className="divide-border/60 mt-12 divide-y sm:mt-16">
+          <div className="divide-border mt-12 divide-y sm:mt-16">
             {releases.map((release, i) => {
               const isLatest = i === 0 && !release.prerelease;
               // Huge auto-generated bodies (v0.9.0 is ~800 PR lines) would swallow

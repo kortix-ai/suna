@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react';
 
-import { MarketplaceBrowser } from '@/components/marketplace/marketplace-browser';
-import { MarketplaceInstalledPanel } from '@/components/marketplace/marketplace-installed-panel';
+// import { MarketplaceBrowser } from '@/components/marketplace/marketplace-browser';
+// import { MarketplaceInstalledPanel } from '@/components/marketplace/marketplace-installed-panel';
+import { MarketplaceBrowser } from '@/features/marketplace/marketplace-browser';
+import { MarketplaceInstalledPanel } from '@/features/marketplace/marketplace-installed-panel';
 import { setBootstrapAuthToken } from '@/lib/auth-token';
 
 export default function DebugMarketplacePage() {

@@ -45,10 +45,15 @@ const IGNORED_DIRS = new Set([
   'node_modules',
 ]);
 
+// OS-generated cruft that can appear in a real contributor's working tree
+// (e.g. Finder writes `.DS_Store` into any directory it has browsed) but
+// must never be captured into a starter template snapshot.
+const IGNORED_FILES = new Set(['.DS_Store', 'Thumbs.db']);
+
 function walk(root: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(root)) {
-    if (IGNORED_DIRS.has(entry)) continue;
+    if (IGNORED_DIRS.has(entry) || IGNORED_FILES.has(entry)) continue;
     const abs = join(root, entry);
     const st = statSync(abs);
     if (st.isDirectory()) out.push(...walk(abs));

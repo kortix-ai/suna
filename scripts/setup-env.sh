@@ -79,8 +79,7 @@ write_env "apps/api/.env.local" \
   "$(kv TUNNEL_SIGNING_SECRET)" \
   "" \
   "# Sandbox" \
-  "$(kv ALLOWED_SANDBOX_PROVIDERS local_docker)" \
-  "$(kv DOCKER_HOST)" \
+  "$(kv ALLOWED_SANDBOX_PROVIDERS daytona)" \
   "$(kv KORTIX_URL)" \
   "$(kv FRONTEND_URL "$(e NEXT_PUBLIC_URL http://localhost:3000)")" \
   "" \
@@ -123,7 +122,6 @@ write_env "apps/web/.env" \
   "$(kv NEXT_PUBLIC_APP_URL "$(e NEXT_PUBLIC_URL http://localhost:3000)")" \
   "$(kv NEXT_PUBLIC_URL http://localhost:3000)" \
   "$(kv NEXT_PUBLIC_BACKEND_URL http://localhost:8008/v1)" \
-  "$(kv NEXT_PUBLIC_SANDBOX_ID "$(e SANDBOX_CONTAINER_NAME kortix-sandbox)")" \
   "" \
   "$(kv NEXT_PUBLIC_GOOGLE_CLIENT_ID)" \
   "$(kv NEXT_PUBLIC_POSTHOG_KEY)" \
@@ -137,4 +135,4 @@ echo "Next steps:"
 echo "  pnpm dev           # start everything"
 echo "  pnpm dev:api       # start API only"
 echo "  pnpm dev:frontend  # start frontend only"
-echo "  pnpm dev:sandbox   # build sandbox image for local_docker sessions"
+echo "  pnpm dev:sandbox   # build the sandbox Docker image locally"

@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { accountMembers, accountUser, projectMembers, projects } from '@kortix/db';
+import { accountMembers, projectMembers, projects } from '@kortix/db';
 
 process.env.KORTIX_DEFAULT_MARKETPLACES = '';
 
@@ -28,8 +28,6 @@ let seedFilePaths: string[];
 let seedBaseFilePaths: string[];
 let seedFilesByPath: Map<string, string>;
 let canonicalMembership: boolean;
-let legacyMembership: boolean;
-let repairedLegacyMembership: any | null;
 
 function setTestAuth(userId = USER_ID, userEmail = 'ship@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
@@ -110,7 +108,9 @@ mock.module('../deployments/providers/freestyle', () => ({
   },
 }));
 
+const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
+  ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
     c.set('userId', auth.userId);
@@ -137,6 +137,7 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   readRepoFile: async () => '',
+  readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
@@ -226,13 +227,10 @@ mock.module('../shared/db', () => ({
           return {
             limit: async () => {
               if (table === accountMembers) {
-                if (canonicalMembership || repairedLegacyMembership) {
+                if (canonicalMembership) {
                   return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
                 }
                 return [];
-              }
-              if (table === accountUser) {
-                return legacyMembership ? [{ accountId: ACCOUNT_ID }] : [];
               }
               return [];
             },
@@ -243,9 +241,6 @@ mock.module('../shared/db', () => ({
     insert: (table: unknown) => ({
       values: (values: any) => ({
         onConflictDoNothing: () => {
-          if (table === accountMembers) {
-            repairedLegacyMembership = values;
-          }
           return Promise.resolve([]);
         },
         onConflictDoUpdate: () => {
@@ -296,8 +291,6 @@ describe('POST /v1/projects/provision (managed git)', () => {
     seedBaseFilePaths = [];
     seedFilesByPath = new Map();
     canonicalMembership = true;
-    legacyMembership = false;
-    repairedLegacyMembership = null;
     backendCalls.length = 0;
     backendConfigured = true;
   });
@@ -329,7 +322,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
       name: 'My Agent',
       repoUrl: expectedRepoUrl,
       defaultBranch: 'main',
-      manifestPath: 'kortix.toml',
+      manifestPath: 'kortix.yaml',
       status: 'active',
       metadata: {
         git: {
@@ -352,28 +345,18 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(backendCalls).toEqual(['createRepo']);
   });
 
-  test('repairs explicit legacy account membership before provisioning', async () => {
+  test('rejects an explicit account the caller has no membership in', async () => {
     canonicalMembership = false;
-    legacyMembership = true;
 
     const app = createApp();
     const res = await app.request('/v1/projects/provision', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'Legacy Account Project' }),
+      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'No Membership Project' }),
     });
 
-    expect(res.status).toBe(201);
-    expect(repairedLegacyMembership).toMatchObject({
-      accountId: ACCOUNT_ID,
-      userId: USER_ID,
-      accountRole: 'owner',
-      isSuperAdmin: true,
-    });
-    expect(insertedProject).toMatchObject({
-      accountId: ACCOUNT_ID,
-      name: 'Legacy Account Project',
-    });
+    expect(res.status).toBe(403);
+    expect(insertedProject).toBeNull();
   });
 
   test('seeds selected marketplace skills into the initial managed repo setup commit', async () => {
@@ -415,8 +398,10 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(Object.keys(lock.items).sort()).toContain('kortix-memory');
     expect(Object.keys(lock.items).sort()).toContain('kortix-executor');
     expect(Object.keys(lock.items).sort()).toContain('kortix-slack');
-    expect(Object.keys(lock.items).sort()).toContain('kortix-computer');
     expect(Object.keys(lock.items).sort()).not.toContain('account-research');
+    // kortix-computer now lives in the marketplace tier (opt-in), not the base
+    // floor — it's absent here because this request didn't select it.
+    expect(Object.keys(lock.items).sort()).not.toContain('kortix-computer');
     expect(lock.items['agent-browser'].type).toBe('registry:skill');
     expect(lock.items['agent-browser'].source).toBe('kortix-starter');
     expect(lock.items['agent-browser'].sourceType).toBe('local');

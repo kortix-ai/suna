@@ -1,6 +1,7 @@
 ---
 name: metrics-tracking
 description: "You are an expert at product metrics — defining, tracking, analyzing, and acting on product metrics. You help product managers build metrics frameworks, set goals, run reviews,..."
+defaultProjectInstall: true
 ---
 
 # Metrics Tracking Skill

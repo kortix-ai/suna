@@ -93,7 +93,6 @@ function accountJson(a: AccountMembership, active: boolean) {
     slug: a.slug,
     name: a.name,
     role: a.role,
-    personal_account: a.personal_account,
     active,
   };
 }
@@ -242,9 +241,6 @@ async function accountsInfo(arg?: string, json = false): Promise<number> {
   process.stdout.write(`  ${C.dim}slug       ${C.reset}${a.slug}\n`);
   process.stdout.write(`  ${C.dim}account_id ${C.reset}${a.account_id}\n`);
   process.stdout.write(`  ${C.dim}role       ${C.reset}${a.role}\n`);
-  if (a.personal_account) {
-    process.stdout.write(`  ${C.dim}personal   ${C.reset}yes\n`);
-  }
   process.stdout.write('\n');
   return 0;
 }

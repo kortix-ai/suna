@@ -47,8 +47,20 @@ mock.module('../shared/db', () => ({
   db: { select: () => makeChain(), insert: () => makeChain(), update: () => makeChain(), delete: () => makeChain() },
   hasDatabase: () => true,
 }));
+const realIam = await import('../iam');
 mock.module('../iam', () => ({
+  ...realIam,
   authorize: async () => ({ allowed: authorizeAllowed }),
+  assertAuthorized: async () => {},
+  filterAccessibleProjectResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
+  unscopedResourceIds: async (_p: string, _t: string, ids: readonly string[]) => [...ids],
+  hasAnyResourceGrants: async () => false,
+}));
+
+const realGit = await import('../projects/git');
+mock.module('../projects/git', () => ({
+  ...realGit,
+  readRepoFile: async () => null,
 }));
 
 // ─── Lifecycle delivery: the outcome under test ───────────────────────────────

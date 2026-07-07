@@ -194,7 +194,7 @@ export async function reopenComputeForSandbox(
   const last = await getLatestComputeSession(sandboxId);
   const spec: SandboxSpec = last
     ? { cpuCores: last.cpuCores, memoryGb: last.memoryGb, diskGb: last.diskGb, gpuCount: last.gpuCount }
-    : { cpuCores: 2, memoryGb: 6, diskGb: 20, gpuCount: 0 };
+    : { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
   return startComputeSession({ sandboxId, accountId, sessionId, actorUserId, spec });
 }
 

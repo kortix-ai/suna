@@ -64,7 +64,7 @@ jobs:
     name: typecheck + coverage gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -81,7 +81,7 @@ jobs:
     name: run suite
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -90,13 +90,17 @@ jobs:
 
       - name: Resolve target
         id: target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_BASE_URL: ${{ inputs.base_url }}
+          INPUT_ARGS: ${{ inputs.args }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
+          if [ "$EVENT_NAME" = "pull_request" ]; then
             echo "base=https://dev-api.kortix.com/v1" >> "$GITHUB_OUTPUT"
             echo "args=run --tag smoke" >> "$GITHUB_OUTPUT"
           else
-            echo "base=${{ inputs.base_url }}" >> "$GITHUB_OUTPUT"
-            echo "args=${{ inputs.args }}" >> "$GITHUB_OUTPUT"
+            echo "base=$INPUT_BASE_URL" >> "$GITHUB_OUTPUT"
+            echo "args=$INPUT_ARGS" >> "$GITHUB_OUTPUT"
           fi
 
       - name: GC leaked resources from prior runs
@@ -114,9 +118,13 @@ jobs:
           KE2E_DATABASE_URL: ${{ secrets.KE2E_DATABASE_URL }}
 
       - name: Run ke2e
-        run: bun bin/ke2e.ts ${{ steps.target.outputs.args }}
+        run: |
+          set -euo pipefail
+          read -r -a KE2E_ARGV <<< "$KE2E_ARGS"
+          bun bin/ke2e.ts "${KE2E_ARGV[@]}"
         working-directory: tests
         env:
+          KE2E_ARGS: ${{ steps.target.outputs.args }}
           KE2E_API_URL: ${{ steps.target.outputs.base }}
           KE2E_LIVE_CONFIRM: "ci"
           KE2E_OWNER_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}

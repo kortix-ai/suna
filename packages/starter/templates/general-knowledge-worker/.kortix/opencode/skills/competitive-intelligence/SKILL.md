@@ -1,6 +1,7 @@
 ---
 name: competitive-intelligence
 description: "Research your competitors extensively and generate an interactive HTML battlecard you can use in deals. The output is a self-contained artifact with clickable competitor tabs an..."
+defaultProjectInstall: true
 ---
 
 # Competitive Intelligence

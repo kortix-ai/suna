@@ -2,10 +2,7 @@
 
 import type { ReactNode } from 'react';
 
-import {
-  type AttachedFile,
-  SessionChatInput,
-} from '@/features/session/session-chat-input';
+import { type AttachedFile, SessionChatInput } from '@/features/session/session-chat-input';
 import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
 import { type ModelKey, useOpenCodeLocal } from '@/hooks/opencode/use-opencode-local';
 import {
@@ -37,13 +34,16 @@ export function ComposerChatInput({
   projectId,
   isBusy,
   stopDisabled,
+  isSending,
   disabled,
   autoFocus,
   placeholder,
   prefill,
   inputSlot,
   toolbarSlot,
+  cardClassName,
   boundAgentName,
+  clearOnSend,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
@@ -52,12 +52,19 @@ export function ComposerChatInput({
   isBusy?: boolean;
   /** Show a disabled stop button while busy (e.g. the computer is still booting). */
   stopDisabled?: boolean;
+  /** Send in flight, not yet settled — spinner in the send slot (see SessionChatInput.isSending). */
+  isSending?: boolean;
   disabled?: boolean;
+  /** Clear the composer optimistically on send. Set false on the project-home
+   *  composer, whose send navigates it away (see SessionChatInput.clearOnSend). */
+  clearOnSend?: boolean;
   autoFocus?: boolean;
   placeholder?: string;
   prefill?: { text: string; id: number } | null;
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
+  /** Extra classes for the input card (e.g. the project-home radius override). */
+  cardClassName?: string;
   /** Immutable project-session agent. When set, sends are locked to this agent. */
   boundAgentName?: string | null;
 }) {
@@ -85,14 +92,17 @@ export function ComposerChatInput({
     <SessionChatInput
       onSend={(text, files) => onSend(text, files, options())}
       onCommand={onCommand ? (cmd, args) => onCommand(cmd, args, options()) : undefined}
+      clearOnSend={clearOnSend}
       isBusy={isBusy}
       stopDisabled={stopDisabled}
+      isSending={isSending}
       disabled={disabled}
       autoFocus={autoFocus}
       placeholder={placeholder}
       prefill={prefill}
       inputSlot={inputSlot}
       toolbarSlot={toolbarSlot}
+      cardClassName={cardClassName}
       sessionId={sessionId}
       providers={providers}
       agents={local.agent.list}

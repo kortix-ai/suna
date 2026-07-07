@@ -7,9 +7,9 @@ import { cn } from '@/lib/utils';
 const alertVariants = cva('w-full rounded-md', {
   variants: {
     variant: {
-      default: 'bg-card text-card-foreground',
+      default: 'bg-popover text-foreground',
       destructive:
-        'text-destructive bg-card [&_[data-slot=item-media]_svg]:text-current [&_[data-slot=item-description]]:text-destructive/90',
+        'text-destructive bg-popover [&_[data-slot=item-media]_svg]:text-current [&_[data-slot=item-description]]:text-destructive/90',
       warning:
         'text-kortix-orange   bg-kortix-orange/10 [&_[data-slot=item-media]_svg]:text-current [&_[data-slot=item-description]]:text-kortix-orange/90',
     },
@@ -29,7 +29,7 @@ function AlertMedia({
       data-slot="alert-media"
       variant={variant}
       className={cn(
-        'size-4 shrink-0 self-start [&_svg]:text-current [&_svg:not([class*="size-"])]:size-4',
+        'mt-0 shrink-0 self-start [&_svg]:pointer-events-none [&_svg]:shrink-0',
         className,
       )}
       {...props}

@@ -2,7 +2,7 @@
 
 import { useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
-import { getProjectDetail } from '@/lib/projects-client';
+import { getProjectDetail } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
 
 export function useProjectCanRun(projectId: string | undefined) {

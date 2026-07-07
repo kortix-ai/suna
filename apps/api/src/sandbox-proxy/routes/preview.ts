@@ -33,10 +33,15 @@ const STRIP_FORWARD_HEADERS = new Set([
   'content-length',
 ]);
 
-function jsonProxyError(body: Record<string, unknown>, status: number): Response {
+function jsonProxyError(body: Record<string, unknown>, status: number, origin?: string): Response {
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  if (origin) {
+    headers.set('Access-Control-Allow-Origin', origin);
+    headers.set('Access-Control-Allow-Credentials', 'true');
+  }
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers,
   });
 }
 
@@ -258,13 +263,13 @@ function requestedPromptAgent(body: ArrayBuffer | undefined, incomingHeaders: He
   }
 }
 
-function agentSwitchConflictResponse(expectedAgent: string, requestedAgent: string): Response {
+function agentSwitchConflictResponse(expectedAgent: string, requestedAgent: string, origin?: string): Response {
   return jsonProxyError({
     error: 'agent switch requires a new session',
     code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
     expected_agent: expectedAgent,
     requested_agent: requestedAgent,
-  }, 409);
+  }, 409, origin);
 }
 
 // The sentinel name a session carries when it isn't bound to a *concrete* agent.
@@ -356,7 +361,7 @@ export async function forwardToSandbox(
   // separate queries for the same row.)
   const record = await loadSandbox(sandboxId);
   if (!record) {
-    return jsonProxyError({ error: 'sandbox not found' }, 404);
+    return jsonProxyError({ error: 'sandbox not found' }, 404, origin);
   }
   const userId = principalUserId(access);
   if (
@@ -388,7 +393,7 @@ export async function forwardToSandbox(
   // never through this user-facing proxy — block it so an account member can't
   // inject arbitrary env into a sandbox by POSTing /v1/p/<id>/8000/kortix/env.
   if (port === 8000 && /^\/kortix\/env(?:$|[/?#])/.test(remainingPath)) {
-    return jsonProxyError({ error: 'not found' }, 404);
+    return jsonProxyError({ error: 'not found' }, 404, origin);
   }
   if (record.status !== 'active') {
     return portUnreachableResponse({
@@ -441,7 +446,7 @@ export async function forwardToSandbox(
           config.KORTIX_ENFORCE_SESSION_AGENT_LOCK &&
           isProhibitedAgentSwitch(requestedAgent, sessionAgent)
         ) {
-          return agentSwitchConflictResponse(sessionAgent, requestedAgent!);
+          return agentSwitchConflictResponse(sessionAgent, requestedAgent!, origin);
         }
         // Drop only the legacy 'default' sentinel so OpenCode resolves its own
         // `default_agent` (the real default the session booted with). A *concrete*
@@ -469,7 +474,7 @@ export async function forwardToSandbox(
             throw new Error(message);
           }
           console.warn(`[PREVIEW] Project env sync failed for ${sandboxId}:${port}: ${message}`);
-          return jsonProxyError({ error: message }, 502);
+          return jsonProxyError({ error: message }, 502, origin);
         }
       }
 
@@ -503,7 +508,7 @@ export async function forwardToSandbox(
       // of the Daytona proxy (3000-<id>.daytonaproxy01.net). Frameworks that enforce
       // same-origin on mutations (Next.js Server Actions, SvelteKit, Remix, Django CSRF)
       // reject that mismatch as "Invalid Server Actions request." Rewriting Origin (and
-      // pinning x-forwarded-host for single-hop local_docker upstreams) to the upstream
+      // pinning x-forwarded-host for single-hop upstreams) to the upstream
       // origin makes this proxy transparent to ANY framework — no per-project config.
       const upstreamUrl = new URL(previewUrl);
       if (headers.has('origin')) {
@@ -535,21 +540,44 @@ export async function forwardToSandbox(
         );
       }
 
-      const upstream = await fetch(targetUrl, {
-        method,
-        headers,
-        body,
-        redirect: 'manual',
-        // Bound a wedged first connection to a freshly-restored microVM (residual
-        // CH RX stall) so the attempt fails fast → retry on a fresh connection,
-        // instead of hanging the whole proxy. `body` is buffered (line ~576, not
-        // a stream) so aborting only kills the in-flight attempt, never truncates
-        // an upload mid-stream.
-        signal: AbortSignal.timeout(proxyAttemptTimeoutMs(budgetRemainingMs)),
-        // @ts-ignore — Bun extensions: no decompression (raw byte passthrough), duplex streaming
-        decompress: false,
-        duplex: 'half',
-      });
+      // Bound a wedged first connection to a freshly-restored microVM (residual
+      // CH RX stall) so the attempt fails fast → retry on a fresh connection,
+      // instead of hanging the whole proxy. `body` is buffered (line ~576, not
+      // a stream) so aborting only kills the in-flight attempt, never truncates
+      // an upload mid-stream.
+      //
+      // CRITICAL: the timeout bounds ONLY the connect/header phase — the timer
+      // is cleared the moment `fetch` resolves. The previous
+      // `AbortSignal.timeout(...)` bounded the ENTIRE fetch lifecycle, which
+      // severed every streaming response body at ~15s: the `/global/event` SSE
+      // stream (each open session tab then reconnected ~250ms later, forever —
+      // a fleet-wide reconnect storm, ~240 reconnects/hour/tab), long-polls,
+      // and any proxied download slower than 15s. The retry loop only ever
+      // needed to retry attempts whose CONNECTION wedged, which this still does.
+      const attemptController = new AbortController();
+      const connectTimer = setTimeout(
+        () =>
+          attemptController.abort(
+            new DOMException('proxy attempt connect timeout', 'TimeoutError'),
+          ),
+        proxyAttemptTimeoutMs(budgetRemainingMs),
+      );
+      let upstream: Response;
+      try {
+        upstream = await fetch(targetUrl, {
+          method,
+          headers,
+          body,
+          redirect: 'manual',
+          signal: attemptController.signal,
+          // Bun extensions: no decompression (raw byte passthrough), duplex streaming —
+          // not in the lib RequestInit type.
+          decompress: false,
+          duplex: 'half',
+        } as RequestInit);
+      } finally {
+        clearTimeout(connectTimer);
+      }
 
       if (upstream.status >= 300 && upstream.status < 400) {
         const respHeaders = clientResponseHeaders(upstream.headers, origin);
@@ -568,7 +596,7 @@ export async function forwardToSandbox(
 
       if (upstream.status === 401 && serviceKey && userId) {
         console.warn(`[PREVIEW] Sandbox ${sandboxId}:${port} rejected signed user context`);
-        return jsonProxyError({ error: 'sandbox proxy authentication rejected' }, 502);
+        return jsonProxyError({ error: 'sandbox proxy authentication rejected' }, 502, origin);
       }
 
       // Daytona returns various error codes when the sandbox isn't ready:

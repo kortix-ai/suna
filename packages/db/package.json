@@ -9,8 +9,6 @@
     ".": "./src/index.ts",
     "./client": "./src/client.ts",
     "./schema": "./src/schema/index.ts",
-    "./schema/legacy": "./src/schema/legacy/index.ts",
-    "./schema/legacy/schema": "./src/schema/legacy/schema.ts",
     "./types": "./src/types.ts"
   },
   "scripts": {
