@@ -13,6 +13,8 @@ import { FormEvent, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, Loader2, Plus, Trash2, X } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { getEnv } from '@/lib/env-config';
+import { buildScimBaseUrl, isAbsoluteHttpUrl } from '@/lib/scim-url';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -88,10 +90,12 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
   });
 
   const tokens = tokensQuery.data ?? [];
-  // SCIM base URL is documented per-account. We can't know the full host
-  // from this component (the API may sit on a different domain) so we show
-  // a relative path and let the admin prepend their API origin.
-  const scimBaseUrl = `/scim/v2/accounts/${accountId}`;
+  // The SCIM base URL is what the admin pastes into their IdP (Okta/Azure),
+  // which calls it directly — so show the absolute API origin when we know it.
+  // Falls back to a relative path (+ the "prepend your origin" hint below) when
+  // the backend is configured as a same-origin proxy path.
+  const scimBaseUrl = buildScimBaseUrl(accountId, getEnv().BACKEND_URL);
+  const scimBaseIsAbsolute = isAbsoluteHttpUrl(scimBaseUrl);
 
   return (
     <section className="rounded-xl border border-border/70 bg-card">
@@ -119,7 +123,15 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
             </Button>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            {tHardcodedUi.raw('componentsIamScimCard.line122JsxTextPrependYourAPIOriginEG')}<code>https://api.kortix.com</code>{tHardcodedUi.raw('componentsIamScimCard.line122JsxTextTheIdPAppends')}<code>/Users</code> and <code>/Groups</code>.
+            {scimBaseIsAbsolute ? (
+              <>
+                Your IdP appends <code>/Users</code> and <code>/Groups</code>.
+              </>
+            ) : (
+              <>
+                {tHardcodedUi.raw('componentsIamScimCard.line122JsxTextPrependYourAPIOriginEG')}<code>https://api.kortix.com</code>{tHardcodedUi.raw('componentsIamScimCard.line122JsxTextTheIdPAppends')}<code>/Users</code> and <code>/Groups</code>.
+              </>
+            )}
           </p>
         </div>
 
@@ -236,6 +248,9 @@ function CreateScimTokenDialog({
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [created, setCreated] = useState<CreatedScimToken | null>(null);
+  // Same absolute-when-known base URL the card shows, so the post-mint view
+  // matches (the API returns a relative path in created.scim_base_url).
+  const scimBaseUrl = buildScimBaseUrl(accountId, getEnv().BACKEND_URL);
 
   const mutation = useMutation({
     mutationFn: () => createScimToken(accountId, { name: name.trim() }),
@@ -297,13 +312,13 @@ function CreateScimTokenDialog({
               <Label className="text-xs">{tHardcodedUi.raw('componentsIamScimCard.line301JsxTextSCIMBaseURL')}</Label>
               <div className="mt-1 flex items-center gap-2">
                 <code className="flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
-                  {created.scim_base_url}
+                  {scimBaseUrl}
                 </code>
                 <Button
                   variant="outline"
                   size="icon"
                   aria-label={tHardcodedUi.raw('componentsIamScimCard.line309JsxAttrAriaLabelCopyURL')}
-                  onClick={() => copyToClipboard(created.scim_base_url, 'URL copied')}
+                  onClick={() => copyToClipboard(scimBaseUrl, 'URL copied')}
                 >
                   <Copy className="h-3.5 w-3.5" />
                 </Button>
