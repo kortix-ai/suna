@@ -13,6 +13,7 @@ import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
 import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
+import { shouldShowStartError } from '@/features/session/session-start-gate';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
 import { useAccountState } from '@/hooks/billing';
@@ -183,15 +184,15 @@ export default function ProjectSessionPage() {
       );
     }
 
-    if (session.startError) {
-      const sessionMissing = session.startError.status === 404;
+    if (shouldShowStartError(session.startError, isFresh)) {
+      const sessionMissing = session.startError!.status === 404;
       return (
         <InlineSessionError
           title="Couldn't start session"
           message={
             sessionMissing
               ? 'This session is no longer available, or you do not have access to it.'
-              : session.startError.message
+              : session.startError!.message
           }
         />
       );
