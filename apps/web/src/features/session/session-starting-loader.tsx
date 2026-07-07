@@ -4,7 +4,7 @@ import { Loader2, RotateCcw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { restartProjectSession, sessionStartKey, type SessionStartStage } from '@kortix/sdk/projects-client';
+import { restartProjectSession, sessionStartKey } from '@kortix/sdk/projects-client';
 import { Button } from '@/components/ui/button';
 import { errorToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
@@ -41,7 +41,6 @@ function useBootClock(): number {
 }
 
 export function SessionStartingLoader({
-  stage = 'provisioning',
   /** Delay before the content fades in. The full-screen resume loader keeps the
    *  default so a warm open never flashes it; the side panel passes 0 because the
    *  user opened it deliberately and expects to see status immediately. */
@@ -52,7 +51,6 @@ export function SessionStartingLoader({
   projectId,
   sessionId,
 }: {
-  stage?: SessionStartStage;
   delayMs?: number;
   projectId?: string;
   sessionId?: string;
@@ -96,7 +94,7 @@ export function SessionStartingLoader({
     <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center px-8">
       <div
         className={cn(
-          'flex flex-col items-center gap-5 transition-opacity duration-500',
+          'flex flex-col items-center gap-5 transition-opacity duration-500 ease-out',
           show ? 'opacity-100' : 'opacity-0',
         )}
       >
