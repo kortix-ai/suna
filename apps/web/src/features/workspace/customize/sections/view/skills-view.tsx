@@ -14,8 +14,8 @@ export function SkillsView({ projectId }: { projectId: string }) {
       projectId={projectId}
       kind="skill"
       noun="skill"
+      layout="split"
       title="Skills"
-      description="Pick a skill from the list to preview it, or create a new one."
       searchPlaceholder="Search skills"
       emptyIcon={Sparkles}
       emptyTitle="No skills yet"

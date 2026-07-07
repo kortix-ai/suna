@@ -40,8 +40,6 @@ export function AgentsView({ projectId }: { projectId: string }) {
       noun="agent"
       layout="split"
       title="Agents"
-      description="Pick an agent from the list to preview it, or create a new one."
-      docs="https://kortix.com/docs/concepts/agents"
       searchPlaceholder="Search agents"
       emptyIcon={Bot}
       emptyTitle="No agents yet"
@@ -50,6 +48,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
       emptyBodyLabel="Agent body is empty. Add prompt content below the frontmatter."
       select={(config) => config.agents}
       renderTriggerLabel={(agent) => agent.name}
+      className=' p-4  lg:py-0'
       renderRowTrailing={(agent, config) => (
         <>
           {agent.mode ? (

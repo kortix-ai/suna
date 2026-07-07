@@ -49,9 +49,10 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
   /** Lowercase singular used in inline copy ("No matches", "{noun} body is empty"). */
   noun: string;
 
+  className?: string;
   // Section shell
   title: string;
-  description: string;
+  description?: string;
   docs?: string;
 
   // Search
@@ -82,11 +83,13 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
   renderContext?: (config: ProjectConfigSummary) => ReactNode;
 
   /**
-   * 'accordion' (default) — a vertical list where each row expands its detail
-   * inline. 'split' — a master-detail layout: a selectable list on the LEFT, the
-   * selected entity's source in the MIDDLE, and `renderDetailExtra` as a right
-   * aside. Use 'split' for agents (the detail carries scope/model/assignment
-   * cards that deserve their own column). Widens the section to fit three panes.
+   * 'accordion' — a vertical list where each row expands its detail inline.
+   * 'split' (the standard for agents, skills & commands) — a master-detail
+   * layout: a separate, self-scrolling sidebar that lists every entity on the
+   * LEFT, the selected entity's source in the MIDDLE, and (when provided)
+   * `renderDetailExtra` as a right aside — e.g. agents surface their
+   * scope/model/assignment cards in that third column. Widens the section to
+   * fit the extra panes.
    */
   layout?: 'accordion' | 'split';
 }
@@ -115,6 +118,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
     emptyBodyLabel,
     renderContext,
     layout = 'accordion',
+    className,
   } = props;
 
   const detailQuery = useQuery({
@@ -252,84 +256,124 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
     </div>
   );
 
-  const splitBody = (
-    <div className="space-y-4">
-      {config && entities.length > 0 && renderContext ? renderContext(config) : null}
-      {stateContent ??
-        (config ? (
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
-            {/* Left — a selectable list, sticky on scroll. The top offset keeps
-                it from pinning flush against the scrollport edge (the section's
-                vertical padding scrolls away with the content). */}
-            <div className="lg:border-border/60 space-y-3 lg:sticky lg:top-6 lg:self-start lg:border-r lg:pr-4">
-              {searchInput}
-              {filtered.length === 0 ? (
-                noMatches
-              ) : (
-                <ul className="space-y-0.5">
-                  {filtered.map((entity) => {
-                    const trailing = renderRowTrailing?.(entity, config);
-                    const isActive = selected?.path === entity.path;
-                    return (
-                      <li key={entity.path}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPath(entity.path)}
-                          aria-current={isActive}
-                          className={cn(
-                            'focus-visible:ring-kortix-blue flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:ring-2 focus-visible:outline-none',
-                            isActive
-                              ? 'bg-secondary text-foreground font-medium'
-                              : 'text-muted-foreground hover:bg-muted/50',
-                          )}
-                        >
-                          <span className="min-w-0 flex-1 truncate">
+  // The agent's extras (scope / model / assignment cards) become their own fixed
+  // pane, so the middle content is the sole scroller.
+  const extra = selected && config ? renderDetailExtra?.(selected, config) : null;
+
+  // Fixed-shell master-detail: the section header, the left list, and the right
+  // aside all stay put — only the middle content pane scrolls (lg+). Below lg the
+  // whole thing degrades to a single scroll under the fixed header.
+  const splitBody = stateContent ? (
+    <div className="h-full overflow-y-auto px-6 py-10">{stateContent}</div>
+  ) : config ? (
+    <div className="flex min-h-0 flex-col lg:h-full">
+      {entities.length > 0 && renderContext ? (
+        <div className="border-border/60 shrink-0 border-b px-6 py-3">{renderContext(config)}</div>
+      ) : null}
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        {/* Left — the entity list. Fixed beside the content; only its own list
+            scrolls, and only when it overflows. */}
+        <aside className="border-border/60 flex shrink-0 flex-col border-b lg:h-full lg:min-h-0 lg:w-[264px] lg:border-r lg:border-b-0">
+          <div className="shrink-0 px-4 pt-4 pb-3">{searchInput}</div>
+          {filtered.length === 0 ? (
+            <div className="px-4">{noMatches}</div>
+          ) : (
+            <nav
+              aria-label={`${title} list`}
+              className="scrollbar-minimal px-2 pb-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
+            >
+              <ul className="space-y-0.5">
+                {filtered.map((entity) => {
+                  const trailing = renderRowTrailing?.(entity, config);
+                  const isActive = selected?.path === entity.path;
+                  return (
+                    <li key={entity.path}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPath(entity.path)}
+                        aria-current={isActive}
+                        className={cn(
+                          'group flex w-full flex-col gap-0.5 rounded-md py-2 pr-2.5 pl-3 text-left transition-colors',
+                          'focus-visible:ring-kortix-blue/50 focus-visible:ring-2 focus-visible:outline-none',
+                          isActive ? 'bg-primary/[0.06]' : 'hover:bg-muted/40',
+                        )}
+                      >
+                        <span className="flex w-full items-center gap-2">
+                          <span
+                            className={cn(
+                              'min-w-0 flex-1 truncate text-sm font-medium',
+                              isActive
+                                ? 'text-foreground'
+                                : 'text-foreground/70 group-hover:text-foreground',
+                            )}
+                          >
                             {renderTriggerLabel(entity)}
                           </span>
                           {trailing ? (
                             <span className="flex shrink-0 items-center gap-1.5">{trailing}</span>
                           ) : null}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+                        </span>
+                        {entity.description ? (
+                          <span className="text-muted-foreground/60 w-full truncate text-xs">
+                            {entity.description}
+                          </span>
+                        ) : null}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </nav>
+          )}
+        </aside>
+        {/* Middle — the ONLY scroll region: the selected entity's content. */}
+        <div className="min-w-0 lg:h-full lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+          {selected ? (
+            <div className="mx-auto max-w-3xl px-6 py-8 lg:py-10">
+              <EntityDetail
+                key={selected.path}
+                projectId={projectId}
+                kind={kind}
+                entity={selected}
+                config={config}
+                renderDetailTitle={renderDetailTitle}
+                renderDetailMeta={renderDetailMeta}
+                emptyBodyLabel={emptyBodyLabel}
+                split
+              />
             </div>
-            {/* Right — the selected entity (source in the middle, extras aside). */}
-            <div className="min-w-0">
-              {selected ? (
-                <EntityDetail
-                  key={selected.path}
-                  projectId={projectId}
-                  kind={kind}
-                  entity={selected}
-                  config={config}
-                  renderDetailTitle={renderDetailTitle}
-                  renderDetailMeta={renderDetailMeta}
-                  renderDetailExtra={renderDetailExtra}
-                  emptyBodyLabel={emptyBodyLabel}
-                  split
-                />
-              ) : (
-                <p className="text-muted-foreground/60 px-4 py-16 text-center text-sm">
-                  Pick {noun === 'agent' ? 'an' : 'a'} {noun} on the left to preview it.
-                </p>
-              )}
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-3 px-6 py-24 text-center lg:h-full">
+              <EmptyIcon className="text-muted-foreground/30 size-8" />
+              <p className="text-muted-foreground/60 text-sm">
+                Pick {noun === 'agent' ? 'an' : 'a'} {noun} on the left to preview it.
+              </p>
             </div>
-          </div>
-        ) : null)}
+          )}
+        </div>
+        {/* Right — entity extras (e.g. an agent's scope / model). Fixed; scrolls
+            only itself when tall. */}
+        {extra ? (
+          <aside
+            key={selected?.path}
+            className="border-border/60 shrink-0 space-y-3 border-t p-4 lg:h-full lg:min-h-0 lg:w-[344px] lg:overflow-y-auto lg:border-t-0 lg:border-l"
+          >
+            {extra}
+          </aside>
+        ) : null}
+      </div>
     </div>
-  );
+  ) : null;
 
   const body = layout === 'split' ? splitBody : accordionBody;
 
   return (
     <CustomizeSectionWrapper
+      className={className}
       title={title}
       description={description}
       docs={docs}
-      className={layout === 'split' ? 'max-w-none px-6' : undefined}
+      fill={layout === 'split'}
       action={
         <div className="flex items-center gap-1.5">
           <MarketplaceSectionButton projectId={projectId} />
@@ -466,7 +510,9 @@ function EntityDetail<T extends ConfigEntity>({
   );
 
   const meta = renderDetailMeta?.(entity, config);
-  const extra = renderDetailExtra?.(entity, config);
+  // In split mode the extras render as their own fixed pane (owned by
+  // ConfigEntityView), so the detail here is just the header + source.
+  const extra = split ? null : renderDetailExtra?.(entity, config);
 
   const source = fileQuery.isLoading ? (
     <div className="space-y-2.5">
@@ -517,25 +563,13 @@ function EntityDetail<T extends ConfigEntity>({
   );
 
   if (split) {
-    // Full-width master detail: the source (header + body) fills the MIDDLE with a
-    // readable max-width, and the extra cards sit as a right-hand aside stuck to
-    // the edge. Below xl the aside stacks under the source.
+    // Master-detail middle pane: header + source only. The readable max-width and
+    // padding come from the scrolling column wrapper in ConfigEntityView; the
+    // extras live in their own fixed aside there.
     return (
-      <div
-        className={cn(
-          'grid grid-cols-1 gap-8 pb-10',
-          extra && 'xl:grid-cols-[minmax(0,1fr)_340px]',
-        )}
-      >
-        <div className="min-w-0">
-          <div className="mx-auto max-w-3xl">
-            {header}
-            <div className="mt-8">{source}</div>
-          </div>
-        </div>
-        {extra ? (
-          <aside className="space-y-3 xl:sticky xl:top-6 xl:self-start xl:pt-1">{extra}</aside>
-        ) : null}
+      <div className="min-w-0">
+        {header}
+        <div className="mt-8">{source}</div>
       </div>
     );
   }
