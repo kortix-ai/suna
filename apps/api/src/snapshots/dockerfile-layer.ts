@@ -324,8 +324,8 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // Baking the binary version makes opencode find it already present → no fetch.
     // Bump RUNTIME_LAYER_VERSION in templates.ts when this step changes.
     // NOTE: this dependency set (and the "axios"/"form-data" security overrides
-    // below) is duplicated in packages/starter/templates/base/.kortix/opencode/package.json
-    // and .kortix/opencode/package.json (local dev). Keep all three in sync —
+    // below) is duplicated in packages/starter/templates/base/.kortix/opencode/package.json.
+    // Keep both in sync —
     // a version bump made in only one place is exactly how this file's axios
     // override once diverged and shipped a bundle-breaking install (see the
     // verification RUN step right below, added after that incident).
