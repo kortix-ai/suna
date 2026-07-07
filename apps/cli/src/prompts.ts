@@ -142,23 +142,3 @@ export async function selectMany<T extends string>(
     rl.close();
   }
 }
-
-/**
- * Loop-until-non-empty prompt. Used when the answer is mandatory.
- */
-export async function promptForProjectName(): Promise<string> {
-  ensureTTY();
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    while (true) {
-      const raw = await new Promise<string>((resolve) =>
-        rl.question('Project name: ', (answer) => resolve(answer)),
-      );
-      const trimmed = raw.trim();
-      if (trimmed !== '') return trimmed;
-      process.stdout.write('  Project name is required.\n');
-    }
-  } finally {
-    rl.close();
-  }
-}

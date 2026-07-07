@@ -495,12 +495,37 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(help.stdout).not.toContain('tunnel <subcommand>');
     expect(help.stdout).not.toContain('Agent Tunnel');
 
-    // `tunnel` now falls through to the generic project-scaffold path
-    // (`kortix <project-name>`) instead of a dedicated tunnel command.
     const result = await runCli(['tunnel', '--help']);
-    expect(result.stdout).toContain('Usage: kortix [project-name] [options]');
+    expect(result.code).toBe(2);
+    expect(result.stderr).toContain('unknown command `tunnel`');
     expect(result.stdout).not.toContain('Agent Tunnel');
     expect(result.stdout).not.toContain('tunnelId');
+  });
+
+  test('an unknown command errors instead of scaffolding a project named after the typo', async () => {
+    const result = await runCli(['use']);
+
+    expect(result.code).toBe(2);
+    expect(result.stderr).toContain('unknown command `use`');
+    expect(result.stderr).toContain('kortix init <name>');
+    expect(result.stdout).not.toContain('Scaffolded');
+    expect(existsSync(join(tmp, 'use'))).toBe(false);
+  });
+
+  test('a near-miss of a real command gets a did-you-mean suggestion and no scaffold', async () => {
+    const result = await runCli(['inti']);
+
+    expect(result.code).toBe(2);
+    expect(result.stderr).toContain('unknown command `inti`');
+    expect(result.stderr).toContain('Did you mean');
+    expect(result.stderr).toContain('kortix init');
+    expect(existsSync(join(tmp, 'inti'))).toBe(false);
+  });
+
+  test('help no longer advertises the bare project-name scaffold form', async () => {
+    const help = await runCli(['--help']);
+    expect(help.stdout).not.toContain('<project-name>');
+    expect(help.stdout).toContain('init');
   });
 
   test('schema --version 2 prints the v2 JSON Schema, not the CLI version banner', async () => {
@@ -533,7 +558,7 @@ console.log(JSON.stringify({ cmd, args, body }));
     );
 
     expect(result.code).toBe(2);
-    expect(result.stderr).toContain('`add` is not a kortix subcommand');
+    expect(result.stderr).toContain('unknown command `add`');
     expect(requests).toEqual([]);
   }, 15_000);
 
@@ -746,7 +771,7 @@ console.log(JSON.stringify({ cmd, args, body }));
 
     const add = await runCli(['add', 'pty', '--project', 'proj_e2e'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(add.code).toBe(2);
-    expect(add.stderr).toContain('`add` is not a kortix subcommand');
+    expect(add.stderr).toContain('unknown command `add`');
 
     expect(requests.map((r) => [r.method, r.path, r.body ?? null])).toEqual([
       ['GET', '/v1/projects/missing', null],
