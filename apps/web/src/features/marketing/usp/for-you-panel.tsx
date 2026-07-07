@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { Heatmap } from '@paper-design/shaders-react';
+import { ShaderSafe } from '@/components/ui/shader-safe';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { DEPT_DOT, FOR_YOU, type UseCaseCard } from './section3-content';
@@ -150,25 +151,27 @@ export function ForYouPanel({
           {reduceMotion ? <StaticOrbit /> : <LiveOrbit />}
         </div>
 
-        <Heatmap
-          speed={1}
-          contour={0.5}
-          angle={0}
-          noise={0}
-          innerGlow={0.5}
-          outerGlow={0.05}
-          scale={0.65}
-          image="https://app.paper.design/file-assets/01KSZX87JES96T455ZX3RRGMPP/01KT47X1FY5YNJN6EPP8TW6ZB1.svg"
-          frame={407072.499999992}
-          colors={['var(--kortix-orange)', '#fafafa', '#242424']}
-          colorBack="#ffffff00"
-          className="shrink-0"
-          style={{
-            // backgroundColor: 'var(--card)',
-            height: '182px',
-            width: '220px',
-          }}
-        />
+        <ShaderSafe>
+          <Heatmap
+            speed={1}
+            contour={0.5}
+            angle={0}
+            noise={0}
+            innerGlow={0.5}
+            outerGlow={0.05}
+            scale={0.65}
+            image="/shaders/heatmap-mark.svg"
+            frame={407072.499999992}
+            colors={['var(--kortix-orange)', '#fafafa', '#242424']}
+            colorBack="#ffffff00"
+            className="shrink-0"
+            style={{
+              // backgroundColor: 'var(--card)',
+              height: '182px',
+              width: '220px',
+            }}
+          />
+        </ShaderSafe>
       </div>
     </div>
   );
