@@ -16,6 +16,7 @@ import { revokeAllAccountTokensForUser } from '../../repositories/account-tokens
 import { db } from '../../shared/db';
 import { lookupUserIdByEmail } from '../../shared/users';
 import { buildInviteUrl, sendAccountInviteEmail } from '../email';
+import { visibleMemberRows } from './member-visibility';
 import {
   AccountIdParam,
   AccountInviteSchema,
@@ -75,9 +76,7 @@ export function registerMemberRoutes(): void {
         .from(accountMembers)
         .where(eq(accountMembers.accountId, accountId));
 
-      const visibleRows = canManageMembers
-        ? rows
-        : rows.filter((r) => r.userId === userId || r.accountRole !== 'member');
+      const visibleRows = visibleMemberRows(rows, userId, canManageMembers);
 
       const emails = await lookupEmailsByUserIds(rows.map((r) => r.userId));
       const projectGrantRows = await db
