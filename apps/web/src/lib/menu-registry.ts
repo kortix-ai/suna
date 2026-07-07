@@ -335,14 +335,14 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-files',
-    label: 'Customize · Files',
+    label: 'Files',
     icon: FolderOpen,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/files',
+    href: '/projects/{projectId}/files',
     requiresProject: true,
-    keywords: 'files repository project customize browser explorer',
+    keywords: 'files repository project drive browser explorer',
   },
   {
     id: 'proj-agents',

@@ -2,6 +2,7 @@
 
 import { Config } from '@mynaui/icons-react';
 import { FolderOpen } from 'lucide-react';
+import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect } from 'react';
 
 import Hint from '@/components/ui/hint';
@@ -22,17 +23,21 @@ export function useCustomizeActivate() {
   }, [openCustomize, isMobile, setOpenMobile]);
 }
 
-/** Open straight to Files. Files live OUTSIDE customization (accessible to any
- *  member), so this is a top-level entry, not gated behind customize access. */
+/** Navigate to the standalone Files page. Files live OUTSIDE customization
+ *  (accessible to any member), so this is a top-level route, not a section of
+ *  the Customize overlay. */
 export function useFilesActivate() {
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const router = useRouter();
+  const params = useParams<{ id: string }>();
+  const projectId = params?.id;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
 
   return useCallback(() => {
-    openCustomize('files');
+    if (!projectId) return;
+    router.push(`/projects/${projectId}/files`);
     if (isMobile) setOpenMobile(false);
-  }, [openCustomize, isMobile, setOpenMobile]);
+  }, [router, projectId, isMobile, setOpenMobile]);
 }
 
 /** Mod+, — open the customize overlay (same as the sidebar button). */
@@ -95,17 +100,17 @@ export function ProjectCustomizeRailItem() {
 }
 
 /** Top-level Files entry — sits ABOVE Customize and is shown to every member
- *  (files aren't part of customization). Opens the panel straight to Files. */
+ *  (files aren't part of customization). Navigates to the standalone page. */
 export function ProjectFilesNavItem() {
   const onClick = useFilesActivate();
-  const section = useCustomizeStore((s) => s.section);
-  const customizeOpen = useCustomizeStore((s) => s.open);
+  const pathname = usePathname();
+  const isActive = !!pathname && /^\/projects\/[^/]+\/files(\/|$)/.test(pathname);
 
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
         onClick={onClick}
-        isActive={customizeOpen && section === 'files'}
+        isActive={isActive}
         tooltip="Files"
         className="text-sm! font-medium [&_svg]:size-4! flex items-center gap-2"
       >

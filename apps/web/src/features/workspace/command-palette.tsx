@@ -837,10 +837,10 @@ export function CommandPalette() {
   const handleSelectFile = useCallback(
     (_filePath: string, _lineNumber?: number) => {
       if (!projectId) return close();
-      useCustomizeStore.getState().openCustomize('files');
+      router.push(`/projects/${projectId}/files`);
       close();
     },
-    [projectId, close],
+    [projectId, router, close],
   );
 
   const jumpToMessage = useMessageJumpStore((s) => s.jumpToMessage);

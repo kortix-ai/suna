@@ -112,7 +112,6 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   },
   changes: { read: PROJECT_ACTIONS.PROJECT_GITOPS_READ, write: PROJECT_ACTIONS.PROJECT_CR_OPEN },
   review: { read: PROJECT_ACTIONS.PROJECT_REVIEW_READ, write: PROJECT_ACTIONS.PROJECT_REVIEW_ACT },
-  files: { read: PROJECT_ACTIONS.PROJECT_FILE_READ, write: PROJECT_ACTIONS.PROJECT_FILE_WRITE },
   members: {
     read: PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
     write: PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
@@ -151,21 +150,19 @@ export const CUSTOMIZE_SECTION_READ_ACTIONS: readonly ProjectAction[] = Array.fr
 
 /**
  * Whether a section is visible in the rail, given the current user's resolved
- * capabilities (`caps[action].allowed`). The rule:
- *   • `files` — visible to any member who can READ files. Files live OUTSIDE
- *     customization, so they're reachable all the time.
- *   • every other section — customization is an editor+ capability, so it shows
- *     only when the user can customize (`project.customize.write`, i.e. editor
- *     or manager) AND still holds that section's own read leaf (so a custom role
- *     that omits a read leaf keeps hiding just that section). A plain `member`
- *     (read-only floor) lacks customize.write → sees Files only.
+ * capabilities (`caps[action].allowed`). Customization is an editor+
+ * capability, so a section shows only when the user can customize
+ * (`project.customize.write`, i.e. editor or manager) AND still holds that
+ * section's own read leaf (so a custom role that omits a read leaf keeps
+ * hiding just that section). A plain `member` (read-only floor) lacks
+ * customize.write → sees none of them. Files is NOT here — it's the
+ * standalone /projects/[id]/files page, reachable by any member.
  */
 export function isCustomizeSectionVisible(
   s: CustomizeSection,
   can: (action: ProjectAction) => boolean,
 ): boolean {
   const a = CUSTOMIZE_SECTION_ACCESS[s];
-  if (s === 'files') return can(a.read);
   return can(PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE) && can(a.read);
 }
 
