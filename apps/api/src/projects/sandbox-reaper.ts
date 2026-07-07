@@ -34,17 +34,34 @@ import { db } from '../shared/db';
 import { getProvider, type ProviderName, type SandboxStatus } from '../platform/providers';
 import { invalidateProviderCache } from '../sandbox-proxy';
 import { pauseComputeSession, endComputeSession } from '../billing/services/compute-metering';
+import { probeSandboxBusy } from './sandbox-busy-probe';
 import { ACTIVE_SESSION_STATUSES } from './lib/session-status';
 import { config } from '../config';
 
 export const REAP_BATCH_SIZE = 100;
 const REAP_CONCURRENCY = 6;
 const DEFAULT_AUTOSTOP_MINUTES = 15;
+const DEFAULT_TRIGGER_AUTOSTOP_MINUTES = 5;
 
 /** The single knob for "how long with no real turn before we stop a box". */
 export function autoStopTtlMs(): number {
   const min = Math.max(1, config.KORTIX_SANDBOX_AUTOSTOP_MINUTES || DEFAULT_AUTOSTOP_MINUTES);
   return min * 60_000;
+}
+
+/** Shorter idle window for trigger-fired boxes — no human is waiting on them,
+ *  so every idle minute past turn end is pure billed dead time. */
+export function triggerAutoStopTtlMs(): number {
+  const min = Math.max(1, config.KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES || DEFAULT_TRIGGER_AUTOSTOP_MINUTES);
+  return min * 60_000;
+}
+
+/** Sandbox rows carry the session's invocation source in `metadata.source`
+ *  (stamped at provisioning). 'trigger:*' boxes are unattended; anything else
+ *  (ui/slack/cli/missing) is treated as interactive — the safe direction. */
+export function isTriggerSession(metadata: Record<string, unknown> | null): boolean {
+  const source = metadata?.source;
+  return typeof source === 'string' && source.startsWith('trigger:');
 }
 
 export type ReapAction = 'none' | 'stop-idle' | 'reconcile-stopped' | 'reconcile-removed';
@@ -194,6 +211,7 @@ export interface ReapResult {
   reconciled: number;   // provider already not-running; we synced our row
   billingClosed: number;
   skipped: number;
+  busyVetoed: number;   // idle-by-TTL but the box itself reported a running turn
   errors: number;
 }
 
@@ -206,6 +224,7 @@ export interface ReapResult {
  */
 export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapResult> {
   const ttlMs = autoStopTtlMs();
+  const triggerTtlMs = triggerAutoStopTtlMs();
 
   const rows = (await db
     .select({
@@ -224,7 +243,7 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
     ))
     .limit(REAP_BATCH_SIZE)) as ReapCandidate[];
 
-  const result: ReapResult = { candidates: rows.length, stopped: 0, reconciled: 0, billingClosed: 0, skipped: 0, errors: 0 };
+  const result: ReapResult = { candidates: rows.length, stopped: 0, reconciled: 0, billingClosed: 0, skipped: 0, busyVetoed: 0, errors: 0 };
   if (rows.length === 0) return result;
 
   const sessionIds = rows.map((r) => r.sessionId);
@@ -266,7 +285,7 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
           // if a turn is in flight so a running box is never stopped on uncertain
           // data (provider-confirmed stopped/removed still reconciles).
           hasActiveTurn: !activitySignalReliable || activeTurnSessions.has(row.sessionId),
-          ttlMs,
+          ttlMs: isTriggerSession(row.metadata) ? triggerTtlMs : ttlMs,
           provider: row.provider,
         });
 
@@ -304,7 +323,21 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
             result.reconciled += 1;
             result.billingClosed += 1;
             break;
-          case 'stop-idle':
+          case 'stop-idle': {
+            // The idle heuristic can't see long tool runs / retries / subagent
+            // work (no usage_events trail while they execute) — ask the box
+            // itself before pulling the plug. 'busy' resets the idle clock;
+            // 'unknown' (unreachable/legacy box) proceeds to stop, exactly the
+            // pre-probe behavior, so a wedged daemon can't hold billing open.
+            const busyState = await probeSandboxBusy({ sandboxId: row.sandboxId, externalId: row.externalId });
+            if (busyState === 'busy') {
+              await db
+                .update(sessionSandboxes)
+                .set({ updatedAt: now, metadata: mergeMetadata({ lastTurnAt: now.toISOString() }) })
+                .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+              result.busyVetoed += 1;
+              break;
+            }
             try {
               await provider.stop(row.externalId);
             } catch (err) {
@@ -326,6 +359,7 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
             result.stopped += 1;
             result.billingClosed += 1;
             break;
+          }
         }
       } catch (err) {
         result.errors += 1;
