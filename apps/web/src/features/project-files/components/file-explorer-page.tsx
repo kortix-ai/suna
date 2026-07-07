@@ -37,7 +37,7 @@ import { DriveToolbar } from './drive-toolbar';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
 
-export function FileExplorerPage() {
+export function FileExplorerPage({ embedded = false }: { embedded?: boolean; shareContext?: unknown } = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
@@ -344,6 +344,7 @@ export function FileExplorerPage() {
   return (
     <div className="bg-background relative flex h-full flex-col">
       <DriveHeader
+        offsetForSidebarToggle={!embedded}
         historyToggle={{
           open: rightPanel === 'history',
           onToggle: () => toggleRightPanel('history'),

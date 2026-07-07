@@ -71,6 +71,12 @@ flow(
         .del("/v1/projects/:projectId/secrets/:name/personal", { params: { projectId: p.id, name: "PERSONAL_KEY" } });
       r.status([200, 204, 404]);
     });
+    await ctx.step("personal override of an LLM provider key → 400 (always project-wide)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put("/v1/projects/:projectId/secrets/:name/personal", { value: "sk-mine" }, { params: { projectId: p.id, name: "ANTHROPIC_API_KEY" } });
+      r.status(400);
+    });
   },
 );
 

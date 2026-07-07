@@ -8,6 +8,14 @@ import { z } from 'zod';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   Form,
@@ -19,6 +27,7 @@ import {
 } from '@/components/ui/form';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Item,
   ItemActions,
@@ -49,18 +58,23 @@ import {
 } from '@/lib/marketplace-client';
 import {
   linkRepository,
+  listAccounts,
   listGitHubInstallations,
   listGitHubRepositories,
   listProjectsForAccount,
   provisionProject,
   type GitHubRepository,
+  type KortixAccount,
   type KortixProject,
 } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CheckCircleSolid } from '@mynaui/icons-react';
 import { Boxes, ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+
+import { resolveCreateAccountSelection } from './create-account-selection';
 
 const sanitizeProjectName = (value: string) => value.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
 
@@ -115,6 +129,19 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
   const [mode, setMode] = useState<'managed' | 'github'>('managed');
   const [isConnectingGitHub, setIsConnectingGitHub] = useState(false);
   const [marketplaceDefaultsApplied, setMarketplaceDefaultsApplied] = useState(false);
+  const [pickedAccountId, setPickedAccountId] = useState<string | null>(null);
+
+  const accountsQuery = useQuery({
+    queryKey: ['accounts'],
+    queryFn: listAccounts,
+    staleTime: 60_000,
+    enabled: open,
+  });
+  const accountSelection = useMemo(
+    () => resolveCreateAccountSelection(accountsQuery.data, accountId, pickedAccountId),
+    [accountsQuery.data, accountId, pickedAccountId],
+  );
+  const effectiveAccountId = accountSelection.effectiveAccountId;
 
   const managedForm = useForm<ManagedProjectFormValues>({
     resolver: zodResolver(managedProjectSchema),
@@ -140,6 +167,7 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
   function resetAndClose() {
     setMode('managed');
     setMarketplaceDefaultsApplied(false);
+    setPickedAccountId(null);
     managedForm.reset();
     githubForm.reset();
     onOpenChange(false);
@@ -173,9 +201,9 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
       router.replace(`/projects/${project.project_id}`);
     },
     onError: async (error: Error) => {
-      if (accountId && isProjectLimitError(error)) {
+      if (effectiveAccountId && isProjectLimitError(error)) {
         try {
-          const existing = await listProjectsForAccount(accountId);
+          const existing = await listProjectsForAccount(effectiveAccountId);
           const project = existing[0];
           if (project) {
             resetAndClose();
@@ -191,9 +219,9 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
   });
 
   const githubInstallationsQuery = useQuery({
-    queryKey: ['github-installations', accountId],
-    queryFn: () => listGitHubInstallations(accountId!),
-    enabled: open && mode === 'github' && !!accountId,
+    queryKey: ['github-installations', effectiveAccountId],
+    queryFn: () => listGitHubInstallations(effectiveAccountId!),
+    enabled: open && mode === 'github' && !!effectiveAccountId,
     staleTime: 0,
   });
 
@@ -230,9 +258,9 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
     ) ?? null;
 
   const githubReposQuery = useQuery({
-    queryKey: ['github-repositories', accountId, selectedInstallationId],
-    queryFn: () => listGitHubRepositories(accountId!, selectedInstallationId),
-    enabled: open && mode === 'github' && !!accountId && !!selectedInstallationId,
+    queryKey: ['github-repositories', effectiveAccountId, selectedInstallationId],
+    queryFn: () => listGitHubRepositories(effectiveAccountId!, selectedInstallationId),
+    enabled: open && mode === 'github' && !!effectiveAccountId && !!selectedInstallationId,
     staleTime: 30_000,
   });
 
@@ -280,10 +308,10 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
   });
 
   function handleCreate(values: ManagedProjectFormValues) {
-    if (!accountId) return errorToast('Select an account first');
+    if (!effectiveAccountId) return errorToast('Select an account first');
     const defaultMarketplaceItems = marketplaceItems.map((item) => item.id);
     createMutation.mutate({
-      account_id: accountId,
+      account_id: effectiveAccountId,
       name: values.name,
       starter_template: 'minimal',
       marketplace_items: values.includeGeneralKnowledgeSkills ? defaultMarketplaceItems : [],
@@ -291,10 +319,10 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
   }
 
   function handleLinkGitHub(values: GitHubLinkFormValues) {
-    if (!accountId) return errorToast('Select an account first');
+    if (!effectiveAccountId) return errorToast('Select an account first');
     const trimmedName = values.name.trim();
     linkMutation.mutate({
-      account_id: accountId,
+      account_id: effectiveAccountId,
       installation_id: values.installationId,
       repo_full_name: values.repo,
       ...(trimmedName ? { name: trimmedName } : {}),
@@ -302,7 +330,7 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
   }
 
   async function handleConnectGitHub() {
-    if (!accountId) {
+    if (!effectiveAccountId) {
       errorToast('Select an account first');
       return;
     }
@@ -349,6 +377,16 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
             )}
           </ModalDescription> */}
         </ModalHeader>
+
+        {accountSelection.currentAccount ? (
+          <CreateAccountField
+            current={accountSelection.currentAccount}
+            options={accountSelection.options}
+            canSwitch={accountSelection.canSwitch}
+            disabled={submitting}
+            onSelect={setPickedAccountId}
+          />
+        ) : null}
 
         {mode === 'managed' ? (
           <Form {...managedForm}>
@@ -436,7 +474,7 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                   className="w-full sm:w-auto"
                   disabled={
                     submitting ||
-                    !accountId ||
+                    !effectiveAccountId ||
                     (includeGeneralKnowledgeSkills && marketplaceDefaultsQuery.isLoading)
                   }
                 >
@@ -675,7 +713,9 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                 </Button>
                 <Button
                   type="submit"
-                  disabled={submitting || !accountId || !selectedInstallationId || !selectedRepo}
+                  disabled={
+                    submitting || !effectiveAccountId || !selectedInstallationId || !selectedRepo
+                  }
                   className="w-full sm:w-auto"
                 >
                   {submitting ? <Loading /> : <Icon.Github />}
@@ -691,6 +731,80 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
     </Modal>
   );
 };
+
+/** Shows which account the new project will be created under. Becomes a
+ *  dropdown when the user can create projects in more than one account;
+ *  otherwise it's a static read-only field so the target is still visible. */
+function CreateAccountField({
+  current,
+  options,
+  canSwitch,
+  disabled,
+  onSelect,
+}: {
+  current: KortixAccount;
+  options: KortixAccount[];
+  canSwitch: boolean;
+  disabled?: boolean;
+  onSelect: (accountId: string) => void;
+}) {
+  const label = current.name || 'Account';
+  const summary = (
+    <span className="flex min-w-0 items-center gap-2">
+      <EntityAvatar label={label} size="xs" />
+      <span className="text-foreground min-w-0 truncate text-sm font-medium">{label}</span>
+    </span>
+  );
+
+  return (
+    <div className="space-y-1.5" data-testid="project-create-account">
+      <Label>Account</Label>
+      {canSwitch ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="secondary-outline"
+              disabled={disabled}
+              className="w-full justify-between px-3"
+            >
+              {summary}
+              <ChevronsUpDown className="text-muted-foreground size-3.5 shrink-0" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            className="w-[var(--radix-dropdown-menu-trigger-width)]"
+          >
+            <DropdownMenuLabel className="text-muted-foreground">Create in</DropdownMenuLabel>
+            <div className="max-h-[280px] [scrollbar-width:none] overflow-y-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              {options.map((account) => {
+                const itemLabel = account.name || 'Account';
+                const active = account.account_id === current.account_id;
+                return (
+                  <DropdownMenuItem
+                    key={account.account_id}
+                    onSelect={() => onSelect(account.account_id)}
+                  >
+                    <EntityAvatar label={itemLabel} size="xs" />
+                    <span className="min-w-0 flex-1 truncate text-sm leading-tight font-medium">
+                      {itemLabel}
+                    </span>
+                    {active && <CheckCircleSolid className="text-kortix-green size-3.5 shrink-0" />}
+                  </DropdownMenuItem>
+                );
+              })}
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <div className="border-border bg-secondary flex h-9 w-full items-center rounded-md border px-3">
+          {summary}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** One selectable row in the New Project "Starter skills" surface — the whole
  *  row is a label wrapping a real checkbox, so a click anywhere toggles it and

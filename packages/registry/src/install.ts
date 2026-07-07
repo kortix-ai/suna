@@ -11,7 +11,7 @@
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describeRegistry, type RegistryRef } from './address';
-import type { ResolvedItem } from './fetch';
+import { mapLimit, type ResolvedItem } from './fetch';
 import { buildTarget, expandTarget, type TargetContext } from './paths';
 import { hashContent, readLock, upsertLockEntry, writeLock } from './lock';
 import type {
@@ -21,6 +21,12 @@ import type {
   RegistryLockEntry,
   RegistryLockSourceType,
 } from './schema';
+
+/** Max simultaneous per-file reads within a single item (a GitHub install
+ *  reading a many-file skill was the main contributor to the install timeout). */
+const FILE_READ_CONCURRENCY = 8;
+
+type FileReadResult = { ok: true; write: PlannedWrite } | { ok: false; warning: string };
 
 export interface PlannedWrite {
   /** Repo-relative POSIX path in the consuming project. */
@@ -120,26 +126,42 @@ export async function planInstall(root: ResolvedItem, ctx: PlanContext): Promise
       }
     }
 
+    // Reads are fetched concurrently (bounded) but reduced back into `writes` /
+    // `plan.warnings` in original file order, so output stays byte-identical to
+    // a sequential implementation — only the I/O is parallelized.
+    const fileResults = await mapLimit(
+      resolved.item.files ?? [],
+      FILE_READ_CONCURRENCY,
+      async (file): Promise<FileReadResult> => {
+        const targetRaw = file.target ?? defaultTarget(resolved.item, file.path);
+        const target = expandTarget(targetRaw, ctx);
+        try {
+          const content = await resolved.readFile(file.path);
+          const write: PlannedWrite = {
+            target,
+            content,
+            hash: hashContent(content),
+            exists: ctx.exists(target),
+            itemName: resolved.item.name,
+          };
+          return { ok: true, write };
+        } catch (err) {
+          return {
+            ok: false,
+            warning: `could not read "${file.path}" for "${resolved.item.name}": ${(err as Error).message}`,
+          };
+        }
+      },
+    );
+
     const writes: PlannedWrite[] = [];
-    for (const file of resolved.item.files ?? []) {
-      const targetRaw = file.target ?? defaultTarget(resolved.item, file.path);
-      const target = expandTarget(targetRaw, ctx);
-      let content: string;
-      try {
-        content = await resolved.readFile(file.path);
-      } catch (err) {
-        plan.warnings.push(`could not read "${file.path}" for "${resolved.item.name}": ${(err as Error).message}`);
-        continue;
+    for (const result of fileResults) {
+      if (result.ok) {
+        writes.push(result.write);
+        plan.writes.push(result.write);
+      } else {
+        plan.warnings.push(result.warning);
       }
-      const write: PlannedWrite = {
-        target,
-        content,
-        hash: hashContent(content),
-        exists: ctx.exists(target),
-        itemName: resolved.item.name,
-      };
-      writes.push(write);
-      plan.writes.push(write);
     }
 
     for (const [k, v] of Object.entries(resolved.item.envVars ?? {})) plan.envVars[k] = v;
