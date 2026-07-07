@@ -8,7 +8,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, stat, utimes } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { validateRef } from '../git-ref';
@@ -208,9 +208,101 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
 export async function refreshMirror(project: GitBackedProject, force = false) {
   const current = refreshLocks.get(project.projectId);
   if (current) return current;
-  const next = doRefreshMirror(project, force).finally(() => refreshLocks.delete(project.projectId));
+  const next = doRefreshMirror(project, force)
+    .then(async (repoPath) => {
+      // Bump the mirror dir's mtime on EVERY access (warm hits included) — the
+      // size-budget reaper below uses it as the LRU signal, and a warm read
+      // must not look idle just because no fetch ran.
+      const now = new Date();
+      await utimes(repoPath, now, now).catch(() => {});
+      return repoPath;
+    })
+    .finally(() => refreshLocks.delete(project.projectId));
   refreshLocks.set(project.projectId, next);
   return next;
+}
+
+function gitCacheMaxBytes(): number {
+  const raw = Number(process.env.KORTIX_GIT_CACHE_MAX_BYTES);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 4 * 1024 * 1024 * 1024;
+}
+
+// Must stay SHORT: the connector sweep re-touches every mirror on the platform
+// each pass (~11min), so a grace window near the pass duration would shield the
+// whole cache from eviction. It only has to outlive a single in-flight git read
+// that started right after a refreshMirror() touch (seconds, not minutes).
+const GIT_CACHE_EVICT_GRACE_MS = 5 * 60 * 1000;
+
+async function dirSizeBytes(root: string): Promise<number> {
+  let total = 0;
+  const entries = await readdir(root, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = join(root, entry.name);
+    if (entry.isDirectory()) {
+      total += await dirSizeBytes(full);
+    } else if (entry.isFile()) {
+      const s = await stat(full).catch(() => null);
+      if (s) total += s.size;
+    }
+  }
+  return total;
+}
+
+/**
+ * Enforce a total size budget on the bare-mirror cache. The trigger/connector
+ * sweeps walk EVERY active project's manifest through `refreshMirror()`, so the
+ * leader pod accumulates a full clone of every repo on the platform — unbounded,
+ * this fills the pod's ephemeral-storage limit and kubelet EVICTS the pod
+ * (observed: 19 prod api evictions 2026-07-05→07 at the 8Gi cap). Evict
+ * least-recently-used mirrors until under budget; a mirror touched within the
+ * grace window is never removed (refreshMirror bumps mtime on every access, so
+ * anything an in-flight git op could be reading is inside the grace window).
+ * Deleting a live mirror is safe-by-design anyway: the next access re-clones.
+ */
+export async function reapGitCacheOverBudget(
+  maxBytes = gitCacheMaxBytes(),
+): Promise<{ totalBytes: number; deleted: number; freedBytes: number }> {
+  const root = cacheRoot();
+  let names: string[];
+  try {
+    names = await readdir(root);
+  } catch {
+    return { totalBytes: 0, deleted: 0, freedBytes: 0 };
+  }
+
+  const mirrors: Array<{ path: string; bytes: number; mtimeMs: number }> = [];
+  for (const name of names) {
+    if (!name.endsWith('.git')) continue;
+    const path = join(root, name);
+    try {
+      const s = await stat(path);
+      if (!s.isDirectory()) continue;
+      mirrors.push({ path, bytes: await dirSizeBytes(path), mtimeMs: s.mtimeMs });
+    } catch {
+      // racing clone or already gone — skip
+    }
+  }
+
+  let totalBytes = mirrors.reduce((sum, m) => sum + m.bytes, 0);
+  if (totalBytes <= maxBytes) return { totalBytes, deleted: 0, freedBytes: 0 };
+
+  const now = Date.now();
+  let deleted = 0;
+  let freedBytes = 0;
+  mirrors.sort((a, b) => a.mtimeMs - b.mtimeMs);
+  for (const mirror of mirrors) {
+    if (totalBytes <= maxBytes) break;
+    if (now - mirror.mtimeMs < GIT_CACHE_EVICT_GRACE_MS) break;
+    try {
+      await rm(mirror.path, { recursive: true, force: true });
+      totalBytes -= mirror.bytes;
+      freedBytes += mirror.bytes;
+      deleted++;
+    } catch {
+      // in use or perms — leave it for the next sweep
+    }
+  }
+  return { totalBytes, deleted, freedBytes };
 }
 
 /**

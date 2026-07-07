@@ -64,11 +64,20 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 const sanitizeProjectName = (value: string) => value.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
 
+// Mirrors the API's PROJECT_NAME_MAX_LENGTH (projects.name is varchar(255);
+// pasted prompts used to sail past the charset regex and 500 on the insert).
+const PROJECT_NAME_MAX_LENGTH = 120;
+
 const managedProjectSchema = z.object({
   name: z
     .string()
     .transform(sanitizeProjectName)
-    .pipe(z.string().min(1, 'Project name is required')),
+    .pipe(
+      z
+        .string()
+        .min(1, 'Project name is required')
+        .max(PROJECT_NAME_MAX_LENGTH, `Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`),
+    ),
   includeGeneralKnowledgeSkills: z.boolean(),
   marketplaceItems: z.array(z.string()),
 });
@@ -371,6 +380,7 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                             autoCapitalize="none"
                             autoCorrect="off"
                             autoFocus
+                            maxLength={PROJECT_NAME_MAX_LENGTH}
                             {...field}
                           />
                         </FormControl>
