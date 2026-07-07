@@ -76,8 +76,13 @@ export const PROJECT_ROLES = ['manager', 'editor', 'member'] as const;
 export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
 export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
 
-/** Every provider that can appear on session/sandbox rows. */
-export const SANDBOX_PROVIDERS = ['daytona', 'local_docker', 'justavps', 'platinum'] as const;
+/** Every provider that can appear on session/sandbox rows. 'daytona' is the
+ *  managed cloud backend's identity (default / first-class); 'managed' is kept as
+ *  an accepted value only because the DB sandbox_provider enum still carries it
+ *  (from the reverted daytona→managed rename) — a DB-derived provider can read
+ *  back 'managed', and the dual-accept guards resolve it to the Daytona adapter.
+ *  Nothing DEFAULTS to or normalizes toward 'managed'. */
+export const SANDBOX_PROVIDERS = ['daytona', 'managed', 'local_docker', 'justavps', 'platinum'] as const;
 export const SandboxProviderSchema = z.enum(SANDBOX_PROVIDERS);
 export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
 
