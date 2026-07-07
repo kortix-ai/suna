@@ -25,3 +25,27 @@ export function resolveSessionProvider(opts: {
   if (opts.projectPin && opts.isEnabled(opts.projectPin)) return { provider: opts.projectPin };
   return { fallback: true };
 }
+
+/**
+ * Which provider(s) a build-on-push warm prebake should target for a project —
+ * i.e. the providers a session on this project could actually land on. Mirrors
+ * {@link resolveSessionProvider} minus the per-request override (a push carries
+ * no session context):
+ *   - an ENABLED per-project pin ⇒ every session uses exactly that provider, so
+ *     warm ONLY it (no wasted bake for providers the project never boots on);
+ *   - otherwise ⇒ sessions fall to the weighted balancer, which can pick ANY
+ *     enabled provider, so warm ALL of them for symmetric parity.
+ * A stale/disabled/absent pin degrades to the "all enabled" case (never a bake
+ * on a provider that can't run). Pure — `allowed`/`isEnabled` are injected, so it
+ * unit-tests without env/DB.
+ */
+export function warmPrebakeProviders(opts: {
+  projectPin: string | null;
+  allowed: readonly string[];
+  isEnabled: (provider: string) => boolean;
+}): string[] {
+  if (opts.projectPin && opts.allowed.includes(opts.projectPin) && opts.isEnabled(opts.projectPin)) {
+    return [opts.projectPin];
+  }
+  return opts.allowed.filter((p) => opts.isEnabled(p));
+}
