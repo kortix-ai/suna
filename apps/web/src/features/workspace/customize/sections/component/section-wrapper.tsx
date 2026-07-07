@@ -17,6 +17,13 @@ type Props = {
    * content pane scrolls. Default is the single scrolling column.
    */
   fill?: boolean;
+  /**
+   * Exposes the scrollable ancestor div (the one carrying `overflow-y-auto`)
+   * to callers that need to virtualize a list against it — e.g.
+   * `MarketplaceBrowser`'s `@tanstack/react-virtual` grid — without coupling
+   * to this component's internal class names.
+   */
+  scrollContainerRef?: React.Ref<HTMLDivElement>;
 };
 
 const CustomizeSectionWrapper = ({
@@ -27,6 +34,7 @@ const CustomizeSectionWrapper = ({
   docs,
   className,
   fill,
+  scrollContainerRef,
 }: Props) => {
   const heading = (
     <div className="space-y-1">
@@ -55,14 +63,19 @@ const CustomizeSectionWrapper = ({
           {heading}
           {action ? <div className="mt-2 shrink-0 sm:mt-0">{action}</div> : null}
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">{children}</div>
+        <div
+          ref={scrollContainerRef}
+          className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden"
+        >
+          {children}
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-y-auto">
         <div
           className={cn('mx-auto w-full max-w-3xl space-y-5 px-4 py-10 pb-20 lg:py-20', className)}
         >
