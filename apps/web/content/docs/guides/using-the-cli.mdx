@@ -79,5 +79,5 @@ kortix cr merge 3
 Inside a session's environment the CLI is already authenticated for that project — no login needed. A project-scoped token is injected automatically, so commands like `kortix secrets ls` or `kortix cr open` work right away. This is how an agent opens its own change request.
 
 <Callout title="Under the hood">
-On your laptop the CLI uses a user-scoped token (saved at `~/.config/kortix/config.json`) that can see every project on accounts you belong to. Inside a sandbox, `KORTIX_TOKEN` is pre-injected and scoped to that one project. The CLI resolves "which project" from a flag, an env var, or a linked directory, in that order.
+On your laptop the CLI uses a user-scoped token (saved at `~/.config/kortix/config.json`) that can see every project on accounts you belong to. Inside a sandbox, `KORTIX_CLI_TOKEN` (falling back to `KORTIX_EXECUTOR_TOKEN`) is pre-injected and scoped to that one project. `KORTIX_TOKEN` is also present, but it's the sandbox's own service key, not a CLI credential — the CLI never uses it to authenticate. The CLI resolves "which project" from a flag, an env var, or a linked directory, in that order.
 </Callout>

@@ -10,10 +10,13 @@ from chat. Connect Slack to a project, and a message or mention spawns a
 [session](/docs/concepts/sessions); the agent replies in the thread. Follow-up
 messages in that thread continue the same session.
 
-- **Connect Slack** from the project's Channels page in the dashboard, or with
-  [`kortix channels connect`](/docs/reference/cli). Two options: bring your own
-  Slack app (a bot token + signing secret), or the Kortix-managed Slack app via
-  OAuth.
+- **Connect Slack** from the project's Channels page in the dashboard — either
+  one-click via the Kortix-managed Slack app (OAuth), or bring your own Slack
+  app (a bot token + signing secret). From the CLI,
+  [`kortix channels connect`](/docs/reference/cli) supports the bring-your-own-app
+  path only: pass `--bot-token`/`--signing-secret`, set `SLACK_BOT_TOKEN`/
+  `SLACK_SIGNING_SECRET` in the environment, or pipe them via stdin. There's no
+  OAuth option from the CLI.
 - **Credentials are stored as project [secrets](/docs/concepts/secrets)** (e.g.
   `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`) — never in the repo.
 - **The agent talks to Slack through the Executor.** Connecting Slack
@@ -29,4 +32,25 @@ Channels are configured through the dashboard, CLI, and secrets — **not**
 through the manifest (`kortix.yaml`/`kortix.toml`). v2 removes channel
 declarations from the schema outright; the `slack` connector auto-materializes
 on connect, you don't declare it.
+</Callout>
+
+## Who the agent runs as
+
+By default, every Slack sender — the first message in a channel, a thread
+follow-up, or a button click — must be linked to a Kortix account that has
+access to the project before the agent will act for them. Link your identity
+once with the `/kortix login` slash command (or the button on the prompt
+below); it opens a short-lived, private browser link that connects your
+Slack user to a Kortix account.
+
+If there's no linked mapping yet, the agent doesn't run — it posts an
+ephemeral prompt nudging the sender to connect (or, if they're linked but
+not a member of the project's account, to request access) instead of
+replying.
+
+<Callout type="warn" title="Legacy">
+Deployments that disable this requirement fall back to the older behavior:
+every message runs as a stand-in for the project account's owner, regardless
+of who actually sent it. This is legacy, non-default behavior — the identity
+requirement is on by default.
 </Callout>

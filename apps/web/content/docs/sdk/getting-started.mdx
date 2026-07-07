@@ -39,6 +39,8 @@ export const kortix = createKortix({
 | `getUserId` | `() => Promise<string \| null>` | no | Current user id, when the host knows it |
 | `billingEnabled` | `boolean` | no | Toggles billing-gated behaviour |
 | `onError` · `onToast` · `onNotify` | callbacks | no | Host sinks for errors, toasts, and notifications |
+| `sandboxId` | `string \| null` | no | Default sandbox id for local/single-sandbox hosts |
+| `featureFlags` | object | no | Per-flag overrides for `@kortix/sdk/feature-flags` — see **[Modules](/docs/sdk/modules#other-subpaths-internal-plumbing)** |
 
 <Callout>
 `createKortix` calls `configureKortix` for you — the one global seam every SDK
@@ -79,12 +81,12 @@ const detail = await kortix.project(projectId).detail();
 
 // create + start a session (one agent run, in its own sandbox on its own branch)
 const created = await kortix.project(projectId).sessions.create();
-const s = kortix.session(projectId, created.id);
+const s = kortix.session(projectId, created.session_id);
 await s.start();
 
 // talk to the running agent — the typed opencode runtime, reached via the SDK
 await s.runtime.session.prompt({
-  sessionID: created.id,
+  sessionID: (await s.ensureReady()).opencodeSessionId,
   parts: [{ type: 'text', text: 'Add a README' }],
 });
 ```

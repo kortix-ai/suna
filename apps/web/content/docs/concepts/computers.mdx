@@ -10,10 +10,11 @@ Kortix over the **Agent Computer Tunnel** — a permissioned reverse tunnel. Onc
 connected, the agent can read/write files, run shell commands, and drive the
 desktop **on that machine**, with you granting access per capability.
 
-- **Connect a machine** from the project's Computers page in the dashboard
-  (device pairing), or with [`kortix tunnel`](/docs/reference/cli). It's an
-  experimental feature — enable **Agent Computer Tunnel** in Customize →
-  Experimental first.
+- **Connect a machine** from the project's Computers page in the dashboard.
+  It's an experimental feature — enable **Agent Computer Tunnel** in Customize →
+  Experimental first, then the Computers page shows a one-line command to run
+  on the target machine (`npx @kortix/agent-tunnel connect --api-url ...`) to
+  pair it.
 - **Grant access per capability** — filesystem / shell / desktop, scoped to
   allowed paths, commands, and desktop features. The agent only gets what you
   grant; a call to something ungranted raises a **permission request** you
