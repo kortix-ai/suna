@@ -126,8 +126,17 @@ export async function getPublicMarketplaceItemFile(
 // into the infinite-scroll + virtualized views (`MarketplacePagedGrid`) for
 // anything beyond the first page.
 
-/** First-page size for the `/marketplace/[company]` SSR fetch. */
-export const MARKETPLACE_COMPANY_PAGE_LIMIT = 30;
+/** Canonical marketplace items page size. Lives in this server-safe module
+ *  (which the client hook can import without pulling in client-only code, but
+ *  not vice-versa) so the SSR first-page limits below and the client's
+ *  `useInfiniteMarketplaceItems` page size derive from a single source — the
+ *  company page's `initialData` seed/offset math only lines up if they stay
+ *  equal. */
+export const MARKETPLACE_ITEMS_PAGE_SIZE = 30;
+
+/** First-page size for the `/marketplace/[company]` SSR fetch — must equal the
+ *  client hook's page size so the seeded first page and its `offset` align. */
+export const MARKETPLACE_COMPANY_PAGE_LIMIT = MARKETPLACE_ITEMS_PAGE_SIZE;
 
 /** First-page size for the `/marketplace` landing SSR fetch — large enough to
  *  fill each type section's ~9-item preview (and the featured rail) in the

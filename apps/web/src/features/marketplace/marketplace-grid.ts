@@ -148,6 +148,25 @@ export function shouldVirtualizeMarketplacePagedGrid(pageCount: number): boolean
   return pageCount > 1;
 }
 
+/** Whether an explore-landing type section should offer its "See all"
+ *  affordance (routing into the paged/virtualized view). Gated on the section
+ *  actually having a paged view (`hasPagedView` — the curated Featured rail
+ *  doesn't) AND on a local under-count: the section renders `renderedCount`
+ *  cards (its preview cap) but `total` items exist across the catalog, so
+ *  whenever fewer are shown than exist — whether because the preview is capped
+ *  or because the SSR-bounded landing sample itself truncated this type below
+ *  its true total — a "See all" surfaces. Comparing the *rendered* count (not
+ *  the raw local bucket) to the true total is what closes the gap where a
+ *  bounded sample could otherwise silently show an incomplete set with no
+ *  escape hatch. */
+export function shouldOfferMarketplaceSeeAll(params: {
+  hasPagedView: boolean;
+  renderedCount: number;
+  total: number;
+}): boolean {
+  return params.hasPagedView && params.renderedCount < params.total;
+}
+
 /** Resolves a type section's true item total from the summed type counts
  *  (stripping the `registry:` prefix to match their short keys), falling
  *  back to the SSR-bounded local count when the type is absent from the

@@ -23,8 +23,11 @@ import {
   type ItemsPage,
 } from '@/lib/marketplace-client';
 
-/** Default page size for `useInfiniteMarketplaceItems`. */
-export const MARKETPLACE_ITEMS_PAGE_SIZE = 30;
+// Default page size for `useInfiniteMarketplaceItems`. Re-exported from the
+// server-safe module so it stays coupled to the SSR first-page limits (a future
+// change can't silently misalign the company page's seeded offset math).
+export { MARKETPLACE_ITEMS_PAGE_SIZE } from '@/lib/marketplace-public';
+import { MARKETPLACE_ITEMS_PAGE_SIZE } from '@/lib/marketplace-public';
 
 /** Pure paging step for `useInfiniteMarketplaceItems`'s `getNextPageParam`,
  *  extracted so it's unit-testable without spinning up react-query. Advances

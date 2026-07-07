@@ -23,6 +23,7 @@ import {
   MARKETPLACE_GRID_COLUMNS,
   resolveMarketplaceExploreViewMode,
   resolveMarketplaceTypeSectionTotal,
+  shouldOfferMarketplaceSeeAll,
   sumMarketplaceTypeCounts,
 } from './marketplace-grid';
 import { typeMeta } from './marketplace-meta';
@@ -84,7 +85,11 @@ function ExploreSection({
   const [expanded, setExpanded] = useState(false);
   const visible = items.slice(0, initial);
   const effectiveTotal = total ?? items.length;
-  const canExpand = !!type && effectiveTotal > initial;
+  const canExpand = shouldOfferMarketplaceSeeAll({
+    hasPagedView: !!type,
+    renderedCount: visible.length,
+    total: effectiveTotal,
+  });
 
   return (
     <section id={id} className="scroll-mt-28">

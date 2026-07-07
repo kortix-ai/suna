@@ -9,6 +9,7 @@ import {
   resolveMarketplaceQueryParams,
   resolveMarketplaceTypeSectionTotal,
   shouldFetchNextMarketplacePage,
+  shouldOfferMarketplaceSeeAll,
   shouldVirtualizeMarketplacePagedGrid,
   sumMarketplaceTypeCounts,
 } from './marketplace-grid';
@@ -226,6 +227,32 @@ describe('company explore paged grid bounding (A4)', () => {
 
     expect(rows.length).toBe(Math.ceil(items.length / 2));
     expect(rows.length).toBeLessThan(items.length);
+  });
+});
+
+describe('shouldOfferMarketplaceSeeAll', () => {
+  test('offers See all when the preview cap hides items that exist', () => {
+    expect(shouldOfferMarketplaceSeeAll({ hasPagedView: true, renderedCount: 9, total: 40 })).toBe(
+      true,
+    );
+  });
+
+  test('offers See all when the SSR-bounded sample is truncated below the true total even under the preview cap', () => {
+    expect(shouldOfferMarketplaceSeeAll({ hasPagedView: true, renderedCount: 5, total: 8 })).toBe(
+      true,
+    );
+  });
+
+  test('does not offer See all when every item that exists is already rendered', () => {
+    expect(shouldOfferMarketplaceSeeAll({ hasPagedView: true, renderedCount: 8, total: 8 })).toBe(
+      false,
+    );
+  });
+
+  test('never offers See all for a section without a paged view', () => {
+    expect(shouldOfferMarketplaceSeeAll({ hasPagedView: false, renderedCount: 8, total: 40 })).toBe(
+      false,
+    );
   });
 });
 
