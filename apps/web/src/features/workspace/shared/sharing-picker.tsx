@@ -71,7 +71,7 @@ export function SharingPicker({
   showHeading?: boolean;
   /**
    * Pure-pyramid mode (secrets + connectors): drop the direct "specific
-   * members/departments" option — targeted access comes ONLY through agent
+   * members/groups" option — targeted access comes ONLY through agent
    * assignment (declare the resource on an agent, assign people to that agent,
    * they inherit it). Keeps one mental model: resources live on agents.
    */
@@ -112,7 +112,7 @@ export function SharingPicker({
       )}
       {hideMembers && !legacyMembers && (
         <p className="text-muted-foreground text-xs leading-relaxed">
-          To give specific people access, assign them (or a department) to an{' '}
+          To give specific people access, assign them (or a group) to an{' '}
           <span className="text-foreground/80 font-medium">agent</span> that uses this — they
           inherit it automatically. Manage that in the project's Members tab.
         </p>
@@ -128,9 +128,9 @@ export function SharingPicker({
 }
 
 /**
- * Searchable, multi-select allow-list of MEMBERS and DEPARTMENTS — the same
- * member+department subject model the IAM Resource-access dialog uses. Members
- * come from the project's access list; departments (account groups) from
+ * Searchable, multi-select allow-list of MEMBERS and GROUPS — the same
+ * member+group subject model the IAM Resource-access dialog uses. Members
+ * come from the project's access list; groups (account groups) from
  * listGroups, keyed off the account the project belongs to (derived from the
  * access response, so no extra prop plumbing).
  */
@@ -244,7 +244,7 @@ function SubjectPicker({
           </div>
         ) : nothing ? (
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-            No members or departments in this project yet.
+            No members or groups in this project yet.
           </p>
         ) : filteredGroups.length === 0 && filteredMembers.length === 0 ? (
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">
@@ -255,7 +255,7 @@ function SubjectPicker({
             {filteredGroups.length > 0 && (
               <>
                 <p className="text-muted-foreground/70 px-2 pt-1.5 pb-1 text-[11px] font-medium tracking-wide uppercase">
-                  Departments
+                  Groups
                 </p>
                 {filteredGroups.map((g) => {
                   const isSelected = groupSet.has(g.group_id);
@@ -275,7 +275,7 @@ function SubjectPicker({
                       </span>
                       <span className="text-foreground min-w-0 flex-1 truncate text-sm">
                         {g.name}
-                        <span className="text-muted-foreground ml-1 text-xs">· dept</span>
+                        <span className="text-muted-foreground ml-1 text-xs">· group</span>
                       </span>
                       {isSelected && (
                         <span className="shrink-0 px-1">

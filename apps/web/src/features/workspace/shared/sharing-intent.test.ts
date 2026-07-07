@@ -7,7 +7,7 @@ import {
 } from './sharing-intent';
 
 describe('selectionToIntent', () => {
-  test('members carries both memberIds and groupIds (departments reach the wire)', () => {
+  test('members carries both memberIds and groupIds (groups reach the wire)', () => {
     const sel: SharingSelection = { mode: 'members', memberIds: ['u1'], groupIds: ['g1', 'g2'] };
     expect(selectionToIntent(sel)).toEqual({
       mode: 'members',
@@ -16,7 +16,7 @@ describe('selectionToIntent', () => {
     });
   });
 
-  test('department-only selection still emits a members intent (not project-wide)', () => {
+  test('group-only selection still emits a members intent (not project-wide)', () => {
     const sel: SharingSelection = { mode: 'members', memberIds: [], groupIds: ['g1'] };
     expect(selectionToIntent(sel)).toEqual({ mode: 'members', memberIds: [], groupIds: ['g1'] });
   });
@@ -33,7 +33,7 @@ describe('selectionToIntent', () => {
 });
 
 describe('intentToSelection', () => {
-  test('reads groupIds back so a saved department selection round-trips', () => {
+  test('reads groupIds back so a saved group selection round-trips', () => {
     const sel = intentToSelection({ mode: 'members', memberIds: ['u1'], groupIds: ['g1'] });
     expect(sel).toEqual({ mode: 'members', memberIds: ['u1'], groupIds: ['g1'] });
   });
@@ -61,11 +61,11 @@ describe('intentToSelection', () => {
 });
 
 describe('isSharingComplete', () => {
-  test('members is complete with ONLY departments selected (the footgun guard)', () => {
+  test('members is complete with ONLY groups selected (the footgun guard)', () => {
     expect(isSharingComplete({ mode: 'members', memberIds: [], groupIds: ['g1'] })).toBe(true);
   });
 
-  test('members is incomplete when neither members nor departments are picked', () => {
+  test('members is incomplete when neither members nor groups are picked', () => {
     // An empty allow-list would silently collapse to project-wide on save.
     expect(isSharingComplete({ mode: 'members', memberIds: [], groupIds: [] })).toBe(false);
   });
