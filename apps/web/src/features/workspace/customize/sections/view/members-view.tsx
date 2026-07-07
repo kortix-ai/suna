@@ -1623,7 +1623,7 @@ function ProjectGroupGrantsCard({
   );
 }
 
-// ─── Per-resource scoping (agents/skills → member/department) ──────────────
+// ─── Per-resource scoping (agents/skills → member/group) ──────────────
 
 /**
  * A row of filter pills shown above a long list (resource grants, role
@@ -1887,7 +1887,7 @@ function ResourceAccessCard({
     <SectionCard
       flush
       title="Resource access"
-      description="Assign agents to a member or department to control who can USE them. An agent with no assignment is open to everyone with project access; assigning one restricts it to the people or departments you choose — they inherit that agent's declared skills, connectors, and secrets to use in its sessions. This only ever grants USE, never edit: changing the agent, a skill, a connector, or a secret still requires the editor role."
+      description="Assign agents to a member or group to control who can USE them. An agent with no assignment is open to everyone with project access; assigning one restricts it to the people or groups you choose — they inherit that agent's declared skills, connectors, and secrets to use in its sessions. This only ever grants USE, never edit: changing the agent, a skill, a connector, or a secret still requires the editor role."
       count={grants.length}
       action={
         canManage && hasResources ? (
@@ -1902,7 +1902,7 @@ function ResourceAccessCard({
               <DialogHeader>
                 <DialogTitle>Assign an agent</DialogTitle>
                 <DialogDescription>
-                  Assign an agent to a member or department — they inherit everything that agent
+                  Assign an agent to a member or group — they inherit everything that agent
                   uses (its secrets, connectors, and skills) to USE, not edit. Resources reach
                   people through agents, not by a direct grant; agents you don't assign stay open
                   to everyone with project access. Editing the agent or any resource it uses still
@@ -1949,7 +1949,7 @@ function ResourceAccessCard({
                     disabled={createMutation.isPending}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Member or department" />
+                      <SelectValue placeholder="Member or group" />
                     </SelectTrigger>
                     <SelectContent>
                       {members.map((m) => (
@@ -1959,7 +1959,7 @@ function ResourceAccessCard({
                       ))}
                       {groups.map((g) => (
                         <SelectItem key={`group:${g.group_id}`} value={`group:${g.group_id}`}>
-                          {g.name} · dept
+                          {g.name} · group
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -2035,7 +2035,7 @@ function ResourceAccessCard({
                 subtitle={
                   <InlineMeta>
                     <span>
-                      {g.principal_type === 'group' ? 'Dept' : 'Member'}: {g.principal_label}
+                      {g.principal_type === 'group' ? 'Group' : 'Member'}: {g.principal_label}
                     </span>
                     <span>Granted {formatDate(g.created_at)}</span>
                   </InlineMeta>
@@ -2071,7 +2071,7 @@ function ResourceAccessCard({
 /**
  * Custom-role assignments for THIS project — the project-level view of the
  * account Roles page's bindings. Custom roles are DEFINED on the account Roles
- * page; here a manager grants one (to a member / department / agent) scoped to
+ * page; here a manager grants one (to a member / group / agent) scoped to
  * this project, so a project's full access picture lives in one place.
  */
 function ProjectRoleAssignmentsCard({
@@ -2138,7 +2138,7 @@ function ProjectRoleAssignmentsCard({
 
   function principalLabel(p: IamPolicy): { kind: string; label: string; missing: boolean } {
     if (p.principal_type === 'group') {
-      return { kind: 'Dept', label: groupNameById.get(p.principal_id) ?? p.principal_id, missing: false };
+      return { kind: 'Group', label: groupNameById.get(p.principal_id) ?? p.principal_id, missing: false };
     }
     if (p.principal_type === 'token') {
       // Agent SAs resolve from the account-wide identity list; a miss means the
@@ -2175,7 +2175,7 @@ function ProjectRoleAssignmentsCard({
       (
         [
           { type: 'member', label: 'Member', Icon: User, items: members.map((m) => ({ id: m.user_id, name: userLabel(m) })) },
-          { type: 'group', label: 'Dept', Icon: Users, items: groups.map((g) => ({ id: g.group_id, name: g.name })) },
+          { type: 'group', label: 'Group', Icon: Users, items: groups.map((g) => ({ id: g.group_id, name: g.name })) },
           {
             type: 'token',
             label: 'Agent',
@@ -2248,7 +2248,7 @@ function ProjectRoleAssignmentsCard({
       { value: 'all', label: 'All', count: policies.length },
     ];
     if (policyCounts.member) opts.push({ value: 'member', label: 'Members', count: policyCounts.member });
-    if (policyCounts.group) opts.push({ value: 'group', label: 'Depts', count: policyCounts.group });
+    if (policyCounts.group) opts.push({ value: 'group', label: 'Groups', count: policyCounts.group });
     if (policyCounts.token) opts.push({ value: 'token', label: 'Agents', count: policyCounts.token });
     return opts;
   }, [policies.length, policyCounts]);
@@ -2263,7 +2263,7 @@ function ProjectRoleAssignmentsCard({
     <SectionCard
       flush
       title="Custom roles"
-      description="Grant a custom role to a member, department, or agent on this project. Custom roles are defined on the account Roles page; here you bind them for this project only."
+      description="Grant a custom role to a member, group, or agent on this project. Custom roles are defined on the account Roles page; here you bind them for this project only."
       count={policies.length}
       action={
         canManage && customRoles.length > 0 ? (
@@ -2278,7 +2278,7 @@ function ProjectRoleAssignmentsCard({
               <DialogHeader>
                 <DialogTitle>Assign a custom role</DialogTitle>
                 <DialogDescription>
-                  Bind a custom role to a member, department, or agent on this project only.
+                  Bind a custom role to a member, group, or agent on this project only.
                 </DialogDescription>
               </DialogHeader>
 
@@ -2312,7 +2312,7 @@ function ProjectRoleAssignmentsCard({
 
                 <div className="space-y-1.5">
                   <span className="text-muted-foreground text-xs font-medium">
-                    2. {subjectType === 'group' ? 'Department' : subjectType === 'token' ? 'Agent' : 'Member'}
+                    2. {subjectType === 'group' ? 'Group' : subjectType === 'token' ? 'Agent' : 'Member'}
                   </span>
                   <Select
                     value={subjectId}
@@ -2381,7 +2381,7 @@ function ProjectRoleAssignmentsCard({
               , then bind it here for this project.
             </>
           ) : (
-            'No custom-role assignments on this project yet. Bind one above to grant a member, department, or agent a custom role here.'
+            'No custom-role assignments on this project yet. Bind one above to grant a member, group, or agent a custom role here.'
           )}
         </div>
       )}
