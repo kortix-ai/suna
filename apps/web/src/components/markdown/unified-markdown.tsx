@@ -94,25 +94,18 @@ function CopyButton({ code }: { code: string }) {
     <button
       onClick={handleCopy}
       className={cn(
-        "inline-flex items-center gap-1.5 h-6 px-2 rounded-md cursor-pointer",
-        "text-xs font-medium tracking-tight",
-        "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50",
-        "hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60",
+        "inline-flex items-center justify-center h-7 w-7 rounded-md cursor-pointer",
+        "text-muted-foreground hover:text-foreground",
+        "hover:bg-muted-foreground/10",
         "transition-colors duration-150",
         "outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0",
       )}
       aria-label={copied ? "Copied!" : "Copy code"}
     >
       {copied ? (
-        <>
-          <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-          <span>Copied</span>
-        </>
+        <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
       ) : (
-        <>
-          <Copy className="h-3 w-3" />
-          <span>Copy</span>
-        </>
+        <Copy className="h-3.5 w-3.5" />
       )}
     </button>
   );
@@ -122,15 +115,13 @@ function CopyButton({ code }: { code: string }) {
 // Very large code blocks are expensive to highlight — truncate to keep UI responsive.
 const SHIKI_MAX_LENGTH = 50_000;
 
-// Shared theme — pierre-dark / pierre-light — matches the diff renderer
-// (PatchDiff) and every other Shiki surface in the app.
-import {
-  SHIKI_THEMES,
-  SHIKI_THEME_DARK_NAME,
-  SHIKI_THEME_LIGHT_NAME,
-} from '@/lib/shiki-theme';
-export const SHIKI_THEME_DARK = SHIKI_THEME_DARK_NAME;
-export const SHIKI_THEME_LIGHT = SHIKI_THEME_LIGHT_NAME;
+// Markdown code blocks use the actrun website's Shiki palette — `slack-ochin`
+// (light) / `plastic` (dark). Both ship in Shiki's bundled theme set, so they
+// resolve by name (no JSON to load). This is intentionally SEPARATE from the
+// app-wide Pierre themes in `@/lib/shiki-theme` (which back the diff renderer,
+// file viewers, and thumbnails) — restyling markdown must never disturb those.
+export const SHIKI_THEME_DARK = 'plastic';
+export const SHIKI_THEME_LIGHT = 'slack-ochin';
 
 // Normalise language aliases that Shiki might not recognise directly
 function normalizeLanguage(lang: string): string {
@@ -199,11 +190,9 @@ const loadedLangs = new Set<string>(PRELOAD_LANGS.map((l) => l.toLowerCase()));
 const langLoadPromises = new Map<string, Promise<void>>();
 
 const highlighterPromise: Promise<Highlighter> = getSingletonHighlighter({
-  // Pass the theme JSON objects (not just names) so Shiki can load them —
-  // Pierre's themes are not in Shiki's bundled set. The cast skirts a strict
-  // TS check: Pierre ships VS Code-format themes (`tokenColors`), which Shiki
-  // accepts at runtime but its `ThemeInput` type only narrowly describes.
-  themes: [SHIKI_THEMES.dark as never, SHIKI_THEMES.light as never],
+  // `slack-ochin` / `plastic` are bundled Shiki themes — reference them by name
+  // and Shiki loads them from its own theme set (no JSON needed).
+  themes: [SHIKI_THEME_DARK, SHIKI_THEME_LIGHT],
   langs: PRELOAD_LANGS,
 }).then((h) => {
   highlighterReady = h;
@@ -529,33 +518,30 @@ function CodeBlock({
     <div
       className={cn(
         "relative group not-prose my-5",
-        "rounded-2xl overflow-hidden",
-        "border border-border",
-        "bg-card",
-        "shadow-[0_1px_0_rgba(0,0,0,0.02)] dark:shadow-none",
+        "rounded-lg overflow-hidden",
+        "bg-muted dark:bg-card",
         className,
       )}
     >
       <div
         className={cn(
-          "flex items-center justify-between",
-          "h-9 pl-3.5 pr-1.5",
-          "border-b border-border",
-          "bg-muted/30",
+          "flex items-center justify-between gap-2",
+          "py-1 pl-4 pr-1.5",
+          "border-b border-dashed border-border/70",
         )}
       >
-        <span className="text-xs font-mono tracking-tight text-muted-foreground select-none">
+        <span className="text-xs font-medium tracking-wide uppercase text-muted-foreground select-none">
           {languageLabel(language)}
         </span>
         {code && !isStreaming && <CopyButton code={code} />}
       </div>
       <pre
         className={cn(
-          "px-4 py-3.5 overflow-x-auto",
+          "p-4 max-h-[520px] overflow-auto",
           "text-sm font-mono leading-[1.65]",
           "text-foreground",
           "[&_code]:bg-transparent [&_code]:text-inherit [&_code]:p-0 [&_code]:border-none",
-          "[&_span]:border-none [&_span]:outline-none",
+          "[&_.shiki]:!bg-transparent [&_span]:!bg-transparent [&_span]:border-none [&_span]:outline-none",
         )}
       >
         {children}
@@ -647,9 +633,8 @@ function ClickableInlineCode({ children }: { children: React.ReactNode }) {
   const resolvedUrlHref = isUrl ? (proxyUrl(text) ?? text) : text;
 
   const baseInline =
-    "px-[0.35rem] py-[0.1rem] rounded-[5px] text-sm font-mono " +
-    "bg-zinc-100 dark:bg-zinc-800/70 text-foreground/90 " +
-    "ring-1 ring-inset ring-zinc-200/70 dark:ring-zinc-700/40";
+    "px-1.5 py-[0.1rem] rounded text-[0.9rem] font-mono " +
+    "bg-muted dark:bg-card text-foreground/95";
 
   if (isUrl) {
     return (
@@ -769,33 +754,36 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
     // ═══════════════════════════════════════════════════════════════
     // HEADINGS - Clean hierarchy with proper weight distribution
     // ═══════════════════════════════════════════════════════════════
+    // Flat, uniform heading treatment (matches the actrun website markdown):
+    // every level renders at the same weight/size with generous top spacing,
+    // no size ramp and no border under h1.
     h1: ({ children }: { children?: React.ReactNode }) => (
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground mt-8 mb-4 first:mt-0 pb-2 border-b border-border/40">
+      <h1 className="text-xl font-semibold text-foreground mt-10 mb-4 first:mt-0">
         {children}
       </h1>
     ),
     h2: ({ children }: { children?: React.ReactNode }) => (
-      <h2 className="text-xl font-semibold tracking-tight text-foreground mt-8 mb-3 first:mt-0">
+      <h2 className="text-xl font-semibold text-foreground mt-10 mb-4 first:mt-0">
         {children}
       </h2>
     ),
     h3: ({ children }: { children?: React.ReactNode }) => (
-      <h3 className="text-lg font-semibold text-foreground mt-6 mb-2 first:mt-0">
+      <h3 className="text-xl font-semibold text-foreground mt-10 mb-4 first:mt-0">
         {children}
       </h3>
     ),
     h4: ({ children }: { children?: React.ReactNode }) => (
-      <h4 className="text-base font-semibold text-foreground mt-5 mb-2 first:mt-0">
+      <h4 className="text-xl font-semibold text-foreground mt-10 mb-4 first:mt-0">
         {children}
       </h4>
     ),
     h5: ({ children }: { children?: React.ReactNode }) => (
-      <h5 className="text-sm font-semibold text-foreground mt-4 mb-1 first:mt-0">
+      <h5 className="text-xl font-semibold text-foreground mt-10 mb-4 first:mt-0">
         {children}
       </h5>
     ),
     h6: ({ children }: { children?: React.ReactNode }) => (
-      <h6 className="text-sm font-medium text-muted-foreground mt-4 mb-1 first:mt-0 uppercase tracking-wide">
+      <h6 className="text-xl font-semibold text-foreground mt-10 mb-4 first:mt-0">
         {children}
       </h6>
     ),
@@ -804,7 +792,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
     // PARAGRAPHS - Optimal line height for readability
     // ═══════════════════════════════════════════════════════════════
     p: ({ children }: { children?: React.ReactNode }) => (
-      <div className="text-sm text-foreground leading-relaxed my-4 first:mt-0 last:mb-0 [&:has(img)]:my-0">
+      <div className="text-foreground/95 font-medium leading-relaxed my-4 first:mt-0 last:mb-0 [&:has(img)]:my-0">
         {wrapChildrenWithPaths(children)}
       </div>
     ),
@@ -813,17 +801,17 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
     // LISTS - Clean bullets with proper spacing
     // ═══════════════════════════════════════════════════════════════
     ul: ({ children }: { children?: React.ReactNode }) => (
-      <ul className="my-4 ml-6 list-disc marker:text-muted-foreground/60 space-y-2 first:mt-0 last:mb-0 text-sm">
+      <ul className="my-4 pl-6 list-outside list-disc marker:text-muted-foreground/60 space-y-1 first:mt-0 last:mb-0 [&_p]:mb-2 [&_p]:last:mb-0">
         {children}
       </ul>
     ),
     ol: ({ children }: { children?: React.ReactNode }) => (
-      <ol className="my-4 ml-6 list-decimal marker:text-muted-foreground/60 marker:font-medium space-y-2 first:mt-0 last:mb-0 text-sm">
+      <ol className="my-4 pl-6 list-outside list-decimal marker:text-muted-foreground/60 marker:font-medium space-y-1 first:mt-0 last:mb-0 [&_p]:mb-2 [&_p]:last:mb-0">
         {children}
       </ol>
     ),
     li: ({ children }: { children?: React.ReactNode }) => (
-      <li className="text-sm text-foreground leading-relaxed pl-1">
+      <li className="text-foreground/95 font-medium leading-relaxed">
         {wrapChildrenWithPaths(children)}
       </li>
     ),
@@ -853,9 +841,9 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
       const isInternal = isInternalUrl(resolvedHref);
       const isHashLink = resolvedHref?.startsWith('#');
       const linkClassName = cn(
-        "font-medium text-foreground",
-        "underline decoration-foreground/30 underline-offset-[3px] decoration-[1px]",
-        "hover:decoration-foreground/60 transition-colors duration-150"
+        "font-medium text-primary",
+        "underline decoration-primary/40 underline-offset-[3px] decoration-[1px]",
+        "hover:decoration-primary transition-colors duration-150"
       );
 
       if (isHashLink) {
@@ -952,7 +940,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
     // ═══════════════════════════════════════════════════════════════
     blockquote: ({ children }: { children?: React.ReactNode }) => (
       <blockquote className={cn(
-        "my-5 pl-4 py-1 text-sm",
+        "my-5 pl-6 italic",
         "border-l-2 border-border",
         "text-muted-foreground",
         "[&>p]:my-2"
@@ -965,41 +953,41 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
     // HORIZONTAL RULE - Subtle divider
     // ═══════════════════════════════════════════════════════════════
     hr: () => (
-      <hr className="my-8 border-0 h-px bg-border/60" />
+      <hr className="my-6 border-0 border-t border-border/60" />
     ),
 
     // ═══════════════════════════════════════════════════════════════
     // TABLES - Clean, modern table design
     // ═══════════════════════════════════════════════════════════════
     table: ({ children }: { children?: React.ReactNode }) => (
-      <div className="my-5 overflow-x-auto rounded-2xl border border-border/60">
+      <div className="my-5 overflow-x-auto rounded-md border border-border">
         <table className="w-full text-sm !m-0">
           {children}
         </table>
       </div>
     ),
     thead: ({ children }: { children?: React.ReactNode }) => (
-      <thead className="bg-muted/50 dark:bg-muted/30 border-b border-border/60">
+      <thead className="bg-muted border-b border-border">
         {children}
       </thead>
     ),
     tbody: ({ children }: { children?: React.ReactNode }) => (
-      <tbody className="divide-y divide-border/40">
+      <tbody className="divide-y divide-border">
         {children}
       </tbody>
     ),
     tr: ({ children }: { children?: React.ReactNode }) => (
-      <tr className="transition-colors hover:bg-muted/30">
+      <tr>
         {children}
       </tr>
     ),
     th: ({ children }: { children?: React.ReactNode }) => (
-      <th className="px-4 py-3 text-left text-xs font-semibold text-foreground uppercase tracking-wider">
+      <th className="px-4 py-2 text-left font-semibold text-foreground">
         {children}
       </th>
     ),
     td: ({ children }: { children?: React.ReactNode }) => (
-      <td className="px-4 py-3 text-foreground">
+      <td className="px-4 py-2 text-left font-normal text-foreground">
         {wrapChildrenWithPaths(children)}
       </td>
     ),
@@ -1019,17 +1007,13 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
             src={resolvedSrc}
             alt={alt || ''}
             className={cn(
-              "max-w-full h-auto rounded-xl",
-              "border border-border/40",
-              ""
+              "max-w-full h-auto rounded-lg",
+              // Subtle depth via a pure-black/pure-white hairline outline (never a
+              // tinted neutral, which reads as dirt on the image edge).
+              "outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10",
             )}
             loading="lazy"
           />
-          {alt && (
-            <span className="block mt-2 text-center text-sm text-muted-foreground">
-              {alt}
-            </span>
-          )}
         </span>
       );
     },
@@ -1124,7 +1108,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
 
   return (
     <div
-      className={cn('kortix-markdown', isStreaming && 'streaming-active', className)}
+      className={cn('kortix-markdown text-[15px]', isStreaming && 'streaming-active', className)}
       data-streaming={isStreaming ? 'true' : 'false'}
     >
       <Streamdown
