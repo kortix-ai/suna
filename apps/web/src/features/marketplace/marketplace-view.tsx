@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Tabs, TabsContent, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
@@ -25,6 +25,7 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
   const [addItem, setAddItem] = useState<MarketplaceItem | null>(null);
   const [tab, setTab] = useState<'browse' | 'discover' | 'installed'>('browse');
   const [sourceFilter, setSourceFilter] = useState<string | undefined>();
+  const browseScrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => () => closeDetail(), [closeDetail]);
 
@@ -87,7 +88,8 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
       >
         <CustomizeSectionWrapper
           title="Marketplace"
-          className="max-w-5xl p-4 px-4 py-2  lg:py-2"
+          className="max-w-5xl p-4 px-4 py-2  lg:py-4"
+          scrollContainerRef={browseScrollContainerRef}
           action={
             <TabsListCompact>
               <TabsTriggerCompact value="browse">Browse</TabsTriggerCompact>
@@ -101,6 +103,7 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
               installedNames={installedNames}
               onAdd={setAddItem}
               sourceFilter={sourceFilter}
+              scrollContainerRef={browseScrollContainerRef}
             />
           </TabsContent>
           <TabsContent value="installed" className="mt-0">

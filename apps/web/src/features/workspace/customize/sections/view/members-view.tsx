@@ -257,7 +257,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const [emails, setEmails] = useState<string[]>([]);
   const [inputValue, setInputValue] = useState('');
-  const [role, setRole] = useState<ProjectRole>('editor');
+  const [role, setRole] = useState<ProjectRole>('member');
   const [inlineError, setInlineError] = useState<string | null>(null);
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -1325,6 +1325,28 @@ function ProjectGroupGrantsCard({
     enabled: canManage,
     staleTime: 60_000,
   });
+  // Custom-role policies bound to a GROUP on this project. A group that has BOTH
+  // a built-in grant (this list) AND a custom-role policy hits the union trap:
+  // allow-only/highest-wins means the built-in role WINS and silently overrides
+  // the custom role's restrictions. We flag those rows so it isn't a silent gotcha.
+  const policiesQuery = useQuery({
+    queryKey: ['project-policies', projectId],
+    queryFn: () => listPolicies(accountId, { scopeId: projectId }),
+    enabled: canManage,
+    staleTime: 20_000,
+  });
+  const groupsWithCustomRole = useMemo(
+    () =>
+      new Set(
+        (policiesQuery.data ?? [])
+          .filter(
+            (p) =>
+              p.principal_type === 'group' && p.scope_type === 'project' && p.scope_id === projectId,
+          )
+          .map((p) => p.principal_id),
+      ),
+    [policiesQuery.data, projectId],
+  );
 
   const grants = useMemo(() => {
     const raw = grantsQuery.data?.grants ?? [];
@@ -1341,7 +1363,7 @@ function ProjectGroupGrantsCard({
   );
 
   const [pickerGroupId, setPickerGroupId] = useState<string>('');
-  const [pickerRole, setPickerRole] = useState<ProjectRole>('editor');
+  const [pickerRole, setPickerRole] = useState<ProjectRole>('member');
   const [pendingGroupIds, setPendingGroupIds] = useState<Set<string>>(() => new Set());
   const markPending = (id: string) => setPendingGroupIds((prev) => new Set(prev).add(id));
   const clearPending = (id: string) =>
@@ -1540,6 +1562,14 @@ function ProjectGroupGrantsCard({
                             {tHardcodedUi.raw(
                               'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextGetManagera88e6fc4',
                             )}
+                          </span>
+                        )}
+                        {groupsWithCustomRole.has(g.group_id) && (
+                          <span
+                            className="text-kortix-orange font-medium"
+                            title="This group also has a custom role assigned on this project. Built-in role grants WIN over custom roles (allow-only / highest-wins), so this grant overrides the custom role's limits. Detach it to let the custom role apply."
+                          >
+                            ⚠ overrides an assigned custom role
                           </span>
                         )}
                       </InlineMeta>
