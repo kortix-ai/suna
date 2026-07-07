@@ -7,10 +7,13 @@ import {
   DiagnosticsDisplay,
   getToolDiagnostics,
   InlineDiffView,
+  isErrorOutput,
   partInput,
   partMetadata,
+  partOutput,
   partStatus,
   partStreamingInput,
+  ToolOutputFallback,
   ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
@@ -54,6 +57,8 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const morphInstructions =
     (input.instructions as string) || (streamingInput.instructions as string) || '';
   const hasDiff = before !== '' || after !== '';
+  const output = partOutput(part);
+  const isError = status === 'completed' && isErrorOutput(output);
   const { openPreview } = useFilePreviewStore();
 
   return (
@@ -69,7 +74,9 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       locked={locked}
       className="overflow-hidden p-0"
     >
-      {hasDiff ? (
+      {isError ? (
+        <ToolOutputFallback output={output} toolName="edit" />
+      ) : hasDiff ? (
         <div data-scrollable className="max-h-96 overflow-auto">
           <InlineDiffView oldValue={before} newValue={after} filename={filename} />
         </div>

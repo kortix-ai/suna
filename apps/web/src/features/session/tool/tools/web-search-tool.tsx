@@ -9,7 +9,7 @@ import {
 import { FaviconAvatar } from '@/components/ui/favicon-avatar';
 import {
   BasicTool,
-  looksLikeError,
+  isErrorOutput,
   partInput,
   partOutput,
   partStatus,
@@ -120,9 +120,10 @@ export function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProp
     [queryResults],
   );
   const [expandedQuery, setExpandedQuery] = useState<number | null>(null);
+  const isError = status === 'completed' && isErrorOutput(output);
 
   const triggerBadge =
-    status === 'completed' && queryResults.length > 0
+    status === 'completed' && !isError && queryResults.length > 0
       ? queryResults.length > 1
         ? `${queryResults.length} queries`
         : totalSources > 0
@@ -149,7 +150,9 @@ export function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProp
       forceOpen={forceOpen}
       locked={locked}
     >
-      {queryResults.length > 0 ? (
+      {isError ? (
+        <ToolOutputFallback output={output} toolName="web_search" />
+      ) : queryResults.length > 0 ? (
         <div data-scrollable className="max-h-[400px] overflow-auto">
           {queryResults.map((qr, qi) => {
             const isMulti = queryResults.length > 1;
@@ -202,7 +205,7 @@ export function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProp
             );
           })}
         </div>
-      ) : output && !looksLikeError(output) ? (
+      ) : output ? (
         <ToolOutputFallback
           output={output}
           isStreaming={status === 'running'}

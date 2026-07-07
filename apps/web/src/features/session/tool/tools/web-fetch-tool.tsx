@@ -120,7 +120,7 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
             </CollapsibleContent>
           </Collapsible>
         </div>
-      ) : isError ? null : (
+      ) : (
         <ToolOutputFallback
           output={output}
           isStreaming={status === 'running'}

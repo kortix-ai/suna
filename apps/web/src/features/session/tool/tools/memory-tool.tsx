@@ -1,6 +1,8 @@
 'use client';
 
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { DiffStat, STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
+import { Stepper, StepperItem, StepperSeparator, StepperTrigger } from '@/components/ui/stepper';
 import {
   BasicTool,
   InlineDiffView,
@@ -31,11 +33,8 @@ import {
 import { useTranslations } from 'next-intl';
 import { type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
-import {
-  MEMORY_VERBS,
-  memoryRelPath,
-  parseMemoryView,
-} from '@/features/session/tool/shared/memory-helpers';
+import { memoryRelPath, parseMemoryView } from '@/features/session/tool/shared/memory-helpers';
+import { formatRelative } from '@kortix/shared';
 
 export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -61,7 +60,6 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
   const insertText = (input.insert_text as string) || (streamingInput.insert_text as string) || '';
   const insertLine = input.insert_line ?? streamingInput.insert_line;
 
-  const verb = MEMORY_VERBS[command] ?? 'Memory';
   const relPath = memoryRelPath(path);
   const ext = (relPath.split('.').pop() || 'md').toLowerCase();
   const isFileTarget = command !== 'view' || /\.\w+$/.test(path);
@@ -82,22 +80,43 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
     if (view?.type === 'dir') {
       body =
         view.entries.length > 0 ? (
-          <div data-scrollable className="max-h-96 space-y-0.5 overflow-auto px-3 py-2">
-            {view.entries.map((entry) => (
-              <div
-                key={entry.path}
-                className="text-muted-foreground/80 flex items-center gap-1.5 font-mono text-xs"
-              >
-                {entry.isDir ? (
-                  <Folder className="text-muted-foreground/40 size-3 flex-shrink-0" />
-                ) : (
-                  <FileText className="text-muted-foreground/40 size-3 flex-shrink-0" />
-                )}
-                <span className="truncate">{memoryRelPath(entry.path)}</span>
-                <span className="text-muted-foreground/40 ml-auto flex-shrink-0">{entry.size}</span>
-              </div>
-            ))}
-          </div>
+          <FadedScrollArea fadeColor="from-background">
+            <Stepper
+              orientation="vertical"
+              count={view.entries.length}
+              className="flex w-full flex-col"
+            >
+              {view.entries.map((entry, i) => {
+                const isLast = i + 1 >= view.entries.length;
+                return (
+                  <div key={entry.path} className="flex gap-2.5">
+                    <StepperItem step={i + 1} completed className="items-center">
+                      <StepperTrigger asChild>
+                        <span className="flex shrink-0">
+                          {entry.isDir ? (
+                            <Folder className="text-muted-foreground/50 size-3.5" />
+                          ) : (
+                            <FileText className="text-muted-foreground/50 size-3.5" />
+                          )}
+                        </span>
+                      </StepperTrigger>
+                      <StepperSeparator className="bg-border m-0 my-0.5 group-data-[orientation=vertical]/stepper:min-h-2" />
+                    </StepperItem>
+                    <div
+                      className={cn('flex min-w-0 flex-1 items-center gap-2', !isLast && 'pb-3')}
+                    >
+                      <span className="text-muted-foreground/80 truncate font-mono text-xs">
+                        {memoryRelPath(entry.path)}
+                      </span>
+                      <span className="text-muted-foreground/40 ml-auto shrink-0 text-xs tabular-nums">
+                        {entry.size}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </Stepper>
+          </FadedScrollArea>
         ) : (
           <ToolEmptyState
             message={tI18nHardcoded.raw(
@@ -175,8 +194,7 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
       icon={<Brain className="size-3.5 flex-shrink-0" />}
       trigger={{
         title: 'Memory',
-        subtitle: command === 'rename' ? memoryRelPath(newPath) : relPath,
-        args: command ? [verb] : undefined,
+        // subtitle: command === 'rename' ? memoryRelPath(newPath) : relPath,
       }}
       onSubtitleClick={
         path && isFileTarget && command !== 'delete' ? () => openPreview(path) : undefined
@@ -270,33 +288,25 @@ function parseSessionMetadataOutput(output: string): ParsedSessionMeta[] | null 
   return sessions;
 }
 
-function formatSessionTime(timestamp: number): string {
-  const d = new Date(timestamp);
-  const now = Date.now();
-  const diff = now - timestamp;
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}d ago`;
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
-
-function formatSessionTimeFallback(timestamp: number): string {
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(timestamp));
-}
+// Deterministic UTC date for the first (server) render, so hydration matches;
+// the client effect below swaps it for a live relative label after mount.
+const stableDate = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  timeZone: 'UTC',
+});
 
 function SessionTimeLabel({ timestamp }: { timestamp: number }) {
-  const [label, setLabel] = useState(() => formatSessionTimeFallback(timestamp));
+  const [label, setLabel] = useState(() => stableDate.format(new Date(timestamp)));
 
   useEffect(() => {
-    const update = () => setLabel(formatSessionTime(timestamp));
+    const update = () =>
+      setLabel(
+        formatRelative(timestamp, {
+          maxRelativeDays: 7,
+          dateFallback: { month: 'short', day: 'numeric' },
+        }) ?? '',
+      );
     update();
     const intervalId = window.setInterval(update, 60_000);
     return () => window.clearInterval(intervalId);

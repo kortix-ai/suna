@@ -5,7 +5,7 @@ import { HighlightedCode, UnifiedMarkdown } from '@/components/markdown/unified-
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import Hint from '@/components/ui/hint';
-import { DiffStat, STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
+import { DiffStat, STATUS_BG, STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import { formatRawOutput, looksLikeJsonPayload } from '@/features/session/tool/tool-output-format';
@@ -519,6 +519,16 @@ export function looksLikeError(text: string): boolean {
   return false;
 }
 
+/**
+ * True when a completed tool's output is an error rather than a result —
+ * either a plain error/traceback string or the `{success:false,error}` contract.
+ * Tools whose own parser returns nothing should fall back to rendering the
+ * error (via `ToolOutputFallback`) instead of a blank panel.
+ */
+export function isErrorOutput(output: string): boolean {
+  return !!output && (looksLikeError(output) || parseJsonFailure(output) !== null);
+}
+
 export function parseJsonFailure(output: string): ParsedJsonFailure | null {
   const trimmed = output.trim();
   if (!trimmed) return null;
@@ -556,59 +566,60 @@ export function parseJsonFailure(output: string): ParsedJsonFailure | null {
   return result;
 }
 
+/**
+ * Normalize a backend error string for display: strip the noisy, often
+ * duplicated `Error:` prefixes (e.g. "Error: … Error: Error: …") and collapse
+ * whitespace, so the panel shows one calm sentence instead of stack-y jargon.
+ * Falls back to the trimmed original if cleaning would empty the string.
+ */
+export function cleanErrorMessage(raw: string): string {
+  const cleaned = raw
+    .replace(/^(?:\s*Error:\s*)+/i, '')
+    .replace(/(?:\bError:\s*){2,}/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || raw.trim();
+}
+
 export function JsonFailureOutputCard({
   failure,
-  toolName,
 }: {
   failure: ParsedJsonFailure;
   toolName?: string;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
+  const summary = cleanErrorMessage(failure.errorSummary);
+  const detail = failure.nestedMessage ? cleanErrorMessage(failure.nestedMessage) : undefined;
+
   return (
-    <div className="overflow-hidden text-xs">
-      <div className="flex items-center gap-2 border-b border-rose-500/20 px-3 py-2">
-        <CircleAlert className="size-3.5 flex-shrink-0 text-rose-500/80" />
-        <span className="font-medium text-rose-600 dark:text-rose-400">
-          {tHardcodedUi.raw(
-            'componentsSessionToolRenderers.line851JsxTextIntegrationRequestFailed',
-          )}
-        </span>
-        {typeof failure.status === 'number' && (
-          <span className="ml-auto font-mono text-xs text-rose-600 dark:text-rose-400">
-            HTTP {failure.status}
-          </span>
+    <div className="flex items-start gap-2.5 px-3 py-2.5 text-xs">
+      <span
+        className={cn(
+          'mt-px flex size-5 shrink-0 items-center justify-center rounded-sm',
+          STATUS_BG.destructive,
         )}
-      </div>
-      <div className="space-y-2 px-3 py-2.5">
-        <p className="text-foreground/85 text-xs leading-relaxed break-words">
-          {failure.errorSummary}
+      >
+        <CircleAlert className={cn('size-3.5', STATUS_TEXT.destructive)} />
+      </span>
+      <div className="min-w-0 flex-1 space-y-1">
+        <p className="text-foreground/90 text-xs leading-relaxed break-words text-pretty">
+          {summary}
         </p>
-        {failure.nestedMessage && (
-          <div className="px-2 py-1.5 text-xs">
-            <div className="text-muted-foreground/60 mb-1 text-xs tracking-wider uppercase">
-              Details
-            </div>
-            <p className="text-foreground/80 text-xs break-words">{failure.nestedMessage}</p>
-          </div>
+        {detail && detail !== summary && (
+          <p className="text-muted-foreground text-xs leading-relaxed break-words text-pretty">
+            {detail}
+          </p>
         )}
         {failure.hint && (
-          <div
-            className={cn(
-              'rounded-2xl border px-2 py-1.5',
-              STATUS_BORDER.success,
-              STATUS_BG.success,
-            )}
-          >
-            <div className={cn('mb-1 text-xs tracking-wider uppercase', STATUS_TEXT.success)}>
-              Hint
-            </div>
-            <p className="text-foreground/80 text-xs break-words">{failure.hint}</p>
-          </div>
-        )}
-        {toolName && (
-          <div className="text-muted-foreground/60 font-mono text-xs">Tool: {toolName}</div>
+          <p className="text-muted-foreground/80 text-xs leading-relaxed break-words text-pretty">
+            {failure.hint.trim()}
+          </p>
         )}
       </div>
+      {typeof failure.status === 'number' && (
+        <span className="text-muted-foreground/60 shrink-0 font-mono text-xs tabular-nums">
+          {failure.status}
+        </span>
+      )}
     </div>
   );
 }

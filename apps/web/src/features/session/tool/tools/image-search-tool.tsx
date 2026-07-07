@@ -31,6 +31,7 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
+  isErrorOutput,
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
@@ -286,7 +287,9 @@ export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolPr
       forceOpen={forceOpen}
       locked={locked}
     >
-      {imageResults.length > 0 ? (
+      {status === 'completed' && isErrorOutput(output) ? (
+        <ToolOutputFallback output={output} toolName="image_search" />
+      ) : imageResults.length > 0 ? (
         <div data-scrollable className="scrollbar-hide max-h-80 overflow-auto p-2">
           <div className="grid grid-cols-3 gap-1.5">
             {imageResults.slice(0, 9).map((img: any, i: number) => {

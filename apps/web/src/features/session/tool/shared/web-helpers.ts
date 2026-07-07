@@ -40,6 +40,8 @@ export function parseWebSearchOutput(output: string | any): WebSearchQueryResult
   }
 
   if (parsed) {
+    if (parsed.success === false) return [];
+
     if (parsed.results && Array.isArray(parsed.results) && parsed.results.length > 0) {
       const firstItem = parsed.results[0];
       if (firstItem && typeof firstItem.query === 'string') {

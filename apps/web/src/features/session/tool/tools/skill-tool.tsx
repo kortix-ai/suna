@@ -13,9 +13,11 @@ import {
 import {
   BasicTool,
   MD_FLUSH_CLASSES,
+  parseJsonFailure,
   partInput,
   partOutput,
   partStatus,
+  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import {
@@ -49,6 +51,10 @@ export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const isCompleted = status === 'completed';
+  const failure = useMemo(
+    () => (isCompleted ? parseJsonFailure(output) : null),
+    [isCompleted, output],
+  );
 
   const sheetBodyContent = useMemo(() => {
     if (skillFiles.length === 0) return markdownContent;
@@ -69,7 +75,9 @@ export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         badge={isCompleted && skillFiles.length > 0 ? `${skillFiles.length} files` : undefined}
         rightAccessory={<ExternalLink />}
       >
-        {isCompleted && (markdownContent || skillFiles.length > 0) ? (
+        {failure ? (
+          <ToolOutputFallback output={output} toolName="skill" />
+        ) : isCompleted && (markdownContent || skillFiles.length > 0) ? (
           <div
             data-scrollable
             className={cn('relative max-h-96 overflow-auto px-1', MD_FLUSH_CLASSES)}

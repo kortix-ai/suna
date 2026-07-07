@@ -5,11 +5,13 @@ import { STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   BasicTool,
+  isErrorOutput,
   partInput,
   partMetadata,
   partOutput,
   partStatus,
   partStreamingInput,
+  ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
 } from '@/features/session/tool/shared/infrastructure';
@@ -102,6 +104,8 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           <TextShimmer>
             {tHardcodedUi.raw('componentsSessionToolRenderers.line2853JsxTextWaitingForFileContent')}
           </TextShimmer>
+        ) : isErrorOutput(output) ? (
+          <ToolOutputFallback output={output} toolName="read" />
         ) : null}
       </BasicTool>
       {surface !== 'panel' && loaded.length > 0 && (

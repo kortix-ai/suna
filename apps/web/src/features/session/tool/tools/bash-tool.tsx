@@ -11,6 +11,7 @@ import {
   partStreamingInput,
   StructuredOutput,
   ToolRunningContext,
+  ToolSurfaceContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -115,6 +116,7 @@ export function BashTool({ part, sessionId, defaultOpen, forceOpen, locked }: To
   const output = partOutput(part);
   const status = partStatus(part);
   const running = useContext(ToolRunningContext);
+  const surface = useContext(ToolSurfaceContext);
   const command =
     (input.command as string) ||
     (metadata.command as string) ||
@@ -161,7 +163,7 @@ export function BashTool({ part, sessionId, defaultOpen, forceOpen, locked }: To
   return (
     <BasicTool
       trigger={
-        isStalePending ? (
+        surface === 'panel' ? null : isStalePending ? (
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
             <span className="text-muted-foreground/60 shrink-0 font-mono text-xs select-none">
               $

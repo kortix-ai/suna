@@ -7,10 +7,13 @@ import {
   BasicTool,
   DiagnosticsDisplay,
   getToolDiagnostics,
+  isErrorOutput,
   partInput,
   partMetadata,
+  partOutput,
   partStatus,
   partStreamingInput,
+  ToolOutputFallback,
   ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
@@ -33,6 +36,8 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const directory = filePath ? getDirectory(filePath) : undefined;
   const content = (input.content as string) || (streamingInput.content as string) || '';
   const ext = filename.split('.').pop() || '';
+  const output = partOutput(part);
+  const isError = status === 'completed' && isErrorOutput(output);
   const diagnostics = getToolDiagnostics(part, filePath);
 
   const isStalePending = !running && !filename && (status === 'pending' || status === 'running');
@@ -52,7 +57,9 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       locked={locked}
       className="overflow-hidden p-0"
     >
-      {content ? (
+      {isError ? (
+        <ToolOutputFallback output={output} toolName="write" />
+      ) : content ? (
         <div className="bg-card">
           <BetterCodeBlock
             code={content}

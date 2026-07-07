@@ -33,6 +33,7 @@ import {
   BasicTool,
   ToolActivateContext,
   ToolDurationContext,
+  isErrorOutput,
   ToolEmptyState,
   ToolOutputFallback,
   ToolRunningContext,
@@ -212,7 +213,8 @@ export function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const grepResult = useMemo(() => parseGrepOutput(output), [output]);
   const hasResults = !!grepResult;
-  const isNoResults = !hasResults && status === 'completed' && !!output;
+  const isError = status === 'completed' && isErrorOutput(output);
+  const isNoResults = !hasResults && !isError && status === 'completed' && !!output;
 
   return (
     <BasicTool

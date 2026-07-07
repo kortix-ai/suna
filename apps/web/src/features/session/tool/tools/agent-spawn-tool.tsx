@@ -7,9 +7,11 @@ import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   firstMeaningfulLine,
   getAgentCardLabel,
+  parseJsonFailure,
   partInput,
   partOutput,
   partStatus,
+  ToolOutputFallback,
   ToolSurfaceContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
@@ -69,6 +71,10 @@ export function AgentSpawnTool({ part, forceOpen }: ToolProps) {
 
   const cleanedOutput = useMemo(() => cleanWorkerOutput(output), [output]);
   const workerPreview = useMemo(() => extractWorkerPreview(cleanedOutput), [cleanedOutput]);
+  const spawnFailure = useMemo(
+    () => (isCompleted ? parseJsonFailure(output) : null),
+    [isCompleted, output],
+  );
 
   const hasSession = !!childSessionId;
 
@@ -182,7 +188,13 @@ export function AgentSpawnTool({ part, forceOpen }: ToolProps) {
           )}
         </div>
 
-        {isCompleted && cleanedOutput && (
+        {isCompleted && spawnFailure && (
+          <div className="border-border/30 border-t">
+            <ToolOutputFallback output={output} toolName="agent_spawn" />
+          </div>
+        )}
+
+        {isCompleted && !spawnFailure && cleanedOutput && (
           <div className="border-border/30 border-t">
             {isShortOutput(cleanedOutput) ? (
               <div className="px-3 py-2.5">
