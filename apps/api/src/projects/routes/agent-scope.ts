@@ -14,8 +14,9 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json } from '../../openapi';
 import { applyAgentScope, extractAgents } from '../agents';
-import { loadProjectForUser } from '../lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
+import { PROJECT_ACTIONS } from '../../iam';
 import { commitManifest, loadManifestForEdit } from '../lib/triggers';
 
 // `'all'` = every item the launcher can see; a list = an explicit allowlist;
@@ -43,8 +44,14 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const agentName = c.req.param('agentName');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    // Floor 'read' (membership); the real gate is project.agent.write below.
+    // Scoping an agent edits its `[[agents]]` manifest entry (binding its
+    // connectors AND secrets), so it's an agent-config edit — agent.write is the
+    // precise leaf (a single connector/secret leaf wouldn't cover both). Was
+    // 'manage' → project.write, so unchecking agent.write did nothing here.
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_AGENT_WRITE);
 
     const parsed = AgentScopeBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);

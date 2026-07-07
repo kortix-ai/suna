@@ -122,6 +122,9 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Human gate: submitting a reviewable needs project.review.submit. Every
+    // built-in role holds it; a custom role that unchecks it is denied here.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_REVIEW_SUBMIT);
     // Agent-side gate: submitting a reviewable is the agent's intended path.
     assertAgentScope(c, 'project.review.submit');
 

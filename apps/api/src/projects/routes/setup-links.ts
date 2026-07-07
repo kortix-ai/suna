@@ -18,8 +18,9 @@ import { loadPipedreamConnector } from '../../executor/db-deps';
 import { pipedreamConfigured } from '../../executor/pipedream';
 import { mintSetupLink, type SecretFieldSpec } from '../../setup-links/token';
 import { isValidSecretName } from '../secrets';
-import { loadProjectForUser } from '../lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
+import { PROJECT_ACTIONS } from '../../iam';
 import { CODEX_AUTH_JSON_SECRET_NAME, normalizeString, readBody } from '../lib/serializers';
 
 function frontendBase(): string {
@@ -49,8 +50,12 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    // Floor 'read'; project.secret.write is the real gate — the same leaf as
+    // POST /secrets. Was 'manage' → project.write, so unchecking secret.write
+    // did nothing here.
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
 
     // Accept `names: [...]` or a single `name`.
     const rawNames: unknown[] = Array.isArray(body.names)
@@ -128,8 +133,11 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    // Floor 'read'; project.connector.write is the real gate (minting a Pipedream
+    // Quick Connect link is a connector operation). Was 'manage' → project.write.
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
 
     if (!pipedreamConfigured()) return c.json({ error: 'Pipedream is not configured on this deployment' }, 501);
 

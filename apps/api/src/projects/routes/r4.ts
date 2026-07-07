@@ -662,8 +662,12 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read' (membership); the connector.write leaf below is the real gate,
+    // so a custom role that unchecks connector.write is denied even if it holds
+    // project.write. Built-in editor/manager hold the leaf.
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
     if (!emailChannelEnabled(loaded.row.metadata)) {
       return c.json(
         {
@@ -815,8 +819,10 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read'; project.connector.write is the real gate (see /email/connect).
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
     if (!emailChannelEnabled(loaded.row.metadata)) {
       return c.json(
         {
@@ -873,8 +879,10 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read'; project.connector.write is the real gate (see /email/connect).
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
     const connectorSlug =
       c.req.query("connector_slug") ||
       c.req.query("profile_slug") ||
@@ -1285,8 +1293,11 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read'; project.customize.write is the real gate (setting the bot
+    // name is project customization). Built-in editor/manager hold the leaf.
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     const body = await readBody(c);
     const name = String(body.name ?? body.bot_name ?? "");
     const saved = await setProjectBotName(projectId, name);
@@ -1313,8 +1324,11 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read'; project.customize.write is the real gate (choosing the voice
+    // is project customization). Built-in editor/manager hold the leaf.
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     const body = await readBody(c);
     const voiceId = String(body.voice ?? "");
     if (!isMeetVoice(voiceId)) return c.json({ error: "unknown voice" }, 400);
@@ -1559,8 +1573,13 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read'; project.customize.write is the real gate (model defaults are
+    // project customization). NOTE: /{projectId}/model-defaults is ALSO defined in
+    // routes/model-defaults.ts (registered later in projects/index.ts) — both are
+    // gated here to be safe against route-registration order; dedupe is follow-up.
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     const ownerAccountId = loaded.row.accountId as string;
     const userId = c.get("userId") as string;
 
@@ -1639,8 +1658,11 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read'; project.customize.write is the real gate (see PUT above; also
+    // mirrored in routes/model-defaults.ts).
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     const ownerAccountId = loaded.row.accountId as string;
     const scope = c.req.query("scope");
     const agentName = c.req.query("agentName");
