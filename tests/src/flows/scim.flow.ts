@@ -50,6 +50,23 @@ flow(
       r.status(200).body().exists("$.schemas").exists("$.patch.supported").exists("$.authenticationSchemes");
     });
 
+    await ctx.step("ResourceTypes → 200 with User + Group (Azure AD probes this)", async () => {
+      const r = await scim.get("/scim/v2/accounts/:accountId/ResourceTypes", { params: { accountId: team.id } });
+      r.status(200)
+        .body()
+        .has("$.totalResults", 2)
+        .has("$.Resources[0].id", "User")
+        .has("$.Resources[1].id", "Group");
+    });
+
+    await ctx.step("Schemas → 200 with the core User schema + its attributes", async () => {
+      const r = await scim.get("/scim/v2/accounts/:accountId/Schemas", { params: { accountId: team.id } });
+      r.status(200)
+        .body()
+        .has("$.Resources[0].id", "urn:ietf:params:scim:schemas:core:2.0:User")
+        .exists("$.Resources[0].attributes");
+    });
+
     await ctx.step("OWNER JWT (not a SCIM token) → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
