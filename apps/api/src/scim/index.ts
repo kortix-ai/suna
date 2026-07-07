@@ -4,14 +4,16 @@
 // so the IdP configures its base URL once. scimAuth middleware validates
 // the bearer token and ensures it belongs to the same account.
 //
-// What we implement (v1):
-//   - /ServiceProviderConfig (capabilities discovery)
-//   - /Users: GET (list + filter by userName), GET/:id, POST, PATCH, DELETE
+// What we implement:
+//   - /ServiceProviderConfig, /ResourceTypes, /Schemas (discovery — Azure AD
+//     probes ResourceTypes/Schemas during connector setup; Okta hardcodes them)
+//   - /Users: GET (list + filter by userName), GET/:id, POST, PATCH, PUT, DELETE
+//     (Okta's "Push Profile Updates" uses PUT; Azure uses PATCH — both work)
 //   - /Groups: GET (list), GET/:id, POST, PATCH, DELETE (member add/remove via PATCH)
+//   - Pending invitations are surfaced as ACTIVE Users so every IdP-pushed user
+//     resolves (an invited account is enabled; active:false made Okta loop)
 //
-// What we deliberately skip in v1:
-//   - PUT (most IdPs prefer PATCH; PATCH is sufficient for Okta + Azure AD)
-//   - /Schemas and /ResourceTypes (most IdPs hardcode knowledge of the spec)
+// What we deliberately skip:
 //   - Pagination beyond the default page (small directories fit; revisit if needed)
 //   - Full filter grammar — only `userName eq` / `id eq` / `displayName eq` are
 //     supported, which covers the request patterns Okta and Azure AD actually use.

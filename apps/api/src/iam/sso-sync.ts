@@ -19,6 +19,7 @@ import { accountGroupMembers, accountMembers } from '@kortix/db';
 import { db } from '../shared/db';
 import { invalidateIamCacheForUser } from './cache-invalidation';
 import {
+  ensureAutoProvisionedGroup,
   getSsoProviderBySupabaseId,
   listSsoGroupMappings,
 } from '../repositories/sso';
@@ -217,12 +218,26 @@ export async function syncSsoMembership(args: {
   }
 
   // 2. Sync IAM group memberships from the claim.
+  const claims = extractGroupClaims(args.jwtPayload, provider.groupClaimName);
+
+  // Auto-provision: when enabled, create an IAM group + mapping for every
+  // (deduped) group the IdP sent BEFORE reading the mappings below, so the
+  // freshly created ones flow through the very same diff — the admin skips
+  // hand-mapping each group and just attaches project roles to the new ones.
+  if (provider.autoProvisionGroups) {
+    for (const claimValue of new Set(claims)) {
+      await ensureAutoProvisionedGroup({
+        accountId: provider.accountId,
+        ssoProviderId: provider.ssoProviderId,
+        claimValue,
+      });
+    }
+  }
+
   const mappings = await listSsoGroupMappings(provider.accountId);
   if (mappings.length === 0) {
     return { skipped: false, memberCreated };
   }
-
-  const claims = extractGroupClaims(args.jwtPayload, provider.groupClaimName);
   const claimedGroupIds = resolveClaimedGroupIds(claims, mappings);
   const mappedGroupIds = new Set(mappings.map((m) => m.groupId));
 

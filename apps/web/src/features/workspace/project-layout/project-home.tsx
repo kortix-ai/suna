@@ -156,6 +156,11 @@ export function ProjectHome({
             projectId={projectId}
             isBusy={busy}
             disabled={busy}
+            // The home composer navigates to the new session on send — don't clear
+            // it first (that only flashes an empty box before the route swaps, and
+            // would drop the text on a gated send). The message rides across via the
+            // start-stash and reappears as the instant shell's optimistic turn.
+            clearOnSend={false}
             autoFocus
             cardClassName="rounded-xl"
             placeholder={tI18nHardcoded.raw(

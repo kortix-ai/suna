@@ -8,7 +8,7 @@
  * — `VALID_ACTIONS` rejects anything else, so a typo here means the IAM probe
  * 400s. Keep this list in sync when actions.ts changes.
  *
- * Gating rule (IAM v1): a capability is DEACTIVATED for a department by giving
+ * Gating rule (IAM v1): a capability is DEACTIVATED for a group by giving
  * its custom role a permission set that OMITS the capability's leaf. The UI
  * reflects that by hiding/disabling the section whose `read`/`write` leaf the
  * role no longer grants. Therefore every `read` leaf used below MUST be one the

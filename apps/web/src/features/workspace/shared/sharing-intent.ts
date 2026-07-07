@@ -4,7 +4,7 @@ import type { ConnectorSharing } from '@kortix/sdk/projects-client';
  * Pure sharing-selection logic, shared by the <SharingPicker> component and its
  * callers (secrets, connectors, session sharing). Kept framework-free so it can
  * be unit-tested without pulling in React. The selection carries BOTH members
- * and departments (account groups) — aligned with the IAM member+department
+ * and groups (account groups) — aligned with the IAM member+group
  * model; the share-scope backend already evaluates group grants.
  */
 export type SharingMode = 'project' | 'private' | 'members';
@@ -12,7 +12,7 @@ export type SharingMode = 'project' | 'private' | 'members';
 export interface SharingSelection {
   mode: SharingMode;
   memberIds: string[];
-  /** Departments (account groups) allowed to use this. */
+  /** Groups (account groups) allowed to use this. */
   groupIds: string[];
 }
 
@@ -33,12 +33,12 @@ export const DEFAULT_COPY: SharingCopy = {
   project: { label: 'Project-wide', desc: 'Every member of this project' },
   private: { label: 'Only me', desc: 'Just you' },
   members: {
-    label: 'Specific members or departments',
-    desc: 'A chosen list of members and departments',
+    label: 'Specific members or groups',
+    desc: 'A chosen list of members and groups',
   },
 };
 
-/** A "Specific members or departments" selection must name at least one subject,
+/** A "Specific members or groups" selection must name at least one subject,
  *  else the empty allow-list silently collapses to project-wide on save. */
 export function isSharingComplete(s: SharingSelection): boolean {
   return s.mode !== 'members' || s.memberIds.length + s.groupIds.length > 0;
