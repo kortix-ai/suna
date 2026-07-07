@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   addMarketplaceSource,
@@ -20,7 +20,23 @@ import {
   updateAllMarketplaceItems,
   updateMarketplaceItem,
   type AddSourceInput,
+  type ItemsPage,
 } from '@/lib/marketplace-client';
+
+/** Default page size for `useInfiniteMarketplaceItems`. */
+export const MARKETPLACE_ITEMS_PAGE_SIZE = 30;
+
+/** Pure paging step for `useInfiniteMarketplaceItems`'s `getNextPageParam`,
+ *  extracted so it's unit-testable without spinning up react-query. Advances
+ *  the offset by `limit` per page already fetched, and stops once the server
+ *  reports no more items. */
+export function nextMarketplaceItemsPageParam(
+  lastPage: ItemsPage,
+  allPages: ItemsPage[],
+  limit: number,
+): number | undefined {
+  return lastPage.hasMore ? allPages.length * limit : undefined;
+}
 
 export function useMarketplaceItems(params: {
   query?: string;
@@ -44,6 +60,44 @@ export function useMarketplaceItems(params: {
     // No placeholderData: switching marketplace/type must not flash the previous
     // source's cards under the new header count (they'd disagree). Debounce
     // already coalesces keystrokes, so the skeleton is brief + honest.
+  });
+}
+
+/** Paged variant of `useMarketplaceItems` for infinite-scroll browsing (A3/A4
+ *  consumers). Flatten `data.pages.flatMap(p => p.items)` for the item list;
+ *  `data.pages[0]` still carries `total`/`loading`/`pending`/`sources`. */
+export function useInfiniteMarketplaceItems(params: {
+  query?: string;
+  type?: string;
+  source?: string;
+  publicOnly?: boolean;
+  limit?: number;
+}) {
+  const publicOnly = params.publicOnly ?? false;
+  const limit = params.limit ?? MARKETPLACE_ITEMS_PAGE_SIZE;
+  return useInfiniteQuery({
+    queryKey: [
+      publicOnly ? 'marketplace-items-infinite-public' : 'marketplace-items-infinite',
+      params.query ?? '',
+      params.type ?? 'all',
+      params.source ?? 'all',
+      limit,
+    ],
+    queryFn: ({ pageParam }) =>
+      (publicOnly ? listPublicMarketplaceItems : listMarketplaceItems)({
+        query: params.query,
+        type: params.type,
+        source: params.source,
+        limit,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) =>
+      nextMarketplaceItemsPageParam(lastPage, allPages, limit),
+    staleTime: 60_000,
+    // Same cold-load poll as `useMarketplaceItems`, keyed off the first page
+    // (later pages don't carry fresh `loading`/`sources` info).
+    refetchInterval: (query) => (query.state.data?.pages?.[0]?.loading ? 1500 : false),
   });
 }
 

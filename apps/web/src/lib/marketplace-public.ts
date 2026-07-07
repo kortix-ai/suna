@@ -57,20 +57,32 @@ export async function listPublicMarketplaceItems(params?: {
   query?: string;
   type?: string;
   source?: string;
+  /** Opt-in server-side pagination. Omit for the full filtered list. */
+  limit?: number;
+  offset?: number;
 }): Promise<ItemsPage> {
   const qs = new URLSearchParams();
   if (params?.query) qs.set('query', params.query);
   if (params?.type && params.type !== 'all') qs.set('type', params.type);
   if (params?.source && params.source !== 'all') qs.set('source', params.source);
+  if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+  if (params?.offset !== undefined) qs.set('offset', String(params.offset));
   const suffix = qs.toString() ? `?${qs.toString()}` : '';
   const res = await publicGet<{
     items: MarketplaceItem[];
+    total?: number;
+    hasMore?: boolean;
     loading?: boolean;
     pending?: number;
     sources?: PendingSource[];
   }>(`/marketplace/items${suffix}`);
+  const items = res.items ?? [];
   return {
-    items: res.items ?? [],
+    items,
+    // Servers/callers predating pagination won't send these — fall back to a
+    // valid single-page shape so `ItemsPage` is never partially populated.
+    total: res.total ?? items.length,
+    hasMore: res.hasMore ?? false,
     loading: !!res.loading,
     pending: res.pending ?? 0,
     sources: res.sources ?? [],
