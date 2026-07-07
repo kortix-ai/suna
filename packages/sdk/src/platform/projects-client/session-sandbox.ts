@@ -1,6 +1,7 @@
 // Session sandbox — runtime sandbox row + the session-open (/start) flow.
 
 import { backendApi } from '../api-client';
+import { isSessionFresh } from '../fresh-sessions';
 import { setSessionRuntime } from '../../state/session-runtime-registry';
 import { getSandboxUrlForExternalId } from '../../state/server-store/url-helpers';
 
@@ -111,7 +112,11 @@ export async function startProjectSession(
   );
   if (!response.success || !response.data) {
     const terminal = classifySessionStartFailure(response.error);
-    if (terminal) throw terminal;
+    // A 404 for a session minted in THIS tab is the optimistic create-vs-start
+    // race: `useNewProjectSession` fires this /start before its background
+    // create POST has landed, so the row doesn't exist yet. Yield null so the
+    // poll keeps going; a 404 for any other session stays terminal.
+    if (terminal && !(terminal.status === 404 && isSessionFresh(sessionId))) throw terminal;
     return null;
   }
   const result = response.data;

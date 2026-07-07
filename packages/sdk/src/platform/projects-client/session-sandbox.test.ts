@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../config';
+import { clearSessionFresh, markSessionFresh } from '../fresh-sessions';
 import { clearSessionRuntime, getSessionRuntime } from '../../state/session-runtime-registry';
 import { isSessionStartError, sessionStartKey, startProjectSession } from './session-sandbox';
 
@@ -27,6 +28,7 @@ beforeEach(() => {
 
 afterEach(() => {
   clearSessionRuntime(PROJECT, SESSION);
+  clearSessionFresh(SESSION);
 });
 
 configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok' });
@@ -96,6 +98,29 @@ test('startProjectSession throws a terminal SessionStartError for non-retryable 
   expect(isSessionStartError(caught)).toBe(true);
   expect((caught as Error & { status?: number; terminal?: boolean }).status).toBe(404);
   expect((caught as Error & { status?: number; terminal?: boolean }).terminal).toBe(true);
+});
+
+test('startProjectSession returns null on 404 for a fresh session (create-vs-start race) so the poll continues', async () => {
+  markSessionFresh(SESSION);
+  nextResponse = { status: 404, body: { error: 'Not found' } };
+
+  const result = await startProjectSession(PROJECT, SESSION);
+  expect(result).toBeNull();
+});
+
+test('startProjectSession still throws terminally on non-404 client errors for a fresh session', async () => {
+  markSessionFresh(SESSION);
+  nextResponse = { status: 403, body: { error: 'Forbidden' } };
+
+  let caught: unknown;
+  try {
+    await startProjectSession(PROJECT, SESSION);
+  } catch (error) {
+    caught = error;
+  }
+
+  expect(isSessionStartError(caught)).toBe(true);
+  expect((caught as Error & { status?: number }).status).toBe(403);
 });
 
 test('startProjectSession returns null for server failures so callers can retry', async () => {
