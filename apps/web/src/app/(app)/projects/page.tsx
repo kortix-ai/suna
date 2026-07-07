@@ -4,7 +4,6 @@ import { useTranslations } from 'next-intl';
 
 import Link from 'next/link';
 
-import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
@@ -47,6 +46,37 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const PROJECT_SKELETON_KEYS = Array.from({ length: 6 }, (_, index) => `project-skeleton-${index}`);
+
+/**
+ * The one loading state for this page. Auth gate, first-project bootstrap, and
+ * the in-list fetch all resolve to the same skeleton grid — no progress line, no
+ * connecting shell — so nothing else ever flashes before the projects land.
+ */
+function ProjectsLoadingScreen() {
+  return (
+    <div className="flex min-h-screen flex-col">
+      <div className="w-full border-b">
+        <div className="kx-app-header px-mobile mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between gap-2 py-4 sm:gap-3">
+          <Skeleton className="h-5 w-24 rounded-md" />
+          <Skeleton className="h-8 w-20 rounded-full" />
+        </div>
+      </div>
+      <main className="bg-background px-mobile flex-1 py-10 sm:py-12">
+        <div className="mx-auto w-full max-w-6xl space-y-8">
+          <div className="space-y-2">
+            <Skeleton className="h-9 w-44 rounded-md" />
+            <Skeleton className="h-5 w-80 max-w-full rounded-md" />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {PROJECT_SKELETON_KEYS.map((key) => (
+              <Skeleton key={key} className="h-[92px] rounded-2xl" />
+            ))}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
 
 export default function ProjectsPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -280,13 +310,13 @@ export default function ProjectsPage() {
   const hasLegacyMachines = (legacyMachinesQuery.data?.sandboxes?.length ?? 0) > 0;
 
   if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
+    return <ProjectsLoadingScreen />;
   }
 
-  // Bootstrapping the first project — hold the connecting screen instead of
-  // flashing the empty "create your first project" state before the redirect.
+  // Bootstrapping the first project — hold the skeleton instead of flashing the
+  // empty "create your first project" state before the redirect.
   if (autoCreating) {
-    return <ConnectingScreen forceConnecting hideWorkspacePicker />;
+    return <ProjectsLoadingScreen />;
   }
 
   const total = projectsQuery.data?.length ?? 0;

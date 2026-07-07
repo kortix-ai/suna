@@ -352,6 +352,7 @@ export const SessionLayout = memo(function SessionLayout({
       delayMs={0}
       projectId={projectId}
       sessionId={projectSessionId}
+      variant="stepper"
     />
   ) : (
     panelBody

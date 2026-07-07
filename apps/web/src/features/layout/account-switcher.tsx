@@ -134,11 +134,10 @@ export function AccountSwitcher({
     );
 
   if (accountsQuery.isLoading && !activeAccount) {
-    return variant === 'header' ? (
-      <Skeleton className={cn('h-8 w-36 rounded-md', className)} />
-    ) : (
-      <Skeleton className="h-9 w-full rounded-lg" />
-    );
+    // Header: render nothing while accounts load. The breadcrumb logo + page
+    // label carry the header on their own, so a skeleton chip between them just
+    // reads as noise — collapse it so it's simply `[logo] [label]`.
+    return variant === 'header' ? null : <Skeleton className="h-9 w-full rounded-lg" />;
   }
 
   const dropdown = (
