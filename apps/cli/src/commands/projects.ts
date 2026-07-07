@@ -379,7 +379,7 @@ async function projectsLink(arg?: string): Promise<number> {
   // dir (from `kortix init`) or a `kortix.toml` at the root.
   if (!isKortixProject()) {
     process.stderr.write(
-      `${status.err(`Not a Kortix project — no .kortix/ or kortix.toml in ${process.cwd()}.`)}\n`,
+      `${status.err(`Not a Kortix project — no .kortix/ or kortix.yaml in ${process.cwd()}.`)}\n`,
     );
     process.stderr.write(
       `  ${C.dim}Run ${C.reset}${C.cyan}kortix init${C.reset}${C.dim} here first to scaffold one.${C.reset}\n`,

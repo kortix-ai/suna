@@ -125,7 +125,7 @@ function isLifecycleTransitionInProgress(err: unknown): boolean {
   return msg.includes('state change in progress') || msg.includes('transition in progress');
 }
 
-function isAlreadyNotRunning(err: unknown): boolean {
+export function isAlreadyNotRunning(err: unknown): boolean {
   const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
   return (
     msg.includes('not started') ||
@@ -250,11 +250,6 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
     while (cursor < rows.length) {
       const row = rows[cursor++];
       try {
-        // Local Docker containers are --rm; stopping discards them. Skip (as before).
-        if (row.provider === 'local_docker') {
-          result.skipped += 1;
-          continue;
-        }
         const provider = getProvider(row.provider);
         const providerStatus: SandboxStatus = await provider.getStatus(row.externalId);
         // Meaningful = latest of (stamped lastTurnAt | row creation) and the last
@@ -431,7 +426,6 @@ export async function reconcileOrphanComputeSessions(): Promise<{ checked: numbe
         }
         // The reaper pass already closes billing for boxes whose row is still
         // active; here we only need to catch rows whose box is NOT running.
-        if (row.provider === 'local_docker') continue;
         const status = await getProvider(row.provider as ProviderName).getStatus(row.externalId);
         if (status === 'stopped' || status === 'removed') {
           await pauseComputeSession(row.sandboxId);
@@ -647,8 +641,8 @@ export interface OrphanReapResult {
 export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanReapResult> {
   const zero: OrphanReapResult = { listed: 0, orphans: 0, stopped: 0, errors: 0 };
   if (process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED === 'false') return zero;
-  // Daytona is the only org-shared provider that leaks this way; local_docker
-  // boxes are per-host and Platinum is reconciled on its own path.
+  // Daytona is the only org-shared provider that leaks this way; Platinum is
+  // reconciled on its own path.
   if (!config.DAYTONA_API_KEY) return zero;
   let listManaged: (() => Promise<Array<{ externalId: string; createdAt: Date | null }>>) | undefined;
   try {

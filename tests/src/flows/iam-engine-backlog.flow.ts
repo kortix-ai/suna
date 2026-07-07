@@ -1,12 +1,18 @@
 /**
  * IAM backlog: ids the original spec described against a REST policy/role
- * surface (`…/iam/policies`, `…/iam/roles`, `…/iam/actions`) that DOES NOT
- * EXIST. Those V1 routes were removed in PR5 when the V2 engine
- * (apps/api/src/iam/engine-v2.ts) became the only authorization path.
+ * surface (`…/iam/policies`, `…/iam/roles`, `…/iam/actions`). That surface
+ * WAS removed in PR5 alongside the old V1 approval/break-glass machinery,
+ * but a DB-backed custom-role/policy surface was rebuilt from scratch in
+ * Phase 3 of feat/iam-rbac-v1 (June 2026) at those same route prefixes —
+ * see apps/api/src/accounts/iam/custom-roles.ts and
+ * tests/src/flows/iam.flow.ts for coverage of that surface. This file only
+ * covers the pieces that still have no CRUD surface (see below).
  *
  * V2 decides access from six fixed code-defined roles via three tables
- * (account_members, project_members, project_group_grants) — there are no
- * policy/role CRUD routes, no deny rules, and no per-token policies.
+ * (account_members, project_members, project_group_grants), UNIONED
+ * additively with any DB custom-role grants (iam_policies / iam_role_actions,
+ * Enterprise-entitlement-gated) — there are still no deny rules and no
+ * per-token policies beyond a token's own iam_policies row.
  *
  * So these flows verify the ENGINE's observable semantics black-box through
  * the one read surface that exposes the computed decision:
@@ -17,9 +23,11 @@
  * account_role_insufficient / no_project_membership / project_role /
  * project_role_insufficient), letting us assert WHY a decision was made.
  *
- * Covers IAM-4,5,6 (no policy/role surface → fold into effective reads) and
- * IAM-9,10,11,12,13 (engine semantics). IAM-1,2,3,7,8,14-24 live in
- * iam.flow.ts — not duplicated here.
+ * Covers IAM-4,5,6 (default/no-custom-role-bound behavior → fold into
+ * effective reads) and IAM-9,10,11,12,13 (engine semantics). IAM-1,2,3,7,8,
+ * 14-24 live in iam.flow.ts — not duplicated here. Custom-role/policy CRUD
+ * itself is covered separately (see custom-roles.ts test coverage), not in
+ * this file.
  *
  * The OWNER principal creates every team() account (the team fixture's
  * adminClient is `Client.as(OWNER)`), so OWNER is that account's owner AND
@@ -49,10 +57,11 @@ const R_GROUPS_POST = `POST ${GROUPS}`;
 const R_GROUP_MEMBERS_POST = `POST ${GROUP_MEMBERS}`;
 const R_PROJECT_GRANTS_POST = `POST ${PROJECT_GRANTS}`;
 
-// ─── IAM-4: no policy CRUD → effective is the read surface ──────────────────
-// The V1 `…/iam/policies` GET/POST/PATCH/DELETE routes do not exist. A
-// member's account-scoped permission set is decided by account_role, not by
-// any creatable policy row. We assert that read surface (effective) instead.
+// ─── IAM-4: default (no custom role bound) → effective is the read surface ─
+// `…/iam/policies` CRUD now exists (custom-roles.ts) but is Enterprise-gated
+// and additive: with no custom role bound to this member, their
+// account-scoped permission set is decided purely by the fixed account_role.
+// We assert that baseline through the effective probe.
 
 flow(
   "IAM-4",
@@ -90,10 +99,11 @@ flow(
   },
 );
 
-// ─── IAM-5: no role/action catalog → role behavior via effective ────────────
-// The V1 `…/iam/roles`, `…/roles/:rid/permissions`, `…/iam/actions` reads do
-// not exist. What each fixed role grants is observable only through the
-// effective probe.
+// ─── IAM-5: built-in preset role behavior via effective ─────────────────────
+// `…/iam/roles`, `…/roles/:rid/permissions`, `…/iam/actions` now exist
+// (custom-roles.ts, Enterprise-gated) but only describe custom roles + the
+// read-only built-in preset catalog. What a fixed built-in role actually
+// grants (with no custom role bound) is asserted through the effective probe.
 
 flow(
   "IAM-5",
@@ -127,11 +137,12 @@ flow(
   },
 );
 
-// ─── IAM-6: no role CRUD → fixed project-role mapping via effective ─────────
-// Roles can't be created/renamed/deleted (immutable, code-defined). The
-// fixed project-role → action mapping is verified through the effective
-// probe: an admin (implicit Manager) can delete any project; a plain member
-// with no project path cannot.
+// ─── IAM-6: fixed project-role mapping via effective ────────────────────────
+// Built-in preset roles can't be created/renamed/deleted (immutable,
+// code-defined) — only custom roles can. The fixed project-role → action
+// mapping is verified through the effective probe: an admin (implicit
+// Manager) can delete any project; a plain member with no project path
+// cannot.
 
 flow(
   "IAM-6",
@@ -225,11 +236,13 @@ flow(
 
 // ─── IAM-10: no deny precedence (deny-wins does not exist) ──────────────────
 // V2 has no deny rules — access is allow-by-role, max-role-wins across
-// direct + group sources. The classic allow+deny conflict is not
-// constructible through any real route. Closest assertion: a low direct role
-// and a high group grant on the SAME project → effective = the MAX role, and
-// the lower grant never vetoes the higher. (deny-wins itself is unverifiable
-// black-box because the feature was removed.)
+// direct + group sources, unioned additively with any custom-role grants
+// (which are themselves allow-only, no conditions). The classic allow+deny
+// conflict is not constructible through any real route. Closest assertion: a
+// low direct role and a high group grant on the SAME project → effective =
+// the MAX role, and the lower grant never vetoes the higher. (deny-wins
+// itself is unverifiable black-box because the feature does not exist
+// anywhere in the engine.)
 
 flow(
   "IAM-10",
@@ -242,9 +255,9 @@ flow(
     const member = await team.addMember("member");
     const project = await team.project();
 
-    // Low direct role: Viewer (cannot delete).
-    await ctx.step("give member a direct Viewer role on the project", async () => {
-      await team.grantProjectRole(project.id, member.userId!, "viewer");
+    // Low direct role: User (cannot delete).
+    await ctx.step("give member a direct User role on the project", async () => {
+      await team.grantProjectRole(project.id, member.userId!, "user");
     });
 
     // High group grant: Manager (can delete) on the same project.
@@ -275,7 +288,7 @@ flow(
       grant.status(201).body().has("$.role", "manager");
     });
 
-    await ctx.step("max-role-wins: project.delete allowed (Manager grant overrides the lower Viewer; nothing denies)", async () => {
+    await ctx.step("max-role-wins: project.delete allowed (Manager grant overrides the lower User; nothing denies)", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
         params: { accountId: team.id, userId: member.userId! },
         query: { action: "project.delete", resourceType: "project", resourceId: project.id },
@@ -285,12 +298,13 @@ flow(
   },
 );
 
-// ─── IAM-11: PATs inherit the minter (no token-only policy eval) ────────────
-// V2 has no per-token policies. An unscoped account PAT carries no narrowing
-// rule set; its access equals the user it was minted by. We assert the
-// minter's effective set is exactly the engine's role decision (the same
-// answer a PAT minted by them would inherit). Per-token policy evaluation is
-// unverifiable black-box because that feature does not exist.
+// ─── IAM-11: PATs inherit the minter (default, no token-scoped policy) ──────
+// A token CAN have its own iam_policies row (principal_type='token',
+// Enterprise-gated custom-role grant) that narrows/extends it, but that is
+// opt-in and not exercised here. With no such row, an unscoped account PAT
+// carries no narrowing rule set; its access equals the user it was minted
+// by. We assert the minter's effective set is exactly the engine's role
+// decision (the same answer a PAT minted by them would inherit by default).
 
 flow(
   "IAM-11",

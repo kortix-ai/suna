@@ -34,8 +34,8 @@ import {
   useFileRename,
   useFileUpload,
 } from '../hooks/use-file-mutations';
-import { useFilesStore } from '../store/files-store';
-import type { FileNode } from '../types';
+import { useFilesStore } from '@/features/file-browser/store/files-store';
+import type { FileNode } from '@/features/file-browser/types';
 
 import { errorToast, successToast } from '@/components/ui/toast';
 import { DriveGridView } from './drive-grid-view';
@@ -44,7 +44,7 @@ import { DriveToolbar } from './drive-toolbar';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
 import { FileSearch } from './file-search';
-import { DRAG_MIME } from './file-tree-item';
+import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
 
 /**
  * Google Drive-style file explorer page.

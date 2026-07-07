@@ -12,7 +12,7 @@ import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import type { AppEnv } from '../types';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import { config } from '../config';
 import { supabaseAuth } from '../middleware/auth';
 import { eq, sql } from 'drizzle-orm';
@@ -82,7 +82,7 @@ function getMasterUrlCandidates(): string[] {
   candidates.push('http://sandbox:8000');
 
   // When running the API on the host (dev), sandbox is exposed on this port.
-  candidates.push(`http://localhost:${config.SANDBOX_PORT_BASE || 14000}`);
+  candidates.push('http://localhost:14000');
 
   // De-dupe
   return Array.from(new Set(candidates));
@@ -209,12 +209,12 @@ setupApp.openapi(
 
   // Provider capabilities — tells the frontend how to handle provisioning UI
   const capabilities: Record<string, { async: boolean; events: boolean; polling: boolean }> = {
-    daytona: { async: false, events: false, polling: false },
+    managed: { async: false, events: false, polling: false },
   };
 
   return c.json({
     providers: available,
-    default: available.includes(config.getDefaultProvider()) ? config.getDefaultProvider() : (available[0] || 'daytona'),
+    default: available.includes(config.getDefaultProvider()) ? config.getDefaultProvider() : (available[0] || 'managed'),
     capabilities: Object.fromEntries(available.map((p) => [p, capabilities[p] || { async: false, events: false, polling: false }])),
   });
   },
@@ -328,8 +328,8 @@ setupApp.openapi(
 
   let dockerRunning = false;
   try {
-    execSync('docker info', { stdio: 'pipe', timeout: 10000 });
-    dockerRunning = true;
+    const result = spawnSync('docker', ['info'], { stdio: 'pipe', timeout: 10000 });
+    dockerRunning = result.status === 0;
   } catch {}
 
   return c.json({
@@ -371,7 +371,7 @@ setupApp.openapi(
   // DAYTONA_API_KEY. We don't ping Daytona here on purpose: that's a
   // latency-sensitive UI call and Daytona's auth-check endpoint is
   // their billing concern, not ours.
-  checks.daytona = config.DAYTONA_API_KEY
+  checks.managed = config.DAYTONA_API_KEY
     ? { ok: true }
     : { ok: false, error: 'DAYTONA_API_KEY not configured' };
   return c.json(checks);

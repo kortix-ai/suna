@@ -7,11 +7,11 @@
  * this hook reads it from the sandbox connection store (populated by the
  * health check in use-sandbox-connection.ts).
  *
- * Use this in components that need update awareness without being inside
- * the server-selector dialog (e.g., update banner, sidebar indicator).
+ * Use this in components that need update awareness (e.g., update banner,
+ * sidebar indicator).
  */
 
-import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
+import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { useSandboxUpdate, PHASE_LABELS, PHASE_PROGRESS, detectChannel } from './use-sandbox-update';
 
 export { PHASE_LABELS, PHASE_PROGRESS, detectChannel };

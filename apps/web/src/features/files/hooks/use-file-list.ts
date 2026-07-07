@@ -4,8 +4,8 @@ import { useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useServerStore } from '@/stores/server-store';
 import { listFiles } from '../api/opencode-files';
-import { useFilesStore } from '../store/files-store';
-import type { FileNode } from '../types';
+import { useFilesStore } from '@/features/file-browser/store/files-store';
+import type { FileNode } from '@/features/file-browser/types';
 
 export const fileListKeys = {
   all: ['opencode-files', 'list'] as const,
@@ -24,7 +24,6 @@ export function useFileList(
   options?: { enabled?: boolean },
 ) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
-  const urlVersion = useServerStore((s) => s.urlVersion);
   const showHidden = useFilesStore((s) => s.showHidden);
 
   const query = useQuery<FileNode[]>({

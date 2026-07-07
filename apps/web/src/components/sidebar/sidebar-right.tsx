@@ -27,8 +27,7 @@ import {
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useCreatePty } from '@/hooks/opencode/use-opencode-pty';
 import { openTabAndNavigate } from '@/stores/tab-store';
-import { SANDBOX_PORTS } from '@/lib/platform-client';
-import { SSHKeyDialog } from '@/components/sidebar/ssh-key-dialog';
+import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 import {
   getNavItemsClustered,
   isItemActive,
@@ -36,9 +35,8 @@ import {
   type MenuItemDef,
   type NavSubGroup,
 } from '@/lib/menu-registry';
-import { normalizeAppPathname } from '@/lib/instance-routes';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { useSSHDialogStore } from '@/stores/ssh-dialog-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { toast } from '@/lib/toast';
 import { Button } from '../ui/button';
@@ -61,7 +59,6 @@ export function SidebarRight() {
 
   const router = useRouter();
   const pathname = normalizeAppPathname(usePathname());
-  const { isOpen: sshDialogOpen, setOpen: setSSHDialogOpen } = useSSHDialogStore();
 
   const { getServiceUrl } = useSandboxProxy();
 
@@ -141,14 +138,12 @@ export function SidebarRight() {
       case 'action':
         if (item.actionId === 'newTerminal') {
           handleNewTerminal();
-        } else if (item.actionId === 'generateSSHKey') {
-          setSSHDialogOpen(true);
         } else if (item.actionId === 'openProviderModal') {
           useProviderModalStore.getState().openProviderModal('connected');
         }
         break;
     }
-  }, [router, openSandboxServiceTab, handleNewTerminal, setSSHDialogOpen]);
+  }, [router, openSandboxServiceTab, handleNewTerminal]);
 
   // Get registry items for the right sidebar
   const quickActionClusters = getNavItemsClustered('rightSidebar', 'quickActions');
@@ -261,7 +256,6 @@ export function SidebarRight() {
             </div>
           </SheetContent>
         </Sheet>
-        <SSHKeyDialog open={sshDialogOpen} onOpenChange={setSSHDialogOpen} />
       </>
     );
   }
@@ -502,8 +496,6 @@ export function SidebarRight() {
           </div>
         </div>
       </div>
-
-      <SSHKeyDialog open={sshDialogOpen} onOpenChange={setSSHDialogOpen} />
 
     </>
   );

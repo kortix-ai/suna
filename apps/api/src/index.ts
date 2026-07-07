@@ -30,7 +30,6 @@ import { billingApp, accountDeletionApp } from './billing';
 import { platformApp } from './platform';
 import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
-import { serversApp } from './servers';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { requestDeadline } from './middleware/request-deadline';
 // Statically imported (NOT await import() in the handlers): on a long-running
@@ -61,8 +60,6 @@ import {
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
-import { kickWarmBaseBuild } from './snapshots/warm-bake';
-import { warmSnapshotsEnabled } from './shared/daytona';
 import { startLegacyMigrationWorker, stopLegacyMigrationWorker } from './projects/legacy-migration-worker';
 import { registerLegacyMigrationRoutes } from './projects/legacy-migration-routes';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
@@ -164,6 +161,9 @@ const cloudOrigins = [
 const localOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
+  // Local dev: the white-label reference app (apps/whitelabel-demo) defaults to :3010.
+  'http://localhost:3010',
+  'http://127.0.0.1:3010',
 ];
 const extraOrigins = process.env.CORS_ALLOWED_ORIGINS
   ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
@@ -354,7 +354,6 @@ const HealthSchema = z
     memory_mb: z.number(),
     timestamp: z.string(),
     billing_enabled: z.boolean(),
-    warm_snapshots: z.boolean(),
     tunnel: z.any(),
     leader: z.boolean(),
     trigger_scheduler: z.any(),
@@ -376,10 +375,6 @@ const healthHandler = (c: any) =>
     memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
     timestamp: new Date().toISOString(),
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
-    // Whether the Daytona warm-snapshot path is live in this env (flag + key +
-    // warm target all present) — see snapshots/warm-bake.ts. Surfaced here so a
-    // misconfigured env var is visible remotely instead of failing silently.
-    warm_snapshots: warmSnapshotsEnabled(),
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
     // The leader pod's trigger-sweep heartbeat: when it last ran, how long it
@@ -551,19 +546,19 @@ app.openapi(
     responses: { 200: json(MaintenanceSchema, 'Updated config'), ...errors(403, 503) },
   }),
   async (c: any) => {
-  const accountId = c.get('userId') as string;
-  const role = await getPlatformRole(accountId);
-  if (role !== 'admin' && role !== 'super_admin') {
-    return c.json({ error: 'Admin access required' }, 403);
-  }
-  if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
-  const body = await c.req.json().catch(() => ({}));
-  const config = { ...DEFAULT_MAINTENANCE, ...body, updatedAt: new Date().toISOString() };
-  await db
-    .insert(platformSettings)
-    .values({ key: MAINTENANCE_KEY, value: config, updatedAt: new Date() })
-    .onConflictDoUpdate({ target: platformSettings.key, set: { value: config, updatedAt: new Date() } });
-  return c.json(config);
+    const userId = c.get('userId') as string;
+    const role = await getPlatformRole(userId);
+    if (role !== 'admin' && role !== 'super_admin') {
+      return c.json({ error: 'Admin access required' }, 403);
+    }
+    if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
+    const body = await c.req.json().catch(() => ({}));
+    const maintenanceConfig = { ...DEFAULT_MAINTENANCE, ...body, updatedAt: new Date().toISOString() };
+    await db
+      .insert(platformSettings)
+      .values({ key: MAINTENANCE_KEY, value: maintenanceConfig, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: platformSettings.key, set: { value: maintenanceConfig, updatedAt: new Date() } });
+    return c.json(maintenanceConfig);
   },
 );
 
@@ -661,12 +656,13 @@ app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the 
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
-const { slackWebhookApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp } = await import('./channels');
+const { slackWebhookApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp, meetWebhookApp } = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
 app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
+app.route('/v1/webhooks/meet', meetWebhookApp); // /v1/webhooks/meet/realtime — Recall.ai live transcript/chat relay
 
 const { sandboxWebhooksApp } = await import('./platform/webhooks/routes');
 app.route('/v1/webhooks/sandbox', sandboxWebhooksApp); // /v1/webhooks/sandbox/{daytona,platinum} — provider lifecycle → close billing
@@ -681,6 +677,14 @@ app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/acce
 import { setupLinksPublicApp } from './setup-links/public-app';
 app.route('/v1/setup-links', setupLinksPublicApp); // /v1/setup-links/{secret,connector}/:token
 
+// Public session shares — PUBLIC, share-id-gated. Anonymous, read-only
+// session title + sanitized transcript for a valid session public-share
+// (any resource type SESS-13's CRUD creates); backs the logged-out
+// `/share/[shareId]` viewer (apps/web). No auth, no client-side sandbox
+// access — the API reads the sandbox's OpenCode daemon server-side.
+import { publicSessionSharesApp } from './public-session-shares';
+app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
+
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
@@ -692,10 +696,6 @@ app.route('/v1/admin', adminApp);
 
 // OAuth2 provider — public token endpoint, auth on authorize/consent
 app.route('/v1/oauth', oauthApp);
-
-// All remaining routes require authentication (JWT or kortix_ token).
-app.use('/v1/servers/*', combinedAuth);
-app.route('/v1/servers', serversApp);        // /v1/servers, /v1/servers/:id, /v1/servers/sync
 
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
@@ -712,10 +712,9 @@ app.use('/v1/tunnel/*', async (c, next) => {
 });
 app.route('/v1/tunnel', tunnelApp);
 
-// Preview Proxy — unified route for both cloud (Daytona) and local mode.
-// Pattern: /v1/p/{sandboxId}/{port}/* for ALL modes.
-// Cloud:  sandboxId = Daytona external ID → proxied via Daytona SDK
-// Local:  sandboxId = container name (e.g. 'kortix-sandbox') → Docker DNS resolution
+// Preview Proxy — unified route for sandbox HTTP access.
+// Pattern: /v1/p/{sandboxId}/{port}/* — sandboxId is the provider external ID,
+// resolved to a reachable upstream URL via the provider's resolvePreviewLink.
 // Auth: unified previewProxyAuth (accepts Supabase JWT and kortix_ tokens).
 // MUST be after all explicit routes (wildcard catch-all).
 app.route('/v1/p', sandboxProxyApp);
@@ -887,10 +886,6 @@ async function startSingletonWorkers() {
   // the first session anywhere lands on a cache hit. Idempotent + best-effort;
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
-  // Experimental: pre-bake the shared memory-state warm base so the first
-  // session can boot from it (~1.3s). No-op unless the warm_snapshot admin toggle
-  // is on + DAYTONA_WARM_TARGET is set; best-effort.
-  kickWarmBaseBuild();
   startLegacyMigrationWorker();
   startSunaMigrationWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row

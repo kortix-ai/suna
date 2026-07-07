@@ -5,7 +5,7 @@ export type { FileContentRendererProps } from './file-content-renderer';
 export { getFileCategory, getLanguageFromExt } from './file-content-renderer';
 export { FileSearch } from './file-search';
 export { FileBreadcrumbs, FilePathBreadcrumbs } from './file-breadcrumbs';
-export { FileTreeItem } from './file-tree-item';
+export { FileTreeItem } from '@/features/file-browser/components/file-tree-item';
 export { FileHistoryPanel } from './file-history-panel';
 export { FileHistoryPopoverContent } from './file-history-popover';
 export { getFileIcon } from './file-icon';

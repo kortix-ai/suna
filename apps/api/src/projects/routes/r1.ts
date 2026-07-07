@@ -1,10 +1,9 @@
-import { ACCOUNT_ACTIONS, assertAuthorized, authorize, listAccessibleResources } from '../../iam';
+import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized, authorize, listAccessibleResources } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
-import { kickProjectWarmBake } from '../../snapshots/warm-project';
 import { isAccountManager, type ProjectRole } from '../access';
 import { getBackend, hasBackend, type GitScope } from '../git-backends';
 import { seedRepoViaGitPush } from '../git-backends/seed';
@@ -17,7 +16,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
-import { enforceProjectQuota, grantProjectRole, loadProjectForUser, resolveProjectAccount } from '../lib/access';
+import { enforceProjectQuota, grantProjectRole, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, registerGitHubLinkedProject, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeGitHubRepo, serializeProject } from '../lib/serializers';
@@ -154,7 +153,7 @@ projectsApp.openapi(
         200: json(z.array(ProjectSchema), 'Projects the caller can read'),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const scope = await resolveProjectAccount(c);
   // Reach through `any` for non-typed context keys set by the auth
   // middleware (the AppEnv only types userId/userEmail).
@@ -217,7 +216,7 @@ projectsApp.openapi(
   // Heuristic for effective_role label (UI only, NOT auth):
   //   - account-manager → 'manager' (legacy owner/admin gets full label)
   //   - explicit project_members row → that role
-  //   - otherwise → 'viewer' (engine allowed read but we don't know the
+  //   - otherwise → 'member' (engine allowed read but we don't know the
   //     exact role; safe minimum for UI affordances)
   const accountManager = isAccountManager(scope.accountRole);
   return c.json(
@@ -225,7 +224,7 @@ projectsApp.openapi(
       const projectRole = roleByProject.get(row.projectId) ?? null;
       const effectiveRole = accountManager
         ? 'manager'
-        : projectRole ?? 'viewer';
+        : projectRole ?? 'member';
       return serializeProject(row, { projectRole, effectiveRole });
     }),
   );
@@ -311,11 +310,6 @@ projectsApp.openapi(
     },
     { accountId: scope.accountId, source: 'project-create' },
   );
-
-  // Bake the project's warm snapshot (repo pre-cloned at tip + warm opencode
-  // caches) so even the FIRST session skips the clone. No-op unless warm
-  // snapshots are enabled.
-  kickProjectWarmBake(row);
 
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
 },
@@ -416,7 +410,13 @@ projectsApp.openapi(
       name,
       repoUrl: provisioned.upstreamUrl,
       defaultBranch: provisioned.defaultBranch,
-      manifestPath: 'kortix.toml',
+      // The starter this route seeds (buildProjectSeedFiles, below) ships
+      // kortix.yaml (kortix_version 2) — record that as the canonical path so
+      // a project created here is never labeled with a stale v1 filename. A
+      // CLI `kortix ship` that pushes its own files instead of seeding still
+      // scaffolded via `kortix init` (same @kortix/starter, same kortix.yaml),
+      // so this holds for both the web and CLI creation paths.
+      manifestPath: 'kortix.yaml',
       status: 'active',
       metadata: {
         git: {
@@ -434,6 +434,14 @@ projectsApp.openapi(
           owner: provisioned.repoOwner,
           name: provisioned.repoName,
         },
+        // MANDATORY DECLARED AGENTS (docs/specs/2026-07-05-agent-first-config-
+        // unification.md §2.1/§3 Phase 2): every project created through this
+        // route is "new" in the spec's sense — subject to declared-agent
+        // enforcement from birth, regardless of the platform-wide
+        // KORTIX_REQUIRE_DECLARED_AGENTS flag (see projectRequiresDeclaredAgents /
+        // createProjectSession). Pre-existing projects (this flag absent/false)
+        // keep the v1 adopt-to-govern behavior untouched.
+        require_declared_agents: true,
       },
       updatedAt: now,
     })
@@ -576,6 +584,11 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // This endpoint hands back a RAW git push credential. project.write is
+  // fold-exempt, so without a leaf gate a read-scoped agent could mint a push
+  // token and bypass every CR/commit gate. Gate on gitops.push: a custom role
+  // can withhold it, and the agent fold requires it in the token's grant.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
   const connection = await getProjectGitConnection(projectId);
   const remote = getProjectGitRemote(loaded.row, connection);
@@ -626,6 +639,10 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Inviting a git collaborator grants a human standing access to the repo —
+  // membership-tier, not plain write. Gate on members.manage so an editor (or a
+  // scoped agent via the fold) can't add external collaborators.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
   const username = normalizeString(body.github_username ?? body.username ?? body.login);

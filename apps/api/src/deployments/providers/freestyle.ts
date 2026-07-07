@@ -32,7 +32,7 @@ function getMasterUrlCandidates(): string[] {
   const explicit = process.env.KORTIX_MASTER_URL;
   if (explicit?.trim()) candidates.push(explicit.trim());
   candidates.push('http://sandbox:8000');
-  candidates.push(`http://localhost:${config.SANDBOX_PORT_BASE || 14000}`);
+  candidates.push('http://localhost:14000');
   return Array.from(new Set(candidates));
 }
 

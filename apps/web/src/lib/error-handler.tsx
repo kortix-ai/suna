@@ -5,7 +5,7 @@ import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-st
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import * as Sentry from '@sentry/nextjs';
-import { BillingError, formatBillingErrorForUI, isBillingError } from './api/errors';
+import { BillingError, formatBillingErrorForUI, isBillingError } from '@kortix/sdk/react';
 
 const TOP_UP_LABEL = 'Top up';
 const MANAGE_PLAN_LABEL = 'Manage plan';
@@ -285,13 +285,10 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   // Legacy 402 paths (no structured code) — preserved behaviour.
   const errorUI = formatBillingErrorForUI(error);
   if (errorUI) {
-    const detail = (error as BillingError)?.detail as
-      | { code?: string; message?: string; balance?: number }
-      | undefined;
-
-    const message = detail?.message?.toLowerCase() || '';
-    const isCreditsExhausted =
-      message.includes('credit') || message.includes('balance') || message.includes('insufficient');
+    // formatBillingErrorForUI already ran the credits-exhausted classification
+    // (its own regex over detail.message) to pick a title — reuse that result
+    // instead of re-deriving it here with a second, separately-maintained regex.
+    const isCreditsExhausted = errorUI.alertTitle === 'You ran out of credits';
 
     if (isCreditsExhausted) {
       useAccountSettingsModalStore.getState().openAccountSettings({

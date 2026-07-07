@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { usePathname } from 'next/navigation';
-import { normalizeAppPathname } from '@/lib/instance-routes';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 
 function normalizeRoute(path: string): string {
   const cleanPath = path.split('?')[0]?.split('#')[0] || path;

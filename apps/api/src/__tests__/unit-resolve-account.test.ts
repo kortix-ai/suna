@@ -2,13 +2,18 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 const accounts = { __table: 'accounts', accountId: 'accountId' };
 const accountMembers = { __table: 'accountMembers', accountId: 'accountId', userId: 'userId' };
-const accountUser = { __table: 'accountUser', accountId: 'accountId', userId: 'userId' };
 const billingCustomers = { __table: 'billingCustomers', accountId: 'accountId', id: 'id', email: 'email', active: 'active', provider: 'provider' };
 const creditAccounts = { __table: 'creditAccounts', accountId: 'accountId', tier: 'tier', stripeSubscriptionId: 'stripeSubscriptionId' };
+// Transitively imported by accounts/core/{app,members}.ts (pulled in via the app
+// graph). resolve-account never queries these — the symbols just have to exist
+// so the static `@kortix/db` imports resolve.
+const accountInvitations = { __table: 'accountInvitations', accountId: 'accountId', email: 'email', inviteId: 'inviteId', acceptedAt: 'acceptedAt', expiresAt: 'expiresAt' };
+const accountGroups = { __table: 'accountGroups', accountId: 'accountId', groupId: 'groupId' };
+const accountGroupMembers = { __table: 'accountGroupMembers', groupId: 'groupId', userId: 'userId' };
+const projectMembers = { __table: 'projectMembers', projectId: 'projectId', userId: 'userId' };
 
 const state = {
   membership: null as { accountId: string } | null,
-  legacyMembership: null as { accountId: string } | null,
   creditAccount: null as { tier?: string | null; stripeSubscriptionId?: string | null } | null,
   legacyCustomer: null as { id?: string | null; email?: string | null } | null,
   customerSearchResults: [] as Array<{ id: string }>,
@@ -25,8 +30,6 @@ function rowsForTable(table: { __table: string }) {
   switch (table.__table) {
     case 'accountMembers':
       return state.membership ? [state.membership] : [];
-    case 'accountUser':
-      return state.legacyMembership ? [state.legacyMembership] : [];
     case 'creditAccounts':
       return state.creditAccount ? [state.creditAccount] : [];
     default:
@@ -60,12 +63,15 @@ const fakeDb = {
 mock.module('drizzle-orm', () => ({
   eq: (column: string, value: unknown) => ({ column, value }),
   ne: (column: string, value: unknown) => ({ op: 'ne', column, value }),
+  asc: (column: string) => ({ op: 'asc', column }),
   and: (...parts: unknown[]) => ({ op: 'and', parts }),
   or: (...parts: unknown[]) => ({ op: 'or', parts }),
   isNull: (column: string) => ({ op: 'isNull', column }),
   inArray: (column: string, values: unknown[]) => ({ op: 'inArray', column, values }),
   gte: (column: string, value: unknown) => ({ op: 'gte', column, value }),
   lte: (column: string, value: unknown) => ({ op: 'lte', column, value }),
+  gt: (column: string, value: unknown) => ({ op: 'gt', column, value }),
+  count: (column?: unknown) => ({ op: 'count', column }),
   desc: (column: string) => ({ op: 'desc', column }),
   sql: (...args: unknown[]) => ({ op: 'sql', args }),
 }));
@@ -73,9 +79,12 @@ mock.module('drizzle-orm', () => ({
 mock.module('@kortix/db', () => ({
   accounts,
   accountMembers,
-  accountUser,
   billingCustomers,
   creditAccounts,
+  accountInvitations,
+  accountGroups,
+  accountGroupMembers,
+  projectMembers,
 }));
 
 mock.module('../shared/db', () => ({ db: fakeDb }));
@@ -88,6 +97,7 @@ mock.module('../billing/repositories/customers', () => ({
 }));
 
 mock.module('../billing/repositories/credit-accounts', () => ({
+  getCreditAccount: async () => null,
   upsertCreditAccount: async (accountId: string, data: Record<string, unknown>) => {
     upsertCreditAccountCalls.push({ accountId, data });
   },
@@ -97,10 +107,12 @@ mock.module('../billing/services/credits', () => ({
   resetExpiringCredits: async (...args: any[]) => {
     resetExpiringCreditsCalls.push(args);
   },
+  grantCredits: async () => undefined,
 }));
 
 mock.module('../billing/services/tiers', () => ({
   MACHINE_CREDIT_BONUS: 5,
+  MINIMUM_CREDIT_FOR_RUN: 0.01,
   getTier: (tierName: string) => ({
     name: tierName,
     monthlyCredits: tierName === 'tier_2_20' ? 20 : tierName === 'tier_6_50' ? 50 : 0,
@@ -137,7 +149,6 @@ const { resolveAccountId } = await import('../shared/resolve-account');
 
 beforeEach(() => {
   state.membership = null;
-  state.legacyMembership = null;
   state.creditAccount = null;
   state.legacyCustomer = null;
   state.customerSearchResults = [];

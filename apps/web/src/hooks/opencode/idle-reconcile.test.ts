@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { Part } from '@opencode-ai/sdk/v2/client';
+import type { Part } from '@kortix/sdk/opencode-client';
 
 import { hasUnsettledToolPart } from './idle-reconcile';
 

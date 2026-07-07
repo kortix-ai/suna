@@ -1,6 +1,7 @@
 ---
 name: financial-statements
 description: "Formats, GAAP presentation requirements, common adjustments, and flux analysis methodology for income statements, balance sheets, and cash flow statements."
+defaultProjectInstall: true
 ---
 
 # Financial Statements

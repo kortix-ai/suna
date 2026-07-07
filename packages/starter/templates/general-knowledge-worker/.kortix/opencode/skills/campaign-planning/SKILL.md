@@ -1,6 +1,7 @@
 ---
 name: campaign-planning
 description: "Frameworks and guidance for planning, structuring, and executing marketing campaigns."
+defaultProjectInstall: true
 ---
 
 # Campaign Planning Skill

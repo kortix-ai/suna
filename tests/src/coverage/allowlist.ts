@@ -4,7 +4,14 @@ export interface AllowEntry {
   reason: string;
 }
 
-export const uncoveredAllow: AllowEntry[] = [];
+export const uncoveredAllow: AllowEntry[] = [
+  {
+    method: "PUT",
+    path: "/v1/executor/projects/:*/connectors/:*/sensitive",
+    reason:
+      "executor-scoped runtime endpoint — called by the in-sandbox executor with its own token, not by end-user clients; the user-facing equivalent is flow-covered",
+  },
+];
 
 export const externalRoutes: AllowEntry[] = [
   { method: "GET", path: "/v1/llm/models", reason: "llm-gateway standalone service (gateway-*.kortix.com), not in the main API manifest" },

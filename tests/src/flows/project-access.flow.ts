@@ -12,8 +12,8 @@
  *  - Account invites the recipient acts on:
  *    GET/accept/decline /account-invites/:inviteId.
  *
- * Project roles are manager|editor|viewer; member-management routes gate on
- * PROJECT_MEMBERS_MANAGE (admin-tier) — a project viewer/editor without manage
+ * Project roles are manager|editor|user; member-management routes gate on
+ * PROJECT_MEMBERS_MANAGE (admin-tier) — a project user/editor without manage
  * is denied. Source of truth: apps/api/src/projects/index.ts (access +
  * group-grants handlers) and apps/api/src/accounts/invites.ts.
  */
@@ -88,7 +88,7 @@ flow(
         .as(editor)
         .put(
           "/v1/projects/:projectId/access/:userId",
-          { role: "viewer" },
+          { role: "user" },
           { params: { projectId: p.id, userId: target.userId! } },
         );
       r.status([403, 404]);
@@ -108,7 +108,7 @@ flow(
         .as(ctx.P.OWNER)
         .put(
           "/v1/projects/:projectId/access/:userId",
-          { role: "viewer" },
+          { role: "user" },
           { params: { projectId: p.id, userId: "00000000-0000-4000-a000-000000000000" } },
         );
       r.status(404);
@@ -128,7 +128,7 @@ flow(
     const member = await team.addMember("member");
     const admin = await team.addMember("admin");
     await ctx.step("grant then revoke a real member → 200", async () => {
-      await team.grantProjectRole(p.id, member.userId!, "viewer");
+      await team.grantProjectRole(p.id, member.userId!, "user");
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .del("/v1/projects/:projectId/access/:userId", {
@@ -310,27 +310,27 @@ flow(
         .as(ctx.P.OWNER)
         .post(
           "/v1/projects/:projectId/group-grants",
-          { group_id: "00000000-0000-4000-a000-000000000000", role: "viewer" },
+          { group_id: "00000000-0000-4000-a000-000000000000", role: "user" },
           { params: { projectId: p.id } },
         );
       r.status(404);
     });
-    await ctx.step("PATCH role to viewer → 200", async () => {
+    await ctx.step("PATCH role to user → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
           "/v1/projects/:projectId/group-grants/:groupId",
-          { role: "viewer" },
+          { role: "user" },
           { params: { projectId: p.id, groupId } },
         );
-      r.status(200).body().has("$.role", "viewer");
+      r.status(200).body().has("$.role", "user");
     });
     await ctx.step("PATCH unknown grant → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
           "/v1/projects/:projectId/group-grants/:groupId",
-          { role: "viewer" },
+          { role: "user" },
           { params: { projectId: p.id, groupId: "00000000-0000-4000-a000-000000000000" } },
         );
       r.status(404);
@@ -342,6 +342,124 @@ flow(
           params: { projectId: p.id, groupId },
         });
       r.status(200).body().has("$.ok", true);
+    });
+  },
+);
+
+// PACC-7 — resource grants are AGENT-ONLY (Marko, resource-model
+// simplification). `agent` is the only member/department-scopable resource:
+// assigning an agent lets the assignee USE it (and inherit its declared
+// skills/connectors/secrets to USE, not edit). Skills and secrets are NO
+// LONGER member-scopable resources — a POST with resource_type=skill|secret
+// is rejected 400 (the guard runs before any config/DB load, so it needs no
+// existing resource). Reading/listing/revoking pre-existing skill/secret
+// grant rows still works (back-compat), but none can be CREATED here.
+flow(
+  "PACC-7",
+  {
+    domain: "projects",
+    routes: [
+      "GET /v1/projects/:projectId/resource-grants",
+      "POST /v1/projects/:projectId/resource-grants",
+      "DELETE /v1/projects/:projectId/resource-grants/:grantId",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember("member");
+    const p = await team.project();
+    const NONEXISTENT_GRANT = "00000000-0000-4000-a000-000000000000";
+
+    let firstAgentId = "";
+    await ctx.step("OWNER lists grantable resources and existing grants → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/resource-grants", { params: { projectId: p.id } });
+      r.status(200).body().exists("$.resources").exists("$.grants");
+      const agents = r.json<any>()?.resources?.agents ?? [];
+      firstAgentId = agents[0]?.id ?? "";
+    });
+
+    // ── The core agent-only invariant: skill/secret creation is rejected ──
+    await ctx.step("scoping a SECRET is rejected (agent-only) → 400", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/projects/:projectId/resource-grants",
+        {
+          resource_type: "secret",
+          resource_id: "ANY_SECRET",
+          principal_type: "member",
+          principal_id: member.userId,
+        },
+        { params: { projectId: p.id } },
+      );
+      r.status(400);
+    });
+
+    await ctx.step("scoping a SKILL is rejected (agent-only) → 400", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/projects/:projectId/resource-grants",
+        {
+          resource_type: "skill",
+          resource_id: "any-skill",
+          principal_type: "member",
+          principal_id: member.userId,
+        },
+        { params: { projectId: p.id } },
+      );
+      r.status(400);
+    });
+
+    await ctx.step("invalid resource type → 400", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/projects/:projectId/resource-grants",
+        {
+          resource_type: "database",
+          resource_id: "x",
+          principal_type: "member",
+          principal_id: member.userId,
+        },
+        { params: { projectId: p.id } },
+      );
+      r.status(400);
+    });
+
+    // ── Agent happy path (only when the project declares an agent) ──
+    let grantId = "";
+    await ctx.step("OWNER scopes an AGENT to an account member → 201 (skipped if no agent in config)", async () => {
+      if (!firstAgentId) return; // bare project with no declared agents — nothing to scope
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/projects/:projectId/resource-grants",
+        {
+          resource_type: "agent",
+          resource_id: firstAgentId,
+          principal_type: "member",
+          principal_id: member.userId,
+        },
+        { params: { projectId: p.id } },
+      );
+      r.status(201).body().exists("$.grant_id").has("$.resource_type", "agent");
+      grantId = r.json<any>().grant_id;
+    });
+
+    await ctx.step("OWNER deletes the agent grant → 200 (skipped if none was created)", async () => {
+      if (!grantId) return;
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/projects/:projectId/resource-grants/:grantId", {
+          params: { projectId: p.id, grantId },
+        });
+      r.status(200).body().has("$.ok", true);
+    });
+
+    // Always exercise the DELETE route (coverage) with a nonexistent grant.
+    await ctx.step("deleting a nonexistent grant → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/projects/:projectId/resource-grants/:grantId", {
+          params: { projectId: p.id, grantId: grantId || NONEXISTENT_GRANT },
+        });
+      // If a real grant was created+deleted above, re-deleting it is 404 too.
+      r.status(404);
     });
   },
 );
@@ -530,7 +648,7 @@ flow(
         .as(ctx.P.NONMEMBER)
         .post(
           "/v1/projects/:projectId/access/invite",
-          { email: "stranger@example.com", role: "viewer" },
+          { email: "stranger@example.com", role: "user" },
           { params: { projectId: p.id } },
         );
       r.status(403);

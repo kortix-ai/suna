@@ -11,8 +11,8 @@ import {
   getProjectCommitDiff,
   getProjectFileHistory,
   type ProjectCommit,
-} from '@/lib/projects-client';
-import type { FileCommitDiff, FileHistoryResult, GitCommit } from '../types';
+} from '@kortix/sdk/projects-client';
+import type { FileCommitDiff, FileHistoryResult, GitCommit } from '@/features/file-browser/types';
 
 function toGitCommit(c: ProjectCommit): GitCommit {
   const timestamp = Number(new Date(c.committed_at || c.authored_at).getTime()) || Date.now();

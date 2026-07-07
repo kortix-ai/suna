@@ -17,10 +17,11 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { authenticatedFetch } from '@/lib/auth-token';
-import { useServerStore } from '@/stores/server-store';
+import { getActiveSandboxId } from '@/stores/server-store';
 import { getEnv } from '@/lib/env-config';
+import { fetchSandboxGlobalHealth } from '@/hooks/platform/use-sandbox-poller';
 import type { UpdatePhase } from '@/hooks/platform/use-sandbox-update';
-import type { ChangelogEntry } from '@/lib/platform-client';
+import type { ChangelogEntry } from '@kortix/sdk/platform-client';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { UpdateChangelogPreview } from '@/components/update-changelog-preview';
 
@@ -116,19 +117,23 @@ export function UpdateDialog({
   }, [open]);
 
   const pollHealth = useCallback(async () => {
-    const state = useServerStore.getState();
-    const active = state.servers.find((s) => s.id === state.activeServerId);
-    if (!active?.sandboxId) return false;
+    const sandboxId = getActiveSandboxId();
+    if (!sandboxId) return false;
 
     const backendUrl = (getEnv().BACKEND_URL || 'http://localhost:8008/v1').replace(/\/+$/, '');
-    const url = `${backendUrl}/p/${active.sandboxId}/8000/global/health`;
+    const sandboxBaseUrl = `${backendUrl}/p/${sandboxId}/8000`;
 
-    try {
-      const res = await authenticatedFetch(url, { method: 'GET', signal: AbortSignal.timeout(5000) });
-      return res.ok;
-    } catch {
-      return false;
-    }
+    // Probes OpenCode's own `/global/health` (not the daemon's `/kortix/health`
+    // that `@kortix/sdk/session`'s `getSessionHealth` exposes) — the daemon
+    // wrapper endpoint always returns 200 even mid-restart, so it can't tell us
+    // whether OpenCode itself is back up; `healthy` can. See
+    // use-sandbox-poller.ts's `fetchSandboxGlobalHealth` header comment.
+    const health = await fetchSandboxGlobalHealth(
+      sandboxBaseUrl,
+      { method: 'GET', signal: AbortSignal.timeout(5000) },
+      authenticatedFetch,
+    );
+    return health.healthy;
   }, []);
 
   useEffect(() => {

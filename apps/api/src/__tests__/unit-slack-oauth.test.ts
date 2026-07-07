@@ -40,6 +40,7 @@ mock.module('../channels/install-store', () => ({
     saveCalls.push(input);
     if (saveError) throw saveError;
   },
+  loadSlackTokenForProject: async () => null,
 }));
 
 mock.module('../executor/sync', () => ({

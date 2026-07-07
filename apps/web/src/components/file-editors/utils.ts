@@ -42,37 +42,6 @@ export const processUnicodeContent = (content: any, forCodeBlock: boolean = fals
   });
 };
 
-// Helper function to get file type from extension
-export function getFileTypeFromExtension(fileName: string): string {
-  const extension = fileName.split('.').pop()?.toLowerCase() || '';
-
-  const markdownExtensions = ['md', 'markdown'];
-  const codeExtensions = [
-    'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'json', 'doc',
-    'py', 'python', 'java', 'c', 'cpp', 'h', 'cs', 'go', 'rs',
-    'php', 'rb', 'sh', 'bash', 'xml', 'yml', 'yaml', 'toml',
-    'sql', 'graphql', 'swift', 'kotlin', 'dart', 'r', 'lua',
-    'scala', 'perl', 'haskell', 'rust',
-  ];
-  const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'heif', 'avif'];
-  const pdfExtensions = ['pdf'];
-  const csvExtensions = ['csv', 'tsv'];
-  const xlsxExtensions = ['xlsx', 'xls'];
-  const pptxExtensions = ['pptx', 'ppt'];
-  const textExtensions = ['txt', 'log', 'env', 'ini'];
-
-  if (markdownExtensions.includes(extension)) return 'markdown';
-  if (codeExtensions.includes(extension)) return 'code';
-  if (imageExtensions.includes(extension)) return 'image';
-  if (pdfExtensions.includes(extension)) return 'pdf';
-  if (csvExtensions.includes(extension)) return 'csv';
-  if (xlsxExtensions.includes(extension)) return 'xlsx';
-  if (pptxExtensions.includes(extension)) return 'pptx';
-  if (textExtensions.includes(extension)) return 'text';
-
-  return 'binary';
-}
-
 // Helper function to get language from file extension for code highlighting
 export function getLanguageFromExtension(fileName: string): string {
   const extension = fileName.split('.').pop()?.toLowerCase() || '';

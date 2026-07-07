@@ -1,5 +1,9 @@
 import { logger } from '../lib/logger';
-import { EMAIL_CHANNEL_CONNECTOR_SLUG, SLACK_CHANNEL_CONNECTOR_SLUG, channelCatalog } from './channels';
+import {
+  EMAIL_CHANNEL_CONNECTOR_SLUG,
+  SLACK_CHANNEL_CONNECTOR_SLUG,
+  channelCatalog,
+} from './channels';
 import {
   type ExecResult,
   type ExecutorAuth,
@@ -9,9 +13,11 @@ import {
 } from './execute';
 /**
  * Executor gateway — the chokepoint every tool call goes through. Resolves the
- * connector + action, checks the acting user can use it (project-secret
- * sharing), resolves the credential SERVER-SIDE, runs the call, audits it.
- * The sandbox never holds an app secret.
+ * connector + action, resolves the credential SERVER-SIDE, runs the call,
+ * audits it. The sandbox never holds an app secret. Connectors are
+ * project-wide visible (no per-connector member/agent scoping) — the only
+ * access gate is the agent-side `[[agents]].connectors` grant, enforced at the
+ * router before this is ever reached.
  *
  * Policy enforcement is layered (docs/specs/executor.md §8):
  *   1. project-level [[policies]] (fully-qualified patterns) — admin guardrails
@@ -24,7 +30,7 @@ import {
  * with the original allow-all engine; production sets it true.
  */
 import { type DefaultMode, type Policy, resolveEffectiveAction } from './policy';
-import { type SecretGrant, type ShareScope, type ShareSubject, isSecretUsableBy } from './share';
+import type { ShareSubject } from './share';
 import type { ActionBinding, Risk } from './types';
 
 export interface GatewayConnector {
@@ -37,12 +43,14 @@ export interface GatewayConnector {
   auth: ExecutorAuth;
   /** Whether this connector needs a credential at all (false = public/no-auth). */
   hasAuth: boolean;
-  /** Who can use it. */
-  shareScope: ShareScope;
-  grants: SecretGrant[];
-  /** shared = one project credential; per_user = each member's own. */
-  credentialMode: 'shared' | 'per_user';
+  /** Always `shared` (one project credential) — `per_user` (each member's
+   *  own) was removed 2026-07-05. Kept as a field for shape stability. */
+  credentialMode: 'shared';
   enabled: boolean;
+  /** Marked sensitive (email/files/secrets-bearing): reads gate too — every
+   *  action defaults to require_approval unless an explicit policy opens it.
+   *  Optional (absent = not sensitive) so fixtures/callers needn't set it. */
+  sensitive?: boolean;
 }
 
 export interface GatewayAction {
@@ -88,18 +96,71 @@ export interface GatewayDeps {
    */
   resolveCredential(connector: GatewayConnector, userId: string | null): Promise<string | null>;
   /** Email-originated sessions pin native Email channel calls to the inbound inbox/thread. */
-  loadEmailSessionContext?(projectId: string, sessionId: string): Promise<EmailSessionContext | null>;
+  loadEmailSessionContext?(
+    projectId: string,
+    sessionId: string,
+  ): Promise<EmailSessionContext | null>;
   /** Email connector profiles represent one installed AgentMail inbox. */
-  loadEmailConnectorContext?(projectId: string, connectorSlug: string): Promise<EmailConnectorContext | null>;
+  loadEmailConnectorContext?(
+    projectId: string,
+    connectorSlug: string,
+  ): Promise<EmailConnectorContext | null>;
   /** Resolve the AgentMail credential for the install that owns this inbox. */
   resolveEmailCredentialForInbox?(projectId: string, inboxId: string): Promise<string | null>;
+  /**
+   * Meet (Recall.ai) join augmentation — the realtime webhook endpoint + bot
+   * `metadata` (owning session + an HMAC token) injected server-side so Recall
+   * streams transcript/chat back to us. Null when no public URL is configured or
+   * the call isn't session-scoped. The sandbox never builds this callback.
+   */
+  resolveMeetJoinContext?(
+    projectId: string,
+    sessionId: string | null,
+  ): Promise<{
+    metadata: Record<string, unknown>;
+    realtimeEndpoints: unknown[];
+    automaticAudioOutput: unknown;
+    botName: string;
+  } | null>;
   /** Connector-scoped policies (relative patterns over the connector's tool paths). */
   loadPolicies(connectorId: string): Promise<Policy[]>;
   /** Project-scoped policies (fully-qualified patterns over <slug>.<path>). */
   loadProjectPolicies?(projectId: string): Promise<Policy[]>;
   /** Project's policy.default_mode setting (risk | allow_all). Defaults to allow_all. */
   loadDefaultMode?(projectId: string): Promise<DefaultMode>;
-  recordExecution(rec: ExecutionRecord): Promise<void>;
+  /** Records the audit row; returns the new execution id (or null on failure)
+   *  so the caller can wait on a human decision for a gated call. */
+  recordExecution(rec: ExecutionRecord): Promise<string | null>;
+  /** Block until a `pending_approval` execution is resolved, or `timeoutMs`
+   *  elapses. Lets the gateway HOLD a require_approval call so the agent's turn
+   *  pauses in-session (instead of erroring + retrying) and resumes on approve. */
+  waitForApprovalDecision?(
+    executionId: string,
+    timeoutMs: number,
+  ): Promise<'approved' | 'denied' | 'timeout'>;
+  /** "Allow for this session" check: has this session already approved THIS
+   *  connector + action for the rest of the session? A hit turns a
+   *  `require_approval` into a silent run (no hold, no re-prompt). Only ever
+   *  widens ask→run; never consulted for a policy `block`. */
+  isSessionToolApproved?(
+    sessionId: string,
+    connectorId: string,
+    actionPath: string,
+  ): Promise<boolean>;
+  /** Approval carry-over: atomically claim a RECENT human approve of this
+   *  (session, connector, action) whose gated call nobody is waiting on
+   *  anymore — the holder timed out / the sandbox client has no poll loop —
+   *  so the NEXT attempt runs instead of re-asking. Returns true when a grant
+   *  was claimed (each approve is consumable exactly once). */
+  consumeApprovedExecution?(input: {
+    sessionId: string;
+    connectorId: string;
+    actionPath: string;
+  }): Promise<boolean>;
+  /** Mark an approve as consumed by the in-flight held/poll request that just
+   *  resumed on it, so the same grant can't ALSO be carried over by a later
+   *  fresh call (best-effort — a failure only risks one extra silent run). */
+  markApprovalConsumed?(executionId: string): Promise<void>;
   fetchImpl: FetchImpl;
   /** Pipedream execution (Connect actions/run) — required for pipedream connectors. */
   executePipedream?(input: {
@@ -154,16 +215,34 @@ export interface CallInput {
   /** Connector-relative action path (e.g. `charges.create`). */
   actionPath: string;
   args?: Record<string, unknown>;
+  /** Set on a retry of a call already awaiting approval: wait on THIS execution
+   *  rather than recording a new pending row. Powers the sandbox's poll loop
+   *  that pauses the run indefinitely (short holds, re-issued) until a decision. */
+  approvalExecutionId?: string | null;
 }
 
 export type CallResult =
   | { status: 'ok'; data: unknown; risk: Risk }
   | { status: 'denied'; reason: string }
-  | { status: 'pending_approval'; reason: string }
+  | {
+      status: 'pending_approval';
+      reason: string;
+      /** The execution awaiting a decision — the caller re-issues the call with
+       *  this id to keep waiting (poll loop). */
+      executionId?: string | null;
+      /** true = still unresolved after the hold; poll again to keep pausing. */
+      retryable?: boolean;
+    }
   | { status: 'error'; reason: string };
 
 const SLACK_CHANNEL_ACTIONS = new Set(channelCatalog('slack').map((a) => a.path));
 const EMAIL_CHANNEL_ACTIONS = new Set(channelCatalog('email').map((a) => a.path));
+
+// How long the gateway holds a require_approval call waiting for a human
+// decision before giving up (leaving it pending for the async inbox). Kept
+// safely under the sandbox executor client's 60s request timeout, with headroom
+// for the actual connector call to run once approved.
+const APPROVAL_WAIT_MS = 45_000;
 
 async function resolveConnectorForCall(
   deps: GatewayDeps,
@@ -200,22 +279,25 @@ async function resolveConnectorForCall(
   };
 }
 
-/** Is this connector usable by the subject? Access (connector sharing) + credential (by mode). */
+/**
+ * Is this connector usable for this call? Access is public-by-default —
+ * connectors are project-wide visible; the ONLY gate is the agent-side
+ * `[[agents]].connectors` grant (enforced earlier, at the router, via
+ * `agentMayUseConnector`). This function is left with just the credential
+ * check (by mode).
+ */
 async function connectorUsable(
   deps: GatewayDeps,
   connector: GatewayConnector,
-  subject: ShareSubject,
+  _input: CallInput,
   credentialOverride?: string | null,
 ): Promise<{ ok: true; secret: string | null } | { ok: false; reason: string }> {
-  // 1. Access — who can use this connector.
-  if (!isSecretUsableBy(connector.shareScope, connector.grants, subject)) {
-    return { ok: false, reason: 'not_shared' };
-  }
-  // 2. Credential — none needed (public), shared, or this member's own (per_user).
+  // Credential — none needed (public), or the one shared project credential.
+  // (`per_user` — each member's own — was removed 2026-07-05; every connector
+  // now resolves the shared, userId-null credential.)
   if (!connector.hasAuth) return { ok: true, secret: null };
   if (credentialOverride != null) return { ok: true, secret: credentialOverride };
-  const userId = connector.credentialMode === 'per_user' ? subject.userId : null;
-  const secret = await deps.resolveCredential(connector, userId);
+  const secret = await deps.resolveCredential(connector, null);
   if (secret == null) return { ok: false, reason: 'needs_auth' };
   return { ok: true, secret };
 }
@@ -235,17 +317,19 @@ async function resolveEmailExecutionContext(
     return { args, secretOverride: null };
   }
 
-  const sessionContext = input.sessionId && deps.loadEmailSessionContext
-    ? await deps.loadEmailSessionContext(input.projectId, input.sessionId)
-    : null;
-  const connectorContext = !sessionContext?.inboxId && deps.loadEmailConnectorContext
-    ? await deps.loadEmailConnectorContext(input.projectId, connectorSlug)
-    : null;
+  const sessionContext =
+    input.sessionId && deps.loadEmailSessionContext
+      ? await deps.loadEmailSessionContext(input.projectId, input.sessionId)
+      : null;
+  const connectorContext =
+    !sessionContext?.inboxId && deps.loadEmailConnectorContext
+      ? await deps.loadEmailConnectorContext(input.projectId, connectorSlug)
+      : null;
   const context = sessionContext?.inboxId ? sessionContext : connectorContext;
   if (!context?.inboxId) return { args, secretOverride: null };
 
   args.inbox_id = context.inboxId;
-  if ('threadId' in context && (input.actionPath === 'get_thread') && context.threadId) {
+  if ('threadId' in context && input.actionPath === 'get_thread' && context.threadId) {
     args.thread_id = context.threadId;
   }
   if (
@@ -258,9 +342,10 @@ async function resolveEmailExecutionContext(
     args.message_id = context.messageId;
   }
 
-  const secretOverride = sessionContext?.inboxId && deps.resolveEmailCredentialForInbox
-    ? await deps.resolveEmailCredentialForInbox(input.projectId, context.inboxId)
-    : null;
+  const secretOverride =
+    sessionContext?.inboxId && deps.resolveEmailCredentialForInbox
+      ? await deps.resolveEmailCredentialForInbox(input.projectId, context.inboxId)
+      : null;
   return { args, secretOverride };
 }
 
@@ -282,12 +367,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   }
 
   const emailExecution = await resolveEmailExecutionContext(deps, input, connector, resolved.slug);
-  const usable = await connectorUsable(
-    deps,
-    connector,
-    input.subject,
-    emailExecution.secretOverride,
-  );
+  const usable = await connectorUsable(deps, connector, input, emailExecution.secretOverride);
   if (!usable.ok) {
     await audit(deps, input, connector.connectorId, 'denied', action.risk, {
       reason: usable.reason,
@@ -295,8 +375,37 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     return { status: 'denied', reason: usable.reason };
   }
 
-  const executionArgs = emailExecution.args;
+  let executionArgs = emailExecution.args;
   const executionSecret = usable.secret;
+
+  // Meet (Recall.ai) live relay: on join, inject the realtime webhook + bot
+  // metadata server-side so Recall streams transcript/chat back to us, tagged
+  // with this session. Merges with the recording_config the caller already set.
+  if (
+    connector.provider === 'channel' &&
+    connector.platform === 'meet' &&
+    input.actionPath === 'join_meeting' &&
+    deps.resolveMeetJoinContext
+  ) {
+    const ctx = await deps.resolveMeetJoinContext(input.projectId, input.sessionId ?? null);
+    if (ctx) {
+      const rc = { ...((executionArgs.recording_config as Record<string, unknown>) ?? {}) };
+      const existing = Array.isArray(rc.realtime_endpoints) ? rc.realtime_endpoints : [];
+      rc.realtime_endpoints = [...existing, ...ctx.realtimeEndpoints];
+      executionArgs = {
+        ...executionArgs,
+        recording_config: rc,
+        metadata: {
+          ...((executionArgs.metadata as Record<string, unknown>) ?? {}),
+          ...ctx.metadata,
+        },
+        // Enable the bot to speak (output_audio) unless the caller set its own.
+        automatic_audio_output: executionArgs.automatic_audio_output ?? ctx.automaticAudioOutput,
+        // The project's configured bot display name, unless the caller passed one.
+        bot_name: executionArgs.bot_name ?? ctx.botName,
+      };
+    }
+  }
 
   // Layered policy enforcement: project policies first → connector → risk default.
   if (deps.enforcePolicies !== false) {
@@ -312,6 +421,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       connectorPolicies,
       risk: action.risk,
       defaultMode,
+      sensitive: connector.sensitive,
     });
     if (decision.action === 'block') {
       await audit(deps, input, connector.connectorId, 'denied', action.risk, {
@@ -321,11 +431,97 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       return { status: 'denied', reason: 'policy_block' };
     }
     if (decision.action === 'require_approval') {
-      await audit(deps, input, connector.connectorId, 'pending_approval', action.risk, {
-        reason: 'policy_require_approval',
-        policy_source: decision.source,
-      });
-      return { status: 'pending_approval', reason: 'policy_require_approval' };
+      // "Allow for this session": if a human already said allow-for-the-session
+      // for THIS connector + action, skip the gate — run it silently, no hold,
+      // no re-prompt. Audited as `ok` (reason session_allow) so the timeline
+      // still shows the call happened + why it wasn't asked.
+      // PATH FORM MATTERS: session grants store the CONNECTOR-RELATIVE path
+      // (`create_folder`) — the same form `input.actionPath` carries for any
+      // call that got past loadAction. The audit trail (executor_executions)
+      // stores the QUALIFIED form (`google_drive.create_folder`), so the
+      // carry-over lookup below must use that. Mixing the two silently breaks
+      // matching — it's exactly the bug that made "Allow for session" a no-op.
+      const sessionAllowed =
+        input.sessionId && deps.isSessionToolApproved
+          ? await deps.isSessionToolApproved(
+              input.sessionId,
+              connector.connectorId,
+              input.actionPath,
+            )
+          : false;
+      // Approval carry-over: the human approved this exact (session, connector,
+      // action) recently, but the gated call that asked is no longer waiting —
+      // the 45s hold expired and the client never re-polled (e.g. an older
+      // sandbox CLI without the pause loop), so the approve stamped a row nobody
+      // consumed. Claim that grant now: this fresh attempt IS the approved call,
+      // run it instead of stacking a second ask for the same thing.
+      const carriedOver =
+        !sessionAllowed &&
+        input.sessionId &&
+        !input.approvalExecutionId &&
+        deps.consumeApprovedExecution
+          ? await deps.consumeApprovedExecution({
+              sessionId: input.sessionId,
+              connectorId: connector.connectorId,
+              // The audit-row form (see audit() below), NOT the relative form.
+              actionPath: `${input.connectorSlug}.${input.actionPath}`,
+            })
+          : false;
+      if (sessionAllowed || carriedOver) {
+        await audit(deps, input, connector.connectorId, 'ok', action.risk, {
+          reason: sessionAllowed ? 'session_allow' : 'approval_carryover',
+          policy_source: decision.source,
+        });
+      } else {
+        // A retry from the sandbox's poll loop passes the existing execution id —
+        // wait on THAT row instead of stacking a new pending one each poll. First
+        // call records a fresh pending row.
+        const executionId =
+          input.approvalExecutionId ??
+          (await audit(deps, input, connector.connectorId, 'pending_approval', action.risk, {
+            reason: 'policy_require_approval',
+            policy_source: decision.source,
+          }));
+        // HOLD the call so the agent's turn pauses in-session — the sandbox's
+        // synchronous executor.call blocks on this request instead of erroring.
+        // Bounded under the client's 60s timeout: on approve we fall through and
+        // run the action; on deny we return a clean refusal the agent continues
+        // past; on TIMEOUT we return `retryable` + the execution id so the sandbox
+        // re-issues the call and keeps pausing INDEFINITELY (like a question).
+        // Unattended (no session) never waits.
+        if (executionId && input.sessionId && deps.waitForApprovalDecision) {
+          const outcome = await deps.waitForApprovalDecision(executionId, APPROVAL_WAIT_MS);
+          if (outcome === 'denied') {
+            // Mark the decision as consumed by this live waiter — the resolve
+            // endpoint's server-side resume uses that marker to know the turn
+            // already got the answer in-band (no follow-up prompt needed).
+            if (deps.markApprovalConsumed) {
+              await deps.markApprovalConsumed(executionId).catch(() => {});
+            }
+            return { status: 'denied', reason: 'denied_by_user' };
+          }
+          if (outcome === 'timeout') {
+            return {
+              status: 'pending_approval',
+              reason: 'policy_require_approval',
+              executionId,
+              retryable: true,
+            };
+          }
+          // approved → fall through to execute the call below. Mark the grant
+          // consumed so a LATER fresh call can't also carry it over.
+          if (deps.markApprovalConsumed) {
+            await deps.markApprovalConsumed(executionId).catch(() => {});
+          }
+        } else {
+          return {
+            status: 'pending_approval',
+            reason: 'policy_require_approval',
+            executionId,
+            retryable: false,
+          };
+        }
+      }
     }
   }
 
@@ -338,7 +534,8 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       }
       if (!deps.executeComputerCall) throw new Error('computer runner not wired');
       const { computer: selectorRaw, ...rest } = executionArgs;
-      const selector = typeof selectorRaw === 'string' && selectorRaw.trim() ? selectorRaw.trim() : null;
+      const selector =
+        typeof selectorRaw === 'string' && selectorRaw.trim() ? selectorRaw.trim() : null;
       const outcome = await deps.executeComputerCall({
         accountId: input.accountId,
         selector,
@@ -346,7 +543,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         args: rest,
       });
       if (outcome.ok) {
-        await audit(deps, input, connector.connectorId, 'ok', action.risk, { method: action.binding.method });
+        await audit(deps, input, connector.connectorId, 'ok', action.risk, {
+          method: action.binding.method,
+        });
         return { status: 'ok', data: outcome.data, risk: action.risk };
       }
       if (outcome.kind === 'permission_required') {
@@ -359,7 +558,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
           reason: `computer_permission_required: approve in Computers (request ${outcome.requestId})`,
         };
       }
-      await audit(deps, input, connector.connectorId, 'error', action.risk, { reason: outcome.message.slice(0, 500) });
+      await audit(deps, input, connector.connectorId, 'error', action.risk, {
+        reason: outcome.message.slice(0, 500),
+      });
       logger.warn(`[executor] ${fullPath} computer call failed: ${outcome.message.slice(0, 500)}`);
       return { status: 'error', reason: outcome.message };
     }
@@ -372,7 +573,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
           'pipedream connector has no connected account (run `kortix connectors connect`)',
         );
       }
-      const userId = connector.credentialMode === 'per_user' ? input.subject.userId : null;
+      // Always the shared (project-wide) Pipedream external-user binding —
+      // `per_user` (each member's own) was removed 2026-07-05.
+      const userId = null;
       if (b.kind === 'pipedream') {
         if (!deps.executePipedream) throw new Error('pipedream action runner not wired');
         result = await deps.executePipedream({
@@ -489,9 +692,9 @@ async function audit(
   status: ExecutionRecord['status'],
   risk: Risk | null,
   summary: Record<string, unknown> | null,
-): Promise<void> {
+): Promise<string | null> {
   try {
-    await deps.recordExecution({
+    return await deps.recordExecution({
       accountId: input.accountId,
       projectId: input.projectId,
       connectorId,
@@ -504,5 +707,6 @@ async function audit(
     });
   } catch {
     /* auditing must never break the call path */
+    return null;
   }
 }

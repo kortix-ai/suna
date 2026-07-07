@@ -27,11 +27,15 @@ Options:
   -h, --help   Show this help.
 `;
 
-/** Walk up from cwd to the project root (the dir holding kortix.toml / .kortix). */
+/** Walk up from cwd to the project root (the dir holding kortix.yaml / kortix.toml / .kortix). */
 function findProjectRoot(start = process.cwd()): string | null {
   let dir = resolve(start);
   for (;;) {
-    if (existsSync(resolve(dir, 'kortix.toml')) || existsSync(resolve(dir, '.kortix'))) {
+    if (
+      existsSync(resolve(dir, 'kortix.yaml')) ||
+      existsSync(resolve(dir, 'kortix.toml')) ||
+      existsSync(resolve(dir, '.kortix'))
+    ) {
       return dir;
     }
     const parent = dirname(dir);
@@ -49,7 +53,7 @@ export async function runDev(argv: string[]): Promise<number> {
   const root = findProjectRoot();
   if (!root) {
     process.stderr.write(
-      `${status.err('Not inside a Kortix project (no kortix.toml / .kortix found).')}\n` +
+      `${status.err('Not inside a Kortix project (no kortix.yaml / kortix.toml / .kortix found).')}\n` +
         `  ${C.dim}Run ${C.reset}${C.cyan}kortix init${C.reset}${C.dim} first.${C.reset}\n`,
     );
     return 1;

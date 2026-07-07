@@ -1,18 +1,36 @@
+import { recordSessionToolApproval } from '../../executor/db-deps';
 import { isSessionVisibleTo, loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../executor/share';
-import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
+import {
+  PROJECT_ACTIONS,
+  deleteResourceGrant,
+  isCreatableResourceType,
+  listResourceGrants,
+  upsertResourceGrant,
+} from '../../iam';
+import { assertAgentScope } from '../../iam/agent-scope';
+import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
+import { normalizeProjectRole } from '../../iam/role-perms';
+import { projectHasResource, projectResourcesFromConfig, loadConfigWithFiles } from '../lib/project-resources';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountGroups, accountMembers, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
-import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody } from '../lib/access';
-import { AnyObject, GroupGrantSchema, SessionSchema, projectsApp } from '../lib/app';
-import { UUID_V4_REGEX, hasOwn, isProjectRole, normalizeString, readBody, requestAuditContext, serializeSession, serializeSessionSandboxConfig } from '../lib/serializers';
+import { accountGroupMembers, accountGroups, accountMembers, executorConnectors, executorExecutions, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid } from '../lib/access';
+import { AnyObject, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, SessionSchema, projectsApp } from '../lib/app';
+import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
-import { createSession, deleteSession } from '../session-lifecycle';
+import {
+  createSession,
+  deleteSession,
+  drainSessionLifecycleQueue,
+  enqueueContinueSessionCommand,
+} from '../session-lifecycle';
+import { requireEntitlement } from '../../accounts/iam/helpers';
+import { accountHasEntitlement } from '../../billing/services/entitlements';
 
 function parseBoundedPositiveInt(
   raw: string | undefined,
@@ -152,19 +170,26 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(
-    loaded.userId,
-    loaded.row.accountId,
-    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-    { type: 'project', id: projectId },
-  );
+  // assertProjectCapability (not bare assertAuthorized) so the acting token is
+  // threaded and the agent-grant fold fires: an agent-session token must also
+  // hold project.members.manage to mutate group grants, not just its user.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+  // Group→project grants are part of the Enterprise RBAC surface (groups are
+  // gated in accounts/iam/groups.ts); gate the mutation here too so grants
+  // can't be minted through the project-scoped path.
+  {
+    const denied = await requireEntitlement(c, loaded.row.accountId, 'rbac');
+    if (denied) return denied;
+  }
 
   const body = await readBody(c);
   const groupId = normalizeString(body.group_id ?? body.groupId);
-  const role = body.role;
+  // normalizeProjectRole folds the legacy `viewer`/`user` aliases into `member`,
+  // so a grant is never persisted with a retired role.
+  const role = normalizeProjectRole(body.role);
   if (!groupId) return c.json({ error: 'group_id is required' }, 400);
-  if (!isProjectRole(role)) {
-    return c.json({ error: 'role must be manager, editor, or viewer' }, 400);
+  if (!role) {
+    return c.json({ error: 'role must be manager, editor, or member' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
@@ -201,6 +226,7 @@ projectsApp.openapi(
         ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
       },
     });
+  await invalidateIamCacheForGroup(groupId);
 
   return c.json({ project_id: projectId, group_id: groupId, role }, 201);
 },
@@ -231,16 +257,22 @@ projectsApp.openapi(
   const groupId = c.req.param('groupId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(
-    loaded.userId,
-    loaded.row.accountId,
-    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-    { type: 'project', id: projectId },
-  );
+  // assertProjectCapability (not bare assertAuthorized) so the acting token is
+  // threaded and the agent-grant fold fires: an agent-session token must also
+  // hold project.members.manage to mutate group grants, not just its user.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+  // Enterprise RBAC gate — same reasoning as the POST above. DELETE below is
+  // deliberately ungated: revoking access is never paywalled, so a downgraded
+  // account can always detach grants it can no longer manage.
+  {
+    const denied = await requireEntitlement(c, loaded.row.accountId, 'rbac');
+    if (denied) return denied;
+  }
 
   const body = await readBody(c);
-  if (!isProjectRole(body.role)) {
-    return c.json({ error: 'role must be manager, editor, or viewer' }, 400);
+  const role = normalizeProjectRole(body.role);
+  if (!role) {
+    return c.json({ error: 'role must be manager, editor, or member' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
@@ -248,7 +280,7 @@ projectsApp.openapi(
   const result = await db
     .update(projectGroupGrants)
     .set({
-      role: body.role,
+      role,
       updatedAt: new Date(),
       ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
     })
@@ -261,6 +293,7 @@ projectsApp.openapi(
     .returning({ groupId: projectGroupGrants.groupId });
 
   if (result.length === 0) return c.json({ error: 'grant not found' }, 404);
+  await invalidateIamCacheForGroup(groupId);
   return c.json({ project_id: projectId, group_id: groupId, role: body.role });
 },
 );
@@ -289,12 +322,10 @@ projectsApp.openapi(
   const groupId = c.req.param('groupId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(
-    loaded.userId,
-    loaded.row.accountId,
-    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-    { type: 'project', id: projectId },
-  );
+  // assertProjectCapability (not bare assertAuthorized) so the acting token is
+  // threaded and the agent-grant fold fires: an agent-session token must also
+  // hold project.members.manage to mutate group grants, not just its user.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   await db
     .delete(projectGroupGrants)
@@ -304,6 +335,7 @@ projectsApp.openapi(
         eq(projectGroupGrants.groupId, groupId),
       ),
     );
+  await invalidateIamCacheForGroup(groupId);
 
   return c.json({ ok: true });
 },
@@ -326,6 +358,7 @@ projectsApp.openapi(
       },
     responses: {
         201: json(SessionSchema, 'The created session'),
+        202: json(SessionCreateAcceptedSchema, 'Create accepted; poll the session'),
         ...errors(404),
     },
   }),
@@ -334,6 +367,23 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Per-agent gate: starting a session provisions compute. A scoped agent token
+  // must hold project.session.start (no-op for human/PAT tokens).
+  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+  // Per-RESOURCE scoping: a member/department can only launch agents they're
+  // scoped to. No-op when the agent isn't scoped (unscoped = project-wide) and
+  // for owner/admins. Mirrors the agent the session core resolves (sessions.ts).
+  const launchAgent = normalizeString(body.agent_name ?? body.agentName);
+  if (launchAgent) {
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_AGENT_READ,
+      { type: 'agent', id: launchAgent },
+    );
+  }
   const result = await createSession({
     source: 'ui',
     project: loaded.row,
@@ -384,11 +434,12 @@ projectsApp.openapi(
         ...errors(404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const projectId = c.req.param('projectId');
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
   const rows = await db
     .select()
@@ -478,13 +529,14 @@ projectsApp.openapi(
         ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
   const visible = await loadVisibleSession(loaded, sessionId);
   if (!visible) return c.json({ error: 'Not found' }, 404);
@@ -544,6 +596,7 @@ projectsApp.openapi(
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
   const visible = await loadVisibleSession(loaded, sessionId);
   if (!visible) return c.json({ error: 'Not found' }, 404);
@@ -558,6 +611,543 @@ projectsApp.openapi(
   });
   return c.json(transcript);
 },
+);
+
+
+// GET /v1/projects/:projectId/sessions/:sessionId/audit
+// Per-session audit log — the governed actions an agent took in this session:
+// every connector/tool call the executor gated, with its risk, allow/ask/block
+// verdict, who acted, and (for approvals) who resolved it. This is the enterprise
+// "what did the agent actually do" trail, read straight from executor_executions.
+// Same visibility gate as the session detail/transcript (project read + the
+// session must be visible to the caller). Non-Enterprise accounts get only the
+// unresolved pending approvals (never a 402 — see the entitlement note below).
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sessions/{sessionId}/audit',
+    tags: ['sessions'],
+    summary: 'GET /:projectId/sessions/:sessionId/audit',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      query: z.object({ limit: z.string().optional() }),
+    },
+    responses: {
+      200: json(AnyObject, 'Per-session agent action audit log'),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+    const limit = parseBoundedPositiveInt(c.req.query('limit'), 200, 1, 1000, 'limit');
+    if (!limit.ok) return c.json({ error: limit.error }, 400);
+
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+    const visible = await loadVisibleSession(loaded, sessionId);
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+    // The historical trail is Enterprise (`auditAccess`), but this endpoint is
+    // also the approval CONTROL PLANE: write/destructive connector actions
+    // default to require_approval on every tier (executor/policy.ts), the web
+    // app polls this route from every open session to render the approval
+    // prompt, and it is the launcher's only view of what's blocking the run.
+    // A 402 here breaks approvals for every non-Enterprise account (and toasts
+    // the upsell on each poll) — so unentitled accounts degrade to unresolved
+    // pending approvals only instead of being denied.
+    const audited = await accountHasEntitlement(loaded.row.accountId, 'auditAccess');
+
+    const rows = await db
+      .select({
+        executionId: executorExecutions.executionId,
+        connectorId: executorExecutions.connectorId,
+        actionPath: executorExecutions.actionPath,
+        actingUserId: executorExecutions.actingUserId,
+        status: executorExecutions.status,
+        risk: executorExecutions.risk,
+        resultSummary: executorExecutions.resultSummary,
+        approvedBy: executorExecutions.approvedBy,
+        createdAt: executorExecutions.createdAt,
+        resolvedAt: executorExecutions.resolvedAt,
+      })
+      .from(executorExecutions)
+      .where(
+        and(
+          eq(executorExecutions.projectId, projectId),
+          eq(executorExecutions.sessionId, sessionId),
+          ...(audited
+            ? []
+            : [
+                eq(executorExecutions.status, 'pending_approval'),
+                isNull(executorExecutions.approvedBy),
+                isNull(executorExecutions.resolvedAt),
+              ]),
+        ),
+      )
+      // Most-recent-first: when a busy session exceeds `limit`, keep the RECENT
+      // actions (truncating oldest), not the other way round.
+      .orderBy(desc(executorExecutions.createdAt))
+      .limit(limit.value);
+
+    // Resolve actor + approver emails in one batched lookup (managers see who).
+    const userIds = [
+      ...new Set(rows.flatMap((r) => [r.actingUserId, r.approvedBy]).filter((v): v is string => !!v)),
+    ];
+    const emailByUser = userIds.length ? await lookupEmailsByUserIds(userIds) : new Map<string, string>();
+
+    // Connector slugs in one batched lookup — the UI needs `<slug>.<action>`
+    // to offer a "always run this" project-policy shortcut on a pending row.
+    const connectorIds = [...new Set(rows.map((r) => r.connectorId).filter((v): v is string => !!v))];
+    const slugByConnector = new Map<string, string>();
+    if (connectorIds.length) {
+      const conns = await db
+        .select({ connectorId: executorConnectors.connectorId, slug: executorConnectors.slug })
+        .from(executorConnectors)
+        .where(inArray(executorConnectors.connectorId, connectorIds));
+      for (const conn of conns) slugByConnector.set(conn.connectorId, conn.slug);
+    }
+
+    return c.json({
+      session_id: sessionId,
+      agent: (visible.row.agentName as string | null) ?? null,
+      // False when the account lacks the Enterprise `auditAccess` entitlement:
+      // `actions` then contains only unresolved pending approvals, and the UI
+      // shows the upgrade path for the full trail.
+      audit_access: audited,
+      count: rows.length,
+      // Most-recent-first trail of every executor-gated action this session took.
+      actions: rows.map((r) => ({
+        execution_id: r.executionId,
+        action: r.actionPath,
+        connector_id: r.connectorId,
+        connector: r.connectorId ? (slugByConnector.get(r.connectorId) ?? null) : null,
+        status: r.status, // ok | error | denied | pending_approval
+        risk: r.risk, // read | write | destructive | null
+        acted_by: r.actingUserId,
+        acted_by_email: r.actingUserId ? emailByUser.get(r.actingUserId) ?? null : null,
+        // Who resolved a gated action — set for BOTH approve and deny (the
+        // approvedBy column doubles as "resolver"). null while still pending.
+        resolved_by: r.approvedBy,
+        resolved_by_email: r.approvedBy ? emailByUser.get(r.approvedBy) ?? null : null,
+        result_summary: r.resultSummary ?? null,
+        at: r.createdAt.toISOString(),
+        resolved_at: r.resolvedAt?.toISOString() ?? null,
+      })),
+    });
+  },
+);
+
+
+// GET /v1/projects/:projectId/approvals
+// The approval inbox: executor actions a policy gated as `require_approval` that
+// are still awaiting a human decision (status=pending_approval, unresolved).
+// Manager-scoped — this is the project-wide oversight surface. A session's own
+// launcher also sees + resolves the pending items for their session via the
+// per-session audit view + the POST below.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/approvals',
+    tags: ['access'],
+    summary: 'GET /:projectId/approvals',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      query: z.object({ limit: z.string().optional() }),
+    },
+    responses: {
+      200: json(AnyObject, 'Pending approval inbox'),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+
+    const limit = parseBoundedPositiveInt(c.req.query('limit'), 100, 1, 500, 'limit');
+    if (!limit.ok) return c.json({ error: limit.error }, 400);
+
+    const rows = await db
+      .select({
+        executionId: executorExecutions.executionId,
+        actionPath: executorExecutions.actionPath,
+        risk: executorExecutions.risk,
+        sessionId: executorExecutions.sessionId,
+        actingUserId: executorExecutions.actingUserId,
+        resultSummary: executorExecutions.resultSummary,
+        createdAt: executorExecutions.createdAt,
+      })
+      .from(executorExecutions)
+      .where(
+        and(
+          eq(executorExecutions.projectId, projectId),
+          eq(executorExecutions.status, 'pending_approval'),
+          isNull(executorExecutions.approvedBy),
+          isNull(executorExecutions.resolvedAt),
+        ),
+      )
+      .orderBy(desc(executorExecutions.createdAt))
+      .limit(limit.value);
+
+    const userIds = [...new Set(rows.map((r) => r.actingUserId).filter((v): v is string => !!v))];
+    const emailByUser = userIds.length ? await lookupEmailsByUserIds(userIds) : new Map<string, string>();
+
+    return c.json({
+      count: rows.length,
+      approvals: rows.map((r) => ({
+        execution_id: r.executionId,
+        action: r.actionPath,
+        risk: r.risk,
+        session_id: r.sessionId,
+        requested_by: r.actingUserId,
+        requested_by_email: r.actingUserId ? emailByUser.get(r.actingUserId) ?? null : null,
+        requested_at: r.createdAt.toISOString(),
+        detail: r.resultSummary ?? null,
+      })),
+    });
+  },
+);
+
+// GET /v1/projects/:projectId/approvals/needs-input
+// Lightweight per-session summary for the sidebar "needs input" indicator: which
+// sessions have an executor action awaiting a human decision, and how many. A
+// project MANAGER sees every session; everyone else sees only the sessions they
+// LAUNCHED (mirrors who may resolve). Read-gated + cheap enough to poll.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/approvals/needs-input',
+    tags: ['access'],
+    summary: 'GET /:projectId/approvals/needs-input',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(AnyObject, 'Sessions awaiting a human decision'),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    // Managers see every session's pending items; others only their own launched
+    // sessions (same principal set the resolve endpoint accepts).
+    let isManager = false;
+    try {
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+      );
+      isManager = true;
+    } catch {
+      isManager = false;
+    }
+
+    // Every unresolved pending action in the project, by session. (No DB join:
+    // executor_executions.session_id is `uuid` while project_sessions.session_id
+    // is `text` — cross-type equality errors in Postgres, so we resolve in JS
+    // where both surface as strings.)
+    const pendingRows = await db
+      .select({ sessionId: executorExecutions.sessionId })
+      .from(executorExecutions)
+      .where(
+        and(
+          eq(executorExecutions.projectId, projectId),
+          eq(executorExecutions.status, 'pending_approval'),
+          isNull(executorExecutions.approvedBy),
+          isNull(executorExecutions.resolvedAt),
+        ),
+      );
+
+    // Count per (Kortix) session id.
+    const byKortix: Record<string, number> = {};
+    for (const r of pendingRows) {
+      const sid = r.sessionId ? String(r.sessionId) : null;
+      if (sid) byKortix[sid] = (byKortix[sid] ?? 0) + 1;
+    }
+    const kortixIds = Object.keys(byKortix);
+    if (kortixIds.length === 0) return c.json({ total: 0, sessions: {} });
+
+    // Look these sessions up to (a) gate non-managers to their own and (b) map to
+    // the OpenCode session id the sidebar list keys on. The response carries BOTH
+    // id forms → the caller matches whichever it holds.
+    const sess = await db
+      .select({
+        sessionId: projectSessions.sessionId,
+        opencodeSessionId: projectSessions.opencodeSessionId,
+        createdBy: projectSessions.createdBy,
+      })
+      .from(projectSessions)
+      .where(and(eq(projectSessions.projectId, projectId), inArray(projectSessions.sessionId, kortixIds)));
+
+    const sessions: Record<string, number> = {};
+    let total = 0;
+    for (const s of sess) {
+      if (!isManager && s.createdBy !== loaded.userId) continue;
+      const n = byKortix[s.sessionId] ?? 0;
+      if (n <= 0) continue;
+      sessions[s.sessionId] = n;
+      if (s.opencodeSessionId) sessions[s.opencodeSessionId] = n;
+      total += n;
+    }
+    return c.json({ total, sessions });
+  },
+);
+
+// POST /v1/projects/:projectId/approvals/:executionId
+// Resolve a pending approval — { decision: 'approve' | 'deny' }. Allowed for a
+// project MANAGER or the LAUNCHER of the session the action belongs to (the two
+// principals a human-in-the-loop approval should recognise). Records who decided
+// + when; idempotent-safe (a non-pending row 409s).
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/approvals/{executionId}',
+    tags: ['access'],
+    summary: 'POST /:projectId/approvals/:executionId',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), executionId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(OkSchema, 'Resolved'),
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const executionId = c.req.param('executionId');
+    if (!isUuid(executionId)) return c.json({ error: 'Invalid execution id' }, 400);
+    const body = await readBody(c);
+    const decision = normalizeString(body.decision);
+    if (decision !== 'approve' && decision !== 'deny') {
+      return c.json({ error: "decision must be 'approve' or 'deny'" }, 400);
+    }
+    // 'once' (default) = approve just this call; 'session' = also stop asking for
+    // THIS connector+action for the rest of the session; 'session_all' = stop
+    // asking for ANY gated action for the rest of the session (a `*` wildcard
+    // grant per enabled connector). Only meaningful on approve. (A policy
+    // `block` never reaches this endpoint as pending, so a session grant can
+    // only ever widen require_approval → run.)
+    const scopeRaw = normalizeString(body.scope);
+    const scope =
+      scopeRaw === 'session' ? 'session' : scopeRaw === 'session_all' ? 'session_all' : 'once';
+
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    const [row] = await db
+      .select({
+        executionId: executorExecutions.executionId,
+        sessionId: executorExecutions.sessionId,
+        connectorId: executorExecutions.connectorId,
+        actionPath: executorExecutions.actionPath,
+        status: executorExecutions.status,
+        approvedBy: executorExecutions.approvedBy,
+        resolvedAt: executorExecutions.resolvedAt,
+        resultSummary: executorExecutions.resultSummary,
+      })
+      .from(executorExecutions)
+      .where(and(eq(executorExecutions.executionId, executionId), eq(executorExecutions.projectId, projectId)))
+      .limit(1);
+    if (!row) return c.json({ error: 'Not found' }, 404);
+    if (row.status !== 'pending_approval' || row.approvedBy || row.resolvedAt) {
+      return c.json({ error: 'Approval already resolved' }, 409);
+    }
+
+    // Who may resolve: a project MANAGER (the same project.members.manage IAM
+    // gate the inbox uses — capability-consistent, so a custom role holding the
+    // leaf without the "manager" label still qualifies), OR the human who
+    // launched the session the gated action belongs to. (Founder decision:
+    // managers + launcher.) assertProjectCapability throws on denial, so probe
+    // it — a non-manager launcher must still fall through.
+    let isManager = false;
+    try {
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+      );
+      isManager = true;
+    } catch {
+      isManager = false;
+    }
+    let isLauncher = false;
+    if (!isManager && row.sessionId) {
+      const [session] = await db
+        .select({ createdBy: projectSessions.createdBy })
+        .from(projectSessions)
+        // Scope to THIS project too — sessionId is a PK so it's globally unique,
+        // but making the project bound explicit keeps the gate self-documenting.
+        .where(and(eq(projectSessions.sessionId, row.sessionId), eq(projectSessions.projectId, projectId)))
+        .limit(1);
+      isLauncher = Boolean(session && session.createdBy === loaded.userId);
+    }
+    if (!isManager && !isLauncher) {
+      return c.json({ error: 'Only a project manager or the session launcher can resolve this' }, 403);
+    }
+
+    const detail = {
+      ...(typeof row.resultSummary === 'object' && row.resultSummary ? row.resultSummary : {}),
+      decision,
+      decided_by: loaded.userId,
+    };
+    // Atomic resolve — guard the UPDATE on the still-pending state so two
+    // concurrent resolvers can't both win (TOCTOU): approve clears the gate to
+    // the terminal `ok` (the real retried call re-audits as its own row), deny
+    // flips it to `denied`. Both stamp approvedBy (= who resolved) + resolvedAt,
+    // so the row leaves the pending inbox. A lost race matches 0 rows → 409.
+    const resolved = await db
+      .update(executorExecutions)
+      .set({
+        status: decision === 'approve' ? 'ok' : 'denied',
+        approvedBy: loaded.userId,
+        resolvedAt: new Date(),
+        resultSummary: detail,
+      })
+      .where(
+        and(
+          eq(executorExecutions.executionId, executionId),
+          eq(executorExecutions.projectId, projectId),
+          eq(executorExecutions.status, 'pending_approval'),
+          isNull(executorExecutions.approvedBy),
+          isNull(executorExecutions.resolvedAt),
+        ),
+      )
+      .returning({ id: executorExecutions.executionId });
+
+    if (resolved.length === 0) {
+      return c.json({ error: 'Approval already resolved' }, 409);
+    }
+
+    // "Allow for this session": record (session, connector, action) so the
+    // gateway auto-runs the same tool for the rest of the session. Best-effort +
+    // idempotent — a failure here doesn't undo the (already-committed) approval.
+    // The execution row's actionPath is the QUALIFIED audit form
+    // (`google_drive.create_folder`); the gateway's session-allow check matches
+    // the CONNECTOR-RELATIVE form (`create_folder`) — strip the slug prefix or
+    // the grant never matches and "Allow for session" keeps re-asking (the bug
+    // this comment is a headstone for).
+    if (decision === 'approve' && scope === 'session' && row.sessionId && row.connectorId) {
+      try {
+        const [conn] = await db
+          .select({ slug: executorConnectors.slug })
+          .from(executorConnectors)
+          .where(eq(executorConnectors.connectorId, row.connectorId))
+          .limit(1);
+        const relativeActionPath =
+          conn && row.actionPath.startsWith(`${conn.slug}.`)
+            ? row.actionPath.slice(conn.slug.length + 1)
+            : row.actionPath;
+        await recordSessionToolApproval({
+          sessionId: row.sessionId,
+          projectId,
+          connectorId: row.connectorId,
+          actionPath: relativeActionPath,
+          grantedBy: loaded.userId,
+        });
+      } catch (err) {
+        console.warn('[approvals] failed to record session allow', {
+          executionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // "Allow everything for this session": one `*` wildcard grant per enabled
+    // connector (the gateway's session check matches `*` against any action).
+    // Enumerated per connector — instead of a schema-level "all connectors"
+    // marker — so a connector added AFTER this grant still asks. Best-effort +
+    // idempotent, same as the single-action grant above.
+    if (decision === 'approve' && scope === 'session_all' && row.sessionId) {
+      try {
+        const conns = await db
+          .select({ connectorId: executorConnectors.connectorId })
+          .from(executorConnectors)
+          .where(
+            and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.enabled, true)),
+          );
+        for (const conn of conns) {
+          await recordSessionToolApproval({
+            sessionId: row.sessionId,
+            projectId,
+            connectorId: conn.connectorId,
+            actionPath: '*',
+            grantedBy: loaded.userId,
+          });
+        }
+      } catch (err) {
+        console.warn('[approvals] failed to record session allow-all', {
+          executionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // Server-side resume — the reliability backstop. A LIVE gated call (the
+    // sandbox CLI/MCP pause loop, or an approve within the gateway's 45s hold)
+    // picks this decision out of the DB within ~1s, marks it consumed, and the
+    // agent's turn resumes in-band — no message needed. When nobody was
+    // waiting (an older sandbox image without the pause loop, or a decision
+    // after the ~30min poll budget), the resolve would otherwise change
+    // nothing the agent can see: its turn already ended on `pending_approval`.
+    // So we enqueue a DURABLE continue_session command with a grace-window
+    // schedule: the drain re-checks the consumed marker at execution time and
+    // either no-ops (a live waiter got there first) or delivers the
+    // continuation prompt into the session (approval carry-over then lets the
+    // retried call run without re-asking). Queue-backed so it survives this
+    // pod dying; idempotency-keyed so a double-resolve can't double-prompt.
+    if (row.sessionId) {
+      const resumeText =
+        decision === 'approve'
+          ? `Your pending approval to run ${row.actionPath} was approved — continue.`
+          : `Your request to run ${row.actionPath} was denied — continue without it.`;
+      try {
+        await enqueueContinueSessionCommand({
+          source: 'system:approval-resume',
+          projectId,
+          accountId: loaded.row.accountId,
+          sessionId: row.sessionId,
+          actorUserId: loaded.userId,
+          text: resumeText,
+          executionId,
+          // > the waiter's 1s decision poll + hold re-issue latency, with margin.
+          availableAt: new Date(Date.now() + 6_000),
+          idempotencyKey: `approval-resume:${executionId}`,
+        });
+        // Best-effort fast path: the scheduler drains every ~60s; kick one
+        // drain shortly after the grace window so the resume usually lands in
+        // seconds. If this pod dies first, the scheduler still delivers.
+        setTimeout(() => {
+          drainSessionLifecycleQueue({ limit: 5 }).catch(() => {});
+        }, 7_000).unref?.();
+      } catch (err) {
+        console.warn('[approvals] failed to enqueue resume', {
+          executionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return c.json({ ok: true, scope });
+  },
 );
 
 
@@ -624,11 +1214,11 @@ projectsApp.openapi(
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
     responses: {
-        200: json(z.any(), 'OK'),
+        200: json(SessionSchema, 'The updated session'),
         ...errors(400, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -720,17 +1310,20 @@ projectsApp.openapi(
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
       },
     responses: {
-        200: json(z.any(), 'OK'),
+        200: json(OkSchema, 'Session stopped'),
         ...errors(400, 403, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Per-agent gate: tearing down a session. A scoped agent token must hold
+  // project.session.stop (no-op for human/PAT tokens).
+  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
 
   // Stopping a session is reserved for its owner or a project manager.
   const visible = await loadVisibleSession(loaded, sessionId);
@@ -749,4 +1342,243 @@ projectsApp.openapi(
   if ('error' in result) return c.json({ error: result.error }, result.status as any);
   return c.json(result);
 },
+);
+
+// ─── Per-resource (agent/skill) scoping ─────────────────────────────────────
+// Scope a member or group to SPECIFIC agents/skills. A resource with >=1 grant
+// is visible/usable only to granted principals; unscoped resources stay
+// project-wide. All three routes gate on project.members.manage (same as the
+// group-grant routes) and thread the acting token so the agent-grant fold fires.
+
+// GET /v1/projects/:projectId/resource-grants
+// Returns the project's grantable resources (for the picker) + every grant,
+// each enriched with a principal label so the UI needn't re-join.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/resource-grants',
+    tags: ['access'],
+    summary: 'GET /:projectId/resource-grants',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'Resource grants + grantable resources'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Manager-only: this is the grant PICKER — it returns the FULL agent/skill
+    // catalogue + granted-member emails, so it must NOT be readable by a scoped
+    // member (who'd otherwise enumerate exactly what they were scoped away from).
+    // Gate identical to the POST/DELETE siblings below.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+
+    // Enumerate grantable resources from the project config (best-effort: a repo
+    // that won't load just yields empty lists — the existing grants still show).
+    let resources: {
+      // Agents carry their DECLARED scope so the grant UI can preview the blast
+      // radius — "assigning this agent also grants these secrets + connectors"
+      // (the inheritance pyramid). `'all'` = every secret/connector the assignee
+      // can already see (nothing extra inherited).
+      agents: {
+        id: string;
+        name: string;
+        declares?: { secrets: string[] | 'all'; connectors: string[] | 'all' };
+      }[];
+      skills: { id: string; name: string }[];
+    } = { agents: [], skills: [] };
+    let configLoaded = false;
+    try {
+      const config = await loadConfigWithFiles(loaded.row);
+      const fromConfig = projectResourcesFromConfig(config);
+      const scopeByAgent = new Map(config.agents.map((a) => [a.name, a.scope]));
+      resources.agents = fromConfig.agents.map((a) => ({
+        ...a,
+        declares: {
+          secrets: scopeByAgent.get(a.id)?.env ?? 'all',
+          connectors: scopeByAgent.get(a.id)?.connectors ?? 'all',
+        },
+      }));
+      resources.skills = fromConfig.skills;
+      configLoaded = true;
+    } catch (err) {
+      console.warn('[resource-grants] config load failed', {
+        projectId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    // Grants key on the agent NAME / skill SLUG. A rename or delete of the
+    // underlying resource leaves the grant ORPHANED — and since an unscoped
+    // resource is project-wide, the restriction silently evaporates. Flag
+    // orphaned grants so the manager gets a SIGNAL to re-grant.
+    // Only checked when the config actually loaded (a transient repo failure
+    // must not mass-flag).
+    const liveAgentIds = new Set(resources.agents.map((r) => r.id));
+    const liveSkillIds = new Set(resources.skills.map((r) => r.id));
+    const isOrphan = (type: string, id: string) => {
+      if (!configLoaded) return false;
+      return type === 'agent' ? !liveAgentIds.has(id) : type === 'skill' ? !liveSkillIds.has(id) : false;
+    };
+
+    // Agents/skills come from iam_resource_grants. SECRETS no longer have a
+    // resource-type here — secret sharing was retired (a secret is always
+    // project-wide; the only access gate is the agent-side `secrets` grant).
+    const grants = (await listResourceGrants(projectId)).filter((g) => g.resourceType !== 'secret');
+
+    // Resolve principal labels in two batched lookups.
+    const memberIds = [...new Set(grants.filter((g) => g.principalType === 'member').map((g) => g.principalId))];
+    const groupIds = [...new Set(grants.filter((g) => g.principalType === 'group').map((g) => g.principalId))];
+    const emailByUser = memberIds.length ? await lookupEmailsByUserIds(memberIds) : new Map<string, string>();
+    const groupNameById = new Map<string, string>();
+    if (groupIds.length) {
+      const groupRows = await db
+        .select({ groupId: accountGroups.groupId, name: accountGroups.name })
+        .from(accountGroups)
+        .where(and(eq(accountGroups.accountId, loaded.row.accountId), inArray(accountGroups.groupId, groupIds)));
+      for (const g of groupRows) groupNameById.set(g.groupId, g.name);
+    }
+
+    return c.json({
+      resources,
+      grants: grants.map((g) => ({
+        grant_id: g.grantId,
+        resource_type: g.resourceType,
+        resource_id: g.resourceId,
+        principal_type: g.principalType,
+        principal_id: g.principalId,
+        principal_label:
+          g.principalType === 'member'
+            ? emailByUser.get(g.principalId) ?? g.principalId
+            : groupNameById.get(g.principalId) ?? g.principalId,
+        granted_by: g.grantedBy,
+        created_at: g.createdAt.toISOString(),
+        expires_at: g.expiresAt?.toISOString() ?? null,
+        // true = the agent/skill this grant scopes no longer exists (renamed or
+        // deleted); the grant is inert and should be removed or re-pointed.
+        orphaned: isOrphan(g.resourceType, g.resourceId),
+      })),
+    });
+  },
+);
+
+// POST /v1/projects/:projectId/resource-grants
+// Create/update a grant (idempotent on resource+principal). Validates the
+// resource exists in the project and the principal belongs to this account.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/resource-grants',
+    tags: ['access'],
+    summary: 'POST /:projectId/resource-grants',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: { 201: json(z.any(), 'The created grant'), ...errors(400, 404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+
+    const body = await readBody(c);
+    const resourceType = normalizeString(body.resource_type ?? body.resourceType);
+    const resourceId = normalizeString(body.resource_id ?? body.resourceId);
+    const principalType = normalizeString(body.principal_type ?? body.principalType);
+    const principalId = normalizeString(body.principal_id ?? body.principalId);
+    // AGENT-ONLY resource model: agent is the only member/department-scoped
+    // resource. Skills and secrets are governed by the editor role (edit) +
+    // agent inheritance (use) — no NEW skill/secret grant may be created here.
+    // Pre-existing skill/secret rows still read/list/revoke fine (see
+    // resource-grants.ts's RESOURCE_GRANT_TYPES doc comment).
+    if (!resourceType || !isCreatableResourceType(resourceType)) {
+      return c.json({ error: 'resource_type must be agent' }, 400);
+    }
+    if (!resourceId) return c.json({ error: 'resource_id is required' }, 400);
+    if (principalType !== 'member' && principalType !== 'group') {
+      return c.json({ error: 'principal_type must be member or group' }, 400);
+    }
+    if (!principalId) return c.json({ error: 'principal_id is required' }, 400);
+    // principal_id flows into a uuid column — validate the shape first so a
+    // malformed value is a clean 400, not a 22P02 500.
+    if (!isUuid(principalId)) return c.json({ error: 'principal_id must be a valid id' }, 400);
+    const expires = parseExpiresAtBody(body.expires_at);
+    if (!expires.ok) return c.json({ error: expires.error }, 400);
+
+    // The principal must belong to THIS account — never grant a foreign member/
+    // group via a guessed id.
+    if (principalType === 'member') {
+      const [m] = await db
+        .select({ userId: accountMembers.userId })
+        .from(accountMembers)
+        .where(and(eq(accountMembers.accountId, loaded.row.accountId), eq(accountMembers.userId, principalId)))
+        .limit(1);
+      if (!m) return c.json({ error: 'member not found in this account' }, 404);
+    } else {
+      const [g] = await db
+        .select({ groupId: accountGroups.groupId })
+        .from(accountGroups)
+        .where(and(eq(accountGroups.accountId, loaded.row.accountId), eq(accountGroups.groupId, principalId)))
+        .limit(1);
+      if (!g) return c.json({ error: 'group not found in this account' }, 404);
+    }
+
+    // Agents live in the git config → validate there, store in
+    // iam_resource_grants. A typo'd grant would be a silent dead row. (Skills
+    // and secrets used to be creatable here too — SECRETS routed to the share
+    // model, project_secret_grants — but the resourceType guard above now
+    // rejects both before we get here; only 'agent' reaches this point.)
+    let config;
+    try {
+      config = await loadConfigWithFiles(loaded.row);
+    } catch (err) {
+      return c.json({ error: `project config unavailable: ${err instanceof Error ? err.message : String(err)}` }, 400);
+    }
+    if (!projectHasResource(config, resourceType, resourceId)) {
+      return c.json({ error: `no ${resourceType} '${resourceId}' in this project` }, 400);
+    }
+
+    const { grantId } = await upsertResourceGrant({
+      accountId: loaded.row.accountId,
+      projectId,
+      resourceType,
+      resourceId,
+      principalType,
+      principalId,
+      grantedBy: loaded.userId,
+      expiresAt: expires.value ?? null,
+    });
+    return c.json({ grant_id: grantId, resource_type: resourceType, resource_id: resourceId, principal_type: principalType, principal_id: principalId }, 201);
+  },
+);
+
+// DELETE /v1/projects/:projectId/resource-grants/:grantId
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/resource-grants/{grantId}',
+    tags: ['access'],
+    summary: 'DELETE /:projectId/resource-grants/:grantId',
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), grantId: z.string() }) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const grantId = c.req.param('grantId');
+    // grant_id is a uuid column — a malformed id is a clean 404 (same as missing),
+    // not a 22P02 500.
+    if (!isUuid(grantId)) return c.json({ error: 'grant not found' }, 404);
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+
+    // The id belongs to an agent/skill grant (iam_resource_grants). Secrets no
+    // longer have a resource grant to remove — secret sharing was retired.
+    const removed = await deleteResourceGrant(grantId, projectId);
+    if (!removed) return c.json({ error: 'grant not found' }, 404);
+    return c.json({ ok: true });
+  },
 );

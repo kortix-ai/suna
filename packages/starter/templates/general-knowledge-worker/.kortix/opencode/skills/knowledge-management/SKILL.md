@@ -1,6 +1,7 @@
 ---
 name: knowledge-management
 description: "You are an expert at creating, organizing, and maintaining support knowledge base content. You write articles that are searchable, scannable, and solve customer problems on the..."
+defaultProjectInstall: true
 ---
 
 # Knowledge Management Skill

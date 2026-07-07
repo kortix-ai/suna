@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { readFile } from '../api/opencode-files';
 import { useProjectContext } from '../context';
-import type { FileContent } from '../types';
+import type { FileContent } from '@/features/file-browser/types';
 
 export const fileContentKeys = {
   all: ['project-files', 'content'] as const,

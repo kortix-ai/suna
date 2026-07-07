@@ -32,7 +32,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { IconInbox } from '@/components/ui/kortix-icons';
 import { PageSearchBar } from '@/components/ui/page-search-bar';
@@ -54,6 +53,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { backendApi } from '@/lib/api-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -170,7 +170,7 @@ function StatStrip({
     warning: 'text-amber-500',
   };
   return (
-    <div className="border-border/60 divide-border/60 grid grid-cols-2 divide-x divide-y overflow-hidden rounded-2xl border lg:grid-cols-4 lg:divide-y-0">
+    <div className="border-border/60 divide-border grid grid-cols-2 divide-x divide-y overflow-hidden rounded-2xl border lg:grid-cols-4 lg:divide-y-0">
       {items.map((it, i) => (
         <div key={i} className="min-w-0 p-4">
           <div className="text-muted-foreground/70 truncate text-xs font-medium tracking-wider uppercase">
@@ -290,32 +290,6 @@ export default function ProvidersPage() {
     onSuccess: () => {
       toast.success('Failover saved');
       qc.invalidateQueries({ queryKey: ['admin', 'provider-fallback'] });
-    },
-    onError: (e: any) => toast.error(e?.message ?? 'Save failed'),
-  });
-
-  // ── Warm-fork snapshots (per-project ~2s session start; master gate) ──────
-  const wsQ = useQuery({
-    queryKey: ['admin', 'warm-snapshot-config'],
-    queryFn: async () => {
-      const r = await backendApi.get<{ enabled: boolean }>('/admin/api/warm-snapshot-config');
-      if (r.error) throw new Error(r.error.message);
-      return r.data!;
-    },
-  });
-  const [wsEnabled, setWsEnabled] = useState(true);
-  useEffect(() => {
-    if (wsQ.data) setWsEnabled(!!wsQ.data.enabled);
-  }, [wsQ.data]);
-  const saveWs = useMutation({
-    mutationFn: async () => {
-      const r = await backendApi.put('/admin/api/warm-snapshot-config', { enabled: wsEnabled });
-      if (r.error) throw new Error(r.error.message);
-      return r.data;
-    },
-    onSuccess: () => {
-      toast.success('Warm-fork saved');
-      qc.invalidateQueries({ queryKey: ['admin', 'warm-snapshot-config'] });
     },
     onError: (e: any) => toast.error(e?.message ?? 'Save failed'),
   });
@@ -492,43 +466,6 @@ export default function ProvidersPage() {
               </>
             )}
           </div>
-
-          {/* ── Warm-fork sessions (Platinum only — Daytona has no warm/stateful snapshots) ── */}
-          {allowed.includes('platinum') && (
-          <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1">
-                <h2 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-                  {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextWarmForkSessionsf726dcdc')}
-                  <Badge variant="outline" size="sm" className="text-[10px] capitalize">
-                    platinum
-                  </Badge>
-                </h2>
-                <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
-                  {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextPerProjectWarmbd60f907')}
-                </p>
-              </div>
-              {wsQ.isLoading ? (
-                <Skeleton className="h-6 w-10 rounded-full" />
-              ) : (
-                <Switch
-                  checked={wsEnabled}
-                  onCheckedChange={setWsEnabled}
-                  aria-label={tI18nHardcoded.raw('autoAppAdminProvidersPageJsxAttrAriaLabelEnableWarmForkb78de78a')}
-                />
-              )}
-            </div>
-            <Button
-              size="sm"
-              onClick={() => saveWs.mutate()}
-              disabled={saveWs.isPending}
-              className="gap-1.5"
-            >
-              {saveWs.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextSaveWarmFork8eeda5df')}
-            </Button>
-          </div>
-          )}
 
           {/* ── Provider failover ──────────────────────────────────────────── */}
           <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-5">

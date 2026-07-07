@@ -33,7 +33,7 @@ import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { setAdminBypass } from '@/lib/api-client';
-import { getProjectDetail, requestProjectAccess } from '@/lib/projects-client';
+import { getProjectDetail, requestProjectAccess } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 
 interface ProjectAccessBoundaryProps {

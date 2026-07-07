@@ -40,10 +40,8 @@ describe('package index re-exports', () => {
     }
   });
 
-  test('re-exports the public basejump tables', () => {
+  test('re-exports the public tables', () => {
     expect(db.apiKeys).toBeDefined();
-    expect(db.accountUser).toBeDefined();
-    expect(db.billingCustomersInBasejump).toBeDefined();
   });
 
   test('namespaced schema and named table refer to the same object', () => {

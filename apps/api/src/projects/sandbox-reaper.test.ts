@@ -283,15 +283,6 @@ describe('reapAndReconcileSandboxes', () => {
     expect(stops).toEqual([]);
   });
 
-  test('skips local_docker (--rm, cannot resume)', async () => {
-    candidates = [candidate({ provider: 'local_docker' })];
-
-    const r = await reapAndReconcileSandboxes(NOW);
-
-    expect(r.skipped).toBe(1);
-    expect(stops).toEqual([]);
-  });
-
   test('does not act on transient unknown provider state', async () => {
     candidates = [candidate()];
     statusByExternal['ext-1'] = 'unknown';

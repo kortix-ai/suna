@@ -1,11 +1,11 @@
 import * as React from 'react';
 import { Pressable, View, ScrollView } from 'react-native';
+import { useRouter } from 'expo-router';
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 import { UsageContent } from './UsageContent';
 import { PlanPage } from './PlanPage';
 import { useLanguage } from '@/contexts';
-import { useChat } from '@/hooks';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
 import { log } from '@/lib/logger';
@@ -17,7 +17,7 @@ interface UsagePageProps {
 
 export function UsagePage({ visible, onClose }: UsagePageProps) {
   const { t } = useLanguage();
-  const chat = useChat();
+  const router = useRouter();
   const [isPlanPageVisible, setIsPlanPageVisible] = React.useState(false);
   const { useNativePaywall, presentUpgradePaywall } = useUpgradePaywall();
 
@@ -44,15 +44,15 @@ export function UsagePage({ visible, onClose }: UsagePageProps) {
   }, [onClose, useNativePaywall, presentUpgradePaywall]);
 
   const handleThreadPress = React.useCallback(
-    (threadId: string, _projectId: string | null) => {
+    (threadId: string, projectId: string | null) => {
       log.log('🎯 Thread pressed from UsagePage:', threadId);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-      // Load the thread and close the page
-      chat.loadThread(threadId);
       onClose();
+      if (projectId) {
+        router.push(`/projects/${projectId}`);
+      }
     },
-    [chat, onClose]
+    [onClose, router]
   );
 
   if (!visible) return null;

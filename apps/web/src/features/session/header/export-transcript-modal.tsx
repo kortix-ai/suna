@@ -29,7 +29,7 @@ import {
   formatTranscript,
   getTranscriptFilename,
   type TranscriptOptions,
-} from '@/lib/transcript';
+} from '@kortix/sdk';
 import { Check, Copy, Download } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 

@@ -162,10 +162,9 @@ mock.module('../config', () => ({
     DATABASE_URL: '',
     FRONTEND_URL: 'http://localhost:3000',
     KORTIX_BILLING_INTERNAL_ENABLED: true,
-    ALLOWED_SANDBOX_PROVIDERS: ['local_docker'],
+    ALLOWED_SANDBOX_PROVIDERS: ['daytona'],
     isDaytonaEnabled: () => false,
-    isLocalDockerEnabled: () => false,
-    getDefaultProvider: () => 'local_docker',
+    getDefaultProvider: () => 'daytona',
   },
 }));
 

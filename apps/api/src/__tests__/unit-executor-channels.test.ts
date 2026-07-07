@@ -11,11 +11,14 @@
 import { describe, expect, test } from 'bun:test';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
+  MEET_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
   channelApiBase,
+  channelAuth,
   channelCatalog,
   channelDefaultSlug,
 } from '../executor/channels';
+import { config } from '../config';
 import {
   type CallInput,
   type GatewayAction,
@@ -142,6 +145,74 @@ describe('channelCatalog(email)', () => {
   });
 });
 
+describe('channelCatalog(meet)', () => {
+  const actions = channelCatalog('meet');
+  const byPath = new Map(actions.map((a) => [a.path, a]));
+  const action = (path: string) => expectDefined(byPath.get(path));
+
+  test('exposes the Recall.ai meeting-bot lifecycle + transcript + chat as http bindings', () => {
+    expect(actions.map((a) => a.path).sort()).toEqual([
+      'bot_status',
+      'get_transcript',
+      'join_meeting',
+      'leave_meeting',
+      'send_chat_message',
+    ]);
+    for (const a of actions) {
+      expect(a.binding.kind).toBe('http');
+      if (a.binding.kind === 'http') expect(a.binding.path.startsWith('/')).toBe(true);
+    }
+  });
+
+  test('send_chat_message → POST /bot/{id}/send_chat_message/, write, id+message required', () => {
+    const a = action('send_chat_message');
+    expect(a.binding).toEqual({ kind: 'http', method: 'POST', path: '/bot/{id}/send_chat_message/' });
+    expect(a.risk).toBe('write');
+    expect(objectSchema(a.inputSchema).required).toEqual(['id', 'message']);
+    expect((objectSchema(a.inputSchema).properties as Record<string, any>).id['x-in']).toBe('path');
+  });
+
+  test('join_meeting → POST /bot/ (trailing slash), write, meeting_url required', () => {
+    const a = action('join_meeting');
+    expect(a.binding).toEqual({ kind: 'http', method: 'POST', path: '/bot/' });
+    expect(a.risk).toBe('write');
+    expect(objectSchema(a.inputSchema).required).toEqual(['meeting_url']);
+  });
+
+  test('leave_meeting → POST /bot/{id}/leave_call/ with id as a path param', () => {
+    const a = action('leave_meeting');
+    expect(a.binding).toEqual({
+      kind: 'http',
+      method: 'POST',
+      path: '/bot/{id}/leave_call/',
+    });
+    expect((objectSchema(a.inputSchema).properties as Record<string, any>).id['x-in']).toBe('path');
+  });
+
+  test('get_transcript → GET /transcript/ filtered by bot_id; bot_status → GET /bot/{id}/', () => {
+    const t = action('get_transcript');
+    expect(t.binding).toEqual({ kind: 'http', method: 'GET', path: '/transcript/' });
+    expect(t.risk).toBe('read');
+    // bot_id has no x-in hint → on a GET it becomes a query param (?bot_id=…).
+    expect((objectSchema(t.inputSchema).properties as Record<string, any>).bot_id['x-in']).toBeUndefined();
+    expect(objectSchema(t.inputSchema).required).toEqual(['bot_id']);
+    const s = action('bot_status');
+    expect(s.binding).toEqual({ kind: 'http', method: 'GET', path: '/bot/{id}/' });
+    expect((objectSchema(s.inputSchema).properties as Record<string, any>).id['x-in']).toBe('path');
+  });
+
+  test('api base = the configured Recall gateway; default slug is platform-owned', () => {
+    expect(channelApiBase('meet')).toBe(config.RECALL_BASE_URL);
+    expect(channelDefaultSlug('meet')).toBe(MEET_CHANNEL_CONNECTOR_SLUG);
+    expect(MEET_CHANNEL_CONNECTOR_SLUG).toBe('kortix_meet');
+  });
+
+  test('meet auth is `Authorization: Token …` (custom header), not Bearer', () => {
+    expect(channelAuth('meet')).toEqual({ type: 'custom', in: 'header', name: 'Authorization', prefix: 'Token ' });
+    expect(channelAuth('slack')).toEqual({ type: 'bearer', in: 'header', name: null, prefix: null });
+  });
+});
+
 /* ─── parse ───────────────────────────────────────────────────────────────── */
 
 function parse(body: string) {
@@ -227,8 +298,6 @@ const SLACK: GatewayConnector = {
   baseUrl: 'https://slack.com/api',
   auth: { type: 'bearer', in: 'header', name: null, prefix: null },
   hasAuth: true,
-  shareScope: 'project',
-  grants: [],
   credentialMode: 'shared',
   enabled: true,
 };
@@ -241,8 +310,6 @@ const EMAIL: GatewayConnector = {
   baseUrl: 'https://api.agentmail.to/v0',
   auth: { type: 'bearer', in: 'header', name: null, prefix: null },
   hasAuth: true,
-  shareScope: 'project',
-  grants: [],
   credentialMode: 'shared',
   enabled: true,
 };
@@ -299,7 +366,7 @@ function makeDeps(body: string, status = 200) {
     loadPolicies: async () => [],
     loadProjectPolicies: async () => [],
     loadDefaultMode: async () => 'allow_all',
-    recordExecution: async () => {},
+    recordExecution: async () => null,
     fetchImpl: async (url, init) => {
       fetchCalls.push({ url, ...init });
       return { status, ok: status >= 200 && status < 300, text: async () => body };
@@ -345,8 +412,6 @@ describe('handleCall — channel (slack)', () => {
       baseUrl: null,
       auth: { type: 'none', in: 'header', name: null, prefix: null },
       hasAuth: true,
-      shareScope: 'project',
-      grants: [],
       credentialMode: 'shared',
       enabled: true,
     };
@@ -380,7 +445,7 @@ describe('handleCall — channel (slack)', () => {
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
-      recordExecution: async () => {},
+      recordExecution: async () => null,
       fetchImpl: async (url, init) => {
         fetchCalls.push({ url, ...init });
         return { status: 200, ok: true, text: async () => '{"ok":true,"messages":[]}' };
@@ -419,7 +484,7 @@ describe('handleCall — channel (email)', () => {
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
-      recordExecution: async () => {},
+      recordExecution: async () => null,
       fetchImpl: async (url, init) => {
         fetchCalls.push({ url, ...init });
         return { status: 200, ok: true, text: async () => '{"message_id":"msg-reply"}' };
@@ -472,7 +537,7 @@ describe('handleCall — channel (email)', () => {
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
-      recordExecution: async () => {},
+      recordExecution: async () => null,
       fetchImpl: async (url, init) => {
         fetchCalls.push({ url, ...init });
         return { status: 200, ok: true, text: async () => '{"message_id":"msg-reply"}' };
@@ -519,7 +584,7 @@ describe('handleCall — channel (email)', () => {
       loadPolicies: async () => [],
       loadProjectPolicies: async () => [],
       loadDefaultMode: async () => 'allow_all',
-      recordExecution: async () => {},
+      recordExecution: async () => null,
       fetchImpl: async (url, init) => {
         fetchCalls.push({ url, ...init });
         return { status: 200, ok: true, text: async () => '{"messages":[]}' };
@@ -539,5 +604,127 @@ describe('handleCall — channel (email)', () => {
     const call = expectDefined(fetchCalls[0]);
     expect(call.url).toBe('https://api.agentmail.to/v0/inboxes/email-inbox%40agentmail.to/messages?limit=1');
     expect(call.headers.Authorization).toBe('Bearer am_profile_token');
+  });
+});
+
+/* ─── gateway execution — meet (Recall.ai) ────────────────────────────────── */
+
+const MEET: GatewayConnector = {
+  connectorId: 'conn-meet',
+  slug: MEET_CHANNEL_CONNECTOR_SLUG,
+  provider: 'channel',
+  platform: 'meet',
+  baseUrl: 'https://us-west-2.recall.ai/api/v1',
+  auth: { type: 'custom', in: 'header', name: 'Authorization', prefix: 'Token ' },
+  hasAuth: true,
+  credentialMode: 'shared',
+  enabled: true,
+};
+
+const MEET_JOIN: GatewayAction = {
+  path: `${MEET_CHANNEL_CONNECTOR_SLUG}.join_meeting`,
+  relPath: 'join_meeting',
+  inputSchema: {
+    type: 'object',
+    properties: { meeting_url: {}, bot_name: {}, recording_config: {} },
+    required: ['meeting_url'],
+  },
+  risk: 'write',
+  binding: { kind: 'http', method: 'POST', path: '/bot/' },
+};
+
+const MEET_TRANSCRIPT: GatewayAction = {
+  path: `${MEET_CHANNEL_CONNECTOR_SLUG}.get_transcript`,
+  relPath: 'get_transcript',
+  inputSchema: {
+    type: 'object',
+    properties: { bot_id: {} },
+    required: ['bot_id'],
+  },
+  risk: 'read',
+  binding: { kind: 'http', method: 'GET', path: '/transcript/' },
+};
+
+function meetDeps(action: GatewayAction, body: string, status = 200) {
+  const fetchCalls: Array<{ url: string; method: string; headers: Record<string, string>; body?: string }> = [];
+  const deps: GatewayDeps = {
+    loadConnectorBySlug: async () => MEET,
+    loadAction: async () => action,
+    resolveCredential: async () => 'recall_test_key',
+    loadPolicies: async () => [],
+    loadProjectPolicies: async () => [],
+    loadDefaultMode: async () => 'allow_all',
+    recordExecution: async () => null,
+    fetchImpl: async (url, init) => {
+      fetchCalls.push({ url, ...init });
+      return { status, ok: status >= 200 && status < 300, text: async () => body };
+    },
+  };
+  return { deps, fetchCalls };
+}
+
+describe('handleCall — channel (meet)', () => {
+  test('join_meeting POSTs /bot/ with the Recall key as `Authorization: Token …` (never Bearer)', async () => {
+    const { deps, fetchCalls } = meetDeps(MEET_JOIN, '{"id":"bot_abc","status_changes":[]}', 201);
+    const res = await handleCall(deps, {
+      ...input,
+      connectorSlug: MEET_CHANNEL_CONNECTOR_SLUG,
+      actionPath: 'join_meeting',
+      args: { meeting_url: 'https://meet.google.com/abc-defg-hij' },
+    });
+    expect(res.status).toBe('ok');
+    const call = expectDefined(fetchCalls[0]);
+    expect(call.url).toBe('https://us-west-2.recall.ai/api/v1/bot/');
+    expect(call.method).toBe('POST');
+    expect(call.headers.Authorization).toBe('Token recall_test_key');
+    expect(JSON.parse(expectDefined(call.body))).toEqual({
+      meeting_url: 'https://meet.google.com/abc-defg-hij',
+    });
+  });
+
+  test('join_meeting injects the realtime webhook + bot metadata server-side (live relay)', async () => {
+    const { deps, fetchCalls } = meetDeps(MEET_JOIN, '{"id":"bot_abc"}', 201);
+    deps.resolveMeetJoinContext = async (projectId, sessionId) => ({
+      metadata: { kortix_project_id: projectId, kortix_session_id: sessionId, kortix_token: 'sig', kortix_wake: 'kortix' },
+      realtimeEndpoints: [{ type: 'webhook', url: 'https://pub.example/v1/webhooks/meet/realtime', events: ['transcript.data'] }],
+      automaticAudioOutput: { in_call_recording: { data: { kind: 'mp3', b64_data: 'c2lsZW50' } } },
+      botName: 'Acme Notetaker',
+    });
+    const res = await handleCall(deps, {
+      ...input,
+      sessionId: 'sess-xyz',
+      connectorSlug: MEET_CHANNEL_CONNECTOR_SLUG,
+      actionPath: 'join_meeting',
+      args: { meeting_url: 'https://meet.google.com/abc-defg-hij', recording_config: { transcript: { provider: { meeting_captions: {} } } } },
+    });
+    expect(res.status).toBe('ok');
+    const body = JSON.parse(expectDefined(expectDefined(fetchCalls[0]).body));
+    // Caller's recording_config (transcript provider) is preserved …
+    expect(body.recording_config.transcript).toEqual({ provider: { meeting_captions: {} } });
+    // … and the realtime webhook + session-tagged metadata are merged in.
+    expect(body.recording_config.realtime_endpoints).toEqual([
+      { type: 'webhook', url: 'https://pub.example/v1/webhooks/meet/realtime', events: ['transcript.data'] },
+    ]);
+    expect(body.metadata).toMatchObject({ kortix_session_id: 'sess-xyz', kortix_token: 'sig' });
+    // … and the bot is enabled to speak (output_audio) via automatic_audio_output.
+    expect(body.automatic_audio_output).toEqual({ in_call_recording: { data: { kind: 'mp3', b64_data: 'c2lsZW50' } } });
+    // … and the project's configured bot name is used (caller passed none).
+    expect(body.bot_name).toBe('Acme Notetaker');
+  });
+
+  test('get_transcript lists by bot_id (query param) and carries the Token header on a GET', async () => {
+    const { deps, fetchCalls } = meetDeps(MEET_TRANSCRIPT, '{"results":[]}');
+    const res = await handleCall(deps, {
+      ...input,
+      connectorSlug: MEET_CHANNEL_CONNECTOR_SLUG,
+      actionPath: 'get_transcript',
+      args: { bot_id: 'bot_abc' },
+    });
+    expect(res.status).toBe('ok');
+    const call = expectDefined(fetchCalls[0]);
+    expect(call.url).toBe('https://us-west-2.recall.ai/api/v1/transcript/?bot_id=bot_abc');
+    expect(call.method).toBe('GET');
+    expect(call.headers.Authorization).toBe('Token recall_test_key');
+    expect(call.body).toBeUndefined();
   });
 });

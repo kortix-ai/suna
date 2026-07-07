@@ -154,8 +154,8 @@ export function getComputeDescription(serverType: string): string {
 // Enterprise feature gates. Every self-serve tier (Free / Team) gets NONE;
 // the sales-assigned `enterprise` tier gets ALL. See TierEntitlements in
 // ../../types and the requireEntitlement() guard in the IAM routes.
-const NO_ENTERPRISE: TierEntitlements = { sso: false, scim: false };
-const ALL_ENTERPRISE: TierEntitlements = { sso: true, scim: true };
+const NO_ENTERPRISE: TierEntitlements = { sso: false, scim: false, rbac: false, auditAccess: false };
+const ALL_ENTERPRISE: TierEntitlements = { sso: true, scim: true, rbac: true, auditAccess: true };
 
 const TIERS: Record<string, TierConfig> = {
   none: {
@@ -586,9 +586,48 @@ export function isPaidTier(tierName: string): boolean {
  * off the resolved TIER, not `billing_model`: legacy paid customers are just as
  * entitled to premium models as per-seat teams (the gateway meters every account
  * the same way), and gating on `isPerSeatAccount` wrongly locked them out.
+ *
+ * Pure function of tier config only — deliberately environment-agnostic (see
+ * unit-tier-model-entitlement.test.ts, which locks this in as an invariant).
+ * Callers that need a dev/preview QA exemption from the paywall should go
+ * through `accountIsFreeTierForModels` below, not inline this.
  */
 export function tierGrantsAllModels(tierName: string): boolean {
   return getTier(tierName).models.includes('all');
+}
+
+/**
+ * Whether an account (given its resolved billing tier) should be treated as
+ * free-tier for MANAGED-MODEL access — i.e. blocked from every premium Kortix
+ * model and left with BYOK/Codex only. Same as `!tierGrantsAllModels(tier)`
+ * everywhere EXCEPT dev/preview, which never enforce this particular paywall.
+ *
+ * Why: every dev/preview signup — including every fresh PR-preview test/QA
+ * account — defaults to tier 'free' (`models: []`), so without this exemption
+ * it can never get a managed-model candidate. `auto` (the session default)
+ * resolves to `glm-5.2`, the gateway's resolveCandidates returns `[]`, and
+ * every agent turn 400s "No upstream configured for model glm-5.2" — confirmed
+ * against the dev DB on 2026-07-05: gateway_request_logs shows exactly this for
+ * a same-day free-tier signup, while OTHER dev accounts with a paid tier
+ * succeed against the SAME openrouter/bedrock upstreams in the same window.
+ * The upstream config is fine; only entitlement is missing. Prod keeps the
+ * real paywall; staging keeps it too (staging is where the free-tier paywall
+ * itself gets verified against Stripe test mode). dev + preview are internal
+ * engineering/QA surfaces, not customer-facing, so paywalling them only breaks
+ * testing, for no revenue-protection benefit.
+ *
+ * `env` defaults to the real deployed `INTERNAL_KORTIX_ENV` — it's a parameter
+ * (not a direct `config` read) purely so tests can exercise every environment
+ * branch deterministically in-process, without module-mocking `../config`
+ * (which risks leaking a stubbed config into unrelated test files sharing the
+ * same bun test process).
+ */
+export function accountIsFreeTierForModels(
+  tierName: string,
+  env: string = config.INTERNAL_KORTIX_ENV,
+): boolean {
+  if (env === 'dev' || env === 'preview') return false;
+  return !tierGrantsAllModels(tierName);
 }
 
 /** Full entitlement set for a tier (enterprise feature gates). */

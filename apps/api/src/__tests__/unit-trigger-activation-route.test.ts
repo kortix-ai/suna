@@ -81,8 +81,9 @@ describe('trigger activation route ordering', () => {
       join(import.meta.dir, '..', 'projects', 'routes', 'r4.ts'),
       'utf8',
     );
-    const activationIdx = source.indexOf("path: '/{projectId}/triggers/activation'");
-    const slugIdx = source.indexOf("path: '/{projectId}/triggers/{slug}'");
+    // Quote-agnostic (r4 may use single or double quotes after formatting).
+    const activationIdx = source.indexOf('/{projectId}/triggers/activation');
+    const slugIdx = source.indexOf('/{projectId}/triggers/{slug}');
     expect(activationIdx).toBeGreaterThan(-1);
     expect(slugIdx).toBeGreaterThan(-1);
     // If this fails, the activation kill-switch is shadowed and unreachable —

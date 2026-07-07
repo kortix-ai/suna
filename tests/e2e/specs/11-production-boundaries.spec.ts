@@ -136,11 +136,11 @@ test.describe.serial('11 - SPEC auth boundaries, concurrency, and SLOs', () => {
       ownerSession.access_token,
       'PUT',
       `/projects/${project.project_id}/access/${member.id}`,
-      { role: 'viewer' },
+      { role: 'user' },
     );
-    expect(viewerGrant.effective_project_role).toBe('viewer');
+    expect(viewerGrant.effective_project_role).toBe('user');
     expect(await apiStatus(memberSession.access_token, 'GET', `/projects/${project.project_id}`)).toBe(200);
-    // A viewer is the base *usable* role: it CAN start sessions (use the chat), so
+    // A plain user is the floor *usable* role: it CAN start sessions (use the chat), so
     // the role gate no longer blocks session create. It reaches provider validation
     // like an owner — an invalid provider is a 400, not the old role 403.
     expect(await apiStatus(memberSession.access_token, 'POST', `/projects/${project.project_id}/sessions`, { provider: 'justavps' })).toBe(400);

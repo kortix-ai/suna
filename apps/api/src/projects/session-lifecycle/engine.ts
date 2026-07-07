@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { chatThreads, projects, projectSessions } from '@kortix/db';
+import { chatThreads, executorExecutions, projects, projectSessions } from '@kortix/db';
 import { config } from '../../config';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { db } from '../../shared/db';
@@ -18,11 +18,13 @@ import {
   resultFromExistingCommand,
   type SessionLifecycleCommandRow,
 } from './store';
+import type { QueuedContinueSessionPayload } from './store';
 import type {
   ContinueSessionCommand,
   CreateSessionCommand,
   QueuedCreateSessionPayload,
   SessionDeliveryOutcome,
+  SessionInvocationSource,
   SessionLifecyclePostCreateAction,
   SessionLifecycleResult,
   StartSessionCommand,
@@ -304,6 +306,11 @@ export async function drainSessionLifecycleQueue(input: {
   const rows = await claimDueLifecycleCommands({ workerId, limit: input.limit ?? 10 });
   const out = { claimed: rows.length, succeeded: 0, failed: 0, queued: 0 };
   for (const row of rows) {
+    if (row.commandType === 'continue_session') {
+      const outcome = await executeQueuedContinue(row);
+      out[outcome] += 1;
+      continue;
+    }
     if (row.commandType !== 'create_session') {
       await markCommandFailed(row.commandId, `Unsupported command type: ${row.commandType}`, {
         retryable: false,
@@ -350,6 +357,73 @@ export async function drainSessionLifecycleQueue(input: {
     }
   }
   return out;
+}
+
+/**
+ * Drain one queued `continue_session` command — the durable face of "deliver
+ * this follow-up into the session" (today: the approval-resume backstop). The
+ * consumed-marker check runs at DRAIN time, not enqueue time, so a live held
+ * request that picked the decision up during the grace window cleanly turns
+ * this into a no-op instead of a duplicate prompt.
+ */
+async function executeQueuedContinue(
+  row: SessionLifecycleCommandRow,
+): Promise<'succeeded' | 'queued' | 'failed'> {
+  const payload = row.payload as unknown as QueuedContinueSessionPayload;
+  const text = typeof payload.text === 'string' ? payload.text : '';
+  if (!row.sessionId || !text) {
+    await markCommandFailed(row.commandId, 'continue_session command missing sessionId or text', {
+      retryable: false,
+      attempts: row.attempts,
+    });
+    return 'failed';
+  }
+
+  if (payload.executionId) {
+    const [exec] = await db
+      .select({ resultSummary: executorExecutions.resultSummary })
+      .from(executorExecutions)
+      .where(eq(executorExecutions.executionId, payload.executionId))
+      .limit(1);
+    const summary = (exec?.resultSummary ?? {}) as Record<string, unknown>;
+    if (summary.consumed_at) {
+      await markCommandSucceeded(
+        row.commandId,
+        { status: 'skipped', reason: 'consumed_in_band' },
+        row.sessionId,
+      );
+      return 'succeeded';
+    }
+  }
+
+  try {
+    const delivery = await continueSession({
+      source: row.source as SessionInvocationSource,
+      sessionId: row.sessionId,
+      text,
+      userId: row.actorUserId,
+    });
+    if (delivery === 'delivered') {
+      await markCommandSucceeded(row.commandId, { status: 'delivered' }, row.sessionId);
+      return 'succeeded';
+    }
+    // 'pending' = runtime not ready in time — worth another pass. 'no-session'
+    // and 'failed' are terminal for this command.
+    const retryable = delivery === 'pending';
+    await markCommandFailed(row.commandId, `delivery outcome: ${delivery}`, {
+      retryable,
+      attempts: row.attempts,
+      sessionId: row.sessionId,
+    });
+    return retryable ? 'queued' : 'failed';
+  } catch (e) {
+    await markCommandFailed(row.commandId, (e as Error).message || 'continue_session threw', {
+      retryable: true,
+      attempts: row.attempts,
+      sessionId: row.sessionId,
+    });
+    return 'queued';
+  }
 }
 
 async function executeQueuedCreate(row: SessionLifecycleCommandRow): Promise<SessionLifecycleResult> {

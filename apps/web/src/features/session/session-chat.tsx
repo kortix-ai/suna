@@ -2,6 +2,9 @@
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { SandboxImage } from '@/features/session/sandbox-image';
+import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
+import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
+import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import {
   AlertTriangle,
@@ -28,12 +31,12 @@ import {
   Timer,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { usePathname, useRouter } from 'next/navigation';
+import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { GridFileCard } from '@/components/thread/file-attachment/GridFileCard';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
+import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
 import { ConnectProviderDialog } from '@/features/session/model-selector';
 import {
   type QuestionAction,
@@ -41,23 +44,21 @@ import {
   type QuestionPromptHandle,
 } from '@/features/session/question-prompt';
 import {
+  isInvisibleActivityPart,
+  isNoGroupActivityTool,
+  isShellActivityTool,
+  shellActivityGroupLabel,
+} from '@/features/session/session-activity-groups';
+import {
   type AttachedFile,
   SessionChatInput,
   type TrackedMention,
 } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
-import { getSendRetryDelayMs } from '@/features/session/opencode-send-retry';
-import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
-import {
-  isInvisibleActivityPart,
-  isNoGroupActivityTool,
-  isShellActivityTool,
-  shellActivityGroupLabel,
-} from '@/features/session/session-activity-groups';
 import { SessionWelcome } from '@/features/session/session-welcome';
+import { GridFileCard } from './grid-file-card';
 
-import { SandboxUrlDetector } from '@/components/thread/content/sandbox-url-detector';
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -76,7 +77,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { searchWorkspaceFiles } from '@/features/files';
 import { uploadFile } from '@/features/files/api/opencode-files';
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
+// billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
+import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
+import { SubSessionModal } from '@/features/session/sub-session-modal';
 import { contextToolSummary, contextToolTrigger } from '@/features/session/tool-meta';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool-renderers';
 import {
@@ -85,10 +89,10 @@ import {
 } from '@/features/session/uploaded-file-refs';
 import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
 import {
-  formatPromptModel,
-  formatModelString,
-  parseModelKey,
   type ModelKey,
+  formatModelString,
+  formatPromptModel,
+  parseModelKey,
   useOpenCodeLocal,
 } from '@/hooks/opencode/use-opencode-local';
 import type { PromptPart, ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
@@ -108,24 +112,35 @@ import {
 } from '@/hooks/opencode/use-opencode-sessions';
 import { useSessionSync } from '@/hooks/opencode/use-session-sync';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
-import { getClient } from '@/lib/opencode-sdk';
-// billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
-import { ChatMinimap } from '@/features/session/chat-minimap';
-import { SubSessionModal } from '@/features/session/sub-session-modal';
 import { useModelPricingLookup } from '@/lib/model-pricing';
+import { getClient } from '@/lib/opencode-sdk';
+import {
+  abandonOptimisticSend,
+  applyOptimisticAbort,
+  beginOptimisticSend,
+  classifySendError,
+  clearStartStash,
+  type KortixSendError,
+  readStartStash,
+  replayStartStash,
+  sendAndRecover,
+  usePermissionSelfHeal,
+  useQuestionSelfHeal,
+  writeForkDraft,
+} from '@kortix/sdk/react';
 import {
   type AgentRefLike,
+  type FileRefLike,
   buildAgentRefsBlock,
   buildFileRefsBlock,
-  type FileRefLike,
 } from '@/lib/project-preamble';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import {
-  extractKortixSystemMessages,
-  extractSessionReport,
   type KortixSystemMessage,
   type SessionReport,
+  extractKortixSystemMessages,
+  extractSessionReport,
   stripKortixSystemTags,
 } from '@/lib/utils/kortix-system-tags';
 import { useChatSendStore } from '@/stores/chat-send-store';
@@ -137,15 +152,22 @@ import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
-import { getActiveOpenCodeUrl, useServerStore } from '@/stores/server-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
 import {
   type AgentPart,
-  collectTurnParts,
   type Command,
   type FilePart,
+  type MessageWithParts,
+  type Part,
+  type PermissionRequest,
+  type QuestionRequest,
+  type ReasoningPart,
+  type TextPart,
+  type ToolPart,
+  type Turn,
+  collectTurnParts,
   findLastTextPart,
   formatCost,
   formatDuration,
@@ -171,17 +193,10 @@ import {
   isTextPart,
   isToolPart,
   isToolPartHidden,
-  type MessageWithParts,
-  type Part,
-  type PermissionRequest,
-  type QuestionRequest,
-  type ReasoningPart,
   shouldShowToolPart,
   splitUserParts,
-  type TextPart,
-  type ToolPart,
-  type Turn,
 } from '@/ui';
+import { SandboxUrlDetector } from './sandbox-url-detector';
 
 // ============================================================================
 // Reply-to context (select & reply feature)
@@ -197,10 +212,6 @@ export interface ReplyToContext {
 // ============================================================================
 
 // SubSessionBar removed — subsessions now use SessionSiteHeader + chat input indicator
-
-function forkDraftKey(sessionId: string) {
-  return `opencode_fork_prompt:${sessionId}`;
-}
 
 function buildForkPrompt(parts: Part[], text?: string): PromptPart[] {
   const next: PromptPart[] = [];
@@ -220,11 +231,6 @@ function buildForkPrompt(parts: Part[], text?: string): PromptPart[] {
     });
   }
   return next;
-}
-
-function stashForkPrompt(sessionId: string, prompt: PromptPart[]) {
-  if (typeof window === 'undefined' || prompt.length === 0) return;
-  sessionStorage.setItem(forkDraftKey(sessionId), JSON.stringify(prompt));
 }
 
 // ============================================================================
@@ -326,6 +332,18 @@ function formatCommandError(errorLike: unknown): string {
   }
 
   return 'Command failed';
+}
+
+/**
+ * Classify a send/command failure onto the SDK's typed `KortixSendError`
+ * layer (billing vs runtime-not-ready vs runtime-error) so the banner can key
+ * off `.kind` instead of regexing the message — while keeping this file's
+ * richer message formatting (`formatCommandError` special-cases things like
+ * `ProviderModelNotFoundError` that the SDK's generic formatter doesn't know
+ * about).
+ */
+function classifySessionError(err: unknown): KortixSendError {
+  return { ...classifySendError(err), message: formatCommandError(err) };
 }
 
 // ============================================================================
@@ -531,7 +549,6 @@ function HighlightMentions({
                   title: 'Session',
                   type: 'session',
                   href: `/sessions/${raw}`,
-                  serverId: useServerStore.getState().activeServerId,
                 });
                 return;
               }
@@ -542,7 +559,6 @@ function HighlightMentions({
                   title: ref.title || 'Session',
                   type: 'session',
                   href: `/sessions/${ref.id}`,
-                  serverId: useServerStore.getState().activeServerId,
                 });
               }
             }}
@@ -851,8 +867,8 @@ function parseLegacyDCPNotification(text: string): DCPNotification | null {
 
   const tokenStr = headerMatch[1];
   const tokensSaved = tokenStr.endsWith('K')
-    ? Math.round(parseFloat(tokenStr.slice(0, -1)) * 1000)
-    : parseInt(tokenStr, 10);
+    ? Math.round(Number.parseFloat(tokenStr.slice(0, -1)) * 1000)
+    : Number.parseInt(tokenStr, 10);
 
   const pruningMatch = text.match(DCP_LEGACY_PRUNING_REGEX);
   let batchSaved = 0;
@@ -861,13 +877,13 @@ function parseLegacyDCPNotification(text: string): DCPNotification | null {
   if (pruningMatch) {
     const batchStr = pruningMatch[1];
     batchSaved = batchStr.endsWith('K')
-      ? Math.round(parseFloat(batchStr.slice(0, -1)) * 1000)
-      : parseInt(batchStr, 10);
+      ? Math.round(Number.parseFloat(batchStr.slice(0, -1)) * 1000)
+      : Number.parseInt(batchStr, 10);
     if (pruningMatch[2]) {
       const extStr = pruningMatch[2];
       extractedTokens = extStr.endsWith('K')
-        ? Math.round(parseFloat(extStr.slice(0, -1)) * 1000)
-        : parseInt(extStr, 10);
+        ? Math.round(Number.parseFloat(extStr.slice(0, -1)) * 1000)
+        : Number.parseInt(extStr, 10);
     }
     reason = pruningMatch[3]?.trim();
   }
@@ -903,10 +919,10 @@ function parseDCPNotifications(text: string): {
   const cleanText = text
     .replace(DCP_TAG_REGEX, (_, attrs: string, body: string) => {
       const type = (parseAttr(attrs, 'type') || 'prune') as 'prune' | 'compress';
-      const tokensSaved = parseInt(parseAttr(attrs, 'tokens-saved') || '0', 10);
-      const batchSaved = parseInt(parseAttr(attrs, 'batch-saved') || '0', 10);
-      const prunedCount = parseInt(parseAttr(attrs, 'pruned-count') || '0', 10);
-      const extractedTokens = parseInt(parseAttr(attrs, 'extracted-tokens') || '0', 10);
+      const tokensSaved = Number.parseInt(parseAttr(attrs, 'tokens-saved') || '0', 10);
+      const batchSaved = Number.parseInt(parseAttr(attrs, 'batch-saved') || '0', 10);
+      const prunedCount = Number.parseInt(parseAttr(attrs, 'pruned-count') || '0', 10);
+      const extractedTokens = Number.parseInt(parseAttr(attrs, 'extracted-tokens') || '0', 10);
       const reason = parseAttr(attrs, 'reason');
 
       // Parse items
@@ -925,8 +941,9 @@ function parseDCPNotifications(text: string): {
       const distilled = distilledMatch ? unescapeXml(distilledMatch[1]) : undefined;
 
       // Compress-specific
-      const messagesCount = parseInt(parseAttr(attrs, 'messages-count') || '0', 10) || undefined;
-      const toolsCount = parseInt(parseAttr(attrs, 'tools-count') || '0', 10) || undefined;
+      const messagesCount =
+        Number.parseInt(parseAttr(attrs, 'messages-count') || '0', 10) || undefined;
+      const toolsCount = Number.parseInt(parseAttr(attrs, 'tools-count') || '0', 10) || undefined;
       const topic = parseAttr(attrs, 'topic');
       const summaryMatch = body.match(DCP_SUMMARY_REGEX);
       const summary = summaryMatch ? unescapeXml(summaryMatch[1]) : undefined;
@@ -1988,7 +2005,6 @@ function UserMessageRow({
                             title: 'Session',
                             type: 'session',
                             href: `/sessions/${raw}`,
-                            serverId: useServerStore.getState().activeServerId,
                           });
                           return;
                         }
@@ -1999,7 +2015,6 @@ function UserMessageRow({
                             title: ref.title || 'Session',
                             type: 'session',
                             href: `/sessions/${ref.id}`,
-                            serverId: useServerStore.getState().activeServerId,
                           });
                         }
                       }}
@@ -2289,7 +2304,7 @@ function SameToolGroup({
   );
 
   const totalDurationMs = useMemo(() => {
-    let earliest = Infinity;
+    let earliest = Number.POSITIVE_INFINITY;
     let latest = 0;
     for (const { part } of entries) {
       const s = (part.state as any)?.time?.start;
@@ -3777,6 +3792,16 @@ export function SessionChat({
   // Project sessions use the server-side project agent roster. Non-project
   // sessions fall back to OpenCode's directory-scoped runtime discovery.
   const { data: agents } = useOpenCodeAgents({ directory: session?.directory, projectId });
+  // Pending connector-approvals for this session pause the run — lock the
+  // composer (like a question) until they're resolved. Shares the query key with
+  // SessionApprovalPrompt, so it's one request.
+  const approvalRouteParams = useParams<{ id?: string; sessionId?: string }>();
+  const { data: approvalAudit } = useSessionAudit(
+    projectId ?? approvalRouteParams.id,
+    approvalRouteParams.sessionId,
+    { refetchInterval: 5_000 },
+  );
+  const hasPendingApproval = (approvalAudit?.actions ?? []).some(isPendingAction);
   const { data: commands } = useOpenCodeCommands();
   const { data: providers } = useOpenCodeProviders();
   const { data: allSessions } = useOpenCodeSessions();
@@ -3839,15 +3864,13 @@ export function SessionChat({
     name: string;
     description?: string;
   } | null>(null);
-  const [commandError, setCommandError] = useState<string | null>(null);
+  const [commandError, setCommandError] = useState<KortixSendError | null>(null);
   // Map of user message IDs → command info, so UserMessageRow can render
   // a compact command pill instead of the raw expanded template text.
   const commandMessagesRef = useRef<Map<string, { name: string; args?: string }>>(new Map());
   // Stash the pending command info so we can associate it with the user message
   // even if the busy signal arrives before the message list updates.
   const pendingCommandStashRef = useRef<{ name: string; args?: string } | null>(null);
-  // Track whether we're retrying a failed send (keeps loader visible)
-  const [isRetrying, setIsRetrying] = useState(false);
   // Track whether a pending prompt send is in flight (dashboard→session flow).
   // Keeps isBusy true until the server acknowledges with a busy status.
   const [pendingSendInFlight, setPendingSendInFlight] = useState(false);
@@ -3855,271 +3878,137 @@ export function SessionChat({
   // Grace period: don't stop polling immediately on idle after a recent send
   const lastSendTimeRef = useRef<number>(0);
   // ---- Optimistic prompt (from dashboard/project page) ----
-  // Uses session-specific sessionStorage keys so pushState navigation works
-  // (no dependency on ?new=true URL param which requires router.push).
+  // Backed by the SDK's start-stash (`readStartStash`/`clearStartStash`), which
+  // understands both the modern `kortix:start:<id>` shape and every legacy
+  // producer's bare `opencode_pending_prompt:<id>` + `opencode_pending_options:<id>`
+  // pair — so pushState navigation still works with no `?new=true` dependency,
+  // and no web code needs to know the storage key names directly.
   const [optimisticPrompt, setOptimisticPrompt] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
-      return sessionStorage.getItem(`opencode_pending_prompt:${sessionId}`);
+      return readStartStash(sessionId)?.prompt ?? null;
     }
     return null;
   });
 
-  const addOptimisticUserMessage = useCallback(
-    (messageId: string, text: string, partIds?: string[]) => {
-      const parts = text.trim()
-        ? [
-            {
-              id: partIds?.[0] ?? ascendingId('prt'),
-              sessionID: sessionId,
-              messageID: messageId,
-              type: 'text',
-              text,
-            } as any,
-          ]
-        : [];
-      const info = {
-        id: messageId,
-        sessionID: sessionId,
-        role: 'user',
-        time: { created: Date.now() },
-      } as any;
-
-      useSyncStore.getState().optimisticAdd(sessionId, info, parts as any);
-    },
-    [sessionId],
-  );
-
-  const removeOptimisticUserMessage = useCallback(
-    (messageId: string) => {
-      useSyncStore.getState().optimisticRemove(sessionId, messageId);
-    },
-    [sessionId],
-  );
-
-  // Hydrate options from sessionStorage and send the pending prompt for new sessions.
-  // The dashboard/project page stores the prompt in sessionStorage and navigates here.
-  // We send the message from here (not the dashboard) so that SSE listeners and polling
-  // are already active when the response starts streaming back.
-  // Retries up to 3 times on failure (e.g. "Unable to connect" errors).
-  // Uses a retry loop (up to 5 attempts, 50ms apart) when reading sessionStorage
-  // to handle the race condition where the effect fires before the dashboard
-  // has written the pending prompt.
+  // Hydrate options from the SDK's start-stash and send the pending prompt for
+  // new sessions. The dashboard/project page (or the instant session shell)
+  // stashes the prompt and navigates here. We send the message from here (not
+  // the producer) so that SSE listeners and polling are already active when the
+  // response starts streaming back.
+  //
+  // The write-race retry (stash read), readiness poll (agent/model), and
+  // failure-recovery (stash restore + classify + idle + rehydrate-or-remove)
+  // mechanics are all owned by the SDK's `replayStartStash` — this effect only
+  // supplies the web-specific pieces: resolving agent/model/variant readiness
+  // against this session's own local model/agent stores, building the
+  // optimistic text + outgoing parts (file uploads), and restoring pending
+  // files on failure.
   useEffect(() => {
     if (pendingPromptHandled.current) return;
-    let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
-    const attemptSend = (attempt: number) => {
-      if (cancelled) return;
-      const pendingPrompt = sessionStorage.getItem(`opencode_pending_prompt:${sessionId}`);
-      if (!pendingPrompt) {
-        // Retry up to 5 times with 50ms delay to handle race condition
-        if (attempt < 5) {
-          retryTimer = setTimeout(() => attemptSend(attempt + 1), 50);
-          return;
-        }
-        // Exhausted retries — no pending prompt
-        return;
-      }
-      // Restore agent/model/variant selections from the dashboard
-      const options: Record<string, unknown> = {};
-      let selectedModelForSend: ModelKey | undefined;
-      const isSelectableModel = (model: ModelKey): boolean =>
-        localModelList.some(
-          (m) => m.providerID === model.providerID && m.modelID === model.modelID,
-        ) && localModelVisible(model);
-      try {
-        const raw = sessionStorage.getItem(`opencode_pending_options:${sessionId}`);
-        if (raw) {
-          const pendingOptions = JSON.parse(raw);
-          sessionStorage.removeItem(`opencode_pending_options:${sessionId}`);
-          if (pendingOptions?.agent) {
-            if (!lockedAgentName || pendingOptions.agent === lockedAgentName) {
-              options.agent = pendingOptions.agent;
-              localAgentSet(pendingOptions.agent as string);
-            }
-          }
-          if (pendingOptions?.model) {
-            const parsedPendingModel = parseModelKey(pendingOptions.model);
-            if (parsedPendingModel && isSelectableModel(parsedPendingModel)) {
-              options.model = parsedPendingModel;
-              selectedModelForSend = parsedPendingModel;
-              localModelSet(parsedPendingModel);
-            }
-          }
-          if (pendingOptions?.variant) {
-            options.variant = pendingOptions.variant;
-            localVariantSet(pendingOptions.variant as string);
+    // Set by `prepare` below (once, before any failure can occur) so
+    // `onFailure` can restore the same files it consumed.
+    let filesToRestoreOnFailure: AttachedFile[] = [];
+
+    const handle = replayStartStash<{ options: Record<string, unknown> }>({
+      sessionId,
+      classify: classifySessionError,
+      checkReadiness: (stash) => {
+        // Restore agent/model/variant selections from the producer.
+        const options: Record<string, unknown> = {};
+        let selectedModelForSend: ModelKey | undefined;
+        const isSelectableModel = (model: ModelKey): boolean =>
+          localModelList.some(
+            (m) => m.providerID === model.providerID && m.modelID === model.modelID,
+          ) && localModelVisible(model);
+        if (stash.agent) {
+          if (!lockedAgentName || stash.agent === lockedAgentName) {
+            options.agent = stash.agent;
+            localAgentSet(stash.agent);
           }
         }
-      } catch {
-        // ignore
-      }
-
-      if (lockedAgentName) {
-        options.agent = lockedAgentName;
-      }
-
-      if (!selectedModelForSend && localModelSendKey) {
-        options.model = localModelSendKey;
-        selectedModelForSend = localModelSendKey;
-      }
-
-      if (!selectedModelForSend) {
-        if (attempt < 120) {
-          retryTimer = setTimeout(() => attemptSend(attempt + 1), 250);
-          return;
+        if (stash.model && isSelectableModel(stash.model as ModelKey)) {
+          options.model = stash.model;
+          selectedModelForSend = stash.model as ModelKey;
+          localModelSet(stash.model as ModelKey);
         }
-        setCommandError(NO_MODEL_AVAILABLE_MESSAGE);
-        return;
-      }
+        if (stash.variant) {
+          options.variant = stash.variant;
+          localVariantSet(stash.variant);
+        }
+        if (lockedAgentName) {
+          options.agent = lockedAgentName;
+        }
+        if (!selectedModelForSend && localModelSendKey) {
+          options.model = localModelSendKey;
+          selectedModelForSend = localModelSendKey;
+        }
+        if (!selectedModelForSend) return null;
+        return { options };
+      },
+      onReadinessTimeout: () => {
+        setCommandError({
+          kind: 'runtime-error',
+          message: NO_MODEL_AVAILABLE_MESSAGE,
+          cause: null,
+        });
+      },
+      prepare: (stash, ready) => {
+        pendingPromptHandled.current = true;
+        setPollingActive(true);
+        setPendingSendInFlight(true);
+        clearStartStash(sessionId);
 
-      pendingPromptHandled.current = true;
-      setPollingActive(true);
-      setPendingSendInFlight(true);
-      useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
-      sessionStorage.removeItem(`opencode_pending_prompt:${sessionId}`);
-      sessionStorage.removeItem(`opencode_pending_send_failed:${sessionId}`);
+        const sendOpts = ready.options as {
+          agent?: string;
+          model?: ModelKey;
+          variant?: string;
+        };
+        const messageID = ascendingId('msg');
+        const textPartId = ascendingId('prt');
+        // Consume pending files before rendering the optimistic message so
+        // uploaded file cards are visible while the sandbox is still starting.
+        const pendingFiles = usePendingFilesStore.getState().consumePendingFiles();
+        filesToRestoreOnFailure = pendingFiles;
+        const optimisticPendingPrompt = buildOptimisticPromptTextWithUploads(
+          stash.prompt,
+          pendingFiles,
+        );
+        setOptimisticPrompt(optimisticPendingPrompt);
+        setPendingSendMessageId(messageID);
+        lastSendTimeRef.current = Date.now();
 
-      // Send the message with retry. The useSendOpenCodeMessage hook already
-      // retries 3 times internally for transient errors. We add one additional
-      // outer retry (2 attempts total at this level) to cover cases where the
-      // SDK client itself fails to initialize or the server takes longer to start.
-      const sendOpts = Object.keys(options).length > 0 ? (options as any) : undefined;
-      const messageID = ascendingId('msg');
-      const textPartId = ascendingId('prt');
-      // Consume pending files before rendering the optimistic message so
-      // uploaded file cards are visible while the sandbox is still starting.
-      const pendingFiles = usePendingFilesStore.getState().consumePendingFiles();
-      const optimisticPendingPrompt = buildOptimisticPromptTextWithUploads(
-        pendingPrompt,
-        pendingFiles,
-      );
-      setOptimisticPrompt(optimisticPendingPrompt);
-      setPendingSendMessageId(messageID);
-      addOptimisticUserMessage(messageID, optimisticPendingPrompt, [textPartId]);
-      lastSendTimeRef.current = Date.now();
-
-      // Fire-and-forget via promptAsync. Don't send messageID — let the
-      // server generate it with its own clock to avoid clock-skew issues.
-      let client: ReturnType<typeof getClient>;
-      try {
-        client = getClient();
-      } catch {
-        // SDK client failed to initialize — restore sessionStorage so the
-        // user can retry (e.g. by refreshing). Reset all pending state.
-        sessionStorage.setItem(`opencode_pending_prompt:${sessionId}`, pendingPrompt);
-        pendingPromptHandled.current = false;
-        setPollingActive(false);
-        setPendingSendInFlight(false);
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-        removeOptimisticUserMessage(messageID);
-        return;
-      }
-      const handlePromptError = (err?: unknown) => {
-        setIsRetrying(false);
+        return {
+          messageId: messageID,
+          optimisticText: optimisticPendingPrompt,
+          partIds: [textPartId],
+          sendOptions: {
+            ...(session?.directory ? { directory: session.directory } : {}),
+            ...(sendOpts?.agent && { agent: sendOpts.agent }),
+            ...(sendOpts?.model && { model: formatPromptModel(sendOpts.model) }),
+            ...(sendOpts?.variant && { variant: sendOpts.variant }),
+          },
+          // Upload local files and build the parts array (text + file refs).
+          buildParts: async () => {
+            const built = await buildPromptPartsWithUploads(stash.prompt, pendingFiles, uploadFile);
+            return [{ type: 'text' as const, text: built.text }, ...built.remoteParts];
+          },
+        };
+      },
+      onFailure: (_stash, _err, classified) => {
         setPendingSendInFlight(false);
         setPendingSendMessageId(null);
         setOptimisticPrompt(null);
         setPollingActive(false);
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-        if (err) setCommandError(formatCommandError(err));
-        // Fetch real messages from the server. Some error paths
-        // (e.g. missing API key) return the error directly in the
-        // HTTP response without ever emitting a session.error SSE
-        // event. Without this fetch, removing the optimistic message
-        // leaves the UI blank because no SSE event will bring in the
-        // server-persisted messages.
-        client.session
-          .messages({ sessionID: sessionId })
-          .then((res) => {
-            if (res.data) {
-              // hydrate() already drops superseded optimistic messages AND
-              // bridges their text onto the real server message. Do NOT also
-              // call clearOptimisticMessages here: on an error send whose user
-              // message the server hasn't persisted yet, that wipes the user's
-              // typed text and leaves an empty bubble. Keeping the optimistic
-              // message means the user always still sees what they sent.
-              useSyncStore.getState().hydrate(sessionId, res.data as any);
-            } else {
-              // No server data — just remove the optimistic message
-              removeOptimisticUserMessage(messageID);
-            }
-          })
-          .catch(() => {
-            // Fetch failed — fall back to removing the optimistic message
-            removeOptimisticUserMessage(messageID);
-          });
-      };
-      // Upload local files and build the parts array (text + file refs)
-      const sendPendingPrompt = async () => {
-        const built = await buildPromptPartsWithUploads(pendingPrompt, pendingFiles, uploadFile);
-        return [{ type: 'text' as const, text: built.text }, ...built.remoteParts];
-      };
+        setCommandError(classified);
+        usePendingFilesStore.getState().setPendingFiles(filesToRestoreOnFailure);
+        pendingPromptHandled.current = false;
+      },
+    });
 
-      void (async () => {
-        let parts: Awaited<ReturnType<typeof sendPendingPrompt>>;
-        try {
-          parts = await sendPendingPrompt();
-        } catch (err) {
-          sessionStorage.setItem(`opencode_pending_prompt:${sessionId}`, pendingPrompt);
-          usePendingFilesStore.getState().setPendingFiles(pendingFiles);
-          pendingPromptHandled.current = false;
-          handlePromptError(err);
-          return;
-        }
-
-        const promptBody = {
-          sessionID: sessionId,
-          parts,
-          ...(session?.directory ? { directory: session.directory } : {}),
-          ...(sendOpts?.agent && { agent: sendOpts.agent }),
-          ...(sendOpts?.model && { model: formatPromptModel(sendOpts.model as ModelKey) }),
-          ...(sendOpts?.variant && { variant: sendOpts.variant }),
-        } as any;
-
-        // A freshly-created session points at a sandbox that may still be
-        // booting opencode — the proxy answers `503 "opencode not ready"` until
-        // the binary binds its port. Retry transient failures (especially that
-        // boot signal) across the full boot window so the very first prompt
-        // lands on its own instead of flashing an "opencode not ready" banner
-        // the user can't act on. The optimistic message + busy status stay up
-        // across retries, so the UI shows the send in progress the whole time.
-        for (let attempt = 1; ; attempt++) {
-          let status: number | undefined;
-          let error: unknown;
-          try {
-            // The SDK resolves (not rejects) on HTTP errors, returning
-            // { error, response } instead of throwing.
-            const res = await client.session.promptAsync(promptBody);
-            if (!res?.error) return; // 204 — server accepted the prompt.
-            error = res.error;
-            status = res?.response?.status as number | undefined;
-          } catch (err) {
-            error = err; // thrown = transport failure (no status).
-          }
-
-          const delay = getSendRetryDelayMs(attempt, status, error);
-          if (delay === null) {
-            handlePromptError(error);
-            return;
-          }
-          await new Promise((r) => setTimeout(r, delay));
-          if (cancelled) return;
-        }
-      })();
-    };
-
-    attemptSend(0);
-
-    return () => {
-      cancelled = true;
-      if (retryTimer) clearTimeout(retryTimer);
-    };
+    return () => handle.cancel();
   }, [
     sessionId,
-    addOptimisticUserMessage,
-    removeOptimisticUserMessage,
     localAgentSet,
     localModelCurrentKey,
     localModelSendKey,
@@ -4508,7 +4397,6 @@ export function SessionChat({
   // ---- Pending permissions & questions ----
   const allPermissions = useOpenCodePendingStore((s) => s.permissions);
   const allQuestions = useOpenCodePendingStore((s) => s.questions);
-  const addQuestion = useOpenCodePendingStore((s) => s.addQuestion);
   const pendingPermissions = useMemo(
     () => Object.values(allPermissions).filter((p) => p.sessionID === sessionId),
     [allPermissions, sessionId],
@@ -4566,8 +4454,6 @@ export function SessionChat({
       }
     };
   }, []);
-  const questionHydrationInFlightRef = useRef(false);
-  const lastQuestionHydrationAtRef = useRef(0);
   const turns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
   const hasAnyMessages = turns.length > 0;
   const hasChatContent = hasAnyMessages || (!!optimisticPrompt && !hasAnyMessages);
@@ -4604,65 +4490,18 @@ export function SessionChat({
       }
     };
   }, []);
-  const hasRunningQuestionTool = useMemo(() => {
-    if (!messages) return false;
-    return messages.some((m) => {
-      if (m.info.role !== 'assistant') return false;
-      return m.parts.some((p) => {
-        if (p.type !== 'tool') return false;
-        const tool = p as ToolPart;
-        if (tool.tool !== 'question') return false;
-        return tool.state.status === 'running' || tool.state.status === 'pending';
-      });
-    });
-  }, [messages]);
-
-  // Self-heal missed question events: if we see a question tool part running
-  // but no pending question request in the store, rehydrate question.list().
-  // Keep polling while the tool is running because the first list() call can
-  // race with backend request creation and return an empty list.
-  useEffect(() => {
-    if (!isActiveSessionTab || !hasRunningQuestionTool || pendingQuestions.length > 0) return;
-
-    const client = getClient();
-    let cancelled = false;
-
-    const hydrateQuestions = () => {
-      if (questionHydrationInFlightRef.current || cancelled) return;
-      const now = Date.now();
-      if (now - lastQuestionHydrationAtRef.current < 1500) return;
-
-      questionHydrationInFlightRef.current = true;
-      lastQuestionHydrationAtRef.current = now;
-
-      void client.question
-        .list()
-        .then((res) => {
-          if (!res.data || cancelled) return;
-          (res.data as any[]).forEach((q) => {
-            if (!q?.id || isQuestionSuppressed(q.id)) return;
-            addQuestion(q);
-          });
-        })
-        .finally(() => {
-          questionHydrationInFlightRef.current = false;
-        });
-    };
-
-    hydrateQuestions();
-    const timer = setInterval(hydrateQuestions, 2000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [
-    isActiveSessionTab,
-    hasRunningQuestionTool,
-    pendingQuestions.length,
-    addQuestion,
-    isQuestionSuppressed,
-  ]);
+  // Self-heal a missed `question.asked` SSE event (a `question` tool part
+  // rendering as running with nothing in the pending store for this session) —
+  // see the SDK's `useQuestionSelfHeal` for why this poll is distinct from
+  // `useOpenCodeEventStream`'s reconnect-gap hydration.
+  useQuestionSelfHeal(sessionId, messages, {
+    enabled: isActiveSessionTab,
+    isSuppressed: isQuestionSuppressed,
+  });
+  // The permission twin — a missed `permission.asked` frame otherwise leaves
+  // the agent silently blocked with no card to answer (the "have to type
+  // `continue`" wedge).
+  usePermissionSelfHeal(sessionId, messages, { enabled: isActiveSessionTab });
 
   // ---- Permission/question reply handlers ----
   const removePermission = useOpenCodePendingStore((s) => s.removePermission);
@@ -4670,12 +4509,11 @@ export function SessionChat({
 
   const handlePermissionReply = useCallback(
     async (requestId: string, reply: 'once' | 'always' | 'reject') => {
-      try {
-        await replyToPermission(requestId, reply);
-        removePermission(requestId);
-      } catch {
-        // ignore
-      }
+      // No optimistic remove: only drop the card once the runtime accepted the
+      // reply — a failed reply must stay answerable. Rethrow so callers
+      // (prompt buttons) reset their busy state and surface the error.
+      await replyToPermission(requestId, reply);
+      removePermission(requestId);
     },
     [removePermission],
   );
@@ -4779,7 +4617,6 @@ export function SessionChat({
     setPendingCommand(null);
     setPendingSendInFlight(false);
     setPendingSendMessageId(null);
-    setIsRetrying(false);
     lastSendTimeRef.current = 0;
   }, [sessionId]);
 
@@ -4804,7 +4641,7 @@ export function SessionChat({
         directory: session?.directory,
         workspace: session?.workspaceID,
       });
-      if (msg) stashForkPrompt(forkedSession.id, buildForkPrompt(msg.parts));
+      if (msg) writeForkDraft(forkedSession.id, buildForkPrompt(msg.parts));
 
       const title = forkedSession.title || 'Forked session';
       openTabAndNavigate({
@@ -4812,7 +4649,6 @@ export function SessionChat({
         title,
         type: 'session',
         href: `/sessions/${forkedSession.id}`,
-        serverId: useServerStore.getState().activeServerId,
       });
     },
     [sessionId, forkSession, messages, session?.directory, session?.workspaceID],
@@ -4827,7 +4663,7 @@ export function SessionChat({
         directory: session?.directory,
         workspace: session?.workspaceID,
       });
-      if (msg) stashForkPrompt(forkedSession.id, buildForkPrompt(msg.parts, newText));
+      if (msg) writeForkDraft(forkedSession.id, buildForkPrompt(msg.parts, newText));
 
       const title = forkedSession.title || 'Forked session';
       openTabAndNavigate({
@@ -4835,7 +4671,6 @@ export function SessionChat({
         title,
         type: 'session',
         href: `/sessions/${forkedSession.id}`,
-        serverId: useServerStore.getState().activeServerId,
       });
     },
     [sessionId, forkSession, messages, session?.directory, session?.workspaceID],
@@ -4941,8 +4776,7 @@ export function SessionChat({
 
       // Optimistic: show message immediately in sync store + set busy
       // Matches OpenCode: sync.set("session_status", session.id, { type: "busy" })
-      addOptimisticUserMessage(messageID, optimisticText, [textPartId]);
-      useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
+      beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);
 
       // Scroll so the new user message appears at the top of the viewport.
       // MutationObserver recalcs spacer automatically when the new turn renders.
@@ -4983,11 +4817,12 @@ export function SessionChat({
       try {
         built = await buildPromptPartsWithUploads(textPrompt.text, attachedFiles, uploadFile);
       } catch (err) {
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-        removeOptimisticUserMessage(messageID);
-        const message = formatCommandError(err);
-        setCommandError(message);
-        throw err instanceof Error ? err : new Error(message);
+        // Never reached the network — nothing to rehydrate from the server,
+        // so just clear busy and drop the optimistic message outright.
+        abandonOptimisticSend(sessionId, messageID);
+        const classified = classifySessionError(err);
+        setCommandError(classified);
+        throw err instanceof Error ? err : new Error(classified.message);
       }
       textPrompt.text = built.text;
       parts.push(...built.remoteParts);
@@ -5038,10 +4873,10 @@ export function SessionChat({
         if (block) textPrompt.text = `${textPrompt.text}\n\n${block}`;
       }
 
-      // Send via session.promptAsync. The server returns 204 immediately and
-      // streams the response over SSE — we await the ACK so callers (queue
-      // drain, input box) can handle send failures, but the actual response
-      // body still arrives via the sync store.
+      // Send via the SDK's promptOpenCodeMessage — the server accepts the
+      // prompt (204) and streams the response over SSE; we await the ACK so
+      // callers (queue drain, input box) can handle send failures, but the
+      // actual response body still arrives via the sync store.
       //
       // Don't send part IDs or messageID — let the server generate them with
       // its own clock. Client-generated IDs can sort before server IDs due to
@@ -5058,144 +4893,36 @@ export function SessionChat({
         return { type: 'text' as const, text: p.text };
       });
       const sendOpts = Object.keys(options).length > 0 ? options : undefined;
-      const client = getClient();
-      const handleSendError = () => {
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-        // Fetch real messages from the server. Some error paths
-        // (e.g. missing API key) return the error directly in the
-        // HTTP response without emitting a session.error SSE event.
-        // Without this fetch, removing the optimistic message can
-        // leave the UI blank.
-        client.session
-          .messages({ sessionID: sessionId })
-          .then((res) => {
-            if (res.data) {
-              // hydrate() already drops superseded optimistic messages AND
-              // bridges their text onto the real server message. Do NOT also
-              // call clearOptimisticMessages here: on an error send whose user
-              // message the server hasn't persisted yet, that wipes the user's
-              // typed text and leaves an empty bubble. Keeping the optimistic
-              // message means the user always still sees what they sent.
-              useSyncStore.getState().hydrate(sessionId, res.data as any);
-            } else {
-              removeOptimisticUserMessage(messageID);
-            }
-          })
-          .catch(() => {
-            removeOptimisticUserMessage(messageID);
-          });
-      };
-
-      const promptBody = {
-        sessionID: sessionId,
-        parts: mappedParts,
-        // Pass the session's directory so opencode resolves project-scoped
-        // agents (.opencode/agent/*.md under the project) and applies them
-        // when the user picked a project agent from the picker.
-        ...(session?.directory ? { directory: session.directory } : {}),
-        ...(sendOpts?.agent ? { agent: sendOpts.agent } : {}),
-        ...(sendOpts?.model ? { model: formatPromptModel(sendOpts.model as ModelKey) } : {}),
-        ...(sendOpts?.variant ? { variant: sendOpts.variant } : {}),
-      } as any;
 
       // Sending to the sandbox's OpenCode server can transiently fail — the
       // container may be waking from auto-stop, restarting, or the tunnel
-      // blips. A single blip used to surface as "Failed to send message" and
-      // bounce the draft back. Retry transient failures with backoff so a flaky
-      // send self-heals; only give up (and surface the error) after several
-      // attempts.
-      //
-      // We retry ONLY cases where the server did not accept the prompt — a
-      // thrown network error (request never completed) or a 5xx/429/408
-      // response — so an already-queued prompt is never double-sent. A 4xx
-      // (bad request, auth, missing model key) is a real failure and surfaces
-      // immediately. The lone exception is the sandbox proxy's "opencode not
-      // ready" 503 boot signal, which retries across the full boot window (see
-      // getSendRetryDelayMs). The optimistic user message + busy status stay up
-      // across retries, so the UI shows the send in progress the whole time.
-      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-      let res: any;
-      for (let attempt = 1; ; attempt++) {
-        let caught = false;
-        let caughtErr: unknown;
-        try {
-          res = await client.session.promptAsync(promptBody);
-        } catch (err) {
-          caught = true;
-          caughtErr = err;
-        }
-
-        // Thrown = network/transport failure (request didn't complete).
-        if (caught) {
-          // Lead with a readable string; the dev overlay renders complex error
-          // objects that embed a non-enumerable Response as a useless `{}`.
-          console.error(
-            `[session-chat] send threw (attempt ${attempt}): ${formatCommandError(caughtErr)}`,
-            {
-              sessionId,
-              attempt,
-              activeUrl: getActiveOpenCodeUrl(),
-              error: caughtErr,
-            },
-          );
-          const delay = getSendRetryDelayMs(attempt, undefined, caughtErr);
-          if (delay !== null) {
-            await sleep(delay);
-            continue;
-          }
-          handleSendError();
-          throw caughtErr instanceof Error ? caughtErr : new Error('Couldn’t reach the server.');
-        }
-
-        // The SDK resolves (not rejects) on HTTP errors, returning
-        // { error, response } instead of throwing.
-        if (res?.error) {
-          const status = res?.response?.status as number | undefined;
-          // Full ground truth in the console so we stop guessing the cause:
-          // the exact status, the URL it actually hit, and the error body.
-          // Lead with a readable string; the dev overlay renders the raw SDK
-          // error object that embeds a non-enumerable Response as `{}`.
-          console.error(
-            `[session-chat] send failed (HTTP ${status ?? 'unknown'}, attempt ${attempt}): ${formatCommandError(res?.error)}`,
-            {
-              sessionId,
-              attempt,
-              status,
-              requestedUrl: res?.response?.url,
-              activeUrl: getActiveOpenCodeUrl(),
-              error: res?.error,
-            },
-          );
-          const delay = getSendRetryDelayMs(attempt, status, res?.error);
-          if (delay !== null) {
-            await sleep(delay);
-            continue;
-          }
-          handleSendError();
-          // Surface the real cause in the toast — a bare "Failed to send
-          // message" hides whether this was a 4xx (bad request/auth/model) or
-          // a 5xx/proxy blip. Lead with the server's message if it gave one,
-          // otherwise show the HTTP status so it's diagnosable at a glance.
-          const extracted = formatCommandError(res?.error);
-          const detail =
-            (typeof res.error?.data?.message === 'string' && res.error.data.message) ||
-            (typeof res.error === 'string' && res.error) ||
-            // formatCommandError falls back to JSON.stringify / a generic
-            // placeholder; only trust it as toast copy when it produced a
-            // short, human-readable line, not a raw object dump.
-            (extracted &&
-            extracted !== 'Command failed' &&
-            !extracted.startsWith('{') &&
-            extracted.length <= 160
-              ? extracted
-              : null);
-          throw new Error(detail ?? `Couldn’t send your message (HTTP ${status ?? 'unknown'}).`);
-        }
-
-        // Success — the server accepted the prompt (204) and streams the
-        // response over SSE.
-        break;
+      // blips. `promptOpenCodeMessage` (packages/sdk) owns retrying transient
+      // failures with backoff so a flaky send self-heals; only a real 4xx (bad
+      // request / auth / missing model key), or exhausting the retry window,
+      // surfaces here. The optimistic user message + busy status stay up the
+      // whole time, so the UI shows the send in progress throughout. On
+      // failure, `sendAndRecover` runs the shared recovery routine: clear
+      // busy, then either rehydrate real messages from the server (some error
+      // paths — e.g. missing API key — never emit a `session.error` SSE
+      // event) or drop the optimistic message if the server has no record.
+      const result = await sendAndRecover({
+        sessionId,
+        messageId: messageID,
+        parts: mappedParts,
+        options: {
+          // Pass the session's directory so opencode resolves project-scoped
+          // agents (.opencode/agent/*.md under the project) and applies them
+          // when the user picked a project agent from the picker.
+          ...(session?.directory ? { directory: session.directory } : {}),
+          ...(sendOpts?.agent ? { agent: sendOpts.agent } : {}),
+          ...(sendOpts?.model ? { model: formatPromptModel(sendOpts.model as ModelKey) } : {}),
+          ...(sendOpts?.variant ? { variant: sendOpts.variant } : {}),
+        } as any,
+        classify: classifySessionError,
+      });
+      if (!result.ok) {
+        setCommandError(result.error);
+        throw result.cause instanceof Error ? result.cause : new Error(result.error.message);
       }
 
       return messageID;
@@ -5208,8 +4935,6 @@ export function SessionChat({
       local.model.currentKey,
       local.model.sendKey,
       local.model.variant.current,
-      addOptimisticUserMessage,
-      removeOptimisticUserMessage,
       scrollToBottom,
       replyTo,
       messages,
@@ -5228,6 +4953,11 @@ export function SessionChat({
     return () => unregisterSender(sessionId);
   }, [sessionId, handleSend, registerSender, unregisterSender]);
 
+  // NOTE: no client-side "auto-continue after approval" here — resuming the
+  // agent when nobody was holding the gated call is the RESOLVE ENDPOINT's job
+  // (server-side continueSession delivery in r7.ts), so it works with zero
+  // browsers open. A web-side nudge would just double-send.
+
   const handleStop = useCallback(() => {
     // Guard against rapid clicks — ignore if an abort is already in flight
     if (abortSession.isPending) {
@@ -5235,32 +4965,13 @@ export function SessionChat({
       return;
     }
     console.log(`[handleStop] Stopping session ${sessionId}`);
-    // Optimistically mark the session idle so the UI updates immediately
-    // (stop button hides, input re-enables) without waiting for the SSE
-    // round-trip. Also clear the busy debounce timer to bypass the 2s delay.
-    useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+    // Optimistically mark the session idle + patch an abort error onto the
+    // last assistant message (so the "Interrupted" label appears instantly —
+    // no waiting for the SSE session.error round-trip). Also clear the busy
+    // debounce timer to bypass the 2s delay.
+    applyOptimisticAbort(sessionId);
     clearTimeout(busyTimerRef.current);
     setIsBusy(false);
-
-    // Optimistically patch an abort error onto the last assistant message
-    // so the "Interrupted" label appears instantly — no waiting for the SSE
-    // session.error round-trip.
-    const store = useSyncStore.getState();
-    const msgs = store.messages[sessionId];
-    if (msgs) {
-      for (let i = msgs.length - 1; i >= 0; i--) {
-        if (msgs[i].role === 'assistant' && !(msgs[i] as any).error) {
-          store.upsertMessage(sessionId, {
-            ...msgs[i],
-            error: {
-              name: 'AbortError',
-              data: { message: 'The operation was aborted.' },
-            },
-          } as any);
-          break;
-        }
-      }
-    }
 
     abortSession.mutate(sessionId);
   }, [sessionId, abortSession]);
@@ -5382,7 +5093,7 @@ export function SessionChat({
         setPollingActive(false);
         pendingCommandStashRef.current = null;
         useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-        setCommandError(formatCommandError(err));
+        setCommandError(classifySessionError(err));
       };
 
       setPendingCommand({
@@ -5474,7 +5185,6 @@ export function SessionChat({
           title: parentSessionData.title || 'Parent session',
           type: 'session',
           href: `/sessions/${parentSessionData.id}`,
-          serverId: useServerStore.getState().activeServerId,
         });
       },
     };
@@ -5683,18 +5393,7 @@ export function SessionChat({
                         })()}
                       </div>
                     </div>
-                    <AssistantPendingRow
-                      className="mt-6"
-                      status={
-                        isRetrying ? (
-                          <span className={cn('text-xs', STATUS_TEXT.warning)}>
-                            {tHardcodedUi.raw(
-                              'componentsSessionSessionChat.line5927JsxTextRetryingConnection',
-                            )}
-                          </span>
-                        ) : undefined
-                      }
-                    />
+                    <AssistantPendingRow className="mt-6" />
                   </div>
                 )}
 
@@ -5789,7 +5488,7 @@ export function SessionChat({
                 </ToolActivateContext.Provider>
 
                 {/* Busy indicator when no turns yet but session is busy */}
-                {commandError && <TurnErrorDisplay errorText={commandError} className="mt-2" />}
+                {commandError && <TurnErrorDisplay error={commandError} className="mt-2" />}
                 {!showOptimistic && isBusy && turns.length === 0 && <AssistantPendingRow />}
               </div>
               {/* Spacer — ensures the last message can scroll to the top of
@@ -5877,12 +5576,13 @@ export function SessionChat({
             onSetAccountDefault: (m) => {
               void local.model.defaults.setAccountDefault(m);
             },
-            onSetAgentDefault: lockedAgentName || local.agent.current
-              ? (m) => {
-                  const name = lockedAgentName ?? local.agent.current?.name;
-                  if (name) void local.model.defaults.setAgentDefault(name, m);
-                }
-              : undefined,
+            onSetAgentDefault:
+              lockedAgentName || local.agent.current
+                ? (m) => {
+                    const name = lockedAgentName ?? local.agent.current?.name;
+                    if (name) void local.model.defaults.setAgentDefault(name, m);
+                  }
+                : undefined,
             onSetProjectDefault: (m) => {
               void local.model.defaults.setProjectDefault(m);
             },
@@ -5906,6 +5606,10 @@ export function SessionChat({
           // so a typed message is sent to the agent instead of being swallowed
           // as a custom answer.
           lockForQuestion={!!renderedQuestion && isBusy}
+          // Same dead-prompt guard as questions: only lock while the agent is
+          // actually paused on the decision (isBusy), so a stale card can't
+          // swallow the composer on an idle session.
+          lockForApproval={hasPendingApproval || (pendingPermissions.length > 0 && isBusy)}
           onCustomAnswer={(text) => {
             questionPromptRef.current?.submitCustomAnswer(text);
           }}
@@ -5915,25 +5619,38 @@ export function SessionChat({
             questionPromptRef.current?.performAction();
           }}
           inputSlot={
-            renderedQuestion ? (
-              <div
-                className={cn(
-                  'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
-                  questionPromptVisible
-                    ? 'max-h-[520px] translate-y-0 opacity-100 duration-300'
-                    : 'pointer-events-none max-h-0 -translate-y-1 opacity-0 duration-320',
-                )}
-              >
-                <QuestionPrompt
-                  key={renderedQuestion.id}
-                  ref={questionPromptRef}
-                  request={renderedQuestion}
-                  onReply={handleQuestionReply}
-                  onReject={handleQuestionReject}
-                  onActionChange={handleQuestionActionChange}
-                />
-              </div>
-            ) : undefined
+            <>
+              {/* Connector actions a policy gated for approval — pauses the run
+                  until the human decides. Self-hides when nothing's pending. */}
+              <SessionApprovalPrompt />
+              {/* Opencode tool permissions (bash/edit/…) awaiting a decision —
+                  the turn is blocked inside the runtime and resumes the moment
+                  a reply lands. Self-hides when nothing's pending. */}
+              <SessionPermissionPrompt
+                sessionId={sessionId}
+                permissions={pendingPermissions}
+                onReply={handlePermissionReply}
+              />
+              {renderedQuestion ? (
+                <div
+                  className={cn(
+                    'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
+                    questionPromptVisible
+                      ? 'max-h-[520px] translate-y-0 opacity-100 duration-300'
+                      : 'pointer-events-none max-h-0 -translate-y-1 opacity-0 duration-320',
+                  )}
+                >
+                  <QuestionPrompt
+                    key={renderedQuestion.id}
+                    ref={questionPromptRef}
+                    request={renderedQuestion}
+                    onReply={handleQuestionReply}
+                    onReject={handleQuestionReject}
+                    onActionChange={handleQuestionActionChange}
+                  />
+                </div>
+              ) : null}
+            </>
           }
         />
       )}

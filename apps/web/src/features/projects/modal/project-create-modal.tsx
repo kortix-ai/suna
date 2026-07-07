@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   Form,
   FormControl,
@@ -55,7 +55,7 @@ import {
   provisionProject,
   type GitHubRepository,
   type KortixProject,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Boxes, ChevronsUpDown, ExternalLink, Github } from 'lucide-react';

@@ -47,7 +47,7 @@ jobs:
       cli: ${{ steps.filter.outputs.cli }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Path filter
         uses: dorny/paths-filter@v4
         id: filter
@@ -115,7 +115,7 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # need tags to find the latest released version
       - name: Derive dev version from the latest release tag
@@ -141,7 +141,7 @@ jobs:
     if: needs.detect-changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { submodules: false }
       - run: git submodule sync --recursive && git submodule update --init --recursive --remote
       - name: Set up QEMU
@@ -206,11 +206,12 @@ jobs:
       id-token: write
       contents: read
       attestations: write
+      artifact-metadata: write
     env:
       IMAGE: ${{ needs.tag-api.outputs.image }}
     steps:
       - name: Trivy image scan (fail on fixable CRITICAL)
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: ${{ env.IMAGE }}
@@ -246,7 +247,7 @@ jobs:
           cosign sign --yes "$REF"
           cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$REF"
       - name: SLSA build provenance
-        uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: docker.io/kortix/kortix-api
           subject-digest: ${{ steps.digest.outputs.digest }}
@@ -263,7 +264,7 @@ jobs:
     if: needs.detect-changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -304,7 +305,7 @@ jobs:
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy-dev
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
@@ -459,7 +460,7 @@ jobs:
     if: needs.detect-changes.outputs.gateway == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { submodules: false }
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -520,7 +521,7 @@ jobs:
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy-dev
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
@@ -646,7 +647,7 @@ jobs:
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { submodules: false }
       - run: git submodule sync --recursive && git submodule update --init --recursive --remote
       - uses: actions/setup-node@v4
@@ -698,7 +699,7 @@ jobs:
     if: needs.detect-changes.outputs.cli == 'true'
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -765,7 +766,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

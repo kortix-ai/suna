@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/button';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { listAuditEvents, type AuditEvent } from '@/lib/iam-client';
-import { listAccountMembers } from '@/lib/projects-client';
+import { listAccountMembers } from '@kortix/sdk/projects-client';
 import { KIND_DOT_CLASS, formatResourcePill, humanizeAuditAction } from './audit-display-helpers';
 
 // ─── Quick filters ─────────────────────────────────────────────────────────
@@ -213,7 +213,7 @@ export function AuditTab({ accountId }: AuditTabProps) {
       )}
 
       {query.isLoading && (
-        <div className="divide-border/60 divide-y">
+        <div className="divide-border divide-y">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="px-6 py-3">
               <Skeleton className="h-4 w-3/4" />
@@ -237,7 +237,7 @@ export function AuditTab({ accountId }: AuditTabProps) {
       )}
 
       {!query.isLoading && allEvents.length > 0 && (
-        <ul className="divide-border/60 divide-y">
+        <ul className="divide-border divide-y">
           {allEvents.map((e) => (
             <AuditRow
               key={e.event_id}

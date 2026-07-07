@@ -4,7 +4,6 @@
  * Centralized exports for all API clients and hooks
  * 
  * Organization:
- * - lib/chat/          - Threads, messages, agent runs
  * - lib/agents/        - Agent management
  * - lib/triggers/      - Trigger management
  * - lib/models/        - Available models
@@ -13,9 +12,6 @@
  * - lib/notifications/ - Push notifications, device tokens
  * - lib/utils/         - Utilities, helpers, formatters
  */
-
-// Chat
-export * from './chat';
 
 // Agents
 export * from './agents';

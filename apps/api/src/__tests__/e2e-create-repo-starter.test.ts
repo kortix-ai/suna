@@ -33,6 +33,11 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/agents/kortix.md',
   '.kortix/opencode/agents/memory-reflector.md',
   '.kortix/opencode/bun.lock',
+  '.kortix/opencode/continuation/config.ts',
+  '.kortix/opencode/continuation/continuation-engine.ts',
+  '.kortix/opencode/continuation/intent-gate.ts',
+  '.kortix/opencode/continuation/kortix-continuation.ts',
+  '.kortix/opencode/continuation/todo-enforcer.ts',
   '.kortix/opencode/opencode.jsonc',
   '.kortix/opencode/package.json',
   '.kortix/opencode/plugins/opencode-pty/src/plugin/constants.ts',
@@ -46,7 +51,6 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/plugins/opencode-pty/src/plugin/types.ts',
   '.kortix/opencode/plugins/opencode-pty/src/shared/constants.ts',
   '.kortix/opencode/plugins/pty.ts',
-  '.kortix/opencode/skills/kortix-computer/SKILL.md',
   '.kortix/opencode/skills/kortix-executor/references/executor-sdk.md',
   '.kortix/opencode/skills/kortix-executor/SKILL.md',
   '.kortix/opencode/skills/kortix-memory/SKILL.md',
@@ -55,6 +59,7 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/kortix-toml.md',
+  '.kortix/opencode/skills/kortix-system/references/kortix/marketplace.md',
   '.kortix/opencode/skills/kortix-system/references/opencode/agents.md',
   '.kortix/opencode/skills/kortix-system/references/opencode/commands.md',
   '.kortix/opencode/skills/kortix-system/references/opencode/mcp-servers.md',
@@ -72,7 +77,7 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/tools/scrape_webpage.ts',
   '.kortix/opencode/tools/show.ts',
   '.kortix/opencode/tools/web_search.ts',
-  'kortix.toml',
+  'kortix.yaml',
   'README.md',
 ];
 
@@ -120,7 +125,9 @@ mockIamEngineAllowAll();
 
 mockIamMembershipSyncNoop();
 
+const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
+  ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
     c.set('userId', auth.userId);
@@ -137,6 +144,7 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   readRepoFile: async () => '',
+  readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
@@ -496,8 +504,8 @@ describe('create-repo starter scaffold contract', () => {
     expect(files.find((file) => file.path === '.kortix/opencode/skills/kortix-system/SKILL.md')).toBeDefined();
     expect(files.find((file) => file.path === '.kortix/opencode/agents/kortix.md')).toBeDefined();
     // The manifest IS shipped and names the project.
-    const manifest = files.find((file) => file.path === 'kortix.toml');
-    expect(manifest?.content).toContain('name = "Company OS"');
+    const manifest = files.find((file) => file.path === 'kortix.yaml');
+    expect(manifest?.content).toContain('name: "Company OS"');
     expect(files.some((file) => file.path.includes('/agent-tunnel/'))).toBe(false);
   });
 
@@ -729,7 +737,7 @@ describe('create-repo starter scaffold contract', () => {
       name: 'Company OS',
       repoUrl: 'https://github.com/kortix-org/company-os.git',
       defaultBranch: 'main',
-      manifestPath: 'kortix.toml',
+      manifestPath: 'kortix.yaml',
       status: 'active',
       metadata: {
         github: {

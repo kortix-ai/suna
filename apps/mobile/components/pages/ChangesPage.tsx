@@ -45,7 +45,7 @@ import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
-import { MarkdownRenderer } from '@/components/chat/tool-views/file-operation/MarkdownRenderer';
+import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer';
 import { parsePatch, DiffFile } from '@/components/diff/PatchDiffView';
 import { relativeTime } from '@/lib/projects/triggers-format';
 import {

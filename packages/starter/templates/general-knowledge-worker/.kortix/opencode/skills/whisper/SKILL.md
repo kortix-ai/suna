@@ -1,6 +1,7 @@
 ---
 name: whisper
 description: "Transcribe any audio or video file to text using Whisper (Groq or OpenAI). Use when the agent receives voice messages, audio files, video messages, or any media with speech. Triggers on: 'transcribe', 'what does this say', 'voice message', 'speech to text', 'audio', any file path ending in .ogg .mp3 .mp4 .wav .webm .m4a .flac .oga .oga"
+defaultProjectInstall: true
 ---
 
 # Whisper — Audio/Video Transcription

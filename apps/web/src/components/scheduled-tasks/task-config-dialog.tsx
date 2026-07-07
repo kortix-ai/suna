@@ -21,17 +21,16 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useColumns, useProjectAgents, useTickets } from '@/hooks/kortix/use-kortix-tickets';
-import { useSandbox } from '@/hooks/platform/use-sandbox';
 import {
-  useCreateTrigger,
   type ActionType,
   type SessionMode,
   type TriggerType,
+  useCreateTrigger,
 } from '@/hooks/scheduled-tasks';
-import { featureFlags } from '@/lib/feature-flags';
-import { getSandboxUrl } from '@/lib/platform-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { featureFlags } from '@kortix/sdk/feature-flags';
+import { getSandboxUrl } from '@kortix/sdk/platform-client';
 import {
   ArrowLeft,
   ArrowRight,
@@ -133,16 +132,11 @@ export function TaskConfigDialog({
   const { data: projectColumns = [] } = useColumns(projectId);
   const { data: projectAgents = [] } = useProjectAgents(projectId);
 
-  const { sandbox } = useSandbox();
   const createMutation = useCreateTrigger();
 
-  // Build the public webhook base URL
-  const webhookBaseUrl = useMemo(() => {
-    try {
-      if (sandbox) return getSandboxUrl(sandbox);
-    } catch {}
-    return 'https://<sandbox-url>';
-  }, [sandbox]);
+  // Docs/example webhook base shown in the dialog (real per-session sandbox URL
+  // is resolved server-side; no client-side sandbox lookup needed).
+  const webhookBaseUrl = 'https://<sandbox-url>';
 
   // Use the same hooks as ChatInput / channels for agents + models
   const agents = useVisibleAgents();

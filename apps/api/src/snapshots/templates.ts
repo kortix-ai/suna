@@ -72,15 +72,21 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // loads the plugin SDK matching its own binary and re-fetches it over the network
 // if the baked tree carries a different version — the stale starter pin left every
 // boot re-installing it, the ~5–8s opencode-session-created gap).
-// v16: hard-fail the bake if the baked opencode-config-deps tree (or the
+// v16: ship the `meet` channel CLI + the kortix-meet skill.
+// v17: `meet chat` (bot talks back in-call) + live-relay skill section.
+// v18: `meet speak` (TTS voice in-call) + voice-reply skill section.
+// v19: natural-conversation relay (debounce + acknowledgement + follow-up) skill notes.
+// v20: multi-platform rebrand (Meet/Zoom/Teams) + dedicated speaking skill section.
+// v21: configurable bot name (project setting) + wake word = bot's first name (skill).
+// v22: spoken turns MUST reply by voice (skill) — no chat fallback for speech.
+// v23: auto-recap on meeting end (bot.done webhook -> session produces notes).
+// v24: hard-fail the bake if the baked opencode-config-deps tree (or the
 // starter tool files against it) can't actually be bundled by Bun — a
 // bundle-breaking axios override once shipped silently baked into every
-// sandbox image (bun install succeeded; the runtime bundle did not). Ported
-// from main (#4073) directly onto staging as a hotfix — main's v16-v23 are
-// unrelated feature bumps not yet promoted here.
-const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v16';
+// sandbox image (bun install succeeded; the runtime bundle did not).
+const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v24';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
-const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 6);
+const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
 
 function readPositiveIntEnv(name: string, fallback: number): number {
@@ -294,7 +300,7 @@ export async function createTemplate(input: CreateTemplateInput): Promise<DbSand
       name: input.name || input.slug,
       isShared: false,
       source: input.source ?? 'ui',
-      provider: 'daytona',
+      provider: 'managed',
       image: input.image ?? null,
       dockerfilePath: input.dockerfilePath ?? null,
       entrypoint: input.entrypoint ?? null,
@@ -505,13 +511,13 @@ export async function recordTemplateBuilt(
   // lazy, pressure-gated GC eventually notices.
   const oldName = prev?.providerSnapshotName ?? null;
   if (oldName && oldName !== args.snapshotName) {
-    await reapPredecessorSnapshot(templateId, oldName, args.provider ?? prev?.provider ?? 'daytona');
+    await reapPredecessorSnapshot(templateId, oldName, args.provider ?? prev?.provider ?? 'managed');
   }
 }
 
 /** Managed snapshot namespaces we own and may reap. Anything else (Daytona's
  *  own base/sample images, etc.) is left strictly alone. */
-const REAPABLE_SNAPSHOT_PREFIXES = ['kortix-default-', 'kortix-tpl-', 'kortix-wproj-'];
+const REAPABLE_SNAPSHOT_PREFIXES = ['kortix-default-', 'kortix-tpl-', 'kortix-wproj-', 'kortix-ppwarm-'];
 
 /**
  * Delete a snapshot a template row just stopped pointing at. Best-effort and
@@ -579,7 +585,7 @@ function synthesizedDefault(): ResolvedTemplate {
     name: tpl.name ?? 'Default',
     isShared: true,
     source: 'platform',
-    provider: 'daytona',
+    provider: 'managed',
     image: null,
     dockerfilePath: null,
     entrypoint: null,
@@ -602,7 +608,7 @@ function rowToResolved(row: DbSandboxTemplate): ResolvedTemplate {
     name: row.name,
     isShared: row.isShared,
     source: (row.source as ResolvedTemplate['source']) ?? 'toml',
-    provider: row.provider ?? 'daytona',
+    provider: row.provider ?? 'managed',
     image: row.image,
     dockerfilePath: row.dockerfilePath,
     entrypoint: row.entrypoint,
@@ -636,7 +642,7 @@ async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<v
           name: tpl.name ?? tpl.slug,
           isShared: false,
           source: 'toml',
-          provider: 'daytona',
+          provider: 'managed',
           image: tpl.image ?? null,
           dockerfilePath: tpl.dockerfile ?? null,
           entrypoint: null,

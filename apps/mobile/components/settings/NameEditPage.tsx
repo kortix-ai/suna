@@ -105,18 +105,6 @@ export function NameEditPage({
       
       log.log('✅ Name updated successfully:', updatedUser);
       
-      // Try to update the account table via RPC if it exists
-      try {
-        await supabase.rpc('update_account', {
-          name: trimmedName,
-          account_id: user?.id
-        });
-        log.log('✅ Account table also updated');
-      } catch (rpcError) {
-        log.warn('⚠️ RPC update failed (may not exist):', rpcError);
-        // Ignore RPC errors - not all setups have this function
-      }
-      
       // Notify parent component
       onNameUpdated?.(trimmedName);
       

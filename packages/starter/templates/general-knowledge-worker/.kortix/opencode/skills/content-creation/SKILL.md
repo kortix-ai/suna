@@ -1,6 +1,7 @@
 ---
 name: content-creation
 description: "Guidelines and frameworks for creating effective marketing content across channels."
+defaultProjectInstall: true
 ---
 
 # Content Creation Skill

@@ -1,6 +1,7 @@
 ---
 name: domain-research
 description: "Free domain research and availability checking. No API keys or credentials required. Uses RDAP (1195+ TLDs) with whois CLI fallback for universal coverage. Checks if domains are available, searches keywords across TLDs, performs WHOIS/RDAP lookups, checks expiry dates, and finds nameservers. Use when the agent needs to: check if a domain is available, search for domains, find who owns a domain, check domain expiration, get nameservers, bulk check domains, or do any domain research. Triggers on: 'check domain', 'is domain available', 'search domains', 'domain availability', 'who owns this domain', 'whois', 'domain expiry', 'when does domain expire', 'nameservers for', 'domain research', 'find domains for', 'domain ideas', 'bulk domain check'."
+defaultProjectInstall: true
 ---
 
 # Domain Research

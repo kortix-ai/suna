@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projects } from '@kortix/db';
 import { db } from '../../shared/db';
+import { filterAccessibleProjectResources } from '../../iam';
 import {
   continueSession as continueLifecycleSession,
   createSession as createLifecycleSession,
@@ -121,6 +122,27 @@ export async function createOrJoinThreadSession(input: {
     ? await currentChannelSelection({ teamId, channelId: event.channel })
     : null;
   const conversationPolicy = normalizeConversationPolicy(selection?.conversationPolicy);
+
+  // Per-resource scoping: a member scoped OUT of this agent can't launch it from
+  // Slack either — mirrors the dashboard POST /:projectId/sessions gate so the
+  // channel-agent picker can't be used to bypass department scoping. No-op when
+  // the agent is unscoped (returns it) or the user is an owner/admin/SA.
+  const launchAgent = selection?.agentName ?? 'default';
+  const allowedAgents = await filterAccessibleProjectResources(
+    userId,
+    project.accountId,
+    projectId,
+    'agent',
+    [launchAgent],
+  );
+  if (allowedAgents.length === 0) {
+    if (handle) {
+      await finalizeTurn(handle, {
+        error: `You don't have access to the \`${launchAgent}\` agent in this project. Ask a project manager to grant it, or switch the agent with \`/kortix agents\`.`,
+      });
+    }
+    return;
+  }
 
   const result = await slackSessionLifecycle.createSession({
     source: 'slack',

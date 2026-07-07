@@ -83,6 +83,20 @@ resource "aws_s3_bucket_lifecycle_configuration" "this" {
     }
   }
 
+  # Per-PR reports (reports/pr/<n>/<run>/) age out too — without this they
+  # accumulate forever (every PR run uploads a full report), which is what grew
+  # the bucket without bound. The landing page only surfaces the newest runs.
+  rule {
+    id     = "expire-old-pr-reports"
+    status = "Enabled"
+    filter {
+      prefix = "reports/pr/"
+    }
+    expiration {
+      days = var.pr_report_retention_days
+    }
+  }
+
   # Versioning recoverability without unbounded growth: drop overwritten versions
   # after N days, and clean up incomplete multipart uploads.
   rule {

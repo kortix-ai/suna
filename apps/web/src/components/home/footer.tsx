@@ -1,6 +1,6 @@
 'use client';
 
-import { siteConfig } from '@/lib/site-config';
+import { COMPETITORS } from '@/features/marketing/marketing-pages';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -17,16 +17,13 @@ type FooterSection = {
   links: FooterLinkItem[];
 };
 
-const compareNavItem = siteConfig.nav.links.find(
-  (item) => typeof item.href !== 'string' && item.name === 'Compare',
-);
-
 const FOOTER_SECTIONS: FooterSection[] = [
   {
     title: 'Product',
     links: [
       { label: 'CLI', href: '/developers' },
       { label: 'Developer', href: '/developers' },
+      { label: 'Marketplace', href: '/marketplace' },
       { label: 'Enterprise', href: '/enterprise' },
       { label: 'Pricing', href: '/pricing' },
     ],
@@ -41,17 +38,13 @@ const FOOTER_SECTIONS: FooterSection[] = [
       { label: 'Status', href: 'https://status.kortix.com', external: true },
     ],
   },
-  ...(compareNavItem && typeof compareNavItem.href !== 'string'
-    ? [
-        {
-          title: compareNavItem.name,
-          links: compareNavItem.href.map((link) => ({
-            label: link.name,
-            href: link.href,
-          })),
-        },
-      ]
-    : []),
+  {
+    title: 'Compare',
+    links: COMPETITORS.map((competitor) => ({
+      label: competitor.name,
+      href: `/compare/${competitor.slug}`,
+    })),
+  },
   {
     title: 'Legal',
     links: [

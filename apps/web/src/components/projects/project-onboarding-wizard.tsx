@@ -59,7 +59,7 @@ import {
   pipedreamConnect,
   pipedreamFinalize,
   type PipedreamApp,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
@@ -73,7 +73,7 @@ const SLACK_SLUGS = new Set(['slack', 'slack_v2']);
 
 /** Lazy — keeps the giant connectors-view module out of the project bundle. */
 const SlackConnectForm = lazy(() =>
-  import('@/components/projects/customize/sections/connectors-view').then((m) => ({
+  import('@/features/workspace/customize/sections/connectors-view').then((m) => ({
     default: m.SlackConnectForm,
   })),
 );
@@ -81,7 +81,7 @@ const SlackConnectForm = lazy(() =>
 /** Lazy — the full custom-connector form (OpenAPI / GraphQL / MCP / HTTP), reused
  * verbatim from the Connectors page so onboarding's "Advanced" tab matches it. */
 const CustomConnectorForm = lazy(() =>
-  import('@/components/projects/customize/sections/connectors-view').then((m) => ({
+  import('@/features/workspace/customize/sections/connectors-view').then((m) => ({
     default: m.CustomConnectorForm,
   })),
 );
@@ -142,7 +142,6 @@ function useToolConnect(projectId: string, onConnected: () => void) {
           app: slug,
           account: 'default',
           credential: 'shared',
-          sharing: { mode: 'project' },
         });
       } catch {
         // Already added — fine, proceed straight to authorize.
@@ -191,7 +190,7 @@ function useToolConnect(projectId: string, onConnected: () => void) {
 
 export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
   const contactTier = usePersonalContactTier();
-  const showFounderStep = contactTier !== 'none';
+  const showFounderStep = contactTier === 'personal';
   const { user } = useAuth();
   const defaultName =
     (user?.user_metadata?.full_name as string | undefined) ||

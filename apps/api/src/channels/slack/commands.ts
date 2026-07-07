@@ -18,6 +18,7 @@ import { buildSlackLoginUrl } from './login';
 import { lookupSlackIdentity, revokeSlackIdentity } from './identity';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
 import { lookupEmailsByUserIds } from '../../accounts/core/app';
+import { filterAccessibleProjectResources, unscopedResourceIds } from '../../iam';
 import type { SlashResponse } from './types';
 
 export interface SlashCtx {
@@ -821,6 +822,30 @@ async function slashAgents(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
     } catch (err) {
       console.warn('[slack-webhook] listProjectAgents failed', err);
     }
+    // Per-resource scoping: a linked member sees only agents they're scoped to;
+    // an unlinked caller sees only project-wide (unscoped) agents — never leak a
+    // scoped agent's name cross-department. No-op when nothing is scoped.
+    try {
+      const names = agents.map((a) => a.name);
+      const identity = ctx.slackUserId ? await lookupSlackIdentity(ctx.teamId, ctx.slackUserId) : null;
+      let allowedNames: string[];
+      if (identity) {
+        const [proj] = await db
+          .select({ accountId: projects.accountId })
+          .from(projects)
+          .where(eq(projects.projectId, selection.projectId))
+          .limit(1);
+        allowedNames = proj
+          ? await filterAccessibleProjectResources(identity.userId, proj.accountId, selection.projectId, 'agent', names)
+          : await unscopedResourceIds(selection.projectId, 'agent', names);
+      } else {
+        allowedNames = await unscopedResourceIds(selection.projectId, 'agent', names);
+      }
+      const allow = new Set(allowedNames);
+      agents = agents.filter((a) => allow.has(a.name));
+    } catch (err) {
+      console.warn('[slack-webhook] agent scoping filter failed', err);
+    }
     const blocks = buildAgentPickerBlocks(ctx, selection.agentName, agents);
     if (ctx.deferredDeliver) {
       await ctx.deferredDeliver({ response_type: 'ephemeral', blocks });
@@ -874,8 +899,14 @@ async function slashSetAgent(ctx: SlashCtx, arg: string): Promise<SlashResponse>
     return { response_type: 'ephemeral', text: `Bind a project first with \`${ctx.command} switch\`.` };
   }
   const value = name.toLowerCase() === 'default' ? null : name;
-  const ok = await setChannelAgent(ctx, value);
-  if (!ok) {
+  const result = await setChannelAgent(ctx, value);
+  if (!result.ok) {
+    if (result.reason === 'unknown_agent') {
+      return {
+        response_type: 'ephemeral',
+        text: `"${escapeMrkdwn(value ?? '')}" is not a declared agent in this project's manifest. Run \`${ctx.command} agents\` to pick one.`,
+      };
+    }
     return { response_type: 'ephemeral', text: `Bind a project first with \`${ctx.command} switch\`.` };
   }
   return {

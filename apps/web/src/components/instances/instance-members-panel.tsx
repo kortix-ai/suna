@@ -15,7 +15,7 @@ import {
   type SandboxMember,
   type SandboxMemberRole,
   type SandboxPendingInvite,
-} from '@/lib/platform-client';
+} from '@kortix/sdk/platform-client';
 import { cn } from '@/lib/utils';
 import {
   Dialog,
@@ -33,7 +33,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

@@ -12,21 +12,22 @@
  * repo instead (lands in the next session, no local clone).
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+  type InstallPlan,
+  type RegistryLoaderOptions,
+  type RegistryRef,
+  type ResolvedItem,
   applyInstall,
   loadItem,
   nodeFsExists,
   parseItemAddress,
   planInstall,
   resolveOpencodeDir,
-  type InstallPlan,
-  type RegistryLoaderOptions,
-  type RegistryRef,
-  type ResolvedItem,
 } from '@kortix/registry';
 import { emitJson, resolveProjectContext, surfaceApiError } from '../command-helpers.ts';
+import { resolveLocalManifest } from '../manifest.ts';
 import { C, status } from '../style.ts';
 
 /** Shape returned by GET /v1/marketplace/items. */
@@ -102,8 +103,7 @@ function parseFlags(argv: string[]): { address?: string; flags: Flags } {
     if (arg === '--root' && argv[i + 1]) {
       flags.root = resolve(argv[++i]);
       flags.rootExplicit = true;
-    }
-    else if (arg === '--project' && argv[i + 1]) flags.project = argv[++i];
+    } else if (arg === '--project' && argv[i + 1]) flags.project = argv[++i];
     else if (arg === '--host' && argv[i + 1]) flags.host = argv[++i];
     else if (arg === '--ref' && argv[i + 1]) flags.ref = argv[++i];
     else if (arg === '--namespace' && argv[i + 1]) {
@@ -131,8 +131,11 @@ function makeResolver(flags: Flags) {
 }
 
 function configDirFor(root: string): string {
-  const manifestPath = resolve(root, 'kortix.toml');
-  const raw = existsSync(manifestPath) ? readFileSync(manifestPath, 'utf8') : null;
+  // Resolve kortix.yaml or kortix.toml (yaml preferred); resolveOpencodeDir reads
+  // either format's [opencode] config_dir. Hardcoding kortix.toml here would use
+  // the default dir for a yaml project, installing into the wrong place.
+  const resolved = resolveLocalManifest(root);
+  const raw = resolved ? readFileSync(resolved.path, 'utf8') : null;
   return resolveOpencodeDir(raw);
 }
 
@@ -217,17 +220,25 @@ function printPlan(resolved: ResolvedItem, plan: InstallPlan, flags: Flags): voi
     process.stdout.write(`  ${C.dim}${resolved.item.description}${C.reset}\n`);
   }
   if (plan.dependencies.length > 0) {
-    process.stdout.write(`\n  ${C.dim}Pulls dependencies:${C.reset} ${plan.dependencies.join(', ')}\n`);
+    process.stdout.write(
+      `\n  ${C.dim}Pulls dependencies:${C.reset} ${plan.dependencies.join(', ')}\n`,
+    );
   }
-  process.stdout.write(`\n  ${C.dim}Files → ${flags.root === process.cwd() ? '.' : flags.root}${C.reset}\n`);
+  process.stdout.write(
+    `\n  ${C.dim}Files → ${flags.root === process.cwd() ? '.' : flags.root}${C.reset}\n`,
+  );
   for (const w of plan.writes) {
     const mark = w.exists ? `${C.yellow}~${C.reset}` : `${C.green}+${C.reset}`;
-    process.stdout.write(`    ${mark} ${w.target}${w.exists ? ` ${C.faded}(exists)${C.reset}` : ''}\n`);
+    process.stdout.write(
+      `    ${mark} ${w.target}${w.exists ? ` ${C.faded}(exists)${C.reset}` : ''}\n`,
+    );
   }
   const envKeys = Object.keys(plan.envVars);
   if (envKeys.length > 0) {
     process.stdout.write(`\n  ${C.dim}Needs secrets:${C.reset} ${envKeys.join(', ')}\n`);
-    process.stdout.write(`  ${C.dim}Set them with${C.reset} ${C.cyan}kortix secrets set <KEY> <value>${C.reset}\n`);
+    process.stdout.write(
+      `  ${C.dim}Set them with${C.reset} ${C.cyan}kortix secrets set <KEY> <value>${C.reset}\n`,
+    );
   }
   for (const warn of plan.warnings) process.stdout.write(`${status.warn(warn)}\n`);
 }
@@ -259,7 +270,12 @@ async function installToProject(address: string, flags: Flags): Promise<number> 
         `Browse with ${C.cyan}kortix marketplace search ${address}${C.reset} or the web marketplace.\n`,
     );
     if (items.length > 1) {
-      process.stdout.write(`  ${C.dim}Did you mean:${C.reset} ${items.slice(0, 6).map((i) => i.id).join(', ')}\n`);
+      process.stdout.write(
+        `  ${C.dim}Did you mean:${C.reset} ${items
+          .slice(0, 6)
+          .map((i) => i.id)
+          .join(', ')}\n`,
+      );
     }
     return 1;
   }
@@ -287,7 +303,9 @@ async function installToProject(address: string, flags: Flags): Promise<number> 
 
   let res: InstallResponse;
   try {
-    res = await ctx.client.post<InstallResponse>(`/projects/${ctx.projectId}/marketplace/install`, { id: match.id });
+    res = await ctx.client.post<InstallResponse>(`/projects/${ctx.projectId}/marketplace/install`, {
+      id: match.id,
+    });
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -297,12 +315,16 @@ async function installToProject(address: string, flags: Flags): Promise<number> 
     return 0;
   }
 
-  process.stdout.write(`\n${status.ok(`Installed ${C.bold}${match.title}${C.reset} into your project`)}\n`);
+  process.stdout.write(
+    `\n${status.ok(`Installed ${C.bold}${match.title}${C.reset} into your project`)}\n`,
+  );
   process.stdout.write(
     `  ${C.dim}commit${C.reset} ${C.cyan}${res.commit_sha?.slice(0, 8)}${C.reset} ${C.dim}on${C.reset} ${res.branch} ${C.dim}— ${res.file_count} files${C.reset}\n`,
   );
   if (res.installed?.length > 1) {
-    process.stdout.write(`  ${C.dim}items:${C.reset} ${res.installed.map((i) => i.name).join(', ')}\n`);
+    process.stdout.write(
+      `  ${C.dim}items:${C.reset} ${res.installed.map((i) => i.name).join(', ')}\n`,
+    );
   }
   if (res.capabilities?.secrets?.length) {
     process.stdout.write(

@@ -1,7 +1,17 @@
-export type ProjectRole = 'manager' | 'editor' | 'viewer';
-export type AccountRole = 'owner' | 'admin' | 'member';
-// 'session' sits between 'read' and 'write': any project member (viewer
-// included) may start and run sessions, but not customize the project.
+// `member` is the floor project role (renamed from `user`). The retired `user`
+// and `viewer` tiers fold into it — see normalizeProjectRole in iam/role-perms.ts,
+// the canonical parser (this module no longer keeps its own copy).
+import {
+  maxProjectRole,
+  PROJECT_ROLE_RANK,
+  type AccountRole,
+  type ProjectRole,
+} from '../iam/role-perms';
+
+export type { AccountRole, ProjectRole };
+
+// 'session' sits between 'read' and 'write': any project member (a plain
+// `member` included) may start and run sessions, but not customize the project.
 export type ProjectAccessAction = 'read' | 'session' | 'write' | 'manage';
 
 export function isAccountManager(role: AccountRole): boolean {
@@ -11,7 +21,7 @@ export function isAccountManager(role: AccountRole): boolean {
 export function roleAllows(role: ProjectRole | null, action: ProjectAccessAction): boolean {
   if (!role) return false;
   if (action === 'read') return true;
-  // Every project role can use sessions — viewer is the base *usable* role.
+  // Every project role can use sessions — `member` is the base *usable* role.
   if (action === 'session') return true;
   if (action === 'write') return role === 'editor' || role === 'manager';
   return role === 'manager';
@@ -23,14 +33,6 @@ export function effectiveProjectRole(
 ): ProjectRole | null {
   if (isAccountManager(accountRole)) return 'manager';
   return projectRole;
-}
-
-export function parseProjectRole(value: unknown): ProjectRole | null {
-  if (typeof value !== 'string') return null;
-  const normalized = value.trim().toLowerCase();
-  return normalized === 'manager' || normalized === 'editor' || normalized === 'viewer'
-    ? normalized
-    : null;
 }
 
 // ─── Effective access fold ───────────────────────────────────────────────
@@ -60,16 +62,6 @@ export interface EffectiveAccessFold {
   effective_project_role: ProjectRole | null;
   effective_source: AccessSourceTag | null;
   group_sources: GroupSource[];
-}
-
-const PROJECT_ROLE_RANK: Record<ProjectRole, number> = {
-  viewer: 1,
-  editor: 2,
-  manager: 3,
-};
-
-export function maxProjectRole(a: ProjectRole, b: ProjectRole): ProjectRole {
-  return PROJECT_ROLE_RANK[a] >= PROJECT_ROLE_RANK[b] ? a : b;
 }
 
 export function foldEffectiveProjectAccess(input: {

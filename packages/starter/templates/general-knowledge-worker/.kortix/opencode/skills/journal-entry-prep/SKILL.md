@@ -1,6 +1,7 @@
 ---
 name: journal-entry-prep
 description: "Best practices, standard entry types, documentation requirements, and review workflows for journal entry preparation."
+defaultProjectInstall: true
 ---
 
 # Journal Entry Preparation

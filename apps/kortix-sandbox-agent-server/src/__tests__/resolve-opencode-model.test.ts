@@ -36,4 +36,30 @@ describe('resolveOpencodeModel', () => {
       modelID: 'claude-sonnet-4-6',
     })
   })
+
+  // Regression guard for the agent-first compiler (compile-agent-config.ts):
+  // the compiled agent map can now bake a default `model` onto an agent (or
+  // the top-level config), but that's ONLY a fallback for when no explicit
+  // model is passed on a request. KORTIX_OPENCODE_MODEL (an explicit session/
+  // trigger override, resolved server-side from DB model-preferences) is
+  // threaded through as the literal `model` on the boot prompt call — this
+  // resolver must keep working exactly as before, independent of whatever
+  // KORTIX_COMPILED_AGENT_CONFIG carries, so that explicit override still
+  // wins over the manifest agent's declarative default.
+  test('is unaffected by a server-compiled agent config being present alongside it', () => {
+    process.env.KORTIX_OPENCODE_MODEL = 'anthropic/claude-opus-4-8'
+    process.env.KORTIX_COMPILED_AGENT_CONFIG = JSON.stringify({
+      model: 'anthropic/claude-sonnet-5',
+      agent: { support: { model: 'anthropic/claude-sonnet-5' } },
+    })
+
+    try {
+      expect(resolveOpencodeModel()).toEqual({
+        providerID: 'anthropic',
+        modelID: 'claude-opus-4-8',
+      })
+    } finally {
+      delete process.env.KORTIX_COMPILED_AGENT_CONFIG
+    }
+  })
 })

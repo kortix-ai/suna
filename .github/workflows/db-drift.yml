@@ -50,7 +50,7 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.gate.outputs.skip != 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - if: steps.gate.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
@@ -124,7 +124,7 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.gate.outputs.skip != 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - if: steps.gate.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
