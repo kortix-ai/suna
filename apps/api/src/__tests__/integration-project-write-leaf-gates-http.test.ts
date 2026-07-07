@@ -135,6 +135,16 @@ const CASES: WCase[] = [
     path: () => `/v1/projects/${PROJECT}/review/items`, body: {},
     tier: 'member', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_REVIEW_SUBMIT],
   },
+  // ── Triggers ─────────────────────────────────────────────────────────────
+  {
+    // Floor was 'manage' (project.write) — which the floor `member` role lacks
+    // though it HOLDS trigger.fire, so a plain member could never fire. Floor is
+    // now 'read', so the trigger.fire leaf is the gate and member can fire.
+    name: 'trigger fire (trigger.fire — member floor role must be able to fire)',
+    leaf: A.PROJECT_TRIGGER_FIRE, method: 'POST',
+    path: () => `/v1/projects/${PROJECT}/triggers/some-slug/fire`, body: {},
+    tier: 'member', denyGrant: [A.PROJECT_SESSION_START], allowGrant: [A.PROJECT_TRIGGER_FIRE],
+  },
   // ── Connectors (write) ───────────────────────────────────────────────────
   {
     name: 'email connect (connector.write)',

@@ -1829,7 +1829,12 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param("projectId");
     const slug = c.req.param("slug");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read' (membership); project.trigger.fire is the real gate. The floor
+    // was 'manage' (= project.write) — which the floor `member` role LACKS even
+    // though it HOLDS trigger.fire, so a plain member could never fire a trigger
+    // (its designed fire grant was dead behind the floor). Now member/editor/
+    // manager all fire (all hold the leaf); a custom role without it is denied.
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE);
 
