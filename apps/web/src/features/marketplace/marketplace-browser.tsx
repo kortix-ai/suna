@@ -259,7 +259,7 @@ export function MarketplaceBrowser({
           ref={setOwnScrollElement}
           className={cn(
             'relative w-full',
-            !externalScrollElement && 'max-h-[90vh] overflow-y-auto',
+            !externalScrollElement && 'max-h-[80vh] overflow-y-auto',
           )}
         >
           <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
