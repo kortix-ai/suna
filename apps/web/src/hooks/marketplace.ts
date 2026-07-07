@@ -66,13 +66,24 @@ export function useMarketplaceItems(params: {
 /** Paged variant of `useMarketplaceItems` for infinite-scroll browsing (A3/A4
  *  consumers). Flatten `data.pages.flatMap(p => p.items)` for the item list;
  *  `data.pages[0]` still carries `total`/`loading`/`pending`/`sources`. */
-export function useInfiniteMarketplaceItems(params: {
-  query?: string;
-  type?: string;
-  source?: string;
-  publicOnly?: boolean;
-  limit?: number;
-}) {
+export function useInfiniteMarketplaceItems(
+  params: {
+    query?: string;
+    type?: string;
+    source?: string;
+    publicOnly?: boolean;
+    limit?: number;
+  },
+  options?: {
+    /** Seeds react-query's cache for this exact queryKey with an
+     *  already-fetched first page (e.g. an SSR/ISR bounded fetch), so the
+     *  client hydrates without a network round-trip or a loading flash. Only
+     *  consulted when this queryKey has no cached data yet — callers must
+     *  only pass this for the query params that actually match what was
+     *  server-rendered (A4). */
+    initialData?: () => { pages: ItemsPage[]; pageParams: number[] };
+  },
+) {
   const publicOnly = params.publicOnly ?? false;
   const limit = params.limit ?? MARKETPLACE_ITEMS_PAGE_SIZE;
   return useInfiniteQuery({
@@ -92,6 +103,7 @@ export function useInfiniteMarketplaceItems(params: {
         offset: pageParam,
       }),
     initialPageParam: 0,
+    initialData: options?.initialData,
     getNextPageParam: (lastPage, allPages) =>
       nextMarketplaceItemsPageParam(lastPage, allPages, limit),
     staleTime: 60_000,

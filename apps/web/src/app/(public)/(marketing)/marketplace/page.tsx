@@ -1,10 +1,7 @@
 import type { Metadata } from 'next';
 
 import { MarketplaceExplore } from '@/features/marketplace/marketplace-explore';
-import {
-  listPublicMarketplaceItems,
-  listPublicMarketplaces,
-} from '@/lib/marketplace-public';
+import { loadMarketplaceExploreData } from '@/lib/marketplace-public';
 
 export const revalidate = 3600;
 
@@ -20,22 +17,7 @@ export const metadata: Metadata = {
 };
 
 export default async function MarketplacePage() {
-  let itemsPage;
-  let marketplacesPage;
-  try {
-    [itemsPage, marketplacesPage] = await Promise.all([
-      listPublicMarketplaceItems(),
-      listPublicMarketplaces(),
-    ]);
-  } catch {
-    itemsPage = { items: [], loading: false, pending: 0, sources: [] };
-    marketplacesPage = { marketplaces: [], loading: false, pending: 0, sources: [] };
-  }
+  const { itemsPage, marketplacesPage } = await loadMarketplaceExploreData();
 
-  return (
-    <MarketplaceExplore
-      items={itemsPage.items}
-      marketplaces={marketplacesPage.marketplaces}
-    />
-  );
+  return <MarketplaceExplore items={itemsPage.items} marketplaces={marketplacesPage.marketplaces} />;
 }

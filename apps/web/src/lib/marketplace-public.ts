@@ -118,3 +118,62 @@ export async function getPublicMarketplaceItemFile(
     `/marketplace/items/${encodeURIComponent(id)}/file?path=${encodeURIComponent(target)}`,
   );
 }
+
+// ── Bounded SSR loaders (A4) ────────────────────────────────────────────────
+// The public marketplace pages used to fetch the *entire* catalog on every
+// ISR render and hand it to the client, which hung/rendered-forever on a
+// large catalog. These loaders bound the SSR fetch; the client then hydrates
+// into the infinite-scroll + virtualized views (`MarketplacePagedGrid`) for
+// anything beyond the first page.
+
+/** First-page size for the `/marketplace/[company]` SSR fetch. */
+export const MARKETPLACE_COMPANY_PAGE_LIMIT = 30;
+
+/** First-page size for the `/marketplace` landing SSR fetch — large enough to
+ *  fill each type section's ~9-item preview (and the featured rail) in the
+ *  common case, without being an unbounded full-catalog fetch. A single
+ *  unsorted fetch can't *guarantee* 9-per-type on a very skewed catalog; the
+ *  landing's "See all" already routes through the paged view for that case. */
+export const MARKETPLACE_EXPLORE_LANDING_LIMIT = 120;
+
+function emptyItemsPage(): ItemsPage {
+  return { items: [], total: 0, hasMore: false, loading: false, pending: 0, sources: [] };
+}
+
+function emptyMarketplacesPage(): MarketplacesPage {
+  return { marketplaces: [], loading: false, pending: 0, sources: [] };
+}
+
+/** Bounded data for the `/marketplace` landing page's SSR render. */
+export async function loadMarketplaceExploreData(): Promise<{
+  itemsPage: ItemsPage;
+  marketplacesPage: MarketplacesPage;
+}> {
+  try {
+    const [itemsPage, marketplacesPage] = await Promise.all([
+      listPublicMarketplaceItems({ limit: MARKETPLACE_EXPLORE_LANDING_LIMIT }),
+      listPublicMarketplaces(),
+    ]);
+    return { itemsPage, marketplacesPage };
+  } catch {
+    return { itemsPage: emptyItemsPage(), marketplacesPage: emptyMarketplacesPage() };
+  }
+}
+
+/** Bounded, source-scoped data for the `/marketplace/[company]` page's SSR
+ *  render — the server filters by `source` directly instead of fetching the
+ *  full catalog and filtering client-side. */
+export async function loadMarketplaceCompanyData(marketplaceId: string): Promise<{
+  itemsPage: ItemsPage;
+  marketplacesPage: MarketplacesPage;
+}> {
+  try {
+    const [itemsPage, marketplacesPage] = await Promise.all([
+      listPublicMarketplaceItems({ source: marketplaceId, limit: MARKETPLACE_COMPANY_PAGE_LIMIT }),
+      listPublicMarketplaces(),
+    ]);
+    return { itemsPage, marketplacesPage };
+  } catch {
+    return { itemsPage: emptyItemsPage(), marketplacesPage: emptyMarketplacesPage() };
+  }
+}

@@ -5,8 +5,12 @@ import {
   MARKETPLACE_GRID_COLUMNS,
   marketplaceGridRowKey,
   resolveEffectiveMarketplaceType,
+  resolveMarketplaceExploreViewMode,
   resolveMarketplaceQueryParams,
+  resolveMarketplaceTypeSectionTotal,
   shouldFetchNextMarketplacePage,
+  shouldVirtualizeMarketplacePagedGrid,
+  sumMarketplaceTypeCounts,
 } from './marketplace-grid';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
 
@@ -149,5 +153,93 @@ describe('resolveMarketplaceQueryParams', () => {
     expect(bySearch).not.toEqual(baseline);
     expect(byType).not.toEqual(baseline);
     expect(bySource).not.toEqual(baseline);
+  });
+});
+
+describe('resolveMarketplaceExploreViewMode', () => {
+  test('an empty catalog wins even while a search is in flight', () => {
+    const mode = resolveMarketplaceExploreViewMode({ catalogEmpty: true, searching: true });
+
+    expect(mode).toBe('empty');
+  });
+
+  test('a search in flight switches to the paged search view, not the preview grid', () => {
+    const mode = resolveMarketplaceExploreViewMode({ catalogEmpty: false, searching: true });
+
+    expect(mode).toBe('search');
+  });
+
+  test('no search and a non-empty catalog renders the grouped preview sections', () => {
+    const mode = resolveMarketplaceExploreViewMode({ catalogEmpty: false, searching: false });
+
+    expect(mode).toBe('browse');
+  });
+});
+
+describe('sumMarketplaceTypeCounts', () => {
+  test('sums per-type counts across every marketplace summary', () => {
+    const marketplaces: { types: Record<string, number> }[] = [
+      { types: { skill: 3, agent: 1 } },
+      { types: { skill: 2 } },
+    ];
+
+    expect(sumMarketplaceTypeCounts(marketplaces)).toEqual({ skill: 5, agent: 1 });
+  });
+
+  test('an empty marketplace list produces no counts', () => {
+    expect(sumMarketplaceTypeCounts([])).toEqual({});
+  });
+
+  test('a marketplace with no types map contributes nothing', () => {
+    expect(sumMarketplaceTypeCounts([{}])).toEqual({});
+  });
+});
+
+describe('resolveMarketplaceTypeSectionTotal', () => {
+  test('strips the registry: prefix to match the summary counts', () => {
+    const total = resolveMarketplaceTypeSectionTotal('registry:skill', { skill: 42 }, 9);
+
+    expect(total).toBe(42);
+  });
+
+  test('falls back to the SSR-bounded local count when the type is absent from the summary', () => {
+    const total = resolveMarketplaceTypeSectionTotal('registry:agent', { skill: 42 }, 9);
+
+    expect(total).toBe(9);
+  });
+
+  test('a large true total (beyond the bounded page) is reported, not the local preview count', () => {
+    const total = resolveMarketplaceTypeSectionTotal('registry:skill', { skill: 500 }, 9);
+
+    expect(total).toBe(500);
+  });
+});
+
+describe('company explore paged grid bounding (A4)', () => {
+  test('a large source renders a bounded row window at the company page column count', () => {
+    const items = Array.from(
+      { length: 4000 },
+      (_, i) => ({ id: `item-${i}`, type: 'registry:skill' }) as unknown as MarketplaceItem,
+    );
+
+    const rows = buildMarketplaceGridRows({ items, grouped: false, columns: 2 });
+
+    expect(rows.length).toBe(Math.ceil(items.length / 2));
+    expect(rows.length).toBeLessThan(items.length);
+  });
+});
+
+describe('shouldVirtualizeMarketplacePagedGrid', () => {
+  test('a single loaded page (the SSR/first-hydration state) stays unvirtualized', () => {
+    expect(shouldVirtualizeMarketplacePagedGrid(1)).toBe(false);
+  });
+
+  test('no page loaded yet stays unvirtualized', () => {
+    expect(shouldVirtualizeMarketplacePagedGrid(0)).toBe(false);
+  });
+
+  test('a large source that has fetched multiple pages switches to the windowed render', () => {
+    expect(shouldVirtualizeMarketplacePagedGrid(2)).toBe(true);
+    expect(shouldVirtualizeMarketplacePagedGrid(50)).toBe(true);
   });
 });

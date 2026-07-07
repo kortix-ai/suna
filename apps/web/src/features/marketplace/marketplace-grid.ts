@@ -102,3 +102,61 @@ export function resolveMarketplaceQueryParams(controls: {
     publicOnly: controls.publicOnly,
   };
 }
+
+/** Top-level view the public explore landing renders (A4). An empty catalog
+ *  wins even mid-search (nothing to search); otherwise a query in flight
+ *  switches the whole page to the paged/virtualized search view instead of
+ *  the grouped preview sections. "No results for this search" isn't decided
+ *  here — it's only knowable once the paged query resolves, so it's handled
+ *  by the paged grid itself. */
+export type MarketplaceExploreViewMode = 'empty' | 'search' | 'browse';
+
+export function resolveMarketplaceExploreViewMode(params: {
+  catalogEmpty: boolean;
+  searching: boolean;
+}): MarketplaceExploreViewMode {
+  if (params.catalogEmpty) return 'empty';
+  if (params.searching) return 'search';
+  return 'browse';
+}
+
+/** Sums a `MarketplaceSummary[]`'s per-type counts across all sources into a
+ *  single map, keyed by the short type name (`skill`, not `registry:skill`)
+ *  as the summaries report them. Used to size the "See all N" affordance
+ *  from cheap, already-fetched summary counts instead of the SSR-bounded
+ *  item page (A4) — the bounded page alone can't say whether a type has more
+ *  items than made it into that page. */
+export function sumMarketplaceTypeCounts(
+  marketplaces: { types?: Record<string, number> }[],
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const m of marketplaces) {
+    for (const [k, v] of Object.entries(m.types ?? {})) counts[k] = (counts[k] ?? 0) + v;
+  }
+  return counts;
+}
+
+/** Whether the paged grid (A4's `MarketplacePagedGrid`) should render its
+ *  windowed/virtualized layout instead of a plain grid of the current items.
+ *  Only true once more than one page has actually loaded client-side —
+ *  gating on this (rather than item/row count) guarantees the first page is
+ *  always rendered the same, deterministic way on the server and on first
+ *  hydration, since a fetched page count > 1 is only reachable after a real
+ *  post-hydration scroll. A single page is also small enough (bounded by the
+ *  configured page size) to mount directly without windowing. */
+export function shouldVirtualizeMarketplacePagedGrid(pageCount: number): boolean {
+  return pageCount > 1;
+}
+
+/** Resolves a type section's true item total from the summed type counts
+ *  (stripping the `registry:` prefix to match their short keys), falling
+ *  back to the SSR-bounded local count when the type is absent from the
+ *  summary (e.g. no marketplaces loaded yet). */
+export function resolveMarketplaceTypeSectionTotal(
+  type: string,
+  typeCounts: Record<string, number>,
+  localCount: number,
+): number {
+  const total = typeCounts[type.replace(/^registry:/, '')];
+  return typeof total === 'number' ? total : localCount;
+}
