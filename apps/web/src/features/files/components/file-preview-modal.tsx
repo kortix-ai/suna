@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { FilePreviewModal as BaseFilePreviewModal } from '@/features/file-viewer';
 import { cn } from '@/lib/utils';
-import { useFilesStore } from '../store/files-store';
+import { useFilesStore } from '@/features/file-browser/store/files-store';
 import { useGitStatus } from '../hooks';
 import { workspaceFileSource } from '../file-source';
 import { FileHistoryPopoverContent } from './file-history-popover';

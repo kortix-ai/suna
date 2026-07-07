@@ -1,14 +1,14 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, count, eq, sql } from "drizzle-orm";
 import { json, errors, auth } from "../../openapi";
-import { accountMembers, accounts, accountUser, projects } from "@kortix/db";
+import { accountMembers, accounts, projects } from "@kortix/db";
 import { bootstrapPersonalAccount } from "./bootstrap-personal-account";
 import { db } from "../../shared/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";
 import {
   accountsRouter,
   accountDisplayName,
-  defaultAccountName,
+  resolveAccountDisplayNames,
   AccountSummarySchema,
   AccountDetailSchema,
   AccountIdParam,
@@ -44,62 +44,36 @@ export function registerAccountRoutes(): void {
 
       await autoClaimPendingInvites(userId, userEmail);
 
-      try {
-        const memberships = await db
-          .select({
-            accountId: accountMembers.accountId,
-            accountRole: accountMembers.accountRole,
-            name: accounts.name,
-            createdAt: accounts.createdAt,
-            updatedAt: accounts.updatedAt,
-          })
-          .from(accountMembers)
-          .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
-          .where(eq(accountMembers.userId, userId));
+      const memberships = await db
+        .select({
+          accountId: accountMembers.accountId,
+          accountRole: accountMembers.accountRole,
+          name: accounts.name,
+          createdAt: accounts.createdAt,
+          updatedAt: accounts.updatedAt,
+        })
+        .from(accountMembers)
+        .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
+        .where(eq(accountMembers.userId, userId));
 
-        if (memberships.length > 0) {
-          return c.json(
-            memberships.map((m) => ({
-              account_id: m.accountId,
-              name: accountDisplayName(m.name, userEmail),
-              slug: m.accountId.slice(0, 8),
-              created_at:
-                m.createdAt?.toISOString() ?? new Date().toISOString(),
-              updated_at:
-                m.updatedAt?.toISOString() ?? new Date().toISOString(),
-              account_role: m.accountRole || "owner",
-              is_primary_owner: m.accountRole === "owner",
-            })),
-          );
-        }
-      } catch {
-        // table doesn't exist yet — fall through to legacy basejump
-      }
-
-      try {
-        const legacyMemberships = await db
-          .select({
-            accountId: accountUser.accountId,
-            accountRole: accountUser.accountRole,
-          })
-          .from(accountUser)
-          .where(eq(accountUser.userId, userId));
-
-        if (legacyMemberships.length > 0) {
-          return c.json(
-            legacyMemberships.map((m) => ({
-              account_id: m.accountId,
-              name: defaultAccountName(userEmail),
-              slug: m.accountId.slice(0, 8),
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              account_role: m.accountRole || "owner",
-              is_primary_owner: m.accountRole === "owner",
-            })),
-          );
-        }
-      } catch {
-        // basejump doesn't exist
+      if (memberships.length > 0) {
+        const displayNames = await resolveAccountDisplayNames(memberships, {
+          userId,
+          email: userEmail,
+        });
+        return c.json(
+          memberships.map((m) => ({
+            account_id: m.accountId,
+            name: displayNames.get(m.accountId) ?? accountDisplayName(m.name, userEmail),
+            slug: m.accountId.slice(0, 8),
+            created_at:
+              m.createdAt?.toISOString() ?? new Date().toISOString(),
+            updated_at:
+              m.updatedAt?.toISOString() ?? new Date().toISOString(),
+            account_role: m.accountRole || "owner",
+            is_primary_owner: m.accountRole === "owner",
+          })),
+        );
       }
 
       try {
@@ -245,9 +219,14 @@ export function registerAccountRoutes(): void {
           and(eq(projects.accountId, accountId), eq(projects.status, "active")),
         );
 
+      const displayNames = await resolveAccountDisplayNames(
+        [{ accountId: row.accountId, name: row.name }],
+        { userId, email: c.get("userEmail") as string },
+      );
+
       return c.json({
         account_id: row.accountId,
-        name: row.name,
+        name: displayNames.get(row.accountId) ?? row.name,
         member_count: memberCount,
         project_count: Number(projectCountRow?.n ?? 0),
         role: membership.accountRole,

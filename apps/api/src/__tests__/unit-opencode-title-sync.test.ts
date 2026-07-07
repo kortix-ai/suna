@@ -8,6 +8,7 @@ let listedSessions: any[] = [];
 // Externals whose sandbox lookup should THROW (e.g. provider rate limit /
 // archived box) — used to prove one bad sandbox never sinks the whole batch.
 const throwForExternalIds = new Set<string>();
+const hangForExternalIds = new Set<string>();
 
 mock.module('../shared/db', () => ({
   db: {
@@ -34,6 +35,9 @@ mock.module('../shared/db', () => ({
 
 mock.module('../projects/opencode-mapping', () => ({
   listSandboxOpencodeSessions: async (externalId: string) => {
+    if (hangForExternalIds.has(externalId)) {
+      return new Promise(() => {});
+    }
     if (throwForExternalIds.has(externalId)) {
       throw new Error(`DaytonaRateLimitError: ThrottlerException: Too Many Requests (${externalId})`);
     }
@@ -61,6 +65,7 @@ afterEach(() => {
   dbUpdates.length = 0;
   listedSessions = [];
   throwForExternalIds.clear();
+  hangForExternalIds.clear();
 });
 
 function row(overrides: Record<string, unknown> = {}) {
@@ -169,5 +174,26 @@ describe('syncOpenCodeTitlesForSessions', () => {
     // The throwing sandbox's row is returned UNCHANGED (best-effort fallback).
     expect(result[1].opencodeSessionId).toBe('pin-bad');
     expect((result[1].metadata as Record<string, unknown>).name).toBe('Kept');
+  });
+
+  test('returns cached rows when title sync exceeds the read deadline', async () => {
+    sandboxRows.push({ sessionId: 'slow-session', externalId: 'sandbox-slow' });
+    hangForExternalIds.add('sandbox-slow');
+    const original = row({
+      sessionId: 'slow-session',
+      metadata: { name: 'Cached title' },
+      opencodeSessionId: 'cached-pin',
+    });
+
+    const result = await syncOpenCodeTitlesForSessions({
+      rows: [original],
+      projectId: 'project-1',
+      accountId: 'account-1',
+      userId: 'user-1',
+      deadlineMs: 10,
+    });
+
+    expect(result).toEqual([original]);
+    expect(dbUpdates).toHaveLength(0);
   });
 });

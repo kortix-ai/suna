@@ -1,8 +1,9 @@
 import { accountHasAppAccess } from '@/lib/auth/account-access';
 import { resolveFirstProjectPathForNewUser } from '@/lib/auth/bootstrap-first-project';
 import { buildDesktopBounceHtml, buildMobileBounceHtml } from '@/lib/auth/desktop-bounce';
-import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
-import { ACTIVE_INSTANCE_COOKIE } from '@/lib/instance-routes';
+import { isInviteReturnUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import { ACTIVE_INSTANCE_COOKIE } from '@kortix/sdk/instance-routes';
+import { fetchAccountStateWithToken } from '@kortix/sdk/projects-client';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import type { NextRequest } from 'next/server';
@@ -186,18 +187,20 @@ export async function GET(request: NextRequest) {
         const accessToken = sessionData?.session?.access_token;
 
         const billingEnabled = runtimeEnv.BILLING_ENABLED;
-        if (billingEnabled && backendUrl && accessToken) {
+        // Skip the billing-aware landing for invited users: a returnUrl pointing
+        // at /invites/:id must be honored verbatim so they reach the accept/decline
+        // dialog, instead of being bounced to the billing page or a freshly
+        // provisioned first project (either of which skips the dialog and leaves
+        // the invite unaccepted).
+        if (billingEnabled && backendUrl && accessToken && !isInviteReturnUrl(next)) {
           try {
-            const accountStateRes = await fetch(`${backendUrl}/v1/billing/account-state`, {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-              },
-              signal: AbortSignal.timeout(5000),
+            const accountState = await fetchAccountStateWithToken({
+              backendUrl,
+              accessToken,
+              timeoutMs: 5000,
             });
 
-            if (accountStateRes.ok) {
-              const accountState = await accountStateRes.json();
+            if (accountState) {
               if (!accountHasAppAccess(accountState)) {
                 finalDestination = '/accounts';
               } else if (isNewUser) {

@@ -1,6 +1,6 @@
 import { Context } from 'hono';
 import { z } from '@hono/zod-openapi';
-import { and, count, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { makeOpenApiApp } from '../../openapi';
 import { accountInvitations, accountMembers, accounts } from '@kortix/db';
 import type { AppEnv } from '../../types';
@@ -16,15 +16,20 @@ export function defaultAccountName(email: string | null | undefined): string {
   return normalized ? `${normalized}'s Account` : 'Account';
 }
 
+// A stored name counts as "proper" only when it isn't one of the placeholder
+// values migrations left behind ('Personal', 'User'). Placeholder accounts
+// fall back to an email-derived name.
+export function properAccountName(name: string | null | undefined): string | null {
+  const normalized = name?.trim();
+  if (!normalized || normalized === 'Personal' || normalized === 'User') return null;
+  return normalized;
+}
+
 export function accountDisplayName(
   name: string | null | undefined,
   email: string | null | undefined,
 ): string {
-  const normalized = name?.trim();
-  if (!normalized || normalized === 'Personal' || normalized === 'User') {
-    return defaultAccountName(email);
-  }
-  return normalized;
+  return properAccountName(name) ?? defaultAccountName(email);
 }
 
 // ─── Shared response/request schemas (power the Scalar docs) ────────────────
@@ -71,6 +76,7 @@ export const AccountTokenSchema = z
   .object({
     token_id: z.string(),
     name: z.string(),
+    project_id: z.string().nullable().optional(),
     public_key: z.string(),
     status: z.string(),
     expires_at: z.string().nullable(),
@@ -210,6 +216,57 @@ export async function lookupEmailsByUserIds(userIds: string[]): Promise<Map<stri
   return result;
 }
 
+// Display names for a batch of accounts, deriving the fallback for unnamed
+// (placeholder-named) accounts from the account OWNER's email — not the
+// caller's. Deriving from the caller made every unnamed account a user was
+// invited into render as "<caller>'s Account", so shared projects looked like
+// they lived in the caller's own personal account.
+export async function resolveAccountDisplayNames(
+  rows: Array<{ accountId: string; name: string | null }>,
+  caller: { userId: string; email: string | null | undefined },
+): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  const unnamed: string[] = [];
+  for (const row of rows) {
+    const proper = properAccountName(row.name);
+    if (proper) names.set(row.accountId, proper);
+    else unnamed.push(row.accountId);
+  }
+  if (unnamed.length === 0) return names;
+
+  // Primary owner per unnamed account = earliest-joined 'owner' row.
+  const ownerByAccount = new Map<string, string>();
+  try {
+    const owners = await db
+      .select({ accountId: accountMembers.accountId, userId: accountMembers.userId })
+      .from(accountMembers)
+      .where(and(
+        inArray(accountMembers.accountId, unnamed),
+        eq(accountMembers.accountRole, 'owner'),
+      ))
+      .orderBy(asc(accountMembers.joinedAt));
+    for (const o of owners) {
+      if (!ownerByAccount.has(o.accountId)) ownerByAccount.set(o.accountId, o.userId);
+    }
+  } catch {
+    // account_members may not exist yet — fall through to caller email below.
+  }
+
+  const foreignOwnerIds = [...new Set(ownerByAccount.values())].filter(
+    (id) => id !== caller.userId,
+  );
+  const ownerEmails = await lookupEmailsByUserIds(foreignOwnerIds);
+
+  for (const accountId of unnamed) {
+    const ownerId = ownerByAccount.get(accountId);
+    const email = !ownerId || ownerId === caller.userId
+      ? caller.email // ownerless account: caller email beats a bare 'Account'
+      : ownerEmails.get(ownerId) ?? caller.email;
+    names.set(accountId, defaultAccountName(email));
+  }
+  return names;
+}
+
 export function serializeAccount(row: typeof accounts.$inferSelect) {
   return {
     account_id: row.accountId,
@@ -220,10 +277,15 @@ export function serializeAccount(row: typeof accounts.$inferSelect) {
   };
 }
 
-// Auto-claim any pending invitations matching the caller's email. Each invite
-// becomes an account_members row (skipped on duplicate) and its accepted_at is
-// stamped so subsequent calls are no-ops. Errors are swallowed — auto-claim is
+// Auto-claim any pending *account* invitations matching the caller's email. Each
+// invite becomes an account_members row (skipped on duplicate) and its accepted_at
+// is stamped so subsequent calls are no-ops. Errors are swallowed — auto-claim is
 // best-effort and must never block account listing.
+//
+// Project invites (the ones carrying bootstrap grants) are deliberately left
+// untouched: they must go through the explicit accept/decline dialog so the
+// recipient consents AND the project_members grant actually gets applied. See
+// the per-invite skip in the loop below.
 export async function autoClaimPendingInvites(userId: string, email: string): Promise<void> {
   if (!email) return;
   const normalized = email.trim().toLowerCase();
@@ -242,6 +304,14 @@ export async function autoClaimPendingInvites(userId: string, email: string): Pr
       );
 
     for (const invite of pending) {
+      // Project invites carry bootstrap grants and MUST go through the explicit
+      // accept flow (POST /account-invites/:id/accept) — that's the only path
+      // that applies the project_members grants. Silently auto-claiming one here
+      // stamps accepted_at and adds the account membership but never grants
+      // project access, so the inviter sees "accepted" while the invitee joins
+      // the account, can't see the project, and is never shown the accept/decline
+      // dialog. Leave grant-carrying invites pending for the recipient to act on.
+      if ((invite.bootstrapGrants ?? []).length > 0) continue;
       try {
         await db
           .insert(accountMembers)

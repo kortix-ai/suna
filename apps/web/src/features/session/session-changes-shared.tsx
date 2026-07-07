@@ -12,7 +12,7 @@ import { useCallback, useState } from 'react';
 
 import { STATUS_TEXT } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { getProjectSession } from '@/lib/projects-client';
+import { getProjectSession } from '@kortix/sdk/projects-client';
 import { useChatSendStore } from '@/stores/chat-send-store';
 
 /** git-status status → single-letter badge, using the canonical status tones. */
@@ -62,7 +62,7 @@ export function useOpenChangeRequest(chatSessionId: string | undefined, baseRef:
     setAsking(true);
     try {
       await sendToSession(chatSessionId, prompt);
-      successToast('Asked your agent to commit and open a change request.');
+      successToast('Asked your agent to propose these changes for review.');
     } catch (err) {
       errorToast(
         err instanceof Error ? err.message : 'Could not reach the agent. Please try again.',

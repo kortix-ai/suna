@@ -260,8 +260,8 @@ function buildAuthHeaders(
 /**
  * Shared authenticated fetch — injects auth tokens and handles 401 responses.
  *
- * Centralizes the pattern duplicated across opencode-sdk, use-sandbox-connection,
- * and server-selector. All three auth injection points now go through this.
+ * Centralizes the pattern duplicated across opencode-sdk and
+ * use-sandbox-connection. These auth injection points now go through this.
  *
  * Behavior:
  *   1. Gets the current auth token (Supabase JWT)

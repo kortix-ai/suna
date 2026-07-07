@@ -50,7 +50,6 @@ required_self_hosted_titles=(
   "admin overview and operations dashboard use the supported ops API cleanly"
   "E2E-2 and E2E-3: account filtering plus pending invite auto-claim"
   "E2E-1 and E2E-4: GitHub repo project starts a session and reaches daemon health"
-  "E2E-5: local_docker provider starts the same sandbox image and reaches health"
   "E2E-6: new session opens the project chat route without legacy redirects"
   "E2E-7: signed webhook trigger fires a session and rejects bad signatures"
   "§10.6/§10.7 API boundaries and invite concurrency hold"
@@ -62,7 +61,6 @@ required_target_titles=(
   "admin overview and operations dashboard use the supported ops API cleanly"
   "E2E-2 and E2E-3: account filtering plus pending invite auto-claim"
   "E2E-1 and E2E-4: GitHub repo project starts a session and reaches daemon health"
-  "E2E-5: local_docker provider starts the same sandbox image and reaches health"
   "E2E-6: new session opens the project chat route without legacy redirects"
   "E2E-7: signed webhook trigger fires a session and rejects bad signatures"
   "§10.6/§10.7 API boundaries and invite concurrency hold"
@@ -106,7 +104,7 @@ Usage:
 
 Checks:
   - Local verification summary proves required typecheck, API test, sandbox/auth, Docker build, script syntax, v1 legacy-script guards, and diff checks passed.
-  - Self-hosted golden report proves auth/account/admin/golden specs ran with local_docker and webhook backpressure enabled.
+  - Self-hosted golden report proves auth/account/admin/golden specs ran with the daytona provider and webhook backpressure enabled.
   - Target rehearsal health, response headers, ops overview, run log, and summary exist.
   - Target API curl proof verifies health, accounts, account detail/members/invites, projects, project detail/files/content, project sessions, single session, session sandbox, proxy health, proxied OpenCode SPA, proxied .opencode starter config, signed daemon refresh, and ops overview.
   - Target Playwright JSON report proves account/project access, admin ops, SPEC 10.5 golden paths, and SPEC 10.6/10.7 boundary/SLO specs ran without failures.
@@ -384,9 +382,8 @@ jq -e '
   .evidence_contract_version == 1
   and .status == "passed"
   and .golden_paths_enabled == "1"
-  and .local_docker_golden_enabled == "1"
   and .golden_backpressure_enabled == "1"
-  and .provider == "local_docker"
+  and .provider == "daytona"
 ' "$self_hosted_summary_file" >/dev/null
 jq -e --argjson min_expected "${#required_self_hosted_titles[@]}" '
   (.errors | length) == 0
@@ -642,7 +639,7 @@ jq -e '
   and .stats.unexpected == 0
   and .stats.flaky == 0
   and .stats.expected >= 8
-  and .stats.skipped <= 1
+  and .stats.skipped == 0
   and ([.. | objects | select(has("file")) | .file] | any(. == "08-accounts-project-access.spec.ts"))
   and ([.. | objects | select(has("file")) | .file] | any(. == "09-admin-ops.spec.ts"))
   and ([.. | objects | select(has("file")) | .file] | any(. == "10-production-golden-paths.spec.ts"))
@@ -652,33 +649,11 @@ for title in "${required_target_titles[@]}"; do
   require_playwright_title "$playwright_report_file" "$title"
 done
 for title in "${required_target_titles[@]}"; do
-  if [ "$title" = "E2E-5: local_docker provider starts the same sandbox image and reaches health" ]; then
-    continue
-  fi
   require_playwright_title_ran "$playwright_report_file" "$title"
 done
 target_skipped_count="$(jq -r '.stats.skipped // 0' "$playwright_report_file")"
-target_skipped_titles_json="$(jq -c '
-  [
-    .. | objects
-    | select((.title | type) == "string" and has("tests"))
-    | select(any(.tests[]?; .expectedStatus == "skipped" or .status == "skipped" or any(.results[]?; .status == "skipped")))
-    | .title
-  ]
-' "$playwright_report_file")"
-if [ "$target_skipped_count" -eq 0 ]; then
-  :
-elif [ "$target_skipped_count" -eq 1 ]; then
-  jq -e --argjson skipped_titles "$target_skipped_titles_json" '
-    .local_docker_golden_enabled == "0"
-    and ($skipped_titles | length) == 1
-    and ($skipped_titles[0] | contains("E2E-5: local_docker provider"))
-  ' "$target_summary_file" >/dev/null || {
-    echo "[gate5-verify] The only allowed target skip is the E2E-5 local_docker provider test, and it must be explicit in the Playwright JSON report" >&2
-    exit 1
-  }
-else
-  echo "[gate5-verify] Target Playwright report has $target_skipped_count skipped tests; only E2E-5 local_docker may be skipped in target mode" >&2
+if [ "$target_skipped_count" -ne 0 ]; then
+  echo "[gate5-verify] Target Playwright report has $target_skipped_count skipped tests; no target tests may be skipped" >&2
   exit 1
 fi
 

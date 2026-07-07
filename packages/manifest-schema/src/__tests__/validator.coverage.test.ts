@@ -159,6 +159,54 @@ describe('validateManifest — [[agents]]', () => {
       'agents[0].kortix_cli[0]',
     );
   });
+
+  test('omitted env passes (runtime defaults it to "all")', () => {
+    expect(validateManifest('kortix_version = 1\n[[agents]]\nname = "w"').valid).toBe(true);
+  });
+
+  test('env accepts "all"', () => {
+    expect(validateManifest('kortix_version = 1\n[[agents]]\nname = "w"\nenv = "all"').valid).toBe(true);
+  });
+
+  test('env accepts "none"', () => {
+    expect(validateManifest('kortix_version = 1\n[[agents]]\nname = "w"\nenv = "none"').valid).toBe(true);
+  });
+
+  test('env accepts an empty string as deny (runtime treats "" as "none")', () => {
+    expect(validateManifest('kortix_version = 1\n[[agents]]\nname = "w"\nenv = ""').valid).toBe(true);
+  });
+
+  test('env accepts a valid allowlist', () => {
+    expect(
+      validateManifest('kortix_version = 1\n[[agents]]\nname = "w"\nenv = ["STRIPE_KEY", "DB_URL"]').valid,
+    ).toBe(true);
+  });
+
+  test('env rejects a number', () => {
+    expect(errorPaths('kortix_version = 1\n[[agents]]\nname = "w"\nenv = 5')).toContain('agents[0].env');
+  });
+
+  test('env rejects a table', () => {
+    expect(errorPaths('kortix_version = 1\n[[agents]]\nname = "w"\n[agents.env]\nfoo = "bar"')).toContain(
+      'agents[0].env',
+    );
+  });
+
+  test('env rejects an arbitrary string', () => {
+    expect(errorPaths('kortix_version = 1\n[[agents]]\nname = "w"\nenv = "some"')).toContain('agents[0].env');
+  });
+
+  test('env rejects a list with a non-string entry', () => {
+    expect(errorPaths('kortix_version = 1\n[[agents]]\nname = "w"\nenv = ["GOOD", 5]')).toContain(
+      'agents[0].env[1]',
+    );
+  });
+
+  test('env rejects a list with an empty-string entry', () => {
+    expect(errorPaths('kortix_version = 1\n[[agents]]\nname = "w"\nenv = ["GOOD", ""]')).toContain(
+      'agents[0].env[1]',
+    );
+  });
 });
 
 describe('validateManifest — [[channels]]', () => {
@@ -444,10 +492,12 @@ describe('exported constants', () => {
     expect(ENV_NAME_RE.test('lower')).toBe(false);
   });
 
-  test('GRANTABLE_KORTIX_CLI_ACTIONS includes project and channel actions but not billing', () => {
+  test('GRANTABLE_KORTIX_CLI_ACTIONS includes project actions but not billing or channel.*', () => {
     expect(GRANTABLE_KORTIX_CLI_ACTIONS).toContain('project.read');
-    expect(GRANTABLE_KORTIX_CLI_ACTIONS).toContain('channel.send');
+    expect(GRANTABLE_KORTIX_CLI_ACTIONS).toContain('project.connector.write');
     expect(GRANTABLE_KORTIX_CLI_ACTIONS).not.toContain('billing.read');
+    // channel.* was removed from the catalog — never wired to any route.
+    expect(GRANTABLE_KORTIX_CLI_ACTIONS).not.toContain('channel.send');
   });
 });
 

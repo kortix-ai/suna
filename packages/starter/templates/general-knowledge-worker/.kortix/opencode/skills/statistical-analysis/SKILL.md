@@ -1,6 +1,7 @@
 ---
 name: statistical-analysis
 description: "Descriptive statistics, trend analysis, outlier detection, hypothesis testing, and guidance on when to be cautious about statistical claims."
+defaultProjectInstall: true
 ---
 
 # Statistical Analysis Skill

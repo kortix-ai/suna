@@ -1,6 +1,7 @@
 ---
 name: openalex-paper-search
 description: "Academic paper search powered by OpenAlex -- the free, open catalog of 240M+ scholarly works. Use when the user needs to find academic papers, research articles, literature for a topic, citation data, author publications, or any scholarly source. Triggers on: 'find papers on', 'academic research about', 'what studies exist', 'literature review', 'find citations', 'scholarly articles about', 'who published on', 'papers by [author]', 'highly cited papers on', any request for peer-reviewed or academic sources. Also use during deep research when you need to ground findings in academic literature. Do NOT use for general web searches -- use web_search for that."
+defaultProjectInstall: true
 ---
 
 # Academic Paper Search (OpenAlex)

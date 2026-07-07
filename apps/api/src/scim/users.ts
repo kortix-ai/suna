@@ -2,22 +2,25 @@
 // Registers onto the shared scimRouter via side effect.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { and, eq } from 'drizzle-orm';
 import { accountInvitations, accountMembers } from '@kortix/db';
-import { db } from '../shared/db';
+import { and, eq } from 'drizzle-orm';
+import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
 import { scimError } from '../middleware/scim-auth';
-import { json, errors } from '../openapi';
+import { errors, json } from '../openapi';
+import { revokeAllAccountTokensForUser } from '../repositories/account-tokens';
+import { db } from '../shared/db';
 import {
-  scimRouter,
   ScimResource,
-  parseFilter,
+  type UserShape,
+  buildUser,
+  emailsByUserId,
+  isUnsupportedFilter,
   listResponse,
   locationFor,
-  emailsByUserId,
-  userIdByEmail,
-  buildUser,
+  parseFilter,
   scimAudit,
-  type UserShape,
+  scimRouter,
+  userIdByEmail,
 } from './app';
 
 // ─── Users ────────────────────────────────────────────────────────────────
@@ -38,43 +41,50 @@ scimRouter.openapi(
     },
   }),
   async (c: any) => {
-  const accountId = c.req.param('accountId');
-  const filter = parseFilter(c.req.query('filter'));
+    const accountId = c.req.param('accountId');
+    const rawFilter = c.req.query('filter');
+    // A supplied-but-unsupported filter is a 400, not a silent full-list dump
+    // (RFC 7644 §3.4.2.2) — otherwise the IdP thinks it filtered and quietly gets
+    // the whole directory.
+    if (isUnsupportedFilter(rawFilter)) {
+      return scimError(c, 400, 'Unsupported filter — only `attribute eq "value"` is supported');
+    }
+    const filter = parseFilter(rawFilter);
 
-  // Load every member for the account; cheap because directories that
-  // bother with SCIM tend to have <1000 members in a single account.
-  const members = await db
-    .select({
-      userId: accountMembers.userId,
-      scimExternalId: accountMembers.scimExternalId,
-      joinedAt: accountMembers.joinedAt,
-    })
-    .from(accountMembers)
-    .where(eq(accountMembers.accountId, accountId));
+    // Load every member for the account; cheap because directories that
+    // bother with SCIM tend to have <1000 members in a single account.
+    const members = await db
+      .select({
+        userId: accountMembers.userId,
+        scimExternalId: accountMembers.scimExternalId,
+        joinedAt: accountMembers.joinedAt,
+      })
+      .from(accountMembers)
+      .where(eq(accountMembers.accountId, accountId));
 
-  const emails = await emailsByUserId(members.map((m) => m.userId));
-  const allResources: UserShape[] = members
-    .filter((m) => emails.has(m.userId))
-    .map((m) => buildUser(accountId, m, emails.get(m.userId)!));
+    const emails = await emailsByUserId(members.map((m) => m.userId));
+    const allResources: UserShape[] = members
+      .filter((m) => emails.has(m.userId))
+      .map((m) => buildUser(accountId, m, emails.get(m.userId)!));
 
-  if (!filter) return c.json(listResponse(allResources));
+    if (!filter) return c.json(listResponse(allResources));
 
-  // Only `userName eq` / `id eq` / `externalId eq` are interesting in
-  // practice. Anything else returns an empty list rather than 400 — the
-  // IdP can fall back to listing.
-  const filtered: UserShape[] =
-    filter.attr === 'userName'
-      ? (() => {
-          const v = filter.value.toLowerCase();
-          return allResources.filter((u) => u.userName.toLowerCase() === v);
-        })()
-      : filter.attr === 'id'
-        ? allResources.filter((u) => u.id === filter.value)
-        : filter.attr === 'externalId'
-          ? allResources.filter((u) => u.externalId === filter.value)
-          : [];
+    // Only `userName eq` / `id eq` / `externalId eq` are interesting in
+    // practice. Anything else returns an empty list rather than 400 — the
+    // IdP can fall back to listing.
+    const filtered: UserShape[] =
+      filter.attr === 'userName'
+        ? (() => {
+            const v = filter.value.toLowerCase();
+            return allResources.filter((u) => u.userName.toLowerCase() === v);
+          })()
+        : filter.attr === 'id'
+          ? allResources.filter((u) => u.id === filter.value)
+          : filter.attr === 'externalId'
+            ? allResources.filter((u) => u.externalId === filter.value)
+            : [];
 
-  return c.json(listResponse(filtered));
+    return c.json(listResponse(filtered));
   },
 );
 
@@ -91,25 +101,25 @@ scimRouter.openapi(
     },
   }),
   async (c: any) => {
-  const accountId = c.req.param('accountId');
-  const userId = c.req.param('userId');
+    const accountId = c.req.param('accountId');
+    const userId = c.req.param('userId');
 
-  const [member] = await db
-    .select({
-      userId: accountMembers.userId,
-      scimExternalId: accountMembers.scimExternalId,
-      joinedAt: accountMembers.joinedAt,
-    })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
-    .limit(1);
-  if (!member) return scimError(c, 404, 'User not found in this account');
+    const [member] = await db
+      .select({
+        userId: accountMembers.userId,
+        scimExternalId: accountMembers.scimExternalId,
+        joinedAt: accountMembers.joinedAt,
+      })
+      .from(accountMembers)
+      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+      .limit(1);
+    if (!member) return scimError(c, 404, 'User not found in this account');
 
-  const emails = await emailsByUserId([userId]);
-  const email = emails.get(userId);
-  if (!email) return scimError(c, 404, 'User has no email on record');
+    const emails = await emailsByUserId([userId]);
+    const email = emails.get(userId);
+    if (!email) return scimError(c, 404, 'User has no email on record');
 
-  return c.json(buildUser(accountId, member, email));
+    return c.json(buildUser(accountId, member, email));
   },
 );
 
@@ -130,128 +140,124 @@ scimRouter.openapi(
     },
   }),
   async (c: any) => {
-  const accountId = c.req.param('accountId');
-  let body: Record<string, unknown>;
-  try {
-    body = await c.req.json();
-  } catch {
-    return scimError(c, 400, 'Body must be JSON');
-  }
+    const accountId = c.req.param('accountId');
+    let body: Record<string, unknown>;
+    try {
+      body = await c.req.json();
+    } catch {
+      return scimError(c, 400, 'Body must be JSON');
+    }
 
-  const userName = typeof body.userName === 'string' ? body.userName.trim() : '';
-  if (!userName) return scimError(c, 400, 'userName is required');
+    const userName = typeof body.userName === 'string' ? body.userName.trim() : '';
+    if (!userName) return scimError(c, 400, 'userName is required');
 
-  const externalId =
-    typeof body.externalId === 'string' && body.externalId.trim()
-      ? body.externalId.trim()
-      : null;
+    const externalId =
+      typeof body.externalId === 'string' && body.externalId.trim() ? body.externalId.trim() : null;
 
-  // Look up an existing Supabase user by email. If none, send an invite —
-  // we don't have permission to create a passwordless auth user without
-  // additional infra (magic link), so an invite is the safe v1 default.
-  const existingUserId = await userIdByEmail(userName);
-  if (!existingUserId) {
-    // Create or refresh a pending invitation; the IdP retries on next sync
-    // so the eventual sign-up gets reconciled.
-    const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
-    const [invite] = await db
-      .insert(accountInvitations)
-      .values({
+    // Look up an existing Supabase user by email. If none, send an invite —
+    // we don't have permission to create a passwordless auth user without
+    // additional infra (magic link), so an invite is the safe v1 default.
+    const existingUserId = await userIdByEmail(userName);
+    if (!existingUserId) {
+      // Create or refresh a pending invitation; the IdP retries on next sync
+      // so the eventual sign-up gets reconciled.
+      const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+      const [invite] = await db
+        .insert(accountInvitations)
+        .values({
+          accountId,
+          email: userName.toLowerCase(),
+          initialRole: 'member',
+          expiresAt,
+          invitedBy: null,
+        })
+        .onConflictDoUpdate({
+          target: [accountInvitations.accountId, accountInvitations.email],
+          set: { expiresAt, initialRole: 'member', acceptedAt: null },
+        })
+        .returning();
+
+      await scimAudit(c, {
         accountId,
-        email: userName.toLowerCase(),
-        initialRole: 'member',
-        expiresAt,
-        invitedBy: null,
+        action: 'scim.user.invite',
+        resourceType: 'account_invitation',
+        resourceId: invite.inviteId,
+        after: { email: userName, external_id: externalId },
+      });
+
+      // SCIM expects a User resource even when the human hasn't joined yet.
+      // We return a placeholder with id=invite.inviteId and active=false so
+      // the IdP can correlate without thinking the create failed.
+      return c.json(
+        {
+          schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+          id: invite.inviteId,
+          userName,
+          active: false,
+          emails: [{ value: userName, primary: true }],
+          externalId,
+          meta: {
+            resourceType: 'User',
+            created: invite.createdAt.toISOString(),
+            lastModified: invite.createdAt.toISOString(),
+            location: locationFor(accountId, 'Users', invite.inviteId),
+          },
+        },
+        201,
+      );
+    }
+
+    // User exists in Supabase — make sure they're a member of this account.
+    // If already a member, refresh the externalId; otherwise insert. SCIM is
+    // expected to be idempotent.
+    const [existingMember] = await db
+      .select({ userId: accountMembers.userId })
+      .from(accountMembers)
+      .where(
+        and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, existingUserId)),
+      )
+      .limit(1);
+
+    if (existingMember) {
+      if (externalId) {
+        await db
+          .update(accountMembers)
+          .set({ scimExternalId: externalId })
+          .where(
+            and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, existingUserId)),
+          );
+      }
+    } else {
+      await db.insert(accountMembers).values({
+        accountId,
+        userId: existingUserId,
+        accountRole: 'member',
+        scimExternalId: externalId,
+      });
+      invalidateIamCacheForUser(existingUserId);
+    }
+
+    const [member] = await db
+      .select({
+        userId: accountMembers.userId,
+        scimExternalId: accountMembers.scimExternalId,
+        joinedAt: accountMembers.joinedAt,
       })
-      .onConflictDoUpdate({
-        target: [accountInvitations.accountId, accountInvitations.email],
-        set: { expiresAt, initialRole: 'member', acceptedAt: null },
-      })
-      .returning();
+      .from(accountMembers)
+      .where(
+        and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, existingUserId)),
+      )
+      .limit(1);
 
     await scimAudit(c, {
       accountId,
-      action: 'scim.user.invite',
-      resourceType: 'account_invitation',
-      resourceId: invite.inviteId,
-      after: { email: userName, external_id: externalId },
+      action: existingMember ? 'scim.user.update' : 'scim.user.create',
+      resourceType: 'account_member',
+      resourceId: existingUserId,
+      after: { user_id: existingUserId, external_id: externalId, email: userName },
     });
 
-    // SCIM expects a User resource even when the human hasn't joined yet.
-    // We return a placeholder with id=invite.inviteId and active=false so
-    // the IdP can correlate without thinking the create failed.
-    return c.json(
-      {
-        schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
-        id: invite.inviteId,
-        userName,
-        active: false,
-        emails: [{ value: userName, primary: true }],
-        externalId,
-        meta: {
-          resourceType: 'User',
-          created: invite.createdAt.toISOString(),
-          lastModified: invite.createdAt.toISOString(),
-          location: locationFor(accountId, 'Users', invite.inviteId),
-        },
-      },
-      201,
-    );
-  }
-
-  // User exists in Supabase — make sure they're a member of this account.
-  // If already a member, refresh the externalId; otherwise insert. SCIM is
-  // expected to be idempotent.
-  const [existingMember] = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(
-      and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, existingUserId)),
-    )
-    .limit(1);
-
-  if (existingMember) {
-    if (externalId) {
-      await db
-        .update(accountMembers)
-        .set({ scimExternalId: externalId })
-        .where(
-          and(
-            eq(accountMembers.accountId, accountId),
-            eq(accountMembers.userId, existingUserId),
-          ),
-        );
-    }
-  } else {
-    await db.insert(accountMembers).values({
-      accountId,
-      userId: existingUserId,
-      accountRole: 'member',
-      scimExternalId: externalId,
-    });
-  }
-
-  const [member] = await db
-    .select({
-      userId: accountMembers.userId,
-      scimExternalId: accountMembers.scimExternalId,
-      joinedAt: accountMembers.joinedAt,
-    })
-    .from(accountMembers)
-    .where(
-      and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, existingUserId)),
-    )
-    .limit(1);
-
-  await scimAudit(c, {
-    accountId,
-    action: existingMember ? 'scim.user.update' : 'scim.user.create',
-    resourceType: 'account_member',
-    resourceId: existingUserId,
-    after: { user_id: existingUserId, external_id: externalId, email: userName },
-  });
-
-  return c.json(buildUser(accountId, member!, userName), existingMember ? 200 : 201);
+    return c.json(buildUser(accountId, member!, userName), existingMember ? 200 : 201);
   },
 );
 
@@ -281,86 +287,109 @@ scimRouter.openapi(
     },
   }),
   async (c: any) => {
-  const accountId = c.req.param('accountId');
-  const userId = c.req.param('userId');
+    const accountId = c.req.param('accountId');
+    const userId = c.req.param('userId');
 
-  let body: Record<string, unknown>;
-  try {
-    body = await c.req.json();
-  } catch {
-    return scimError(c, 400, 'Body must be JSON');
-  }
-
-  // Normalise both shapes (top-level fields OR Operations array) into a
-  // map of field → value.
-  const changes = new Map<string, unknown>();
-  if (Array.isArray(body.Operations)) {
-    for (const op of body.Operations as Array<Record<string, unknown>>) {
-      const opName = typeof op.op === 'string' ? op.op.toLowerCase() : null;
-      if (opName !== 'replace' && opName !== 'add') continue;
-      const path = typeof op.path === 'string' ? op.path : 'active';
-      changes.set(path, op.value);
+    let body: Record<string, unknown>;
+    try {
+      body = await c.req.json();
+    } catch {
+      return scimError(c, 400, 'Body must be JSON');
     }
-  } else {
-    for (const k of Object.keys(body)) changes.set(k, body[k]);
-  }
 
-  const [member] = await db
-    .select({
-      userId: accountMembers.userId,
-      accountRole: accountMembers.accountRole,
-      scimExternalId: accountMembers.scimExternalId,
-      joinedAt: accountMembers.joinedAt,
-    })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
-    .limit(1);
-
-  // Deactivate
-  if (changes.get('active') === false) {
-    if (!member) return c.body(null, 204); // idempotent
-    // Refuse to deactivate the last owner — same invariant the human UI
-    // enforces. Without this an IdP misconfiguration could lock everyone
-    // out of an account.
-    if (member.accountRole === 'owner') {
-      const owners = await db
-        .select({ userId: accountMembers.userId })
-        .from(accountMembers)
-        .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner')));
-      if (owners.length <= 1) {
-        return scimError(c, 409, 'Cannot deactivate the last owner of this account');
+    // Normalise both shapes (top-level fields OR Operations array) into a
+    // map of field → value.
+    const changes = new Map<string, unknown>();
+    if (Array.isArray(body.Operations)) {
+      for (const op of body.Operations as Array<Record<string, unknown>>) {
+        const opName = typeof op.op === 'string' ? op.op.toLowerCase() : null;
+        if (opName !== 'replace' && opName !== 'add') continue;
+        const path = typeof op.path === 'string' ? op.path : 'active';
+        changes.set(path, op.value);
       }
+    } else {
+      for (const k of Object.keys(body)) changes.set(k, body[k]);
     }
-    await db
-      .delete(accountMembers)
-      .where(
-        and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)),
+
+    const [member] = await db
+      .select({
+        userId: accountMembers.userId,
+        accountRole: accountMembers.accountRole,
+        scimExternalId: accountMembers.scimExternalId,
+        joinedAt: accountMembers.joinedAt,
+      })
+      .from(accountMembers)
+      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+      .limit(1);
+
+    // Deactivate
+    if (changes.get('active') === false) {
+      if (!member) return c.body(null, 204); // idempotent
+      // Refuse to deactivate the last owner — same invariant the human UI
+      // enforces. Without this an IdP misconfiguration could lock everyone
+      // out of an account.
+      if (member.accountRole === 'owner') {
+        const owners = await db
+          .select({ userId: accountMembers.userId })
+          .from(accountMembers)
+          .where(
+            and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner')),
+          );
+        if (owners.length <= 1) {
+          return scimError(c, 409, 'Cannot deactivate the last owner of this account');
+        }
+      }
+      // Capture the email before removing the row so the response can echo a
+      // complete (active:false) User resource for the IdP to confirm against.
+      const emailsBefore = await emailsByUserId([userId]);
+      await db
+        .delete(accountMembers)
+        .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
+      invalidateIamCacheForUser(userId);
+      // IdP-driven offboarding: revoke the user's PATs + live sandbox session
+      // tokens so deactivation is immediate, not just membership-level. A failure
+      // here would leave a "deactivated" user with LIVE tokens — a silent
+      // offboarding hole — so surface it loudly and record it on the audit event
+      // (never swallow), while still completing the membership removal.
+      const revocationError = await revokeAllAccountTokensForUser(userId, accountId).then(
+        () => null,
+        (err) => {
+          console.error(
+            '[scim] token revocation FAILED on deactivate — user may retain live tokens',
+            { userId, accountId },
+            err,
+          );
+          return err instanceof Error ? err.message : String(err);
+        },
       );
-    await scimAudit(c, {
-      accountId,
-      action: 'scim.user.deactivate',
-      resourceType: 'account_member',
-      resourceId: userId,
-      before: { user_id: userId, account_role: member.accountRole },
-    });
-    return c.body(null, 204);
-  }
+      await scimAudit(c, {
+        accountId,
+        action: 'scim.user.deactivate',
+        resourceType: 'account_member',
+        resourceId: userId,
+        before: { user_id: userId, account_role: member.accountRole },
+        ...(revocationError
+          ? { metadata: { token_revocation_failed: true, token_revocation_error: revocationError } }
+          : {}),
+      });
+      // 200 + the deactivated resource (not a bare 204): Azure AD / Okta expect
+      // the patched User back with active:false to confirm deprovisioning.
+      return c.json(buildUser(accountId, member, emailsBefore.get(userId) ?? member.userId, false));
+    }
 
-  // Reactivate or update — only meaningful when the user exists.
-  if (!member) return scimError(c, 404, 'User not found in this account');
+    // Reactivate or update — only meaningful when the user exists.
+    if (!member) return scimError(c, 404, 'User not found in this account');
 
-  if (changes.has('externalId') && typeof changes.get('externalId') === 'string') {
-    await db
-      .update(accountMembers)
-      .set({ scimExternalId: changes.get('externalId') as string })
-      .where(
-        and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)),
-      );
-  }
+    if (changes.has('externalId') && typeof changes.get('externalId') === 'string') {
+      await db
+        .update(accountMembers)
+        .set({ scimExternalId: changes.get('externalId') as string })
+        .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
+    }
 
-  const emails = await emailsByUserId([userId]);
-  const email = emails.get(userId);
-  return c.json(buildUser(accountId, member, email ?? ''));
+    const emails = await emailsByUserId([userId]);
+    const email = emails.get(userId);
+    return c.json(buildUser(accountId, member, email ?? ''));
   },
 );
 
@@ -377,38 +406,58 @@ scimRouter.openapi(
     },
   }),
   async (c: any) => {
-  const accountId = c.req.param('accountId');
-  const userId = c.req.param('userId');
+    const accountId = c.req.param('accountId');
+    const userId = c.req.param('userId');
 
-  const [member] = await db
-    .select({ accountRole: accountMembers.accountRole })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
-    .limit(1);
-  if (!member) return c.body(null, 204);
-
-  // Same last-owner guard as PATCH active=false.
-  if (member.accountRole === 'owner') {
-    const owners = await db
-      .select({ userId: accountMembers.userId })
+    const [member] = await db
+      .select({ accountRole: accountMembers.accountRole })
       .from(accountMembers)
-      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner')));
-    if (owners.length <= 1) {
-      return scimError(c, 409, 'Cannot delete the last owner of this account');
+      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+      .limit(1);
+    if (!member) return c.body(null, 204);
+
+    // Same last-owner guard as PATCH active=false.
+    if (member.accountRole === 'owner') {
+      const owners = await db
+        .select({ userId: accountMembers.userId })
+        .from(accountMembers)
+        .where(
+          and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner')),
+        );
+      if (owners.length <= 1) {
+        return scimError(c, 409, 'Cannot delete the last owner of this account');
+      }
     }
-  }
 
-  await db
-    .delete(accountMembers)
-    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
+    await db
+      .delete(accountMembers)
+      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
+    invalidateIamCacheForUser(userId);
+    // Revoke PATs + live sandbox session tokens so the deprovision is immediate.
+    // A failure must not be swallowed — a "deleted" member with live tokens is a
+    // silent offboarding hole — so log loudly and record it on the audit event.
+    const revocationError = await revokeAllAccountTokensForUser(userId, accountId).then(
+      () => null,
+      (err) => {
+        console.error(
+          '[scim] token revocation FAILED on delete — user may retain live tokens',
+          { userId, accountId },
+          err,
+        );
+        return err instanceof Error ? err.message : String(err);
+      },
+    );
 
-  await scimAudit(c, {
-    accountId,
-    action: 'scim.user.delete',
-    resourceType: 'account_member',
-    resourceId: userId,
-    before: { user_id: userId, account_role: member.accountRole },
-  });
-  return c.body(null, 204);
+    await scimAudit(c, {
+      accountId,
+      action: 'scim.user.delete',
+      resourceType: 'account_member',
+      resourceId: userId,
+      before: { user_id: userId, account_role: member.accountRole },
+      ...(revocationError
+        ? { metadata: { token_revocation_failed: true, token_revocation_error: revocationError } }
+        : {}),
+    });
+    return c.body(null, 204);
   },
 );

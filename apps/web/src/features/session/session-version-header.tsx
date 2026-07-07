@@ -13,8 +13,10 @@ import { useTranslations } from 'next-intl';
  * style): **All files** (default) and **Changes** (the real diff viewer).
  */
 
-import { GitBranch, GitPullRequestArrow, Info, Loader2 } from 'lucide-react';
+import { FileDiff, Info, Layers } from 'lucide-react';
 import { useParams } from 'next/navigation';
+
+import Loading from '@/components/ui/loading';
 
 import { useGitStatus } from '@/features/files/hooks/use-git-status';
 import { cn } from '@/lib/utils';
@@ -126,7 +128,7 @@ export function SessionVersionHeader({
             className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs"
             title={`Version ${shortVersionId} · alternative version of ${baseRef}`}
           >
-            <GitBranch className="text-muted-foreground/70 size-3.5 shrink-0" />
+            <Layers className="text-muted-foreground/70 size-3.5 shrink-0" />
             <span className="text-foreground/80 truncate font-mono">{shortVersionId}</span>
           </span>
           {hasChanges && (
@@ -137,9 +139,9 @@ export function SessionVersionHeader({
               disabled={asking}
             >
               {asking ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <Loading className="size-3.5 shrink-0" />
               ) : (
-                <GitPullRequestArrow className="size-3.5" />
+                <FileDiff className="size-3.5" />
               )}
               {tI18nHardcoded.raw(
                 'autoFeaturesSessionSessionVersionHeaderJsxTextOpenChangeRequesta0b45de3',

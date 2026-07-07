@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import React, { useMemo, useState } from 'react';
 import { useTriggers, useDeleteTrigger, type Trigger } from '@/hooks/scheduled-tasks';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { PageSearchBar } from '@/components/ui/page-search-bar';
 import { Skeleton } from '@/components/ui/skeleton';

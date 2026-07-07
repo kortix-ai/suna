@@ -1,127 +1,381 @@
 ---
 name: kortix-design-system
-description: "Kortix brand + design system: the rules, tokens, and component library for building any Kortix frontend UI (apps/web). Load this WHENEVER you create or edit a page, screen, component, list, card, badge, avatar, modal, form, empty state, toast, tooltip, or any visual surface in apps/web — and whenever deciding whether to reuse an existing component or add a new one. Enforces: always import from the design system, never hand-roll chrome, people-are-round / things-are-square avatars, toasts only via @/components/ui/toast, tooltips only via @/components/ui/hint, and one standardized brand identity. Source of truth is globals.css + the live /design-system page + src/components/ui."
+description: "Kortix brand + design system: the rules, tokens, and component library for building any Kortix frontend UI (apps/web). Load this WHENEVER you create or edit a page, screen, component, list, card, badge, avatar, modal, form, empty state, toast, tooltip, or any visual surface in apps/web. Always load the companion skill make-interfaces-feel-better (apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md) in the same session — brand/tokens here, polish/motion/haptics there. Source of truth: globals.css + the live /design-system page + src/components/ui + the reference implementations listed below."
 ---
 
 # Kortix Design System
 
-The single reference for building Kortix UI. **If you are touching a visual surface in `apps/web`, follow this.** The goal is one standardized, simple, recognizable brand identity — achieved by _always composing the design system_ instead of hand-rolling.
+**Track this file:** `.claude/skills/kortix-design-system/SKILL.md` (mirror: `.cursor/skills/kortix-design-system/SKILL.md`)
+
+**If you are touching a visual surface in `apps/web`, follow this.** This skill was rewritten in June 2026 to match the polished customize-panel reference implementations — older guidance is stale and superseded.
+
+## Companion skill — always load both
+
+**Always invoke [`make-interfaces-feel-better`](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md) alongside this skill.** They are complementary, not optional alternatives:
+
+| Skill                                | Owns                                                                                                                              |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| **kortix-design-system** (this file) | Brand, tokens, components, layout shells, color/radius/spacing law, reference implementations                                     |
+| **make-interfaces-feel-better**      | Polish: concentric radius, optical alignment, shadows, enter/exit motion, scale-on-press, tabular nums, hit areas, font smoothing |
+
+Load both before writing or reviewing UI. When Kortix rules and polish rules overlap (e.g. border radius, motion), **Kortix tokens win** — then apply the polish skill within those constraints.
 
 ## Philosophy
 
-- **Simplicity is the brand.** Black & white + one accent color. Calm, dense, legible. No decoration that doesn't carry information.
-- **The design system is the source of truth.** Everything imports from `@/components/ui/*` and the tokens in `globals.css`. A screen should read like a sentence built from shared words.
-- **AI-native & self-documenting.** The living styleguide at **`/design-system`** (`apps/web/src/app/(home)/design-system/page.tsx`) renders _every_ component. When you add a component, you add it there too — so the system can never drift from its documentation.
+- **Simplicity is the brand.** Black & white + one accent. Calm, spacious, legible. No decoration that doesn't carry information. Show only important data.
+- **Reuse > Compose > Create.** In that order. Never hand-roll something the system already provides.
+- **Tokens are law.** `apps/web/src/app/globals.css` is the implementation source of truth for every visual property. If a value conflicts with anything else, `globals.css` wins.
+- **AI-native & self-documenting.** The living styleguide at `/design-system` renders every component. When you add a component, add it there too.
 
-## The one rule that matters
+## Strictly avoid — deprecated primitives
 
-> **Reuse > Compose > Create.** In that order. Never hand-roll something the system already provides.
+**Do not use these in new work or when refactoring screens.** They are legacy wrappers; match the hand-composed patterns in the customize section views instead.
 
-Decision flow when you need a UI piece:
+| Banned | Use instead |
+| --- | --- |
+| **`SectionCard`** (`apps/web/src/components/ui/section-card.tsx`) | `Label` + `bg-popover rounded-md border` panel, or `Disclosure` — see `settings-view.tsx` |
+| **`List` / `ListRow`** (`apps/web/src/components/ui/list.tsx`) | `<ul className="space-y-2">` + entity row classes — see `changes-view.tsx`, `members-view.tsx` |
+| **`Dialog` / `DialogContent`** in feature code | **`Modal`** from `apps/web/src/components/ui/modal.tsx` — see `secrets-view.tsx`, `channels-view.tsx` |
+| **`Tooltip` / `TooltipTrigger` / `TooltipContent`** in feature code | **`Hint`** from `apps/web/src/components/ui/hint.tsx` |
+| **`@/lib/toast`**, raw `sonner`, `toast.custom()` | Named helpers from `apps/web/src/components/ui/toast.tsx` |
+| Hand-rolled badge `<span>` chips | **`Badge`** from `apps/web/src/components/ui/badge.tsx` |
+| **`Loader2`**, `Loader`, or any icon as a spinner (`lucide-react`, `@mynaui/icons-react`, etc.) | **`Loading`** from `apps/web/src/components/ui/loading.tsx` |
+| Hand-rolled `<svg>` spinners, `animate-spin` on non-`Loading` elements | **`Loading`** — animation is built in |
 
-1. **Reuse** — does a component in `src/components/ui/` already do this? Use it. (Check the list below and the `/design-system` page first.)
-2. **Compose** — can you build it from existing primitives + tokens? Do that (this is how `SectionCard` is just `Card` + a header).
-3. **Create** — only if 1 and 2 fail. Then:
-   - Put it in `src/components/ui/<name>.tsx`, built from tokens and existing primitives.
-   - Keep the API tiny and prop-driven; match the conventions of neighboring files.
-   - **Add a showcase block to `/design-system`** (a nav entry in `TOC_SECTIONS` + a `<div id="pat-…">` block with `ComponentLabel`/`ComponentDesc`/`DemoContainer`). If it's not on the page, it doesn't exist.
+When editing a file that already uses banned primitives, migrate to the reference pattern — do not add more usage.
+
+## Required primitives — use these, not alternatives
+
+These are **mandatory** for their job. Import from the paths below; never reimplement or swap in a different library.
+
+| Job | Import from | Notes |
+| --- | --- | --- |
+| Tooltips on icon buttons | `apps/web/src/components/ui/hint.tsx` | `<Hint label="…">…</Hint>` — wraps trigger, never Tooltip in features |
+| Dialogs / sheets | `apps/web/src/components/ui/modal.tsx` | `Modal`, `ModalContent`, `ModalHeader`, `ModalTitle`, `ModalDescription`, `ModalBody`, `ModalFooter` |
+| Toasts | `apps/web/src/components/ui/toast.tsx` | `successToast`, `errorToast`, `infoToast`, `warningToast`, `progressToast`, `loadingToast` |
+| Status chips | `apps/web/src/components/ui/badge.tsx` | `size="sm"` or `size="xs"`; variants `outline`, `kortix`, `success`, `destructive`, `beta`, etc. |
+| Expand/collapse panels | `apps/web/src/components/ui/disclosure.tsx` | `Disclosure`, `DisclosureTrigger`, `DisclosureContent` — config lists, settings groups |
+| Inline alerts | `apps/web/src/components/ui/info-banner.tsx` | `tone` + optional `icon` + `title` |
+| Search fields | `apps/web/src/components/ui/input-group.tsx` | `InputGroupSearch` + `InputGroupSearchInput variant="popover"` |
+| Forms in panels | `apps/web/src/components/ui/field.tsx` | `Field`, `FieldLabel`, `FieldGroup`, `FieldDescription` |
+| Empty / error states | `apps/web/src/features/layout/section/empty-state.tsx`, `error-state.tsx` | `size="sm"` in customize sections |
+| Confirm destructive | `apps/web/src/components/ui/confirm-dialog.tsx` | Final confirm only — not routine buttons |
+| Loading / pending spinners | `apps/web/src/components/ui/loading.tsx` | `import Loading from '@/components/ui/loading'` — default `size-4`; use `className="size-4 shrink-0"` in dense buttons. **Never** `Loader2` or other icons |
+
+Also reach for: `Button`, `ButtonGroup`, `Input`, `Select`, `Switch`, `Skeleton`, `Tabs` / `TabsListCompact`, `Table`, `InlineMeta`, `UserAvatar`, `EntityAvatar`.
+
+## Reference implementations — customize section views
+
+**Read the closest match before building any new screen.** All live under `apps/web/src/features/workspace/customize/sections/view/`.
+
+| File | Pattern to copy |
+| --- | --- |
+| **`section-wrapper.tsx`** (`sections/component/`) | Section shell: title left, action right, `max-w-2xl`, responsive header |
+| **`agents-view.tsx`** | Config entity list: search → `Disclosure` rows → detail panel with `Badge`, `ButtonGroup` + `Hint`, toasts |
+| **`skills-view.tsx`** | Same disclosure pattern as agents; `EmptyState` + docs link; `InfoBanner` for 403 |
+| **`commands-view.tsx`** | Disclosure trigger uses `Button variant="accent"`; otherwise identical config-entity flow |
+| **`settings-view.tsx`** | Form sections: `Label` header → `bg-popover rounded-md border px-4 py-5` panel; `Disclosure` for experimental; danger zone as neutral bordered row |
+| **`secrets-view.tsx`** | `Table` + `TabsListCompact` filters + **`Modal`** forms + `DropdownMenu` row actions |
+| **`members-view.tsx`** | Entity rows (`MEMBER_ROW`), `UserAvatar`, `InlineMeta`, underline `Tabs`, tab badge counts |
+| **`changes-view.tsx`** | Tinted `size-9` icon tiles, `Badge variant="kortix" size="xs"`, row inline actions, `TabsListCompact` |
+| **`channels-view.tsx`** | `Table` for integrations, `Modal` for connect flows, `InfoBanner` for connected state |
+| **`sandbox-view.tsx`** | Build status rows, `Badge` variants per status, nested `Disclosure` for error details |
+| **`dev-view.tsx`** | `Stepper` onboarding, command blocks, minimal bordered panels |
+| **`computers-view.tsx`** | Thin wrapper — delegates to `TunnelOverview` |
+
+**Shell:** `apps/web/src/features/workspace/customize/customize-panel.tsx`
+
+**Other references:** tinted-icon tiles → `apps/web/src/components/projects/schedule-view.tsx`; sidebar → `project-sidebar.tsx` + `sidebar-left.tsx`.
+
+## Layout & responsiveness
+
+**Always wrap customize-style sections in `CustomizeSectionWrapper`.** Do not hand-roll the outer shell.
+
+Canonical pattern (from `section-wrapper.tsx`):
+
+```tsx
+<div className="flex h-full min-h-0 flex-col">
+  <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className="mx-auto w-full max-w-2xl space-y-5 px-4 py-10 pb-20 lg:py-20">
+      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <h2 className="text-foreground text-xl font-medium">{title}</h2>
+          <span className="flex items-center gap-1">
+            <p className="text-muted-foreground text-sm text-balance">{description}</p>
+            {/* optional docs link: Button variant="transparent" asChild */}
+          </span>
+        </div>
+        {action ? <div className="mt-2 shrink-0 sm:mt-0">{action}</div> : null}
+      </header>
+      {children}
+    </div>
+  </div>
+</div>
+```
+
+Rules:
+
+- **Header:** title + description left; primary action right. Stacks on mobile (`flex-col sm:flex-row`). Content always **below** the header.
+- **Container:** `mx-auto w-full max-w-2xl`.
+- **Section padding:** `py-10 pb-20 lg:py-20`; `space-y-5` between header and body.
+- **Major blocks inside body:** `space-y-4` (search + list), `space-y-6` (tab panels), `space-y-8` (settings sections).
+- Mobile-first: test narrow width.
+
+## Card & panel patterns (no SectionCard)
+
+Panels are **hand-composed** `bg-popover rounded-md border` surfaces — not `SectionCard`, not raw `Card` with padding on the outer element.
+
+### Settings / form panel
+
+```tsx
+<section className="space-y-4">
+  <Label>Repository</Label>
+  <div className="bg-popover space-y-5 rounded-md border px-4 py-5">
+    <FieldGroup className="grid gap-3 sm:grid-cols-2">{/* fields */}</FieldGroup>
+  </div>
+</section>
+```
+
+### Entity row (list item)
+
+```tsx
+<ul className="space-y-2">
+  <li className="group bg-popover flex items-center gap-3 rounded-md border px-4 py-2 transition-colors">
+    {/* leading: size-9 tinted icon tile */}
+    {/* body: min-w-0 flex-1 */}
+    {/* trailing: Button size="sm" */}
+  </li>
+</ul>
+```
+
+Members use `py-2.5` (`MEMBER_ROW` in `members-view.tsx`). Changes/sandbox use `py-2`.
+
+### Config entity disclosure (agents, skills, commands)
+
+```tsx
+<div className="space-y-2">
+  <Disclosure variant="outline" className="overflow-hidden" open={open} onOpenChange={setOpen}>
+    <DisclosureTrigger variant="outline">
+      <Button variant="popover" className="flex w-full items-center justify-start rounded-none">
+        <span className="truncate text-sm font-medium">{name}</span>
+      </Button>
+    </DisclosureTrigger>
+    <DisclosureContent variant="outline" contentClassName="border-border border-t">
+      <div className="relative px-4 py-5">{/* detail */}</div>
+    </DisclosureContent>
+  </Disclosure>
+</div>
+```
+
+Detail header: `text-2xl font-semibold tracking-tight` title; meta `Badge variant="outline" size="sm"`; toolbar `absolute top-4 right-4` with `ButtonGroup` + `Hint`.
+
+### Danger zone (settings)
+
+Neutral bordered row — no red panel fill:
+
+```tsx
+<div className="bg-popover rounded-md border px-4 py-3">
+  <div className="flex items-center justify-between gap-4">
+    <div className="min-w-0">{/* title text-sm font-medium + description text-xs */}</div>
+    <Button variant="destructive" size="sm" onClick={openConfirm}>Archive</Button>
+  </div>
+</div>
+```
+
+`destructive` on the button is OK inside `ConfirmDialog` flow; panel itself stays neutral.
+
+## Button conventions
+
+Match the customize views — consistent sizes and variants:
+
+| Context | Pattern |
+| --- | --- |
+| Section header primary action | `Button size="sm" variant="secondary"` + `Plus` icon (`size-4`) + label; group with `gap-1.5` |
+| Empty state CTA | `Button variant="outline" size="sm" className="gap-1.5"` |
+| Docs / secondary link | `Button asChild variant="ghost" size="sm" className="gap-1.5"` |
+| Row secondary action | `Button variant="ghost" size="sm"` |
+| Row primary action | `Button size="sm"` (default variant) |
+| Icon-only with tooltip | `Hint` → `Button variant="outline" size="icon"` inside `ButtonGroup` |
+| Inline text link | `Button variant="transparent" size="sm" asChild` |
+| Modal cancel | `Button variant="outline-ghost"` |
+| Pending / in-flight state | `<Loading className="size-4 shrink-0" />` in buttons; `<Loading />` or `className="size-4 shrink-0"` in headers — **never** `Loader2` |
+
+Icons in buttons: `size-3.5 shrink-0` (dense) or `size-4` (header). Always `shrink-0` on icons. **Exception:** loading uses `Loading`, not an icon import.
+
+## Spacing cheat sheet (from reference views)
+
+| Layer | Classes |
+| --- | --- |
+| Section wrapper → body | `space-y-5` |
+| Search + content block | `space-y-4` |
+| List of rows / disclosures | `space-y-2` inside `space-y-4` parent |
+| Settings major sections | `space-y-8` |
+| Tab panel content | `space-y-6` |
+| Panel inner padding | `px-4 py-5` (standard), `px-4 py-3` (compact row) |
+| Row internal gap | `gap-3` (row), `gap-1.5` (title/meta), `gap-2` (button groups) |
+| Detail content below title | `mt-8` |
+| No-match empty search | `px-3 py-6 text-center text-xs` |
+
+**No direct padding on the outer bordered panel** — padding lives on inner content (`px-4 py-5`).
 
 ## Tokens — `globals.css` is law
 
-For `apps/web`, **`apps/web/src/app/globals.css` is the implementation source of truth** for color, typography, radius, spacing, shadows, borders, and motion. `brand-guidelines` explains the brand intent (neutral base, one accent per surface, Roobert, subtle shadows); if a value conflicts, `globals.css` wins. Use semantic Tailwind tokens, never raw hex/OKLCH/RGB values and never one-off arbitrary radii or font sizes.
+### Color
 
-- **Color tokens:** use the implemented tokens exposed in `@theme inline`: `background/foreground`, `card/card-foreground`, `popover/popover-foreground`, `primary/primary-foreground`, `secondary/secondary-foreground`, `muted/muted-foreground`, `accent/accent-foreground`, `destructive/destructive-foreground`, `border`, `input`, `ring`, `sidebar-*`, `chart-1`…`chart-5`, and brand accents `kortix-base`, `kortix-blue`, `kortix-yellow`, `kortix-orange`, `kortix-green`, `kortix-purple`, `kortix-red`. In components, write classes like `bg-background`, `text-foreground`, `bg-card`, `text-muted-foreground`, `border-border`, `ring-ring`, `bg-kortix-blue`. **Never** use raw Tailwind palette classes (`bg-blue-500`, `text-red-400`, `bg-green-600`, `border-amber-300`, etc.), raw values (`#fff`, `oklch(...)`, `rgb(...)`), or hardcoded theme hacks (`bg-black/10`, `bg-white/10`).
-- **Accent discipline:** the app is neutral first. Use one `kortix-*` accent per surface when content needs color; use `chart-*` only for data visualization. For normal app selection and activity, prefer `primary` tint (`bg-primary/[0.05]`–`bg-primary/[0.10]`, `text-primary`, `border-l-primary`) over flat grey fills.
-- **Red is the brake, not the paint.** `destructive`/red is reserved for the _single irreversible confirmation step_ — the primary button inside a `ConfirmDialog`/`AlertDialog`. **Never** color routine actions red: Log out, Cancel, Close, navigation, and every menu **row** (even `Remove` / `Leave` / `Delete` entries) stay neutral and only turn red at the final confirm. Red sprinkled on menus and links reads as noise and looks off — restraint is the brand.
-- **A Danger Zone stays calm.** `SectionCard tone="destructive"` is a _neutral_ panel with only a faint warm hairline edge (`border-destructive/25`) — its title and description read normally (no red text, no red fill), and its trigger button is **neutral** (e.g. `variant="outline"`) because it just opens a confirm. The single red lives on that final confirm button — never on the panel, the title, or the trigger. A panel painted red is the #1 thing that makes the product look aggressive; don't.
-- **Selected / active = tinted primary, never flat grey.** The brand is monochrome, so a flat grey fill used to mean "selected"/"active" reads as an accidental smudge. Active toggles, selected tabs, and "on" pills use `variant="subtle"` (`bg-primary/10 text-primary`), never `variant="secondary"` or `bg-muted`. Selected rows/cards use `bg-primary/[0.05]`–`bg-primary/[0.08]`, optionally with `border-l-2 border-l-primary`. Dense command/menu rows use the primitive's `data-[selected=true]:bg-foreground/[0.06]`. Image scrims/overlays use `bg-foreground/[0.06]`.
-- **Typography:** `--font-sans` maps to `var(--font-roobert)` and `--font-mono` maps to `var(--font-roobert-mono)`. Use `font-sans` for UI, headings, and body; use `font-mono` only for code, paths, IDs, CLI/config nouns, and technical snippets. Fallbacks and CJK handling live in `globals.css`; do not override them per component.
-- **Type scale:** keep `html` at `font-size: 100%`; never simulate zoom by changing root size. Use named text tokens only: `text-xs` = metadata/captions/badges/timestamps; `text-sm` = dense UI rows, menus, compact buttons, sidebar labels; `text-base` = readable body, form text, chat/content; `text-lg` through `text-8xl` = page hierarchy, marketing, and display. Section titles are `text-base font-semibold`; row titles are `text-sm font-medium` unless content-heavy, then `text-base`.
-- **Typography details:** `globals.css` defines line-height tokens for every text size, `--tracking-normal: 0em`, antialiasing, `text-rendering: optimizeLegibility`, and Roobert feature settings (`ss10`, `ss09`, `ss03`, `ss04`, `ss14`, `palt`). Do not loosen body tracking or add arbitrary type utilities like `text-[10px]`, `text-[13.5px]`, or `text-[0.875em]`. Syntax/color utilities such as `text-[var(--shiki-dark)]` are allowed because they are colors, not font sizes.
-- **Navigation hierarchy:** Parent/child rows stay on the same readable title size (`text-sm` in dense sidebars). Show hierarchy with indentation, a border, a dot/icon, opacity, or metadata treatment — not by shrinking child titles below the parent.
-- **Radius:** use only the implemented radius tokens from `globals.css` (`rounded-sm`, `rounded-md`, `rounded-lg`, `rounded-xl`, `rounded-2xl`) plus `rounded-md`. App chrome convention: main containers, cards, panels, dialogs, inputs, textareas, selects, popovers, dropdown/context menus, command palettes, tables, banners, alerts, and selectable option cards use `rounded-2xl`. Pills (buttons, badges) use `rounded-full`. Menu/list highlight rows use `rounded-lg`; tiny micro-bits (kbd keys, swatches, ≤24px icon squares) may use the smaller token that matches the primitive. Never use arbitrary radii like `rounded-[5px]`.
-- **Form controls:** `Input`, `Textarea`, `Select` share ONE treatment — `bg-card`, `border`, `rounded-lg`, accent focus ring (`focus:ring-2 focus:ring-primary/50`), no shadow. `Input` is canonical; the other two mirror it. **Never** restyle a field per-usage (no per-field `bg-transparent`, `shadow-xs`, or a custom/neutral focus ring).
-- **Spacing and borders:** use Tailwind spacing utilities backed by `--spacing: 0.23rem`; use `--spacing-sidebar` and desktop/titlebar inset variables only in shell chrome. Border color comes from `border-border`; border thickness follows the design-system components and the `--border-width` token where a primitive uses it. Do not invent heavier strokes.
-- **Shadows:** shadows exist but stay subtle. Use the implemented `shadow-2xs`…`shadow-2xl` tokens only when elevation is needed; most controls and dense app surfaces should remain flat. Never add glow, neon, colored shadows, or custom `box-shadow` values.
-- **Motion:** use duration/easing tokens from `globals.css`: `duration-fast` 100ms, `duration-normal` 150ms, `duration-moderate` 200ms, `duration-slow` 300ms, `duration-slower` 500ms; `ease-default`, `ease-in`, `ease-out`, `ease-in-out`. Default UI transitions are 150–200ms with `ease-default` or `ease-out`; repeated keyboard-driven actions should not animate.
+Use only semantic tokens and `kortix-*` brand accents. **Never** raw Tailwind palette classes (`bg-blue-500`, `text-red-400`), raw hex/oklch, or manual `dark:` palette hacks.
 
-## Component catalog — what to use when
+**Brand accents (`kortix-*`):** `kortix-base`, `kortix-blue`, `kortix-yellow`, `kortix-orange`, `kortix-green`, `kortix-purple`, `kortix-red` — the *only* sources for semantic UI color.
 
-Surfaces & layout
+| State | Token |
+| --- | --- |
+| success / running / connected | `kortix-green` |
+| error / failed | `kortix-red` |
+| warning / needs attention | `kortix-orange` |
+| pending / informational | `kortix-yellow` |
+| idle / neutral | `muted-foreground` |
 
-- **`SectionCard`** — THE panel. Composes `Card` (rounded-2xl) + a divided header (`title`, muted `count`, `description`, trailing `action`). `flush` seats a `List` edge-to-edge; `tone="destructive"` is the danger zone (a calm neutral panel with a faint warm edge — not a red box). Use this instead of any `<section className="rounded-xl border …">`.
-- **`Card` / `CardHeader` / `CardContent`** — raw surface when `SectionCard` is too opinionated.
-- **`Section`** — labelled, _boxless_ grouping inside a `PageShell` (uppercase micro-label + whitespace).
-- **`PageShell` / `PageHeader`** — page width + intro.
+**Active / selected:** `bg-primary/[0.05]`–`bg-primary/[0.08]` or `variant="subtle"` — never `bg-muted` for selection.
 
-Lists & rows
+### Radius
 
-- **`List` + `ListRow`** — THE list. `ListRow` has a `leading` slot (avatar/icon), `title` + inline `badges`, a `subtitle` (use `InlineMeta`), and a `trailing` slot (status badge + kebab). A clickable row is an accessible `div role="button"` so it can still hold a trailing menu (wrap that menu in `stopPropagation`). Use this instead of hand-rolled `<ul className="divide-y">`.
-- **`Table` / `DataTable`** — only for genuinely multi-column tabular data. Lists beat tables for entity rows.
-- **`DefinitionList` / `DefinitionRow`** — key/value detail panels.
+| Surface | Radius |
+| --- | --- |
+| Panels, rows, tables | `rounded-md` |
+| Flush seam inside disclosure | `rounded-none` on trigger button |
+| Status icon tiles | `rounded-sm` (`size-8` or `size-9`) |
+| Inputs / selects | `rounded-lg` via `variant="popover"` |
+| Pills (buttons, badges) | `rounded-full` |
 
-Identity
+**Never:** `rounded-xl` / `rounded-2xl` on app containers, nested rounding (parent + child both rounded).
 
-- **`UserAvatar`** — a **person** (round). Renders the supabase profile picture when present (`avatar_url`/`picture`, `referrerPolicy="no-referrer"`), else neutral monochrome initials — **no colored backgrounds**. People and things share the same neutral material and size scale; only the shape differs. Pending invites are people too → `UserAvatar` by email.
-- **`EntityAvatar`** — a **thing**: account, project, group, workspace (rounded square; initial or Lucide `icon`). **People are round, things are square — never mix.** Both share the `xs|sm|md|lg|xl` scale so they align.
+### Typography
 
-Atoms
+- Section page title (wrapper): `text-xl font-medium`
+- Panel section label: `Label` component
+- Row title: `text-sm font-medium`
+- Row meta: `text-xs text-muted-foreground`
+- Detail title: `text-2xl font-semibold tracking-tight`
+- Named sizes only — no `text-[11px]` except where `Badge size="xs"` already defines it
 
-- **`Badge`** — status chips. Use `variant` (`outline|secondary|destructive|success|…`) + `size="sm"` for dense UI. **Never** hand-roll `h-4 rounded-md px-1 text-[9px]`.
-- **`Button`** — pill (`rounded-md`) by default. Sizes `sm|default|lg|icon`. Variants `default|outline|ghost|destructive|secondary|subtle`.
-- **`InlineMeta`** — the `a · b · c` fact strip (skips falsy children). Use for row subtitles & header meta instead of manual `·`/`/` separators.
-- **`InfoBanner`** — inline status / note box (manifest status, warnings, tips, the live diff preview). `tone` = `neutral|info|success|warning|destructive` + optional `icon`, `title`, `action`. Use this instead of hand-rolling `rounded-md border border-amber-500/30 bg-amber-500/5` colored one-offs. (`Alert` is the heavier, role-flagged full-width variant.)
-- **`EmptyState`** — zero-state: icon + title + description + up to two actions. Use for every empty list.
-- **`Tabs`** (+ `TabsListCompact`) — pill tabs.
-- **`Skeleton`** — loading; match the shape it replaces (round vs `rounded-lg`).
+## Status pattern — tinted icon tile
 
-Feedback
+```tsx
+<span className={cn(
+  'flex size-9 items-center justify-center rounded-sm',
+  merged && 'bg-kortix-green/15',
+  failed && 'bg-kortix-red/15',
+  open && 'bg-kortix-blue/15',
+)}>
+  <Icon className={cn('size-5', merged && 'text-kortix-green', …)} />
+</span>
+```
 
-- **`toast`** (`@/components/ui/toast`) — THE toast. Import `successToast`, `errorToast`, `infoToast`, `warningToast`, `progressToast`, and `loadingToast` from here only. **Never** import `sonner` directly, **never** use `@/lib/toast`, and **never** call raw `toast.success()` / `toast.error()` / `toast.custom()`. Use `loadingToast` for promise-backed actions; use `progressToast` with an `id` to update a toast in place.
-- **`Hint`** (`@/components/ui/hint`) — THE tooltip. Wrap the trigger in `<Hint label="…">…</Hint>` (or `content` for rich tooltip bodies). **Never** import `Tooltip`, `TooltipTrigger`, or `TooltipContent` from `@/components/ui/tooltip` in feature code — `hint.tsx` is the only public API for hover hints.
+Use **solid** icons at `size-5` inside `size-8`/`size-9` tiles. Pair with `Badge` for text labels when needed (`changes-view.tsx`, `sandbox-view.tsx`).
+
+## Modal pattern (canonical — use `modal.tsx`)
+
+From `secrets-view.tsx` / `channels-view.tsx` — **not** raw Dialog:
+
+```tsx
+<Modal open={open} onOpenChange={setOpen}>
+  <ModalContent className="lg:max-w-lg">
+    <ModalHeader>
+      <ModalTitle>Title</ModalTitle>
+      <ModalDescription>Description</ModalDescription>
+    </ModalHeader>
+    <form onSubmit={handleSubmit}>
+      <ModalBody className="max-h-[60vh] overflow-y-auto">
+        {/* fields */}
+      </ModalBody>
+      <ModalFooter className="sm:justify-between">
+        <Button type="button" variant="outline-ghost" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={pending}>
+          {pending ? <Loading className="size-4 shrink-0" /> : null}
+          Save
+        </Button>
+      </ModalFooter>
+    </form>
+  </ModalContent>
+</Modal>
+```
+
+Destructive confirms → `ConfirmDialog`, not a red-styled `Modal` trigger.
+
+## Tabs pattern
+
+- **Primary section tabs:** `TabsList type="underline"` + `TabsTrigger className="w-fit flex-none"` (`members-view.tsx`, `changes-view.tsx`)
+- **Filter / status tabs:** `TabsListCompact` + `TabsTriggerCompact` (`changes-view.tsx`, `secrets-view.tsx`)
+- Tab badge count: `<Badge variant="secondary" size="sm">` inside trigger
+
+## Loading pattern (canonical)
+
+**Every in-flight spinner is `Loading` from `loading.tsx`.** The component ships its own rotate/dash animation — do not swap in `Loader2`, `Loader`, or any other spinning icon.
+
+```tsx
+import Loading from '@/components/ui/loading';
+
+// Button pending (replaces action icon)
+<Button disabled={pending}>
+  {pending ? <Loading className="size-3.5 shrink-0" /> : <Plus className="size-3.5 shrink-0" />}
+  Save
+</Button>
+
+// Section header action
+<Button size="sm" variant="secondary" disabled={pending}>
+  {pending ? <Loading className="size-4 shrink-0" /> : <Plus className="size-4" />}
+  New
+</Button>
+
+// Inline / modal submit
+{pending ? <Loading className="size-4 shrink-0" /> : null}
+```
+
+For page-level loading placeholders use **`Skeleton`** (shape-matched). Use **`Loading`** only for active async operations (submit, fetch-in-button, mutation pending).
+
+## Search + loading + empty flow
+
+Standard content block (`agents-view.tsx` pattern):
+
+```tsx
+<div className="space-y-4">
+  <InputGroupSearch>…<InputGroupSearchInput variant="popover" />…</InputGroupSearch>
+  {isLoading ? (
+    <div className="space-y-1">{/* Skeleton h-7 rounded-md × 5 */}</div>
+  ) : isError ? (
+    <ErrorState size="sm" action={<Button variant="outline" size="sm">Retry</Button>} />
+  ) : items.length === 0 ? (
+    <EmptyState icon={…} size="sm" action={…} />
+  ) : (
+  /* list */
+  )}
+</div>
+```
 
 ## Dos & Don'ts
 
-- ✅ Panels → `SectionCard`. ❌ `<section className="rounded-xl border border-border/70 bg-card">` with a hand-rolled header.
-- ✅ Danger zones → `<SectionCard tone="destructive">`. ❌ a bespoke red box.
-- ✅ Destructive intent → a **neutral** trigger (menu row / button) that opens a confirm; red appears **only** on that final confirm button. ❌ `text-destructive` on Log out, Cancel, links, or menu rows.
-- ✅ People → `UserAvatar` with neutral initials / real photo. ❌ a colored avatar background or white-on-color initials.
-- ✅ Lists → `List` + `ListRow`. ❌ ad-hoc `<ul className="divide-y">` with custom `<li>` flex rows.
-- ✅ Badges → `<Badge size="sm" variant="…">`. ❌ `className="h-4 rounded-md px-1 text-[9px]"`.
-- ✅ People → `UserAvatar` (round); things → `EntityAvatar` (square). ❌ a custom initial tile, or a circle for a project / a square for a person.
-- ✅ Meta lines → `InlineMeta`. ❌ manual `<span className="text-muted-foreground/40">·</span>`.
-- ✅ Empty views → `EmptyState`. ❌ centered `<p>` with custom padding.
-- ✅ Status / note boxes → `<InfoBanner tone="…">`. ❌ `<div className="rounded-md border border-amber-500/30 bg-amber-500/5 …">` colored one-offs.
-- ✅ Form fields → bare `Input`/`Textarea`/`Select` (they already match). ❌ a per-field `bg-transparent`, `shadow-xs`, or custom focus ring that makes two fields look like different materials.
-- ✅ Font sizes → named text tokens (`text-xs`, `text-sm`, `text-base`, `text-lg`+). ❌ arbitrary font-size classes like `text-[11px]`, `text-[13.5px]`, or `text-[0.875em]`.
-- ✅ Nested nav/session rows → same readable title token, with indentation/dot/border for hierarchy. ❌ child titles made smaller than parent titles.
-- ✅ Color/radius via `globals.css` tokens (`bg-muted`, `bg-kortix-blue`, `rounded-2xl`). ❌ Tailwind palette colors (`bg-blue-500`, `text-red-400`, `bg-green-600`), raw values (`#fff`, `oklch(…)`), `rounded-[5px]`, `rounded-md`/`rounded-xl` on a container.
-- ✅ Selected/active → tinted primary (`variant="subtle"`, `bg-primary/[0.05]`, `border-l-primary`). ❌ a flat grey selected/active state (`variant="secondary"`, `bg-muted`, hardcoded `bg-black/10`).
-- ✅ Modals: header `border-b`, padded body, **flush footer bar** (`flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3`). ❌ `-mx-6`/`mt-4` hacks or leftover bottom padding under the footer.
-- ✅ One shared component imported everywhere. ❌ a second copy of an existing component (e.g. a local `CreateAccountModal`).
-- ✅ Toasts → `successToast` / `errorToast` / `infoToast` / `warningToast` / `progressToast` / `loadingToast` from `@/components/ui/toast`. ❌ `sonner`, `@/lib/toast`, or ad-hoc `toast.custom()` markup.
-- ✅ Hover hints → `<Hint label="…">` from `@/components/ui/hint`. ❌ importing `Tooltip` primitives from `@/components/ui/tooltip` in pages, features, or screens.
-
-## Modal pattern (canonical)
-
-```tsx
-<DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-  <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4"> … </DialogHeader>
-  <form onSubmit={…}>
-    <div className="space-y-4 px-6 py-5"> {/* fields */} </div>
-    <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
-      <Button variant="ghost">Cancel</Button>
-      <Button type="submit">Confirm</Button>
-    </div>
-  </form>
-</DialogContent>
-```
+- ✅ Section shell → `CustomizeSectionWrapper`. ❌ hand-rolled outer flex + header.
+- ✅ Panels → `bg-popover rounded-md border` + inner `px-4 py-5`. ❌ `SectionCard`, ❌ padding on the border element itself.
+- ✅ Lists → `<ul className="space-y-2">` + entity row classes. ❌ `List` / `ListRow`, ❌ `divide-y` Card lists.
+- ✅ Expandable config → `Disclosure` + `Button variant="popover"`. ❌ custom accordion, ❌ nested `rounded-md` inside rounded parent.
+- ✅ Modals → `Modal` from `modal.tsx`. ❌ `Dialog`/`DialogContent` in features.
+- ✅ Tooltips → `Hint`. ❌ `Tooltip` primitives in features.
+- ✅ Toasts → `@/components/ui/toast` helpers. ❌ `@/lib/toast`, raw sonner.
+- ✅ Badges → `<Badge size="sm" variant="…">`. ❌ hand-rolled chip spans.
+- ✅ Status → tinted icon tile + optional `Badge`. ❌ raw palette icon colors.
+- ✅ Color → `kortix-*` + semantic tokens. ❌ `text-emerald-600`, `bg-amber-500`.
+- ✅ Meta separators → `InlineMeta` or `text-muted-foreground/40` bullet (`&bull;`). ❌ inconsistent separators.
+- ✅ Empty → `EmptyState`. ❌ centered `<p>` only.
+- ✅ Alerts → `InfoBanner`. ❌ hand-rolled colored banners.
+- ✅ Pending spinners → `Loading` from `loading.tsx`. ❌ `Loader2`, `Loader`, or any `animate-spin` icon.
 
 ## Workflow checklist
 
-1. Open `/design-system` (run the app, see `kortix-design-system`/run skills) and skim `src/components/ui/` before writing UI.
-2. Build the screen by composing primitives — `SectionCard` + `List`/`ListRow` + `UserAvatar`/`EntityAvatar` + `Badge` + `InlineMeta` + `EmptyState`.
-3. If you must create a primitive: build it from tokens, keep it tiny, and add a showcase block to `/design-system`.
-4. Verify: no hardcoded colors/radii, no hand-rolled chrome, correct avatar shapes, themes still work, `tsc` clean for the files you touched.
-
-The reference implementation that follows all of the above: the account screens (`src/app/accounts/**`) and the IAM components (`src/components/iam/**`).
+1. **Load [`make-interfaces-feel-better`](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md)** — run its review checklist after composing UI.
+2. **Read the closest reference view** from the table above. Copy structure, spacing, and primitives — don't invent a new layout dialect.
+3. Skim `/design-system` and `src/components/ui/` for anything not covered by the reference.
+4. Compose: `CustomizeSectionWrapper` → search/panel/row/disclosure/table → `Badge` + `Hint` + `Modal` + `toast` + `Loading` + `EmptyState`. **Never** `SectionCard`, `List`, or `Loader2`.
+5. Status → tinted icon tile. Color → `kortix-*`. Radius → `rounded-md` (panel), `rounded-none` (flush trigger).
+6. New primitive? Tokens only, tiny API, add to `/design-system`.
+7. Verify: no banned imports, no raw palette colors, no nested rounding, light + dark, `tsc` clean, polish checklist from `make-interfaces-feel-better`.

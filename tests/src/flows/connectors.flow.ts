@@ -1,6 +1,8 @@
 /**
- * Connectors (executor) — catalog, project connector admin, policies, sharing,
- * credentials, call gateway. Maps to spec §24 (CONN-1..9).
+ * Connectors (executor) — catalog, project connector admin, policies,
+ * credentials, call gateway. Connectors are project-wide visible (no
+ * per-connector sharing/agent-scope — retired 2026-07-06, see
+ * spec/end-to-end.md §24). Maps to spec §24 (CONN-1..5, 7-9, 12, 13).
  */
 import { flow } from "../core/flow";
 
@@ -68,22 +70,6 @@ flow(
   },
 );
 
-flow("CONN-6", { domain: "connectors", routes: ["PUT /v1/executor/projects/:projectId/connectors/:slug/sharing"] }, async (ctx) => {
-  const p = await ctx.fixtures.project();
-  await ctx.step("invalid sharing mode → 400", async () => {
-    const r = await ctx.client
-      .as(ctx.P.OWNER)
-      .put("/v1/executor/projects/:projectId/connectors/:slug/sharing", { mode: "wizard" }, { params: { projectId: p.id, slug: "nope" } });
-    r.status(400);
-  });
-  await ctx.step("valid mode but unknown connector → 404", async () => {
-    const r = await ctx.client
-      .as(ctx.P.OWNER)
-      .put("/v1/executor/projects/:projectId/connectors/:slug/sharing", { mode: "project" }, { params: { projectId: p.id, slug: "nope" } });
-    r.status(404);
-  });
-});
-
 flow("CONN-7", { domain: "connectors", routes: ["PUT /v1/executor/projects/:projectId/connectors/:slug/credential"] }, async (ctx) => {
   const p = await ctx.fixtures.project();
   await ctx.step("missing value → 400", async () => {
@@ -133,3 +119,79 @@ flow("CONN-12", { domain: "connectors", routes: ["GET /v1/executor/projects/:pro
     r.status(403);
   });
 });
+
+// Admin: connector-policy mutations — credential mode, display name, and the
+// per-tool/per-pattern call policies. All three gate on project.connector.write
+// (resolveAdmin), validate their body BEFORE looking up the connector (so an
+// invalid mode/name/policy is a 400 even against an unknown slug), and 404 an
+// unknown connector once the body is well-formed.
+flow(
+  "CONN-13",
+  {
+    domain: "connectors",
+    routes: [
+      "PUT /v1/executor/projects/:projectId/connectors/:slug/credential-mode",
+      "PUT /v1/executor/projects/:projectId/connectors/:slug/name",
+      "PUT /v1/executor/projects/:projectId/connectors/:slug/policies",
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+
+    await ctx.step("credential-mode: invalid mode → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put("/v1/executor/projects/:projectId/connectors/:slug/credential-mode", { mode: "nope" }, { params: { projectId: p.id, slug: "nope" } });
+      r.status(400);
+    });
+    await ctx.step("credential-mode: valid mode but unknown connector → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put("/v1/executor/projects/:projectId/connectors/:slug/credential-mode", { mode: "shared" }, { params: { projectId: p.id, slug: "nope" } });
+      r.status(404);
+    });
+
+    await ctx.step("name: empty name → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put("/v1/executor/projects/:projectId/connectors/:slug/name", { name: "" }, { params: { projectId: p.id, slug: "nope" } });
+      r.status(400);
+    });
+    await ctx.step("name: valid name but unknown connector → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put("/v1/executor/projects/:projectId/connectors/:slug/name", { name: "Renamed" }, { params: { projectId: p.id, slug: "nope" } });
+      r.status(404);
+    });
+
+    await ctx.step("policies: not an array → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put("/v1/executor/projects/:projectId/connectors/:slug/policies", { policies: "nope" }, { params: { projectId: p.id, slug: "nope" } });
+      r.status(400);
+    });
+    await ctx.step("policies: invalid action validated before the connector lookup → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/executor/projects/:projectId/connectors/:slug/policies",
+          { policies: [{ match: "foo", action: "nope" }] },
+          { params: { projectId: p.id, slug: "nope" } },
+        );
+      r.status(400);
+    });
+    await ctx.step("policies: well-formed but unknown connector → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put("/v1/executor/projects/:projectId/connectors/:slug/policies", { policies: [] }, { params: { projectId: p.id, slug: "nope" } });
+      r.status(404);
+    });
+
+    await ctx.step("NONMEMBER → 403", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .put("/v1/executor/projects/:projectId/connectors/:slug/credential-mode", { mode: "shared" }, { params: { projectId: p.id, slug: "nope" } });
+      r.status(403);
+    });
+  },
+);

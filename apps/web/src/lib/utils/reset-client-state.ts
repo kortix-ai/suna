@@ -1,6 +1,6 @@
 import { getSharedQueryClient } from '@/lib/query-client-singleton';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
-import { clearSessionIDBCache } from '@/lib/idb-sync-cache';
+import { clearSessionIDBCache } from '@kortix/sdk/idb-sync-cache';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 
 /**

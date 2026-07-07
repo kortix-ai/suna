@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { ChevronRight, FolderRoot } from 'lucide-react';
-import { useFilesStore, useFilesStoreApi } from '../store/files-store';
+import { useFilesStore, useFilesStoreApi } from '@/features/file-browser/store/files-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { cn } from '@/lib/utils';
 import { getFileIcon } from './file-icon';

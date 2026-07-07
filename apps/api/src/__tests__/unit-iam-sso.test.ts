@@ -5,6 +5,7 @@ import {
   diffSsoGroups,
   extractGroupClaims,
   extractSsoProviderId,
+  resolveClaimedGroupIds,
 } from '../iam/sso-sync';
 
 describe('extractSsoProviderId', () => {
@@ -18,6 +19,43 @@ describe('extractSsoProviderId', () => {
     expect(
       extractSsoProviderId({ app_metadata: { provider_id: 'bbb' } }),
     ).toBe('bbb');
+  });
+
+  test('reads the real Supabase shape: app_metadata.provider = "sso:<uuid>"', () => {
+    expect(
+      extractSsoProviderId({
+        app_metadata: {
+          provider: 'sso:464651b7-6157-46b1-afaa-5bbd7fa37599',
+          providers: ['sso:464651b7-6157-46b1-afaa-5bbd7fa37599'],
+        },
+      }),
+    ).toBe('464651b7-6157-46b1-afaa-5bbd7fa37599');
+  });
+
+  test('reads the id out of the providers[] array when provider is absent', () => {
+    expect(
+      extractSsoProviderId({ app_metadata: { providers: ['sso:abc-123'] } }),
+    ).toBe('abc-123');
+  });
+
+  test('prefers an explicit sso_provider_id over the provider tag', () => {
+    expect(
+      extractSsoProviderId({
+        app_metadata: { sso_provider_id: 'explicit', provider: 'sso:tagged' },
+      }),
+    ).toBe('explicit');
+  });
+
+  test('non-SSO providers resolve to null', () => {
+    expect(
+      extractSsoProviderId({ app_metadata: { provider: 'email', providers: ['email'] } }),
+    ).toBeNull();
+    expect(extractSsoProviderId({ app_metadata: { provider: 'google' } })).toBeNull();
+  });
+
+  test('an empty "sso:" tag resolves to null', () => {
+    expect(extractSsoProviderId({ app_metadata: { provider: 'sso:' } })).toBeNull();
+    expect(extractSsoProviderId({ app_metadata: { provider: 'sso:   ' } })).toBeNull();
   });
 
   test('returns null when missing', () => {
@@ -42,6 +80,15 @@ describe('extractGroupClaims', () => {
     expect(out).toEqual(['Engineers', 'Admins']);
   });
 
+  test('reads the real Supabase SSO location: user_metadata.custom_claims.groups', () => {
+    expect(
+      extractGroupClaims(
+        { user_metadata: { custom_claims: { groups: ['Everyone', 'Managers'] } } },
+        'groups',
+      ),
+    ).toEqual(['Everyone', 'Managers']);
+  });
+
   test('reads string claim and wraps as array', () => {
     expect(
       extractGroupClaims({ app_metadata: { groups: 'Engineers' } }, 'groups'),
@@ -64,6 +111,52 @@ describe('extractGroupClaims', () => {
     expect(
       extractGroupClaims({ app_metadata: { groups: ['a', 1, null, 'b'] } }, 'groups'),
     ).toEqual(['a', 'b']);
+  });
+});
+
+describe('resolveClaimedGroupIds — Entra-tolerant claim→group matching', () => {
+  const mappings = [
+    { claimValue: 'Marketing', groupId: 'g-mkt' },
+    { claimValue: 'Engineering', groupId: 'g-eng' },
+    { claimValue: '11111111-2222-3333-4444-555555555555', groupId: 'g-guid' },
+  ];
+
+  test('exact match resolves the group id', () => {
+    expect([...resolveClaimedGroupIds(['Marketing'], mappings)]).toEqual(['g-mkt']);
+  });
+
+  test('CASE-insensitive: Azure display-name casing mismatch still matches', () => {
+    // Entra sends "MARKETING"; admin typed "Marketing" in the mapping.
+    expect([...resolveClaimedGroupIds(['MARKETING', 'engineering'], mappings)].sort()).toEqual([
+      'g-eng',
+      'g-mkt',
+    ]);
+  });
+
+  test('whitespace-insensitive on both sides', () => {
+    expect([...resolveClaimedGroupIds(['  Marketing  '], mappings)]).toEqual(['g-mkt']);
+  });
+
+  test('GUID object-id claims (Entra default) match regardless of case', () => {
+    expect([...resolveClaimedGroupIds(['11111111-2222-3333-4444-555555555555'.toUpperCase()], mappings)]).toEqual([
+      'g-guid',
+    ]);
+  });
+
+  test('unmapped claim values are ignored (no group)', () => {
+    expect([...resolveClaimedGroupIds(['Finance', 'Sales'], mappings)]).toEqual([]);
+  });
+
+  test('empty claims resolve to nothing', () => {
+    expect(resolveClaimedGroupIds([], mappings).size).toBe(0);
+  });
+
+  test('de-dupes when two claim values map to the same group', () => {
+    const dup = [
+      { claimValue: 'A', groupId: 'g' },
+      { claimValue: 'B', groupId: 'g' },
+    ];
+    expect([...resolveClaimedGroupIds(['a', 'b'], dup)]).toEqual(['g']);
   });
 });
 

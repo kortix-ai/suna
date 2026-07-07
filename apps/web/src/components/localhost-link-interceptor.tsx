@@ -57,7 +57,7 @@ function getCurrentSessionId(): string | null {
 }
 
 export function LocalhostLinkInterceptor() {
-  const { activeServer, subdomainOpts, rewritePortPath } = useSandboxProxy();
+  const { subdomainOpts, rewritePortPath } = useSandboxProxy();
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -121,7 +121,7 @@ export function LocalhostLinkInterceptor() {
 
       // ── Case 2: Already-proxied URL ──
       if (isPreviewUrl(href)) {
-        const internal = proxyUrlToInternal(href, activeServer?.mappedPorts);
+        const internal = proxyUrlToInternal(href);
         if (internal) {
           const parsed = parseLocalhostUrl(internal);
           if (parsed) {
@@ -163,7 +163,7 @@ export function LocalhostLinkInterceptor() {
 
     document.addEventListener('click', handleClick, { capture: true });
     return () => document.removeEventListener('click', handleClick, { capture: true });
-  }, [activeServer, rewritePortPath, subdomainOpts]);
+  }, [rewritePortPath, subdomainOpts]);
 
   return null;
 }

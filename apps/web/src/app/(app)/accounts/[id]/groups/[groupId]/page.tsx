@@ -27,7 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
@@ -62,7 +62,7 @@ import {
   listAccountMembers,
   listProjectsForAccount,
   type ProjectRole,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { usePermission } from '@/lib/use-permission';
 
 export default function GroupDetailPage() {
@@ -1027,9 +1027,7 @@ function AttachToProjectDialog({
                 <SelectItem value="editor">
                   {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextEditor415a1a4b')}
                 </SelectItem>
-                <SelectItem value="viewer">
-                  {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextViewer8a17707f')}
-                </SelectItem>
+                <SelectItem value="member">Member</SelectItem>
               </SelectContent>
             </Select>
           </div>

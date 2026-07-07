@@ -45,10 +45,7 @@ export function SessionTerminalPanel({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const currentSandboxId = useKortixComputerStore((s) => s.currentSandboxId);
-  const serverUrl = useServerStore((s) => {
-    const server = s.servers.find((srv) => srv.id === s.activeServerId);
-    return server?.url ?? s.getActiveServerUrl();
-  });
+  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
 
   // The opencode runtime (in-sandbox daemon + opencode server) must be booted
   // and healthy before any /pty REST call will resolve — otherwise the proxy

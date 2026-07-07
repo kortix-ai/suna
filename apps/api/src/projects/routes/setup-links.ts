@@ -146,7 +146,7 @@ projectsApp.openapi(
 
     const { token, expiresAt } = mintSetupLink(
       projectId,
-      { kind: 'connector', slug, app: conn.app, mode: conn.mode, uid: loaded.userId },
+      { kind: 'connector', slug, app: conn.app, uid: loaded.userId },
       { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
     );
 

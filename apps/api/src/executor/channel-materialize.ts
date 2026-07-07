@@ -1,4 +1,4 @@
-import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
+import { listAgentMailInstalls, loadMeetInstall, loadSlackInstall } from '../channels/install-store';
 /**
  * Auto-materialize channel connectors from platform installs.
  *
@@ -6,8 +6,8 @@ import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-sto
  * kortix.toml — connecting the platform IS the registration. When a project has
  * a Slack install but hasn't explicitly declared a `channel` connector for it,
  * we synthesize a ConnectorSpec here so the materializer treats it like any
- * other connector: it gets DB rows, a fixed action catalog, sharing, policies,
- * and shows up in the Executor/Connectors surface. The credential is the
+ * other connector: it gets DB rows, a fixed action catalog, policies, and
+ * shows up in the Executor/Connectors surface. The credential is the
  * existing install token (resolved server-side at call time) — no copy, no
  * executor_credentials row, no migration. See KORTIX-206.
  */
@@ -27,6 +27,10 @@ function channelSpec(platform: ChannelPlatform, slug: string, name = channelLabe
     enabled: true,
     provider: 'channel',
     credentialMode: 'shared',
+    // Email is sensitive by default — reading a private inbox is an exfiltration
+    // surface, so its actions ask before running (silence per-session with "allow
+    // for session"). Slack/meet aren't gated by default.
+    sensitive: platform === 'email',
     app: null,
     account: null,
     url: null,
@@ -79,6 +83,17 @@ export async function synthesizeChannelConnectors(
     .from(projects)
     .where(eq(projects.projectId, projectId))
     .limit(1);
+
+  // Meet (Recall.ai) — gated on the per-project `meet` experimental flag. Like
+  // Slack, a resolvable Recall key IS the registration (no OAuth / no [[connectors]]).
+  if (project && resolveExperimentalFeature(project.metadata, 'meet')) {
+    const meetSlug = channelDefaultSlug('meet');
+    if (!channelAlreadyDeclared(declared, 'meet', meetSlug)) {
+      const install = await loadMeetInstall(projectId).catch(() => null);
+      if (install) specs.push(channelSpec('meet', meetSlug));
+    }
+  }
+
   if (!project || !resolveExperimentalFeature(project.metadata, 'agentmail_email')) {
     return specs;
   }

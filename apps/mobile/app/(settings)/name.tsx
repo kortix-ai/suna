@@ -79,16 +79,6 @@ export default function NameEditScreen() {
 
       log.log('✅ Name updated successfully:', updatedUser);
 
-      try {
-        await supabase.rpc('update_account', {
-          name: trimmedName,
-          account_id: user?.id,
-        });
-        log.log('✅ Account table also updated');
-      } catch (rpcError) {
-        log.warn('⚠️ RPC update failed (may not exist):', rpcError);
-      }
-
       haptics.success();
       Keyboard.dismiss();
       router.back();

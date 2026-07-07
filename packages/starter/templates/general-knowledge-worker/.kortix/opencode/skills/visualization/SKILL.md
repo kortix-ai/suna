@@ -1,6 +1,7 @@
 ---
 name: visualization
 description: "Chart selection guidance, Python visualization code patterns, design principles, and accessibility considerations for creating effective data visualizations."
+defaultProjectInstall: true
 ---
 
 # Data Visualization Skill

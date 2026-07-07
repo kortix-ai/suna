@@ -20,9 +20,15 @@ import type { CustomizeSection } from '@/lib/customize-sections';
  *  "Add provider" (catalog) is the primary surface, so it's the default. */
 export type LlmProvidersTab = 'catalog' | 'connected' | 'models';
 
+/** Sub-tab to land on inside the Members section when deep-linking there.
+ *  "People" is the primary surface, so it's the default. */
+export type MembersTab = 'people' | 'invite';
+
 interface CustomizeOptions {
   /** When jumping to `llm-providers`, which Providers sub-tab to open. */
   llmProvidersTab?: LlmProvidersTab;
+  /** When jumping to `members`, which sub-tab to open (e.g. straight to Invite). */
+  membersTab?: MembersTab;
 }
 
 interface CustomizeState {
@@ -33,6 +39,9 @@ interface CustomizeState {
   /** Which Providers sub-tab the LLM panel should land on. Reset to "catalog"
    *  (Add provider) on every open unless a trigger explicitly asks otherwise. */
   llmProvidersTab: LlmProvidersTab;
+  /** Which sub-tab the Members section should land on. Reset to "people" on
+   *  every open unless a trigger explicitly asks otherwise (e.g. Invite). */
+  membersTab: MembersTab;
   /** Open the overlay. Pass a section to jump straight to it; omit to resume
    *  wherever you left off. */
   openCustomize: (section?: CustomizeSection, opts?: CustomizeOptions) => void;
@@ -44,11 +53,13 @@ export const useCustomizeStore = create<CustomizeState>((set) => ({
   open: false,
   section: 'agents',
   llmProvidersTab: 'catalog',
+  membersTab: 'people',
   openCustomize: (section, opts) =>
     set((s) => ({
       open: true,
       section: section ?? s.section,
       llmProvidersTab: opts?.llmProvidersTab ?? 'catalog',
+      membersTab: opts?.membersTab ?? 'people',
     })),
   setSection: (section) => set({ section }),
   close: () => set({ open: false }),

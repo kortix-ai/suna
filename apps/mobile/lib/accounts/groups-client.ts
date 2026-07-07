@@ -17,7 +17,7 @@ export interface GroupMember {
 export interface GroupProjectGrant {
   project_id: string;
   project_name: string;
-  role: 'manager' | 'editor' | 'viewer';
+  role: 'manager' | 'editor' | 'member';
   granted_by: string | null;
   created_at: string;
   expires_at?: string | null;

@@ -21,7 +21,6 @@ import { Icon } from '@/features/icon/icon';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
-import { isWorkEmail } from '@/lib/personal-email';
 import { cn } from '@/lib/utils';
 import { TelephoneSolid } from '@mynaui/icons-react';
 import Link from 'next/link';
@@ -36,7 +35,6 @@ export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } 
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const { user } = useAuth();
   const tier = usePersonalContactTier();
-  const isPaid = tier === 'personal';
   const [dismissed, setDismissed] = useState(true);
   const [hydrated, setHydrated] = useState(false);
   const [qualifierOpen, setQualifierOpen] = useState(false);
@@ -48,8 +46,7 @@ export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } 
     setHydrated(true);
   }, []);
 
-  if (tier === 'none') return null;
-  if (!isWorkEmail(user?.email)) return null;
+  if (tier !== 'personal') return null;
   if (!hydrated || dismissed) return null;
   if (wizardPending) return null;
 
@@ -122,9 +119,7 @@ export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } 
             {tI18nHardcoded.raw(
               'autoComponentsProjectsPersonalOnboardingWelcomeJsxTextWantAHandf0a0c56c',
             )}
-            {isPaid
-              ? ' Book a call or send me a WhatsApp message whenever you need help.'
-              : ' Book a demo and I’ll walk you through it.'}
+            {' Book a call or send me a WhatsApp message whenever you need help.'}
           </p>
         </CardContent>
 
@@ -135,14 +130,12 @@ export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } 
               'autoComponentsProjectsPersonalOnboardingWelcomeJsxTextBookADemo7f3fc2d5',
             )}
           </Button>
-          {isPaid && (
-            <Button asChild size="sm" variant="outline">
-              <Link href={`https://wa.me/${MARKO_WHATSAPP}`} target="_blank" rel="noreferrer">
-                <Icon.WhatsApp />
-                WhatsApp
-              </Link>
-            </Button>
-          )}
+          <Button asChild size="sm" variant="outline">
+            <Link href={`https://wa.me/${MARKO_WHATSAPP}`} target="_blank" rel="noreferrer">
+              <Icon.WhatsApp />
+              WhatsApp
+            </Link>
+          </Button>
           <Button size="sm" variant="outline" onClick={copyEmail}>
             {MARKO_EMAIL}
           </Button>

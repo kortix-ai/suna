@@ -193,6 +193,8 @@ See `skills/website-building/shared/08-standards.md` for the full anti-patterns 
 
 Use real local preview commands first and only publish with the target project's actual deployment workflow. See `skills/website-building/shared/09-technical.md` for the recommended preview and delivery flow.
 
+**Before taking a site live, read `skills/website-building/website-publishing/SKILL.md`.** It covers the publish guardrail (explicit user opt-in — never publish unprompted), runtime-only dependencies that won't survive a standalone deployment, and the mandatory pre-publish security review.
+
 ---
 
 ## Delivery

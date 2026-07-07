@@ -44,6 +44,10 @@ export interface CreateAccountTokenParams {
   /** Set for agent-session tokens — the resolved per-agent grant to stamp
    *  onto the token (already ∩ the launching user's role). */
   agentGrant?: AgentGrant | null;
+  /** The agent's standing-identity service account. When set, the IAM engine
+   *  authorizes this session AS the SA (its own policies) ∩ agentGrant, not the
+   *  launching user. Null = legacy (authorize as the user). */
+  serviceAccountId?: string | null;
 }
 
 export interface CreateAccountTokenResult {
@@ -162,6 +166,7 @@ export async function createAccountToken(
       secretKeyHash,
       expiresAt: params.expiresAt ?? null,
       agentGrant: params.agentGrant ?? null,
+      serviceAccountId: params.serviceAccountId ?? null,
     })
     .returning();
 
@@ -226,6 +231,34 @@ export async function revokeAccountToken(
     .returning({ tokenId: accountTokens.tokenId });
 
   return result.length > 0;
+}
+
+/**
+ * Revoke EVERY active token a user holds in an account — their PATs AND their
+ * live sandbox session tokens (both carry `user_id`). Called when a member is
+ * removed or deactivated (human UI or SCIM/IdP), so offboarding is IMMEDIATE:
+ * `validateAccountToken` only accepts `status='active'`, so a revoked bearer
+ * (and any running agent session it authenticates) stops on its very next call —
+ * defense-in-depth on top of the membership deletion + IAM-cache bust. Returns
+ * the number of tokens revoked.
+ */
+export async function revokeAllAccountTokensForUser(
+  userId: string,
+  accountId: string,
+): Promise<number> {
+  const result = await db
+    .update(accountTokens)
+    .set({ status: 'revoked', revokedAt: new Date() })
+    .where(
+      and(
+        eq(accountTokens.userId, userId),
+        eq(accountTokens.accountId, accountId),
+        eq(accountTokens.status, 'active'),
+      ),
+    )
+    .returning({ tokenId: accountTokens.tokenId });
+
+  return result.length;
 }
 
 // ─── Validation ──────────────────────────────────────────────────────────────

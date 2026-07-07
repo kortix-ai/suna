@@ -17,7 +17,7 @@ import {
   Columns3,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { IconInbox } from '@/components/ui/kortix-icons';
 import { Button } from '@/components/ui/button';
 import { TaskKanban } from '@/components/kortix/task-kanban';

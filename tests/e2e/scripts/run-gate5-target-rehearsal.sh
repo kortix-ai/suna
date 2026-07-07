@@ -148,7 +148,6 @@ export E2E_ENABLE_GOLDEN_PATHS="${E2E_ENABLE_GOLDEN_PATHS:-1}"
 export E2E_REQUIRE_GITHUB_APP="${E2E_REQUIRE_GITHUB_APP:-1}"
 export E2E_GOLDEN_PROVIDER="${E2E_GOLDEN_PROVIDER:-daytona}"
 export E2E_GOLDEN_BACKPRESSURE="${E2E_GOLDEN_BACKPRESSURE:-1}"
-export E2E_GOLDEN_LOCAL_DOCKER="${E2E_GOLDEN_LOCAL_DOCKER:-0}"
 export E2E_ENFORCE_SLOS="${E2E_ENFORCE_SLOS:-1}"
 
 if [ "${GATE5_REQUIRE_MANAGED_OBSERVABILITY:-1}" != "1" ]; then
@@ -249,7 +248,6 @@ if [ "$PREFLIGHT_ONLY" = "1" ]; then
   "github_app_required": "$E2E_REQUIRE_GITHUB_APP",
   "golden_paths_enabled": "$E2E_ENABLE_GOLDEN_PATHS",
   "golden_backpressure_enabled": "$E2E_GOLDEN_BACKPRESSURE",
-  "local_docker_golden_enabled": "$E2E_GOLDEN_LOCAL_DOCKER",
   "slos_enforced": "$E2E_ENFORCE_SLOS",
   "managed_observability_required": "${GATE5_REQUIRE_MANAGED_OBSERVABILITY:-1}",
   "no_active_legacy_required": "${GATE5_REQUIRE_NO_ACTIVE_LEGACY:-1}",
@@ -302,7 +300,6 @@ cat >"$EVIDENCE_DIR/summary.json" <<JSON
   "github_app_required": "$E2E_REQUIRE_GITHUB_APP",
   "golden_paths_enabled": "$E2E_ENABLE_GOLDEN_PATHS",
   "golden_backpressure_enabled": "$E2E_GOLDEN_BACKPRESSURE",
-  "local_docker_golden_enabled": "$E2E_GOLDEN_LOCAL_DOCKER",
   "slos_enforced": "$E2E_ENFORCE_SLOS",
   "managed_observability_required": "${GATE5_REQUIRE_MANAGED_OBSERVABILITY:-1}",
   "no_active_legacy_required": "${GATE5_REQUIRE_NO_ACTIVE_LEGACY:-1}",

@@ -19,9 +19,9 @@ import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
+import { ensureAgentServiceAccount } from '../../repositories/service-accounts';
 import {
   getProvider,
-  WarmRuntimeUnavailableError,
   type CreateSandboxOpts,
   type ProviderName,
 } from '../providers';
@@ -39,7 +39,6 @@ import {
   DEFAULT_SANDBOX_SLUG,
   type EnsureSandboxImageResult,
 } from '../../snapshots/builder';
-import { ensureWarmBaseReady, warmPathPaused } from '../../snapshots/warm-bake';
 import { config } from '../../config';
 import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';
@@ -53,8 +52,8 @@ import { resolveAgentGrant } from '../../projects/agents';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 
 // Fallback spec for sandboxes that don't declare [sandbox] in kortix.toml.
-// Mirrors the platform default sandbox size (2 vCPU / 6 GB / 20 GB).
-const DEFAULT_METERING_SPEC = { cpuCores: 2, memoryGb: 6, diskGb: 20, gpuCount: 0 };
+// Mirrors the platform default sandbox size (2 vCPU / 4 GB / 20 GB).
+const DEFAULT_METERING_SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 
 async function openComputeSessionForSandbox(
   sandboxId: string,
@@ -114,10 +113,25 @@ async function mintExecutorToken(opts: {
   agentName: string;
   gitProject: GitBackedProject;
 }): Promise<string | null> {
-  const agentGrant = await resolveAgentGrant(opts.agentName, opts.gitProject).catch((err) => {
-    console.warn(`[session-sandbox] failed to resolve agent grant for ${opts.projectId}:`, err);
-    return null;
-  });
+  // Resolve the per-session grant AND the agent's standing-identity service
+  // account in parallel. The SA resolution is FAIL-SAFE: on error we mint
+  // without a service_account_id, which is the legacy behavior (authorize as the
+  // user ∩ grant) — it never WIDENS, so a provisioning hiccup degrades to the
+  // previous secure model rather than breaking session start.
+  const [agentGrant, serviceAccountId] = await Promise.all([
+    resolveAgentGrant(opts.agentName, opts.gitProject).catch((err) => {
+      console.warn(`[session-sandbox] failed to resolve agent grant for ${opts.projectId}:`, err);
+      return null;
+    }),
+    ensureAgentServiceAccount({
+      accountId: opts.accountId,
+      projectId: opts.projectId,
+      agentName: opts.agentName,
+    }).catch((err) => {
+      console.warn(`[session-sandbox] failed to ensure agent service account for ${opts.projectId}:`, err);
+      return null;
+    }),
+  ]);
   try {
     const tok = await createAccountToken({
       accountId: opts.accountId,
@@ -128,6 +142,7 @@ async function mintExecutorToken(opts: {
       sessionId: opts.sandboxId,
       name: `Executor Session ${opts.sandboxId.slice(0, 8)}`,
       agentGrant,
+      serviceAccountId,
     });
     return tok.secretKey;
   } catch (err) {
@@ -172,13 +187,6 @@ export async function provisionSessionSandbox(opts: {
    */
   sandboxSlug?: string;
   /**
-   * The project's per-project warm snapshot (projects.metadata.warm_snapshot
-   * .name — repo baked at tip + warm opencode caches). Preferred over the
-   * generic warm base when usable; verified against the provider before use,
-   * so a stale pointer just falls back. See snapshots/warm-project.ts.
-   */
-  projectWarmSnapshot?: { name: string; provider: ProviderName } | null;
-  /**
    * Runs after the provider sandbox is created but BEFORE the row is flipped to
    * `active`. Used by legacy migration to restore the original opencode store
    * into the sandbox before the frontend's `ensure-opencode` pin runs (which
@@ -214,72 +222,20 @@ export async function provisionSessionSandbox(opts: {
   // already exists. On the warm path this overlaps the ~200ms token round-trip
   // with the ~100-300ms cache-check, taking the smaller off the critical path.
   type FirstImage = EnsureSandboxImageResult & { gitProject: GitBackedProject };
-  // Experimental warm path. Preference order:
-  //   1. The PROJECT's warm snapshot (repo already cloned at tip + opencode
-  //      caches warm — skips the clone entirely; commits since bake are
-  //      fast-forwarded post-boot via /kortix/refresh).
-  //   2. The generic warm runtime base (skips the cold create; clone still runs).
-  //   3. null → the normal Dockerfile-snapshot path.
-  // Master gate is the warm_snapshot admin toggle (default ON); daytona also
-  // needs DAYTONA_WARM_TARGET, platinum a configured host (warmSnapshotsEnabledFor).
-  // Restricted to the platform-default slug: warm snapshots carry only the
-  // default runtime, so a project with a custom [[sandbox.templates]] Dockerfile
-  // must still boot its own per-project image.
-  let warmBase: string | null = null;
-  let warmIsProjectSnapshot = false;
-  // Skip ALL warm routes while the warm path is in post-failure cooldown — a
-  // degraded warm region (experimental "internal error" streaks) must not make
-  // every session pay a doomed warm attempt before falling back to cold. The
-  // generic base path already honors this; the per-project branch must too.
-  if (slug === DEFAULT_SANDBOX_SLUG && !warmPathPaused()) {
-    const ptr = opts.projectWarmSnapshot;
-    // Only consume a pointer baked for THIS session's provider (the pointer
-    // carries its provider; a daytona artifact can't be forked on platinum).
-    if (ptr && ptr.provider === providerName) {
-      try {
-        const { warmSnapshotsEnabledFor } = await import('../../shared/daytona');
-        if (warmSnapshotsEnabledFor(providerName)) {
-          if (providerName === 'platinum') {
-            // Platinum's per-project warm snapshot is a STATEFUL template; if it's
-            // ready on the host it CoW-forks on a normal create (no warm-base
-            // field). A pure provider state check — no extra round-trip class.
-            const { platinumProvider } = await import('../../snapshots/providers/platinum');
-            if ((await platinumProvider.getSnapshotState(ptr.name)) === 'active') {
-              warmBase = ptr.name;
-              warmIsProjectSnapshot = true;
-            }
-          } else if (providerName === 'daytona') {
-            // Cached + bounded + region-keyed (warmSnapshotUsableCached): a warm hit
-            // is a pure in-process check, and a degraded region times out in 4s AND
-            // pauses the warm path — so the generic-base lookup below short-circuits
-            // instead of paying a SECOND serial probe on the request-blocking path.
-            const { warmSnapshotUsableCached } = await import('../../snapshots/warm-bake');
-            if (await warmSnapshotUsableCached(ptr.name)) {
-              warmBase = ptr.name;
-              warmIsProjectSnapshot = true;
-            }
-          }
-        }
-      } catch {
-        // pointer is stale / lookup slow → fall through to cold (or generic base)
-      }
-    }
-    // The generic memory-state warm base is Daytona-only (Platinum has no
-    // equivalent; it cold-spawns when there's no per-project warm template).
-    if (!warmBase && providerName === 'daytona') warmBase = await ensureWarmBaseReady();
-  }
-  let firstImagePromise: Promise<FirstImage> | null = warmBase
-    ? null
-    : (async () => {
-        const gitProject = await resolveGitProject();
-        const image = await ensureSandboxImage(gitProject, {
-          slug,
-          accountId,
-          source: 'session-start',
-          provider: providerName,
-        });
-        return { ...image, gitProject };
-      })();
+  // Cold-only: every session boots from its Dockerfile snapshot (the shared
+  // default or a per-project template), resolved by ensureSandboxImage. No warm
+  // / stateful-snapshot fast path — Platinum and Daytona take the identical cold
+  // path.
+  let firstImagePromise: Promise<FirstImage> | null = (async () => {
+    const gitProject = await resolveGitProject();
+    const image = await ensureSandboxImage(gitProject, {
+      slug,
+      accountId,
+      source: 'session-start',
+      provider: providerName,
+    });
+    return { ...image, gitProject };
+  })();
   // Swallow the unhandled-rejection warning; the IIFE's try/catch owns the error
   // when it awaits the promise.
   firstImagePromise?.catch(() => {});
@@ -400,8 +356,6 @@ export async function provisionSessionSandbox(opts: {
         ? {
             KORTIX_LLM_API_KEY: gatewayLlmKey,
             KORTIX_LLM_BASE_URL: llmBaseUrl,
-            KORTIX_YOLO_API_KEY: gatewayLlmKey,
-            KORTIX_YOLO_URL: llmBaseUrl,
           }
         : {}),
     },
@@ -439,11 +393,7 @@ export async function provisionSessionSandbox(opts: {
       // kicked off in parallel with the token round-trip; heal-retries re-resolve
       // from scratch (the prior snapshot was just deleted).
       let image: EnsureSandboxImageResult;
-      if (warmBase) {
-        // Warm path: no per-project Dockerfile snapshot — boot the shared
-        // memory-state warm base; the provider starts the daemon post-restore.
-        image = { snapshotName: warmBase, slug, contentHash: 'warm', built: false, isDefault: true };
-      } else if (firstImagePromise) {
+      if (firstImagePromise) {
         image = await firstImagePromise;
         firstImagePromise = null;
       } else {
@@ -461,20 +411,12 @@ export async function provisionSessionSandbox(opts: {
         contentHash: image.contentHash,
         isDefault: image.isDefault,
       };
-      tl.mark(warmBase ? 'warm-base' : image.built ? 'image-built' : 'image-cached');
-      if (warmBase) {
-        // Platinum: the warm artifact is a stateful TEMPLATE — boot it normally
-        // and the host CoW-forks it. Daytona: it's a memory snapshot restored via
-        // the dedicated warmBaseSnapshot field.
-        if (providerName === 'platinum') providerCreateInput.snapshot = warmBase;
-        else providerCreateInput.warmBaseSnapshot = warmBase;
-      } else {
-        providerCreateInput.snapshot = image.snapshotName;
-      }
+      tl.mark(image.built ? 'image-built' : 'image-cached');
+      providerCreateInput.snapshot = image.snapshotName;
       console.log(
         `[session-sandbox] Booting ${sandbox.sandboxId} from ${image.snapshotName} ` +
-        `(${warmBase ? 'warm base' : `template "${image.slug}"${image.isDefault ? ' [platform default]' : ''}`}, ` +
-        `branch ${branch}, ${warmBase ? 'memory-restore' : image.built ? 'fresh build' : 'cache hit'})`,
+        `(template "${image.slug}"${image.isDefault ? ' [platform default]' : ''}, ` +
+        `branch ${branch}, ${image.built ? 'fresh build' : 'cache hit'})`,
       );
 
       const firstStage = provider.provisioning.stages[0];
@@ -581,7 +523,7 @@ export async function provisionSessionSandbox(opts: {
             provisionTimeline: timeline,
             daytonaSandboxId: result.externalId,
             runtimeArtifact: {
-              artifactType: providerName === 'daytona' ? 'daytona_snapshot' : 'unknown',
+              artifactType: (providerName === 'daytona' || providerName === 'managed') ? 'daytona_snapshot' : 'unknown',
               providerArtifactRef: imageInfo!.snapshotName,
               contentHash: imageInfo!.contentHash,
               sandboxSlug: imageInfo!.slug,
@@ -666,15 +608,6 @@ export async function provisionSessionSandbox(opts: {
         )
         .catch(() => {});
 
-      // Project warm snapshot: the baked workspace is at BAKE-time tip. Fast-
-      // forward it to the CURRENT base tip in the background so commits merged
-      // since the bake are present.
-      if (warmIsProjectSnapshot && result.externalId) {
-        void import('../../snapshots/warm-project')
-          .then(({ refreshRestoredWorkspace }) => refreshRestoredWorkspace(result.externalId, userId))
-          .catch(() => {});
-      }
-
       tl.mark('row-active');
       tl.log({ provider: providerName, attempts });
 
@@ -696,37 +629,10 @@ export async function provisionSessionSandbox(opts: {
       );
       break provisioning;
     } catch (bgErr) {
-      // Warm restore kept coming up without the baked runtime (Daytona's
-      // experimental snapshot drops the filesystem layer ~half the time, and
-      // createWarm exhausted its in-provider retries). Drop the warm path and
-      // re-provision from the normal Dockerfile snapshot so the session still
-      // starts — warm is a best-effort speedup, never a hard dependency.
-      if (warmBase && bgErr instanceof WarmRuntimeUnavailableError) {
-        console.warn(
-          `[session-sandbox] warm runtime unavailable for ${sandbox.sandboxId} — falling back to the normal snapshot path:`,
-          bgErr.message,
-        );
-        // Pause the warm path fleet-wide for a few minutes so subsequent
-        // sessions skip the doomed warm attempt (e.g. region revoked).
-        const { noteWarmPathFailure } = await import('../../snapshots/warm-bake');
-        noteWarmPathFailure();
-        warmBase = null;
-        warmIsProjectSnapshot = false;
-        providerCreateInput.warmBaseSnapshot = undefined;
-        if (bgExternalId) {
-          await provider.remove(bgExternalId).catch(() => {});
-          bgExternalId = null;
-        }
-        imageInfo = null;
-        tl.mark('warm-fallback');
-        continue provisioning;
-      }
-
       // Daytona dropped the image between resolve and create. Force a rebuild
       // (delete the snapshot so the next ensureSandboxImage call rebuilds it)
-      // and retry once. Capped at one heal per session start. Never on the warm
-      // path — there's no per-project Dockerfile snapshot to rebuild.
-      if (!warmBase && isSnapshotMissingOnProvider(bgErr) && imageInfo && !healedStaleSnapshot) {
+      // and retry once. Capped at one heal per session start.
+      if (isSnapshotMissingOnProvider(bgErr) && imageInfo && !healedStaleSnapshot) {
         healedStaleSnapshot = true;
         await deleteSandboxImage(opts.gitProject, { slug: imageInfo.slug }).catch((err) =>
           console.warn(
@@ -776,10 +682,7 @@ export async function provisionSessionSandbox(opts: {
           }
           providerName = next;
           provider = getProvider(next);
-          warmBase = null;
-          warmIsProjectSnapshot = false;
           providerCreateInput.snapshot = undefined;
-          providerCreateInput.warmBaseSnapshot = undefined;
           firstImagePromise = null;
           imageInfo = null;
           healedStaleSnapshot = false;

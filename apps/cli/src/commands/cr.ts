@@ -428,6 +428,26 @@ async function crOpen(argv: string[], opts: CtxOpts): Promise<number> {
   process.stdout.write(
     `  ${C.dim}${displayBranch(created.head_ref)} → ${displayBranch(created.base_ref)}${C.reset}\n\n`,
   );
+
+  // A CR whose head tip equals base shows "No changes detected" in the
+  // dashboard and can't be applied — by far the most common cause is a
+  // committed-but-never-pushed session branch. Catch it here, at open time,
+  // while the author (usually an agent) can still fix it in one command. The
+  // diff endpoint recomputes live, so pushing after this warning heals the
+  // SAME CR — no need to reopen. Best-effort: never fail the open over it.
+  try {
+    const diff = await ctx.client.get<ChangeRequestDiffResponse>(
+      `/projects/${ctx.projectId}/change-requests/${created.cr_id}/diff`,
+    );
+    if (diff.files_changed === 0) {
+      process.stderr.write(
+        `  ${C.yellow}⚠${C.reset} CR #${created.number} has NO changes — its head branch is identical to ${displayBranch(created.base_ref)}.\n    If you committed locally, push first: ${C.bold}git push origin HEAD${C.reset}\n    The CR updates automatically once the push lands.\n\n`,
+      );
+    }
+  } catch {
+    // Diff unavailable (e.g. transient mirror refresh) — the open succeeded,
+    // don't fail or confuse the caller over a advisory check.
+  }
   return 0;
 }
 

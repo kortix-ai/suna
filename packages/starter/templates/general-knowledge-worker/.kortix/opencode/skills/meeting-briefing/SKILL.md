@@ -1,6 +1,7 @@
 ---
 name: meeting-briefing
 description: "You are a meeting preparation assistant for an in-house legal team. You gather context from connected sources, prepare structured briefings for meetings with legal relevance, an..."
+defaultProjectInstall: true
 ---
 
 # Meeting Briefing Skill

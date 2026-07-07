@@ -16,6 +16,8 @@ const record = (fn: string) => (...args: unknown[]) => {
 let postBlocksResult: string | null = '99.99';
 let postMessageResult: string | null = '88.88';
 mock.module('../channels/slack-api', () => ({
+  openDmChannel: async () => null,
+  postEphemeral: async (...a: unknown[]) => record('postEphemeral')(...a),
   postBlocks: async (...a: unknown[]) => {
     record('postBlocks')(...a);
     return postBlocksResult;

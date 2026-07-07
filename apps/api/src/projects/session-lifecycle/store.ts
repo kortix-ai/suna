@@ -4,6 +4,7 @@ import { db } from '../../shared/db';
 import type {
   CreateSessionCommand,
   QueuedCreateSessionPayload,
+  SessionInvocationSource,
   SessionLifecycleResult,
 } from './types';
 
@@ -18,6 +19,61 @@ export function createSessionCommandPayload(command: CreateSessionCommand): Queu
     enforceAccountCap: command.enforceAccountCap,
     postCreate: command.postCreate,
   };
+}
+
+export interface QueuedContinueSessionPayload {
+  text: string;
+  /** When set, the drain SKIPS delivery if this execution's decision was
+   *  already consumed in-band (a live held/poll request resumed the turn) —
+   *  the follow-up prompt would just be noise. */
+  executionId?: string | null;
+}
+
+/**
+ * Enqueue a durable "deliver this follow-up into the session" command —
+ * drained by the leader's scheduler tick, retried with backoff, dead-lettered
+ * after 5 attempts. Survives the enqueueing pod dying, unlike a detached
+ * promise. `availableAt` in the future = a scheduled grace window.
+ */
+export async function enqueueContinueSessionCommand(input: {
+  source: SessionInvocationSource;
+  projectId: string;
+  accountId: string;
+  sessionId: string;
+  actorUserId: string | null;
+  text: string;
+  executionId?: string | null;
+  availableAt?: Date;
+  /** Dedupe key — a repeat enqueue (double-resolve race) is a no-op. */
+  idempotencyKey?: string | null;
+}): Promise<void> {
+  const now = new Date();
+  const payload: QueuedContinueSessionPayload = {
+    text: input.text,
+    executionId: input.executionId ?? null,
+  };
+  const values = {
+    commandType: 'continue_session',
+    source: input.source,
+    status: 'queued' as const,
+    projectId: input.projectId,
+    accountId: input.accountId,
+    actorUserId: input.actorUserId,
+    sessionId: input.sessionId,
+    idempotencyKey: input.idempotencyKey ?? null,
+    payload: payload as unknown as Record<string, unknown>,
+    result: {},
+    availableAt: input.availableAt ?? now,
+    updatedAt: now,
+  };
+  if (!input.idempotencyKey) {
+    await db.insert(sessionLifecycleCommands).values(values);
+    return;
+  }
+  await db
+    .insert(sessionLifecycleCommands)
+    .values(values)
+    .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
 }
 
 export async function claimCreateSessionCommand(

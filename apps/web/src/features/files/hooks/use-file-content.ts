@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useServerStore } from '@/stores/server-store';
 import { readFile } from '../api/opencode-files';
-import type { FileContent } from '../types';
+import type { FileContent } from '@/features/file-browser/types';
 import { fileReadRetryDelayMs, shouldRetryFileRead } from './file-read-retry';
 import { isSystemDirectoryPath } from './system-dir';
 

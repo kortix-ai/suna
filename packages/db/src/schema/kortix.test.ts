@@ -69,6 +69,7 @@ describe('kortix enums', () => {
   test('sandbox_provider enum lists supported providers', () => {
     expect(sandboxProviderEnum.enumName).toBe('sandbox_provider');
     expect(sandboxProviderEnum.enumValues).toEqual([
+      'managed',
       'daytona',
       'local_docker',
       'justavps',
@@ -115,8 +116,10 @@ describe('kortix enums', () => {
     expect(sessionLifecycleCommandStatusEnum.enumValues).toContain('dead_lettered');
   });
 
-  test('project_role enum is ordered manager, editor, viewer', () => {
-    expect(projectRoleEnum.enumValues).toEqual(['manager', 'editor', 'viewer']);
+  test('project_role enum carries manager, editor, member, and the deprecated viewer', () => {
+    // `viewer` is retired (folded into `member`) but remains in the enum because
+    // Postgres can't drop an enum member — nothing reads or writes it.
+    expect(projectRoleEnum.enumValues).toEqual(['manager', 'editor', 'member', 'viewer']);
   });
 
   test('project_access_request_status enum has the expected values', () => {
@@ -259,11 +262,11 @@ describe('projects table', () => {
 });
 
 describe('project_members table', () => {
-  test('project_role defaults to viewer', () => {
+  test('project_role defaults to member (the floor role)', () => {
     const col = getTableConfig(projectMembers).columns.find(
       (c) => c.name === 'project_role',
     );
-    expect(col?.default).toBe('viewer');
+    expect(col?.default).toBe('member');
   });
 
   test('enforces a unique project/user index', () => {
@@ -305,9 +308,9 @@ describe('sandboxes table', () => {
     expect(primaryColumn(sandboxes)).toBe('sandbox_id');
   });
 
-  test('provider defaults to daytona', () => {
+  test('provider defaults to managed', () => {
     const col = getTableConfig(sandboxes).columns.find((c) => c.name === 'provider');
-    expect(col?.default).toBe('daytona');
+    expect(col?.default).toBe('managed');
   });
 
   test('status defaults to provisioning', () => {

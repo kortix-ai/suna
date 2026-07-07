@@ -159,7 +159,9 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
   await (ctx.database as any).transaction(async (tx: any) => {
     await tx.insert(projects).values({
       projectId, accountId: ctx.accountId, name: 'Legacy (Suna) projects',
-      repoUrl, defaultBranch, manifestPath: 'kortix.toml', status: 'active',
+      // pushBundleAsRepo (suna-push.ts) seeds the new repo with
+      // @kortix/starter, which ships kortix.yaml (kortix_version 2).
+      repoUrl, defaultBranch, manifestPath: 'kortix.yaml', status: 'active',
       metadata: {
         git: { url: repoUrl, upstream_url: repoUrl, default_branch: defaultBranch, provider, managed: true,
                owner: ctx.progress.repo_owner, name: ctx.progress.repo_name },
@@ -186,7 +188,7 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
     for (const s of specs) {
       await tx.insert(projectSessions).values({
         sessionId: crypto.randomUUID(), accountId: ctx.accountId, projectId,
-        branchName: s.slug, baseRef: defaultBranch, sandboxProvider: 'daytona',
+        branchName: s.slug, baseRef: defaultBranch, sandboxProvider: 'managed',
         sandboxId: null, sandboxUrl: null, opencodeSessionId: s.opencodeSessionId,
         agentName: 'default', status: 'stopped', createdBy: ctx.accountId, visibility: 'project',
         metadata: {

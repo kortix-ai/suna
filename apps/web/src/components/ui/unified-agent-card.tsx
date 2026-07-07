@@ -38,7 +38,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { AgentAvatar } from '@/components/thread/content/agent-avatar';
+import { AgentAvatar } from '@/components/ui/agent-avatar';
 
 // Unified agent card variants
 export type AgentCardVariant =

@@ -1,6 +1,7 @@
 ---
 name: webapp
 description: "Use for fullstack web apps built with the bundled Express, Vite, React, Tailwind, and Drizzle template."
+defaultProjectInstall: true
 ---
 
 # Fullstack Web App

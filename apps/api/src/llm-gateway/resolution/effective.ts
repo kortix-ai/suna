@@ -1,4 +1,4 @@
-import { isManagedModelId } from '@kortix/shared/llm-catalog';
+import { isManagedModelId } from '@kortix/llm-catalog';
 
 // One definition of how a default model/agent is chosen across scopes, shared by
 // the gateway's `auto` resolution (chooseDefaultModel → here) and the apps/api

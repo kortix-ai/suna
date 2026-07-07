@@ -99,8 +99,6 @@ mock.module('../shared/supabase', () => ({
 mock.module('../config', () => ({
   config: {
     isLocal: () => false,
-    isLocalDockerEnabled: () => true,
-    SANDBOX_CONTAINER_NAME: 'kortix-sandbox',
   },
 }));
 
@@ -260,15 +258,15 @@ describe('preview auth ownership', () => {
     expect(res.status).toBe(200);
   });
 
-  test('rejects localhost local-sandbox preview without auth', async () => {
+  test('rejects localhost sandbox preview without auth', async () => {
     const app = createApp();
-    const res = await app.request('http://localhost/v1/p/kortix-sandbox/8000/session/status');
+    const res = await app.request('http://localhost/v1/p/sb-ext-1/8000/session/status');
     expect(res.status).toBe(401);
   });
 
-  test('still requires auth for remote hosts hitting the local sandbox route', async () => {
+  test('still requires auth for remote hosts hitting the sandbox preview route', async () => {
     const app = createApp();
-    const res = await app.request('https://app.kortix.com/v1/p/kortix-sandbox/8000/session/status');
+    const res = await app.request('https://app.kortix.com/v1/p/sb-ext-1/8000/session/status');
     expect(res.status).toBe(401);
   });
 });

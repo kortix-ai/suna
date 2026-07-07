@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchBranches } from '../api/branches';
 import { useProjectContext } from '../context';
-import type { ProjectBranchesResponse } from '@/lib/projects-client';
+import type { ProjectBranchesResponse } from '@kortix/sdk/projects-client';
 
 export const branchKeys = {
   all: ['project-files', 'branches'] as const,

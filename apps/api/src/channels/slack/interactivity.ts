@@ -5,7 +5,10 @@ import { config } from '../../config';
 import { loadSlackTokenForProject } from '../install-store';
 import { updateMessage } from '../slack-api';
 import { dispatchSlackEvent, pendingPickers, spawnAgentTurn } from './dispatch';
-import { createSlackAccessRequest, notifyAdminsOfAccessRequest } from './identity';
+import { createSlackAccessRequest, notifyAdminsOfAccessRequest, resolveSlackActor } from './identity';
+import { parseReviewActionId, reviewVerbToVerdict, type ReviewVerb } from './review-cards';
+import { applyVerdict, getReviewItemById } from '../../projects/review-items';
+import { isAdaptedId } from '../../projects/review-adapters';
 import { decideSlackThreadJoin } from './participants';
 import { attachPendingSlackAuthResponseUrl } from './auth-resume';
 import { verifyLoginState } from './login';
@@ -135,6 +138,115 @@ async function handleQuestionAnswer(
   await spawnAgentTurn(thread.projectId, envelope, event);
 }
 
+// A click on a Review Center card button (rendered by buildReviewCardBlocks,
+// action_id `review_<verb>_<id>`). Apply the human's verdict to the review item,
+// ack ephemerally, then resume the waiting session with the decision as a
+// follow-up turn — the SAME path a question answer takes (handleQuestionAnswer),
+// so a Slack-submitted review behaves natively instead of dead-ending.
+async function handleReviewAction(
+  payload: SlackInteractionPayload,
+  parsed: { verb: ReviewVerb; id: string },
+): Promise<void> {
+  const teamId = payload.team?.id ?? '';
+  const channelId = payload.channel?.id ?? '';
+  const slackUserId = payload.user?.id ?? '';
+  const messageTs = payload.message?.ts ?? '';
+  const threadTs = payload.message?.thread_ts ?? messageTs;
+  if (!teamId || !channelId || !slackUserId || !threadTs) return;
+
+  // 'view' is a link button (opens Kortix) — Slack still fires its block_action,
+  // but there's nothing to apply.
+  const verdict = reviewVerbToVerdict(parsed.verb);
+  if (!verdict) return;
+
+  // Adapted items (change requests, executor approvals) keep their own act flow —
+  // their verdict can't be applied through the native review path.
+  if (isAdaptedId(parsed.id)) {
+    await respondViaUrl(payload.response_url, {
+      response_type: 'ephemeral',
+      text: 'Open this item in Kortix to act on it.',
+    });
+    return;
+  }
+
+  // Resolve the thread → its project so we can scope the item + the actor.
+  const [thread] = await db
+    .select({ projectId: chatThreads.projectId })
+    .from(chatThreads)
+    .where(and(
+      eq(chatThreads.platform, 'slack'),
+      eq(chatThreads.workspaceId, teamId),
+      eq(chatThreads.threadId, threadTs),
+    ))
+    .limit(1);
+  if (!thread) return;
+
+  const item = await getReviewItemById(parsed.id, thread.projectId);
+  if (!item) {
+    await respondViaUrl(payload.response_url, {
+      response_type: 'ephemeral',
+      text: 'That review item is no longer available.',
+    });
+    return;
+  }
+
+  // The actor must be a linked Kortix user with write access to this project.
+  // Self-approve is allowed (launcher or any editor) — there's no separation-of-
+  // duties gate. No live mapping → nudge to connect / request access.
+  const actor = await resolveSlackActor(teamId, slackUserId, item.accountId, thread.projectId);
+  if ('reason' in actor) {
+    await respondViaUrl(payload.response_url, {
+      response_type: 'ephemeral',
+      text:
+        actor.reason === 'unlinked'
+          ? 'Connect your Kortix account first (`/kortix login`) to act on reviews.'
+          : "You don't have access to act on this project's reviews.",
+    });
+    return;
+  }
+
+  await applyVerdict(parsed.id, thread.projectId, {
+    verdict,
+    feedback: null,
+    actingUserId: actor.userId,
+  });
+
+  // Ephemeral ack only (NOT replace_original) — keep the card so a sibling button
+  // or a re-click still works, mirroring handleQuestionAnswer.
+  const title = escapeMrkdwn(item.title);
+  await respondViaUrl(payload.response_url, {
+    response_type: 'ephemeral',
+    text:
+      verdict === 'approve'
+        ? `Approved *${title}* ✓ — resuming the agent.`
+        : verdict === 'reject'
+          ? `Rejected *${title}*.`
+          : `Asked for changes on *${title}*.`,
+  });
+
+  // Resume the session with the decision as a follow-up turn (same path as a
+  // question answer / an in-thread reply). spawnAgentTurn re-checks the clicker's
+  // access from event.user, so this can't run as anyone but them.
+  const decisionLine =
+    verdict === 'approve'
+      ? `The review "${item.title}" was approved.`
+      : verdict === 'reject'
+        ? `The review "${item.title}" was rejected — do not proceed with it.`
+        : `Changes were requested on the review "${item.title}". Ask what to change, then revise.`;
+
+  const event: SlackEvent = {
+    type: 'message',
+    user: slackUserId,
+    channel: channelId,
+    text: [decisionLine, '', 'Continue the turn based on this decision.'].join('\n'),
+    ts: messageTs,
+    thread_ts: threadTs,
+    team: teamId,
+  };
+  const envelope: SlackEnvelope = { type: 'event_callback', team_id: teamId, event };
+  await spawnAgentTurn(thread.projectId, envelope, event);
+}
+
 async function handleSwitchProject(payload: SlackInteractionPayload, rawValue: string): Promise<void> {
   let value: { p?: string; c?: string };
   try {
@@ -206,12 +318,14 @@ async function handleSetSelection(
 
   if (kind === 'agent') {
     const agentName = value.a && value.a.length > 0 ? value.a : null;
-    const ok = await setChannelAgent(ctx, agentName);
+    const result = await setChannelAgent(ctx, agentName);
     await respondViaUrl(payload.response_url, {
       response_type: 'ephemeral',
       replace_original: true,
-      text: !ok
-        ? 'That channel is no longer bound to a project — run `/kortix switch` first.'
+      text: !result.ok
+        ? result.reason === 'unknown_agent'
+          ? `"${escapeMrkdwn(agentName ?? '')}" is not a declared agent in this project's manifest.`
+          : 'That channel is no longer bound to a project — run `/kortix switch` first.'
         : agentName
           ? `✓ Agent for this channel set to *${escapeMrkdwn(agentName)}*. New sessions will use it.`
           : '✓ Agent reset to the project default.',
@@ -504,6 +618,13 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
 
   if (action.action_id.startsWith('qa_')) {
     await handleQuestionAnswer(payload, action);
+    return;
+  }
+
+  // A Review Center card button (`review_<verb>_<id>`). Apply the verdict + resume.
+  if (action.action_id.startsWith('review_')) {
+    const parsed = parseReviewActionId(action.action_id);
+    if (parsed) await handleReviewAction(payload, parsed);
     return;
   }
 

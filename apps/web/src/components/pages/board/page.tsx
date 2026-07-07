@@ -28,7 +28,7 @@ import * as TabsPrimitive from '@radix-ui/react-tabs';
 import { Loader2, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { featureFlags } from '@/lib/feature-flags';
+import { featureFlags } from '@kortix/sdk/feature-flags';
 import {
   useTickets,
   useColumns,

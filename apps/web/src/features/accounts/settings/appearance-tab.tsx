@@ -15,10 +15,13 @@ import * as React from 'react';
 
 function WallpaperCard({
   wallpaper,
+  thumbSrc,
   isActive,
   onSelect,
 }: {
   wallpaper: Wallpaper;
+  /** Pre-rendered preview image — shader wallpapers never run a live canvas in the picker */
+  thumbSrc?: string;
   isActive: boolean;
   onSelect: () => void;
 }) {
@@ -35,7 +38,18 @@ function WallpaperCard({
         )}
       >
         <div className="absolute inset-0" aria-hidden="true">
-          <WallpaperBackground wallpaperId={wallpaper.id} preview />
+          {thumbSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={thumbSrc}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover select-none"
+              loading="lazy"
+              draggable={false}
+            />
+          ) : (
+            <WallpaperBackground wallpaperId={wallpaper.id} preview />
+          )}
         </div>
 
         <div
@@ -65,8 +79,6 @@ function WallpaperCard({
   );
 }
 
-const DARK_ONLY_WALLPAPER_IDS = new Set(['matrix', 'ascii-tunnel']);
-
 export function AppearanceTab() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -88,16 +100,12 @@ export function AppearanceTab() {
 
   const isLight = mounted && resolvedTheme === 'light';
 
-  const visibleWallpapers = React.useMemo(
-    () => (isLight ? WALLPAPERS.filter((w) => !DARK_ONLY_WALLPAPER_IDS.has(w.id)) : WALLPAPERS),
-    [isLight],
-  );
-
+  // Users may have a wallpaper persisted that no longer exists — reset it.
   React.useEffect(() => {
-    if (isLight && DARK_ONLY_WALLPAPER_IDS.has(wallpaperId)) {
+    if (!WALLPAPERS.some((w) => w.id === wallpaperId)) {
       setWallpaperId(DEFAULT_WALLPAPER_ID);
     }
-  }, [isLight, wallpaperId, setWallpaperId]);
+  }, [wallpaperId, setWallpaperId]);
 
   return (
     <div className="scrollbar-hide w-full max-w-full min-w-0 space-y-6 overflow-x-hidden px-6 py-5">
@@ -148,10 +156,11 @@ export function AppearanceTab() {
       <div className="flex flex-col space-y-2">
         <label className="text-muted-foreground text-sm font-medium">Wallpaper</label>
         <div className="grid w-full grid-cols-3 gap-2">
-          {visibleWallpapers.map((wp) => (
+          {WALLPAPERS.map((wp) => (
             <WallpaperCard
               key={wp.id}
               wallpaper={wp}
+              thumbSrc={wp.thumbs ? (isLight ? wp.thumbs.light : wp.thumbs.dark) : undefined}
               isActive={wallpaperId === wp.id}
               onSelect={() => setWallpaperId(wp.id)}
             />

@@ -6,8 +6,8 @@ sandbox. It is **always available** inside a Kortix session sandbox:
 
 - the binary is on `PATH` (`/usr/local/bin/kortix`)
 - `KORTIX_CLI_TOKEN` is pre-injected — a project-scoped token the CLI
-  authenticates with automatically (not `KORTIX_TOKEN`; see "Inside a
-  sandbox" below)
+  authenticates with automatically (not `KORTIX_SANDBOX_TOKEN` / its
+  deprecated `KORTIX_TOKEN` alias; see "Inside a sandbox" below)
 - `KORTIX_API_URL` points at the platform you're running against
 
 So you can run `kortix sessions ls` or `kortix secrets set FOO=bar`
@@ -354,8 +354,9 @@ outright.
 The session bootstrap injects:
 
 ```
-KORTIX_CLI_TOKEN=kortix_pat_…   ← project-scoped PAT; what the CLI authenticates with
-KORTIX_TOKEN=kortix_sb_…        ← sandbox service key (runtime/clone/LLM) — NOT for the CLI
+KORTIX_CLI_TOKEN=kortix_pat_…       ← project-scoped PAT; what the CLI authenticates with
+KORTIX_SANDBOX_TOKEN=kortix_sb_…    ← sandbox service key (runtime/clone/LLM) — NOT for the CLI
+KORTIX_TOKEN=kortix_sb_…            ← deprecated alias for KORTIX_SANDBOX_TOKEN, same value
 KORTIX_API_URL=https://<host>/v1
 KORTIX_PROJECT_ID=<uuid>
 KORTIX_SESSION_ID=<uuid>
@@ -366,12 +367,12 @@ The CLI reads `KORTIX_CLI_TOKEN` (falling back to `KORTIX_EXECUTOR_TOKEN`)
 automatically and uses `KORTIX_API_URL` as the host base. No config file,
 no `kortix login` needed — `kortix …` just works.
 
-> **Don't authenticate with `KORTIX_TOKEN`.** That's the sandbox *service
-> key* (used for the LLM gateway, the tool router, and just-in-time git
-> clone credentials). The project-scoped routes the CLI calls
-> (`change-requests`, `secrets`, …) reject it with `401 Invalid or expired
-> token` — it isn't expired, it's simply the wrong token. Use the CLI; it
-> already holds the right one.
+> **Don't authenticate with `KORTIX_SANDBOX_TOKEN`** (or its deprecated
+> `KORTIX_TOKEN` alias). That's the sandbox *service key* (used for the LLM
+> gateway, the tool router, and just-in-time git clone credentials). The
+> project-scoped routes the CLI calls (`change-requests`, `secrets`, …)
+> reject it with `401 Invalid or expired token` — it isn't expired, it's
+> simply the wrong token. Use the CLI; it already holds the right one.
 
 ### Rotating
 
@@ -387,7 +388,7 @@ kortix project token rotate             # rotates the project token
 ### Spin up a fresh session with custom env
 
 ```sh
-kortix secrets set OPENAI_API_KEY=sk-… ANTHROPIC_API_KEY=sk-…
+kortix secrets set STRIPE_API_KEY=sk_live_… WEBHOOK_SLACK_SECRET=whsec_…
 kortix sessions new --prompt "Audit the auth module and propose a fix"
 ```
 
@@ -459,7 +460,8 @@ conflict story, and data model.
 | --- | --- |
 | `KORTIX_CLI_TOKEN` | Project-scoped PAT the CLI authenticates with (injected in sandboxes). |
 | `KORTIX_EXECUTOR_TOKEN` | Same PAT under another name; the CLI falls back to it. |
-| `KORTIX_TOKEN` | Sandbox **service key** — runtime/clone/LLM auth. **Not** a CLI token; project routes reject it. |
+| `KORTIX_SANDBOX_TOKEN` | Sandbox **service key** — runtime/clone/LLM auth. **Not** a CLI token; project routes reject it. |
+| `KORTIX_TOKEN` | Deprecated alias for `KORTIX_SANDBOX_TOKEN`, same value. **Not** a CLI token. |
 | `KORTIX_API_URL` | API base URL. In a sandbox it already includes the `/v1` mount. |
 | `KORTIX_PROJECT_ID` | Override the linked project for one command. |
 | `KORTIX_CONFIG_FILE` | Override `~/.config/kortix/config.json` location (useful for tests). |

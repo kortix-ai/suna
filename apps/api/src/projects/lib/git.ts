@@ -12,6 +12,7 @@ import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { grantProjectRole } from './access';
 import { ttlMemo } from '../../shared/ttl-memo';
+import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, deriveProjectName, normalizeJsonObject, normalizeString } from './serializers';
 
 // Memoized briefly (positive hits only): this runs on every project-scoped
@@ -31,6 +32,8 @@ const loadAccountMembership = ttlMemo({
   },
   shouldCache: (membership) => membership !== null,
 });
+// Key is `${userId}|${accountId}` → bust per principal on account-member changes.
+registerPrincipalScopedMemo(loadAccountMembership);
 
 export async function getAccountMembership(userId: string, accountId: string) {
   return loadAccountMembership(userId, accountId);

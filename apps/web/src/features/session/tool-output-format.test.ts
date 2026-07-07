@@ -4,6 +4,7 @@ import {
   cleanResultSnippet,
   formatRawOutput,
   looksLikeJsonPayload,
+  parseEmbeddedFailure,
   recoverLinkResults,
 } from './tool-output-format';
 
@@ -91,5 +92,52 @@ describe('tool output formatting', () => {
   test('recovers nothing from plain prose', () => {
     expect(recoverLinkResults('just some text, no json here')).toEqual([]);
     expect(recoverLinkResults(undefined)).toEqual([]);
+  });
+});
+
+describe('parseEmbeddedFailure', () => {
+  test('unwraps the real web_search 402 transcript to the innermost message', () => {
+    const output = JSON.stringify({
+      query: 'best financial benchmarks',
+      success: false,
+      error:
+        'Error: 402 Error: {"error":true,"message":"Insufficient credits","status":402}',
+    });
+    expect(parseEmbeddedFailure(output)).toEqual({
+      message: 'Insufficient credits',
+      status: 402,
+    });
+  });
+
+  test('keeps a flat error message as-is when there is no nested JSON', () => {
+    const output = JSON.stringify({ success: false, error: 'Search provider timed out' });
+    expect(parseEmbeddedFailure(output)).toEqual({
+      message: 'Search provider timed out',
+      status: undefined,
+    });
+  });
+
+  test('handles a double-encoded (stringified) failure payload', () => {
+    const inner = JSON.stringify({ success: false, error: 'Rate limited' });
+    expect(parseEmbeddedFailure(JSON.stringify(inner))).toEqual({
+      message: 'Rate limited',
+      status: undefined,
+    });
+  });
+
+  test('returns null for a successful payload', () => {
+    const output = JSON.stringify({ query: 'x', results: [{ title: 'a', url: 'http://a.com' }] });
+    expect(parseEmbeddedFailure(output)).toBeNull();
+  });
+
+  test('returns null for success:false without a string error', () => {
+    expect(parseEmbeddedFailure(JSON.stringify({ success: false }))).toBeNull();
+    expect(parseEmbeddedFailure(JSON.stringify({ success: false, error: 123 }))).toBeNull();
+  });
+
+  test('returns null for non-JSON, empty, or undefined input', () => {
+    expect(parseEmbeddedFailure('not json')).toBeNull();
+    expect(parseEmbeddedFailure('')).toBeNull();
+    expect(parseEmbeddedFailure(undefined)).toBeNull();
   });
 });

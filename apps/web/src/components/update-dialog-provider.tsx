@@ -3,21 +3,16 @@
 import { useState, useEffect, useRef } from 'react';
 import { useUpdateDialogStore } from '@/stores/update-dialog-store';
 import { useGlobalSandboxUpdate } from '@/hooks/platform/use-global-sandbox-update';
-import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
-import { useServerStore } from '@/stores/server-store';
+import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { UpdateDialog } from '@/components/update-dialog';
-import type { UpdatePhase } from '@/lib/platform-client';
+import type { UpdatePhase } from '@kortix/sdk/platform-client';
 
 const DEV_PHASES: UpdatePhase[] = ['pulling', 'patching', 'stopping', 'restarting', 'verifying', 'complete'];
 
 export function UpdateDialogProvider() {
   const { open, targetVersion, closeDialog, openDialog } = useUpdateDialogStore();
   const currentVersion = useSandboxConnectionStore((s) => s.sandboxVersion);
-  const activeServer = useServerStore((s) => {
-    const id = s.activeServerId;
-    return id ? s.servers.find((sv) => sv.id === id) : undefined;
-  });
-  const isLocalSelfHosted = activeServer?.provider === 'local_docker';
+  const isLocalSelfHosted = false;
   const {
     phase, phaseMessage, phaseProgress, latestVersion,
     changelog, updateResult, update, updateErrorMessage,

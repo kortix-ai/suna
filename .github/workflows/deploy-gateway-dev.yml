@@ -30,7 +30,7 @@ jobs:
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { submodules: false }
       - id: meta
         run: |
@@ -71,7 +71,7 @@ jobs:
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy-dev
       TAG: ${{ needs.build.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: gateway
           fetch-depth: 0

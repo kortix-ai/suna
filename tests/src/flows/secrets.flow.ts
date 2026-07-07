@@ -57,3 +57,53 @@ flow(
     });
   },
 );
+
+flow(
+  "SEC-6",
+  { domain: "secrets", routes: ["POST /v1/projects/:projectId/secrets"] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    await ctx.step("two identifiers may share the same key (profile-like secrets)", async () => {
+      const primary = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets",
+          { identifier: "GMAPS-primary", name: "GOOGLE_MAPS_API_KEY", value: "primary-key" },
+          { params: { projectId: p.id } },
+        );
+      primary.status([200, 201]);
+      primary.body().has("identifier", "GMAPS-primary").has("name", "GOOGLE_MAPS_API_KEY");
+
+      const backup = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets",
+          { identifier: "GMAPS-backup", name: "GOOGLE_MAPS_API_KEY", value: "backup-key" },
+          { params: { projectId: p.id } },
+        );
+      backup.status([200, 201]);
+      backup.body().has("identifier", "GMAPS-backup").has("name", "GOOGLE_MAPS_API_KEY");
+
+      const list = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/secrets", { params: { projectId: p.id } });
+      list.status(200);
+      const items: any[] = list.json().items ?? [];
+      const withKey = items.filter((i) => i.name === "GOOGLE_MAPS_API_KEY");
+      if (withKey.length !== 2 || new Set(withKey.map((i) => i.identifier)).size !== 2) {
+        throw new Error(`expected 2 distinct identifiers under GOOGLE_MAPS_API_KEY, got ${JSON.stringify(withKey)}`);
+      }
+    });
+
+    await ctx.step("re-submitting the same identifier with a DIFFERENT key is rejected", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets",
+          { identifier: "GMAPS-primary", name: "SOME_OTHER_KEY", value: "x" },
+          { params: { projectId: p.id } },
+        );
+      r.status(409);
+    });
+  },
+);

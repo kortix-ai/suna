@@ -22,6 +22,7 @@ import {
   isPaidTier,
   isPerSeatAccount,
 } from './tiers';
+import { getAccountEntitlements } from './entitlements';
 import { getUsageBreakdownThisPeriod } from './usage-breakdown';
 
 const ACTIVE_SESSION_STATUSES = ['queued', 'branching', 'provisioning', 'running'] as const;
@@ -62,6 +63,11 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
 
   const tierName = sub ? (sub.tier ?? 'free') : 'none';
   const tier = getTier(tierName);
+  // Entitlements must honor the self-serve enterprise DEMO flag, not just the
+  // billing tier — otherwise flipping the demo on never surfaces the SSO/SCIM
+  // cards (the tier's static entitlements say sso:false). getAccountEntitlements
+  // applies the demo override.
+  const entitlements = await getAccountEntitlements(accountId);
   const dailyConfig = getDailyCreditConfig(tierName);
 
   let dailyRefresh = null;
@@ -191,7 +197,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       display_name: isAdmin && tierName === 'none' ? 'Admin' : tier.displayName,
       monthly_credits: tier.monthlyCredits,
       can_purchase_credits: isAdmin ? true : tier.canPurchaseCredits,
-      entitlements: tier.entitlements,
+      entitlements,
     },
     models: [],
     auto_topup: autoTopup,

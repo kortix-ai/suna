@@ -9,7 +9,7 @@ const HELP = `Usage: kortix [project-name] [options]
 
 Create a new Kortix project. Makes a fresh directory next to your shell
 cwd, runs \`git init -b main\` inside it, drops the OpenCode-native
-scaffold at the repo root (kortix.toml + .opencode/ + CONTEXT.md +
+scaffold at the repo root (kortix.yaml + .opencode/ + CONTEXT.md +
 README), stages everything, and makes an initial commit.
 
 Arguments:

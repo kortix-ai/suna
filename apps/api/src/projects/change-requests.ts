@@ -68,3 +68,41 @@ export async function getCrById(crId: string, projectId: string) {
     .limit(1);
   return row ?? null;
 }
+
+/** One human "please change this" note recorded against a CR. */
+export interface RequestedChange {
+  text: string;
+  by: string; // userId
+  at: string; // ISO
+}
+
+/** Read the requested-changes log off a CR's metadata (safe on any shape). */
+export function requestedChangesOf(row: ChangeRequestRow): RequestedChange[] {
+  const list = (row.metadata as Record<string, unknown> | null)?.requested_changes;
+  return Array.isArray(list) ? (list as RequestedChange[]) : [];
+}
+
+/**
+ * Append a human "request changes" note to a CR's metadata. CRs have no comment
+ * table (git is the source of truth for content), so the review feedback lives
+ * here — persistent, and surfaced back in the Review Center detail so the ask is
+ * never lost. Returns the updated row, or null if the CR is gone.
+ */
+export async function recordRequestedChange(
+  crId: string,
+  projectId: string,
+  entry: RequestedChange,
+): Promise<ChangeRequestRow | null> {
+  const cr = await getCrById(crId, projectId);
+  if (!cr) return null;
+  const meta = (cr.metadata as Record<string, unknown> | null) ?? {};
+  const [row] = await db
+    .update(changeRequests)
+    .set({
+      metadata: { ...meta, requested_changes: [...requestedChangesOf(cr), entry] },
+      updatedAt: new Date(),
+    })
+    .where(and(eq(changeRequests.crId, crId), eq(changeRequests.projectId, projectId)))
+    .returning();
+  return row ?? null;
+}
