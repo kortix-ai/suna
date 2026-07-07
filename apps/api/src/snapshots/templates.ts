@@ -31,7 +31,7 @@ import {
 import { computeSnapshotHash } from './hash';
 import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
 import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -47,12 +47,38 @@ const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
 // Source of the `kortix` CLI binary baked into every sandbox. We fingerprint
 // the SOURCE (not the compiled binary, which `bun build --compile` produces
 // non-deterministically) so a CLI code change rebuilds snapshots while a
-// rebuild of the identical source does not. packages/starter is deliberately
-// excluded: it only feeds `kortix init` scaffolding, which is never run inside
-// a sandbox, so its churn shouldn't invalidate every project's image.
+// rebuild of the identical source does not.
+//
+// Scope: only the files whose change can alter what the CLI does INSIDE a
+// sandbox. The single compiled `kortix` binary bakes ALL of apps/cli/src, but a
+// session only ever invokes `kortix executor` / `kortix executor mcp` — the rest
+// (`ship`, `cr`, `tunnel`, `self-host`, `accounts`, the whole `init`/scaffold
+// surface, …) is developer-facing and runs on a laptop, never in the sandbox.
+// Hashing the WHOLE tree meant every dev-only CLI edit re-minted every project's
+// runtime identity AND moved the non-agent `swapKey`, which DISABLES the cheap
+// agent-swap fast path and forces a full O(all-projects) rebuild (measured: ~4 of
+// 11 forced mass-rebuilds over 2 weeks were pure dev-CLI churn). So we hash the
+// in-sandbox executor import-closure instead of `apps/cli/src` wholesale.
+//
+// This closure is asserted complete by snapshots/__tests__/cli-executor-closure
+// .test.ts, which re-derives it from the `kortix executor` entrypoints and fails
+// if a new import escapes the hashed set — so scoping can never silently ship a
+// stale in-sandbox executor. packages/starter (scaffolding) and packages/
+// manifest-schema (only reached by laptop-side `ship`/`validate`) are likewise
+// never in the sandbox and are deliberately not fingerprinted.
 const CLI_SRC_DIR = resolve(REPO_ROOT, 'apps/cli/src');
+// The in-sandbox `kortix executor` closure (see comment above). Relative to
+// CLI_SRC_DIR; the guard test keeps this in sync with the real import graph.
+const CLI_EXECUTOR_CLOSURE = [
+  'executor',
+  'commands/executor.ts',
+  'api/auth.ts',
+  'api/client.ts',
+  'api/config.ts',
+  'api/sandbox-env.ts',
+  'project-link.ts',
+] as const;
 const CLI_PKG_JSON = resolve(REPO_ROOT, 'apps/cli/package.json');
-const MANIFEST_SCHEMA_SRC_DIR = resolve(REPO_ROOT, 'packages/manifest-schema/src');
 const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'] as const;
 
 // Bump when the rendered Kortix Dockerfile layer changes (the Dockerfile text
@@ -720,9 +746,9 @@ function validateTemplateMutation(args: { image?: unknown; dockerfilePath?: unkn
 }
 
 // The runtime layer bakes source artifacts into every template's rootfs. Exactly
-// TWO are the kortix-agent binary; the rest (entrypoint, CLI, slack-cli,
-// executor-sdk, manifest-schema) are the non-agent runtime. The agent-swap fast
-// path replaces ONLY the agent, so the builder must prove the NON-agent runtime is
+// TWO are the kortix-agent binary; the rest (entrypoint, in-sandbox CLI surface,
+// slack-cli, executor-sdk) are the non-agent runtime. The agent-swap fast path
+// replaces ONLY the agent, so the builder must prove the NON-agent runtime is
 // byte-identical before swapping — hence the split into two artifact sets.
 const AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-agent-src', path: AGENT_SRC_DIR, excludeNames: FINGERPRINT_EXCLUDES },
@@ -732,9 +758,15 @@ const NON_AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-entrypoint', path: ENTRYPOINT_PATH },
   { label: 'kortix-slack-cli', path: SLACK_CLI_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
   { label: 'kortix-executor-sdk', path: EXECUTOR_SDK_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
-  { label: 'kortix-cli-src', path: CLI_SRC_DIR, excludeNames: FINGERPRINT_EXCLUDES },
+  // Only the in-sandbox `kortix executor` closure (NOT the whole apps/cli/src) —
+  // see CLI_EXECUTOR_CLOSURE. Labels carry the relative path so two files can't
+  // collide, and the set is sorted by label in buildRuntimeArtifactFingerprint.
+  ...CLI_EXECUTOR_CLOSURE.map((rel) => ({
+    label: `kortix-cli-${rel}`,
+    path: join(CLI_SRC_DIR, rel),
+    excludeNames: FINGERPRINT_EXCLUDES,
+  })),
   { label: 'kortix-cli-pkg', path: CLI_PKG_JSON },
-  { label: 'kortix-manifest-schema-src', path: MANIFEST_SCHEMA_SRC_DIR, excludeNames: FINGERPRINT_EXCLUDES },
 ];
 // Both version strings fold in the layer/opencode/browser/sandbox constants — all
 // NON-agent inputs (bumped when the layer/opencode/browser change, not the agent
