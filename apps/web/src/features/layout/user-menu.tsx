@@ -92,6 +92,15 @@ export function UserMenu({
     }
   }, [accountsQuery.data, selectedAccountId, setSelectedAccountId]);
 
+  // In the collapsed sidebar's hover flyout, the menu content portals outside
+  // the panel — hovering it fires the panel's pointer-leave and would collapse
+  // the flyout out from under the open menu. Pin the flyout open while it's up.
+  useEffect(() => {
+    if (variant !== 'sidebar' || !menuOpen) return;
+    sidebar?.holdPeek(true);
+    return () => sidebar?.holdPeek(false);
+  }, [menuOpen, variant, sidebar]);
+
   const currentAccount =
     accountsQuery.data?.find((a) => a.account_id === selectedAccountId) ?? null;
 

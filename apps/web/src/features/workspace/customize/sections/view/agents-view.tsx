@@ -112,7 +112,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
 }
 
 /**
- * Who inherits this agent — the members/departments assigned to it (Members →
+ * Who inherits this agent — the members/groups assigned to it (Members →
  * Resource access). Each inherits the agent's declared secrets & connectors as
  * their own. Manager-only data: gated on a LIVE can_manage capability so it never
  * fires the manager-only grants endpoint (no 403 / error toast) and never renders
@@ -157,12 +157,12 @@ function AgentAssignments({ projectId, agentName }: { projectId: string; agentNa
               <User className="size-3 shrink-0" />
             )}
             {g.principal_label}
-            {g.principal_type === 'group' ? ' · dept' : ''}
+            {g.principal_type === 'group' ? ' · group' : ''}
           </Badge>
         ))}
       </div>
       <p className="text-muted-foreground/50 text-[11px] leading-relaxed">
-        These members &amp; departments inherit this agent's declared secrets &amp; connectors
+        These members &amp; groups inherit this agent's declared secrets &amp; connectors
         (below) as their own — usable in Secrets, sessions, and connector calls.
       </p>
     </div>

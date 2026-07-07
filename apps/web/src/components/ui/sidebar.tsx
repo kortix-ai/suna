@@ -42,6 +42,10 @@ type SidebarContextProps = {
   peek: boolean;
   peekEnter: () => void;
   peekLeave: () => void;
+  /** Pin the flyout open while a menu/popover anchored in the panel is open —
+   *  its content portals outside the panel, so hovering it would otherwise
+   *  collapse the flyout. Balanced: `holdPeek(true)` on open, `false` on close. */
+  holdPeek: (held: boolean) => void;
 };
 
 export const SidebarContext = React.createContext<SidebarContextProps | null>(null);
@@ -104,6 +108,22 @@ function SidebarProvider({
     if (open || isMobile) peekController.cancel();
   }, [open, isMobile, peekController]);
 
+  // Tracks whether the pointer is currently over the panel/edge zone so a
+  // menu closing can decide whether to re-arm the flyout's close timer.
+  const pointerOverRef = React.useRef(false);
+  const peekEnter = React.useCallback(() => {
+    pointerOverRef.current = true;
+    peekController.enter();
+  }, [peekController]);
+  const peekLeave = React.useCallback(() => {
+    pointerOverRef.current = false;
+    peekController.leave();
+  }, [peekController]);
+  const holdPeek = React.useCallback(
+    (held: boolean) => peekController.hold(held, () => pointerOverRef.current),
+    [peekController],
+  );
+
   // Adds a keyboard shortcut to toggle the sidebar.
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -131,8 +151,9 @@ function SidebarProvider({
       setOpenMobile,
       toggleSidebar,
       peek,
-      peekEnter: peekController.enter,
-      peekLeave: peekController.leave,
+      peekEnter,
+      peekLeave,
+      holdPeek,
     }),
     [
       state,
@@ -143,7 +164,9 @@ function SidebarProvider({
       setOpenMobile,
       toggleSidebar,
       peek,
-      peekController,
+      peekEnter,
+      peekLeave,
+      holdPeek,
     ],
   );
 

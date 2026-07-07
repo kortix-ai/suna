@@ -81,7 +81,7 @@ const SESSION_FILTER_ICONS: Record<SessionFilterValue, LucideIcon | IconMynauiTy
 
 export function ProjectSidebar({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const { state, setOpenMobile, toggleSidebar, peek } = useSidebar();
+  const { state, setOpenMobile, toggleSidebar, peek, holdPeek } = useSidebar();
   const isExpanded = state === 'expanded';
   const isMobile = useIsMobile();
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
@@ -237,7 +237,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                       </span>
                     )}
                   </div>
-                  <DropdownMenu>
+                  <DropdownMenu onOpenChange={holdPeek}>
                     <DropdownMenuContent align="start" className="w-44 p-1">
                       {SESSION_FILTER_OPTIONS.map((option) => {
                         const OptionIcon = SESSION_FILTER_ICONS[option.value];
