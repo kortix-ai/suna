@@ -8,8 +8,8 @@
 // (the orchestrator) so the original ordering is preserved.
 
 import { z } from '@hono/zod-openapi';
-import { accountGroupMembers } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { accountGroupMembers, accountMembers } from '@kortix/db';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { scimAuth } from '../middleware/scim-auth';
 import { makeOpenApiApp } from '../openapi';
@@ -98,7 +98,7 @@ export async function emailsByUserId(userIds: string[]): Promise<Map<string, str
   return map;
 }
 
-export async function userIdByEmail(email: string): Promise<string | null> {
+export async function userIdByEmail(email: string, accountId?: string): Promise<string | null> {
   const supabase = getSupabase();
   try {
     // Supabase admin doesn't expose a direct email-lookup; use the paginated
@@ -107,8 +107,22 @@ export async function userIdByEmail(email: string): Promise<string | null> {
     // local email→user_id table.
     const normalized = email.trim().toLowerCase();
     const { data } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    const found = data?.users?.find((u) => (u.email ?? '').trim().toLowerCase() === normalized);
-    return found?.id ?? null;
+    const matches = (data?.users ?? []).filter(
+      (u) => (u.email ?? '').trim().toLowerCase() === normalized,
+    );
+    if (matches.length === 0) return null;
+    if (matches.length === 1 || !accountId) return matches[0]!.id;
+    // Duplicate auth users can exist for one email (e.g. the account was created
+    // both by an admin invite AND by SSO first-login). Prefer the id that is
+    // ALREADY a member of this account, so SCIM updates the real member row
+    // instead of forking a second membership onto the wrong auth user.
+    const ids = matches.map((m) => m.id);
+    const [memberRow] = await db
+      .select({ userId: accountMembers.userId })
+      .from(accountMembers)
+      .where(and(eq(accountMembers.accountId, accountId), inArray(accountMembers.userId, ids)))
+      .limit(1);
+    return memberRow?.userId ?? matches[0]!.id;
   } catch {
     return null;
   }
@@ -137,6 +151,36 @@ export function buildUser(
       created: iso,
       lastModified: iso,
       location: locationFor(accountId, 'Users', member.userId),
+    },
+  };
+}
+
+/**
+ * Serialize a PENDING INVITATION as a SCIM User. An invited-but-not-yet-joined
+ * person is a valid, ENABLED account from the IdP's point of view — so we return
+ * `active: true` (NOT false). Returning false made Okta treat the just-pushed
+ * user as deactivated and loop forever "reactivating" it. The SCIM id is the
+ * invitation id; once the person signs in via SSO they become a real member and
+ * are served by `buildUser` instead (the IdP re-correlates by userName/email).
+ */
+export function buildInviteUser(
+  accountId: string,
+  invite: { inviteId: string; email: string; createdAt: Date; externalId?: string | null },
+  active = true,
+): UserShape {
+  const iso = invite.createdAt.toISOString();
+  return {
+    schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+    id: invite.inviteId,
+    userName: invite.email,
+    active,
+    emails: [{ value: invite.email, primary: true }],
+    externalId: invite.externalId ?? null,
+    meta: {
+      resourceType: 'User',
+      created: iso,
+      lastModified: iso,
+      location: locationFor(accountId, 'Users', invite.inviteId),
     },
   };
 }

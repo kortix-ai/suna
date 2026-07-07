@@ -14,8 +14,8 @@ export function CommandsView({ projectId }: { projectId: string }) {
       projectId={projectId}
       kind="command"
       noun="command"
+      layout="split"
       title="Commands"
-      description="Pick a command from the list to preview it, or create a new one."
       searchPlaceholder="Search commands"
       emptyIcon={SquareSlash}
       emptyTitle="No commands yet"

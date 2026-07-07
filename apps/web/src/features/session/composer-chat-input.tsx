@@ -42,6 +42,7 @@ export function ComposerChatInput({
   toolbarSlot,
   cardClassName,
   boundAgentName,
+  clearOnSend,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
@@ -51,6 +52,9 @@ export function ComposerChatInput({
   /** Show a disabled stop button while busy (e.g. the computer is still booting). */
   stopDisabled?: boolean;
   disabled?: boolean;
+  /** Clear the composer optimistically on send. Set false on the project-home
+   *  composer, whose send navigates it away (see SessionChatInput.clearOnSend). */
+  clearOnSend?: boolean;
   autoFocus?: boolean;
   placeholder?: string;
   prefill?: { text: string; id: number } | null;
@@ -85,6 +89,7 @@ export function ComposerChatInput({
     <SessionChatInput
       onSend={(text, files) => onSend(text, files, options())}
       onCommand={onCommand ? (cmd, args) => onCommand(cmd, args, options()) : undefined}
+      clearOnSend={clearOnSend}
       isBusy={isBusy}
       stopDisabled={stopDisabled}
       disabled={disabled}

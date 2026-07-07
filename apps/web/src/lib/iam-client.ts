@@ -547,6 +547,7 @@ export interface SsoProvider {
   primary_domain: string;
   group_claim_name: string;
   auto_create_members: boolean;
+  auto_provision_groups: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -575,6 +576,7 @@ export async function upsertSsoProvider(
     primary_domain: string;
     group_claim_name?: string;
     auto_create_members?: boolean;
+    auto_provision_groups?: boolean;
   },
 ) {
   return unwrap(
@@ -601,6 +603,7 @@ export async function importSsoProviderFromMetadata(
     metadata_url?: string;
     group_claim_name?: string;
     auto_create_members?: boolean;
+    auto_provision_groups?: boolean;
     domains?: string[];
   },
 ) {

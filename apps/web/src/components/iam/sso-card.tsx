@@ -9,7 +9,7 @@ import { useTranslations } from 'next-intl';
 
 import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
+import { ArrowRight, Check, Loader2, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -140,27 +140,67 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
           {providerQuery.isLoading ? (
             <Skeleton className="h-16 w-full" />
           ) : (
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-              <dt className="text-muted-foreground">Provider</dt>
-              <dd className="text-foreground font-medium">{provider.name}</dd>
-              <dt className="text-muted-foreground">
-                {tHardcodedUi.raw('componentsIamSsoCard.line135JsxTextPrimaryDomain')}
-              </dt>
-              <dd className="text-foreground font-mono text-xs">{provider.primary_domain}</dd>
-              <dt className="text-muted-foreground">
-                {tHardcodedUi.raw('componentsIamSsoCard.line137JsxTextGroupClaim')}
-              </dt>
-              <dd className="text-foreground font-mono text-xs">{provider.group_claim_name}</dd>
-              <dt className="text-muted-foreground">
-                {tHardcodedUi.raw('componentsIamSsoCard.line139JsxTextAutoCreateMembers')}
-              </dt>
-              <dd className="text-foreground">{provider.auto_create_members ? 'Yes' : 'No'}</dd>
-              <dt className="text-muted-foreground">
-                {tHardcodedUi.raw('componentsIamSsoCard.line143JsxTextSupabaseProviderId')}
-              </dt>
-              <dd className="text-muted-foreground truncate font-mono text-[11px]">
-                {provider.supabase_sso_provider_id}
-              </dd>
+            <dl className="text-sm">
+              <div className="border-border/40 flex items-center justify-between gap-4 border-b py-2">
+                <dt className="text-muted-foreground shrink-0">Provider</dt>
+                <dd className="text-foreground min-w-0 truncate text-right font-medium">
+                  {provider.name}
+                </dd>
+              </div>
+              <div className="border-border/40 flex items-center justify-between gap-4 border-b py-2">
+                <dt className="text-muted-foreground shrink-0">
+                  {tHardcodedUi.raw('componentsIamSsoCard.line135JsxTextPrimaryDomain')}
+                </dt>
+                <dd className="text-foreground min-w-0 truncate text-right font-mono text-xs">
+                  {provider.primary_domain}
+                </dd>
+              </div>
+              <div className="border-border/40 flex items-center justify-between gap-4 border-b py-2">
+                <dt className="text-muted-foreground shrink-0">
+                  {tHardcodedUi.raw('componentsIamSsoCard.line137JsxTextGroupClaim')}
+                </dt>
+                <dd className="min-w-0 truncate text-right">
+                  <code className="bg-muted/60 text-foreground rounded px-1.5 py-0.5 font-mono text-[11px]">
+                    {provider.group_claim_name}
+                  </code>
+                </dd>
+              </div>
+              <div className="border-border/40 flex items-center justify-between gap-4 border-b py-2">
+                <dt className="text-muted-foreground shrink-0">
+                  {tHardcodedUi.raw('componentsIamSsoCard.line139JsxTextAutoCreateMembers')}
+                </dt>
+                <dd className="text-right">
+                  {provider.auto_create_members ? (
+                    <span className="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
+                      <Check className="h-3.5 w-3.5" />
+                      Yes
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">No</span>
+                  )}
+                </dd>
+              </div>
+              <div className="border-border/40 flex items-center justify-between gap-4 border-b py-2">
+                <dt className="text-muted-foreground shrink-0">Auto-provision groups</dt>
+                <dd className="text-right">
+                  {provider.auto_provision_groups ? (
+                    <span className="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
+                      <Check className="h-3.5 w-3.5" />
+                      Yes
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">No</span>
+                  )}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-4 py-2">
+                <dt className="text-muted-foreground shrink-0">
+                  {tHardcodedUi.raw('componentsIamSsoCard.line143JsxTextSupabaseProviderId')}
+                </dt>
+                <dd className="text-muted-foreground min-w-0 truncate text-right font-mono text-[11px]">
+                  {provider.supabase_sso_provider_id}
+                </dd>
+              </div>
             </dl>
           )}
         </div>
@@ -198,46 +238,39 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                 )}
               </p>
             ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-border/60 text-muted-foreground border-b text-left text-[10px] font-medium tracking-wider uppercase">
-                    <th className="py-2 font-medium">
-                      {tHardcodedUi.raw('componentsIamSsoCard.line180JsxTextClaimValue')}
-                    </th>
-                    <th className="py-2 font-medium">
-                      {tHardcodedUi.raw('componentsIamSsoCard.line181JsxTextIAMGroup')}
-                    </th>
-                    <th className="w-10 py-2" />
-                  </tr>
-                </thead>
-                <tbody className="divide-border divide-y">
-                  {mappings.map((m) => (
-                    <tr key={m.mapping_id} className="hover:bg-muted/20">
-                      <td className="text-foreground py-2 font-mono text-xs">{m.claim_value}</td>
-                      <td className="py-2">
-                        <Badge variant="outline" size="sm">
-                          {m.group_name}
-                        </Badge>
-                      </td>
-                      <td className="py-2 text-right">
-                        {canManage && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="text-muted-foreground hover:text-destructive h-7 w-7"
-                            onClick={() => setMapDeleteTarget(m)}
-                            aria-label={tHardcodedUi.raw(
-                              'componentsIamSsoCard.line201JsxAttrAriaLabelRemoveMapping',
-                            )}
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </Button>
+              <ul className="space-y-1.5">
+                {mappings.map((m) => (
+                  <li
+                    key={m.mapping_id}
+                    className="border-border/60 bg-muted/20 flex items-center gap-2.5 rounded-lg border px-3 py-2"
+                  >
+                    <code
+                      title={m.claim_value}
+                      className="text-foreground max-w-[42%] truncate font-mono text-xs"
+                    >
+                      {m.claim_value}
+                    </code>
+                    <ArrowRight className="text-muted-foreground/50 h-3.5 w-3.5 shrink-0" />
+                    <Badge variant="outline" size="sm" className="min-w-0 max-w-[42%] truncate">
+                      {m.group_name}
+                    </Badge>
+                    <span className="flex-1" />
+                    {canManage && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="text-muted-foreground hover:text-destructive h-7 w-7 shrink-0"
+                        onClick={() => setMapDeleteTarget(m)}
+                        aria-label={tHardcodedUi.raw(
+                          'componentsIamSsoCard.line201JsxAttrAriaLabelRemoveMapping',
                         )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         </>
@@ -337,6 +370,7 @@ function EditProviderDialog({
   const [domain, setDomain] = useState(existing?.primary_domain ?? '');
   const [claim, setClaim] = useState(existing?.group_claim_name ?? 'groups');
   const [autoCreate, setAutoCreate] = useState(existing?.auto_create_members ?? true);
+  const [autoProvision, setAutoProvision] = useState(existing?.auto_provision_groups ?? false);
   // Import path (new providers only): paste the IdP metadata XML or its URL and
   // we register it with Supabase server-side. Editing an existing provider keeps
   // the advanced UUID form (the Supabase provider already exists).
@@ -353,6 +387,7 @@ function EditProviderDialog({
       setDomain(existing?.primary_domain ?? '');
       setClaim(existing?.group_claim_name ?? 'groups');
       setAutoCreate(existing?.auto_create_members ?? true);
+      setAutoProvision(existing?.auto_provision_groups ?? false);
       setMode(existing ? 'uuid' : 'metadata');
       setMetaKind('xml');
       setMetaXml('');
@@ -369,6 +404,7 @@ function EditProviderDialog({
             primary_domain: domain.trim().toLowerCase(),
             group_claim_name: claim.trim() || 'groups',
             auto_create_members: autoCreate,
+            auto_provision_groups: autoProvision,
             ...(metaKind === 'xml'
               ? { metadata_xml: metaXml.trim() }
               : { metadata_url: metaUrl.trim() }),
@@ -379,6 +415,7 @@ function EditProviderDialog({
             primary_domain: domain.trim().toLowerCase(),
             group_claim_name: claim.trim() || 'groups',
             auto_create_members: autoCreate,
+            auto_provision_groups: autoProvision,
           }),
     onSuccess: () => {
       toast.success(existing ? 'SSO provider updated' : 'SSO provider configured');
@@ -560,6 +597,23 @@ function EditProviderDialog({
                 {tHardcodedUi.raw(
                   'componentsIamSsoCard.line409JsxTextWhenOffOnlyUsersAnAdminHasAlready',
                 )}
+              </span>
+            </span>
+          </label>
+
+          <label className="text-foreground flex cursor-pointer items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={autoProvision}
+              onChange={(e) => setAutoProvision(e.target.checked)}
+              className="border-border accent-primary mt-0.5 h-3.5 w-3.5 rounded"
+              disabled={mutation.isPending}
+            />
+            <span>
+              <span className="font-medium">Auto-provision groups</span>
+              <span className="text-muted-foreground block text-[11px]">
+                Create an IAM group for every group the IdP sends and add users to it — no per-group
+                mapping. You just attach project roles to the auto-created groups.
               </span>
             </span>
           </label>

@@ -2600,6 +2600,7 @@ export const reviewItemsRelations = relations(reviewItems, ({ one }) => ({
 export const accountGroupSourceEnum = kortixSchema.enum('account_group_source', [
   'manual',
   'scim',
+  'sso',
 ]);
 
 export const accountGroups = kortixSchema.table(
@@ -2957,6 +2958,11 @@ export const accountSsoProviders = kortixSchema.table(
      *  group mapping get a baseline 'member' row anyway. Off by default
      *  so admins can enforce strict group-driven access. */
     autoCreateMembers: boolean('auto_create_members').default(true).notNull(),
+    /** When true, a login auto-creates an IAM group (source='sso', named after
+     *  the claim value) + a claim->group mapping for every group the IdP sends,
+     *  so admins skip manual mapping and just attach project roles. Off by
+     *  default — providers keep the explicit-mapping behavior. */
+    autoProvisionGroups: boolean('auto_provision_groups').default(false).notNull(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
