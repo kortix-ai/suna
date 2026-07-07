@@ -132,7 +132,7 @@ export async function getPublicMarketplaceItemFile(
  *  `useInfiniteMarketplaceItems` page size derive from a single source — the
  *  company page's `initialData` seed/offset math only lines up if they stay
  *  equal. */
-export const MARKETPLACE_ITEMS_PAGE_SIZE = 30;
+export const MARKETPLACE_ITEMS_PAGE_SIZE = 48;
 
 /** First-page size for the `/marketplace/[company]` SSR fetch — must equal the
  *  client hook's page size so the seeded first page and its `offset` align. */
