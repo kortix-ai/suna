@@ -12,20 +12,7 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-// 'managed' is the canonical name for the managed cloud backend; 'daytona' is a
-// permanent legacy alias for the SAME backend (kept so existing DB rows / any
-// external caller sending 'daytona' never break). New writes use 'managed'.
-export type SandboxProviderName = 'managed' | 'daytona' | 'platinum';
-
-/** True for either the canonical 'managed' name or its legacy 'daytona' alias. */
-export function isManagedProviderName(p: string | null | undefined): boolean {
-  return p === 'managed' || p === 'daytona';
-}
-
-/** Canonicalise a provider string: legacy 'daytona' → 'managed'; others pass through. */
-export function normalizeProviderName<T extends string>(p: T): T | 'managed' {
-  return p === 'daytona' ? 'managed' : p;
-}
+export type SandboxProviderName = 'daytona' | 'platinum';
 type InternalKortixEnv = 'dev' | 'staging' | 'prod' | 'preview';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -322,7 +309,7 @@ const envSchema = z.object({
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL:                  optStr,
-  ALLOWED_SANDBOX_PROVIDERS:   optStrDefault('managed'),
+  ALLOWED_SANDBOX_PROVIDERS:   optStrDefault('daytona'),
   SANDBOX_IMAGE:               optStr,
   KORTIX_LOCAL_IMAGES:         optBoolFalse,
   SANDBOX_NETWORK:             optStr,
@@ -422,14 +409,12 @@ type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 // Recognised provider names. Source-of-truth for what can legally appear in
 // ALLOWED_SANDBOX_PROVIDERS — adding a new provider is a one-place change
 // here plus a case in `getProvider()` in platform/providers/index.ts.
-// 'managed' is canonical; 'daytona' still parses (normalised to 'managed') so an
-// existing ALLOWED_SANDBOX_PROVIDERS=daytona env keeps working unchanged.
-const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['managed', 'platinum'] as const;
+const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'platinum'] as const;
 
-/** Parse comma-separated provider list (e.g. "managed,platinum"). */
+/** Parse comma-separated provider list (e.g. "daytona,platinum"). */
 function parseAllowedProviders(raw: string): SandboxProviderName[] {
-  if (!raw) return ['managed'];
-  const names = raw.split(',').map((s) => normalizeProviderName(s.trim().toLowerCase())).filter(Boolean);
+  if (!raw) return ['daytona'];
+  const names = raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
   const valid: SandboxProviderName[] = [];
   for (const n of names) {
     if ((KNOWN_PROVIDERS as readonly string[]).includes(n)) {
@@ -439,7 +424,7 @@ function parseAllowedProviders(raw: string): SandboxProviderName[] {
       console.warn(`[config] Unknown sandbox provider "${n}" in ALLOWED_SANDBOX_PROVIDERS - ignored`);
     }
   }
-  return valid.length > 0 ? valid : ['managed'];
+  return valid.length > 0 ? valid : ['daytona'];
 }
 
 function validateEnv(): z.infer<typeof envSchema> {
@@ -460,7 +445,7 @@ function validateEnv(): z.infer<typeof envSchema> {
 
   // ── Conditional: Daytona provider enabled → need Daytona keys ──────────
   const providers = parseAllowedProviders((raw as any).ALLOWED_SANDBOX_PROVIDERS || '');
-  if (providers.includes('managed')) {
+  if (providers.includes('daytona')) {
     if (!raw.DAYTONA_API_KEY)    issues.push({ var: 'DAYTONA_API_KEY',    message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
     if (!raw.DAYTONA_SERVER_URL) issues.push({ var: 'DAYTONA_SERVER_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
     if (!raw.DAYTONA_TARGET)     issues.push({ var: 'DAYTONA_TARGET',     message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
@@ -791,14 +776,12 @@ export const config = {
   // ─── Helper Methods ────────────────────────────────────────────────────────
 
   isProviderEnabled(name: SandboxProviderName): boolean {
-    const canonical = normalizeProviderName(name);
-    if (!this.ALLOWED_SANDBOX_PROVIDERS.includes(canonical)) return false;
-    switch (canonical) {
-      case 'managed':
+    if (!this.ALLOWED_SANDBOX_PROVIDERS.includes(name)) return false;
+    switch (name) {
       case 'daytona': return !!this.DAYTONA_API_KEY;
       case 'platinum': return !!this.PLATINUM_API_KEY;
       default: {
-        const exhaustive: never = canonical;
+        const exhaustive: never = name;
         return exhaustive;
       }
     }
@@ -806,23 +789,17 @@ export const config = {
 
   /**
    * Default sandbox provider for new sessions. First entry of
-   * ALLOWED_SANDBOX_PROVIDERS, with 'managed' as the safety belt for an
+   * ALLOWED_SANDBOX_PROVIDERS, with 'daytona' as the safety belt for an
    * empty list. The single-provider invariant means there's no resolution
    * order today, but the function is the contract callers depend on —
    * adding a new provider later just changes what the list can contain.
    */
   getDefaultProvider(): SandboxProviderName {
-    return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'managed';
+    return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'daytona';
   },
 
-  /** True when the managed cloud backend (canonical 'managed' / legacy 'daytona') is enabled. */
-  isManagedEnabled(): boolean {
-    return this.ALLOWED_SANDBOX_PROVIDERS.some(isManagedProviderName) && !!this.DAYTONA_API_KEY;
-  },
-
-  /** @deprecated use isManagedEnabled — kept for callers still on the old name. */
   isDaytonaEnabled(): boolean {
-    return this.isManagedEnabled();
+    return this.ALLOWED_SANDBOX_PROVIDERS.includes('daytona') && !!this.DAYTONA_API_KEY;
   },
 
   isPlatinumEnabled(): boolean {
