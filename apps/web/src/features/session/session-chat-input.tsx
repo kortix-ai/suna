@@ -26,6 +26,8 @@ import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { clearForkDraft, readForkDraft } from '@kortix/sdk/react';
+
+import { resolveComposerResetOnSend } from './composer-reset';
 import {
   ArrowUp,
   ArrowUpLeft,
@@ -1756,14 +1758,14 @@ export function SessionChatInput({
     // only flashes an empty box before the route swaps, discards the text on a
     // gated send, and would revoke the local file URLs the instant shell still
     // needs to preview. The text/files ride across via the start-stash instead.
-    if (clearOnSend) {
+    // (Decision + which URLs to revoke extracted to `resolveComposerResetOnSend`.)
+    const reset = resolveComposerResetOnSend(clearOnSend, attachedFiles);
+    if (reset.clear) {
       setText('');
       setSlashFilter(null);
       setMentionQuery(null);
       setMentions([]);
-      for (const af of attachedFiles) {
-        if (af.kind === 'local') URL.revokeObjectURL(af.localUrl);
-      }
+      for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
       setAttachedFiles([]);
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
