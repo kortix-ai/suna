@@ -322,10 +322,10 @@ function CreateScimTokenDialog({
         </DialogHeader>
 
         {created ? (
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             <div>
               <Label className="text-xs">Token</Label>
-              <div className="mt-1 flex items-center gap-2">
+              <div className="mt-1 flex min-w-0 items-center gap-2">
                 <code className="min-w-0 flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
                   {created.secret}
                 </code>
@@ -341,7 +341,7 @@ function CreateScimTokenDialog({
             </div>
             <div>
               <Label className="text-xs">{tHardcodedUi.raw('componentsIamScimCard.line301JsxTextSCIMBaseURL')}</Label>
-              <div className="mt-1 flex items-center gap-2">
+              <div className="mt-1 flex min-w-0 items-center gap-2">
                 <code className="min-w-0 flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
                   {scimBaseUrl}
                 </code>
@@ -363,7 +363,7 @@ function CreateScimTokenDialog({
             </DialogFooter>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="min-w-0 space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="scim-token-name">Name</Label>
               <Input
