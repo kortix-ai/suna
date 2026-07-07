@@ -262,13 +262,14 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
         aria-modal="true"
         aria-label="Project setup"
       >
-        {/* Top bar — brand, progress, skip */}
-        <div className="flex items-center justify-between px-5 py-4 md:px-8">
+        {/* Top bar — brand + progress. Skipping lives in the footer, per step,
+            next to Continue — not as a corner escape hatch. */}
+        <div className="relative flex items-center px-5 py-4 md:px-8">
           <div className="flex items-center gap-2.5">
             <KortixAsterisk index={0} />
             <span className="text-foreground text-sm font-semibold tracking-tight">Set up your project</span>
           </div>
-          <div className="hidden flex-1 items-center justify-center gap-1.5 px-8 md:flex">
+          <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1.5 md:flex">
             {steps.map((s, i) => (
               <span
                 key={s}
@@ -279,14 +280,6 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
               />
             ))}
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground hover:text-foreground"
-            onClick={complete}
-          >
-            Skip setup
-          </Button>
         </div>
 
         {/* Body */}
@@ -381,10 +374,24 @@ function StepPrimaryAction({
       <div className="flex items-center gap-3">
         {!slackConnected && (
           <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={onNext}>
-            Skip for now
+            Skip
           </Button>
         )}
         <Button size="sm" className="gap-1.5" onClick={onNext} disabled={!slackConnected}>
+          Continue
+          <ArrowRight className="size-4" />
+        </Button>
+      </div>
+    );
+  }
+
+  if (stepId === 'tools') {
+    return (
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={onNext}>
+          Skip
+        </Button>
+        <Button size="sm" className="gap-1.5" onClick={onNext}>
           Continue
           <ArrowRight className="size-4" />
         </Button>
