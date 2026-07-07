@@ -16,6 +16,7 @@ import {
 } from '../../shared/daytona';
 import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
+import { providerAutoStopBackstopMinutes } from './index';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 
 // The Daytona SDK's axios client is created with a 24-HOUR timeout (see
@@ -126,8 +127,10 @@ function isMissingSandboxError(error: unknown): boolean {
  * idle sweep can't see boxes it has no DB row for.
  *
  *  - autoStopInterval: idle → stop (compute billing ends). CLAMPED to >= 1 so a
- *    box is NEVER created persistent. This is the setting that actually stops
- *    the money burn.
+ *    box is NEVER created persistent. BACKSTOP only: Daytona's idle signal is
+ *    "no inbound requests", blind to local tool runs, so it must sit well above
+ *    the reaper's activity-aware TTL (providerAutoStopBackstopMinutes) or it
+ *    kills working boxes.
  *  - autoArchiveInterval: stopped → archived to cold storage after a few days
  *    (cheap, still resumable). Until then the stopped box stays warm-resumable.
  *  - autoDeleteInterval: -1 by default → NEVER auto-delete. An idle box is
@@ -139,9 +142,9 @@ export function daytonaLifecycle(autoStopOverride?: number): {
   autoArchiveInterval: number;
   autoDeleteInterval: number;
 } {
-  const stop = autoStopOverride ?? config.KORTIX_SANDBOX_AUTOSTOP_MINUTES;
+  const stop = autoStopOverride ?? providerAutoStopBackstopMinutes();
   return {
-    autoStopInterval: Math.max(1, stop || config.KORTIX_SANDBOX_AUTOSTOP_MINUTES || 15),
+    autoStopInterval: Math.max(1, stop),
     autoArchiveInterval: config.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
     autoDeleteInterval: config.KORTIX_SANDBOX_AUTODELETE_MINUTES,
   };

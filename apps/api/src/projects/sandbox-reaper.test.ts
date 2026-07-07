@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSessions, sessionSandboxes, chatTurnStreams, usageEvents } from '@kortix/db';
+import { projectSessions, sessionSandboxes, usageEvents } from '@kortix/db';
 
 // ── mock state ──────────────────────────────────────────────────────────────
 let candidates: any[] = [];
-let activeTurns: Array<{ sessionId: string }> = [];
 let usageRows: Array<{ sessionId: string; last: string }> = [];
 let throwOnUsageLookup = false;
 let statusByExternal: Record<string, 'running' | 'stopped' | 'removed' | 'unknown'> = {};
@@ -47,13 +46,11 @@ mock.module('../shared/db', () => ({
           hybrid(
             table === sessionSandboxes
               ? candidates
-              : table === chatTurnStreams
-                ? activeTurns
-                : table === usageEvents
-                  ? usageRows
-                  : table === projectSessions
-                    ? stuckSessions
-                    : [],
+              : table === usageEvents
+                ? usageRows
+                : table === projectSessions
+                  ? stuckSessions
+                  : [],
             table === usageEvents && throwOnUsageLookup,
           ),
       }),
@@ -113,7 +110,6 @@ const TTL = 15 * 60_000;
 
 beforeEach(() => {
   candidates = [];
-  activeTurns = [];
   usageRows = [];
   throwOnUsageLookup = false;
   statusByExternal = {};
@@ -398,17 +394,6 @@ describe('reapAndReconcileSandboxes', () => {
     expect(stops).toEqual([]);
   });
 
-  test('never reaps a box with a turn in flight', async () => {
-    candidates = [candidate()]; // idle by timestamp
-    statusByExternal['ext-1'] = 'running';
-    activeTurns = [{ sessionId: 'sess-1' }];
-
-    const r = await reapAndReconcileSandboxes(NOW);
-
-    expect(r.skipped).toBe(1);
-    expect(stops).toEqual([]);
-  });
-
   test('does not act on transient unknown provider state', async () => {
     candidates = [candidate()];
     statusByExternal['ext-1'] = 'unknown';
@@ -452,8 +437,8 @@ describe('reapAndReconcileSandboxes', () => {
     expect(stops).toEqual([]); // never poke a removed box
   });
 
-  test('FAIL-SAFE: when the activity lookup fails, never stop a running box', async () => {
-    candidates = [candidate()]; // idle by timestamp (created 2h ago)
+  test('FAIL-SAFE: unreachable box + failed usage lookup → never stop', async () => {
+    candidates = [candidate()]; // idle by timestamp (created 2h ago), probe defaults to unknown
     statusByExternal['ext-1'] = 'running';
     throwOnUsageLookup = true; // simulate a DB/transient failure
 
@@ -462,6 +447,18 @@ describe('reapAndReconcileSandboxes', () => {
     expect(stops).toEqual([]); // uncertain → do not stop
     expect(pausedCompute).toEqual([]);
     expect(r.stopped).toBe(0);
+  });
+
+  test('probe-confirmed idle still counts down even when the usage lookup fails', async () => {
+    candidates = [candidate({ metadata: { idleObservedAt: new Date(NOW.getTime() - TTL).toISOString() } })];
+    statusByExternal['ext-1'] = 'running';
+    busyByExternal['ext-1'] = 'idle';
+    throwOnUsageLookup = true;
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(r.stopped).toBe(1);
+    expect(stops).toEqual(['ext-1']);
   });
 });
 

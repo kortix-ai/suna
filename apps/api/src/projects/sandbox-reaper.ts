@@ -1,31 +1,34 @@
 /**
  * Provider-agnostic sandbox reaper + state/billing reconciler.
  *
- * THE problem this fixes (verified live 2026-06-21): session sandboxes stayed
- * running for hours/days after work finished, and the compute meter kept billing
- * them — 1,597 phantom-active compute rows across 23 accounts.
+ * ONE RULE for running boxes: ask the box itself. Each pass probes the box's
+ * own opencode session status (sandbox-busy-probe.ts):
  *
- * Root cause was twofold:
- *   1. Daytona's provider-side auto-stop ("stop after N min of no REQUEST to the
- *      box") never fired because passive traffic — an open tab streaming opencode
- *      events, repeated /start, the server-side opencode-pin hit — touched each
- *      box < auto-stop apart. So "15 min idle" never elapsed.
- *   2. Kortix's own idle GC keyed off `session_sandboxes.last_used_at`, which is
- *      bumped ONLY by /v1/p proxy traffic — a partial signal that real turn/
- *      session traffic never touches — and its stops didn't stick (auto-wake).
+ *   busy/retry → alive. Disarm the idle countdown, stamp lastTurnAt.
+ *   idle       → the first observation ARMS `metadata.idleObservedAt`; the
+ *                stop fires only once the box has stayed OBSERVABLY idle for
+ *                the full TTL. The TTL counts from real idleness — never from
+ *                a heuristic like "last LLM call", which can predate the turn
+ *                end by a whole tool run (the 2026-06-24 mid-session kills).
+ *   unknown    → unreachable / legacy box. Fall back to the activity clock
+ *                (lastTurnAt | row creation | last LLM usage_event + TTL) so a
+ *                wedged daemon can't hold compute billing open forever.
  *
- * The fix is to stop trusting "any request" as activity. We define MEANINGFUL
- * activity = a real turn (a prompt / Slack message / agent run), stamped as
- * `metadata.lastTurnAt` at the turn boundary, and we make the PROVIDER's real
- * state (getStatus) the source of truth. A box with no meaningful activity for
- * the TTL is stopped regardless of how much passive traffic it sees, and billing
- * is closed the moment the provider reports it is no longer running.
+ * Trigger-fired boxes (metadata.source 'trigger:*') confirm idle on a shorter
+ * TTL — nobody is waiting on a webhook/cron box.
  *
- * Webhooks (see channels/providers webhook ingress) are the fast path that
- * closes billing the instant a box stops; this reaper is the deterministic
- * backstop that runs even if an event is dropped — together they make
- * "15 min of no real activity → stopped, and never billed while stopped" an
- * invariant rather than a best-effort.
+ * Passive traffic (an open tab streaming events, /v1/p proxy hits, repeated
+ * /start polls) is deliberately NEVER treated as activity — trusting it is
+ * what once kept idle boxes alive for days (verified live 2026-06-21: 1,597
+ * phantom-active compute rows). The provider's own auto-stop timer survives
+ * only as the orphan backstop (providerAutoStopBackstopMinutes): its "no
+ * inbound requests" signal is blind to local tool runs, so it sits well above
+ * the reaper's TTL and matters only when this API is dead.
+ *
+ * Provider webhooks are the fast path that closes billing the instant a box
+ * stops; this reaper is the deterministic backstop that runs even if an event
+ * is dropped — together they make "idle for the TTL → stopped, and never
+ * billed while stopped" an invariant rather than a best-effort.
  */
 
 import { and, eq, gt, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
@@ -212,11 +215,67 @@ export interface ReapResult {
   errors: number;
 }
 
+type RunningBoxOutcome = 'stopped' | 'busyVetoed' | 'idleArmed' | 'skipped' | 'errors';
+
+/**
+ * The rule for one running box: busy → alive; observed idle for the TTL →
+ * shut down; unreachable → activity-clock fallback so a wedged daemon still
+ * stops. `fallbackLastMeaningful` is null when this pass's usage lookup
+ * failed — then an unreachable box cannot be judged at all and is skipped
+ * (never act on uncertainty).
+ */
+async function reapRunningBox(
+  row: ReapCandidate,
+  opts: { now: Date; ttlMs: number; fallbackLastMeaningful: Date | null },
+): Promise<RunningBoxOutcome> {
+  const { now, ttlMs, fallbackLastMeaningful } = opts;
+  const busyState = await probeSandboxBusy({ sandboxId: row.sandboxId, externalId: row.externalId });
+
+  if (busyState === 'busy') {
+    // A running process — disarm the countdown, stamp the activity.
+    await db
+      .update(sessionSandboxes)
+      .set({ updatedAt: now, metadata: mergeMetadata({ lastTurnAt: now.toISOString(), idleObservedAt: null }) })
+      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+    return 'busyVetoed';
+  }
+
+  if (busyState === 'idle') {
+    const confirm = decideIdleConfirm({ idleObservedAt: idleObservedAtOf(row.metadata), now, ttlMs });
+    if (confirm === 'arm') {
+      await db
+        .update(sessionSandboxes)
+        .set({ updatedAt: now, metadata: mergeMetadata({ idleObservedAt: now.toISOString() }) })
+        .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+      return 'idleArmed';
+    }
+    if (confirm === 'wait') return 'skipped';
+    // 'stop' — observed idle for the full TTL → fall through to the stop.
+  } else {
+    // 'unknown' — box unreachable / legacy image: activity-clock fallback.
+    if (!fallbackLastMeaningful) return 'skipped';
+    if (now.getTime() - fallbackLastMeaningful.getTime() <= ttlMs) return 'skipped';
+  }
+
+  try {
+    await getProvider(row.provider).stop(row.externalId);
+  } catch (err) {
+    if (isLifecycleTransitionInProgress(err)) return 'skipped';
+    if (!isAlreadyNotRunning(err)) {
+      console.error(`[reaper] provider.stop failed for sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`);
+      return 'errors';
+    }
+    // Already stopped/gone on the provider side is success — reconcile.
+  }
+  await reconcileRowToStopped(row, now, /* quiesce */ true, /* reprovision */ row.provider === 'platinum');
+  return 'stopped';
+}
+
 /**
  * One reaper pass over active session sandboxes. For each:
  *   - ask the provider its REAL state,
  *   - reconcile our row + close billing if it is not running,
- *   - stop it (and close billing) if it has had no meaningful activity for the TTL.
+ *   - otherwise apply the running-box rule (probe → busy alive / idle countdown).
  * Bounded concurrency so a batch of provider round-trips doesn't serialize.
  */
 export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapResult> {
@@ -243,101 +302,32 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
   const result: ReapResult = { candidates: rows.length, stopped: 0, reconciled: 0, billingClosed: 0, skipped: 0, busyVetoed: 0, idleArmed: 0, errors: 0 };
   if (rows.length === 0) return result;
 
-  const sessionIds = rows.map((r) => r.sessionId);
-  // The real activity signals, batched (both lookups are indexed):
-  //  - last LLM call per session (the truest "a real turn happened" signal,
-  //    covering web / Slack / trigger uniformly — the gateway stamps session_id
-  //    on usage_events), and
-  //  - which sessions have a turn IN FLIGHT (unfinalized stream) — never reap those.
-  const [usageResult, activeTurnResult] = await Promise.all([
-    loadLastUsageBySession(sessionIds),
-    loadActiveTurnSessions(sessionIds),
-  ]);
-  // FAIL-SAFE: a null result means the lookup itself FAILED (DB/transient). We
-  // then cannot prove a box is idle, so we must NOT stop it on uncertain data —
-  // same "never act on uncertainty" rule the provider-status path follows.
-  // Provider-confirmed stopped/removed reconciliation still proceeds below.
-  const activitySignalReliable = usageResult !== null && activeTurnResult !== null;
-  const lastUsageBySession = usageResult ?? new Map<string, Date>();
-  const activeTurnSessions = activeTurnResult ?? new Set<string>();
+  // Batched fallback signal: last LLM call per session (indexed usage_events).
+  // Only consulted for boxes the probe can't reach; null = the lookup itself
+  // failed this pass, and unreachable boxes are then skipped (fail safe).
+  const lastUsageBySession = await loadLastUsageBySession(rows.map((r) => r.sessionId));
 
   let cursor = 0;
   const worker = async () => {
     while (cursor < rows.length) {
       const row = rows[cursor++];
       try {
-        const provider = getProvider(row.provider);
-        const providerStatus: SandboxStatus = await provider.getStatus(row.externalId);
-        const rowTtl = isTriggerSession(row.metadata) ? triggerTtlMs : ttlMs;
+        const providerStatus: SandboxStatus = await getProvider(row.provider).getStatus(row.externalId);
 
-        // ── Running boxes: the simple rule — busy → alive; observed idle for
-        // the TTL → shut down. The box's own opencode session status is the
-        // primary signal (it sees tool runs / retries / subagents that leave no
-        // LLM-usage trail); the activity clock survives only as the fallback
-        // for boxes we can't reach, so a wedged daemon still gets stopped.
         if (providerStatus === 'running') {
-          // Fail-safe first: a Slack turn in flight or an unreliable activity
-          // lookup this cycle → never touch the box.
-          if (!activitySignalReliable || activeTurnSessions.has(row.sessionId)) {
-            result.skipped += 1;
-            continue;
-          }
-          const busyState = await probeSandboxBusy({ sandboxId: row.sandboxId, externalId: row.externalId });
-          if (busyState === 'busy') {
-            // A running process — disarm the countdown, stamp the activity.
-            await db
-              .update(sessionSandboxes)
-              .set({ updatedAt: now, metadata: mergeMetadata({ lastTurnAt: now.toISOString(), idleObservedAt: null }) })
-              .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-            result.busyVetoed += 1;
-            continue;
-          }
-          if (busyState === 'idle') {
-            const confirm = decideIdleConfirm({ idleObservedAt: idleObservedAtOf(row.metadata), now, ttlMs: rowTtl });
-            if (confirm === 'arm') {
-              await db
-                .update(sessionSandboxes)
-                .set({ updatedAt: now, metadata: mergeMetadata({ idleObservedAt: now.toISOString() }) })
-                .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-              result.idleArmed += 1;
-              continue;
-            }
-            if (confirm === 'wait') {
-              result.skipped += 1;
-              continue;
-            }
-            // 'stop' — observed idle for the full TTL → fall through.
-          } else {
-            // 'unknown' — box unreachable / legacy image. Fall back to the
-            // activity clock (latest of stamped lastTurnAt | row creation |
-            // last LLM call; passive proxy traffic deliberately NOT counted).
+          let fallbackLastMeaningful: Date | null = null;
+          if (lastUsageBySession !== null) {
             const base = lastMeaningfulAt(row);
             const usage = lastUsageBySession.get(row.sessionId);
-            const lastMeaningful = usage && usage.getTime() > base.getTime() ? usage : base;
-            if (now.getTime() - lastMeaningful.getTime() <= rowTtl) {
-              result.skipped += 1;
-              continue;
-            }
+            fallbackLastMeaningful = usage && usage.getTime() > base.getTime() ? usage : base;
           }
-          try {
-            await provider.stop(row.externalId);
-          } catch (err) {
-            if (isLifecycleTransitionInProgress(err)) {
-              result.skipped += 1;
-              continue;
-            }
-            if (!isAlreadyNotRunning(err)) {
-              result.errors += 1;
-              console.error(
-                `[reaper] provider.stop failed for sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`,
-              );
-              continue;
-            }
-            // Already stopped/gone on the provider side is success — reconcile.
-          }
-          await reconcileRowToStopped(row, now, /* quiesce */ true, /* reprovision */ row.provider === 'platinum');
-          result.stopped += 1;
-          result.billingClosed += 1;
+          const outcome = await reapRunningBox(row, {
+            now,
+            ttlMs: isTriggerSession(row.metadata) ? triggerTtlMs : ttlMs,
+            fallbackLastMeaningful,
+          });
+          result[outcome] += 1;
+          if (outcome === 'stopped') result.billingClosed += 1;
           continue;
         }
 
@@ -413,26 +403,6 @@ async function loadLastUsageBySession(sessionIds: string[]): Promise<Map<string,
     return out;
   } catch (err) {
     console.warn('[reaper] usage-activity lookup failed — failing safe (no stops this cycle):', err instanceof Error ? err.message : err);
-    return null;
-  }
-}
-
-/**
- * Session ids that currently have an unfinalized turn stream (a turn in flight).
- * Returns `null` on a lookup FAILURE so the caller fails safe (never reap when
- * we can't tell if a turn is running). Empty set = looked up fine, none active.
- */
-async function loadActiveTurnSessions(sessionIds: string[]): Promise<Set<string> | null> {
-  if (sessionIds.length === 0) return new Set();
-  try {
-    const { chatTurnStreams } = await import('@kortix/db');
-    const rows = await db
-      .select({ sessionId: chatTurnStreams.sessionId })
-      .from(chatTurnStreams)
-      .where(and(inArray(chatTurnStreams.sessionId, sessionIds), eq(chatTurnStreams.finalized, false)));
-    return new Set(rows.map((r) => r.sessionId));
-  } catch (err) {
-    console.warn('[reaper] active-turn lookup failed — failing safe (no stops this cycle):', err instanceof Error ? err.message : err);
     return null;
   }
 }
