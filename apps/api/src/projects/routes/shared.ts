@@ -66,13 +66,11 @@ export async function resumeStoppedSandbox(row: {
     .set({
       status: 'active',
       updatedAt: now,
-      // Explicit resume clears the reaper's idle-quiesce marker so the resumed
-      // box is treated normally again (passive traffic can keep it warm until
-      // the next idle window) — and stamps lastTurnAt so the resume opens a
-      // FRESH idle window. Without the stamp the reaper's idle clock still
-      // reads the pre-stop last activity, already past the TTL, and the box
-      // gets re-reaped on the next pass before the user's first turn.
-      metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'idleQuiesced' - 'idleQuiescedAt') || ${JSON.stringify({ lastTurnAt: now.toISOString() })}::jsonb`,
+      // Explicit resume clears the reaper's idle-quiesce marker AND its idle
+      // countdown (idleObservedAt — a stale pre-stop stamp would shut the box
+      // down on the very next pass), and stamps lastTurnAt so the resume opens
+      // a FRESH idle window for the unreachable-box fallback clock too.
+      metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'idleQuiesced' - 'idleQuiescedAt' - 'idleObservedAt') || ${JSON.stringify({ lastTurnAt: now.toISOString() })}::jsonb`,
     })
     .where(
       and(

@@ -64,57 +64,53 @@ export function isTriggerSession(metadata: Record<string, unknown> | null): bool
   return typeof source === 'string' && source.startsWith('trigger:');
 }
 
-export type ReapAction = 'none' | 'stop-idle' | 'reconcile-stopped' | 'reconcile-removed';
-
-export interface ReapDecision {
-  action: ReapAction;
-  /** Platinum stop→resume is broken (CH resume-freeze) → the next open must
-   *  REPROVISION a fresh box rather than start() the stopped one. */
-  reprovisionOnResume: boolean;
-  reason: string;
+/** When the reaper first OBSERVED the box idle (probe-confirmed). Null when
+ *  never observed / cleared by a busy observation or an explicit resume. */
+export function idleObservedAtOf(metadata: Record<string, unknown> | null): Date | null {
+  const raw = metadata?.idleObservedAt;
+  if (typeof raw !== 'string') return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/**
- * Pure, deterministic decision from the provider's REAL state + meaningful idle.
- * Kept side-effect-free so it is exhaustively unit-tested (the money + UX
- * correctness lives here).
- */
-export function decideReap(input: {
-  providerStatus: SandboxStatus;
-  meaningfulIdleMs: number;
-  hasActiveTurn: boolean;
-  ttlMs: number;
-  provider: ProviderName;
-}): ReapDecision {
-  const { providerStatus, meaningfulIdleMs, hasActiveTurn, ttlMs, provider } = input;
+export type IdleConfirmAction = 'arm' | 'wait' | 'stop';
 
-  // NEVER act on uncertainty. getStatus() returns 'unknown' on a transient
-  // provider error or a transitional state (starting/resuming/migrating);
-  // stopping or reconciling on that could kill a healthy box or fight a wake.
-  if (providerStatus === 'unknown') {
-    return { action: 'none', reprovisionOnResume: false, reason: 'provider-unknown' };
-  }
+/**
+ * The idle TTL counts from OBSERVED idleness, not from the last LLM call —
+ * the last usage_event can predate the real turn end by however long the
+ * final tool run takes, and stopping "TTL after last LLM call" could kill a
+ * box seconds after its turn actually finished. So the first probe-confirmed
+ * idle observation only ARMS the timer; the stop fires once the box has
+ * stayed observably idle for the full TTL, and any busy observation disarms.
+ * Pure so the money semantics are exhaustively unit-tested.
+ */
+export function decideIdleConfirm(input: {
+  idleObservedAt: Date | null;
+  now: Date;
+  ttlMs: number;
+}): IdleConfirmAction {
+  const { idleObservedAt, now, ttlMs } = input;
+  if (!idleObservedAt || idleObservedAt.getTime() > now.getTime()) return 'arm';
+  return now.getTime() - idleObservedAt.getTime() >= ttlMs ? 'stop' : 'wait';
+}
+
+export type ReconcileAction = 'none' | 'reconcile-stopped' | 'reconcile-removed';
+
+/**
+ * Pure reconcile decision for a box the provider says is NOT running.
+ * (Running boxes take the probe path: busy → alive, observed idle for the
+ * TTL → stop.) 'unknown' is a transient provider error or a transitional
+ * state (starting/resuming/migrating) — NEVER act on uncertainty; acting
+ * could kill a healthy box or fight a wake.
+ */
+export function decideReconcile(providerStatus: SandboxStatus): ReconcileAction {
   // The external box is gone — finalize billing and mark our row so the next
   // open reprovisions instead of trying to resume a box that no longer exists.
-  if (providerStatus === 'removed') {
-    return { action: 'reconcile-removed', reprovisionOnResume: true, reason: 'provider-removed' };
-  }
+  if (providerStatus === 'removed') return 'reconcile-removed';
   // Provider already stopped/archived it (its own auto-stop, an admin, or a
   // webhook we missed) but our row still says active — reconcile + close billing.
-  if (providerStatus === 'stopped') {
-    return { action: 'reconcile-stopped', reprovisionOnResume: false, reason: 'provider-stopped' };
-  }
-
-  // providerStatus === 'running'
-  // A turn in flight (long agent run / streaming) is meaningful even if the last
-  // stamped lastTurnAt is older than the TTL — never reap an in-progress turn.
-  if (hasActiveTurn) {
-    return { action: 'none', reprovisionOnResume: false, reason: 'active-turn' };
-  }
-  if (meaningfulIdleMs > ttlMs) {
-    return { action: 'stop-idle', reprovisionOnResume: provider === 'platinum', reason: 'meaningful-idle' };
-  }
-  return { action: 'none', reprovisionOnResume: false, reason: 'within-ttl' };
+  if (providerStatus === 'stopped') return 'reconcile-stopped';
+  return 'none';
 }
 
 /**
@@ -211,7 +207,8 @@ export interface ReapResult {
   reconciled: number;   // provider already not-running; we synced our row
   billingClosed: number;
   skipped: number;
-  busyVetoed: number;   // idle-by-TTL but the box itself reported a running turn
+  busyVetoed: number;   // idle-by-clock but the box itself reported a running turn
+  idleArmed: number;    // first probe-confirmed idle observation — TTL countdown started
   errors: number;
 }
 
@@ -243,7 +240,7 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
     ))
     .limit(REAP_BATCH_SIZE)) as ReapCandidate[];
 
-  const result: ReapResult = { candidates: rows.length, stopped: 0, reconciled: 0, billingClosed: 0, skipped: 0, busyVetoed: 0, errors: 0 };
+  const result: ReapResult = { candidates: rows.length, stopped: 0, reconciled: 0, billingClosed: 0, skipped: 0, busyVetoed: 0, idleArmed: 0, errors: 0 };
   if (rows.length === 0) return result;
 
   const sessionIds = rows.map((r) => r.sessionId);
@@ -271,25 +268,81 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
       try {
         const provider = getProvider(row.provider);
         const providerStatus: SandboxStatus = await provider.getStatus(row.externalId);
-        // Meaningful = latest of (stamped lastTurnAt | row creation) and the last
-        // LLM call for the session. Passive traffic (proxy/opencode/presence) is
-        // deliberately NOT considered.
-        const base = lastMeaningfulAt(row);
-        const usage = lastUsageBySession.get(row.sessionId);
-        const lastMeaningful = usage && usage.getTime() > base.getTime() ? usage : base;
-        const meaningfulIdleMs = now.getTime() - lastMeaningful.getTime();
-        const decision = decideReap({
-          providerStatus,
-          meaningfulIdleMs,
-          // When the activity signal is unreliable this cycle, treat the box as
-          // if a turn is in flight so a running box is never stopped on uncertain
-          // data (provider-confirmed stopped/removed still reconciles).
-          hasActiveTurn: !activitySignalReliable || activeTurnSessions.has(row.sessionId),
-          ttlMs: isTriggerSession(row.metadata) ? triggerTtlMs : ttlMs,
-          provider: row.provider,
-        });
+        const rowTtl = isTriggerSession(row.metadata) ? triggerTtlMs : ttlMs;
 
-        switch (decision.action) {
+        // ── Running boxes: the simple rule — busy → alive; observed idle for
+        // the TTL → shut down. The box's own opencode session status is the
+        // primary signal (it sees tool runs / retries / subagents that leave no
+        // LLM-usage trail); the activity clock survives only as the fallback
+        // for boxes we can't reach, so a wedged daemon still gets stopped.
+        if (providerStatus === 'running') {
+          // Fail-safe first: a Slack turn in flight or an unreliable activity
+          // lookup this cycle → never touch the box.
+          if (!activitySignalReliable || activeTurnSessions.has(row.sessionId)) {
+            result.skipped += 1;
+            continue;
+          }
+          const busyState = await probeSandboxBusy({ sandboxId: row.sandboxId, externalId: row.externalId });
+          if (busyState === 'busy') {
+            // A running process — disarm the countdown, stamp the activity.
+            await db
+              .update(sessionSandboxes)
+              .set({ updatedAt: now, metadata: mergeMetadata({ lastTurnAt: now.toISOString(), idleObservedAt: null }) })
+              .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+            result.busyVetoed += 1;
+            continue;
+          }
+          if (busyState === 'idle') {
+            const confirm = decideIdleConfirm({ idleObservedAt: idleObservedAtOf(row.metadata), now, ttlMs: rowTtl });
+            if (confirm === 'arm') {
+              await db
+                .update(sessionSandboxes)
+                .set({ updatedAt: now, metadata: mergeMetadata({ idleObservedAt: now.toISOString() }) })
+                .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+              result.idleArmed += 1;
+              continue;
+            }
+            if (confirm === 'wait') {
+              result.skipped += 1;
+              continue;
+            }
+            // 'stop' — observed idle for the full TTL → fall through.
+          } else {
+            // 'unknown' — box unreachable / legacy image. Fall back to the
+            // activity clock (latest of stamped lastTurnAt | row creation |
+            // last LLM call; passive proxy traffic deliberately NOT counted).
+            const base = lastMeaningfulAt(row);
+            const usage = lastUsageBySession.get(row.sessionId);
+            const lastMeaningful = usage && usage.getTime() > base.getTime() ? usage : base;
+            if (now.getTime() - lastMeaningful.getTime() <= rowTtl) {
+              result.skipped += 1;
+              continue;
+            }
+          }
+          try {
+            await provider.stop(row.externalId);
+          } catch (err) {
+            if (isLifecycleTransitionInProgress(err)) {
+              result.skipped += 1;
+              continue;
+            }
+            if (!isAlreadyNotRunning(err)) {
+              result.errors += 1;
+              console.error(
+                `[reaper] provider.stop failed for sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`,
+              );
+              continue;
+            }
+            // Already stopped/gone on the provider side is success — reconcile.
+          }
+          await reconcileRowToStopped(row, now, /* quiesce */ true, /* reprovision */ row.provider === 'platinum');
+          result.stopped += 1;
+          result.billingClosed += 1;
+          continue;
+        }
+
+        // ── Not running: reconcile our row to the provider's real state.
+        switch (decideReconcile(providerStatus)) {
           case 'none':
             result.skipped += 1;
             break;
@@ -323,43 +376,6 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
             result.reconciled += 1;
             result.billingClosed += 1;
             break;
-          case 'stop-idle': {
-            // The idle heuristic can't see long tool runs / retries / subagent
-            // work (no usage_events trail while they execute) — ask the box
-            // itself before pulling the plug. 'busy' resets the idle clock;
-            // 'unknown' (unreachable/legacy box) proceeds to stop, exactly the
-            // pre-probe behavior, so a wedged daemon can't hold billing open.
-            const busyState = await probeSandboxBusy({ sandboxId: row.sandboxId, externalId: row.externalId });
-            if (busyState === 'busy') {
-              await db
-                .update(sessionSandboxes)
-                .set({ updatedAt: now, metadata: mergeMetadata({ lastTurnAt: now.toISOString() }) })
-                .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-              result.busyVetoed += 1;
-              break;
-            }
-            try {
-              await provider.stop(row.externalId);
-            } catch (err) {
-              if (isLifecycleTransitionInProgress(err)) {
-                result.skipped += 1;
-                break;
-              }
-              if (!isAlreadyNotRunning(err)) {
-                result.errors += 1;
-                console.error(
-                  `[reaper] provider.stop failed for sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`,
-                );
-                break;
-              }
-              // Already stopped/gone on the provider side is success — reconcile
-              // our row + close billing.
-            }
-            await reconcileRowToStopped(row, now, /* quiesce */ true, decision.reprovisionOnResume);
-            result.stopped += 1;
-            result.billingClosed += 1;
-            break;
-          }
         }
       } catch (err) {
         result.errors += 1;
