@@ -26,6 +26,7 @@ import type {
   ProvisioningTraits,
   ProvisioningStatus,
 } from './index';
+import { providerAutoStopBackstopMinutes } from './index';
 
 const AGENT_PORT = 8000;
 
@@ -101,14 +102,13 @@ export class PlatinumProvider implements SandboxProvider {
     // autoStopInterval maps to Platinum's auto_stop_minutes. 0 → persistent
     // (never auto-stops); >0 → ephemeral with that idle timeout.
     //
-    // Platinum now AUTO-STOPS idle boxes natively (idle timeout) and resumes them
-    // CoW on reopen. The old reason for forcing persistent (the CH UFFD demand-paged
-    // device-resume bug, isolated 2026-06-06, which wedged net+vsock on resume) is
-    // FIXED — the CH v52 UFFD patch landed; verified stop→resume ~2.3s with the guest
-    // alive. Relying on Platinum's own timer makes idle-stop robust (no dependency on
-    // the Kortix maintenance reaper, which when down let boxes run 24/7 and flood the
-    // host). A normal session gets KORTIX_SANDBOX_AUTOSTOP_MINUTES.
-    const autoStop = opts.autoStopInterval ?? config.KORTIX_SANDBOX_AUTOSTOP_MINUTES;
+    // Platinum AUTO-STOPS idle boxes natively and resumes them CoW on reopen
+    // (the CH UFFD resume bug that once forced persistent is fixed; verified
+    // stop→resume ~2.3s). Its native timer is the BACKSTOP for when this API
+    // is dead — the activity-aware reaper (sandbox-reaper.ts) is the primary
+    // stop, so the native interval sits well above the reaper's TTL to never
+    // kill a box mid-work (providerAutoStopBackstopMinutes).
+    const autoStop = opts.autoStopInterval ?? providerAutoStopBackstopMinutes();
 
     const _t0 = Date.now();
     // This asks Platinum to long-poll server-side for up to 60s
