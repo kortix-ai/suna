@@ -88,7 +88,7 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
       >
         <CustomizeSectionWrapper
           title="Marketplace"
-          className="max-w-5xl p-4 px-4 py-2  lg:py-2"
+          className="max-w-5xl p-4 px-4 py-2  lg:py-4"
           scrollContainerRef={browseScrollContainerRef}
           action={
             <TabsListCompact>
