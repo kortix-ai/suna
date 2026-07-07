@@ -1,6 +1,6 @@
 // Pure SCIM serializer/filter helpers — no DB, safe to run standalone.
 import { describe, expect, test } from 'bun:test';
-import { buildUser, isUnsupportedFilter, parseFilter } from '../scim/app';
+import { buildInviteUser, buildUser, isUnsupportedFilter, parseFilter } from '../scim/app';
 
 describe('parseFilter', () => {
   test('parses the supported `attr eq "value"` form (with whitespace)', () => {
@@ -55,5 +55,33 @@ describe('buildUser active flag', () => {
     expect(u.id).toBe('u-1');
     expect(u.userName).toBe('a@b.com');
     expect(u.externalId).toBe('ext-1');
+  });
+});
+
+describe('buildInviteUser', () => {
+  const invite = {
+    inviteId: 'inv-1',
+    email: 'new@b.com',
+    createdAt: new Date('2026-01-02T00:00:00Z'),
+    externalId: 'okta-99',
+  };
+
+  test('a pending invite is active:true — the key fix so Okta stops "reactivating"', () => {
+    const u = buildInviteUser('acc-1', invite);
+    expect(u.active).toBe(true);
+    expect(u.id).toBe('inv-1'); // SCIM id = invitation id
+    expect(u.userName).toBe('new@b.com');
+    expect(u.externalId).toBe('okta-99');
+    expect(u.emails[0]).toEqual({ value: 'new@b.com', primary: true });
+    expect(u.meta.location).toBe('/scim/v2/accounts/acc-1/Users/inv-1');
+  });
+
+  test('reports active:false when the invite is revoked (deprovision response)', () => {
+    expect(buildInviteUser('acc-1', invite, false).active).toBe(false);
+  });
+
+  test('tolerates a missing externalId (invites without one)', () => {
+    const u = buildInviteUser('acc-1', { ...invite, externalId: undefined });
+    expect(u.externalId).toBeNull();
   });
 });
