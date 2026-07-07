@@ -91,4 +91,74 @@ describe('createPeekController', () => {
     flush();
     expect(calls).toEqual([true]);
   });
+
+  test('hold keeps the panel open when the pointer leaves onto portaled menu content', () => {
+    const { controller, calls, pending, flush } = createHarness();
+    controller.enter();
+    flush();
+    controller.hold(true); // menu opens
+    controller.leave(); // pointer travels onto the portaled menu
+    expect(pending.size).toBe(0);
+    flush();
+    expect(calls).toEqual([true]);
+  });
+
+  test('hold cancels a close already armed by the leave-to-portal', () => {
+    const { controller, calls, flush } = createHarness();
+    controller.enter();
+    flush();
+    controller.leave(); // arms close
+    controller.hold(true); // menu opens right after
+    flush();
+    expect(calls).toEqual([true]);
+  });
+
+  test('releasing the last hold re-arms close when the pointer is away', () => {
+    const { controller, calls, pending, flush } = createHarness();
+    controller.enter();
+    flush();
+    controller.hold(true);
+    controller.leave();
+    controller.hold(false, () => false); // menu closes, pointer off panel
+    expect([...pending.values()][0]?.ms).toBe(SIDEBAR_PEEK_CLOSE_DELAY_MS);
+    flush();
+    expect(calls).toEqual([true, false]);
+  });
+
+  test('releasing the last hold keeps the panel open when the pointer is back on it', () => {
+    const { controller, calls, pending, flush } = createHarness();
+    controller.enter();
+    flush();
+    controller.hold(true);
+    controller.hold(false, () => true); // menu closes, pointer over panel
+    expect(pending.size).toBe(0);
+    flush();
+    expect(calls).toEqual([true]);
+  });
+
+  test('nested holds only re-arm close after the final release', () => {
+    const { controller, calls, flush } = createHarness();
+    controller.enter();
+    flush();
+    controller.hold(true);
+    controller.hold(true);
+    controller.hold(false, () => false);
+    expect(calls).toEqual([true]); // still one hold outstanding
+    controller.hold(false, () => false);
+    flush();
+    expect(calls).toEqual([true, false]);
+  });
+
+  test('cancel clears outstanding holds', () => {
+    const { controller, calls, flush } = createHarness();
+    controller.enter();
+    flush();
+    controller.hold(true);
+    controller.cancel();
+    expect(calls).toEqual([true, false]);
+    // A stale leave after cancel must not resurrect a close via the old hold.
+    controller.leave();
+    flush();
+    expect(calls).toEqual([true, false]);
+  });
 });
