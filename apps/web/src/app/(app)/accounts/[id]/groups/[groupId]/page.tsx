@@ -901,7 +901,7 @@ function AttachToProjectDialog({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
-  const [selectedRole, setSelectedRole] = useState<ProjectRole>('editor');
+  const [selectedRole, setSelectedRole] = useState<ProjectRole>('member');
   // Optional auto-revoke timestamp. Empty string = permanent (default).
   // Stored as the raw <input type="datetime-local"> value; we convert
   // to ISO on submit so the server can parse it.

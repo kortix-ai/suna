@@ -257,7 +257,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const [emails, setEmails] = useState<string[]>([]);
   const [inputValue, setInputValue] = useState('');
-  const [role, setRole] = useState<ProjectRole>('editor');
+  const [role, setRole] = useState<ProjectRole>('member');
   const [inlineError, setInlineError] = useState<string | null>(null);
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -1363,7 +1363,7 @@ function ProjectGroupGrantsCard({
   );
 
   const [pickerGroupId, setPickerGroupId] = useState<string>('');
-  const [pickerRole, setPickerRole] = useState<ProjectRole>('editor');
+  const [pickerRole, setPickerRole] = useState<ProjectRole>('member');
   const [pendingGroupIds, setPendingGroupIds] = useState<Set<string>>(() => new Set());
   const markPending = (id: string) => setPendingGroupIds((prev) => new Set(prev).add(id));
   const clearPending = (id: string) =>
