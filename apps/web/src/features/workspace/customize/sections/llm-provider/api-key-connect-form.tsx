@@ -4,22 +4,29 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import {
-  SharingPicker,
-  isSharingComplete,
-  type SharingSelection,
-} from '@/features/workspace/shared/sharing-picker';
+import type { SharingSelection } from '@/features/workspace/shared/sharing-picker';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
-import { setPersonalProjectSecret, upsertProjectSecret } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
+import { upsertProjectSecret } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, ChevronLeft, ExternalLink, Info, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { FormEvent, useMemo, useState } from 'react';
+import { type FormEvent, useMemo, useState } from 'react';
 
 import { ChatGptSubscriptionConnect } from './chatgpt-subscription-connect';
 import { envVarPlaceholder, helpHostnameFromUrl, prettyFieldLabel } from './utils';
+
+// LLM provider credentials are ALWAYS project-wide. A per-user "Only me" key is
+// invisible to the LLM gateway's shared-row resolution, so every model turn
+// dies with "No upstream configured" while the picker still shows the provider
+// as connected (2026-07-07 prod incident). The server rejects personal
+// overrides for provider env vars; this form never offers the choice.
+const PROJECT_WIDE_SHARING: SharingSelection = {
+  mode: 'project',
+  memberIds: [],
+  groupIds: [],
+};
 
 export function ApiKeyConnectForm({
   projectId,
@@ -37,29 +44,15 @@ export function ApiKeyConnectForm({
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(provider.envVars.map((v) => [v, ''])),
   );
-  const [sharing, setSharing] = useState<SharingSelection>({
-    mode: 'project',
-    memberIds: [],
-    groupIds: [],
-  });
   const [error, setError] = useState<string | null>(null);
 
   const upsert = useMutation({
     mutationFn: async () => {
       for (const envVar of provider.envVars) {
-        if (sharing.mode === 'private') {
-          await setPersonalProjectSecret(projectId, envVar, {
-            value: values[envVar] ?? '',
-            active: true,
-          });
-        } else {
-          // Project-wide is the only shared option now — secret sharing
-          // (restricting a shared value to specific members) was retired.
-          await upsertProjectSecret(projectId, {
-            name: envVar,
-            value: values[envVar] ?? '',
-          });
-        }
+        await upsertProjectSecret(projectId, {
+          name: envVar,
+          value: values[envVar] ?? '',
+        });
       }
     },
     onSuccess: () => {
@@ -83,10 +76,6 @@ export function ApiKeyConnectForm({
           ? 'API key is required'
           : `All ${provider.envVars.length} fields are required`,
       );
-      return;
-    }
-    if (!isSharingComplete(sharing)) {
-      setError('Pick at least one member, or choose another access option.');
       return;
     }
     upsert.mutate();
@@ -124,7 +113,7 @@ export function ApiKeyConnectForm({
       {provider.id === 'openai' && (
         <ChatGptSubscriptionConnect
           projectId={projectId}
-          sharing={sharing}
+          sharing={PROJECT_WIDE_SHARING}
           onConnected={onConnected}
         />
       )}
@@ -154,7 +143,9 @@ export function ApiKeyConnectForm({
           </div>
         ))}
 
-        <SharingPicker projectId={projectId} value={sharing} onChange={setSharing} showHeading hideMembers />
+        <p className="text-muted-foreground text-xs">
+          Project-wide — every member of this project can use this provider.
+        </p>
 
         {provider.helpUrl && helpHostname && (
           <a
@@ -187,12 +178,7 @@ export function ApiKeyConnectForm({
           </p>
         </div>
 
-        <Button
-          type="submit"
-          size="sm"
-          className="px-4"
-          disabled={upsert.isPending || !allFilled || !isSharingComplete(sharing)}
-        >
+        <Button type="submit" size="sm" className="px-4" disabled={upsert.isPending || !allFilled}>
           {upsert.isPending ? (
             <>
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
