@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import type { SharingSelection } from '@/features/workspace/shared/sharing-picker';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { cn } from '@/lib/utils';
@@ -22,11 +21,6 @@ import { envVarPlaceholder, helpHostnameFromUrl, prettyFieldLabel } from './util
 // dies with "No upstream configured" while the picker still shows the provider
 // as connected (2026-07-07 prod incident). The server rejects personal
 // overrides for provider env vars; this form never offers the choice.
-const PROJECT_WIDE_SHARING: SharingSelection = {
-  mode: 'project',
-  memberIds: [],
-  groupIds: [],
-};
 
 export function ApiKeyConnectForm({
   projectId,
@@ -111,11 +105,7 @@ export function ApiKeyConnectForm({
       </div>
 
       {provider.id === 'openai' && (
-        <ChatGptSubscriptionConnect
-          projectId={projectId}
-          sharing={PROJECT_WIDE_SHARING}
-          onConnected={onConnected}
-        />
+        <ChatGptSubscriptionConnect projectId={projectId} onConnected={onConnected} />
       )}
 
       <form

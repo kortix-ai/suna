@@ -10,7 +10,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
-import { deletePersonalProjectSecret, deleteProjectSecret } from '@kortix/sdk/projects-client';
+import { deleteProjectSecret } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plug, Unplug } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -44,10 +44,7 @@ export function ConnectedTab({
             ]
           : provider.envVars;
       await Promise.all(
-        names.flatMap((envVar) => [
-          deleteProjectSecret(projectId, envVar).catch(() => undefined),
-          deletePersonalProjectSecret(projectId, envVar).catch(() => undefined),
-        ]),
+        names.map((envVar) => deleteProjectSecret(projectId, envVar).catch(() => undefined)),
       );
       return provider;
     },
