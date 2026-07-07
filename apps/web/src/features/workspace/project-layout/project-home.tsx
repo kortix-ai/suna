@@ -154,7 +154,10 @@ export function ProjectHome({
             onSend={handleSend}
             onCommand={handleCommand}
             projectId={projectId}
-            isBusy={busy}
+            // `busy` here means "create in flight" — spinner in the send slot,
+            // input locked. NOT isBusy (that renders agent-running stop-button
+            // semantics, which leave the composer with no button at all here).
+            isSending={busy}
             disabled={busy}
             // The home composer navigates to the new session on send — don't clear
             // it first (that only flashes an empty box before the route swaps, and
