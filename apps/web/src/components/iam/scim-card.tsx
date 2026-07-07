@@ -11,7 +11,7 @@ import { useTranslations } from 'next-intl';
 
 import { FormEvent, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { Check, Copy, Loader2, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { getEnv } from '@/lib/env-config';
 import { buildScimBaseUrl, isAbsoluteHttpUrl } from '@/lib/scim-url';
@@ -100,7 +100,10 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
   return (
     <section className="rounded-xl border border-border/70 bg-card">
       <header className="border-b border-border/60 px-6 py-4">
-        <h2 className="text-base font-semibold text-foreground">{tHardcodedUi.raw('componentsIamScimCard.line97JsxTextSCIMProvisioning')}</h2>
+        <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
+          <RefreshCw className="text-muted-foreground h-4 w-4" />
+          {tHardcodedUi.raw('componentsIamScimCard.line97JsxTextSCIMProvisioning')}
+        </h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {tHardcodedUi.raw('componentsIamScimCard.line99JsxTextConnectOktaAzureADOrAnySCIM2')}</p>
       </header>
@@ -133,6 +136,27 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
               </>
             )}
           </p>
+        </div>
+
+        {/* IdP setup hint — what to fill in on the Okta / Azure side, so admins
+            don't have to guess the identifier + auth from docs. */}
+        <div className="border-border/60 bg-muted/20 space-y-1.5 rounded-lg border px-3 py-2.5 text-[11px] text-muted-foreground">
+          <p className="text-foreground text-xs font-medium">Configure your IdP with</p>
+          <div className="flex gap-2">
+            <span className="w-24 shrink-0">Identifier</span>
+            <span className="text-foreground">
+              <code className="bg-muted/60 rounded px-1 py-0.5 font-mono">userName</code> — the user's
+              email
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <span className="w-24 shrink-0">Auth</span>
+            <span className="text-foreground">Bearer token — Okta HTTP Header mode</span>
+          </div>
+          <div className="flex gap-2">
+            <span className="w-24 shrink-0">Actions</span>
+            <span className="text-foreground">Push users &amp; groups; deactivation deprovisions</span>
+          </div>
         </div>
 
         {/* Tokens header */}
@@ -173,12 +197,19 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                     <span className="truncate text-sm font-medium text-foreground">
                       {t.name}
                     </span>
-                    <Badge
-                      variant={t.status === 'active' ? 'outline' : 'destructive'}
-                      className="h-4 rounded-md px-1 text-[9px] font-normal capitalize"
-                    >
-                      {t.status}
-                    </Badge>
+                    {t.status === 'active' ? (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700 dark:text-emerald-300">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        Active
+                      </span>
+                    ) : (
+                      <Badge
+                        variant="destructive"
+                        className="h-4 rounded-md px-1 text-[9px] font-normal capitalize"
+                      >
+                        {t.status}
+                      </Badge>
+                    )}
                   </div>
                   <div className="mt-0.5 flex items-center gap-3 text-[11px] text-muted-foreground">
                     <code className="font-mono">{t.public_prefix}</code>
