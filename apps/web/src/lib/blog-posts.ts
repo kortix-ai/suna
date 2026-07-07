@@ -491,7 +491,7 @@ const secureAiAgentToolAccess: BlogPostEntry = {
   slug: 'secure-ai-agent-tool-access',
   title: 'How to give AI agents tool access safely',
   description:
-    'A practical model for agent tool access: keep credentials server-side, grant connectors per agent, gate risky calls, and review durable work.',
+    'How to give AI agents production tool access without raw API keys: scoped connectors, approval policies, server-side credentials, and reviewed work.',
   date: '2026-07-07',
   author: 'team',
   cover: '/banner.png',
