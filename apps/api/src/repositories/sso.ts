@@ -18,6 +18,7 @@ export type SsoProvider = {
   primaryDomain: string;
   groupClaimName: string;
   autoCreateMembers: boolean;
+  autoProvisionGroups: boolean;
   createdBy: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -67,6 +68,7 @@ export async function upsertSsoProvider(args: {
   primaryDomain: string;
   groupClaimName?: string;
   autoCreateMembers?: boolean;
+  autoProvisionGroups?: boolean;
   createdBy: string;
 }): Promise<SsoProvider> {
   const existing = await getSsoProvider(args.accountId);
@@ -79,6 +81,7 @@ export async function upsertSsoProvider(args: {
         primaryDomain: args.primaryDomain.toLowerCase(),
         groupClaimName: args.groupClaimName ?? existing.groupClaimName,
         autoCreateMembers: args.autoCreateMembers ?? existing.autoCreateMembers,
+        autoProvisionGroups: args.autoProvisionGroups ?? existing.autoProvisionGroups,
         updatedAt: new Date(),
       })
       .where(eq(accountSsoProviders.ssoProviderId, existing.ssoProviderId))
@@ -94,6 +97,7 @@ export async function upsertSsoProvider(args: {
       primaryDomain: args.primaryDomain.toLowerCase(),
       groupClaimName: args.groupClaimName ?? 'groups',
       autoCreateMembers: args.autoCreateMembers ?? true,
+      autoProvisionGroups: args.autoProvisionGroups ?? false,
       createdBy: args.createdBy,
     })
     .returning();
@@ -178,4 +182,71 @@ export async function deleteSsoGroupMapping(
     )
     .returning({ mappingId: accountSsoGroupMappings.mappingId });
   return rows.length > 0;
+}
+
+/**
+ * Auto-provision: ensure an IAM group + claim mapping exist for a group value
+ * the IdP sent (used only when the provider has autoProvisionGroups on).
+ *
+ * Idempotent and rename-safe: if a mapping for this claim value already exists
+ * we return its group and touch nothing — so an admin renaming the
+ * auto-created group won't spawn a duplicate on the next login, and manual
+ * mappings win. Otherwise find-or-create a group named after the claim value
+ * (source 'sso') and map the claim to it. Returns the resolved groupId, or null
+ * if the value is empty / the group couldn't be created.
+ */
+export async function ensureAutoProvisionedGroup(args: {
+  accountId: string;
+  ssoProviderId: string;
+  claimValue: string;
+}): Promise<string | null> {
+  const claimValue = args.claimValue.trim();
+  if (!claimValue) return null;
+
+  const [mapped] = await db
+    .select({ groupId: accountSsoGroupMappings.groupId })
+    .from(accountSsoGroupMappings)
+    .where(
+      and(
+        eq(accountSsoGroupMappings.accountId, args.accountId),
+        eq(accountSsoGroupMappings.claimValue, claimValue),
+      ),
+    )
+    .limit(1);
+  if (mapped) return mapped.groupId;
+
+  // Find-or-create the group (unique on account+name).
+  const [created] = await db
+    .insert(accountGroups)
+    .values({
+      accountId: args.accountId,
+      name: claimValue,
+      source: 'sso',
+      description: 'Auto-provisioned from an SSO group claim.',
+    })
+    .onConflictDoNothing()
+    .returning({ groupId: accountGroups.groupId });
+  let groupId = created?.groupId;
+  if (!groupId) {
+    const [existing] = await db
+      .select({ groupId: accountGroups.groupId })
+      .from(accountGroups)
+      .where(
+        and(eq(accountGroups.accountId, args.accountId), eq(accountGroups.name, claimValue)),
+      )
+      .limit(1);
+    groupId = existing?.groupId;
+  }
+  if (!groupId) return null;
+
+  await db
+    .insert(accountSsoGroupMappings)
+    .values({
+      accountId: args.accountId,
+      ssoProviderId: args.ssoProviderId,
+      claimValue,
+      groupId,
+    })
+    .onConflictDoNothing();
+  return groupId;
 }

@@ -21,6 +21,18 @@ interface RuntimeArtifactFingerprintInput {
   artifacts: RuntimeArtifact[];
 }
 
+/**
+ * True for a directory entry that holds test sources only. `__tests__` dirs and
+ * `*.test.ts` / `*.spec.ts` files are excluded from the runtime fingerprint: they
+ * are never copied into a sandbox image nor compiled into the CLI/agent binary, so
+ * editing them can't change what a session runs — but hashing them re-minted every
+ * template's identity on every test change, defeating the warm cache. Matches by
+ * entry name so it works both for `__tests__` subdirs and loose colocated tests.
+ */
+function isTestEntry(name: string): boolean {
+  return name === '__tests__' || /\.(test|spec)\.[cm]?tsx?$/.test(name);
+}
+
 export async function buildRuntimeArtifactFingerprint(
   input: RuntimeArtifactFingerprintInput,
 ): Promise<string> {
@@ -50,6 +62,12 @@ async function hashPath(
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
       if (excludeNames && excludeNames.includes(entry.name)) continue;
+      // Test sources never ship into a sandbox image (nothing COPYs `__tests__`
+      // or `*.test.ts`, and `bun build` doesn't compile them into the CLI/agent
+      // binary), so they can't change what a session runs — yet hashing them made
+      // every test edit re-mint every project's runtime identity, forcing a mass
+      // cache miss. Skip them so the fingerprint moves only on real runtime code.
+      if (isTestEntry(entry.name)) continue;
       await hashPath(hash, join(path, entry.name), `${logicalPath}/${entry.name}`, excludeNames);
     }
     return;
