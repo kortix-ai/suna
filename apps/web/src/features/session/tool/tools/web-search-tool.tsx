@@ -19,7 +19,7 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
-import { ChevronRight, Globe, Search } from 'lucide-react';
+import { ChevronRight, Search } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 
@@ -68,7 +68,7 @@ function DomainSourceGroup({ group }: { group: WebSearchDomainGroup }) {
       <DisclosureTrigger className="overflow-hidden rounded-md">
         <div className="group-data-[state=closed]:hover:bg-accent flex w-full cursor-pointer items-center justify-between p-3 transition-colors group-data-[state=open]:bg-transparent group-data-[state=open]:hover:bg-transparent">
           <div className="flex min-w-0 items-center gap-2">
-            <Globe className="text-muted-foreground size-4 shrink-0" />
+            <FaviconAvatar value={group.rootDomain} size="xs" className="shrink-0" />
             <p className="text-foreground truncate text-sm font-medium">{group.rootDomain}</p>
           </div>
           {count > 1 && (
@@ -88,7 +88,6 @@ function DomainSourceGroup({ group }: { group: WebSearchDomainGroup }) {
               rel="noopener noreferrer"
               className="hover:bg-muted flex items-center gap-2 rounded-sm px-2 py-1 transition-colors active:scale-[0.99]"
             >
-              <FaviconAvatar value={item.url} size="xs" className="shrink-0" />
               <p className="text-foreground min-w-0 truncate text-sm font-medium">
                 {item.src.title}
               </p>
