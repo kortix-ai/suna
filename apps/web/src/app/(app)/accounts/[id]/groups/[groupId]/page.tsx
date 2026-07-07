@@ -852,12 +852,9 @@ function GroupProjectGrantsCard({
         description={
           detachTarget ? (
             <span>
-              <strong>{groupName}</strong>{' '}
-              {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextWilldd678991')}{' '}
-              <strong>{detachTarget.project_name}</strong>
-              {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextEvery76958122')}
-              <strong>{detachTarget.role}</strong>{' '}
-              {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextAccessf385fd87')}
+              <strong>{groupName}</strong> will no longer be attached to{' '}
+              <strong>{detachTarget.project_name}</strong>. Every group member will lose their
+              inherited <strong className="capitalize">{detachTarget.role}</strong> access.
             </span>
           ) : null
         }
@@ -904,7 +901,7 @@ function AttachToProjectDialog({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
-  const [selectedRole, setSelectedRole] = useState<ProjectRole>('editor');
+  const [selectedRole, setSelectedRole] = useState<ProjectRole>('member');
   // Optional auto-revoke timestamp. Empty string = permanent (default).
   // Stored as the raw <input type="datetime-local"> value; we convert
   // to ISO on submit so the server can parse it.

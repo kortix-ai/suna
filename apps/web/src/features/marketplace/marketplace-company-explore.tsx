@@ -16,18 +16,24 @@ import {
   MarketplaceCompanyFilter,
   displayCompanyLabel,
 } from '@/features/marketplace/marketplace-company-filter';
-import { MarketplaceExploreCard } from '@/features/marketplace/marketplace-explore-card';
 import { MarketplaceAvatar } from '@/features/marketplace/marketplace-avatar';
-import type { MarketplaceItem, MarketplaceSummary } from '@/lib/marketplace-client';
-import { filterPublicMarketplaceItems } from '@/lib/marketplace-public';
+import { MarketplacePagedGrid } from '@/features/marketplace/marketplace-paged-grid';
+import type { ItemsPage, MarketplaceSummary } from '@/lib/marketplace-client';
+
+const COMPANY_GRID_COLUMNS = 2;
 
 export function MarketplaceCompanyExplore({
   marketplaceId,
-  items: catalogItems,
+  initialItemsPage,
   marketplaces,
 }: {
   marketplaceId: string;
-  items: MarketplaceItem[];
+  /** SSR-bounded first page for this source (`MARKETPLACE_COMPANY_PAGE_LIMIT`
+   *  items, server-filtered by `source`) — seeds the client's infinite query
+   *  so the first paint's cards render on the server and hydrate without a
+   *  refetch flash (A4). Only valid for the default (no search) view; a
+   *  search re-scopes the query and fetches fresh. */
+  initialItemsPage: ItemsPage;
   marketplaces: MarketplaceSummary[];
 }) {
   const [query, setQuery] = useState('');
@@ -38,22 +44,21 @@ export function MarketplaceCompanyExplore({
     return () => clearTimeout(t);
   }, [query]);
 
+  const searching = debounced.length > 0;
+
   const company = useMemo(
     () => marketplaces.find((m) => m.id === marketplaceId),
     [marketplaces, marketplaceId],
   );
 
-  const items = useMemo(
-    () =>
-      filterPublicMarketplaceItems(catalogItems, {
-        query: debounced,
-        type: 'all',
-        source: marketplaceId,
-      }),
-    [catalogItems, debounced, marketplaceId],
+  const companyLabel = displayCompanyLabel(marketplaceId, company?.label);
+
+  const initialData = useMemo(
+    () => (searching ? undefined : () => ({ pages: [initialItemsPage], pageParams: [0] })),
+    [searching, initialItemsPage],
   );
 
-  const companyLabel = displayCompanyLabel(marketplaceId, company?.label);
+  const catalogEmpty = !searching && initialItemsPage.total === 0;
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-16 pt-28 pb-24 lg:px-0 lg:pt-40">
@@ -111,7 +116,7 @@ export function MarketplaceCompanyExplore({
         className="mb-8"
       />
 
-      {catalogItems.length === 0 ? (
+      {catalogEmpty ? (
         <EmptyState
           icon={PackageSearch}
           title="Nothing here yet"
@@ -122,31 +127,32 @@ export function MarketplaceCompanyExplore({
             </Button>
           }
         />
-      ) : debounced && items.length === 0 ? (
-        <EmptyState
-          icon={PackageSearch}
-          title="No matches"
-          description={`No items match "${debounced}" in this source.`}
-          action={
+      ) : (
+        <MarketplacePagedGrid
+          query={debounced}
+          source={marketplaceId}
+          columns={COMPANY_GRID_COLUMNS}
+          gridClassName="sm:grid-cols-2"
+          showSource={false}
+          initialData={initialData}
+          emptyTitle="No matches"
+          emptyDescription={`No items match "${debounced}" in this source.`}
+          emptyAction={
             <Button variant="outline" size="sm" onClick={() => setQuery('')}>
               Clear search
             </Button>
           }
+          header={
+            searching
+              ? ({ total }) => (
+                  <div className="text-muted-foreground text-sm">
+                    <span className="tabular-nums">{total}</span>{' '}
+                    {total === 1 ? 'result' : 'results'}
+                  </div>
+                )
+              : undefined
+          }
         />
-      ) : (
-        <div className="space-y-3">
-          {debounced ? (
-            <div className="text-muted-foreground text-sm">
-              <span className="tabular-nums">{items.length}</span>{' '}
-              {items.length === 1 ? 'result' : 'results'}
-            </div>
-          ) : null}
-          <div className="grid gap-3 sm:grid-cols-2">
-            {items.map((item) => (
-              <MarketplaceExploreCard key={item.id} item={item} showSource={false} />
-            ))}
-          </div>
-        </div>
       )}
     </div>
   );

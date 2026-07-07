@@ -172,7 +172,7 @@ async function listGithubTree(
 }
 
 /** Map with bounded concurrency (no external dep) — caps simultaneous fetches. */
-async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+export async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
   let next = 0;
   const worker = async (): Promise<void> => {

@@ -20,7 +20,7 @@ export interface Wallpaper {
   thumbs?: { dark: string; light: string };
 }
 
-export const DEFAULT_WALLPAPER_ID = 'brandmark';
+export const DEFAULT_WALLPAPER_ID = 'dither';
 
 function shaderThumbs(id: Wallpaper['id']): Wallpaper['thumbs'] {
   return {
@@ -30,6 +30,12 @@ function shaderThumbs(id: Wallpaper['id']): Wallpaper['thumbs'] {
 }
 
 export const WALLPAPERS: Wallpaper[] = [
+  {
+    id: 'dither',
+    name: 'Dither',
+    type: 'shader',
+    thumbs: shaderThumbs('dither'),
+  },
   {
     id: 'brandmark',
     name: 'Brandmark',
@@ -48,12 +54,6 @@ export const WALLPAPERS: Wallpaper[] = [
     name: 'Silk',
     type: 'shader',
     thumbs: shaderThumbs('silk'),
-  },
-  {
-    id: 'dither',
-    name: 'Dither',
-    type: 'shader',
-    thumbs: shaderThumbs('dither'),
   },
   {
     id: 'grain',

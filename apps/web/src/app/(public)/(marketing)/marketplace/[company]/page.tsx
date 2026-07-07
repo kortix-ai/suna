@@ -1,11 +1,7 @@
 import type { Metadata } from 'next';
 
 import { MarketplaceCompanyExplore } from '@/features/marketplace/marketplace-company-explore';
-import {
-  filterPublicMarketplaceItems,
-  listPublicMarketplaceItems,
-  listPublicMarketplaces,
-} from '@/lib/marketplace-public';
+import { loadMarketplaceCompanyData, listPublicMarketplaces } from '@/lib/marketplace-public';
 import { companyIdFromSlug, companySlugFromId } from '@/lib/marketplace-slug';
 
 export const revalidate = 3600;
@@ -51,24 +47,12 @@ export default async function MarketplaceCompanyPage({ params }: { params: Promi
   const { company } = await params;
   const marketplaceId = companyIdFromSlug(company);
 
-  let itemsPage;
-  let marketplacesPage;
-  try {
-    [itemsPage, marketplacesPage] = await Promise.all([
-      listPublicMarketplaceItems(),
-      listPublicMarketplaces(),
-    ]);
-  } catch {
-    itemsPage = { items: [], loading: false, pending: 0, sources: [] };
-    marketplacesPage = { marketplaces: [], loading: false, pending: 0, sources: [] };
-  }
-
-  const items = filterPublicMarketplaceItems(itemsPage.items, { source: marketplaceId });
+  const { itemsPage, marketplacesPage } = await loadMarketplaceCompanyData(marketplaceId);
 
   return (
     <MarketplaceCompanyExplore
       marketplaceId={marketplaceId}
-      items={items}
+      initialItemsPage={itemsPage}
       marketplaces={marketplacesPage.marketplaces}
     />
   );

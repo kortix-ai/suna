@@ -22,6 +22,12 @@ flow("PROJ-3", { domain: "projects", requires: ["freestyle"], routes: ["POST /v1
     if (r.statusCode < 400) r.body().exists("$.project_id").exists("$.repo_url");
     ctx.track("project", r.json<any>().project_id);
   });
+  await ctx.step("name over 120 chars → 400, nothing provisioned upstream", async () => {
+    const r = await ctx.client
+      .as(ctx.P.OWNER)
+      .post("/v1/projects/provision", { name: `pasted prompt as name ${"word ".repeat(30)}end` });
+    r.status(400);
+  });
 });
 
 flow("PROJ-5", { domain: "projects", routes: ["GET /v1/projects/:projectId"] }, async (ctx) => {

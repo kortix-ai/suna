@@ -19,7 +19,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { enforceProjectQuota, grantProjectRole, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, registerGitHubLinkedProject, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
-import { UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeGitHubRepo, serializeProject } from '../lib/serializers';
+import { PROJECT_NAME_MAX_LENGTH, UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeGitHubRepo, serializeProject } from '../lib/serializers';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
 
 projectsApp.use('/*', supabaseAuth);
@@ -366,6 +366,16 @@ projectsApp.openapi(
   if (!/^[a-zA-Z0-9._ -]+$/.test(name)) {
     return c.json(
       { error: 'name must contain only letters, numbers, spaces, hyphens, underscores or dots' },
+      400,
+    );
+  }
+  // The column is varchar(255); without this check an over-long name (users
+  // paste whole task prompts here) passes the charset regex, provisions the
+  // upstream repo, then dies on the DB insert — a 500 plus an orphaned managed
+  // repo per retry. Reject BEFORE anything is created upstream.
+  if (name.length > PROJECT_NAME_MAX_LENGTH) {
+    return c.json(
+      { error: `name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer` },
       400,
     );
   }

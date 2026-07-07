@@ -3,24 +3,94 @@ title: Connecting your tools
 description: How to let your agent act in the external tools and services you already use.
 ---
 
+import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
 
-**Connections** let an agent act in external tools and services on your behalf. Setup depends on the tool, and you stay in control of what's connected.
+**Connections** (also called connectors) let an agent act in external tools and services on your behalf — Slack, Gmail, a database, any HTTP/GraphQL API. Setup depends on the tool, and you stay in control of what's connected. For the full model, see [Connections](/docs/concepts/connections).
 
-## What a connection gives you
+## How a connection works
 
-A connection links a [project](/docs/concepts/projects) to an external tool so the agent can take actions there. Without one, the agent is limited to its own session environment; with one, its reach extends to the tools you allow.
+- **Declared as `connectors` in the manifest.** The `provider` is one of `pipedream`, `mcp`, `openapi`, `graphql`, `http`, `channel` (chat platforms like Slack), or `computer` (a connected machine). The definition lives in git; the credential lives on the platform, never in your repo.
+- **Connecting is per project**, like [secrets](/docs/guides/managing-secrets). Connecting a tool for one project doesn't make it available to another.
+- **A connector isn't automatically usable by every agent.** Each agent's `connectors` field in the manifest (`all`, `none`, or a list of slugs) grants — or withholds — access to what's connected. Connecting a tool to the project is a separate step from letting a given agent call it.
+- **Each tool call can be policed.** A connector's `policies` mark a tool `always_run`, `require_approval`, or `block`.
 
-## Connections are per project
+## Connect a tool
 
-Connections belong to a single project, like [secrets](/docs/guides/managing-secrets). Connecting a tool for one project doesn't make it available to another.
+<Steps>
 
-## You stay in control
+<Step>
+### Open the project's Connectors page
 
-- Nothing is connected unless you connect it.
-- You choose which tools a project can reach.
-- You can disconnect a tool when it's no longer needed.
+From the dashboard, open the project's Connectors page. For apps Pipedream supports (Gmail, Slack, Stripe, and others — searchable from the same page), use **one-click connect** — it walks you through OAuth and finalizes the connection server-side; no manifest edit required.
+
+For anything else, add a connector by hand: an **OpenAPI** or **GraphQL** API by spec URL, a remote **MCP** server, or a raw **HTTP** API with declared routes.
+</Step>
+
+<Step>
+### Declare it in the manifest (non-Pipedream connectors)
+
+A hand-added connector is a `[[connectors]]` entry:
+
+```toml
+[[connectors]]
+slug     = "stripe"
+name     = "Stripe API"
+provider = "openapi"
+spec     = "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json"
+
+  [connectors.auth]
+  type   = "bearer"
+  secret = "STRIPE_API_KEY"   # project-secret NAME; value set on the Environment variables page
+
+  [[connectors.policies]]
+  match  = "*.delete*"
+  action = "block"
+```
+
+Pipedream connectors round-trip the same way once connected, but you rarely hand-write them — the dashboard's one-click flow creates the entry for you.
+
+See the [manifest reference](/docs/reference/manifest#connectors--connectors) for every field, and [Connections](/docs/concepts/connections) for how `channel` and `computer` connectors auto-materialize (connecting Slack or a machine creates their connector for you — no manifest entry needed).
+</Step>
+
+<Step>
+### Set the credential
+
+Where a connector needs a credential (an `auth` block with `type = "bearer" | "basic" | "custom"`), the value is stored on the platform, not in the manifest — set it on the project's Environment variables page, same as any other [secret](/docs/guides/managing-secrets). Pipedream connectors skip this step entirely: they authenticate via the connected account from the one-click flow.
+</Step>
+
+<Step>
+### Grant it to an agent
+
+Connecting a tool to the project doesn't hand it to every agent. In the manifest, each agent's `connectors` field controls what that agent may call:
+
+```toml
+[[agents]]
+name       = "kortix"
+connectors = "all"              # every connector on the project
+
+[[agents]]
+name       = "release-bot"
+connectors = ["github"]         # only this one, by slug
+```
+
+(`kortix.yaml` v2 uses the same field under `agents.<name>.connectors` instead of `[[agents]]` — see the [manifest reference](/docs/reference/manifest#agents-v2).) A *declared* agent with `connectors = "none"` (the default when the field is omitted) can't call any connector, even ones the project has connected. In a v1 project with no `[[agents]]` section at all, this governance layer isn't opted into yet, and every session is capped only by the launching user's role instead.
+</Step>
+
+</Steps>
+
+## Per-call policies
+
+A connector's `policies` gate individual tool calls by name (glob match), independent of which agent is calling:
+
+```toml
+[[connectors.policies]]
+match  = "*.delete*"
+action = "block"            # always_run | require_approval | block
+```
+
+Sensitive connectors (email, files, secrets-bearing) default every action to `require_approval` unless a policy explicitly opens it up.
 
 <Callout title="Under the hood">
-Some integrations are credential-based and overlap with [secrets](/docs/guides/managing-secrets) — the agent uses a stored API key or token to call the service. Where a connection needs a credential, declare it by name in the manifest and set its value on the project's Environment variables page so it never lands in your repo. Credentials are shared at the project level — no per-user BYO-credential mode today.
+Every session gets a `kortix-executor` MCP server and a scoped Executor token — the agent discovers tools through it (`connectors` → `discover` → `describe` → `call`), and each `call` is brokered by the Kortix API, which resolves the credential server-side, enforces the grant and policies, runs it, and audits it. The agent never holds third-party credentials. Credentials are shared at the project level — no per-user BYO-credential mode today.
 </Callout>

@@ -131,6 +131,34 @@ export class PlatinumProvider implements SandboxProvider {
     const _vmMs = Date.now() - _t0;
 
     const externalId = sandbox.id;
+
+    // `?wait_for_state=running` returns 200 with the sandbox body even when the
+    // box reached a TERMINAL-FAIL state (failed-start / lost / deleted) — the
+    // wait helper on the Platinum side stops early on those but does NOT error
+    // (apps/api/src/api/sandboxes.ts maybeWait). So a create can hand back an id
+    // for a DEAD box. Before this guard we read `sandbox.id` and marched on, so
+    // an intermittent guest-boot stall surfaced as a "running" session that was
+    // actually failed-start (proven 2026-07-07, session c6fef0b5: Platinum
+    // state=failed-start, comp status=active). Throw on a non-running terminal
+    // state so retrySandboxProvisionCreate re-attempts (fresh box, possibly
+    // another host) instead of silently returning an unusable sandbox. The
+    // host-agent also relaunches the guest in-place once, so this retry is the
+    // outer backstop for the rare case both in-host attempts stall.
+    const createdState = String(sandbox.state ?? '').toLowerCase();
+    // Only a TERMINAL-fail state is a definite dead box (mirrors the Platinum
+    // maybeWait TERMINAL_FAIL_STATES set). 'provisioning' here means the wait
+    // timed out on a still-booting box — rare, and the FE readiness poll can
+    // still pick it up — so don't tear that down.
+    const TERMINAL_FAIL = new Set(['failed-start', 'lost', 'deleted']);
+    if (TERMINAL_FAIL.has(createdState)) {
+      // Best-effort remove the dead box so it doesn't linger/eat capacity; the
+      // retry provisions a fresh one.
+      await this.remove(externalId).catch(() => {});
+      throw new Error(
+        `[platinum] sandbox ${externalId} did not reach running (state=${createdState}) after ${_vmMs}ms`,
+      );
+    }
+
     const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/${AGENT_PORT}`;
 
     // Eagerly expose the agent port so the *.sbx edge route is LIVE the moment

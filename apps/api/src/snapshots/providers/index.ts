@@ -88,9 +88,10 @@ export interface SandboxProviderAdapter {
 }
 
 const ADAPTERS = new Map<string, SandboxProviderAdapter>();
-// The managed cloud backend is registered under BOTH its canonical name
-// ('managed') and its legacy alias ('daytona' = daytonaProvider.id), so template
-// rows / sessions holding either value resolve to the same adapter.
+// The managed cloud backend's identity is 'daytona' (daytonaProvider.id). It's
+// ALSO registered under 'managed' purely as a defensive read alias, so any row
+// written 'managed' during the daytona→managed rename window still resolves to
+// the same adapter. New writes use 'daytona'.
 ADAPTERS.set('managed', daytonaProvider);
 ADAPTERS.set(daytonaProvider.id, daytonaProvider);
 ADAPTERS.set(platinumProvider.id, platinumProvider);

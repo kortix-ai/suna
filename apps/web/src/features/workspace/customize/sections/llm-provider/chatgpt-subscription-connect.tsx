@@ -3,11 +3,6 @@
 import { Button } from '@/components/ui/button';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import {
-  isSharingComplete,
-  selectionToIntent,
-  type SharingSelection,
-} from '@/features/workspace/shared/sharing-picker';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import {
   pollProjectProviderOAuth,
@@ -21,13 +16,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChatGptChallenge, ChatGptPhase } from './types';
 import { sleep } from './utils';
 
+// ChatGPT subscription logins connect project-wide, like every other LLM
+// provider credential (kortix policy: no per-user access choice at the LLM
+// level). The server's default sharing intent is project-wide.
 export function ChatGptSubscriptionConnect({
   projectId,
-  sharing,
   onConnected,
 }: {
   projectId: string;
-  sharing: SharingSelection;
   onConnected: () => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -51,18 +47,12 @@ export function ChatGptSubscriptionConnect({
   }, []);
 
   const handleConnect = useCallback(async () => {
-    if (!isSharingComplete(sharing)) {
-      setError('Pick at least one member, or choose another access option.');
-      return;
-    }
     cancelledRef.current = false;
     setError(null);
     setChallenge(null);
     setPhase('waiting');
     try {
-      const start = await startProjectProviderOAuth(projectId, 'openai', {
-        sharing: selectionToIntent(sharing),
-      });
+      const start = await startProjectProviderOAuth(projectId, 'openai', {});
       if (cancelledRef.current) return;
       setChallenge({ url: start.verification_url, code: start.user_code });
       if (start.verification_url) {
@@ -85,7 +75,7 @@ export function ChatGptSubscriptionConnect({
           setPhase('done');
           successToast('ChatGPT subscription connected to this project');
           queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
-          refreshProjectProviderState(queryClient, projectId);
+          refreshProjectProviderState(queryClient, projectId, { expectProviderId: 'codex' });
           onConnected();
           return;
         }
@@ -113,7 +103,7 @@ export function ChatGptSubscriptionConnect({
       setPhase('idle');
       setError(err instanceof Error ? err.message : 'Failed to connect ChatGPT subscription');
     }
-  }, [projectId, sharing, queryClient, onConnected]);
+  }, [projectId, queryClient, onConnected]);
 
   const waiting = phase === 'waiting';
 

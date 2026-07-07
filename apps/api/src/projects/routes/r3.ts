@@ -1011,6 +1011,19 @@ projectsApp.openapi(
   if (name === CODEX_AUTH_JSON_SECRET_NAME) {
     return c.json({ error: `${CODEX_AUTH_JSON_SECRET_NAME} is managed by ChatGPT subscription onboarding` }, 400);
   }
+  // LLM provider credentials are always project-wide. The gateway resolves
+  // BYOK keys from the SHARED row only (getProjectSecretValue), so a personal
+  // override would show the provider as connected in the UI while every model
+  // turn 400s with "No upstream configured" (2026-07-07 prod incident).
+  if (isGatewayManagedEnv(name)) {
+    return c.json(
+      {
+        error: `${name} is an LLM provider credential — provider keys are always project-wide, update the shared value instead`,
+        code: 'llm_credentials_project_wide',
+      },
+      400,
+    );
+  }
 
   const value = typeof body.value === 'string' ? body.value : null;
   const active = typeof body.active === 'boolean' ? body.active : undefined;
