@@ -168,7 +168,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // assertProjectCapability (not bare assertAuthorized) so the acting token is
   // threaded and the agent-grant fold fires: an agent-session token must also
@@ -255,7 +255,7 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const groupId = c.req.param('groupId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // assertProjectCapability (not bare assertAuthorized) so the acting token is
   // threaded and the agent-grant fold fires: an agent-session token must also
@@ -320,7 +320,7 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const groupId = c.req.param('groupId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // assertProjectCapability (not bare assertAuthorized) so the acting token is
   // threaded and the agent-grant fold fires: an agent-session token must also
@@ -768,7 +768,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
@@ -1365,7 +1365,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Manager-only: this is the grant PICKER — it returns the FULL agent/skill
     // catalogue + granted-member emails, so it must NOT be readable by a scoped
@@ -1479,7 +1479,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
@@ -1571,7 +1571,7 @@ projectsApp.openapi(
     // grant_id is a uuid column — a malformed id is a clean 404 (same as missing),
     // not a 22P02 500.
     if (!isUuid(grantId)) return c.json({ error: 'grant not found' }, 404);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
