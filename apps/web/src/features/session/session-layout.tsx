@@ -340,14 +340,19 @@ export const SessionLayout = memo(function SessionLayout({
     </div>
   );
 
-  // While booting, the panel is JUST the dead-center resume loader — no header
-  // bar (the loader shows only the calm "Starting your computer…" status line,
-  // so a panel title would be redundant), filling the whole card so it's
-  // perfectly centered. The runtime-coupled views (Actions/Files/Terminal/
-  // Browser) need a live sandbox, so they only render once booted.
+  // While booting, the panel is JUST the dead-center "Kortix Computer is
+  // starting" loader — no header bar (the loader has its own heading, so a panel
+  // title would be redundant), filling the whole card so it's perfectly
+  // centered. The runtime-coupled views (Actions/Files/Terminal/Browser) need a
+  // live sandbox, so they only render once booted.
   const effectivePanelHeader = booting ? null : panelHeader;
   const effectivePanelBody = booting ? (
-    <SessionStartingLoader delayMs={0} projectId={projectId} sessionId={projectSessionId} />
+    <SessionStartingLoader
+      stage={bootStage ?? 'provisioning'}
+      delayMs={0}
+      projectId={projectId}
+      sessionId={projectSessionId}
+    />
   ) : (
     panelBody
   );
