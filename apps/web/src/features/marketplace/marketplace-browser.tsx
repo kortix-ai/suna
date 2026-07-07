@@ -3,7 +3,8 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { PackageSearch } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { RefObject } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,7 @@ import {
   buildMarketplaceGridRows,
   marketplaceGridRowKey,
   resolveEffectiveMarketplaceType,
+  resolveMarketplaceQueryParams,
   shouldFetchNextMarketplacePage,
 } from './marketplace-grid';
 import { MarketplaceItemAvatar } from './marketplace-item-avatar';
@@ -42,6 +44,7 @@ export function MarketplaceBrowser({
   sourceFilter,
   publicOnly = false,
   readOnly = false,
+  scrollParentRef,
 }: {
   onAdd?: (item: MarketplaceItem) => void;
   installedNames?: Set<string>;
@@ -54,6 +57,13 @@ export function MarketplaceBrowser({
   publicOnly?: boolean;
   /** Hide project/source mutation affordances. */
   readOnly?: boolean;
+  /**
+   * The ancestor scroll container to virtualize against (e.g. forwarded from
+   * `CustomizeSectionWrapper`'s scrollable div). When omitted, the browser
+   * renders its own bounded, scrollable wrapper instead — used by routes
+   * (like `/debug/marketplace`) that don't sit inside that layout.
+   */
+  scrollParentRef?: RefObject<HTMLElement | null>;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [query, setQuery] = useState('');
@@ -89,12 +99,9 @@ export function MarketplaceBrowser({
   );
   const effectiveType = resolveEffectiveMarketplaceType(type, typeOptions);
 
-  const itemsQuery = useInfiniteMarketplaceItems({
-    query: debounced,
-    type: effectiveType,
-    source,
-    publicOnly,
-  });
+  const itemsQuery = useInfiniteMarketplaceItems(
+    resolveMarketplaceQueryParams({ debounced, effectiveType, source, publicOnly }),
+  );
   const items = useMemo(
     () => itemsQuery.data?.pages.flatMap((p) => p.items) ?? [],
     [itemsQuery.data],
@@ -107,10 +114,20 @@ export function MarketplaceBrowser({
 
   const rows = useMemo(() => buildMarketplaceGridRows({ items, grouped }), [items, grouped]);
 
-  const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null);
-  const setListRef = useCallback((node: HTMLDivElement | null) => {
-    setScrollElement(node?.closest<HTMLElement>('.overflow-y-auto') ?? null);
-  }, []);
+  // Resolve the scroll element the virtualizer measures against. Prefer the
+  // caller-supplied ancestor (`scrollParentRef`, forwarded from
+  // `CustomizeSectionWrapper`'s scrollable div in production) over a
+  // class-name lookup, which silently breaks if that class ever changes or
+  // is absent (e.g. `/debug/marketplace`, which has no such ancestor). When
+  // no external ref is supplied, the browser owns and bounds its own scroll
+  // container below.
+  const [externalScrollElement, setExternalScrollElement] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setExternalScrollElement(scrollParentRef?.current ?? null);
+  }, [scrollParentRef]);
+
+  const [ownScrollElement, setOwnScrollElement] = useState<HTMLDivElement | null>(null);
+  const scrollElement = externalScrollElement ?? ownScrollElement;
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
@@ -230,48 +247,52 @@ export function MarketplaceBrowser({
         )
       ) : (
         <div
-          ref={setListRef}
-          className="relative w-full"
-          style={{ height: rowVirtualizer.getTotalSize() }}
+          ref={setOwnScrollElement}
+          className={cn(
+            'relative w-full',
+            !externalScrollElement && 'max-h-[70vh] overflow-y-auto',
+          )}
         >
-          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-            const row = rows[virtualRow.index];
-            if (!row) return null;
-            return (
-              <div
-                key={virtualRow.key}
-                data-index={virtualRow.index}
-                ref={rowVirtualizer.measureElement}
-                className="absolute top-0 left-0 w-full"
-                style={{ transform: `translateY(${virtualRow.start}px)` }}
-              >
-                {row.kind === 'header' ? (
-                  <div className="flex items-center justify-between gap-2 py-1 pt-4 first:pt-0">
-                    <h3 className="text-foreground text-sm font-medium">{row.label}</h3>
-                    <span className="text-muted-foreground text-[12px] tabular-nums">
-                      {row.count}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-2 pb-2 md:grid-cols-3">
-                    {row.items.map((item) => (
-                      <div
-                        key={item.id}
-                        className="border-border overflow-hidden rounded-md border"
-                      >
-                        <MarketplaceItemRow
-                          item={item}
-                          installed={installedNames?.has(item.name)}
-                          onAdd={readOnly ? undefined : onAdd}
-                          onOpen={() => openItem(item.id)}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const row = rows[virtualRow.index];
+              if (!row) return null;
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  className="absolute top-0 left-0 w-full"
+                  style={{ transform: `translateY(${virtualRow.start}px)` }}
+                >
+                  {row.kind === 'header' ? (
+                    <div className="flex items-center justify-between gap-2 py-1 pt-4 first:pt-0">
+                      <h3 className="text-foreground text-sm font-medium">{row.label}</h3>
+                      <span className="text-muted-foreground text-[12px] tabular-nums">
+                        {row.count}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-2 pb-2 md:grid-cols-3">
+                      {row.items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="border-border overflow-hidden rounded-md border"
+                        >
+                          <MarketplaceItemRow
+                            item={item}
+                            installed={installedNames?.has(item.name)}
+                            onAdd={readOnly ? undefined : onAdd}
+                            onOpen={() => openItem(item.id)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
