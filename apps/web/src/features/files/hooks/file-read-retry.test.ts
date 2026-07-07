@@ -39,6 +39,31 @@ describe('file read retry policy', () => {
     );
   });
 
+  test('does not retry a directory read (400 "Path is a directory") — the .opencode loop', () => {
+    // Reading a directory like `.opencode` as a file returns 400; it must fail
+    // fast, not retry on a loop.
+    expect(shouldRetryFileRead('.opencode', 0, new Error('Path is a directory'))).toBe(false);
+    expect(shouldRetryFileRead('.opencode', 0, new Error('HTTP 400: Bad Request'))).toBe(false);
+    const eisdir = new Error('EISDIR: illegal operation on a directory');
+    expect(shouldRetryFileRead('.opencode', 0, eisdir)).toBe(false);
+  });
+
+  test('does not retry when the error carries a 4xx HTTP status', () => {
+    const err = Object.assign(new Error('nope'), { status: 400 });
+    expect(shouldRetryFileRead('/workspace/src/x.ts', 0, err)).toBe(false);
+    const forbidden = Object.assign(new Error('nope'), { status: 403 });
+    expect(shouldRetryFileRead('/workspace/src/x.ts', 0, forbidden)).toBe(false);
+  });
+
+  test('still retries a transient 5xx / 408 / 429', () => {
+    const server = Object.assign(new Error('boom'), { status: 500 });
+    expect(shouldRetryFileRead('/workspace/src/x.ts', 0, server)).toBe(true);
+    const timeout = Object.assign(new Error('timeout'), { status: 408 });
+    expect(shouldRetryFileRead('/workspace/src/x.ts', 0, timeout)).toBe(true);
+    const rateLimited = Object.assign(new Error('slow down'), { status: 429 });
+    expect(shouldRetryFileRead('/workspace/src/x.ts', 0, rateLimited)).toBe(true);
+  });
+
   test('uses a fixed uploaded-file retry delay without changing normal backoff', () => {
     expect(fileReadRetryDelayMs(4, '/workspace/uploads/report.pdf')).toBe(
       UPLOADED_FILE_READ_RETRY_DELAY_MS,

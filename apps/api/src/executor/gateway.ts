@@ -13,9 +13,11 @@ import {
 } from './execute';
 /**
  * Executor gateway — the chokepoint every tool call goes through. Resolves the
- * connector + action, checks the acting user can use it (project-secret
- * sharing), resolves the credential SERVER-SIDE, runs the call, audits it.
- * The sandbox never holds an app secret.
+ * connector + action, resolves the credential SERVER-SIDE, runs the call,
+ * audits it. The sandbox never holds an app secret. Connectors are
+ * project-wide visible (no per-connector member/agent scoping) — the only
+ * access gate is the agent-side `[[agents]].connectors` grant, enforced at the
+ * router before this is ever reached.
  *
  * Policy enforcement is layered (docs/specs/executor.md §8):
  *   1. project-level [[policies]] (fully-qualified patterns) — admin guardrails
@@ -28,13 +30,7 @@ import {
  * with the original allow-all engine; production sets it true.
  */
 import { type DefaultMode, type Policy, resolveEffectiveAction } from './policy';
-import {
-  type SecretGrant,
-  type ShareScope,
-  type ShareSubject,
-  connectorDeniedForAgent,
-  isSecretUsableBy,
-} from './share';
+import type { ShareSubject } from './share';
 import type { ActionBinding, Risk } from './types';
 
 export interface GatewayConnector {
@@ -47,21 +43,14 @@ export interface GatewayConnector {
   auth: ExecutorAuth;
   /** Whether this connector needs a credential at all (false = public/no-auth). */
   hasAuth: boolean;
-  /** Who can use it. */
-  shareScope: ShareScope;
-  grants: SecretGrant[];
-  /** shared = one project credential; per_user = each member's own. */
-  credentialMode: 'shared' | 'per_user';
+  /** Always `shared` (one project credential) — `per_user` (each member's
+   *  own) was removed 2026-07-05. Kept as a field for shape stability. */
+  credentialMode: 'shared';
   enabled: boolean;
   /** Marked sensitive (email/files/secrets-bearing): reads gate too — every
    *  action defaults to require_approval unless an explicit policy opens it.
    *  Optional (absent = not sensitive) so fixtures/callers needn't set it. */
   sensitive?: boolean;
-  /** Which agents may call this connector (the connector-side agent gate,
-   *  mirror of secret agent_scope). Absent/empty = ALL agents; a list of agent
-   *  NAMES restricts it to those agents' sessions. Enforced in connectorUsable
-   *  against the session's running agent. Optional so fixtures needn't set it. */
-  agentScope?: string[];
 }
 
 export interface GatewayAction {
@@ -133,19 +122,6 @@ export interface GatewayDeps {
     automaticAudioOutput: unknown;
     botName: string;
   } | null>;
-  /**
-   * Inheritance pyramid (assign human → agent): the connector slugs the subject
-   * inherits because they're assigned to an agent that declares them. Consulted
-   * ONLY when a connector fails the direct share check — a cold, rare path
-   * ('project'-scoped connectors short-circuit as usable). Optional: absent = no
-   * inheritance. Implementations should memoize per (project, subject).
-   */
-  inheritedConnectorSlugs?(projectId: string, subject: ShareSubject): Promise<ReadonlySet<string>>;
-  /** The running agent's NAME for a session (projectSessions.agent_name) — the
-   *  SAME source the secret gate uses, so the connector agent-scope check agrees
-   *  on identity. Consulted ONLY for a connector that is actually agent-scoped
-   *  (no lookup on the common all-agents path). Absent = never scope-gate. */
-  sessionAgentName?(sessionId: string): Promise<string | null>;
   /** Connector-scoped policies (relative patterns over the connector's tool paths). */
   loadPolicies(connectorId: string): Promise<Policy[]>;
   /** Project-scoped policies (fully-qualified patterns over <slug>.<path>). */
@@ -171,6 +147,20 @@ export interface GatewayDeps {
     connectorId: string,
     actionPath: string,
   ): Promise<boolean>;
+  /** Approval carry-over: atomically claim a RECENT human approve of this
+   *  (session, connector, action) whose gated call nobody is waiting on
+   *  anymore — the holder timed out / the sandbox client has no poll loop —
+   *  so the NEXT attempt runs instead of re-asking. Returns true when a grant
+   *  was claimed (each approve is consumable exactly once). */
+  consumeApprovedExecution?(input: {
+    sessionId: string;
+    connectorId: string;
+    actionPath: string;
+  }): Promise<boolean>;
+  /** Mark an approve as consumed by the in-flight held/poll request that just
+   *  resumed on it, so the same grant can't ALSO be carried over by a later
+   *  fresh call (best-effort — a failure only risks one extra silent run). */
+  markApprovalConsumed?(executionId: string): Promise<void>;
   fetchImpl: FetchImpl;
   /** Pipedream execution (Connect actions/run) — required for pipedream connectors. */
   executePipedream?(input: {
@@ -289,46 +279,25 @@ async function resolveConnectorForCall(
   };
 }
 
-/** Is this connector usable for this call? Human access (sharing) + AGENT access
- *  (connector agent_scope) + credential (by mode). */
+/**
+ * Is this connector usable for this call? Access is public-by-default —
+ * connectors are project-wide visible; the ONLY gate is the agent-side
+ * `[[agents]].connectors` grant (enforced earlier, at the router, via
+ * `agentMayUseConnector`). This function is left with just the credential
+ * check (by mode).
+ */
 async function connectorUsable(
   deps: GatewayDeps,
   connector: GatewayConnector,
-  input: CallInput,
+  _input: CallInput,
   credentialOverride?: string | null,
 ): Promise<{ ok: true; secret: string | null } | { ok: false; reason: string }> {
-  const { projectId, subject } = input;
-  // 1. HUMAN access — who can use this connector. Direct share (project-wide or a
-  // member/department grant), OR inherited via the "assign human → agent"
-  // pyramid: being assigned to an agent that declares this connector grants it.
-  // Inheritance is only consulted on the cold path (a restricted connector the
-  // subject isn't directly granted) — project-scoped connectors short-circuit.
-  if (!isSecretUsableBy(connector.shareScope, connector.grants, subject)) {
-    const inherited = await deps.inheritedConnectorSlugs?.(projectId, subject);
-    if (!inherited?.has(connector.slug)) {
-      return { ok: false, reason: 'not_shared' };
-    }
-  }
-  // 1b. AGENT access — which AGENTS may call this connector (the connector-side
-  // agent_scope, mirror of the secret agent_scope; a DIFFERENT axis from the
-  // agent-side [[agents]].connectors self-narrowing enforced at the router).
-  // Resolved from the SESSION's agent name (the same source the secret gate
-  // uses) so a connector scoped to [pr-bot] denies the fully-privileged
-  // `default` agent exactly as secrets do. Pays the session lookup ONLY when the
-  // connector is actually scoped; fail-closed if the agent can't be identified.
-  if (connector.agentScope && connector.agentScope.length > 0) {
-    const agentName = input.sessionId
-      ? (await deps.sessionAgentName?.(input.sessionId)) ?? null
-      : null;
-    if (connectorDeniedForAgent(connector.agentScope, agentName)) {
-      return { ok: false, reason: 'agent_not_scoped' };
-    }
-  }
-  // 2. Credential — none needed (public), shared, or this member's own (per_user).
+  // Credential — none needed (public), or the one shared project credential.
+  // (`per_user` — each member's own — was removed 2026-07-05; every connector
+  // now resolves the shared, userId-null credential.)
   if (!connector.hasAuth) return { ok: true, secret: null };
   if (credentialOverride != null) return { ok: true, secret: credentialOverride };
-  const userId = connector.credentialMode === 'per_user' ? subject.userId : null;
-  const secret = await deps.resolveCredential(connector, userId);
+  const secret = await deps.resolveCredential(connector, null);
   if (secret == null) return { ok: false, reason: 'needs_auth' };
   return { ok: true, secret };
 }
@@ -466,6 +435,12 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       // for THIS connector + action, skip the gate — run it silently, no hold,
       // no re-prompt. Audited as `ok` (reason session_allow) so the timeline
       // still shows the call happened + why it wasn't asked.
+      // PATH FORM MATTERS: session grants store the CONNECTOR-RELATIVE path
+      // (`create_folder`) — the same form `input.actionPath` carries for any
+      // call that got past loadAction. The audit trail (executor_executions)
+      // stores the QUALIFIED form (`google_drive.create_folder`), so the
+      // carry-over lookup below must use that. Mixing the two silently breaks
+      // matching — it's exactly the bug that made "Allow for session" a no-op.
       const sessionAllowed =
         input.sessionId && deps.isSessionToolApproved
           ? await deps.isSessionToolApproved(
@@ -474,9 +449,27 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
               input.actionPath,
             )
           : false;
-      if (sessionAllowed) {
+      // Approval carry-over: the human approved this exact (session, connector,
+      // action) recently, but the gated call that asked is no longer waiting —
+      // the 45s hold expired and the client never re-polled (e.g. an older
+      // sandbox CLI without the pause loop), so the approve stamped a row nobody
+      // consumed. Claim that grant now: this fresh attempt IS the approved call,
+      // run it instead of stacking a second ask for the same thing.
+      const carriedOver =
+        !sessionAllowed &&
+        input.sessionId &&
+        !input.approvalExecutionId &&
+        deps.consumeApprovedExecution
+          ? await deps.consumeApprovedExecution({
+              sessionId: input.sessionId,
+              connectorId: connector.connectorId,
+              // The audit-row form (see audit() below), NOT the relative form.
+              actionPath: `${input.connectorSlug}.${input.actionPath}`,
+            })
+          : false;
+      if (sessionAllowed || carriedOver) {
         await audit(deps, input, connector.connectorId, 'ok', action.risk, {
-          reason: 'session_allow',
+          reason: sessionAllowed ? 'session_allow' : 'approval_carryover',
           policy_source: decision.source,
         });
       } else {
@@ -499,6 +492,12 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         if (executionId && input.sessionId && deps.waitForApprovalDecision) {
           const outcome = await deps.waitForApprovalDecision(executionId, APPROVAL_WAIT_MS);
           if (outcome === 'denied') {
+            // Mark the decision as consumed by this live waiter — the resolve
+            // endpoint's server-side resume uses that marker to know the turn
+            // already got the answer in-band (no follow-up prompt needed).
+            if (deps.markApprovalConsumed) {
+              await deps.markApprovalConsumed(executionId).catch(() => {});
+            }
             return { status: 'denied', reason: 'denied_by_user' };
           }
           if (outcome === 'timeout') {
@@ -509,7 +508,11 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
               retryable: true,
             };
           }
-          // approved → fall through to execute the call below.
+          // approved → fall through to execute the call below. Mark the grant
+          // consumed so a LATER fresh call can't also carry it over.
+          if (deps.markApprovalConsumed) {
+            await deps.markApprovalConsumed(executionId).catch(() => {});
+          }
         } else {
           return {
             status: 'pending_approval',
@@ -570,7 +573,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
           'pipedream connector has no connected account (run `kortix connectors connect`)',
         );
       }
-      const userId = connector.credentialMode === 'per_user' ? input.subject.userId : null;
+      // Always the shared (project-wide) Pipedream external-user binding —
+      // `per_user` (each member's own) was removed 2026-07-05.
+      const userId = null;
       if (b.kind === 'pipedream') {
         if (!deps.executePipedream) throw new Error('pipedream action runner not wired');
         result = await deps.executePipedream({

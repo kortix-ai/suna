@@ -19,6 +19,7 @@ import { db } from '../shared/db';
 import { resolveCommitSha, type GitBackedProject } from '../projects/git';
 import { getSandboxProvider, type ProviderState, type SandboxProviderAdapter } from './providers';
 import { config } from '../config';
+import { perProjectWarmImageName, ppwarmReapTargets } from './ppwarm-names';
 import {
   computeTemplateIdentity,
   listTemplatesForProject,
@@ -713,6 +714,47 @@ function kickBackgroundWarmBuild(
 }
 
 /**
+ * Build-on-push warm prebake. Fire-and-forget: when a commit lands on a project's
+ * default branch (a successful push to the managed git), kick the per-project warm
+ * bake for the CURRENT tip so the FIRST session on the new commit boots warm —
+ * instead of waiting for a session to MISS and trigger the bake on demand (which
+ * leaves that first session cold). Reuses the exact resolve-tip + dedup path the
+ * session-start trigger uses: gated to the shared default, keyed on the
+ * default-branch tip, deduped by the target warm name. Idempotent — it no-ops when
+ * the default-branch tip is unchanged (the warm image for that tip is already
+ * active) or a bake for it is already in flight. Best-effort: never throws, never
+ * blocks the push; the session-start on-demand trigger remains the fallback.
+ */
+export async function kickProjectWarmPrebake(
+  project: GitBackedProject,
+  opts: { accountId?: string; provider?: string } = {},
+): Promise<void> {
+  try {
+    const template = await resolveTemplateBySlug(project, undefined);
+    if (!template.isShared) return; // same gate as the session-start warm trigger
+    const buildProvider = opts.provider ?? config.getDefaultProvider();
+    const provider = getSandboxProvider(buildProvider);
+    if (!provider.isConfigured()) return;
+    const identity = await computeTemplateIdentity(project, template);
+    const tip = await resolveCommitSha(project, project.defaultBranch);
+    if (!tip) return;
+    const warmName = perProjectWarmImageName(project.projectId, tip, identity.snapshotName);
+    // Tip unchanged (or already warm for this commit) → nothing to do.
+    if ((await provider.getSnapshotState(warmName)) === 'active') return;
+    kickBackgroundWarmBuild(project, { accountId: opts.accountId, provider: buildProvider, snapshotName: warmName });
+    console.log(
+      `[snapshots] warm prebake-on-push kicked: project ${project.projectId.slice(0, 8)} ` +
+      `tip ${tip.slice(0, 8)} (${buildProvider})`,
+    );
+  } catch (err) {
+    console.warn(
+      `[snapshots] warm prebake-on-push skipped for ${project.projectId}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
+/**
  * Fire-and-forget pre-build. Used at project-create and CR-merge time so the
  * first session for a new commit can boot off a cache hit.
  */
@@ -852,24 +894,6 @@ export function kickProjectTemplatePrebuilds(
 /** Managed name prefix for per-project COLD warm images. Reapable, disjoint
  *  from the shared-default (`kortix-default-`) and custom (`kortix-tpl-`) names.
  *  Provider-agnostic: the SAME cold image builds on Daytona and Platinum. */
-const PPWARM_PREFIX = 'kortix-ppwarm-';
-
-function proj8(projectId: string): string {
-  return projectId.replace(/-/g, '').slice(0, 8);
-}
-
-/**
- * Content-addressed name for a project's COLD warm image, keyed on
- * (project, tip, base runtime identity). A new tip OR a runtime-fingerprint bump
- * moves the name → a fresh bake; a stale name is never served for a moved tip.
- * Mirrors warm-project.ts's `kortix-wproj-<proj8>-<hash12>` naming (that module
- * is stateful/prod-only; this is the cold, provider-agnostic equivalent).
- */
-export function perProjectWarmImageName(projectId: string, tip: string, baseSnapshotName: string): string {
-  const hash = createHash('sha256').update(`${projectId}|${tip}|${baseSnapshotName}`).digest('hex').slice(0, 12);
-  return `${PPWARM_PREFIX}${proj8(projectId)}-${hash}`;
-}
-
 export interface PerProjectWarmResult {
   snapshotName: string;
   tip: string;
@@ -910,7 +934,10 @@ export async function ensurePerProjectWarmImage(
   const snapshotName = perProjectWarmImageName(project.projectId, tip, baseIdentity.snapshotName);
 
   // Idempotency: active image under this (project, tip, runtime) → reuse it.
+  // Still reap here — this path also runs when a prior bake's reap failed or a
+  // moved-then-restored tip races to active, so it cleans lingering old tips.
   if ((await provider.getSnapshotState(snapshotName)) === 'active') {
+    await reapOldPerProjectWarm(project.projectId, snapshotName, buildProvider);
     return { snapshotName, tip, built: false, provider: buildProvider };
   }
 
@@ -947,6 +974,7 @@ export async function ensurePerProjectWarmImage(
       warmRepo,
     });
     if (buildId) await closeBuildLogReady(buildId);
+    await reapOldPerProjectWarm(project.projectId, snapshotName, buildProvider);
     return { snapshotName, tip, built: true, provider: buildProvider };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -979,4 +1007,43 @@ async function resolveWarmRepoContext(project: GitBackedProject): Promise<WarmRe
     branch: project.defaultBranch,
     originUrl: proxyGitUrl(project.projectId),
   };
+}
+
+/**
+ * On-bake reap of a project's SUPERSEDED per-project warm images — the aggressive
+ * cleanup prod does (warm-project.ts `reapOldProjectWarm` / `…Platinum`). A moved
+ * tip orphans the old content-addressed image; `REAPABLE_SNAPSHOT_PREFIXES` lets
+ * the *general* reaper sweep it eventually, but on Daytona (which has a
+ * snapshot-COUNT quota) that lag piles up, so we delete superseded tips the moment
+ * the new one is active — keeping ~1 image per active project, exactly like prod.
+ * Best-effort: a reap failure (list/delete error, provider hiccup) NEVER fails the
+ * bake. Provider-branched like prod (Daytona lists+deletes by id; Platinum by
+ * name); other providers have no per-project snapshot store to reap here.
+ */
+async function reapOldPerProjectWarm(projectId: string, currentName: string, buildProvider: string): Promise<void> {
+  try {
+    if (buildProvider === 'daytona' || buildProvider === 'managed') {
+      const { listDaytonaSnapshots, deleteDaytonaSnapshotById } = await import('../shared/daytona');
+      const snaps = await listDaytonaSnapshots();
+      const targets = new Set(ppwarmReapTargets(projectId, currentName, snaps.map((s) => s.name)));
+      for (const snap of snaps) {
+        if (!targets.has(snap.name)) continue;
+        const ok = await deleteDaytonaSnapshotById(snap.id);
+        console.log(`[snapshots] per-project warm: reaped superseded ${snap.name}: ${ok ? 'ok' : 'failed'}`);
+      }
+    } else if (buildProvider === 'platinum') {
+      const { platinumJson } = await import('../shared/platinum');
+      const { platinumProvider } = await import('./providers/platinum');
+      const list = await platinumJson<Array<{ name?: string }>>('/v1/templates');
+      const names = list.map((t) => t.name ?? '').filter((n): n is string => n.length > 0);
+      for (const name of ppwarmReapTargets(projectId, currentName, names)) {
+        await platinumProvider.deleteSnapshot(name);
+        console.log(`[snapshots] per-project warm: reaped superseded ${name}`);
+      }
+    }
+  } catch (err) {
+    console.warn(
+      `[snapshots] per-project warm: supersession reap skipped: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 }

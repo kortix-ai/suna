@@ -49,7 +49,7 @@ jobs:
       notes: ${{ steps.v.outputs.notes }}
       source_sha: ${{ steps.v.outputs.source_sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # need full tags + annotations to read the release notes
       - name: Read VERSION + release notes (committed by the promote PR)
@@ -155,7 +155,7 @@ jobs:
     needs: version
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -245,7 +245,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -290,7 +290,7 @@ jobs:
           - pkg: '@kortix/executor-sdk'
             dir: executor-sdk
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -358,7 +358,7 @@ jobs:
               apps/desktop-electron/dist/*.AppImage
               apps/desktop-electron/dist/latest-linux.yml
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -455,7 +455,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -533,7 +533,7 @@ jobs:
     needs: version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -590,7 +590,7 @@ jobs:
       CANONICAL_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
       LIVE_DB_URL: ${{ secrets.PROD_DATABASE_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -951,7 +951,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
@@ -986,6 +986,55 @@ jobs:
           # [skip ci] in the squash subject so merging to main doesn't kick off a
           # full dev build/deploy just for a one-line VERSION bump.
           SUBJ="chore(release): main VERSION → $NEXT (dev target after $RELEASED) [skip ci]"
+          gh pr merge "$BR" --squash --delete-branch --subject "$SUBJ" --body "" --admin \
+            || gh pr merge "$BR" --squash --delete-branch --subject "$SUBJ" --body "" \
+            || true
+
+  # ── Keep staging's VERSION honest too (post-publish) ────────────────────────
+  # promote.yml cuts releases FROM `staging` (the pre-prod source of truth) but
+  # never bumps its VERSION, and — until this job — only `main` was advanced
+  # after publish. So staging's VERSION drifted far behind prod: frozen at
+  # whatever `main VERSION →` bump last happened to be synced into it, while
+  # prod and main climbed release after release. Advance staging to the SAME
+  # next dev target as main so the branch releases are cut from stays
+  # version-coherent with prod. Cosmetic (promote derives the release version
+  # from prod's VERSION, not staging's), non-fatal, and `[skip ci]` in the
+  # squash subject avoids kicking a staging rebuild for a one-line bump.
+  sync-staging-version:
+    name: Sync staging VERSION → next dev target
+    needs: [version, github-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - name: Advance staging's VERSION via auto-merged PR
+        continue-on-error: true
+        env:
+          RELEASED: ${{ needs.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          IFS='.' read -r MA MI PA <<< "$RELEASED"
+          NEXT="${MA}.${MI}.$((PA + 1))"
+          cur="$(tr -d '[:space:]' < VERSION 2>/dev/null || true)"
+          if [ "$cur" = "$NEXT" ]; then echo "staging already at $NEXT — nothing to do."; exit 0; fi
+          BR="chore/staging-version-bump-$NEXT"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BR"
+          printf '%s\n' "$NEXT" > VERSION
+          git add VERSION
+          git commit -m "chore(release): staging VERSION → $NEXT (dev target after $RELEASED) [skip ci]"
+          git push -u origin "$BR" --force-with-lease
+          gh pr create --base staging --head "$BR" \
+            --title "chore(release): staging VERSION → $NEXT [skip ci]" \
+            --body "Auto-bump staging's VERSION to the next dev target after the v$RELEASED prod release." || true
+          SUBJ="chore(release): staging VERSION → $NEXT (dev target after $RELEASED) [skip ci]"
           gh pr merge "$BR" --squash --delete-branch --subject "$SUBJ" --body "" --admin \
             || gh pr merge "$BR" --squash --delete-branch --subject "$SUBJ" --body "" \
             || true

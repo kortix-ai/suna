@@ -183,6 +183,20 @@ export default function ProjectSessionPage() {
       );
     }
 
+    if (session.startError) {
+      const sessionMissing = session.startError.status === 404;
+      return (
+        <InlineSessionError
+          title="Couldn't start session"
+          message={
+            sessionMissing
+              ? 'This session is no longer available, or you do not have access to it.'
+              : session.startError.message
+          }
+        />
+      );
+    }
+
     if (fatal) {
       const meta = (sandbox?.metadata as Record<string, unknown>) ?? {};
       return sandbox?.status === 'error' ? (

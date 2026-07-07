@@ -9,7 +9,7 @@
  * map) and `experimental_features` (the self-describing catalog the UI renders).
  *
  * Not behind any feature gate — it's how a project opts in — so it's always
- * reachable for a manager. See apps.flow.ts §APP-4 for the legacy /apps-config
+ * reachable for a project editor / account owner/admin. See apps.flow.ts §APP-4 for the legacy /apps-config
  * alias.
  */
 import { flow } from "../core/flow";

@@ -1,4 +1,5 @@
 import { useAuth } from '@/features/providers/auth-provider';
+import { stripTrailingSlashes } from '@kortix/sdk';
 import { ensureSandbox, getSandboxUrl } from '@kortix/sdk/platform-client';
 import { getClientForUrl, triggersRequest } from '@kortix/sdk/opencode-client';
 import { getActiveOpenCodeUrl } from '@/stores/server-store';
@@ -187,10 +188,10 @@ async function resolveSandboxBaseUrl(_instanceId?: string | null): Promise<strin
   // The active session's runtime is the sandbox — the old per-instance registry
   // lookup is gone, so resolve straight from the current runtime.
   const activeBaseUrl = getActiveOpenCodeUrl();
-  if (activeBaseUrl) return activeBaseUrl.replace(/\/+$/, '');
+  if (activeBaseUrl) return stripTrailingSlashes(activeBaseUrl);
 
   const { sandbox } = await ensureSandbox();
-  return getSandboxUrl(sandbox).replace(/\/+$/, '');
+  return stripTrailingSlashes(getSandboxUrl(sandbox));
 }
 
 async function fetchTriggersJson<T>(

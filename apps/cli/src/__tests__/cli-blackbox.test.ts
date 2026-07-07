@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -186,6 +186,30 @@ function startCliE2eServer() {
         archived = true;
         return Response.json({ ok: true, archived: true, repo_deleted: url.searchParams.get('purge') === 'true' });
       }
+      if (url.pathname === '/v1/projects/proj_e2e/sessions/sess_connect' && req.method === 'GET') {
+        return Response.json({
+          session_id: 'sess_connect',
+          account_id: 'account_1',
+          project_id: 'proj_e2e',
+          branch_name: 'session-sess_connect',
+          base_ref: 'main',
+          sandbox_provider: 'daytona',
+          sandbox_id: 'row-sandbox-id',
+          sandbox_url: `${url.origin}/v1/p/ext-sess-connect/8000`,
+          opencode_session_id: 'ses_oc',
+          name: 'Connect target',
+          custom_name: null,
+          agent_name: 'default',
+          status: 'running',
+          error: null,
+          metadata: {},
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-02T00:00:00.000Z',
+        });
+      }
+      if (url.pathname === '/v1/p/ext-sess-connect/4096/session/ses_oc' && req.method === 'GET') {
+        return Response.json({ id: 'ses_oc', title: 'Connected through proxy' });
+      }
 
       if (url.pathname === '/v1/marketplace/items' && req.method === 'GET') {
         const query = url.searchParams.get('query') ?? '';
@@ -344,6 +368,160 @@ describe('kortix CLI black-box behavior', () => {
     expect(result.stdout).not.toContain('registry <subcommand>');
   });
 
+  test('sessions connect runs opencode attach through an authenticated sandbox proxy', async () => {
+    const apiBase = startCliE2eServer();
+    const configFile = writeConfig(apiBase);
+    const fakeOpenCode = join(tmp, 'fake-opencode');
+    writeFileSync(
+      fakeOpenCode,
+      `#!/usr/bin/env bun
+const [,, cmd, url, ...args] = process.argv;
+if (cmd !== 'attach') {
+  console.error('expected attach command');
+  process.exit(11);
+}
+if (!url?.startsWith('http://127.0.0.1:')) {
+  console.error('expected local proxy url');
+  process.exit(12);
+}
+const res = await fetch(new URL('/session/ses_oc', url));
+if (!res.ok) {
+  console.error(await res.text());
+  process.exit(13);
+}
+const body = await res.json();
+console.log(JSON.stringify({ cmd, args, body }));
+`,
+      'utf8',
+    );
+    chmodSync(fakeOpenCode, 0o755);
+
+    const result = await runCli(
+      ['sessions', 'connect', 'sess_connect', '--project', 'proj_e2e', '--', '--mini'],
+      tmp,
+      { KORTIX_CONFIG_FILE: configFile, KORTIX_OPENCODE_BIN: fakeOpenCode },
+    );
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      cmd: 'attach',
+      args: ['--session', 'ses_oc', '--mini'],
+      body: { id: 'ses_oc', title: 'Connected through proxy' },
+    });
+    expect(result.stderr).toContain('Connecting to');
+    expect(requests.map((r) => [r.method, r.path, r.authorization])).toContainEqual([
+      'GET',
+      '/v1/projects/proj_e2e/sessions/sess_connect',
+      'Bearer tok_blackbox',
+    ]);
+    expect(requests.map((r) => [r.method, r.path, r.authorization])).toContainEqual([
+      'GET',
+      '/v1/p/ext-sess-connect/4096/session/ses_oc',
+      'Bearer tok_blackbox',
+    ]);
+  }, 15_000);
+
+  test('top-level help is grouped into labeled sections', async () => {
+    const result = await runCli(['--help']);
+
+    expect(result.code).toBe(0);
+    for (const heading of [
+      'Project',
+      'Auth & hosts',
+      'Work',
+      'Resources',
+      'Agents',
+      'Access & permissions',
+      'CLI',
+    ]) {
+      expect(result.stdout).toContain(`\n  ${heading}\n`);
+    }
+  });
+
+  test('access, roles, and grants are grouped together under one Access & permissions section', async () => {
+    const result = await runCli(['--help']);
+
+    const sectionStart = result.stdout.indexOf('\n  Access & permissions\n');
+    expect(sectionStart).toBeGreaterThan(-1);
+    const nextSectionStart = result.stdout.indexOf('\n  CLI\n');
+    expect(nextSectionStart).toBeGreaterThan(sectionStart);
+    const section = result.stdout.slice(sectionStart, nextSectionStart);
+
+    expect(section).toContain('access <subcommand>');
+    expect(section).toContain('roles <subcommand>');
+    expect(section).toContain('grants <subcommand>');
+
+    // And they must not also be scattered into any other section.
+    const beforeSection = result.stdout.slice(0, sectionStart);
+    const afterSection = result.stdout.slice(nextSectionStart);
+    for (const name of ['access <subcommand>', 'roles <subcommand>', 'grants <subcommand>']) {
+      expect(beforeSection).not.toContain(name);
+      expect(afterSection).not.toContain(name);
+    }
+  });
+
+  test('apps is hidden from top-level help by default, shown behind KORTIX_APPS_EXPERIMENTAL', async () => {
+    const hidden = await runCli(['--help'], tmp, { KORTIX_APPS_EXPERIMENTAL: '' });
+    expect(hidden.stdout).not.toContain('apps <subcommand>');
+
+    const shown = await runCli(['--help'], tmp, { KORTIX_APPS_EXPERIMENTAL: 'true' });
+    expect(shown.stdout).toContain('apps <subcommand>');
+  });
+
+  test('kortix apps refuses to run without KORTIX_APPS_EXPERIMENTAL and points at the flag', async () => {
+    const result = await runCli(['apps', 'ls'], tmp, {
+      KORTIX_APPS_EXPERIMENTAL: '',
+      KORTIX_CONFIG_FILE: join(tmp, 'missing-config.json'),
+    });
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('experimental');
+    expect(result.stderr).toContain('KORTIX_APPS_EXPERIMENTAL');
+  });
+
+  test('kortix apps proceeds past the experimental gate once KORTIX_APPS_EXPERIMENTAL is set', async () => {
+    const result = await runCli(['apps', 'ls'], tmp, {
+      KORTIX_APPS_EXPERIMENTAL: 'true',
+      KORTIX_CONFIG_FILE: join(tmp, 'missing-config.json'),
+    });
+
+    // Not logged in / no linked project in this tmp dir — the point is it
+    // gets PAST the local experimental gate rather than being blocked by it.
+    expect(result.stderr).not.toContain('experimental and hidden');
+  });
+
+  test('tunnel is no longer a top-level command', async () => {
+    const help = await runCli(['--help']);
+    expect(help.stdout).not.toContain('tunnel <subcommand>');
+    expect(help.stdout).not.toContain('Agent Tunnel');
+
+    // `tunnel` now falls through to the generic project-scaffold path
+    // (`kortix <project-name>`) instead of a dedicated tunnel command.
+    const result = await runCli(['tunnel', '--help']);
+    expect(result.stdout).toContain('Usage: kortix [project-name] [options]');
+    expect(result.stdout).not.toContain('Agent Tunnel');
+    expect(result.stdout).not.toContain('tunnelId');
+  });
+
+  test('schema --version 2 prints the v2 JSON Schema, not the CLI version banner', async () => {
+    // Regression guard: `main()` used to scan the ENTIRE argv for a bare
+    // `--version`/`-v` and print the CLI's own version banner before any
+    // subcommand ever saw its args — which made `kortix schema --version 2`
+    // (and `kortix self-host update --version <tag>`) unreachable.
+    const result = await runCli(['schema', '--version', '2']);
+
+    expect(result.code).toBe(0);
+    const schema = JSON.parse(result.stdout);
+    expect(schema.$id).toBe('https://kortix.com/schema/kortix.v2.schema.json');
+  });
+
+  test('the bare --version flag still prints the CLI version banner', async () => {
+    const result = await runCli(['--version']);
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('Kortix CLI');
+  });
+
   test('add is not a top-level command', async () => {
     const apiBase = startMarketplaceServer();
     const configFile = writeConfig(apiBase);
@@ -365,7 +543,7 @@ describe('kortix CLI black-box behavior', () => {
     expect(result.code).toBe(0);
     const root = join(tmp, 'minimal-project');
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-computer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-computer', 'SKILL.md'))).toBe(false);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);
     expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'memory.ts'))).toBe(true);
@@ -422,7 +600,7 @@ describe('kortix CLI black-box behavior', () => {
     const init = await runCli(['init', 'full-e2e', '--yes', '--no-git']);
     expect(init.code).toBe(0);
     const root = join(tmp, 'full-e2e');
-    expect(existsSync(join(root, 'kortix.toml'))).toBe(true);
+    expect(existsSync(join(root, 'kortix.yaml'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'show.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);

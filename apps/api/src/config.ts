@@ -12,7 +12,20 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'platinum';
+// 'managed' is the canonical name for the managed cloud backend; 'daytona' is a
+// permanent legacy alias for the SAME backend (kept so existing DB rows / any
+// external caller sending 'daytona' never break). New writes use 'managed'.
+export type SandboxProviderName = 'managed' | 'daytona' | 'platinum';
+
+/** True for either the canonical 'managed' name or its legacy 'daytona' alias. */
+export function isManagedProviderName(p: string | null | undefined): boolean {
+  return p === 'managed' || p === 'daytona';
+}
+
+/** Canonicalise a provider string: legacy 'daytona' → 'managed'; others pass through. */
+export function normalizeProviderName<T extends string>(p: T): T | 'managed' {
+  return p === 'daytona' ? 'managed' : p;
+}
 type InternalKortixEnv = 'dev' | 'staging' | 'prod' | 'preview';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -92,6 +105,8 @@ const envSchema = z.object({
   TAVILY_API_KEY:              optStr,
   SERPER_API_URL:              optUrl('https://google.serper.dev'),
   SERPER_API_KEY:              optStr,
+  APIFY_API_URL:               optUrl('https://api.apify.com'),
+  APIFY_TOKEN:                 optStr,
 
   // ── Proxy Providers (optional) ───────────────────────────────────────────
   FIRECRAWL_API_URL:           optUrl('https://api.firecrawl.dev'),
@@ -149,6 +164,19 @@ const envSchema = z.object({
   // list before the session's real default resolves). TODO(marko): re-enable once
   // the executor token is re-minted per requested agent before tool execution.
   KORTIX_ENFORCE_SESSION_AGENT_LOCK: optBoolFalse,
+
+  // Mandatory declared agents (docs/specs/2026-07-05-agent-first-config-unification.md
+  // §2.1/§3 Phase 2). GATED OFF platform-wide by default — flipping it on would
+  // immediately reject every session/trigger on a pre-existing, agent-less project.
+  // The intent is ON for NEW projects: since there's no per-project flag store yet,
+  // a project is "subject" to enforcement when EITHER this is true OR its own
+  // `project.metadata.require_declared_agents === true` (stamped at creation —
+  // see POST /projects/provision). When subject: an agent name not declared in
+  // `[[agents]]`/`agents:` is rejected outright (never silently resolved to the
+  // permissive null grant), and the `default` sentinel must resolve to a
+  // *declared* default_agent. Non-subject projects keep the v1 adopt-to-govern
+  // behavior (absence of `[[agents]]` → unrestricted) untouched.
+  KORTIX_REQUIRE_DECLARED_AGENTS: optBoolFalse,
 
   // ── Legacy migration — reaching legacy JustAVPS VMs + backup storage ──────
   // The new backend has no JustAVPS provider, but it must reach legacy VMs to
@@ -294,7 +322,7 @@ const envSchema = z.object({
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL:                  optStr,
-  ALLOWED_SANDBOX_PROVIDERS:   optStrDefault('daytona'),
+  ALLOWED_SANDBOX_PROVIDERS:   optStrDefault('managed'),
   SANDBOX_IMAGE:               optStr,
   KORTIX_LOCAL_IMAGES:         optBoolFalse,
   SANDBOX_NETWORK:             optStr,
@@ -306,19 +334,29 @@ const envSchema = z.object({
   //   autostop   → idle box stops, compute billing ends. CLAMPED to >=1 at the
   //                use site so a box is NEVER created persistent.
   //                This is what actually stops the money burn.
-  //   autoarchive→ stopped box moves to cold storage after a few hours (cheap,
+  //                Was 120 until 2026-07-07: prod never set the env var, so every
+  //                box idled a full 2h after its last real activity — 78% of all
+  //                billed sandbox-hours (Jul 1-7 audit) were idle tail charged to
+  //                users. 15 matches dev and the reaper's own default.
+  //                Trigger-fired sessions (source 'trigger:*') have no human
+  //                waiting on the box, so the reaper stops them after the much
+  //                shorter TRIGGER_AUTOSTOP window instead.
+  //   autoarchive→ stopped box moves to cold storage after half a day (cheap,
   //                still resumable; kept warm-resumable in the meantime).
   //                Was 3 days (4320) until 2026-07-02: the org-wide (shared
   //                across every environment) stopped-sandbox pool rode that
   //                window up to ~32000GiB, tipping the shared 40000GiB total
-  //                disk quota and failing every create/resume org-wide. 360
-  //                (6h) keeps same-workday warm-resume while capping how much
-  //                disk any one environment's idle churn can hold at once.
+  //                disk quota and failing every create/resume org-wide. Went
+  //                to 360 (6h) as the incident fix, then back up to 720 (12h)
+  //                once disk headroom was confirmed stable — keeps next-day
+  //                warm-resume while still capping how much disk any one
+  //                environment's idle churn can hold at once.
   //   autodelete → NEVER (-1). A sandbox is only ever removed when a user
   //                explicitly deletes the session — auto-stop + cold archive
   //                make an idle box nearly free, so we never destroy disk.
-  KORTIX_SANDBOX_AUTOSTOP_MINUTES:    optInt(120),
-  KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(360),    // 6 hours
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES:    optInt(15),
+  KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: optInt(5),
+  KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(720),    // 12 hours
   KORTIX_SANDBOX_AUTODELETE_MINUTES:  optInt(-1),     // never auto-delete
 
   // ── Internal Service Key (auto-generated if missing — never fails) ───────
@@ -384,12 +422,14 @@ type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 // Recognised provider names. Source-of-truth for what can legally appear in
 // ALLOWED_SANDBOX_PROVIDERS — adding a new provider is a one-place change
 // here plus a case in `getProvider()` in platform/providers/index.ts.
-const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'platinum'] as const;
+// 'managed' is canonical; 'daytona' still parses (normalised to 'managed') so an
+// existing ALLOWED_SANDBOX_PROVIDERS=daytona env keeps working unchanged.
+const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['managed', 'platinum'] as const;
 
-/** Parse comma-separated provider list (e.g. "daytona,platinum"). */
+/** Parse comma-separated provider list (e.g. "managed,platinum"). */
 function parseAllowedProviders(raw: string): SandboxProviderName[] {
-  if (!raw) return ['daytona'];
-  const names = raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  if (!raw) return ['managed'];
+  const names = raw.split(',').map((s) => normalizeProviderName(s.trim().toLowerCase())).filter(Boolean);
   const valid: SandboxProviderName[] = [];
   for (const n of names) {
     if ((KNOWN_PROVIDERS as readonly string[]).includes(n)) {
@@ -399,7 +439,7 @@ function parseAllowedProviders(raw: string): SandboxProviderName[] {
       console.warn(`[config] Unknown sandbox provider "${n}" in ALLOWED_SANDBOX_PROVIDERS - ignored`);
     }
   }
-  return valid.length > 0 ? valid : ['daytona'];
+  return valid.length > 0 ? valid : ['managed'];
 }
 
 function validateEnv(): z.infer<typeof envSchema> {
@@ -420,7 +460,7 @@ function validateEnv(): z.infer<typeof envSchema> {
 
   // ── Conditional: Daytona provider enabled → need Daytona keys ──────────
   const providers = parseAllowedProviders((raw as any).ALLOWED_SANDBOX_PROVIDERS || '');
-  if (providers.includes('daytona')) {
+  if (providers.includes('managed')) {
     if (!raw.DAYTONA_API_KEY)    issues.push({ var: 'DAYTONA_API_KEY',    message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
     if (!raw.DAYTONA_SERVER_URL) issues.push({ var: 'DAYTONA_SERVER_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
     if (!raw.DAYTONA_TARGET)     issues.push({ var: 'DAYTONA_TARGET',     message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
@@ -555,6 +595,8 @@ export const config = {
   TAVILY_API_KEY: env.TAVILY_API_KEY,
   SERPER_API_URL: env.SERPER_API_URL,
   SERPER_API_KEY: env.SERPER_API_KEY,
+  APIFY_API_URL: env.APIFY_API_URL,
+  APIFY_TOKEN: env.APIFY_TOKEN,
 
   // ─── Proxy Providers ──────────────────────────────────────────────────────
   FIRECRAWL_API_URL: env.FIRECRAWL_API_URL,
@@ -577,6 +619,7 @@ export const config = {
   KORTIX_PRERESUME_ENABLED: env.KORTIX_PRERESUME_ENABLED,
   KORTIX_PRERESUME_MAX_PER_PROJECT: env.KORTIX_PRERESUME_MAX_PER_PROJECT,
   KORTIX_ENFORCE_SESSION_AGENT_LOCK: env.KORTIX_ENFORCE_SESSION_AGENT_LOCK,
+  KORTIX_REQUIRE_DECLARED_AGENTS: env.KORTIX_REQUIRE_DECLARED_AGENTS,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────
   JUSTAVPS_PROXY_DOMAIN: env.JUSTAVPS_PROXY_DOMAIN,
@@ -644,6 +687,7 @@ export const config = {
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
+  KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES,
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: env.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
   KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
 
@@ -747,12 +791,14 @@ export const config = {
   // ─── Helper Methods ────────────────────────────────────────────────────────
 
   isProviderEnabled(name: SandboxProviderName): boolean {
-    if (!this.ALLOWED_SANDBOX_PROVIDERS.includes(name)) return false;
-    switch (name) {
+    const canonical = normalizeProviderName(name);
+    if (!this.ALLOWED_SANDBOX_PROVIDERS.includes(canonical)) return false;
+    switch (canonical) {
+      case 'managed':
       case 'daytona': return !!this.DAYTONA_API_KEY;
       case 'platinum': return !!this.PLATINUM_API_KEY;
       default: {
-        const exhaustive: never = name;
+        const exhaustive: never = canonical;
         return exhaustive;
       }
     }
@@ -760,17 +806,23 @@ export const config = {
 
   /**
    * Default sandbox provider for new sessions. First entry of
-   * ALLOWED_SANDBOX_PROVIDERS, with 'daytona' as the safety belt for an
+   * ALLOWED_SANDBOX_PROVIDERS, with 'managed' as the safety belt for an
    * empty list. The single-provider invariant means there's no resolution
    * order today, but the function is the contract callers depend on —
    * adding a new provider later just changes what the list can contain.
    */
   getDefaultProvider(): SandboxProviderName {
-    return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'daytona';
+    return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'managed';
   },
 
+  /** True when the managed cloud backend (canonical 'managed' / legacy 'daytona') is enabled. */
+  isManagedEnabled(): boolean {
+    return this.ALLOWED_SANDBOX_PROVIDERS.some(isManagedProviderName) && !!this.DAYTONA_API_KEY;
+  },
+
+  /** @deprecated use isManagedEnabled — kept for callers still on the old name. */
   isDaytonaEnabled(): boolean {
-    return this.ALLOWED_SANDBOX_PROVIDERS.includes('daytona') && !!this.DAYTONA_API_KEY;
+    return this.isManagedEnabled();
   },
 
   isPlatinumEnabled(): boolean {
@@ -822,6 +874,14 @@ const TOOL_PRICING: Record<string, ToolPricing> = {
   },
   proxy_serper: {
     baseCost: 0.001,
+    perResultCost: 0,
+    markupMultiplier: 1.5,
+  },
+  // Apify LinkedIn people-search actor (harvestapi short mode): $0.10 per search
+  // page of up to 25 results. Page-priced (not per-result), so a flat per-call
+  // cost; with markup the user is charged ~$0.15 per people_search call.
+  proxy_apify: {
+    baseCost: 0.1,
     perResultCost: 0,
     markupMultiplier: 1.5,
   },

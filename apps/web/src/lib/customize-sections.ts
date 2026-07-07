@@ -6,12 +6,15 @@
  * This module keeps the section enum, the default, and a parser in one spot
  * so the page, the sidebar, and any deep-link helpers all agree on the
  * canonical list.
+ *
+ * Files is NOT a customize section — it's the standalone /projects/[id]/files
+ * page (any member can browse it). Deep-link routes still accept the legacy
+ * `files` section and redirect there.
  */
 
 export type CustomizeSection =
   | 'changes'
   | 'review'
-  | 'files'
   | 'skills'
   | 'agents'
   | 'commands'
@@ -32,14 +35,14 @@ export type CustomizeSection =
   | 'meet'
   | 'sandbox'
   | 'dev'
-  | 'settings';
+  | 'settings'
+  | 'upgrade';
 
-export const DEFAULT_CUSTOMIZE_SECTION: CustomizeSection = 'files';
+export const DEFAULT_CUSTOMIZE_SECTION: CustomizeSection = 'agents';
 
 export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'changes',
   'review',
-  'files',
   'skills',
   'agents',
   'commands',
@@ -61,6 +64,7 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'sandbox',
   'dev',
   'settings',
+  'upgrade',
 ];
 
 export function parseCustomizeSection(raw: string | null | undefined): CustomizeSection | null {

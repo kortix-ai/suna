@@ -101,21 +101,26 @@ mock.module('../shared/db', () => {
       select: (fields: any) => {
         // Determine which table is being queried by inspecting selected fields
         // The preview proxy selects several session_sandboxes projections and
-        // { accountRole } from accountUser/account_members depending on the path.
+        // { accountRole } from account_members.
         const fieldKeys = fields ? Object.keys(fields) : [];
-        const isSandboxQuery = fieldKeys.some((key) =>
+        // `createdBy` is the unambiguous signal for the projectSessions
+        // owner/agent lookup (sandbox-env-sync.ts) — check it BEFORE the loose
+        // sandbox-field check below, since that query also selects `agentName`
+        // (a field the sandbox-row query shape shares), which would otherwise
+        // misclassify it as a sandbox-table query and starve resolveOwnerRawEnv.
+        const isProjectSessionQuery = fieldKeys.includes('createdBy');
+        const isSandboxQuery = !isProjectSessionQuery && fieldKeys.some((key) =>
           ['accountId', 'sandboxId', 'projectId', 'agentName', 'status', 'config', 'provider', 'baseUrl'].includes(key),
         );
         const isMembershipQuery = fieldKeys.includes('accountRole');
-        const isProjectSessionQuery = fieldKeys.includes('createdBy');
 
         const rowsFor = (ordered = false): any[] => {
+          if (isProjectSessionQuery) return [{ createdBy: TEST_USER_ID }];
           if (isSandboxQuery) {
             const rows = mockSandboxRows();
             return ordered ? sortPreferredSandboxRows(rows) : rows;
           }
           if (isMembershipQuery) return mockDbMembership ? [mockDbMembership] : [];
-          if (isProjectSessionQuery) return [{ createdBy: TEST_USER_ID }];
           // Fallback: empty (unknown query, e.g. accountGroupMembers in
           // resolveShareSubject — the test models no group memberships).
           return [];
@@ -935,6 +940,18 @@ describe('Preview proxy: CORS', () => {
       headers: { Authorization: 'Bearer test', Origin: 'https://app.kortix.com' },
     });
     expect(res.headers.get('access-control-allow-origin')).toBe('https://app.kortix.com');
+    expect(res.headers.get('access-control-allow-credentials')).toBe('true');
+  });
+
+  test('sets CORS headers on proxy-generated sandbox auth errors', async () => {
+    mockFetchResponses = [{ status: 401, body: 'bad signed context' }];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/global/event`, {
+      headers: { Authorization: 'Bearer test', Origin: 'https://dev.kortix.com' },
+    });
+
+    expect(res.status).toBe(502);
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://dev.kortix.com');
     expect(res.headers.get('access-control-allow-credentials')).toBe('true');
   });
 

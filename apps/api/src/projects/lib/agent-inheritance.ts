@@ -1,8 +1,5 @@
-import { projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
 import type { GrantSet } from '../agents';
 import { isResourceExplicitlyGranted, loadProjectResourceGrants } from '../../iam/resource-grants';
-import { db } from '../../shared/db';
 import { loadConfigWithFiles } from './project-resources';
 
 /**
@@ -110,26 +107,4 @@ export async function resolveInheritedResourceNames(
     config.agents.map((a) => ({ name: a.name, env: a.scope?.env, connectors: a.scope?.connectors })),
     assigned,
   );
-}
-
-/**
- * Executor-side entry point: the connector slugs the subject inherits via the
- * agents they're assigned to. Loads the project row itself (the executor gate
- * only has a projectId), so it can read [[agents]] from git. Fail-closed —
- * inheritance only ADDS access, so any error resolves to the empty set and the
- * direct share check stands.
- */
-export async function resolveInheritedConnectorSlugs(
-  projectId: string,
-  userId: string,
-  groupIds: readonly string[],
-): Promise<Set<string>> {
-  try {
-    const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
-    if (!row) return new Set();
-    const { connectors } = await resolveInheritedResourceNames(row, userId, groupIds);
-    return new Set(connectors);
-  } catch {
-    return new Set();
-  }
 }

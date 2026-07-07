@@ -3512,7 +3512,7 @@
       "line328JsxTextNoAccess": "No access"
     },
     "appProjectsIdCustomizeSecretsPage": {
-      "line104JsxTextProjectSecrets": "Project secrets",
+      "line104JsxTextProjectSecrets": "Environment variables",
       "line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto": "Environment variables injected into each new session.",
       "line109JsxTextManifestValuesAreEncryptedAtRest": "manifest. Values are encrypted at rest.",
       "line278JsxTextSessionsCanStillStartButTheAgentWill": "Sessions can still start, but the agent will likely fail until these are set.",

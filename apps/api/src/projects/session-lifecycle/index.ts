@@ -4,9 +4,10 @@ export {
   continueSession,
   drainSessionLifecycleQueue,
 } from './engine';
+export { enqueueContinueSessionCommand } from './store';
 export { deleteSession, restartSession } from './actions';
 export { stopSession } from './stop';
-export { resolveProjectAutomationActor } from './actor';
+export { resolveProjectAutomationActor, resolveAgentRunAttribution } from './actor';
 export { sessionBackpressureState, triggerBackpressureLimit } from './backpressure';
 export type {
   ContinueSessionCommand,

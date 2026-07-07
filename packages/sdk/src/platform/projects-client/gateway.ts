@@ -279,3 +279,32 @@ export async function revokeGatewayKey(
     'Gateway request failed',
   );
 }
+
+export interface GatewayPlaygroundResult {
+  model: string;
+  ok: boolean;
+  latency_ms?: number;
+  output?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  error?: string;
+}
+
+export interface GatewayPlaygroundResponse {
+  results: GatewayPlaygroundResult[];
+}
+
+/** Run one prompt against up to 6 models side by side (a model-comparison playground). */
+export async function runGatewayPlayground(
+  projectId: string,
+  prompt: string,
+  models: string[],
+): Promise<GatewayPlaygroundResponse> {
+  return unwrap(
+    await backendApi.post<GatewayPlaygroundResponse>(`/projects/${projectId}/gateway/playground`, {
+      prompt,
+      models,
+    }),
+    'Gateway request failed',
+  );
+}

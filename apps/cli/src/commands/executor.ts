@@ -19,6 +19,7 @@
 import { ExecutorError } from '@kortix/executor-sdk';
 import {
   addConnector,
+  callPausingForApproval,
   executorClient,
   mintConnectLink,
   removeConnector,
@@ -92,7 +93,10 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
       if (raw) {
         try { parsed = JSON.parse(raw); } catch { throw new CliError('args must be valid JSON', 'BAD_ARGS'); }
       }
-      const result = await executor.call(slug, action, parsed);
+      // PAUSES for human approval instead of returning `pending_approval`
+      // immediately — this is the agent's primary path, and the turn must
+      // resume the moment the human approves (never "type continue").
+      const result = await callPausingForApproval(executor, slug, action, parsed);
       out(result);
       break;
     }

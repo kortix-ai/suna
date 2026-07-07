@@ -57,6 +57,12 @@ export interface ManagedModel {
   // size the conversation and fire auto-compaction. This is the CANONICAL home —
   // it used to be backfilled from a hardcoded table in the sandbox agent server.
   limit: { context: number; output: number };
+  // OpenRouter request-level provider routing preferences (their `provider`
+  // body field), for 'openrouter'-transport models only. Without this,
+  // OpenRouter load-balances across every host serving the slug — including
+  // low-uptime fp4 requantizations that stall mid-generation until OpenRouter
+  // kills the stream with "Upstream idle timeout exceeded".
+  openrouterProvider?: Record<string, unknown>;
 }
 
 // Managed model ids are single-segment (no `provider/` prefix). They are served
@@ -100,6 +106,9 @@ export const MANAGED_MODELS: ManagedModel[] = [
     tier: "balanced",
     vision: false,
     limit: { context: 1_000_000, output: 131_072 },
+    // Prefer Z.AI's first-party endpoint (99.9%+ uptime, native fp8). Fallbacks
+    // stay enabled so an actual Z.AI outage still routes rather than failing.
+    openrouterProvider: { order: ["z-ai"], allow_fallbacks: true },
   },
   {
     id: "qwen3.7-max",

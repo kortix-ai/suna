@@ -30,8 +30,9 @@ desktop **on that machine**, with you granting access per capability.
   tunnel permission layer. Nothing is exposed inside the sandbox.
 
 <Callout type="info" title="Note">
-Computers are configured through the dashboard (Computers) and `kortix tunnel` —
-**not** through `kortix.toml`. The `computer` connector auto-materializes when you
-connect a machine; you don't declare it. Calls run through the same tunnel
-permission, approval, and audit model as the dedicated Computers surface.
+Computers are configured through the dashboard (Computers) — **not** through
+the manifest (`kortix.yaml`/`kortix.toml`). The `computer` connector
+auto-materializes when you connect a machine; you don't declare it. Calls run
+through the same tunnel permission, approval, and audit model as the dedicated
+Computers surface.
 </Callout>

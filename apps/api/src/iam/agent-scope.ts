@@ -52,18 +52,21 @@ export function agentMayUseConnector(grant: AgentGrant | null, slug: string): bo
   return grant.connectors.includes(slug);
 }
 
-/** True if the agent may receive/read project secret `name` (or no grant).
- *  `env` is optional on the grant for back-compat with tokens minted before the
- *  field existed — those are treated as 'all' (unrestricted). */
-export function agentMayUseEnv(grant: AgentGrant | null, name: string): boolean {
+/** True if the agent may receive/read the project secret with this
+ *  IDENTIFIER (or no grant). `env` is the grant's `secrets` allowlist — a list
+ *  of secret IDENTIFIERS (not raw env-var keys; see project_secrets.identifier
+ *  / resolveGrantedSecretEnv), optional for back-compat with tokens minted
+ *  before the field existed — those are treated as 'all' (unrestricted). This
+ *  is the SOLE gate on agent secret access — there is no resource-side
+ *  allow-list on the secret itself. */
+export function agentMayUseEnv(grant: AgentGrant | null, identifier: string): boolean {
   if (!grant) return true; // no grant = no restriction
   const env = grant.env ?? 'all';
   if (env === 'all') return true;
-  // Secret names are canonically UPPERCASE (SECRET_NAME_REGEX = /^[A-Z_]…/), but
-  // a kortix.toml `env = [...]` allowlist is hand-written and may use any case.
-  // Match case-insensitively so `env = ["openai_api_key"]` still admits the
-  // OPENAI_API_KEY secret instead of silently (and confusingly) withholding it.
-  const target = name.toUpperCase();
+  // Identifiers are free-form-ish but a kortix.toml `secrets = [...]` allowlist
+  // is hand-written and may use any case. Match case-insensitively so
+  // `secrets = ["gmaps-primary"]` still admits identifier "GMAPS-primary".
+  const target = identifier.toUpperCase();
   return env.some((e) => e.toUpperCase() === target);
 }
 

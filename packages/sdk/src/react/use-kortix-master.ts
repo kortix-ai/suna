@@ -347,7 +347,10 @@ export function useKortixProjectSessions(
   options: KortixProjectQueryOptions = {},
 ) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
-  return useQuery<any[]>({
+  // `listKortixProjectSessions` itself returns `unknown[]` (its enriched
+  // OpenCode-session shape isn't schema-typed at the source) — mirror that
+  // here rather than lying about the element shape with `any`.
+  return useQuery<unknown[]>({
     queryKey: ['kortix', 'projects', projectId, 'sessions', identity.userId ?? 'anonymous', serverUrl],
     queryFn: () => listKortixProjectSessions(serverUrl, projectId),
     enabled: !identity.isLoading && !!identity.userId && !!serverUrl && !!projectId && (options.enabled ?? true),
@@ -407,26 +410,30 @@ const VALID_STATUSES: KortixTaskStatus[] = [
 
 /** Pure — the daemon's `status` isn't schema-validated, so this normalizes
  * raw rows (defaulting an unrecognized status to `'todo'`) before trusting
- * `KortixTask['status']`. Exported for direct unit testing. */
-export function normalizeTask(raw: any): KortixTask {
-  const status = VALID_STATUSES.includes(raw?.status) ? raw.status : 'todo';
+ * `KortixTask['status']`. `raw` is genuinely unvalidated wire data — duck-type
+ * via `unknown` rather than assume the shape. Exported for direct unit testing. */
+export function normalizeTask(raw: unknown): KortixTask {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const status = VALID_STATUSES.includes(r.status as KortixTaskStatus)
+    ? (r.status as KortixTaskStatus)
+    : 'todo';
   return {
-    id: raw.id,
-    project_id: raw.project_id,
-    title: raw.title || '',
-    description: raw.description || '',
-    verification_condition: raw.verification_condition || '',
+    id: r.id as string,
+    project_id: r.project_id as string,
+    title: (r.title as string) || '',
+    description: (r.description as string) || '',
+    verification_condition: (r.verification_condition as string) || '',
     status,
-    result: raw.result ?? null,
-    verification_summary: raw.verification_summary ?? null,
-    blocking_question: raw.blocking_question ?? null,
-    owner_session_id: raw.owner_session_id ?? null,
-    owner_agent: raw.owner_agent ?? null,
-    requested_by_session_id: raw.requested_by_session_id ?? null,
-    started_at: raw.started_at ?? null,
-    completed_at: raw.completed_at ?? null,
-    created_at: raw.created_at,
-    updated_at: raw.updated_at,
+    result: (r.result as string | null) ?? null,
+    verification_summary: (r.verification_summary as string | null) ?? null,
+    blocking_question: (r.blocking_question as string | null) ?? null,
+    owner_session_id: (r.owner_session_id as string | null) ?? null,
+    owner_agent: (r.owner_agent as string | null) ?? null,
+    requested_by_session_id: (r.requested_by_session_id as string | null) ?? null,
+    started_at: (r.started_at as string | null) ?? null,
+    completed_at: (r.completed_at as string | null) ?? null,
+    created_at: r.created_at as string,
+    updated_at: r.updated_at as string,
   };
 }
 
@@ -529,9 +536,9 @@ export function useStartKortixTask() {
     onSuccess: (task) => {
       qc.invalidateQueries({ queryKey: taskKeys.all });
       qc.invalidateQueries({ queryKey: ['kortix', 'projects'] });
-      if ((task as any)?.project_id) {
-        qc.invalidateQueries({ queryKey: ['kortix', 'projects', (task as any).project_id] });
-        qc.invalidateQueries({ queryKey: ['kortix', 'projects', (task as any).project_id, 'sessions'] });
+      if (task?.project_id) {
+        qc.invalidateQueries({ queryKey: ['kortix', 'projects', task.project_id] });
+        qc.invalidateQueries({ queryKey: ['kortix', 'projects', task.project_id, 'sessions'] });
       }
     },
   });

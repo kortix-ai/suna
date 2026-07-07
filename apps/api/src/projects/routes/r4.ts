@@ -19,7 +19,7 @@ import {
 } from "../../channels/agentmail-api";
 import { config } from "../../config";
 import { getCachedAccountTier } from "../../billing/services/entitlements";
-import { tierGrantsAllModels } from "../../billing/services/tiers";
+import { accountIsFreeTierForModels } from "../../billing/services/tiers";
 import {
   downloadSlackFile,
   uploadSlackFile,
@@ -146,6 +146,9 @@ projectsApp.openapi(
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    // Leaf-gate the read (a custom role can omit project.trigger.read) — and, via
+    // the central agent-grant fold, an agent token must hold it in its kortixCli.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_READ);
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row));
   },
@@ -1193,13 +1196,22 @@ projectsApp.openapi(
         z.object({ ok: z.boolean(), files: z.any() }).passthrough(),
         "Uploaded",
       ),
-      ...errors(400, 404),
+      ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    // This is a SEND primitive (posts to Slack with the project's bot token), not
+    // a read — a bare project-read gate let ANY project-read caller post
+    // arbitrary files to the workspace. The channel.send leaf in iam/actions.ts
+    // is cataloged but scoped to resource_type='channel' and was never wired
+    // through assertProjectCapability's project-scoped fold (nothing asserts it
+    // today — see the audit note removing CHANNEL_ACTIONS). Reuse the connector
+    // capability that already gates connect/disconnect and the channel-bindings
+    // route instead of inventing a parallel gate for the same resource.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
     const body = await readBody(c);
     const result = await uploadSlackFile(projectId, {
       channel: String(body.channel ?? ""),
@@ -1354,13 +1366,18 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.object({ ok: z.boolean(), voice: z.string() }).passthrough(), "Spoken"),
-      ...errors(400, 404, 502, 503),
+      ...errors(400, 403, 404, 502, 503),
     },
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    // Same reasoning as the Slack upload proxy above: this is a SEND primitive
+    // (makes the meeting bot speak), not a read, so a bare project-read gate is
+    // wrong here too. channel.send is dead/unwired (see audit note removing
+    // CHANNEL_ACTIONS) — reuse the connector-write leaf instead.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
     const body = await readBody(c);
     const botId = String(body.bot_id ?? body.botId ?? "");
     const text = String(body.text ?? "");
@@ -1449,7 +1466,7 @@ projectsApp.openapi(
     // synthetic AUTO stay hidden from the picker.
     const freeManagedOnly =
       config.KORTIX_BILLING_INTERNAL_ENABLED && ownerAccountId
-        ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))
+        ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
         : false;
     const models = gatewayModelCatalog(projectId, { freeManagedOnly });
     return c.json({ models });
@@ -1490,7 +1507,7 @@ projectsApp.openapi(
     const defaults = await getAccountModelDefaults(ownerAccountId);
     const freeTier =
       config.KORTIX_BILLING_INTERNAL_ENABLED
-        ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))
+        ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
         : false;
     // Honest project-level resolution (project → account → platform) + where it
     // came from, so the UI can show "Sonnet 4.6 · project default". The
@@ -1560,7 +1577,7 @@ projectsApp.openapi(
     }
 
     const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))
+      ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
       : false;
     const servable = await isModelServableForAccount({
       userId,

@@ -116,13 +116,14 @@ setupLinksPublicApp.post('/connector/:token/start', async (c) => {
   if (!pipedreamConfigured()) return c.json({ error: 'Pipedream is not configured on this deployment' }, 501);
   if (!resolved.payload.app) return c.json({ error: 'This connector has no Pipedream app bound' }, 400);
 
-  const effectiveUser = resolved.payload.mode === 'per_user' ? resolved.payload.uid : null;
   try {
+    // Always the shared project account — `per_user` (each member's own) was
+    // removed 2026-07-05.
     const { connectUrl } = await pipedreamConnectUrl(
       resolved.projectId,
       resolved.payload.slug,
       resolved.payload.app,
-      effectiveUser,
+      null,
     );
     if (!connectUrl) return c.json({ error: 'Pipedream did not return a connect URL' }, 502);
     return c.json({ connect_url: connectUrl });

@@ -69,6 +69,7 @@ describe('kortix enums', () => {
   test('sandbox_provider enum lists supported providers', () => {
     expect(sandboxProviderEnum.enumName).toBe('sandbox_provider');
     expect(sandboxProviderEnum.enumValues).toEqual([
+      'managed',
       'daytona',
       'local_docker',
       'justavps',
@@ -307,9 +308,9 @@ describe('sandboxes table', () => {
     expect(primaryColumn(sandboxes)).toBe('sandbox_id');
   });
 
-  test('provider defaults to daytona', () => {
+  test('provider defaults to managed', () => {
     const col = getTableConfig(sandboxes).columns.find((c) => c.name === 'provider');
-    expect(col?.default).toBe('daytona');
+    expect(col?.default).toBe('managed');
   });
 
   test('status defaults to provisioning', () => {

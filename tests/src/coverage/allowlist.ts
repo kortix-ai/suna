@@ -7,12 +7,6 @@ export interface AllowEntry {
 export const uncoveredAllow: AllowEntry[] = [
   {
     method: "PUT",
-    path: "/v1/executor/projects/:*/connectors/:*/agent-scope",
-    reason:
-      "executor-scoped runtime endpoint — called by the in-sandbox executor with its own token, not by end-user clients; the user-facing equivalent (PUT /v1/projects/:id/connectors/:id/agent-scope) is flow-covered",
-  },
-  {
-    method: "PUT",
     path: "/v1/executor/projects/:*/connectors/:*/sensitive",
     reason:
       "executor-scoped runtime endpoint — called by the in-sandbox executor with its own token, not by end-user clients; the user-facing equivalent is flow-covered",

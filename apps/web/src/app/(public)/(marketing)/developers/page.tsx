@@ -166,7 +166,7 @@ const CLI_GROUPS: { label: string; icon: typeof TerminalIcon; cmds: [string, str
     label: 'Scaffold & ship',
     icon: TerminalIcon,
     cmds: [
-      ['kortix init', 'Scaffold kortix.toml + .kortix/'],
+      ['kortix init', 'Scaffold kortix.yaml + .kortix/'],
       ['kortix ship', 'Commit, push, link & go live'],
       ['kortix validate', 'Type-check your manifest'],
     ],
@@ -234,33 +234,33 @@ const RUNS_ANYWHERE = [
   },
 ];
 
-const TOML = `kortix_version = 1
+const KORTIX_YAML_EXAMPLE = `kortix_version: 2
 
-[project]
-name = "acme"
+project:
+  name: acme
 
 # the OpenCode runtime config dir
-[opencode]
-config_dir = ".kortix/opencode"
+opencode:
+  config_dir: .kortix/opencode
 
 # a trigger runs itself, on a schedule
-[[triggers]]
-slug = "daily-digest"
-type = "cron"
-agent = "research"
-cron = "0 0 9 * * 1-5"
-prompt = "Summarize yesterday across Slack & Linear"
+triggers:
+  - slug: daily-digest
+    type: cron
+    agent: research
+    cron: "0 0 9 * * 1-5"
+    prompt: Summarize yesterday across Slack & Linear
 
 # connect a tool's API as agent tools
-[[connectors]]
-slug = "stripe"
-provider = "http"
-base_url = "https://api.stripe.com"
+connectors:
+  - slug: stripe
+    provider: http
+    base_url: https://api.stripe.com
 
 # answer where your team works
-[[channels]]
-platform = "slack"
-agent = "support"`;
+channels:
+  - platform: slack
+    agent: support`;
 
 const AGENT_MD = `---
 description: Acme's support agent. Resolves tickets end to end.
@@ -331,28 +331,27 @@ function Step({
   );
 }
 
-const KORTIX_TOML = `name = "acme-ops"
+const KORTIX_YAML = `kortix_version: 2
 
-[sandbox]
-image = ".kortix/Dockerfile"
+project:
+  name: acme-ops
 
-[[agents]]
-name   = "support-triage"
-model  = "anthropic/claude-opus-4-8"
-skills = ["ticket-triage", "kortix-memory"]
+sandbox:
+  image: .kortix/Dockerfile
 
-[[triggers]]
-type     = "cron"
-schedule = "0 8 * * *"
-agent    = "support-triage"
+agents:
+  support-triage:
+    connectors: [slack, linear]
+    skills: [ticket-triage, kortix-memory]
 
-[connectors]
-slack  = true
-linear = true`;
+triggers:
+  - type: cron
+    schedule: "0 8 * * *"
+    agent: support-triage`;
 
 const REPO_TREE: [string, number, 'dir' | 'file' | 'accent'][] = [
   ['acme-ops', 0, 'dir'],
-  ['kortix.toml', 1, 'accent'],
+  ['kortix.yaml', 1, 'accent'],
   ['.kortix', 1, 'dir'],
   ['opencode', 2, 'dir'],
   ['agents', 3, 'dir'],
@@ -521,7 +520,7 @@ function HeroWorkspace() {
       <div className="border-card bg-background overflow-hidden rounded-[calc(var(--radius)+2px)] border-4">
         <div className="border-border/60 bg-muted/30 flex items-center gap-2 border-b px-4 py-2.5">
           <span className="bg-foreground text-background rounded px-2.5 py-0.5 font-mono text-xs font-medium">
-            kortix.toml
+            kortix.yaml
           </span>
           <span className="text-muted-foreground font-mono text-xs">
             {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextDeclareItOnce7b7c95e7')}
@@ -529,8 +528,8 @@ function HeroWorkspace() {
         </div>
         <div className="text-foreground overflow-x-auto text-sm">
           <CodeBlockCode
-            code={KORTIX_TOML}
-            language="toml"
+            code={KORTIX_YAML}
+            language="yaml"
             className="[&_pre]:rounded-none [&_pre]:px-0"
           />
         </div>
@@ -693,7 +692,7 @@ export default function DevelopersPage() {
                   'autoAppPublicMarketingDevelopersPageJsxTextKortixInit263fedee',
                 )}
               </Cmd>
-              <Done>kortix.toml</Done>
+              <Done>kortix.yaml</Done>
               <Done>.kortix/opencode/</Done>
             </Terminal>
           </Step>
@@ -724,7 +723,7 @@ export default function DevelopersPage() {
               'autoAppPublicMarketingDevelopersPageJsxAttrBodyKortixToml8f2ef9df',
             )}
           >
-            <CodeFile name="kortix.toml" code={TOML} language="toml" />
+            <CodeFile name="kortix.yaml" code={KORTIX_YAML_EXAMPLE} language="yaml" />
           </Step>
 
           <Step

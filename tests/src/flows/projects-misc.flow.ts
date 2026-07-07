@@ -347,3 +347,70 @@ flow(
     });
   },
 );
+
+// PROJ-19 — Full v2 agent-config editor (the "agent builder" surface, spec
+// docs/specs/2026-07-05-agent-first-config-unification.md §2.2). GET reports the
+// agent's full block + the manifest schema version (the UI's v1-vs-v2 branch);
+// PUT replaces the whole block, validating it through the manifest-schema
+// validator before the kortix.yaml commit. A bare provisioned project has no
+// v2 manifest (loadManifestForEdit synthesizes a v1 TOML), so this pins the
+// achievable boundaries: GET degrades cleanly to schema_version 1 / editable
+// false; PUT on that v1 project is refused with a 400 upgrade pointer; the
+// editor-tier gate holds. The v2 happy-path commit needs a project whose
+// kortix.yaml is already v2 — out of reach for a bare repo here (same
+// limitation IAM-31's scope flow documents).
+flow(
+  "PROJ-19",
+  {
+    domain: "projects",
+    routes: [
+      "GET /v1/projects/:projectId/agents/:agentName/config",
+      "PUT /v1/projects/:projectId/agents/:agentName/config",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+
+    await ctx.step("GET degrades to schema_version 1 / editable false for a v1 (or empty) manifest", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/agents/:agentName/config", {
+          params: { projectId: project.id, agentName: "kortix" },
+        });
+      r.status(200).body().has("$.editable", false);
+    });
+
+    await ctx.step("PUT a full block on a v1 project → 400 (v2-only, upgrade pointer)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/agents/:agentName/config",
+          { mode: "primary", description: "Support", temperature: 0.2 },
+          { params: { projectId: project.id, agentName: "kortix" } },
+        );
+      r.status(400);
+    });
+
+    await ctx.step("PUT with a malformed body (bad enum) → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/agents/:agentName/config",
+          { mode: "supervisor" },
+          { params: { projectId: project.id, agentName: "kortix" } },
+        );
+      r.status(400);
+    });
+
+    await ctx.step("a member with no project grant cannot read/write the config → 404", async () => {
+      const bare = await team.addMember("member");
+      const r = await ctx.client
+        .as(bare)
+        .get("/v1/projects/:projectId/agents/:agentName/config", {
+          params: { projectId: project.id, agentName: "kortix" },
+        });
+      r.status(404);
+    });
+  },
+);

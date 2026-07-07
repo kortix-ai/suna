@@ -24,6 +24,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { kortix } from '@/lib/kortix';
+import type { ProjectTrigger } from '@kortix/sdk/projects-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Play, Trash2, Zap } from 'lucide-react';
 import { useState } from 'react';
@@ -46,9 +47,8 @@ export function TriggersTab({ projectId }: { projectId: string }) {
   const [cron, setCron] = useState('0 0 * * * *');
   const [prompt, setPrompt] = useState('');
 
-  const data = triggers.data as any;
-  const items: any[] = Array.isArray(data) ? data : (data?.triggers ?? []);
-  const paused: boolean = Boolean(data?.triggers_paused);
+  const items: ProjectTrigger[] = triggers.data?.triggers ?? [];
+  const paused: boolean = Boolean(triggers.data?.triggers_paused);
 
   const setActivation = useMutation({
     mutationFn: (next: boolean) => kortix.project(projectId).triggers.setActivation(next),
@@ -79,8 +79,7 @@ export function TriggersTab({ projectId }: { projectId: string }) {
   const fire = useMutation({
     mutationFn: (slug: string) => kortix.project(projectId).triggers.fire(slug),
     onSuccess: (res) => {
-      const r = res as any;
-      toast.success(`Trigger ${r?.status ?? 'fired'}`);
+      toast.success(`Trigger ${res.status}`);
     },
     onError: () => toast.error('Could not fire trigger'),
   });
@@ -253,13 +252,13 @@ function EditTriggerDialog({
 }: {
   projectId: string;
   slug: string;
-  trigger: any;
+  trigger: ProjectTrigger;
   onSaved: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState(String(trigger?.name ?? ''));
-  const [prompt, setPrompt] = useState(String(trigger?.prompt_template ?? ''));
-  const [enabled, setEnabled] = useState<'on' | 'off'>(trigger?.enabled === false ? 'off' : 'on');
+  const [name, setName] = useState(trigger.name);
+  const [prompt, setPrompt] = useState(trigger.prompt_template);
+  const [enabled, setEnabled] = useState<'on' | 'off'>(trigger.enabled === false ? 'off' : 'on');
 
   const update = useMutation({
     mutationFn: () =>

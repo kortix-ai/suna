@@ -14,7 +14,7 @@ import {
   getDiffBetweenShas,
   invalidateProjectMirror,
   previewMerge,
-  resolveBranchTip,
+  resolveBranchAheadState,
 } from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
@@ -122,14 +122,14 @@ projectsApp.openapi(
     // hold project.session.start (no-op for human/PAT tokens).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
 
-    // Restart is reserved for the session owner or a project manager.
+    // Restart is reserved for the session owner or an account owner/admin.
     const visible = await loadVisibleSession(loaded, sessionId);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
       return c.json(
         {
           error:
-            'Only the session owner or a project manager can restart this session',
+            'Only the session owner or an account owner/admin can restart this session',
         },
         403,
       );
@@ -175,13 +175,13 @@ projectsApp.openapi(
     // the agent's session-lifecycle surface.
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
 
-    // Stop is reserved for the session owner or a project manager, same policy
+    // Stop is reserved for the session owner or an account owner/admin, same policy
     // as restart.
     const visible = await loadVisibleSession(loaded, sessionId);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
       return c.json(
-        { error: 'Only the session owner or a project manager can stop this session' },
+        { error: 'Only the session owner or an account owner/admin can stop this session' },
         403,
       );
     }
@@ -272,7 +272,7 @@ projectsApp.openapi(
     },
     responses: {
       201: json(ChangeRequestSchema, 'The created change request'),
-      ...errors(400, 404, 500),
+      ...errors(400, 404, 422, 500),
     },
   }),
   async (c: any) => {
@@ -280,7 +280,7 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Human-side capability gate (Git Ops). Editors/managers hold it; a custom
+    // Human-side capability gate (Git Ops). Editors hold it; a custom
     // role omits project.gitops.push to take Git-Ops away from a department.
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
@@ -317,15 +317,24 @@ projectsApp.openapi(
       if (!sessionRow) originSessionId = null;
     }
 
-    // Resolve current tips so the CR has anchored SHAs from the start.
+    // Resolve current tips so the CR has anchored SHAs from the start, and
+    // refuse an EMPTY change request outright: a head with no commits ahead
+    // of base renders "No changes detected" in the dashboard and can never
+    // be applied (previewMerge reports it un-mergeable). The two shapes are
+    // a committed-but-never-pushed session branch (head tip == base tip) and
+    // a stale branch behind an advanced base (merge-base == head tip); both
+    // came up in the wild via agent flows on 2026-07-06. The resolver forces
+    // a mirror re-fetch before concluding "not ahead", so a push that landed
+    // moments ago never bounces.
     let baseSha: string | null = null;
     let headSha: string | null = null;
+    let headAhead = true;
     try {
       const projectForGit = await withProjectGitAuth(loaded.row);
-      [baseSha, headSha] = await Promise.all([
-        resolveBranchTip(projectForGit, baseRef),
-        resolveBranchTip(projectForGit, headRef),
-      ]);
+      const aheadState = await resolveBranchAheadState(projectForGit, baseRef, headRef);
+      baseSha = aheadState.baseSha;
+      headSha = aheadState.headSha;
+      headAhead = aheadState.ahead;
     } catch (error) {
       return c.json(
         {
@@ -335,6 +344,15 @@ projectsApp.openapi(
               : 'Failed to resolve branches',
         },
         400,
+      );
+    }
+    if (!headAhead) {
+      return c.json(
+        {
+          error: `head_ref "${headRef}" has no commits ahead of "${baseRef}" — the change request would be empty and could never be applied. Commit your work and push the branch (git push origin HEAD), then retry. If your branch is behind an advanced base, rebase onto the latest base first.`,
+          code: 'CR_HEAD_NOT_AHEAD',
+        },
+        422,
       );
     }
 

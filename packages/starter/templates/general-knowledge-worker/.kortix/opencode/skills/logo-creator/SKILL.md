@@ -1,6 +1,7 @@
 ---
 name: logo-creator
 description: "Create professional logos through an intelligent, iterative design process. Use this skill when the user wants to create a logo, icon, favicon, brand mark, wordmark, or any visual brand identity mark. Triggers on: 'create a logo', 'design a logo', 'make me a logo', 'logo for my brand', 'I need a logo', 'brand mark', 'wordmark', 'logomark', 'icon design', 'favicon'. This is NOT a one-shot image generator — it researches, strategizes, generates symbols with AI, visually inspects every output, then programmatically composes them with real Google Fonts typography into complete logo systems (logomark, wordmark, combination marks in multiple layouts)."
+defaultProjectInstall: true
 ---
 
 # Logo Creator — Intelligent Logo Design Skill

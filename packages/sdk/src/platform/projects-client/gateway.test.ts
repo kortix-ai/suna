@@ -8,6 +8,7 @@ import {
   getGatewayOverview,
   listGatewayLogs,
   revokeGatewayKey,
+  runGatewayPlayground,
   setGatewayBudget,
 } from './gateway';
 
@@ -92,4 +93,16 @@ test('getGatewayKeys returns the keys list', async () => {
   nextResponse = { status: 200, body: { keys: [], gateway_url: 'https://gw.local' } };
   const result = await getGatewayKeys('P1');
   expect(result.gateway_url).toBe('https://gw.local');
+});
+
+test('runGatewayPlayground posts prompt + models and returns per-model results', async () => {
+  nextResponse = {
+    status: 200,
+    body: { results: [{ model: 'gpt-4o', ok: true, latency_ms: 120, output: 'hi' }] },
+  };
+  const result = await runGatewayPlayground('P1', 'Say hi', ['gpt-4o', 'claude-3']);
+  expect(last().url).toContain('/projects/P1/gateway/playground');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ prompt: 'Say hi', models: ['gpt-4o', 'claude-3'] });
+  expect(result.results[0]?.model).toBe('gpt-4o');
 });

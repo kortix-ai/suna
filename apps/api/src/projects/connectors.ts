@@ -5,8 +5,9 @@
  * MCP, OpenAPI, GraphQL, or raw HTTP. The manifest holds the *definition*
  * (provider, endpoint/spec, auth method + which project-secret to use) and,
  * for the policy layer, the connector-scoped `[[connectors.policies]]`. The
- * secret *value* and Pipedream OAuth live in the platform, never in git;
- * who-can-use-it (sharing) is platform-side too.
+ * secret *value* and Pipedream OAuth live in the platform, never in git.
+ * Connectors are project-wide visible — the only access gate is which AGENTS
+ * may call it (`[[agents]].connectors`, declared on the agent, in git).
  *
  * Example:
  *
@@ -37,8 +38,7 @@
 import { createHash } from 'node:crypto';
 import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
 import { isValidSecretName } from './secrets';
-
-const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+import { CHANNEL_PLATFORMS, RESERVED_SLUG_PROVIDERS, SLUG_RE } from '@kortix/manifest-schema';
 
 export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
 const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 'graphql', 'http', 'channel', 'computer'];
@@ -55,14 +55,12 @@ const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 
  *  - `kortix_slack` → channel only (the Slack channel materializes under it; see
  *    executor/channels.ts SLACK_CHANNEL_CONNECTOR_SLUG).
  *  - `computer`     → computer only (the Agent Computer Tunnel connector).
- * See KORTIX-206 + docs/specs/computer-connector.md.
+ * See KORTIX-206 + docs/specs/computer-connector.md. The pairs themselves are
+ * canonically defined in `@kortix/manifest-schema` (imported above) — this
+ * `export` just preserves this module's existing public surface, since
+ * executor/manifest-crud.ts imports `RESERVED_SLUG_PROVIDERS` from here.
  */
-export const RESERVED_SLUG_PROVIDERS: Readonly<Record<string, ConnectorProvider>> = {
-  kortix_slack: 'channel',
-  kortix_email: 'channel',
-  kortix_meet: 'channel',
-  computer: 'computer',
-};
+export { RESERVED_SLUG_PROVIDERS };
 /** The reserved slug the built-in Slack channel materializes under. */
 export const SLACK_RESERVED_SLUG = 'kortix_slack';
 export const EMAIL_RESERVED_SLUG = 'kortix_email';
@@ -76,7 +74,6 @@ export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
 
 /** Chat platforms a `channel` connector can target. */
 export type ChannelPlatform = 'slack' | 'email' | 'meet';
-const CHANNEL_PLATFORMS: readonly ChannelPlatform[] = ['slack', 'email', 'meet'];
 
 type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'none';
 const AUTH_TYPES: readonly ConnectorAuthType[] = ['bearer', 'basic', 'custom', 'none'];
@@ -114,16 +111,15 @@ export interface ConnectorSpec {
   /** When false the materializer / gateway skip this entry. */
   enabled: boolean;
   provider: ConnectorProvider;
-  /** Credential storage mode. Default: pipedream→per_user, others→shared. */
-  credentialMode: 'shared' | 'per_user';
+  /** Credential storage mode. `shared` is the only mode — `per_user` (each
+   *  member brings their own) was removed 2026-07-05 (docs/specs/2026-07-05-
+   *  agent-first-config-unification.md §2.5). A manifest that still says
+   *  `credential = "per_user"` is tolerated (legacy, warning-only) but always
+   *  resolves to `shared` here — it can never round-trip back into git. */
+  credentialMode: 'shared';
   /** Sensitive connector (email/files/secrets-bearing): reads gate too — every
    *  action defaults to require_approval unless an explicit policy opens it. */
   sensitive: boolean;
-  /** Which AGENTS may call this connector (the connector-side agent gate, mirror
-   *  of the secret agent_scope). null / empty = ALL agents; a list of agent NAMES
-   *  restricts it to those agents' sessions. Reconciled to executor_connectors.
-   *  agent_scope every sync (toml-authoritative for declared connectors). */
-  agentScope: string[] | null;
   // ── provider-specific ──
   /** pipedream: app slug (`gmail`, `slack`). */
   app: string | null;
@@ -217,11 +213,8 @@ export function connectorSpecToTomlEntry(spec: ConnectorSpec): Record<string, un
     provider: spec.provider,
     enabled: spec.enabled,
   };
-  // Only emit credential mode when it differs from the per-app default.
-  const defaultMode = spec.provider === 'pipedream' ? 'per_user' : 'shared';
-  if (spec.credentialMode !== defaultMode) entry.credential = spec.credentialMode;
-  // Restrict which agents may call it — omit when all-agents (the default).
-  if (spec.agentScope && spec.agentScope.length > 0) entry.agent_scope = spec.agentScope;
+  // `shared` is the only mode and the implicit default for every provider —
+  // never emit `credential` (mirrors how `sensitive: false` is omitted).
   // Provider-specific keys — only emit what carries information.
   if (spec.provider === 'pipedream') {
     if (spec.app) entry.app = spec.app;
@@ -321,30 +314,16 @@ function parseConnectorEntry(entry: unknown, index: number): ParseOk | ParseErr 
   const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;
   const enabled = coerceBool(row.enabled, true);
   const sensitive = coerceBool(row.sensitive, false);
-  // agent_scope = which agents may call this connector. A hand-written list of
-  // agent names; empty/absent = all agents (null). Any string accepted (not
-  // validated against declared [[agents]], mirroring how connectors aren't
-  // validated against the catalog) so a typo simply scopes to a nonexistent agent.
-  const agentScopeList = Array.isArray(row.agent_scope)
-    ? Array.from(
-        new Set(
-          row.agent_scope
-            .filter((x): x is string => typeof x === 'string' && x.trim() !== '')
-            .map((x) => x.trim()),
-        ),
-      )
-    : [];
-  const agentScope = agentScopeList.length > 0 ? agentScopeList : null;
 
-  // Credential mode — per-app default, overridable via `credential = "..."`.
+  // Credential mode — `shared` is the only mode. `per_user` is tolerated as a
+  // legacy value (existing manifests that still say `credential = "per_user"`
+  // parse fine, same as the manifest-schema validator's warning) but always
+  // resolves to `shared` — it's never round-tripped back into git.
   const credRaw = typeof row.credential === 'string' ? row.credential.trim().toLowerCase() : '';
   if (credRaw && credRaw !== 'shared' && credRaw !== 'per_user') {
-    return err(slug, 'credential must be "shared" or "per_user"');
+    return err(slug, 'credential must be "shared" ("per_user" is tolerated as a legacy value, resolving to "shared")');
   }
-  const credentialMode: 'shared' | 'per_user' =
-    credRaw === 'shared' || credRaw === 'per_user'
-      ? credRaw
-      : provider === 'pipedream' ? 'per_user' : 'shared';
+  const credentialMode: 'shared' = 'shared';
 
   // Defaults; provider blocks fill them in.
   const base: Omit<ConnectorSpec, 'auth' | 'policies'> = {
@@ -355,7 +334,6 @@ function parseConnectorEntry(entry: unknown, index: number): ParseOk | ParseErr 
     provider: provider as ConnectorProvider,
     credentialMode,
     sensitive,
-    agentScope,
     app: null,
     account: null,
     url: null,

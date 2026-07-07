@@ -33,9 +33,28 @@ interface SsoSyncOutcome {
   groupsRemoved?: string[];
 }
 
+/** Pull the auth `sso_providers` id out of a Supabase `"sso:<uuid>"` tag. */
+function ssoIdFromProviderTag(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const prefix = 'sso:';
+  if (!value.startsWith(prefix)) return null;
+  const id = value.slice(prefix.length).trim();
+  return id.length > 0 ? id : null;
+}
+
 /**
- * Extract the supabase sso_provider id from a JWT payload. Supabase puts
- * it in `app_metadata.provider_id` when the user signed in via SAML.
+ * Extract the Supabase `sso_providers` id from a JWT payload, or null when the
+ * token isn't a SAML login.
+ *
+ * Real Supabase SAML tokens carry the id INSIDE `app_metadata.provider` (and
+ * `app_metadata.providers[]`) as the string `"sso:<uuid>"`, e.g.
+ * `provider: "sso:464651b7-6157-46b1-afaa-5bbd7fa37599"`. We also accept a bare
+ * `sso_provider_id`/`provider_id` for forward-compat and simpler test fixtures.
+ *
+ * The previous implementation read ONLY the bare fields, which no real Supabase
+ * SAML token sets — so `extractSsoProviderId` always returned null and NO SSO
+ * user was ever JIT-provisioned into their org (they fell through to a personal
+ * account instead). Parsing the `"sso:<uuid>"` tag is the actual fix.
  */
 export function extractSsoProviderId(
   payload: Record<string, unknown> | undefined,
@@ -43,10 +62,21 @@ export function extractSsoProviderId(
   if (!payload) return null;
   const meta = payload.app_metadata as Record<string, unknown> | undefined;
   if (!meta) return null;
-  // Supabase historically used `provider_id`; newer versions also set
-  // `sso_provider_id`. Accept either so we're forward-compat.
-  const id = meta.sso_provider_id ?? meta.provider_id;
-  return typeof id === 'string' && id.length > 0 ? id : null;
+
+  // Explicit fields first (forward-compat / fixtures).
+  const explicit = meta.sso_provider_id ?? meta.provider_id;
+  if (typeof explicit === 'string' && explicit.length > 0) return explicit;
+
+  // Real shape: provider = "sso:<uuid>", providers = ["sso:<uuid>"].
+  const fromProvider = ssoIdFromProviderTag(meta.provider);
+  if (fromProvider) return fromProvider;
+  if (Array.isArray(meta.providers)) {
+    for (const p of meta.providers) {
+      const id = ssoIdFromProviderTag(p);
+      if (id) return id;
+    }
+  }
+  return null;
 }
 
 /**
@@ -58,11 +88,19 @@ export function extractGroupClaims(
   claimName: string,
 ): string[] {
   if (!payload) return [];
-  // Try app_metadata first (Supabase wraps SAML attributes there), then
-  // the top level for IdPs that don't.
+  const asObj = (v: unknown): Record<string, unknown> | undefined =>
+    v && typeof v === 'object' ? (v as Record<string, unknown>) : undefined;
+  const app = asObj(payload.app_metadata);
+  const user = asObj(payload.user_metadata);
+  // Supabase SSO nests the mapped SAML attributes under
+  // `user_metadata.custom_claims` (e.g. `custom_claims.groups`) — NOT at the top
+  // of user_metadata — so check custom_claims FIRST, then fall back to the flat
+  // locations other IdPs / non-SSO tokens use.
   const sources: Array<Record<string, unknown> | undefined> = [
-    payload.app_metadata as Record<string, unknown> | undefined,
-    payload.user_metadata as Record<string, unknown> | undefined,
+    asObj(user?.custom_claims),
+    asObj(app?.custom_claims),
+    app,
+    user,
     payload,
   ];
   for (const src of sources) {

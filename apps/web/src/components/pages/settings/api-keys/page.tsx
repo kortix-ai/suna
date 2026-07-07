@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { stripTrailingSlashes } from '@kortix/sdk';
 
 import { cn } from '@/lib/utils';
 import React, { useState, useMemo, useCallback } from 'react';
@@ -179,7 +180,7 @@ export default function APIKeysPage() {
     label: '',
   });
   const queryClient = useQueryClient();
-  const activeInstanceUrl = getActiveOpenCodeUrl()?.replace(/\/+$/, '');
+  const activeInstanceUrl = stripTrailingSlashes(getActiveOpenCodeUrl() ?? '') || undefined;
 
   // ── Queries & mutations ────────────────────────────────────────────────
 

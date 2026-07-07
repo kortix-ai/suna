@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useState, useEffect } from "react";
 import { Settings, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { KortixLoader } from "@/components/ui/kortix-loader";
+import { KortixHyperLogo } from "@/components/ui/marketing/kortix-hyper-logo";
 import { toast } from "@/lib/toast";
 import {
   useMaintenanceAdmin,
@@ -108,7 +108,7 @@ export default function AdminUtilsPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <KortixLoader size="large" />
+        <KortixHyperLogo size={72} startOnView={false} loop className="text-foreground" />
       </div>
     );
   }

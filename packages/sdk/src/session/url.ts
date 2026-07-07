@@ -392,7 +392,11 @@ export function rewriteLocalhostUrl(
   // actually on the user's box. Otherwise we always go path-based through the
   // public API base URL (which terminates at whichever ingress fronts the API).
   if (!isBackendOnLocalhost(subdomainOpts.apiBaseUrl)) {
-    const base = subdomainOpts.apiBaseUrl.replace(/\/+$/, '');
+    // Linear trailing-slash strip — the regex form (/\/+$/) backtracks
+    // quadratically on adversarial input (CodeQL js/polynomial-redos).
+    let baseEnd = subdomainOpts.apiBaseUrl.length;
+    while (baseEnd > 0 && subdomainOpts.apiBaseUrl.charCodeAt(baseEnd - 1) === 47 /* '/' */) baseEnd--;
+    const base = subdomainOpts.apiBaseUrl.slice(0, baseEnd);
     return `${base}/p/${subdomainOpts.sandboxId}/${port}${safePath}`;
   }
 

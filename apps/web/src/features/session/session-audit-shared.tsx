@@ -10,9 +10,10 @@
  *
  * Gating note: we drive everything off `getSessionAudit` (gated on session
  * VISIBILITY — the launcher can see their own session) rather than the
- * project-wide `listPendingApprovals` (manager-only). That's deliberate: the
- * per-session surface is for the launcher, who may not be a project manager.
- * The resolve endpoint itself allows the manager OR the launcher.
+ * project-wide `listPendingApprovals` (account owner/admin only). That's
+ * deliberate: the per-session surface is for the launcher, who may not be an
+ * account owner/admin. The resolve endpoint itself allows an account
+ * owner/admin OR the launcher.
  */
 
 import {
@@ -123,7 +124,11 @@ export function useResolveApproval(projectId: string | undefined, sessionId: str
       executionId,
       decision,
       scope = 'once',
-    }: { executionId: string; decision: 'approve' | 'deny'; scope?: 'once' | 'session' }) => {
+    }: {
+      executionId: string;
+      decision: 'approve' | 'deny';
+      scope?: 'once' | 'session' | 'session_all';
+    }) => {
       if (!projectId) throw new Error('No project in context');
       return resolveApproval(projectId, executionId, decision, scope);
     },

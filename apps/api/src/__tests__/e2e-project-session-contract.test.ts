@@ -36,6 +36,8 @@ let sandboxProvisionCalls = 0;
 let providerStartCalls = 0;
 let providerStatus = 'stopped';
 let providerStartError: Error | null = null;
+let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' =
+  'unchanged';
 let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let sessionSandboxRows: Array<typeof sessionSandboxes.$inferSelect>;
@@ -79,6 +81,7 @@ function resetState() {
   providerStartCalls = 0;
   providerStatus = 'stopped';
   providerStartError = null;
+  opencodeEnsureReason = 'unchanged';
   activeSessionCount = 0;
   lastProvisionInput = null;
   projectRow.repoUrl = `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`;
@@ -116,7 +119,9 @@ function resetState() {
   freestyleCalls = [];
 }
 
+const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
+  ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     if (c.req.header('Authorization') === `Bearer ${PROJECT_SANDBOX_TOKEN}`) {
       c.set('userId', ACCOUNT_ID);
@@ -156,6 +161,10 @@ mock.module('../projects/git', () => ({
   grepRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
   readRepoFile: async () => '',
+  // compile-agent-config.ts (the agent-first v2 compiler) reads the manifest
+  // straight from git — no manifest ⇒ null ⇒ the v1-shaped projects this suite
+  // exercises get no compiled agent config, matching their pre-compiler behavior.
+  readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
@@ -280,6 +289,22 @@ mock.module('../platform/providers', () => ({
   }),
 }));
 
+mock.module('../projects/opencode-mapping', () => ({
+  pickCanonicalRoot: () => 'ses_root_existing',
+  resolveRootSessionId: () => 'ses_root_existing',
+  sandboxOpencodeEndpoint: async () => null,
+  listSandboxOpencodeSessions: async () => ({
+    ok: false,
+    reason: opencodeEnsureReason === 'not_ready' ? 'not_ready' : 'unreachable',
+  }),
+  ensureOpencodeSessionPin: async (input: { currentPin: string | null }) => ({
+    pin: input.currentPin ?? 'ses_root_existing',
+    changed: false,
+    reason: opencodeEnsureReason,
+    sessions: [],
+  }),
+}));
+
 // Session create runs the billing gate. Return a billing-active account so the
 // contract holds regardless of whether KORTIX_BILLING_INTERNAL_ENABLED is set
 // in the run environment (the gate is a no-op when billing is disabled).
@@ -344,6 +369,7 @@ mock.module('../deployments/providers/freestyle', () => ({
 mock.module('../shared/account-limits', () => ({
   resolveAccountTier: async () => 'free',
   maxConcurrentSessionsForTier: () => 1,
+  resolveAccountSessionLimit: async () => ({ tier: 'free', limit: 1, source: 'tier' }),
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
   maxProjectsForAccount: async () => 100,
   accountEntitledToLlmGateway: async () => true,
@@ -593,13 +619,12 @@ mock.module('../shared/db', () => ({
                   ? secretRows[existingIndex]!.secretId
                   : '00000000-0000-4000-a000-000000000401',
               projectId: values.projectId!,
+              identifier: values.identifier ?? values.name!,
               name: values.name!,
               valueEnc: (set.valueEnc ?? values.valueEnc)!,
               scope: values.scope ?? 'runtime',
-              shareScope: values.shareScope ?? 'project',
               ownerUserId: values.ownerUserId ?? null,
               active: values.active ?? true,
-              agentScope: values.agentScope ?? null,
               createdBy: values.createdBy ?? null,
               createdAt:
                 existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
@@ -903,13 +928,12 @@ describe('project session API contract', () => {
       {
         secretId: '00000000-0000-4000-a000-000000000402',
         projectId: PROJECT_ID,
+        identifier: 'KORTIX_GIT_AUTH_TOKEN',
         name: 'KORTIX_GIT_AUTH_TOKEN',
         valueEnc: encryptProjectSecret(PROJECT_ID, 'legacy-freestyle-token'),
         scope: 'runtime',
-        shareScope: 'project',
         ownerUserId: null,
         active: true,
-        agentScope: null,
         createdBy: USER_ID,
         createdAt: new Date('2026-01-02T00:00:00Z'),
         updatedAt: new Date('2026-01-02T00:00:00Z'),
@@ -1169,6 +1193,152 @@ describe('project session API contract', () => {
     expect(await missingSession.json()).toMatchObject({ error: 'Not found' });
   });
 
+  test('dashboard start leaves fresh no-external-id provisioning rows alone', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'provisioning',
+      sandboxProvider: 'daytona',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'provisioning',
+        config: {},
+        metadata: {
+          initStatus: 'pending',
+          initAttempts: 0,
+          initMaxAttempts: 3,
+          healthStatus: 'unknown',
+        },
+        lastUsedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'provisioning',
+      retriable: true,
+      sandbox: {
+        sandbox_id: SESSION_ID,
+        external_id: null,
+        status: 'provisioning',
+      },
+    });
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows).toHaveLength(1);
+  });
+
+  test('dashboard start retires abandoned no-external-id provisioning rows and reallocates', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'provisioning',
+      sandboxProvider: 'daytona',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'provisioning',
+        config: {},
+        metadata: {
+          initStatus: 'pending',
+          initAttempts: 0,
+          initMaxAttempts: 3,
+          healthStatus: 'unknown',
+        },
+        lastUsedAt: null,
+        createdAt: new Date(Date.now() - 11 * 60 * 1000),
+        updatedAt: new Date(Date.now() - 11 * 60 * 1000),
+      },
+    ];
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'provisioning',
+      agent_name: 'default',
+      retriable: true,
+      sandbox: null,
+      reason: 'stale_provisioning_pending',
+    });
+
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(sessionSandboxRows).toHaveLength(0);
+    expect(lastProvisionInput?.sandboxId).toBe(SESSION_ID);
+  });
+
+  test('dashboard start retires abandoned started provisioning rows and reallocates', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'provisioning',
+      sandboxProvider: 'platinum',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: null,
+        baseUrl: null,
+        status: 'provisioning',
+        config: {},
+        metadata: {
+          initStatus: 'provisioning',
+          initAttempts: 1,
+          initMaxAttempts: 3,
+          initStartedAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
+          initUpdatedAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
+          healthStatus: 'unknown',
+        },
+        lastUsedAt: null,
+        createdAt: new Date(Date.now() - 6 * 60 * 1000),
+        updatedAt: new Date(Date.now() - 6 * 60 * 1000),
+      },
+    ];
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'provisioning',
+      agent_name: 'default',
+      retriable: true,
+      sandbox: null,
+      reason: 'stale_provisioning_lost',
+    });
+
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(sessionSandboxRows).toHaveLength(0);
+    expect(lastProvisionInput?.sandboxId).toBe(SESSION_ID);
+  });
+
   test('dashboard start of an existing sandbox wakes in place and never allocates a second runtime', async () => {
     const app = createApp();
     sessionRow = {
@@ -1254,6 +1424,157 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
+  test('dashboard start retires a sandbox that stayed stopped after wake grace', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-stuck-stopped',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          runtimeWakeStartedAt: new Date(
+            Date.now() - 2 * 60 * 1000,
+          ).toISOString(),
+          runtimeWakeProviderStatus: 'stopped',
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'stopped';
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'provisioning',
+      retriable: true,
+      sandbox: null,
+      reason: 'runtime_wake_timeout',
+    });
+
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(providerStartCalls).toBe(0);
+    expect(sessionSandboxRows).toHaveLength(0);
+    expect(lastProvisionInput?.sandboxId).toBe(SESSION_ID);
+  });
+
+  test('dashboard start retires an old active row whose provider status stays unknown', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'platinum',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-status-unknown',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          initSucceededAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'unknown';
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'provisioning',
+      retriable: true,
+      sandbox: null,
+      reason: 'runtime_status_unknown_timeout',
+    });
+
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(providerStartCalls).toBe(0);
+    expect(sessionSandboxRows).toHaveLength(0);
+    expect(lastProvisionInput?.sandboxId).toBe(SESSION_ID);
+  });
+
+  test('dashboard start gives a freshly-created active runtime grace when provider status is removed', async () => {
+    const app = createApp();
+    const initSucceededAt = new Date().toISOString();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'platinum',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-fresh-eventual-404',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          initSucceededAt,
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'starting',
+      retriable: true,
+      sandbox: null,
+      reason: 'runtime_removed_checking',
+    });
+
+    expect(providerStartCalls).toBe(0);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows).toHaveLength(1);
+    expect(sessionSandboxRows[0]?.externalId).toBe('box-fresh-eventual-404');
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>)
+        .runtimeWakeStartedAt,
+    ).toEqual(expect.any(String));
+  });
+
   test('dashboard start retires a provider-removed sandbox and reallocates through the canonical runtime path', async () => {
     const app = createApp();
     sessionRow = {
@@ -1310,6 +1631,59 @@ describe('project session API contract', () => {
     expect(lastProvisionInput?.extraEnvVars?.KORTIX_OPENCODE_MODEL).toBe(
       'anthropic/claude-sonnet-4-6',
     );
+  });
+
+  test('dashboard start retires a running sandbox whose OpenCode runtime never becomes reachable', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'platinum',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-opencode-dead',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          initSucceededAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
+          opencodeReadyWaitStartedAt: new Date(
+            Date.now() - 6 * 60 * 1000,
+          ).toISOString(),
+          opencodeReadyWaitReason: 'unreachable',
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'running';
+    opencodeEnsureReason = 'unreachable';
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'provisioning',
+      retriable: true,
+      sandbox: null,
+      reason: 'runtime_unreachable_timeout',
+    });
+
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(providerStartCalls).toBe(0);
+    expect(sessionSandboxRows).toHaveLength(0);
+    expect(lastProvisionInput?.sandboxId).toBe(SESSION_ID);
   });
 
   test('restart of a provider-removed sandbox provisions a replacement instead of leaving the session stopped', async () => {

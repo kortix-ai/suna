@@ -139,9 +139,9 @@ describe('getStarterFiles', () => {
     expect(a).toEqual(b);
   });
 
-  test('always includes the base kortix.toml', () => {
+  test('always includes the base kortix.yaml', () => {
     const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
-    expect(byPath(files).has('kortix.toml')).toBe(true);
+    expect(byPath(files).has('kortix.yaml')).toBe(true);
   });
 
   test('default starter does not ship general knowledge worker skills', () => {

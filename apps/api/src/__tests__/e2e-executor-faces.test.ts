@@ -9,7 +9,6 @@ import { fileURLToPath } from 'node:url';
 import { createExecutorClient } from '../../../../packages/executor-sdk/src/index';
 import { createExecutorRouter, type CatalogConnector, type ExecutorPrincipal, type ExecutorRouterDeps } from '../executor/router';
 import type { ExecutionRecord, GatewayAction, GatewayConnector, GatewayDeps } from '../executor/gateway';
-import { isSecretUsableBy } from '../executor/share';
 
 const ACCOUNT = 'acct-faces';
 const PROJECT = 'proj-faces';
@@ -37,8 +36,6 @@ const connector: GatewayConnector = {
   baseUrl: 'https://example.test',
   auth: { type: 'bearer', in: 'header', name: null, prefix: null },
   hasAuth: true,
-  shareScope: 'project',
-  grants: [],
   credentialMode: 'shared',
   enabled: true,
 };
@@ -66,8 +63,7 @@ function principal(): ExecutorPrincipal {
   };
 }
 
-function catalogFor(p: ExecutorPrincipal): CatalogConnector[] {
-  if (!isSecretUsableBy(connector.shareScope, connector.grants, p.subject)) return [];
+function catalogFor(_p: ExecutorPrincipal): CatalogConnector[] {
   return [{
     slug: connector.slug,
     name: 'Echo',
@@ -116,7 +112,6 @@ function makeDeps(): ExecutorRouterDeps {
     resolveAdmin: async () => null,
     listConnectors: async () => [],
     syncConnectors: async () => ({ synced: 0, errors: [] }),
-    setSharing: async () => false,
   };
 }
 

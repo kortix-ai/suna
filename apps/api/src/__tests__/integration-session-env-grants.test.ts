@@ -1,95 +1,93 @@
 /**
- * Integration test (real local DB): secret access is enforced at the SANDBOX ENV
- * boundary, not just the GET /secrets list. A member a secret isn't shared with
- * must be unable to read it from $ENV inside their session.
+ * Integration test (real local DB): session-env injection under the secrets v2
+ * identifier model. Authorization is centralized on the agent's `secrets`
+ * grant, applied BY IDENTIFIER via `listProjectSecretsSnapshotForUser` (the
+ * resolver `buildSessionSandboxEnvVars` calls at sandbox boot) — there is no
+ * resource-side allow-list and no per-secret member/group sharing left to test.
  *
- * Secrets are governed by ONE model — the share model (project_secret_grants +
- * share_scope) — written by both the Secret "Who can access this" dialog AND the
- * Members "Resource access" card (via addSecretResourceGrant). This drives the
- * real `buildSessionSandboxEnvVars` against it:
- *   - an OUTSIDER (not in the allow-list) never gets the restricted secret, but
- *     unscoped secrets still reach them (default = project-wide / open).
- *   - the granted member gets the restricted secret back.
+ * Covers the model's headline scenario: two identifiers sharing one env-var
+ * KEY (GMAPS-primary / GMAPS-backup, both GOOGLE_MAPS_API_KEY) — an agent
+ * granted one specific identifier gets exactly that value injected.
  *
  * Runs against the local Postgres (DATABASE_URL).
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, sql, inArray } from 'drizzle-orm';
 import { projectSecrets } from '@kortix/db';
 import { db } from '../shared/db';
-import { addSecretResourceGrant, writeSharedProjectSecret } from '../projects/secrets';
-import { buildSessionSandboxEnvVars } from '../projects/lib/sessions';
+import {
+  AmbiguousSecretGrantError,
+  listProjectSecretsSnapshotForUser,
+  writeSharedProjectSecret,
+} from '../projects/secrets';
 
-let ctx: { projectId: string; accountId: string } | null = null;
-const GRANTED_USER = crypto.randomUUID();
-const OUTSIDER = crypto.randomUUID();
-// Unique names so we never collide with real project secrets / parallel runs.
+let ctx: { projectId: string } | null = null;
+const USER = crypto.randomUUID();
 const SUFFIX = crypto.randomUUID().slice(0, 8).toUpperCase().replace(/-/g, '');
-const SCOPED = `E2E_SCOPED_${SUFFIX}`;
+const KEY = `E2E_GMAPS_${SUFFIX}`;
+const PRIMARY = `${KEY}-primary`;
+const BACKUP = `${KEY}-backup`;
 const UNSCOPED = `E2E_UNSCOPED_${SUFFIX}`;
-
-async function envFor(userId: string): Promise<Record<string, string>> {
-  if (!ctx) throw new Error('no ctx');
-  return buildSessionSandboxEnvVars({
-    accountId: ctx.accountId,
-    projectId: ctx.projectId,
-    sessionId: crypto.randomUUID(),
-    userId,
-    repoUrl: '',
-    baseRef: 'main',
-    agentName: 'default',
-    llmGatewayEnabled: false,
-  });
-}
 
 beforeAll(async () => {
   const rows = (await db.execute(
-    sql`select project_id, account_id from kortix.projects limit 1`,
-  )) as unknown as Array<{ project_id: string; account_id: string }>;
+    sql`select project_id from kortix.projects limit 1`,
+  )) as unknown as Array<{ project_id: string }>;
   if (!rows[0]) return;
-  ctx = { projectId: rows[0].project_id, accountId: rows[0].account_id };
+  ctx = { projectId: rows[0].project_id };
 
-  // Two project-wide secrets; then restrict SCOPED to GRANTED_USER via the share
-  // model — the same write the Resource-access card and Secrets dialog make.
-  await writeSharedProjectSecret({ projectId: ctx.projectId, name: SCOPED, value: 'scoped-val' });
+  // Two identifiers, SAME key — the headline secrets-v2 scenario.
+  await writeSharedProjectSecret({ projectId: ctx.projectId, identifier: PRIMARY, name: KEY, value: 'primary-val' });
+  await writeSharedProjectSecret({ projectId: ctx.projectId, identifier: BACKUP, name: KEY, value: 'backup-val' });
   await writeSharedProjectSecret({ projectId: ctx.projectId, name: UNSCOPED, value: 'open-val' });
-  await addSecretResourceGrant({
-    projectId: ctx.projectId,
-    name: SCOPED,
-    principalType: 'member',
-    principalId: GRANTED_USER,
-  });
 });
 
 afterAll(async () => {
   if (!ctx) return;
-  // project_secret_grants cascade-delete with their secret rows.
-  for (const name of [SCOPED, UNSCOPED]) {
-    await db
-      .delete(projectSecrets)
-      .where(and(eq(projectSecrets.projectId, ctx.projectId), eq(projectSecrets.name, name)));
-  }
+  await db
+    .delete(projectSecrets)
+    .where(and(eq(projectSecrets.projectId, ctx.projectId), inArray(projectSecrets.identifier, [PRIMARY, BACKUP, UNSCOPED])));
 });
 
-describe('secret sharing gates the sandbox env (buildSessionSandboxEnvVars)', () => {
-  test('outsider: the restricted secret is dropped from the env, unscoped stays', async () => {
+describe('listProjectSecretsSnapshotForUser — session env injection by identifier', () => {
+  test('an agent granted ONE identifier gets exactly that value under the shared key', async () => {
     if (!ctx) { console.warn('[integration] no project in local DB — skipping'); return; }
-    const env = await envFor(OUTSIDER);
-    // A member the secret isn't shared with cannot read it from $ENV.
-    expect(env[SCOPED]).toBeUndefined();
-    // Unscoped secrets remain open — restricting one only affects that secret.
-    expect(env[UNSCOPED]).toBe('open-val');
-    // The advertised name list must agree with what's actually injected.
-    const names = (env.KORTIX_PROJECT_SECRET_NAMES ?? '').split(',');
-    expect(names).not.toContain(SCOPED);
-    expect(names).toContain(UNSCOPED);
+    const { env, names } = await listProjectSecretsSnapshotForUser(ctx.projectId, USER, [PRIMARY]);
+    expect(env[KEY]).toBe('primary-val');
+    expect(names).toContain(KEY);
+    // Only the granted identifier's key is present — nothing else leaks in.
+    expect(Object.keys(env)).toEqual([KEY]);
   });
 
-  test('granted member: gets the restricted secret back', async () => {
+  test('a DIFFERENT identifier grant gets the OTHER value under the same key', async () => {
     if (!ctx) return;
-    const env = await envFor(GRANTED_USER);
-    expect(env[SCOPED]).toBe('scoped-val');
+    const { env } = await listProjectSecretsSnapshotForUser(ctx.projectId, USER, [BACKUP]);
+    expect(env[KEY]).toBe('backup-val');
+  });
+
+  test("'all' (default/back-compat) sees every identifier, deterministically resolving the shared key", async () => {
+    if (!ctx) return;
+    const { env, names } = await listProjectSecretsSnapshotForUser(ctx.projectId, USER, 'all');
     expect(env[UNSCOPED]).toBe('open-val');
-    expect((env.KORTIX_PROJECT_SECRET_NAMES ?? '').split(',')).toContain(SCOPED);
+    expect(names).toContain(UNSCOPED);
+    // One of the two GMAPS values wins deterministically — never both/neither.
+    expect([isEitherGmapsValue(env)]).toContain(true);
+  });
+
+  test('an agent granted BOTH identifiers for the same key is ambiguous — rejected', async () => {
+    if (!ctx) return;
+    await expect(
+      listProjectSecretsSnapshotForUser(ctx.projectId, USER, [PRIMARY, BACKUP]),
+    ).rejects.toThrow(AmbiguousSecretGrantError);
+  });
+
+  test('an unscoped (single-identifier) secret is unaffected by the collision above', async () => {
+    if (!ctx) return;
+    const { env } = await listProjectSecretsSnapshotForUser(ctx.projectId, USER, [UNSCOPED]);
+    expect(env).toEqual({ [UNSCOPED]: 'open-val' });
   });
 });
+
+function isEitherGmapsValue(env: Record<string, string>): boolean {
+  return env[KEY] === 'primary-val' || env[KEY] === 'backup-val';
+}

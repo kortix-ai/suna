@@ -3,7 +3,7 @@ import { isSessionVisibleTo, loadSessionGrants, parseSharingIntent, resolveShare
 import {
   PROJECT_ACTIONS,
   deleteResourceGrant,
-  isResourceType,
+  isCreatableResourceType,
   listResourceGrants,
   upsertResourceGrant,
 } from '../../iam';
@@ -15,16 +15,20 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountGroups, accountMembers, executorExecutions, projectGroupGrants, projectSecrets, projectSessions, sessionSandboxes } from '@kortix/db';
+import { accountGroupMembers, accountGroups, accountMembers, executorConnectors, executorExecutions, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid } from '../lib/access';
 import { AnyObject, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
-import { addSecretResourceGrant, listSecretResourceGrants, removeSecretResourceGrant } from '../secrets';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
-import { createSession, deleteSession } from '../session-lifecycle';
+import {
+  createSession,
+  deleteSession,
+  drainSessionLifecycleQueue,
+  enqueueContinueSessionCommand,
+} from '../session-lifecycle';
 import { requireEntitlement } from '../../accounts/iam/helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 
@@ -435,6 +439,7 @@ projectsApp.openapi(
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
   const rows = await db
     .select()
@@ -531,6 +536,7 @@ projectsApp.openapi(
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
   const visible = await loadVisibleSession(loaded, sessionId);
   if (!visible) return c.json({ error: 'Not found' }, 404);
@@ -590,6 +596,7 @@ projectsApp.openapi(
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
   const visible = await loadVisibleSession(loaded, sessionId);
   if (!visible) return c.json({ error: 'Not found' }, 404);
@@ -642,6 +649,7 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
     const visible = await loadVisibleSession(loaded, sessionId);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // The historical trail is Enterprise (`auditAccess`), but this endpoint is
@@ -692,6 +700,18 @@ projectsApp.openapi(
     ];
     const emailByUser = userIds.length ? await lookupEmailsByUserIds(userIds) : new Map<string, string>();
 
+    // Connector slugs in one batched lookup — the UI needs `<slug>.<action>`
+    // to offer a "always run this" project-policy shortcut on a pending row.
+    const connectorIds = [...new Set(rows.map((r) => r.connectorId).filter((v): v is string => !!v))];
+    const slugByConnector = new Map<string, string>();
+    if (connectorIds.length) {
+      const conns = await db
+        .select({ connectorId: executorConnectors.connectorId, slug: executorConnectors.slug })
+        .from(executorConnectors)
+        .where(inArray(executorConnectors.connectorId, connectorIds));
+      for (const conn of conns) slugByConnector.set(conn.connectorId, conn.slug);
+    }
+
     return c.json({
       session_id: sessionId,
       agent: (visible.row.agentName as string | null) ?? null,
@@ -705,6 +725,7 @@ projectsApp.openapi(
         execution_id: r.executionId,
         action: r.actionPath,
         connector_id: r.connectorId,
+        connector: r.connectorId ? (slugByConnector.get(r.connectorId) ?? null) : null,
         status: r.status, // ok | error | denied | pending_approval
         risk: r.risk, // read | write | destructive | null
         acted_by: r.actingUserId,
@@ -918,10 +939,14 @@ projectsApp.openapi(
       return c.json({ error: "decision must be 'approve' or 'deny'" }, 400);
     }
     // 'once' (default) = approve just this call; 'session' = also stop asking for
-    // THIS connector+action for the rest of the session. Only meaningful on
-    // approve. (A policy `block` never reaches this endpoint as pending, so
-    // "allow for session" can only ever widen require_approval → run.)
-    const scope = normalizeString(body.scope) === 'session' ? 'session' : 'once';
+    // THIS connector+action for the rest of the session; 'session_all' = stop
+    // asking for ANY gated action for the rest of the session (a `*` wildcard
+    // grant per enabled connector). Only meaningful on approve. (A policy
+    // `block` never reaches this endpoint as pending, so a session grant can
+    // only ever widen require_approval → run.)
+    const scopeRaw = normalizeString(body.scope);
+    const scope =
+      scopeRaw === 'session' ? 'session' : scopeRaw === 'session_all' ? 'session_all' : 'once';
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -1015,17 +1040,106 @@ projectsApp.openapi(
     // "Allow for this session": record (session, connector, action) so the
     // gateway auto-runs the same tool for the rest of the session. Best-effort +
     // idempotent — a failure here doesn't undo the (already-committed) approval.
+    // The execution row's actionPath is the QUALIFIED audit form
+    // (`google_drive.create_folder`); the gateway's session-allow check matches
+    // the CONNECTOR-RELATIVE form (`create_folder`) — strip the slug prefix or
+    // the grant never matches and "Allow for session" keeps re-asking (the bug
+    // this comment is a headstone for).
     if (decision === 'approve' && scope === 'session' && row.sessionId && row.connectorId) {
       try {
+        const [conn] = await db
+          .select({ slug: executorConnectors.slug })
+          .from(executorConnectors)
+          .where(eq(executorConnectors.connectorId, row.connectorId))
+          .limit(1);
+        const relativeActionPath =
+          conn && row.actionPath.startsWith(`${conn.slug}.`)
+            ? row.actionPath.slice(conn.slug.length + 1)
+            : row.actionPath;
         await recordSessionToolApproval({
           sessionId: row.sessionId,
           projectId,
           connectorId: row.connectorId,
-          actionPath: row.actionPath,
+          actionPath: relativeActionPath,
           grantedBy: loaded.userId,
         });
       } catch (err) {
         console.warn('[approvals] failed to record session allow', {
+          executionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // "Allow everything for this session": one `*` wildcard grant per enabled
+    // connector (the gateway's session check matches `*` against any action).
+    // Enumerated per connector — instead of a schema-level "all connectors"
+    // marker — so a connector added AFTER this grant still asks. Best-effort +
+    // idempotent, same as the single-action grant above.
+    if (decision === 'approve' && scope === 'session_all' && row.sessionId) {
+      try {
+        const conns = await db
+          .select({ connectorId: executorConnectors.connectorId })
+          .from(executorConnectors)
+          .where(
+            and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.enabled, true)),
+          );
+        for (const conn of conns) {
+          await recordSessionToolApproval({
+            sessionId: row.sessionId,
+            projectId,
+            connectorId: conn.connectorId,
+            actionPath: '*',
+            grantedBy: loaded.userId,
+          });
+        }
+      } catch (err) {
+        console.warn('[approvals] failed to record session allow-all', {
+          executionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // Server-side resume — the reliability backstop. A LIVE gated call (the
+    // sandbox CLI/MCP pause loop, or an approve within the gateway's 45s hold)
+    // picks this decision out of the DB within ~1s, marks it consumed, and the
+    // agent's turn resumes in-band — no message needed. When nobody was
+    // waiting (an older sandbox image without the pause loop, or a decision
+    // after the ~30min poll budget), the resolve would otherwise change
+    // nothing the agent can see: its turn already ended on `pending_approval`.
+    // So we enqueue a DURABLE continue_session command with a grace-window
+    // schedule: the drain re-checks the consumed marker at execution time and
+    // either no-ops (a live waiter got there first) or delivers the
+    // continuation prompt into the session (approval carry-over then lets the
+    // retried call run without re-asking). Queue-backed so it survives this
+    // pod dying; idempotency-keyed so a double-resolve can't double-prompt.
+    if (row.sessionId) {
+      const resumeText =
+        decision === 'approve'
+          ? `Your pending approval to run ${row.actionPath} was approved — continue.`
+          : `Your request to run ${row.actionPath} was denied — continue without it.`;
+      try {
+        await enqueueContinueSessionCommand({
+          source: 'system:approval-resume',
+          projectId,
+          accountId: loaded.row.accountId,
+          sessionId: row.sessionId,
+          actorUserId: loaded.userId,
+          text: resumeText,
+          executionId,
+          // > the waiter's 1s decision poll + hold re-issue latency, with margin.
+          availableAt: new Date(Date.now() + 6_000),
+          idempotencyKey: `approval-resume:${executionId}`,
+        });
+        // Best-effort fast path: the scheduler drains every ~60s; kick one
+        // drain shortly after the grace window so the resume usually lands in
+        // seconds. If this pod dies first, the scheduler still delivers.
+        setTimeout(() => {
+          drainSessionLifecycleQueue({ limit: 5 }).catch(() => {});
+        }, 7_000).unref?.();
+      } catch (err) {
+        console.warn('[approvals] failed to enqueue resume', {
           executionId,
           error: err instanceof Error ? err.message : String(err),
         });
@@ -1272,8 +1386,7 @@ projectsApp.openapi(
         declares?: { secrets: string[] | 'all'; connectors: string[] | 'all' };
       }[];
       skills: { id: string; name: string }[];
-      secrets: { id: string; name: string }[];
-    } = { agents: [], skills: [], secrets: [] };
+    } = { agents: [], skills: [] };
     let configLoaded = false;
     try {
       const config = await loadConfigWithFiles(loaded.row);
@@ -1294,49 +1407,23 @@ projectsApp.openapi(
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    // Secrets aren't in the git config — they live in project_secrets. Enumerate
-    // their NAMES (the grant resource_id IS the name; name doubles as the label).
-    // This always loads (DB, not the repo), independent of configLoaded.
-    // SHARED rows only (owner_user_id IS NULL): a per-secret grant scopes a
-    // project-wide secret to specific members. Personal overrides are already
-    // per-user, so they aren't project-grantable — and listing one would let a
-    // grant on its name strip the secret from its OWN owner's session.
-    const secretRows = await db
-      .selectDistinct({ name: projectSecrets.name })
-      .from(projectSecrets)
-      .where(and(eq(projectSecrets.projectId, projectId), isNull(projectSecrets.ownerUserId)));
-    resources.secrets = secretRows.map((r) => ({ id: r.name, name: r.name }));
-
-    // Grants key on the agent NAME / skill SLUG / secret NAME. A rename or delete
-    // of the underlying resource leaves the grant ORPHANED — and since an
-    // unscoped resource is project-wide, the restriction silently evaporates.
-    // Flag orphaned grants so the manager gets a SIGNAL to re-grant. Agent/skill
-    // orphans only when the config actually loaded (a transient repo failure must
-    // not mass-flag); secrets always load, so they're always checkable.
+    // Grants key on the agent NAME / skill SLUG. A rename or delete of the
+    // underlying resource leaves the grant ORPHANED — and since an unscoped
+    // resource is project-wide, the restriction silently evaporates. Flag
+    // orphaned grants so the manager gets a SIGNAL to re-grant.
+    // Only checked when the config actually loaded (a transient repo failure
+    // must not mass-flag).
     const liveAgentIds = new Set(resources.agents.map((r) => r.id));
     const liveSkillIds = new Set(resources.skills.map((r) => r.id));
-    const liveSecretIds = new Set(resources.secrets.map((r) => r.id));
     const isOrphan = (type: string, id: string) => {
-      if (type === 'secret') return !liveSecretIds.has(id);
       if (!configLoaded) return false;
       return type === 'agent' ? !liveAgentIds.has(id) : type === 'skill' ? !liveSkillIds.has(id) : false;
     };
 
-    // Agents/skills come from iam_resource_grants; SECRETS come from the share
-    // model (project_secret_grants) — one source of truth shared with the Secret
-    // "Who can access this" dialog. Any legacy iam secret rows are ignored.
-    const iamGrants = (await listResourceGrants(projectId)).filter((g) => g.resourceType !== 'secret');
-    const secretGrants = (await listSecretResourceGrants(projectId)).map((s) => ({
-      grantId: s.grantId,
-      resourceType: 'secret' as const,
-      resourceId: s.name,
-      principalType: s.principalType,
-      principalId: s.principalId,
-      expiresAt: null as Date | null,
-      grantedBy: null as string | null,
-      createdAt: s.createdAt,
-    }));
-    const grants = [...iamGrants, ...secretGrants];
+    // Agents/skills come from iam_resource_grants. SECRETS no longer have a
+    // resource-type here — secret sharing was retired (a secret is always
+    // project-wide; the only access gate is the agent-side `secrets` grant).
+    const grants = (await listResourceGrants(projectId)).filter((g) => g.resourceType !== 'secret');
 
     // Resolve principal labels in two batched lookups.
     const memberIds = [...new Set(grants.filter((g) => g.principalType === 'member').map((g) => g.principalId))];
@@ -1401,8 +1488,13 @@ projectsApp.openapi(
     const resourceId = normalizeString(body.resource_id ?? body.resourceId);
     const principalType = normalizeString(body.principal_type ?? body.principalType);
     const principalId = normalizeString(body.principal_id ?? body.principalId);
-    if (!resourceType || !isResourceType(resourceType)) {
-      return c.json({ error: 'resource_type must be agent, skill, or secret' }, 400);
+    // AGENT-ONLY resource model: agent is the only member/department-scoped
+    // resource. Skills and secrets are governed by the editor role (edit) +
+    // agent inheritance (use) — no NEW skill/secret grant may be created here.
+    // Pre-existing skill/secret rows still read/list/revoke fine (see
+    // resource-grants.ts's RESOURCE_GRANT_TYPES doc comment).
+    if (!resourceType || !isCreatableResourceType(resourceType)) {
+      return c.json({ error: 'resource_type must be agent' }, 400);
     }
     if (!resourceId) return c.json({ error: 'resource_id is required' }, 400);
     if (principalType !== 'member' && principalType !== 'group') {
@@ -1433,19 +1525,11 @@ projectsApp.openapi(
       if (!g) return c.json({ error: 'group not found in this account' }, 404);
     }
 
-    // SECRETS are governed by the share model (project_secret_grants) — the SAME
-    // data the Secret "Who can access this" dialog writes — so a grant here shows
-    // there and vice-versa. Granting to a member/dept restricts the secret to its
-    // allow-list. (expires_at isn't part of the share model; the card doesn't set
-    // it for secrets.)
-    if (resourceType === 'secret') {
-      const added = await addSecretResourceGrant({ projectId, name: resourceId, principalType, principalId });
-      if (!added) return c.json({ error: `no secret '${resourceId}' in this project` }, 400);
-      return c.json({ grant_id: added.grantId, resource_type: 'secret', resource_id: resourceId, principal_type: principalType, principal_id: principalId }, 201);
-    }
-
-    // Agents/skills live in the git config → validate there, store in
-    // iam_resource_grants. A typo'd grant would be a silent dead row.
+    // Agents live in the git config → validate there, store in
+    // iam_resource_grants. A typo'd grant would be a silent dead row. (Skills
+    // and secrets used to be creatable here too — SECRETS routed to the share
+    // model, project_secret_grants — but the resourceType guard above now
+    // rejects both before we get here; only 'agent' reaches this point.)
     let config;
     try {
       config = await loadConfigWithFiles(loaded.row);
@@ -1491,11 +1575,9 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
-    // The id belongs to either an agent/skill grant (iam_resource_grants) or a
-    // secret grant (project_secret_grants). Try the IAM table first, then the
-    // share model; removing a secret's last grant reverts it to project-wide.
-    const removed =
-      (await deleteResourceGrant(grantId, projectId)) || (await removeSecretResourceGrant(grantId, projectId));
+    // The id belongs to an agent/skill grant (iam_resource_grants). Secrets no
+    // longer have a resource grant to remove — secret sharing was retired.
+    const removed = await deleteResourceGrant(grantId, projectId);
     if (!removed) return c.json({ error: 'grant not found' }, 404);
     return c.json({ ok: true });
   },

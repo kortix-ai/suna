@@ -55,18 +55,20 @@ const HELP = `Usage: kortix grants <subcommand> [options]
 Assign project resources to people — the inheritance PYRAMID. Secrets and
 connectors live on AGENTS; assign an agent to a member (or department) and they
 inherit everything that agent declares. Mirrors the dashboard's
-"Members → Resource access" panel. Resource types: ${RESOURCE_TYPES.join(', ')}.
+"Members → Resource access" panel. Authorization is centralized on the agent:
+\`assign\` only ever creates agent grants now (\`ls\` still lists any legacy
+skill/secret rows for visibility — see Resource types: ${RESOURCE_TYPES.join(', ')}).
 
 Subcommands:
   ls [--json]                          List grants + grantable agents/skills/secrets.
-  assign <name> --to <who> [--group]   Assign a resource to a member (or --group department).
+  assign <agent-name> --to <who> [--group]   Assign an agent to a member (or --group department).
   revoke <grant-id>                    Remove a grant.
 
 Options:
   --to <who>         Member email or user-id; department group-id with --group.
   --group            Treat --to as a department (group) id, not a member.
-  --type <t>         ${RESOURCE_TYPES.join('|')} (default: agent).
-  --expires <iso>    Optional auto-revoke timestamp (agents/skills only).
+  --type <t>         agent (the only assignable type; default).
+  --expires <iso>    Optional auto-revoke timestamp.
   --project <id>     Operate on this project id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
@@ -76,7 +78,6 @@ Examples:
   kortix grants ls
   kortix grants assign support-bot --to alice@corp.com
   kortix grants assign support-bot --to 8f3c… --group
-  kortix grants assign db-url --type secret --to alice@corp.com
   kortix grants revoke 2f1a…
 `;
 
@@ -145,7 +146,7 @@ export async function runGrants(argv: string[]): Promise<number> {
         process.stdout.write(`  ${C.dim}GRANTABLE${C.reset}\n`);
         if (agents.length === 0 && skills.length === 0 && secrets.length === 0) {
           process.stdout.write(
-            `  ${C.faded}(none — add agents/skills to kortix.toml or secrets in the dashboard)${C.reset}\n`,
+            `  ${C.faded}(none — add agents/skills to kortix.yaml or secrets in the dashboard)${C.reset}\n`,
           );
         }
         for (const a of agents) {
@@ -194,12 +195,16 @@ export async function runGrants(argv: string[]): Promise<number> {
       case 'assign':
       case 'add': {
         const resourceId = positional[0];
-        if (!resourceId) return missing('a resource name (agent/skill/secret)');
+        if (!resourceId) return missing('an agent name');
         if (!f.to) return missing('--to <member-email|user-id|group-id>');
+        // Authorization is centralized on the AGENT: assigning a member/department
+        // to an agent is the only grant this command creates. `ls` still shows
+        // any legacy skill/secret rows for visibility, but they can't be created
+        // here anymore.
         const resourceType = (f.type ?? 'agent') as ResourceType;
-        if (!RESOURCE_TYPES.includes(resourceType)) {
+        if (resourceType !== 'agent') {
           process.stderr.write(
-            `${status.err(`--type must be one of ${RESOURCE_TYPES.join(', ')}`)}\n`,
+            `${status.err('--type must be agent — skill/secret grants are no longer assignable (only agent grants; assign the agent instead)')}\n`,
           );
           return 2;
         }

@@ -1,6 +1,7 @@
 ---
 name: escalation
 description: "You are an expert at determining when and how to escalate support issues. You structure escalation briefs that give receiving teams everything they need to act quickly, and you..."
+defaultProjectInstall: true
 ---
 
 # Escalation Skill

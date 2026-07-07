@@ -1,23 +1,16 @@
 import { checkBillingActive } from '../../billing/services/billing-gate';
-import { config, type SandboxProviderName } from '../../config';
+import { config, normalizeProviderName, type SandboxProviderName } from '../../config';
 import { resolveSessionProvider } from './provider-precedence';
-import { resolveShareSubject } from '../../executor/share';
 import { auth, json } from '../../openapi';
-import { maxConcurrentSessionsForTier, resolveAccountTier } from '../../shared/account-limits';
+import { resolveAccountSessionLimit } from '../../shared/account-limits';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
-import {
-  listProjectSecretsSnapshotForUser,
-  loadSecretAgentScopes,
-  resolveDeclaredSharedSecrets,
-  secretNamesDeniedForAgent,
-} from '../secrets';
-import { grantFromLoadedAgents, loadProjectAgents } from '../agents';
-import { resolveAssignedAgentNames, unionDeclaredResources } from './agent-inheritance';
-import { agentMayUseEnv } from '../../iam/agent-scope';
+import { AmbiguousSecretGrantError, listProjectSecretsSnapshotForUser } from '../secrets';
+import { grantFromLoadedAgents, loadProjectAgents, projectRequiresDeclaredAgents, resolveGovernedAgentGrant } from '../agents';
+import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { projectSessions } from '@kortix/db';
@@ -78,8 +71,7 @@ export async function countProvisioningProjectSessions(projectId: string): Promi
 
 
 export async function enforceConcurrentSessionCap(accountId: string, userId: string, request?: RequestAuditContext): Promise<SessionCreateError | null> {
-  const tier = await resolveAccountTier(accountId);
-  const limit = maxConcurrentSessionsForTier(tier);
+  const { tier, limit, source } = await resolveAccountSessionLimit(accountId);
   const activeSessions = await countActiveProjectSessions(accountId);
   if (activeSessions < limit) return null;
 
@@ -95,12 +87,14 @@ export async function enforceConcurrentSessionCap(accountId: string, userId: str
       limiter: 'concurrent_sessions',
       tier,
       limit,
+      limit_source: source,
       active_sessions: activeSessions,
     },
   }).catch((error) => {
     console.error('[projects] Failed to record session cap audit event:', error);
   });
 
+  const message = `You've reached your plan's concurrent-session limit (${limit}). Upgrade your plan for a higher limit, or contact the Kortix team to raise it for your account.`;
   return {
     status: 429,
     headers: {
@@ -108,8 +102,8 @@ export async function enforceConcurrentSessionCap(accountId: string, userId: str
       'X-RateLimit-Remaining': '0',
     },
     body: {
-      error: `You're at your ${limit}-session limit. Close a running session or upgrade for more.`,
-      message: `You're at your ${limit}-session limit. Close a running session or upgrade for more.`,
+      error: message,
+      message,
       code: 'concurrent_session_limit',
       limit,
       active_sessions: activeSessions,
@@ -122,8 +116,7 @@ export async function checkConcurrentSessionCap(accountId: string, userId: strin
   error?: SessionCreateError;
   headers: Record<string, string>;
 }> {
-  const tier = await resolveAccountTier(accountId);
-  const limit = maxConcurrentSessionsForTier(tier);
+  const { limit } = await resolveAccountSessionLimit(accountId);
   const activeSessions = await countActiveProjectSessions(accountId);
   const remainingAfterCreate = Math.max(limit - activeSessions - 1, 0);
   const headers = {
@@ -199,20 +192,73 @@ export async function buildSessionSandboxEnvVars(input: {
    *  negotiation round-trip that still hung for 34s through the flaky dev tunnel
    *  (2026-06-13). Omitted → daemon delta-fetches as before. */
   baseSha?: string;
-  /** Project git context, so the per-agent `env` allowlist in [[agents]] can be
-   *  resolved and applied — secrets the agent isn't granted are dropped from the
-   *  injected env (a prompt-injected agent then can't read another scope's keys
-   *  out of $ENV). Optional: when absent, no per-agent narrowing (back-compat). */
+  /** Project git context, so the running agent's `secrets` grant in [[agents]]
+   *  can be resolved and applied by IDENTIFIER — secrets the agent isn't
+   *  granted are dropped from the injected env (a prompt-injected agent then
+   *  can't read another scope's keys out of $ENV). Optional: when absent, the
+   *  grant defaults to 'all' (back-compat, no narrowing). */
   defaultBranch?: string;
   manifestPath?: string;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
   // then reused by the daemon for both API calls and proxy HMAC validation.
-  // Resolved AS the launching user, so personal overrides win and "Only me" /
-  // "Select members" secrets only reach members they're shared with.
-  const subject = await resolveShareSubject(input.userId);
-  const runtimeSecrets = await listProjectSecretsSnapshotForUser(input.projectId, subject);
+  // Resolved AS the launching user so their own CODEX_AUTH_JSON override (if
+  // any) wins; every OTHER secret is project-wide (secret sharing was retired —
+  // authorization is centralized on the running agent's `secrets` grant, applied
+  // below by identifier).
+  let agentGrantEnv: string[] | 'all' | undefined;
+
+  // v2-only: compile the manifest's `agents:` map into an OpenCode-native
+  // config the sandbox receives sealed (see compile-agent-config.ts). `null`
+  // for a v1 project (no `kortix_version: 2`) or any read/parse failure — no
+  // KORTIX_COMPILED_AGENT_CONFIG key is emitted below in that case, so a v1
+  // project's sandbox env is byte-for-byte unaffected by this. Gated on the
+  // same `defaultBranch` presence as the [[agents]] grant resolution below
+  // (both need git context; optional call sites that omit it get neither).
+  let compiledAgentConfig: string | null = null;
+  if (input.defaultBranch) {
+    compiledAgentConfig = await resolveCompiledAgentConfigForSession({
+      projectId: input.projectId,
+      repoUrl: input.repoUrl,
+      defaultBranch: input.defaultBranch,
+      manifestPath: input.manifestPath ?? 'kortix.toml',
+      gitAuthToken: null,
+    }).catch(() => null);
+
+    // Per-agent secret scoping: an agent declared in [[agents]] with a `secrets`
+    // allowlist receives ONLY those IDENTIFIERS — so a narrowly-scoped agent
+    // can't read another scope's API keys/payment creds straight out of $ENV.
+    // No-op (undefined → 'all') for back-compat grants and projects without
+    // [[agents]] or git context. This is the ONLY gate on agent secret access —
+    // there is no resource-side allow-list on the secret itself.
+    const loadedAgents = await loadProjectAgents({
+      projectId: input.projectId,
+      repoUrl: input.repoUrl,
+      defaultBranch: input.defaultBranch,
+      manifestPath: input.manifestPath ?? 'kortix.toml',
+      gitAuthToken: null,
+    }).catch(() => null);
+    const grant = loadedAgents ? grantFromLoadedAgents(input.agentName, loadedAgents) : null;
+    agentGrantEnv = grant?.env;
+  }
+
+  let runtimeSecrets: { env: Record<string, string>; names: string[]; revision: string };
+  try {
+    runtimeSecrets = await listProjectSecretsSnapshotForUser(input.projectId, input.userId, agentGrantEnv);
+  } catch (err) {
+    if (err instanceof AmbiguousSecretGrantError) {
+      console.error(
+        `[session ${input.sessionId}] agent '${input.agentName}' secrets grant is ambiguous: ${err.message}`,
+      );
+    }
+    throw err;
+  }
+  if (Array.isArray(agentGrantEnv) && agentGrantEnv.length > 0) {
+    console.log(
+      `[session ${input.sessionId}] agent '${input.agentName}' env-scoped to ${agentGrantEnv.length} granted identifier(s)`,
+    );
+  }
   // The Slack signing secret only verifies inbound webhooks (an apps/api job).
   // The in-sandbox agent never needs it — keep it out of the sandbox env.
   delete runtimeSecrets.env.SLACK_SIGNING_SECRET;
@@ -233,100 +279,6 @@ export async function buildSessionSandboxEnvVars(input: {
       `[session ${input.sessionId}] ignored ${droppedReserved.length} project secret(s) with reserved env names: ${droppedReserved.join(', ')}`,
     );
   }
-  // Per-agent secret scoping: an agent declared in [[agents]] with an `env`
-  // allowlist receives ONLY those secrets — so a narrowly-scoped agent can't read
-  // another scope's API keys/payment creds straight out of $ENV. No-op for the
-  // 'all'/null grant (back-compat) and projects without [[agents]] or git context.
-  if (input.defaultBranch) {
-    const loadedAgents = await loadProjectAgents({
-      projectId: input.projectId,
-      repoUrl: input.repoUrl,
-      defaultBranch: input.defaultBranch,
-      manifestPath: input.manifestPath ?? 'kortix.toml',
-      gitAuthToken: null,
-    }).catch(() => null);
-    const grant = loadedAgents ? grantFromLoadedAgents(input.agentName, loadedAgents) : null;
-
-    // Inheritance (the "assign human → agent" pyramid), GLOBAL. When the launcher
-    // is EXPLICITLY assigned to ANY agent (a resource grant names them or their
-    // department), the secrets that agent declares in [[agents]].env become
-    // genuinely theirs — folded into the launcher's visible set here, even ones
-    // they can't personally see and even when THIS session runs a DIFFERENT
-    // agent. This removes the double-grant (declare on the agent OR grant the
-    // human, not both). Automatic on assignment (no opt-in flag). The per-agent
-    // narrowing below still applies, so a scoped agent only ever receives its own
-    // declared allowlist — inheritance widens the human, not the agent process.
-    if (loadedAgents && loadedAgents.specs.length > 0) {
-      const assigned = await resolveAssignedAgentNames(input.projectId, input.userId, subject.groupIds);
-      if (assigned.size > 0) {
-        const { secrets } = unionDeclaredResources(loadedAgents.specs, assigned);
-        if (secrets.length > 0) {
-          const inherited = await resolveDeclaredSharedSecrets(input.projectId, secrets);
-          let added = 0;
-          for (const [name, value] of Object.entries(inherited)) {
-            if (!(name in runtimeSecrets.env)) {
-              runtimeSecrets.env[name] = value;
-              runtimeSecrets.names.push(name);
-              added += 1;
-            }
-          }
-          if (added > 0) {
-            console.log(
-              `[session ${input.sessionId}] launcher inherited ${added} secret(s) from assigned agent(s)`,
-            );
-          }
-        }
-      }
-    }
-
-    // Per-agent secret scoping: the agent process only ever sees its own declared
-    // allowlist (a scoped agent can't read another scope's keys out of $ENV, no
-    // matter who launched it or what they inherited). No-op for 'all'/null grants.
-    if (grant && (grant.env ?? 'all') !== 'all') {
-      const droppedByAgent = Object.keys(runtimeSecrets.env).filter((n) => !agentMayUseEnv(grant, n));
-      for (const name of droppedByAgent) delete runtimeSecrets.env[name];
-      runtimeSecrets.names = runtimeSecrets.names.filter((n) => agentMayUseEnv(grant, n));
-      if (droppedByAgent.length > 0) {
-        console.log(
-          `[session ${input.sessionId}] agent '${input.agentName}' env-scoped out ${droppedByAgent.length} secret(s)`,
-        );
-      }
-    }
-  }
-
-  // Secret → AGENT access control (the secret-side allowlist, the authoritative
-  // "which agents may use this secret" gate). A shared secret scoped to specific
-  // agents (`agent_scope` non-empty) is dropped from any session whose running
-  // agent isn't listed — even one the launcher could otherwise see or inherited
-  // from an assignment. All-agents secrets (NULL/empty scope) always pass. This
-  // is DB-side (no git/manifest needed), so it applies to every session; the
-  // per-agent `env` allowlist above is a SEPARATE, agent-side least-privilege
-  // narrowing (a scoped agent limiting itself), not this cross-agent gate.
-  const agentSecretScopes = await loadSecretAgentScopes(input.projectId);
-  if (agentSecretScopes.size > 0) {
-    const denied = secretNamesDeniedForAgent(agentSecretScopes, input.agentName);
-    let droppedByScope = 0;
-    for (const name of denied) {
-      if (name in runtimeSecrets.env) {
-        delete runtimeSecrets.env[name];
-        runtimeSecrets.names = runtimeSecrets.names.filter((n) => n !== name);
-        droppedByScope += 1;
-      }
-    }
-    if (droppedByScope > 0) {
-      console.log(
-        `[session ${input.sessionId}] agent '${input.agentName}' scope-gated out ${droppedByScope} secret(s)`,
-      );
-    }
-  }
-
-  // Per-MEMBER / department secret scoping is already applied UPSTREAM by the
-  // share model: listProjectSecretsSnapshotForUser (above) resolves secrets AS
-  // the launching user, so a secret shared only with specific members/depts —
-  // set via the Secret "Who can access this" dialog OR the Members "Resource
-  // access" card, one source of truth — never enters `runtimeSecrets` for a
-  // member outside its allow-list. No second gate needed here.
-
   // Restore the session's channel binding on EVERY (re)provision. A session
   // created from a chat channel (e.g. Slack) persists its binding in
   // metadata.slack; the in-box relay gates turn-end/answer on SLACK_THREAD_TS /
@@ -372,6 +324,7 @@ export async function buildSessionSandboxEnvVars(input: {
       // Per-session model override (e.g. Slack turns pin a specific model).
       // The sandbox agent reads this and sets it on every opencode prompt call.
       opencodeModel: input.opencodeModel,
+      compiledAgentConfig,
     }),
   };
 }
@@ -461,6 +414,26 @@ export async function createProjectSession(input: {
   );
   const agentName =
     normalizeString(body.agent_name ?? body.agentName) ?? projectDefaultAgent ?? 'default';
+  // MANDATORY DECLARED AGENTS (flagged — docs/specs/2026-07-05-agent-first-config-
+  // unification.md §2.1/§3 Phase 2). Only projects "subject" to enforcement (the
+  // platform-wide flag, or a project stamped `metadata.require_declared_agents`
+  // at creation) pay for this: an extra manifest read, done synchronously here so
+  // an undeclared agent is REJECTED with an explicit 400 before any row is
+  // inserted or sandbox provisioned — never left to resolve to the permissive
+  // null grant `resolveAgentGrant` falls back to on a later hiccup (see the
+  // `.catch` in session-sandbox.ts `mintExecutorToken`, which must stay
+  // fail-safe for NON-subject projects). Non-subject projects take the exact
+  // same path as before this flag existed (zero added I/O, zero behavior change).
+  if (projectRequiresDeclaredAgents(project.metadata, config.KORTIX_REQUIRE_DECLARED_AGENTS)) {
+    const loadedAgents = await loadProjectAgents(project);
+    const governed = resolveGovernedAgentGrant(agentName, loadedAgents, {
+      subject: true,
+      projectDefaultAgent,
+    });
+    if (!governed.ok) {
+      return { error: { status: 400, body: { error: governed.error, code: governed.code } } };
+    }
+  }
   // Explicit request wins; otherwise fall back to the project's default sandbox
   // template (`[sandbox] default` in kortix.toml, synced to project metadata),
   // so EVERY session — UI, triggers, channels — inherits the project's chosen
@@ -473,12 +446,16 @@ export async function createProjectSession(input: {
   // Sandbox provider: explicit request › per-project pin (Customize → Settings) ›
   // weighted balancer. The pin lets you put ONE project on e.g. platinum regardless
   // of the global distribution weights — see resolveSessionProvider.
+  // Canonicalise the legacy 'daytona' alias → 'managed' BEFORE the allowed/enabled
+  // check (matches parseAllowedProviders/isProviderEnabled) so an explicit
+  // provider:'daytona' from any client (Kortix server, legacy SDK) keeps working.
+  const requestedProvider = normalizeString(body.provider);
+  const providerPin = normalizeString(
+    (project.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_provider,
+  );
   const picked = resolveSessionProvider({
-    requested: normalizeString(body.provider) ?? null,
-    projectPin:
-      normalizeString(
-        (project.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_provider,
-      ) ?? null,
+    requested: requestedProvider ? normalizeProviderName(requestedProvider) : null,
+    projectPin: providerPin ? normalizeProviderName(providerPin) : null,
     allowed: config.ALLOWED_SANDBOX_PROVIDERS,
     isEnabled: (p) => config.isProviderEnabled(p as SandboxProviderName),
   });

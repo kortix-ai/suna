@@ -1,6 +1,7 @@
 ---
 name: brand-voice
 description: "Frameworks for documenting, applying, and enforcing brand voice and style guidelines across marketing content."
+defaultProjectInstall: true
 ---
 
 # Brand Voice Skill

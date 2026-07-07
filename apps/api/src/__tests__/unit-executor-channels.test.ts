@@ -298,8 +298,6 @@ const SLACK: GatewayConnector = {
   baseUrl: 'https://slack.com/api',
   auth: { type: 'bearer', in: 'header', name: null, prefix: null },
   hasAuth: true,
-  shareScope: 'project',
-  grants: [],
   credentialMode: 'shared',
   enabled: true,
 };
@@ -312,8 +310,6 @@ const EMAIL: GatewayConnector = {
   baseUrl: 'https://api.agentmail.to/v0',
   auth: { type: 'bearer', in: 'header', name: null, prefix: null },
   hasAuth: true,
-  shareScope: 'project',
-  grants: [],
   credentialMode: 'shared',
   enabled: true,
 };
@@ -416,8 +412,6 @@ describe('handleCall — channel (slack)', () => {
       baseUrl: null,
       auth: { type: 'none', in: 'header', name: null, prefix: null },
       hasAuth: true,
-      shareScope: 'project',
-      grants: [],
       credentialMode: 'shared',
       enabled: true,
     };
@@ -623,8 +617,6 @@ const MEET: GatewayConnector = {
   baseUrl: 'https://us-west-2.recall.ai/api/v1',
   auth: { type: 'custom', in: 'header', name: 'Authorization', prefix: 'Token ' },
   hasAuth: true,
-  shareScope: 'project',
-  grants: [],
   credentialMode: 'shared',
   enabled: true,
 };

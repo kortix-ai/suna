@@ -1,6 +1,8 @@
 /**
- * Connectors (executor) — catalog, project connector admin, policies, sharing,
- * credentials, call gateway. Maps to spec §24 (CONN-1..9, CONN-12, CONN-13).
+ * Connectors (executor) — catalog, project connector admin, policies,
+ * credentials, call gateway. Connectors are project-wide visible (no
+ * per-connector sharing/agent-scope — retired 2026-07-06, see
+ * spec/end-to-end.md §24). Maps to spec §24 (CONN-1..5, 7-9, 12, 13).
  */
 import { flow } from "../core/flow";
 
@@ -67,22 +69,6 @@ flow(
     });
   },
 );
-
-flow("CONN-6", { domain: "connectors", routes: ["PUT /v1/executor/projects/:projectId/connectors/:slug/sharing"] }, async (ctx) => {
-  const p = await ctx.fixtures.project();
-  await ctx.step("invalid sharing mode → 400", async () => {
-    const r = await ctx.client
-      .as(ctx.P.OWNER)
-      .put("/v1/executor/projects/:projectId/connectors/:slug/sharing", { mode: "wizard" }, { params: { projectId: p.id, slug: "nope" } });
-    r.status(400);
-  });
-  await ctx.step("valid mode but unknown connector → 404", async () => {
-    const r = await ctx.client
-      .as(ctx.P.OWNER)
-      .put("/v1/executor/projects/:projectId/connectors/:slug/sharing", { mode: "project" }, { params: { projectId: p.id, slug: "nope" } });
-    r.status(404);
-  });
-});
 
 flow("CONN-7", { domain: "connectors", routes: ["PUT /v1/executor/projects/:projectId/connectors/:slug/credential"] }, async (ctx) => {
   const p = await ctx.fixtures.project();

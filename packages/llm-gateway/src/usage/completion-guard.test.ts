@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { jsonHasContent, sseHasContent } from './completion-guard';
+import { jsonHasContent, sseErrorFrame, sseHasContent } from './completion-guard';
 
 describe('jsonHasContent', () => {
   test('true for a normal message completion', () => {
@@ -64,5 +64,34 @@ describe('sseHasContent', () => {
 
   test('ignores malformed JSON lines instead of throwing', () => {
     expect(sseHasContent('data: {not json\n\n')).toBe(false);
+  });
+});
+
+describe('sseErrorFrame', () => {
+  test('extracts an OpenRouter mid-stream error frame', () => {
+    const buf =
+      'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n' +
+      'data: {"error":{"message":"Upstream idle timeout exceeded","code":502}}\n\n';
+    expect(sseErrorFrame(buf)).toEqual({ message: 'Upstream idle timeout exceeded', code: 502 });
+  });
+
+  test('extracts an error frame without a code', () => {
+    const buf = 'data: {"error":{"message":"boom"}}\n\n';
+    expect(sseErrorFrame(buf)).toEqual({ message: 'boom' });
+  });
+
+  test('null for a clean stream', () => {
+    const buf =
+      'data: {"choices":[{"delta":{"content":"hi"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n';
+    expect(sseErrorFrame(buf)).toBeNull();
+  });
+
+  test('null for an empty buffer and for malformed lines', () => {
+    expect(sseErrorFrame('')).toBeNull();
+    expect(sseErrorFrame('data: {not json\n\n')).toBeNull();
+  });
+
+  test('ignores a non-object error field', () => {
+    expect(sseErrorFrame('data: {"error":"nope"}\n\n')).toBeNull();
   });
 });

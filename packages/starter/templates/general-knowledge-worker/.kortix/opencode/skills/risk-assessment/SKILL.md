@@ -1,6 +1,7 @@
 ---
 name: risk-assessment
 description: "You are a legal risk assessment assistant for an in-house legal team. You help evaluate, classify, and document legal risks using a structured framework based on severity and li..."
+defaultProjectInstall: true
 ---
 
 # Legal Risk Assessment Skill

@@ -15,6 +15,7 @@ import {
   continueSession,
   createSession,
   drainSessionLifecycleQueue,
+  resolveAgentRunAttribution,
   resolveProjectAutomationActor,
   sessionBackpressureState,
 } from '../session-lifecycle';
@@ -479,22 +480,70 @@ export async function resolveGitTriggerActor(accountId: string): Promise<string 
 }
 
 /**
- * Resolve the identity a trigger's automated session is OWNED BY — for the session
- * row's created_by, billing, and audit trail.
- *
- * Triggers are UNATTENDED AGENT automation; they NEVER impersonate a picked human
- * member. The old "Runs as <member>" selector is gone — automation must not assume
- * a human identity. What a run can actually ACCESS is governed by the AGENT's
- * declared scope in kortix.toml `[[agents]]` (secrets + connectors), applied when
- * the session env is built — not by this owner. So this just resolves the project's
- * system automation actor to own the row.
- *
- * TODO (agent standing identity, D1/D2): resolve to the agent's SERVICE ACCOUNT so
- * per-user connectors + secrets bind to the AGENT itself, with no human userId at
- * all. The session token already carries the agent's service-account id.
+ * Resolve the identity a trigger's automated session PROVISIONS as — the
+ * account-member stand-in `createProjectSession` needs for the provisioning/
+ * authorization actor (concurrency cap, secret-visibility subject, the
+ * standing-role fallback an unactivated agent SA relies on — see
+ * `resolveActingActor` in iam/engine-v2.ts). This is intentionally NOT the
+ * run's recorded identity: see `attributeFiredTriggerSession` below, which
+ * overwrites `project_sessions.created_by` to the agent's own service account
+ * right after the row exists — "attribution and authorization stop sharing
+ * one field" (docs/specs/2026-07-05-agent-first-config-unification.md §2.2).
+ * What a run can actually ACCESS is governed by the AGENT's declared scope in
+ * kortix.toml `[[agents]]` (secrets + connectors), applied when the session
+ * env is built — not by this stand-in.
  */
 export async function resolveTriggerActor(project: ProjectRow): Promise<string | null> {
   return resolveProjectAutomationActor(project.accountId);
+}
+
+/**
+ * Re-attribute a freshly created trigger-fired session to the firing agent's
+ * standing-identity service account: `created_by` (session identity/audit —
+ * NOT the visibility gate, which is `visibility: 'project'` for every trigger
+ * session regardless of owner) moves off the arbitrary account-owner stand-in
+ * `resolveTriggerActor` returns and onto the agent itself. Closes the TODO
+ * that lived here: "resolve to the agent's SERVICE ACCOUNT so per-user
+ * connectors + secrets bind to the AGENT itself, with no human userId at all."
+ *
+ * Deliberately a POST-creation fixup rather than changing what `fireGitTrigger`
+ * passes as `userId` into `createSession`: that value also drives provisioning
+ * (concurrency cap, secret-share subject) and is the fallback identity IAM
+ * v2 authorizes as when the agent's SA has no role bound yet (unactivated —
+ * the default state for an auto-provisioned agent). Swapping it for the SA
+ * there would make every un-activated trigger agent authorize as a bare,
+ * role-less service account and lose that fallback outright — see
+ * `resolveActingActor` in iam/engine-v2.ts. The authorization path stays
+ * exactly as it is today; only the audit-facing owner changes.
+ *
+ * Best-effort: failures are logged and swallowed — a session that already
+ * fired must not be reported as failed over a cosmetic attribution miss.
+ * No-op for the `session_mode = "reuse"` path (the reused session's
+ * `created_by` was already fixed up the first time it was created).
+ */
+export async function attributeFiredTriggerSession(input: {
+  project: ProjectRow;
+  sessionId: string;
+  agentName: string;
+}): Promise<void> {
+  const serviceAccountId = await resolveAgentRunAttribution({
+    accountId: input.project.accountId,
+    projectId: input.project.projectId,
+    agentName: input.agentName,
+  });
+  if (!serviceAccountId) return;
+  try {
+    await db
+      .update(projectSessions)
+      .set({ createdBy: serviceAccountId })
+      .where(eq(projectSessions.sessionId, input.sessionId));
+  } catch (err) {
+    console.warn('[triggers] failed to attribute fired session to agent service account', {
+      sessionId: input.sessionId,
+      agentName: input.agentName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 export function isGitCronSpecDue(
@@ -724,9 +773,23 @@ export async function fireGitTrigger(input: {
       error: String(sessionResult.error.body.error ?? 'Failed to create trigger session'),
     };
   }
+  const firedSessionId = sessionResult.sessionId ?? sessionResult.row?.sessionId;
+  // Re-attribute the run to the agent's own service account (see
+  // attributeFiredTriggerSession's docblock). `row.agentName` is the RESOLVED
+  // name `createProjectSession` actually persisted (default-sentinel/
+  // project-default fallbacks already applied) — using it here means this
+  // never re-derives that resolution logic. Best-effort: this must not turn an
+  // already-fired session into a failed trigger result.
+  if (firedSessionId && sessionResult.row?.agentName) {
+    await attributeFiredTriggerSession({
+      project,
+      sessionId: firedSessionId,
+      agentName: sessionResult.row.agentName,
+    }).catch(() => {});
+  }
   return {
     status: 'fired',
-    sessionId: sessionResult.sessionId ?? sessionResult.row?.sessionId,
+    sessionId: firedSessionId,
     commandId: sessionResult.commandId,
     deduped: sessionResult.deduped,
   };
@@ -1229,21 +1292,17 @@ export function removeTriggerFromManifest(manifest: ParsedManifest, slug: string
 }
 
 /**
- * Commit a new revision of kortix.toml to the project's default branch.
- * All trigger CRUD funnels through this — one file, one commit per edit.
+ * Commit a single file to the project's default branch — the generic engine
+ * behind `commitManifest` (kortix.yaml/toml) and the agent-config route's
+ * `.md` behavior-file writes. One file, one commit per call.
  */
-
-export async function commitManifest(
+export async function commitRepoFile(
   project: ProjectRow,
-  manifest: ParsedManifest,
+  path: string,
+  content: string,
   message: string,
 ): Promise<{ ok: true } | { error: string; status: number }> {
-  const content = serializeManifest(manifest);
   const branch = project.defaultBranch;
-  // Write back to the SAME file we read (kortix.yaml or kortix.toml, or a custom
-  // path) in its own format — never a hardcoded name, or a yaml project's edits
-  // would silently land in a second kortix.toml the runtime doesn't read.
-  const manifestFile = manifest.path || project.manifestPath || MANIFEST_FILENAME;
 
   // GitHub repos: commit through the Contents API (App / PAT auth) — the
   // lightweight single-file path that doesn't need a full clone.
@@ -1261,7 +1320,7 @@ export async function commitManifest(
     const existingSha = await getFileSha({
       owner: repo.owner,
       repo: repo.repo,
-      path: manifestFile,
+      path,
       branch,
       auth,
     });
@@ -1269,7 +1328,7 @@ export async function commitManifest(
       await commitFile({
         owner: repo.owner,
         repo: repo.repo,
-        path: manifestFile,
+        path,
         content,
         message,
         branch,
@@ -1278,7 +1337,7 @@ export async function commitManifest(
       });
     } catch (err) {
       return {
-        error: `Failed to commit ${manifestFile}: ${(err as Error).message || String(err)}`,
+        error: `Failed to commit ${path}: ${(err as Error).message || String(err)}`,
         status: 502,
       };
     }
@@ -1303,7 +1362,7 @@ export async function commitManifest(
 
   try {
     await commitFileToBranch(gitProject, {
-      path: manifestFile,
+      path,
       content,
       message,
       branch,
@@ -1312,13 +1371,31 @@ export async function commitManifest(
     });
   } catch (err) {
     return {
-      error: `Failed to commit ${manifestFile}: ${(err as Error).message || String(err)}`,
+      error: `Failed to commit ${path}: ${(err as Error).message || String(err)}`,
       status: 502,
     };
   }
 
   invalidateProjectMirror(project.projectId);
   return { ok: true };
+}
+
+/**
+ * Commit a new revision of kortix.toml to the project's default branch.
+ * All trigger CRUD funnels through this — one file, one commit per edit.
+ */
+
+export async function commitManifest(
+  project: ProjectRow,
+  manifest: ParsedManifest,
+  message: string,
+): Promise<{ ok: true } | { error: string; status: number }> {
+  const content = serializeManifest(manifest);
+  // Write back to the SAME file we read (kortix.yaml or kortix.toml, or a custom
+  // path) in its own format — never a hardcoded name, or a yaml project's edits
+  // would silently land in a second kortix.toml the runtime doesn't read.
+  const manifestFile = manifest.path || project.manifestPath || MANIFEST_FILENAME;
+  return commitRepoFile(project, manifestFile, content, message);
 }
 
 // POST /v1/projects/:projectId/triggers

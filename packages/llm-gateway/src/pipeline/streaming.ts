@@ -1,4 +1,10 @@
-import { type ExtractedUsage, extractUsageFromSseBuffer, sseHasContent } from '../usage';
+import {
+  type ExtractedUsage,
+  type SseErrorFrame,
+  extractUsageFromSseBuffer,
+  sseErrorFrame,
+  sseHasContent,
+} from '../usage';
 
 export interface StreamRelayOptions {
   /** Fresh upstream body — mutually exclusive with `primed`. */
@@ -8,7 +14,11 @@ export interface StreamRelayOptions {
   captureBodies: boolean;
   requestId: string;
   logger: { warn: (...args: unknown[]) => void; debug?: (...args: unknown[]) => void };
-  settle: (usage: ExtractedUsage | null, response: unknown) => Promise<void>;
+  settle: (
+    usage: ExtractedUsage | null,
+    response: unknown,
+    streamError?: SseErrorFrame | null,
+  ) => Promise<void>;
   /** Keep-alive interval in ms (overridable for tests). */
   heartbeatMs?: number;
 }
@@ -165,6 +175,16 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
       } catch {
         // writer already closed / downstream gone — nothing to do here.
       }
+      // An upstream that dies mid-generation (a stalled model host behind
+      // OpenRouter, e.g. "Upstream idle timeout exceeded") reports it as an
+      // in-stream error frame on an otherwise clean 200 stream. Surface it so
+      // the trace records a failed turn instead of a silent success.
+      const streamError = sseErrorFrame(sseBuffer);
+      if (streamError) {
+        logger.warn(
+          `[llm-gateway] upstream error frame in stream ${requestId}: "${streamError.message}"${streamError.code !== undefined ? ` (code ${streamError.code})` : ''}`,
+        );
+      }
       debug('stream_end', {
         totalMs: Date.now() - startMs,
         ttfbMs: firstByteAt ? firstByteAt - startMs : null,
@@ -172,12 +192,17 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
         chunks,
         heartbeats,
         downstreamAlive,
+        ...(streamError ? { streamError: streamError.message } : {}),
       });
       // Settlement (usage extraction + recordUsage + trace) must never throw out
       // of this detached async task — a failure here would otherwise be an
       // unhandled rejection and silently lose billing/trace for the stream.
       try {
-        await settle(extractUsageFromSseBuffer(sseBuffer), captureBodies ? sseBuffer : null);
+        await settle(
+          extractUsageFromSseBuffer(sseBuffer),
+          captureBodies ? sseBuffer : null,
+          streamError,
+        );
       } catch (err) {
         logger.warn(`[llm-gateway] stream settle failed ${requestId}:`, err);
       }

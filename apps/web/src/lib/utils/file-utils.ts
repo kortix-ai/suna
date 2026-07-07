@@ -7,7 +7,9 @@ import {
     FileText, FileImage, FileCode, FileSpreadsheet, FileVideo,
     FileAudio, FileType, Database, Archive, File
 } from 'lucide-react';
-import { getExtension } from './file-types';
+function getExtension(filename: string): string {
+    return filename.split('.').pop()?.toLowerCase() || '';
+}
 
 export type FileType =
     | 'image' | 'code' | 'text' | 'pdf'

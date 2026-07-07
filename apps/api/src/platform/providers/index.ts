@@ -11,7 +11,8 @@ import { PlatinumProvider } from './platinum';
  *   - daytona — managed cloud (Daytona)
  *   - platinum — managed cloud (Platinum)
  */
-export type ProviderName = 'daytona' | 'platinum';
+// 'managed' is canonical for the managed cloud backend; 'daytona' is its legacy alias.
+export type ProviderName = 'managed' | 'daytona' | 'platinum';
 
 /**
  * Thrown by the Daytona warm path when the experimental memory-snapshot restore
@@ -115,6 +116,21 @@ export interface SandboxProvider {
   listManagedRunningSandboxes?(): Promise<Array<{ externalId: string; createdAt: Date | null }>>;
 }
 
+/**
+ * Provider-native auto-stop is a BACKSTOP, not the primary stop mechanism.
+ * The reaper (projects/sandbox-reaper.ts) is the primary: it asks the box's
+ * own opencode whether a turn is running before stopping, so it never kills
+ * mid-work. The provider's native timer only sees inbound traffic — blind to
+ * local tool runs — so at the reaper's TTL it WOULD kill working boxes (the
+ * 2026-06-24 "stopped too quickly mid-session" class). Its sole job is to
+ * stop boxes when this API is dead or the box has no DB row, so it sits well
+ * above the reaper's window.
+ */
+export function providerAutoStopBackstopMinutes(): number {
+  const ttl = Math.max(1, config.KORTIX_SANDBOX_AUTOSTOP_MINUTES || 15);
+  return Math.max(60, ttl * 2);
+}
+
 const providers = new Map<ProviderName, SandboxProvider>();
 
 export function getProvider(name: ProviderName): SandboxProvider {
@@ -124,9 +140,10 @@ export function getProvider(name: ProviderName): SandboxProvider {
   let provider: SandboxProvider;
 
   switch (name) {
+    case 'managed':
     case 'daytona':
       if (!config.DAYTONA_API_KEY) {
-        throw new Error('Daytona provider requires DAYTONA_API_KEY to be set.');
+        throw new Error('Managed provider requires DAYTONA_API_KEY to be set.');
       }
       provider = new DaytonaProvider();
       break;

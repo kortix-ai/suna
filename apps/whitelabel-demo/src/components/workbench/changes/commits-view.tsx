@@ -24,6 +24,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
+import type { ProjectBranch, ProjectCommit } from '@kortix/sdk/projects-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, GitBranch, GitCommitHorizontal, Loader2, Scale } from 'lucide-react';
 import { useState } from 'react';
@@ -52,7 +53,7 @@ export function CommitsView({
     queryFn: () => kortix.project(projectId).git.commits(),
   });
 
-  const defaultBranch = (branches.data as any)?.default_branch as string | undefined;
+  const defaultBranch = branches.data?.default_branch;
 
   // "Compare to base": summarize the session branch against the default branch.
   const versionDiff = useQuery({
@@ -71,12 +72,11 @@ export function CommitsView({
         .session(projectId, sessionId)
         .commit(message.trim() ? { message: message.trim() } : undefined),
     onSuccess: (res) => {
-      const r = res as any;
-      if (r?.nothing_to_do) {
+      if (res.nothing_to_do) {
         toast.info('Nothing to commit');
       } else {
         toast.success(
-          r?.pushed ? 'Committed and pushed session changes' : 'Committed session changes',
+          res.pushed ? 'Committed and pushed session changes' : 'Committed session changes',
         );
       }
       setMessage('');
@@ -86,9 +86,9 @@ export function CommitsView({
     onError: () => toast.error('Could not commit session changes'),
   });
 
-  const branchItems: any[] = (branches.data as any)?.branches ?? [];
-  const commitItems: any[] = (commits.data as any)?.commits ?? [];
-  const vd = versionDiff.data as any;
+  const branchItems: ProjectBranch[] = branches.data?.branches ?? [];
+  const commitItems: ProjectCommit[] = commits.data?.commits ?? [];
+  const vd = versionDiff.data;
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
@@ -271,8 +271,8 @@ function CommitDetailDialog({
     queryFn: () => kortix.project(projectId).git.commitDiff(sha as string),
   });
 
-  const d = detail.data as any;
-  const files: any[] = d?.files ?? [];
+  const d = detail.data;
+  const files = d?.files ?? [];
 
   return (
     <Dialog open={!!sha} onOpenChange={(o) => !o && onClose()}>
@@ -309,7 +309,7 @@ function CommitDetailDialog({
           {diff.isLoading ? (
             <Skeleton className="h-40 w-full" />
           ) : (
-            <DiffView patch={(diff.data as any)?.patch} />
+            <DiffView patch={diff.data?.patch} />
           )}
         </ScrollArea>
       </DialogContent>

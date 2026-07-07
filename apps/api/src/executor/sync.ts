@@ -7,7 +7,7 @@
  * a connector that can't be reached is stored with status='error' + 0 actions,
  * never failing the whole sweep. See docs/specs/executor.md §3, §7.
  */
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { parse as parseToml } from 'smol-toml';
 import {
   executorConnectorActions,
@@ -248,13 +248,7 @@ async function upsertConnector(
   const credentialMode = spec.credentialMode;
 
   // Cheap fields reconciled on every sync. `config` (which folds in the
-  // discovered server) only changes when we actually re-resolved the catalog —
-  // which is why the connector agent-scope is a dedicated COLUMN here, not a
-  // config key: it must reconcile from the toml on every sync (toml-authoritative
-  // for declared connectors), independent of a catalog re-fetch. Synthetic
-  // channel/computer connectors have no manifest entry, so their scope is set
-  // DB-side and MUST survive sync — omit the column for them (leave it untouched).
-  const isSyntheticProvider = spec.provider === 'channel' || spec.provider === 'computer';
+  // discovered server) only changes when we actually re-resolved the catalog.
   const common = {
     name: spec.name,
     providerType: spec.provider,
@@ -266,14 +260,25 @@ async function upsertConnector(
     lastError: catalog?.error ?? null,
     lastSyncedAt: new Date(),
     updatedAt: new Date(),
-    ...(isSyntheticProvider ? {} : { agentScope: spec.agentScope ?? null }),
   } as const;
 
   let connectorId = existingId;
   if (connectorId) {
+    // `sensitive` lives inside `config` but is a CHEAP field: it isn't part of
+    // manifestHashForConnector (deliberately — flipping it must not force a
+    // catalog re-fetch), so on a hash-match reconcile we still patch that one
+    // key in place. Without this, the Sensitive toggle commits to kortix.toml
+    // but the DB config (what the gateway + admin UI read) never updates.
+    const sensitivePatch = spec.sensitive
+      ? sql`coalesce(${executorConnectors.config}, '{}'::jsonb) || '{"sensitive": true}'::jsonb`
+      : sql`coalesce(${executorConnectors.config}, '{}'::jsonb) - 'sensitive'`;
     await db
       .update(executorConnectors)
-      .set(catalog ? { ...common, config: connectorConfig(spec, catalog.server) } : common)
+      .set(
+        catalog
+          ? { ...common, config: connectorConfig(spec, catalog.server) }
+          : { ...common, config: sensitivePatch },
+      )
       .where(eq(executorConnectors.connectorId, connectorId));
   } else {
     // A brand-new connector is never "unchanged", so catalog is always present

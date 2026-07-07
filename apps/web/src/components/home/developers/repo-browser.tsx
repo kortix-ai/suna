@@ -13,66 +13,79 @@ import { useMemo, useState } from 'react';
 /* -------------------------------------------------------------------------- */
 
 const FILES: Record<string, string> = {
-  'kortix.toml': `# Kortix project manifest — the source of truth for project-wide
+  'kortix.yaml': `# Kortix project manifest — the source of truth for project-wide
 # config, versioned in git. kortix_version pins the schema.
-kortix_version = 1
+kortix_version: 2
 
-[project]
-name = "acme"
-description = "Acme's AI workforce."
+project:
+  name: acme
+  description: Acme's AI workforce.
 
 # Env the runtime needs. Required values must be set in the Kortix
 # Secrets Manager before a session can start.
-[env]
-required = ["ANTHROPIC_API_KEY"]
-optional = ["STRIPE_API_KEY"]
+env:
+  required: []
+  optional: [STRIPE_API_KEY]
 
 # Sessions boot from a sandbox image; the Kortix runtime layer is
 # always added on top of the base.
-[sandbox]
-default = "agent-box"
-
-[[sandbox.templates]]
-slug = "agent-box"
-name = "Agent box"
-dockerfile = ".kortix/Dockerfile"
-cpu = 4
-memory = 8
-disk = 20
+sandbox:
+  default: agent-box
+  templates:
+    - slug: agent-box
+      name: Agent box
+      dockerfile: .kortix/Dockerfile
+      cpu: 4
+      memory: 8
+      disk: 20
 
 # OpenCode runtime: the daemon launches opencode with OPENCODE_CONFIG_DIR
 # pointed here, so agents, skills and tools live under this folder.
-[opencode]
-config_dir = ".kortix/opencode"
+opencode:
+  config_dir: .kortix/opencode
+
+# Governance only — model, prompt and tools live in each agent's own
+# .kortix/opencode/agents/<name>.md file, joined by name.
+agents:
+  support:
+    connectors: [slack]
+    secrets: all
+    kortix_cli: all
+    skills: all
+
+  research:
+    connectors: all
+    secrets: all
+    kortix_cli: all
+    skills: all
 
 # A trigger spawns a fresh session that runs \`prompt\` as its first message.
-[[triggers]]
-slug = "daily-digest"
-name = "Daily digest"
-type = "cron"
-agent = "research"
-enabled = true
-cron = "0 0 9 * * 1-5"          # 09:00 Mon–Fri
-timezone = "America/Los_Angeles"
-prompt = "Summarize yesterday across Slack and Linear, post to #standup."
+triggers:
+  - slug: daily-digest
+    name: Daily digest
+    type: cron
+    agent: research
+    enabled: true
+    cron: "0 0 9 * * 1-5"          # 09:00 Mon–Fri
+    timezone: America/Los_Angeles
+    prompt: Summarize yesterday across Slack and Linear, post to #standup.
 
 # Connect a tool's API so agents can call it. (3,000+ apps via Pipedream.)
-[[connectors]]
-slug = "stripe"
-name = "Stripe"
-provider = "http"
-base_url = "https://api.stripe.com"
-
-  [connectors.auth]
-  type = "bearer"
-  secret = "STRIPE_API_KEY"
+connectors:
+  - slug: stripe
+    name: Stripe
+    provider: http
+    base_url: https://api.stripe.com
+    auth:
+      type: bearer
+      secret: STRIPE_API_KEY
 
 # Answer where your team already works.
-[[channels]]
-platform = "slack"
-enabled = true
-agent = "support"
-events = ["mention", "dm"]
+channels:
+  - platform: slack
+    enabled: true
+    agent: support
+    events: [mention, dm]
 `,
 
   '.kortix/opencode/agents/support.md': `---
@@ -183,7 +196,7 @@ This repo *is* Acme's AI workforce. Every agent, skill,
 automation and integration lives here as a plain file you
 can read, diff, review and roll back.
 
-- \`kortix.toml\` declares the company and its runtime.
+- \`kortix.yaml\` declares the company and its runtime.
 - \`.kortix/opencode/\` holds the agents, skills, tools and memory.
 
 Build it locally with your coding agent, then run \`kortix ship\`
@@ -196,7 +209,7 @@ to take it live as a fleet of cloud sandboxes.
 type Node = { name: string; path?: string; children?: Node[] };
 
 const TREE: Node[] = [
-  { name: 'kortix.toml', path: 'kortix.toml' },
+  { name: 'kortix.yaml', path: 'kortix.yaml' },
   {
     name: '.kortix',
     children: [
@@ -238,7 +251,7 @@ const TREE: Node[] = [
   { name: 'README.md', path: 'README.md' },
 ];
 
-const DEFAULT_FILE = 'kortix.toml';
+const DEFAULT_FILE = 'kortix.yaml';
 
 /* All folders open by default — the whole company is meant to be visible. */
 const ALL_DIRS = new Set<string>([

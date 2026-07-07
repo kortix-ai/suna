@@ -410,7 +410,13 @@ projectsApp.openapi(
       name,
       repoUrl: provisioned.upstreamUrl,
       defaultBranch: provisioned.defaultBranch,
-      manifestPath: 'kortix.toml',
+      // The starter this route seeds (buildProjectSeedFiles, below) ships
+      // kortix.yaml (kortix_version 2) — record that as the canonical path so
+      // a project created here is never labeled with a stale v1 filename. A
+      // CLI `kortix ship` that pushes its own files instead of seeding still
+      // scaffolded via `kortix init` (same @kortix/starter, same kortix.yaml),
+      // so this holds for both the web and CLI creation paths.
+      manifestPath: 'kortix.yaml',
       status: 'active',
       metadata: {
         git: {
@@ -428,6 +434,14 @@ projectsApp.openapi(
           owner: provisioned.repoOwner,
           name: provisioned.repoName,
         },
+        // MANDATORY DECLARED AGENTS (docs/specs/2026-07-05-agent-first-config-
+        // unification.md §2.1/§3 Phase 2): every project created through this
+        // route is "new" in the spec's sense — subject to declared-agent
+        // enforcement from birth, regardless of the platform-wide
+        // KORTIX_REQUIRE_DECLARED_AGENTS flag (see projectRequiresDeclaredAgents /
+        // createProjectSession). Pre-existing projects (this flag absent/false)
+        // keep the v1 adopt-to-govern behavior untouched.
+        require_declared_agents: true,
       },
       updatedAt: now,
     })

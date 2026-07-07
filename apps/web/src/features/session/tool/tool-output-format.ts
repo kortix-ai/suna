@@ -62,6 +62,79 @@ export function cleanResultSnippet(content: string | undefined, maxChars = 200):
   return s.length > maxChars ? s.slice(0, maxChars).trimEnd() + '…' : s;
 }
 
+export interface EmbeddedFailure {
+  /** Fully-unwrapped, human-readable error message. */
+  message: string;
+  /** HTTP status code recovered from a nested error payload, if any. */
+  status?: number;
+}
+
+/**
+ * Detect the "well-known" embedded-failure shape some tools return even when
+ * the outer part state is `completed`: a JSON object with `success: false`
+ * and a string `error` field — e.g. a `web_search` call that hit a 402 from
+ * the search provider still reports `state.status: "completed"` because the
+ * *tool call* completed, only the underlying request failed.
+ *
+ * The `error` string is frequently itself a wrapper around a nested JSON
+ * error object (proxy error → upstream error), e.g.
+ * `"Error: 402 Error: {\"message\":\"Insufficient credits\",\"status\":402}"`.
+ * This unwraps up to a few levels of that nesting so callers can show the
+ * innermost human message ("Insufficient credits") instead of the raw blob.
+ *
+ * Deliberately conservative: only matches this exact `{success:false,
+ * error:string}` shape so it never misfires on legitimate tool payloads that
+ * happen to contain the words "success" or "error".
+ */
+export function parseEmbeddedFailure(output: string | undefined): EmbeddedFailure | null {
+  const trimmed = (output ?? '').trim();
+  if (!trimmed) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+    if (typeof parsed === 'string') {
+      try {
+        parsed = JSON.parse(parsed);
+      } catch {
+        return null;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const obj = parsed as Record<string, unknown>;
+  if (obj.success !== false || typeof obj.error !== 'string' || !obj.error.trim()) return null;
+
+  let message = obj.error.trim();
+  let status: number | undefined;
+
+  // Unwrap `... : {json}` tails: proxy errors often wrap an upstream error
+  // object. Walk a few levels deep so a doubly-wrapped message still resolves.
+  for (let i = 0; i < 3; i++) {
+    const nestedMatch = message.match(/:\s*(\{[\s\S]*\})\s*$/);
+    if (!nestedMatch) break;
+    let nested: Record<string, unknown>;
+    try {
+      nested = JSON.parse(nestedMatch[1]);
+    } catch {
+      break;
+    }
+    if (typeof nested.status === 'number') status = nested.status;
+    if (typeof nested.message === 'string' && nested.message.trim()) {
+      message = nested.message.trim();
+    } else if (typeof nested.error === 'string' && nested.error.trim()) {
+      message = nested.error.trim();
+    } else {
+      break;
+    }
+  }
+
+  return { message, status };
+}
+
 export interface RecoveredResult {
   title: string;
   url: string;

@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, KeyRound, MoreHorizontal, Plug, Plus, Users } from 'lucide-react';
+import { KeyRound, MoreHorizontal, Plug, Plus } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -47,7 +47,6 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
-import { AgentAccessPicker } from '@/features/workspace/shared/agent-access-picker';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
@@ -63,20 +62,21 @@ import {
 import { DangerTriangleSolid, Pencil, Search, TrashSolid } from '@mynaui/icons-react';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
+const IDENTIFIER_REGEX = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
 
 type Requirement = 'required' | 'optional' | null;
 
 /**
- * Per-key view-model for the shared/project secret. Personal ("only me")
- * overrides are retired — a secret is now project-scoped and gated by which
- * AGENTS may use it (`agentScope`: null = all agents; a list = restricted).
+ * A project secret is `{ identifier, key, value }` — authorization is
+ * centralized on the agent grant (by identifier, in kortix.yaml); this page is
+ * project-wide create/configure/value only. `identifier` is the unique handle;
+ * `key` (the env var name) is NOT unique — two identifiers may share one.
  */
 interface SecretRow {
-  name: string;
+  identifier: string;
+  key: string;
   requirement: Requirement;
   configured: boolean;
-  /** null / [] = all agents; a list of agent names = restricted to those. */
-  agentScope: string[] | null;
   system: boolean;
   readonly: boolean;
   purpose: string | null;
@@ -120,14 +120,16 @@ export function SecretsView({ projectId }: { projectId: string }) {
   }, [projectId, queryClient, queryKey]);
 
   const removeShared = useMutation({
-    mutationFn: (name: string) => deleteProjectSecret(projectId, name),
+    mutationFn: (identifier: string) => deleteProjectSecret(projectId, identifier),
     onSuccess: refreshSecretsAndProviders,
   });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return allRows;
-    return allRows.filter((r) => r.name.toLowerCase().includes(q));
+    return allRows.filter(
+      (r) => r.identifier.toLowerCase().includes(q) || r.key.toLowerCase().includes(q),
+    );
   }, [allRows, query]);
 
   const openCreate = () => {
@@ -245,9 +247,8 @@ export function SecretsView({ projectId }: { projectId: string }) {
                 <Table className="overflow-hidden rounded-md">
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableHead>Name</TableHead>
+                      <TableHead>Identifier</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Access</TableHead>
                       <TableHead className="w-[52px]">
                         <span className="sr-only">Actions</span>
                       </TableHead>
@@ -256,12 +257,12 @@ export function SecretsView({ projectId }: { projectId: string }) {
                   <TableBody>
                     {filtered.map((row) => (
                       <SecretTableRow
-                        key={row.name}
+                        key={row.identifier}
                         row={row}
                         canManage={canManage}
-                        busy={removeShared.isPending && removeShared.variables === row.name}
+                        busy={removeShared.isPending && removeShared.variables === row.identifier}
                         onEdit={() => openEdit(row)}
-                        onDelete={() => removeShared.mutate(row.name)}
+                        onDelete={() => removeShared.mutate(row.identifier)}
                       />
                     ))}
                   </TableBody>
@@ -312,56 +313,56 @@ function normalizeResponse(
 
 function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefined): SecretRow[] {
   const data = normalizeResponse(raw);
-  const requirementByName = new Map<string, Requirement>();
-  for (const name of data.required) requirementByName.set(name, 'required');
-  for (const name of data.optional) {
-    if (!requirementByName.has(name)) requirementByName.set(name, 'optional');
+  const requirementByKey = new Map<string, Requirement>();
+  for (const key of data.required) requirementByKey.set(key, 'required');
+  for (const key of data.optional) {
+    if (!requirementByKey.has(key)) requirementByKey.set(key, 'optional');
   }
 
-  const storedByName = new Map(data.items.map((item) => [item.name, item]));
-  const seen = new Set<string>();
-  const rows: SecretRow[] = [];
-
-  const toRow = (
-    name: string,
-    requirement: Requirement,
-    item: ProjectSecret | undefined,
-  ): SecretRow => ({
-    name,
+  const toRow = (item: ProjectSecret, requirement: Requirement): SecretRow => ({
+    identifier: item.identifier,
+    key: item.name,
     requirement,
-    configured: Boolean(item?.configured),
-    agentScope: item?.agent_scope ?? null,
-    system: Boolean(item?.system),
-    readonly: Boolean(item?.readonly),
-    purpose: item?.purpose ?? null,
-    canRotate: Boolean(item?.can_rotate),
-    updatedAt: item?.updated_at ?? null,
+    configured: Boolean(item.configured),
+    system: Boolean(item.system),
+    readonly: Boolean(item.readonly),
+    purpose: item.purpose ?? null,
+    canRotate: Boolean(item.can_rotate),
+    updatedAt: item.updated_at ?? null,
   });
 
-  // Manifest entries first (required, then optional), so the "must-set" rows
-  // dominate the visual hierarchy regardless of whether they're set yet.
-  for (const [name, requirement] of requirementByName) {
-    rows.push(toRow(name, requirement, storedByName.get(name)));
-    seen.add(name);
-  }
-  // Anything stored that the manifest doesn't mention.
+  const rows: SecretRow[] = [];
+  const keysWithRows = new Set<string>();
   for (const item of data.items) {
-    if (seen.has(item.name)) continue;
-    rows.push(toRow(item.name, null, item));
+    rows.push(toRow(item, requirementByKey.get(item.name) ?? null));
+    keysWithRows.add(item.name);
   }
+  // Manifest-declared keys with NO stored secret under them yet → one
+  // "not set" placeholder row, keyed by the key itself (identifier === key,
+  // matching what creating it would default to).
+  for (const [key, requirement] of requirementByKey) {
+    if (keysWithRows.has(key)) continue;
+    rows.push({
+      identifier: key,
+      key,
+      requirement,
+      configured: false,
+      system: false,
+      readonly: false,
+      purpose: null,
+      canRotate: false,
+      updatedAt: null,
+    });
+  }
+
+  const rank = (r: SecretRow) => (r.requirement === 'required' ? 0 : r.requirement === 'optional' ? 1 : 2);
+  rows.sort((a, b) => rank(a) - rank(b) || a.key.localeCompare(b.key) || a.identifier.localeCompare(b.identifier));
   return rows;
 }
 
 function statusLabel(row: SecretRow): string {
   if (row.system) return row.configured ? 'Managed by Kortix' : 'Not set';
   return row.configured ? 'Set' : 'Not set';
-}
-
-/** Human summary of which agents may use the secret. null/[] = all agents. */
-function agentAccessLabel(scope: string[] | null): { text: string; title?: string } {
-  if (!scope || scope.length === 0) return { text: 'All agents' };
-  if (scope.length === 1) return { text: scope[0]!, title: scope[0]! };
-  return { text: `${scope.length} agents`, title: scope.join(', ') };
 }
 
 function SecretTableRow({
@@ -379,16 +380,18 @@ function SecretTableRow({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const canManageShared = canManage && !row.system;
-  const access = agentAccessLabel(row.agentScope);
-  const restricted = Boolean(row.agentScope && row.agentScope.length > 0);
+  const distinctKey = row.identifier !== row.key;
 
   return (
     <TableRow
       className={cn(row.requirement === 'required' && !row.configured && 'bg-kortix-orange/[0.04]')}
     >
-      <TableCell className="max-w-[180px]">
+      <TableCell className="max-w-[220px]">
         <div className="flex min-w-0 flex-col gap-1.5">
-          <code className="text-foreground truncate font-mono text-xs">{row.name}</code>
+          <code className="text-foreground truncate font-mono text-xs">{row.identifier}</code>
+          {distinctKey && (
+            <code className="text-muted-foreground truncate font-mono text-xs">→ {row.key}</code>
+          )}
           <div className="flex flex-wrap gap-1">
             {row.system && (
               <Badge variant="outline" size="xs">
@@ -410,23 +413,6 @@ function SecretTableRow({
       </TableCell>
       <TableCell className="text-muted-foreground max-w-[200px] text-xs font-medium whitespace-normal">
         {statusLabel(row)}
-      </TableCell>
-      <TableCell className="text-xs">
-        {row.system ? (
-          <span className="text-muted-foreground/50">—</span>
-        ) : (
-          <span
-            className="text-muted-foreground inline-flex items-center gap-1.5"
-            title={access.title}
-          >
-            {restricted ? (
-              <Bot className="size-3.5 shrink-0" />
-            ) : (
-              <Users className="size-3.5 shrink-0" />
-            )}
-            {access.text}
-          </span>
-        )}
       </TableCell>
       <TableCell>
         {!canManageShared ? null : (
@@ -480,46 +466,44 @@ function SecretDialog({
   row: SecretRow | null;
   onSaved: () => void;
 }) {
-  const fixedName = row?.name ?? null;
-  const [name, setName] = useState('');
+  const isEdit = row !== null;
+  const [identifier, setIdentifier] = useState('');
+  const [key, setKey] = useState('');
   const [value, setValue] = useState('');
-  // null = all agents; [] = "specific" chosen but none picked (invalid); list = restricted.
-  const [agentScope, setAgentScope] = useState<string[] | null>(null);
 
   const requiresValue = !row?.configured;
-  // "Specific agents" selected but nothing picked — block save (never persist []).
-  const specificButEmpty = Array.isArray(agentScope) && agentScope.length === 0;
 
   useEffect(() => {
     if (!open) return;
-    setName(row?.name ?? '');
+    setIdentifier(row?.identifier ?? '');
+    setKey(row?.key ?? '');
     setValue('');
-    setAgentScope(row?.agentScope ?? null);
   }, [open, row]);
 
   const save = useMutation({
     mutationFn: () => {
-      const finalName = (fixedName ?? name).trim().toUpperCase();
-      if (!SECRET_NAME_REGEX.test(finalName)) {
-        throw new Error('Use A-Z, 0-9, _ only. Must start with a letter or _. Max 64 chars.');
+      const finalKey = (row?.key ?? key).trim().toUpperCase();
+      const finalIdentifier = (row?.identifier ?? identifier).trim() || finalKey;
+      if (!SECRET_NAME_REGEX.test(finalKey)) {
+        throw new Error('Key: use A-Z, 0-9, _ only. Must start with a letter or _. Max 64 chars.');
+      }
+      if (!IDENTIFIER_REGEX.test(finalIdentifier)) {
+        throw new Error('Identifier: letters, numbers, _, ., - only. Max 128 chars.');
       }
       if (requiresValue && !value.trim()) {
         throw new Error('Value is required.');
       }
-      if (finalName.startsWith('KORTIX_')) {
-        throw new Error('KORTIX_* names are reserved for platform variables');
-      }
-      if (specificButEmpty) {
-        throw new Error('Pick at least one agent, or choose “All agents”.');
+      if (finalKey.startsWith('KORTIX_')) {
+        throw new Error('KORTIX_* keys are reserved for platform variables');
       }
       return upsertProjectSecret(projectId, {
-        name: finalName,
+        name: finalKey,
+        identifier: finalIdentifier,
         ...(value.trim() ? { value } : {}),
-        agentScope,
       });
     },
     onSuccess: () => {
-      successToast(`Saved ${(fixedName ?? name).trim().toUpperCase()}`);
+      successToast(`Saved ${(row?.identifier ?? identifier).trim() || (row?.key ?? key).trim().toUpperCase()}`);
       onSaved();
       onOpenChange(false);
     },
@@ -529,11 +513,11 @@ function SecretDialog({
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (save.isPending) return;
-    if (!fixedName && !name.trim()) return;
+    if (!isEdit && !key.trim()) return;
     save.mutate();
   }
 
-  const title = !row ? 'Add secret' : row.configured ? `Edit ${row.name}` : `Set ${row.name}`;
+  const title = !row ? 'Add secret' : row.configured ? `Edit ${row.identifier}` : `Set ${row.identifier}`;
 
   return (
     <Modal
@@ -547,25 +531,45 @@ function SecretDialog({
         <ModalHeader>
           <ModalTitle>{title}</ModalTitle>
           <ModalDescription>
-            Injected as an environment variable into every session the chosen agents run.
+            {isEdit
+              ? 'Injected as an environment variable into every session the granted agents run.'
+              : 'A profile-like secret: an identifier agents grant, a key injected as an env var, and a value.'}
           </ModalDescription>
         </ModalHeader>
         <form onSubmit={handleSubmit} autoComplete="off">
           <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
             <div className="border-border bg-sidebar flex flex-col overflow-hidden rounded-md border">
+              <div className="flex flex-col gap-1 border-b px-3 py-2">
+                <label className="text-muted-foreground text-xs font-medium" htmlFor="secret-dialog-identifier">
+                  Identifier
+                </label>
+                <Input
+                  id="secret-dialog-identifier"
+                  name="kortix-secret-identifier"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  placeholder={key ? key : 'e.g. GMAPS-primary'}
+                  className="bg-sidebar disabled:bg-sidebar h-8 rounded-none border-none px-0 font-mono"
+                  autoFocus={!isEdit}
+                  autoComplete="off"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-form-type="other"
+                  disabled={isEdit || save.isPending}
+                />
+              </div>
               <Input
-                id="secret-dialog-name"
-                name="kortix-secret-name"
-                value={fixedName ?? name}
-                onChange={(e) => setName(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
+                id="secret-dialog-key"
+                name="kortix-secret-key"
+                value={key}
+                onChange={(e) => setKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
                 placeholder="KEY_NAME"
                 className="bg-sidebar disabled:bg-sidebar rounded-none border-none font-mono"
-                autoFocus={!fixedName}
                 autoComplete="off"
                 data-1p-ignore="true"
                 data-lpignore="true"
                 data-form-type="other"
-                disabled={!!fixedName || save.isPending}
+                disabled={isEdit || save.isPending}
                 required
               />
               <Input
@@ -580,24 +584,22 @@ function SecretDialog({
                 data-1p-ignore="true"
                 data-lpignore="true"
                 data-form-type="other"
-                autoFocus={!!fixedName}
+                autoFocus={isEdit}
                 disabled={save.isPending}
               />
             </div>
 
-            {row?.configured && (
+            {!isEdit && (
               <p className="text-muted-foreground text-xs">
-                Leave the value blank to change access without rotating the secret.
+                Leave the identifier blank to use the key as its own identifier — the common case. Set
+                it explicitly to keep a second value under the same key (e.g. a backup key).
               </p>
             )}
-
-            <AgentAccessPicker
-              projectId={projectId}
-              value={agentScope}
-              onChange={setAgentScope}
-              label="Which agents can use this secret"
-              allDescription="Every agent in this project can use it (default)."
-            />
+            {row?.configured && (
+              <p className="text-muted-foreground text-xs">
+                Leave the value blank to leave it unchanged.
+              </p>
+            )}
           </ModalBody>
 
           <ModalFooter className="sm:justify-between">
@@ -615,12 +617,7 @@ function SecretDialog({
               type="submit"
               size="sm"
               className="w-full sm:w-auto"
-              disabled={
-                (!fixedName && !name.trim()) ||
-                (requiresValue && !value.trim()) ||
-                specificButEmpty ||
-                save.isPending
-              }
+              disabled={(!isEdit && !key.trim()) || (requiresValue && !value.trim()) || save.isPending}
             >
               {save.isPending && <Loading className="size-4 shrink-0 animate-spin" />}
               Save

@@ -20,7 +20,7 @@ const password = process.env.SLACK_AUTH_FIXTURE_PASSWORD || 'SlackFixture123!';
 const supabaseUrl = (process.env.SUPABASE_URL || 'http://127.0.0.1:54321').replace(/\/+$/, '');
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-const users: Record<FixtureUserKey, { email: string; accountRole?: 'owner' | 'admin' | 'member'; projectRole?: 'manager' | 'editor' | 'member' }> = {
+const users: Record<FixtureUserKey, { email: string; accountRole?: 'owner' | 'admin' | 'member'; projectRole?: 'editor' | 'member' }> = {
   admin: { email: 'slack-fixture-admin@kortix.local', accountRole: 'owner' },
   approved: { email: 'slack-fixture-approved@kortix.local', accountRole: 'member', projectRole: 'editor' },
   viewer: { email: 'slack-fixture-viewer@kortix.local', accountRole: 'member', projectRole: 'member' },

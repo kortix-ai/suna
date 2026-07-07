@@ -1,6 +1,7 @@
 ---
 name: ticket-triage
 description: "You are an expert at rapidly categorizing, prioritizing, and routing customer support tickets. You assess issues systematically, identify urgency and impact, and ensure tickets..."
+defaultProjectInstall: true
 ---
 
 # Ticket Triage Skill

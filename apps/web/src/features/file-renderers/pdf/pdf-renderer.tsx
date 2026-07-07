@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { AlertTriangle } from 'lucide-react';
+import { PDFViewer } from '@/components/ui/extend/pdf-viewer';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
 import { PDFViewer } from './pdf-viewer';
@@ -21,6 +22,7 @@ interface PdfRendererProps {
   fileContent?: string | null;
   /** Existing PDF object URL fallback. */
   url?: string | null;
+  fileName?: string;
   className?: string;
   compact?: boolean;
   fileName?: string;
@@ -88,6 +90,13 @@ export function PdfRenderer({ fileContent, url, className, compact = false, file
   }
 
   return (
+    <PDFViewer
+      src={pdfUrl}
+      fileName={fileName}
+      showToolbar={!compact}
+      showUpload={false}
+      className={cn('h-full w-full', className)}
+    />
     <PDFViewer
       src={pdfUrl}
       fileName={fileName}

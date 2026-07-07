@@ -4,7 +4,9 @@ import type {
 	Message,
 	Event as OpenCodeEvent,
 	Part,
+	ReasoningPart,
 	SessionStatus,
+	TextPart,
 	Todo,
 } from "@opencode-ai/sdk/v2/client";
 import { create } from "zustand";
@@ -12,13 +14,22 @@ import { create } from "zustand";
 import { ascendingId } from "./sync-store/ascending-id";
 import { Binary } from "./sync-store/binary";
 import { writeStreamCache } from "./sync-store/stream-cache";
-import type { FileDiff, MessageWithParts } from "./sync-store/types";
+import type { FileDiff, MessageError, MessageWithParts } from "./sync-store/types";
 
 // Re-export moved helpers/types so the public surface stays byte-identical:
 // `Binary`, `ascendingId`, and the `MessageWithParts` type remain importable
 // from this module exactly as before.
 export { ascendingId, Binary };
-export type { MessageWithParts };
+export type { MessageError, MessageWithParts };
+
+/** The two `Part` variants that carry streaming `.text` (vs. tool/file/etc.
+ *  parts, which don't). Narrows a `Part` down so `.text` is safe to read
+ *  without a cast — every `Part` member shares `id`/`sessionID`/`messageID`/
+ *  `type`, but only these two carry `text`. */
+type TextLikePart = TextPart | ReasoningPart;
+function isTextLikePart(part: Part): part is TextLikePart {
+	return part.type === "text" || part.type === "reasoning";
+}
 
 // ============================================================================
 // Store State
@@ -179,14 +190,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			}
 			const result = Binary.search(list, part.id, (p) => p.id);
 			if (result.found) {
-				const prev = list[result.index] as any;
-				const incoming = part as any;
-				const tracksStreamingText =
-					(prev?.type === "text" || prev?.type === "reasoning") &&
-					(incoming?.type === "text" || incoming?.type === "reasoning");
-				const prevText = typeof prev?.text === "string" ? prev.text : null;
-				const incomingText =
-					typeof incoming?.text === "string" ? incoming.text : null;
+				const prev = list[result.index];
+				const prevIsTextLike = isTextLikePart(prev);
+				const incomingIsTextLike = isTextLikePart(part);
+				const tracksStreamingText = prevIsTextLike && incomingIsTextLike;
+				const prevText = prevIsTextLike ? prev.text : null;
+				const incomingText = incomingIsTextLike ? part.text : null;
 
 				// Guard against out-of-order/stale part snapshots that can cause
 				// the stream to jump or start from the middle.
@@ -225,11 +234,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// text (missing the beginning). Skip the insert — the delta-
 				// created version already exists in the parts list under the
 				// message entry created by the delta handler.
-				const incoming = part as any;
-				if (
-					deltaActiveParts.has(part.id) &&
-					(incoming?.type === "text" || incoming?.type === "reasoning")
-				) {
+					if (deltaActiveParts.has(part.id) && isTextLikePart(part)) {
 					// Delta-created part already exists — check all messageID
 					// buckets since the delta handler may have stored it under
 					// a different (stub) message entry.
@@ -492,16 +497,10 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					// For text/reasoning parts: prefer whichever has more text content.
 					// This prevents hydrate from clobbering SSE-streamed content
 					// with an empty/stale server snapshot during active streaming.
-					const inText = (inP as any).text;
-					const exText = (exP as any).text;
-					const isTextLike =
-						(inP as any)?.type === "text" ||
-						(inP as any)?.type === "reasoning";
 					if (
-						isTextLike &&
-						typeof exText === "string" &&
-						typeof inText === "string" &&
-						exText.length > inText.length
+						isTextLikePart(inP) &&
+						isTextLikePart(exP) &&
+						exP.text.length > inP.text.length
 					) {
 						return exP;
 					}
@@ -625,8 +624,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 
 				const eventSessionID =
 					(event.properties as { sessionID?: string })?.sessionID;
-				let resolvedSessionID =
-					(part as any).sessionID ?? eventSessionID;
+				let resolvedSessionID: string | undefined =
+					part.sessionID ?? eventSessionID;
 
 				if (!resolvedSessionID) {
 					const sessionsById = get().messages;
@@ -655,17 +654,17 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				}
 
 				store.upsertPart(part.messageID, part);
-				if ((part as any).type === "text" && typeof (part as any).text === "string") {
+				if (isTextLikePart(part)) {
 					if (!resolvedSessionID) return;
 					const msgInfo = get().messages[resolvedSessionID]?.find(
 						(m) => m.id === part.messageID,
-					) as any;
+					);
 					writeStreamCache(
 						resolvedSessionID,
 						part.messageID,
 						part.id,
-						(part as any).text,
-						msgInfo?.parentID,
+						part.text,
+						msgInfo?.role === "assistant" ? msgInfo.parentID : undefined,
 					);
 				}
 				return;
@@ -736,17 +735,17 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				if (props.field === "text") {
 					const updated = get().parts[props.messageID]?.find(
 						(p) => p.id === props.partID,
-					) as any;
-					if (typeof updated?.text === "string" && updated.text.length > 0) {
+					);
+					if (updated && isTextLikePart(updated) && updated.text.length > 0) {
 						const msgInfo = get().messages[props.sessionID]?.find(
 							(m) => m.id === props.messageID,
-						) as any;
+						);
 						writeStreamCache(
 							props.sessionID,
 							props.messageID,
 							props.partID,
 							updated.text,
-							msgInfo?.parentID,
+							msgInfo?.role === "assistant" ? msgInfo.parentID : undefined,
 						);
 					}
 				}
@@ -770,9 +769,10 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			return;
 		}
 		case "session.error": {
-			const props = event.properties as { sessionID?: string; error?: unknown };
+			const props = event.properties as { sessionID?: string; error?: MessageError };
 			if (!props.sessionID || !props.error) return;
 			const sid = props.sessionID;
+			const error = props.error;
 			// Mark session idle — errors terminate the response.
 			store.setStatus(sid, { type: "idle" });
 			deltaActiveParts.clear();
@@ -786,10 +786,15 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				const msgs = s.messages[sid] ?? [];
 				// Find last assistant message and patch .error onto it
 				for (let i = msgs.length - 1; i >= 0; i--) {
-					if (msgs[i].role === "assistant") {
-						if ((msgs[i] as any).error) return s; // already has error
+					const msg = msgs[i];
+					if (msg.role === "assistant") {
+						if (msg.error) return s; // already has error
 						const next = [...msgs];
-						next[i] = { ...msgs[i], error: props.error } as any;
+						// `error` may be the client-synthesized `SyntheticAbortError`
+						// (see `MessageError`), which the SDK's own `AssistantMessage.error`
+						// union doesn't declare — the assertion is the documented, narrow
+						// exception for that one extra shape.
+						next[i] = { ...msg, error } as typeof msg;
 						return { messages: { ...s.messages, [sid]: next } };
 					}
 				}
@@ -801,8 +806,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					id: stubId,
 					sessionID: sid,
 					role: "assistant",
-					error: props.error,
-				} as any;
+					error,
+				} as Message;
 				return {
 					messages: { ...s.messages, [sid]: [...msgs, stubMsg] },
 				};

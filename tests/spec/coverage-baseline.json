@@ -19,7 +19,6 @@
     "GET /v1/channels/slack/identity/login/:*",
     "GET /v1/executor/projects/:*/connectors/:*/policies",
     "GET /v1/health/live",
-    "GET /v1/llm/health",
     "GET /v1/marketplace/items",
     "GET /v1/marketplace/items/:*",
     "GET /v1/marketplace/items/:*/file",

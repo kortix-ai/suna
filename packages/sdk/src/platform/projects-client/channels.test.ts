@@ -8,13 +8,18 @@ import {
   getEmailInstallation,
   getEmailMode,
   getMeetVoices,
+  getSlackChannelFile,
   getSlackInstallation,
   getSlackManifest,
   getSlackMode,
+  listChannelBindings,
   previewMeetVoice,
   setMeetBotName,
   setMeetVoice,
+  speakInMeeting,
+  updateChannelBinding,
   updateEmailPolicy,
+  uploadSlackChannelFile,
 } from './channels';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -150,6 +155,37 @@ test('previewMeetVoice posts to the per-voice preview endpoint and returns null 
   expect(await previewMeetVoice('P1', 'voice-1')).toBeNull();
 });
 
+test('getSlackChannelFile GETs the file proxy with the url query param', async () => {
+  nextResponse = { status: 200, body: { data: 'bytes' } };
+  await getSlackChannelFile('P1', 'https://files.slack.com/x/y.pdf');
+  expect(last().url).toContain('/projects/P1/channels/slack/file?url=');
+  expect(last().url).toContain(encodeURIComponent('https://files.slack.com/x/y.pdf'));
+  expect(last().method).toBe('GET');
+});
+
+test('uploadSlackChannelFile posts channel/filename/content_base64 to the upload proxy', async () => {
+  nextResponse = { status: 200, body: { ok: true, files: [] } };
+  const result = await uploadSlackChannelFile('P1', {
+    channel: 'C1',
+    filename: 'report.pdf',
+    contentBase64: 'YWJj',
+    comment: 'here you go',
+  });
+  expect(last().url).toContain('/projects/P1/channels/slack/file/upload');
+  expect(last().method).toBe('POST');
+  expect(last().body).toMatchObject({ channel: 'C1', filename: 'report.pdf', content_base64: 'YWJj', comment: 'here you go' });
+  expect(result.ok).toBe(true);
+});
+
+test('speakInMeeting posts bot_id/text/voice to the meet speak endpoint', async () => {
+  nextResponse = { status: 200, body: { ok: true, voice: 'voice-1' } };
+  const result = await speakInMeeting('P1', 'bot-1', 'hello there', 'voice-1');
+  expect(last().url).toContain('/projects/P1/channels/meet/speak');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ bot_id: 'bot-1', text: 'hello there', voice: 'voice-1' });
+  expect(result.voice).toBe('voice-1');
+});
+
 test('updateEmailPolicy defaults connector_slug to kortix_email', async () => {
   nextResponse = {
     status: 200,
@@ -170,4 +206,61 @@ test('updateEmailPolicy defaults connector_slug to kortix_email', async () => {
     allowedRegex: null,
   });
   expect(last().body).toMatchObject({ connector_slug: 'kortix_email' });
+});
+
+test('listChannelBindings hits the bindings collection', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      projectDefaultAgent: 'support',
+      bindings: [
+        {
+          bindingId: 'b1',
+          platform: 'slack',
+          workspaceId: 'W1',
+          channelId: 'C1',
+          channelName: null,
+          channelType: null,
+          agentName: null,
+          opencodeModel: null,
+          conversationPolicy: 'project_open',
+          installedAt: '2026-01-01',
+          effectiveAgent: { agent: 'support', source: 'project' },
+        },
+      ],
+    },
+  };
+  const result = await listChannelBindings('P1');
+  expect(last().url).toContain('/projects/P1/channels/bindings');
+  expect(last().method).toBe('GET');
+  expect(result.projectDefaultAgent).toBe('support');
+  expect(result.bindings).toHaveLength(1);
+  expect(result.bindings[0]?.effectiveAgent).toEqual({ agent: 'support', source: 'project' });
+});
+
+test('updateChannelBinding PATCHes the binding by id', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      bindingId: 'b1',
+      platform: 'slack',
+      workspaceId: 'W1',
+      channelId: 'C1',
+      channelName: null,
+      channelType: null,
+      agentName: 'billing',
+      opencodeModel: null,
+      conversationPolicy: 'owner_only',
+      installedAt: '2026-01-01',
+      effectiveAgent: { agent: 'billing', source: 'explicit' },
+    },
+  };
+  const result = await updateChannelBinding('P1', 'b1', { agentName: 'billing', conversationPolicy: 'owner_only' });
+  expect(last().url).toContain('/projects/P1/channels/bindings/b1');
+  expect(last().method).toBe('PATCH');
+  expect(last().body).toEqual({ agentName: 'billing', conversationPolicy: 'owner_only' });
+  expect(result.agentName).toBe('billing');
+
+  nextResponse = { status: 404, body: { message: 'not found' } };
+  await expect(updateChannelBinding('P1', 'unknown', { agentName: null })).rejects.toThrow('not found');
 });

@@ -3,6 +3,7 @@
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { SandboxImage } from '@/features/session/sandbox-image';
 import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
+import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import {
@@ -123,6 +124,7 @@ import {
   readStartStash,
   replayStartStash,
   sendAndRecover,
+  usePermissionSelfHeal,
   useQuestionSelfHeal,
   writeForkDraft,
 } from '@kortix/sdk/react';
@@ -3944,7 +3946,11 @@ export function SessionChat({
         return { options };
       },
       onReadinessTimeout: () => {
-        setCommandError({ kind: 'runtime-error', message: NO_MODEL_AVAILABLE_MESSAGE, cause: null });
+        setCommandError({
+          kind: 'runtime-error',
+          message: NO_MODEL_AVAILABLE_MESSAGE,
+          cause: null,
+        });
       },
       prepare: (stash, ready) => {
         pendingPromptHandled.current = true;
@@ -4491,6 +4497,10 @@ export function SessionChat({
     enabled: isActiveSessionTab,
     isSuppressed: isQuestionSuppressed,
   });
+  // The permission twin — a missed `permission.asked` frame otherwise leaves
+  // the agent silently blocked with no card to answer (the "have to type
+  // `continue`" wedge).
+  usePermissionSelfHeal(sessionId, messages, { enabled: isActiveSessionTab });
 
   // ---- Permission/question reply handlers ----
   const removePermission = useOpenCodePendingStore((s) => s.removePermission);
@@ -4498,12 +4508,11 @@ export function SessionChat({
 
   const handlePermissionReply = useCallback(
     async (requestId: string, reply: 'once' | 'always' | 'reject') => {
-      try {
-        await replyToPermission(requestId, reply);
-        removePermission(requestId);
-      } catch {
-        // ignore
-      }
+      // No optimistic remove: only drop the card once the runtime accepted the
+      // reply — a failed reply must stay answerable. Rethrow so callers
+      // (prompt buttons) reset their busy state and surface the error.
+      await replyToPermission(requestId, reply);
+      removePermission(requestId);
     },
     [removePermission],
   );
@@ -4942,6 +4951,11 @@ export function SessionChat({
     registerSender(sessionId, (text: string) => handleSend(text));
     return () => unregisterSender(sessionId);
   }, [sessionId, handleSend, registerSender, unregisterSender]);
+
+  // NOTE: no client-side "auto-continue after approval" here — resuming the
+  // agent when nobody was holding the gated call is the RESOLVE ENDPOINT's job
+  // (server-side continueSession delivery in r7.ts), so it works with zero
+  // browsers open. A web-side nudge would just double-send.
 
   const handleStop = useCallback(() => {
     // Guard against rapid clicks — ignore if an abort is already in flight
@@ -5591,7 +5605,10 @@ export function SessionChat({
           // so a typed message is sent to the agent instead of being swallowed
           // as a custom answer.
           lockForQuestion={!!renderedQuestion && isBusy}
-          lockForApproval={hasPendingApproval}
+          // Same dead-prompt guard as questions: only lock while the agent is
+          // actually paused on the decision (isBusy), so a stale card can't
+          // swallow the composer on an idle session.
+          lockForApproval={hasPendingApproval || (pendingPermissions.length > 0 && isBusy)}
           onCustomAnswer={(text) => {
             questionPromptRef.current?.submitCustomAnswer(text);
           }}
@@ -5605,6 +5622,14 @@ export function SessionChat({
               {/* Connector actions a policy gated for approval — pauses the run
                   until the human decides. Self-hides when nothing's pending. */}
               <SessionApprovalPrompt />
+              {/* Opencode tool permissions (bash/edit/…) awaiting a decision —
+                  the turn is blocked inside the runtime and resumes the moment
+                  a reply lands. Self-hides when nothing's pending. */}
+              <SessionPermissionPrompt
+                sessionId={sessionId}
+                permissions={pendingPermissions}
+                onReply={handlePermissionReply}
+              />
               {renderedQuestion ? (
                 <div
                   className={cn(

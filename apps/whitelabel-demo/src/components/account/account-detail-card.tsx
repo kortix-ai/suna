@@ -41,7 +41,7 @@ export function AccountDetailCard({
     queryFn: () => kortix.accounts.get(accountId),
   });
 
-  const data = detail.data as any;
+  const data = detail.data;
   const [name, setName] = useState('');
   useEffect(() => {
     if (data?.name != null) setName(String(data.name));
@@ -67,7 +67,7 @@ export function AccountDetailCard({
     onError: () => toast.error('Could not leave the account'),
   });
 
-  const role = data?.role as string | undefined;
+  const role = data?.role;
   const isOwner = role === 'owner';
   const dirty = data?.name != null && name.trim() !== '' && name.trim() !== String(data.name);
 

@@ -33,8 +33,8 @@ let stderr = '';
 let requests: string[] = [];
 
 const ACCOUNTS = [
-  { account_id: 'account_1', slug: 'personal', name: 'Personal', personal_account: true, role: 'owner' },
-  { account_id: 'account_2', slug: 'kortix', name: 'Kortix', personal_account: false, role: 'owner' },
+  { account_id: 'account_1', slug: 'personal', name: 'Personal', role: 'owner' },
+  { account_id: 'account_2', slug: 'kortix', name: 'Kortix', role: 'owner' },
 ];
 
 function writeConfig(activeAccountId = 'account_1'): void {

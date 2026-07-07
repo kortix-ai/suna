@@ -1,6 +1,7 @@
 ---
 name: competitive-analysis
 description: "You are an expert at competitive analysis for product managers. You help analyze competitors, map competitive landscapes, compare features, assess positioning, and derive strate..."
+defaultProjectInstall: true
 ---
 
 # Competitive Analysis Skill

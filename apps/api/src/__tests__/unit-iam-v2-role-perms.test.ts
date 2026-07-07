@@ -69,11 +69,10 @@ describe('IAM V2 — project role table', () => {
     // producing output for a human to decide on, not a project customization —
     // see PROJECT_REVIEW_SUBMIT vs PROJECT_REVIEW_ACT in actions.ts.)
     for (const a of PROJECT_ROLE_PERMS.member) {
-      expect(a).toMatch(/\.(read|start|exec|stop|fire|submit)$/);
+      expect(a).toMatch(/\.(read|start|stop|fire|submit)$/);
     }
     // Can start / run / stop sessions (the floor role must be able to USE Kortix).
     expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_SESSION_START)).toBe(true);
-    expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_SESSION_EXEC)).toBe(true);
     expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_SESSION_STOP)).toBe(true);
     // ...and can FIRE the project's triggers (operate its automations).
     expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE)).toBe(true);
@@ -127,8 +126,6 @@ describe('IAM V2 — no unknown actions', () => {
       PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
       PROJECT_ACTIONS.PROJECT_SKILL_WRITE,
       PROJECT_ACTIONS.PROJECT_COMMAND_WRITE,
-      PROJECT_ACTIONS.PROJECT_SCHEDULE_WRITE,
-      PROJECT_ACTIONS.PROJECT_WEBHOOK_WRITE,
       PROJECT_ACTIONS.PROJECT_FILE_WRITE,
       PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
       PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
@@ -140,8 +137,6 @@ describe('IAM V2 — no unknown actions', () => {
       PROJECT_ACTIONS.PROJECT_AGENT_READ,
       PROJECT_ACTIONS.PROJECT_SKILL_READ,
       PROJECT_ACTIONS.PROJECT_COMMAND_READ,
-      PROJECT_ACTIONS.PROJECT_SCHEDULE_READ,
-      PROJECT_ACTIONS.PROJECT_WEBHOOK_READ,
       PROJECT_ACTIONS.PROJECT_FILE_READ,
       PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
       PROJECT_ACTIONS.PROJECT_GITOPS_READ,

@@ -39,7 +39,6 @@ export {
   projectMembers,
   projectAccessRequests,
   projectSecrets,
-  projectSecretGrants,
   secretShareScopeEnum,
   secretGrantPrincipalEnum,
   projectSecretScopeEnum,
@@ -182,7 +181,6 @@ export {
   executorConnectorPoliciesRelations,
   executorProjectPoliciesRelations,
   executorProjectSettingsRelations,
-  projectSecretGrantsRelations,
 } from './schema/kortix';
 export type { AgentGrant } from './schema/kortix';
 
@@ -194,12 +192,8 @@ export type {
   TunnelPermissionScope,
 } from './schema/kortix';
 
-// Public/basejump tables
-export {
-  apiKeys,
-  accountUser,
-  billingCustomersInBasejump,
-} from './schema/public';
+// Public tables
+export { apiKeys } from './schema/public';
 
 export type {
   Account,
@@ -228,7 +222,6 @@ export type {
   NewSessionSandbox,
   ApiKey,
   CreditAccount,
-  AccountUser,
   NewApiKey,
   SandboxSelect,
   KortixApiKey,

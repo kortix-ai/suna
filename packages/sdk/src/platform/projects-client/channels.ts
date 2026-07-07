@@ -72,6 +72,55 @@ export async function disconnectSlack(projectId: string): Promise<void> {
   if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect');
 }
 
+/**
+ * Download a Slack-hosted file through the server-side proxy (SSRF-guarded to
+ * `*.slack.com`) — the bot token never reaches the sandbox. Backs `slack download`.
+ */
+export async function getSlackChannelFile(projectId: string, url: string): Promise<Blob> {
+  return unwrap(
+    await backendApi.get<Blob>(
+      `/projects/${encodeURIComponent(projectId)}/channels/slack/file?url=${encodeURIComponent(url)}`,
+      { showErrors: false },
+    ),
+    'Failed to download Slack file',
+  );
+}
+
+export interface UploadSlackChannelFileInput {
+  channel: string;
+  filename: string;
+  /** Base64-encoded file content. */
+  contentBase64: string;
+  comment?: string;
+  threadTs?: string;
+}
+
+export interface UploadSlackChannelFileResult {
+  ok: boolean;
+  files: unknown;
+}
+
+/** Upload a file to Slack through the server-side 3-step external-upload proxy. Backs `slack send --file`. */
+export async function uploadSlackChannelFile(
+  projectId: string,
+  input: UploadSlackChannelFileInput,
+): Promise<UploadSlackChannelFileResult> {
+  return unwrap(
+    await backendApi.post<UploadSlackChannelFileResult>(
+      `/projects/${encodeURIComponent(projectId)}/channels/slack/file/upload`,
+      {
+        channel: input.channel,
+        filename: input.filename,
+        content_base64: input.contentBase64,
+        comment: input.comment,
+        thread_ts: input.threadTs,
+      },
+      { showErrors: false },
+    ),
+    'Failed to upload Slack file',
+  );
+}
+
 export interface EmailSenderPolicy {
   mode: 'allow_all' | 'restricted';
   allowedEmails: string[];
@@ -230,4 +279,93 @@ export async function previewMeetVoice(
   );
   if (!res.success || !res.data?.b64) return null;
   return res.data.b64;
+}
+
+// ── Channel bindings — which agent/model/join-policy a bound chat channel uses ──
+// The web management surface for `chat_channel_bindings`. Today the only other
+// way to change these is the in-Slack `/kortix agent|model|policy` commands —
+// this is the same underlying row, just editable from the dashboard.
+
+export type ChannelConversationPolicy = 'owner_approval' | 'owner_only' | 'project_open';
+
+export interface ChannelBindingEffectiveAgent {
+  agent: string;
+  source: 'explicit' | 'project' | 'fallback';
+}
+
+export interface ChannelBinding {
+  bindingId: string;
+  platform: string;
+  workspaceId: string;
+  channelId: string;
+  channelName: string | null;
+  channelType: string | null;
+  agentName: string | null;
+  opencodeModel: string | null;
+  conversationPolicy: ChannelConversationPolicy;
+  installedAt: string;
+  effectiveAgent: ChannelBindingEffectiveAgent;
+}
+
+export interface ChannelBindingsResponse {
+  projectDefaultAgent: string | null;
+  bindings: ChannelBinding[];
+}
+
+export async function listChannelBindings(projectId: string): Promise<ChannelBindingsResponse> {
+  return unwrap(
+    await backendApi.get<ChannelBindingsResponse>(
+      `/projects/${encodeURIComponent(projectId)}/channels/bindings`,
+      { showErrors: false },
+    ),
+    'Failed to load channel bindings',
+  );
+}
+
+export interface UpdateChannelBindingInput {
+  /** null resets the agent override to the project default. */
+  agentName?: string | null;
+  /** null resets the model override to the project/account/platform default. */
+  opencodeModel?: string | null;
+  conversationPolicy?: ChannelConversationPolicy;
+}
+
+export async function updateChannelBinding(
+  projectId: string,
+  bindingId: string,
+  input: UpdateChannelBindingInput,
+): Promise<ChannelBinding> {
+  return unwrap(
+    await backendApi.patch<ChannelBinding>(
+      `/projects/${encodeURIComponent(projectId)}/channels/bindings/${encodeURIComponent(bindingId)}`,
+      input,
+      { showErrors: false },
+    ),
+    'Failed to update channel binding',
+  );
+}
+
+export interface SpeakInMeetingResult {
+  ok: boolean;
+  voice: string;
+}
+
+/**
+ * Make the meeting bot speak: text → ElevenLabs (project voice) → Recall
+ * `output_audio`, both keys kept server-side. Backs `meet speak`.
+ */
+export async function speakInMeeting(
+  projectId: string,
+  botId: string,
+  text: string,
+  voice?: string,
+): Promise<SpeakInMeetingResult> {
+  return unwrap(
+    await backendApi.post<SpeakInMeetingResult>(
+      `/projects/${encodeURIComponent(projectId)}/channels/meet/speak`,
+      { bot_id: botId, text, voice },
+      { showErrors: false },
+    ),
+    'Failed to speak in meeting',
+  );
 }

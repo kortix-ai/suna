@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 458,
+  "count": 466,
   "routes": [
     {
       "method": "GET",
@@ -695,10 +695,6 @@
       "path": "/v1/executor/projects/:projectId/connectors/:slug"
     },
     {
-      "method": "PUT",
-      "path": "/v1/executor/projects/:projectId/connectors/:slug/agent-scope"
-    },
-    {
       "method": "GET",
       "path": "/v1/executor/projects/:projectId/connectors/:slug/config"
     },
@@ -739,10 +735,6 @@
       "path": "/v1/executor/projects/:projectId/connectors/:slug/sensitive"
     },
     {
-      "method": "PUT",
-      "path": "/v1/executor/projects/:projectId/connectors/:slug/sharing"
-    },
-    {
       "method": "POST",
       "path": "/v1/executor/projects/:projectId/connectors/sync"
     },
@@ -781,18 +773,6 @@
     {
       "method": "GET",
       "path": "/v1/health/live"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/llm/chat/completions"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/llm/health"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/llm/models"
     },
     {
       "method": "GET",
@@ -971,6 +951,14 @@
       "path": "/v1/projects/:projectId/access/pending-invites/:inviteId/resend"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/agents/:agentName/config"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/agents/:agentName/config"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/agents/:agentName/scope"
     },
@@ -1061,6 +1049,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/change-requests/:crId/request-changes"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/bindings"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/channels/bindings/:bindingId"
     },
     {
       "method": "POST",
@@ -1677,6 +1673,42 @@
     {
       "method": "POST",
       "path": "/v1/setup-links/secret/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/bootstrap-owner"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/health"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/install-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/sandbox-providers"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/setup-complete"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/setup-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/setup-wizard-step"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/setup-wizard-step"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/status"
     },
     {
       "method": "GET",

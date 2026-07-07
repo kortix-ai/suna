@@ -100,8 +100,6 @@ const COMPUTER: GatewayConnector = {
   baseUrl: null,
   auth: { type: 'none', in: 'header', name: null, prefix: null },
   hasAuth: false, // no credential — the relay is the credential
-  shareScope: 'project',
-  grants: [],
   credentialMode: 'shared',
   enabled: true,
 };

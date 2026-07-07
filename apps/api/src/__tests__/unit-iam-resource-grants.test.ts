@@ -9,7 +9,13 @@
  *  - group grants match if the user is in ANY of their groups.
  */
 import { describe, expect, test } from 'bun:test';
-import { isResourceAccessible, isResourceType, RESOURCE_GRANT_TYPES } from '../iam/resource-grants';
+import {
+  CREATABLE_RESOURCE_GRANT_TYPES,
+  isCreatableResourceType,
+  isResourceAccessible,
+  isResourceType,
+  RESOURCE_GRANT_TYPES,
+} from '../iam/resource-grants';
 
 const USER = 'user-1';
 const OTHER = 'user-2';
@@ -60,12 +66,32 @@ describe('isResourceAccessible — scoped resources gate by principal', () => {
 });
 
 describe('resource type guard', () => {
-  test('agent, skill + secret are the valid resource types', () => {
+  test('agent, skill + secret remain valid resource types (READ/REVOKE back-compat)', () => {
+    // skill/secret stay in the union so pre-existing grant rows of those types
+    // still read, list, and revoke — the CREATE restriction is separate (below).
     expect(RESOURCE_GRANT_TYPES).toEqual(['agent', 'skill', 'secret']);
     expect(isResourceType('agent')).toBe(true);
     expect(isResourceType('skill')).toBe(true);
     expect(isResourceType('secret')).toBe(true);
     expect(isResourceType('connector')).toBe(false);
     expect(isResourceType('')).toBe(false);
+  });
+});
+
+describe('creatable resource type guard — AGENT-ONLY new grants', () => {
+  test('only agent is creatable; skill/secret are NOT (governed by editor role + agent inheritance)', () => {
+    expect(CREATABLE_RESOURCE_GRANT_TYPES).toEqual(['agent']);
+    expect(isCreatableResourceType('agent')).toBe(true);
+    // skill/secret are valid to READ but NOT to CREATE a new member-scoped grant.
+    expect(isCreatableResourceType('skill')).toBe(false);
+    expect(isCreatableResourceType('secret')).toBe(false);
+    expect(isCreatableResourceType('connector')).toBe(false);
+    expect(isCreatableResourceType('')).toBe(false);
+  });
+
+  test('every creatable type is also a readable resource type (subset invariant)', () => {
+    for (const t of CREATABLE_RESOURCE_GRANT_TYPES) {
+      expect(isResourceType(t)).toBe(true);
+    }
   });
 });

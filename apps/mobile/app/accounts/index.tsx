@@ -19,8 +19,7 @@ import { useAccounts } from '@/lib/projects/hooks';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { NewAccountSheet } from '@/components/accounts/NewAccountSheet';
 
-function roleLabel(account: { account_role?: string; personal_account?: boolean }): string {
-  if (account.personal_account) return 'Personal';
+function roleLabel(account: { account_role?: string }): string {
   const r = account.account_role;
   return r ? r.charAt(0).toUpperCase() + r.slice(1) : 'Member';
 }

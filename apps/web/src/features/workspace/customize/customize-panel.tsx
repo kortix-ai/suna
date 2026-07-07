@@ -30,11 +30,11 @@ import { getProjectDetail, listReviewItems } from '@kortix/sdk/projects-client';
 import { AlarmClock, ArrowLeft, ChatMessages, Command, Sparkles } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
+  ArrowUpCircle,
   AudioLines,
   Bot,
   Boxes,
   Container,
-  FolderOpen,
   History,
   Inbox,
   KeyRound,
@@ -46,8 +46,9 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { LuSettings, LuUsersRound } from 'react-icons/lu';
+import { detectManifestVersion } from './migrate-to-v2/manifest-version';
+import { UpgradesView } from './migrate-to-v2/upgrade-view';
 import { isRailItemActive } from './rail';
-import { FilesSection } from './sections/files-section';
 import { LlmManagementView } from './sections/gateway-view';
 import { ChangesView } from './sections/view/changes-view';
 import { DevView } from './sections/view/dev-view';
@@ -67,7 +68,7 @@ const GROUPS: readonly RailGroup[] = [
     label: 'Connect',
     items: [
       { section: 'connectors', label: 'Connectors', icon: Plug },
-      { section: 'secrets', label: 'Secrets', icon: KeyRound },
+      { section: 'secrets', label: 'Environment variables', icon: KeyRound },
       { section: 'channels', label: 'Channels', icon: ChatMessages },
     ],
   },
@@ -81,7 +82,6 @@ const GROUPS: readonly RailGroup[] = [
   {
     label: 'Workspace',
     items: [
-      { section: 'files', label: 'Files', icon: FolderOpen },
       { section: 'changes', label: 'Changes', icon: History },
       { section: 'sandbox', label: 'Sandbox', icon: Container },
       { section: 'dev', label: 'Dev', icon: Terminal },
@@ -106,14 +106,22 @@ const MEET_ITEM: RailItem = { section: 'meet', label: 'Meetings', icon: AudioLin
 
 const REVIEW_ITEM: RailItem = { section: 'review', label: 'Review', icon: Inbox };
 
+// The Upgrades section is always reachable (it hosts the one-off prompt
+// runner), but it only claims the pinned top slot while a registry upgrade
+// is actually applicable (e.g. the project is still on a v1 manifest) —
+// otherwise it sits quietly in Manage next to Settings.
+const UPGRADE_ITEM: RailItem = { section: 'upgrade', label: 'Upgrades', icon: ArrowUpCircle };
+
 function railGroups(
   tunnelEnabled: boolean,
   marketplaceEnabled: boolean,
   llmGatewayAvailable: boolean,
   meetEnabled: boolean,
   reviewEnabled: boolean,
+  upgradeAttention: boolean,
 ): readonly RailGroup[] {
-  return GROUPS.map((g) => {
+  const groups = upgradeAttention ? [{ items: [UPGRADE_ITEM] }, ...GROUPS] : GROUPS;
+  return groups.map((g) => {
     if (g.label === 'Build' && marketplaceEnabled) {
       return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
     }
@@ -130,6 +138,9 @@ function railGroups(
       const at = items.findIndex((it) => it.section === 'changes');
       items.splice(at >= 0 ? at + 1 : items.length, 0, REVIEW_ITEM);
       return { ...g, items };
+    }
+    if (g.label === 'Manage' && !upgradeAttention) {
+      return { ...g, items: [...g.items, UPGRADE_ITEM] };
     }
     return g;
   });
@@ -172,7 +183,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   );
   // A section is permitted when its GATE leaf resolved to allowed:true. Every
   // customize section gates on WRITE (editor+) — a plain `member` sees none of
-  // them; `files` is the exception (gates on read), so it stays reachable. Until
+  // them (Files lives on its own /projects/[id]/files page, not in here). Until
   // the probe resolves (or if it errored) we permit everything (optimistic).
   const isSectionAllowed = useCallback(
     (s: CustomizeSection) => {
@@ -188,6 +199,12 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   const llmGatewayAvailable = isLlmGatewayAvailable(detail.data?.project);
   const meetEnabled = detail.data?.project?.experimental?.meet ?? false;
   const reviewEnabled = detail.data?.project?.experimental?.review_center ?? false;
+  // Pin Upgrades to the top only once the manifest read resolved to v1 —
+  // while the detail query is in flight (or on v2 projects) the item sits in
+  // its calm Manage slot instead. Same detection the section rows use.
+  const upgradeAttention = detail.data
+    ? detectManifestVersion(detail.data.config.manifest_raw) === 1
+    : false;
 
   // "Needs you" count for the Review rail badge. Shares the review inbox's query
   // key so the badge and the section stay in sync; only fetched when the panel is
@@ -208,7 +225,14 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
     // BOTH its flag check (baked into railGroups) AND its read-leaf probe. Empty
     // groups drop out so no orphan header renders.
     () =>
-      railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, meetEnabled, reviewEnabled)
+      railGroups(
+        tunnelEnabled,
+        marketplaceEnabled,
+        llmGatewayAvailable,
+        meetEnabled,
+        reviewEnabled,
+        upgradeAttention,
+      )
         .map((g) => ({ ...g, items: g.items.filter((item) => isSectionAllowed(item.section)) }))
         .filter((g) => g.items.length > 0),
     [
@@ -217,6 +241,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
       llmGatewayAvailable,
       meetEnabled,
       reviewEnabled,
+      upgradeAttention,
       isSectionAllowed,
     ],
   );
@@ -455,8 +480,6 @@ function SectionContent({
       return <ChangesView projectId={projectId} />;
     case 'review':
       return <ReviewView projectId={projectId} />;
-    case 'files':
-      return <FilesSection projectId={projectId} />;
     case 'sandbox':
       return <SandboxView projectId={projectId} />;
     case 'dev':
@@ -465,6 +488,8 @@ function SectionContent({
       return <MembersView projectId={projectId} />;
     case 'settings':
       return <SettingsView projectId={projectId} />;
+    case 'upgrade':
+      return <UpgradesView projectId={projectId} />;
     default:
       return null;
   }

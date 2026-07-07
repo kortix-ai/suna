@@ -1,5 +1,5 @@
 import { and, eq, ne } from 'drizzle-orm';
-import { billingCustomers, billingCustomersInBasejump } from '@kortix/db';
+import { billingCustomers } from '@kortix/db';
 import { db } from '../../shared/db';
 
 type BillingCustomerRow = typeof billingCustomers.$inferSelect;
@@ -27,53 +27,17 @@ async function listKortixCustomersByAccountId(accountId: string): Promise<Billin
 
 /**
  * Every Stripe customer id ever associated with this account — kortix
- * billing_customers (active AND inactive) + the legacy basejump table, deduped.
- * The legacy→per-seat migration uses this to cancel subs that live on a
- * deactivated/older customer, not just the canonical one (a user can have
- * several Stripe customers; their machine subs may be on a non-canonical one).
+ * billing_customers, active AND inactive, deduped. The legacy→per-seat
+ * migration uses this to cancel subs that live on a deactivated/older
+ * customer, not just the canonical one (a user can have several Stripe
+ * customers; their machine subs may be on a non-canonical one).
  */
 export async function listAccountStripeCustomerIds(accountId: string): Promise<string[]> {
   const ids = new Set<string>();
   for (const row of await listKortixCustomersByAccountId(accountId)) {
     if ((row.provider ?? 'stripe') === 'stripe' && row.id) ids.add(row.id);
   }
-  try {
-    const legacy = await db
-      .select()
-      .from(billingCustomersInBasejump)
-      .where(eq(billingCustomersInBasejump.accountId, accountId));
-    for (const row of legacy as BillingCustomerRow[]) if (row.id) ids.add(row.id);
-  } catch {
-    // basejump customers table may not exist in all environments
-  }
   return Array.from(ids);
-}
-
-async function getLegacyCustomerByAccountId(accountId: string) {
-  try {
-    const rows = await db
-      .select()
-      .from(billingCustomersInBasejump)
-      .where(eq(billingCustomersInBasejump.accountId, accountId));
-
-    return pickCanonicalCustomer(rows as BillingCustomerRow[]);
-  } catch {
-    return null;
-  }
-}
-
-async function getLegacyCustomerByStripeId(stripeCustomerId: string) {
-  try {
-    const [row] = await db
-      .select()
-      .from(billingCustomersInBasejump)
-      .where(eq(billingCustomersInBasejump.id, stripeCustomerId))
-      .limit(1);
-
-    return row ?? null;
-  } catch {
-    return null;
-  }
 }
 
 async function deactivateConflictingCustomers(accountId: string, canonicalId: string, provider?: string | null) {
@@ -92,48 +56,7 @@ async function deactivateConflictingCustomers(accountId: string, canonicalId: st
     .where(and(...conditions));
 }
 
-async function syncLegacyCustomerToKortix(legacy: {
-  accountId: string;
-  id: string;
-  email?: string | null;
-  provider?: string | null;
-  active?: boolean | null;
-}) {
-  await db
-    .insert(billingCustomers)
-    .values({
-      accountId: legacy.accountId,
-      id: legacy.id,
-      email: legacy.email,
-      provider: legacy.provider,
-      active: legacy.active ?? true,
-    })
-    .onConflictDoUpdate({
-      target: billingCustomers.id,
-      set: {
-        email: legacy.email,
-        active: legacy.active ?? true,
-        provider: legacy.provider,
-      },
-    });
-
-  await deactivateConflictingCustomers(legacy.accountId, legacy.id, legacy.provider);
-
-  return {
-    accountId: legacy.accountId,
-    id: legacy.id,
-    email: legacy.email ?? null,
-    provider: legacy.provider ?? null,
-    active: legacy.active ?? true,
-  };
-}
-
 export async function getCustomerByAccountId(accountId: string) {
-  const legacy = await getLegacyCustomerByAccountId(accountId);
-  if (legacy) {
-    return syncLegacyCustomerToKortix(legacy);
-  }
-
   const rows = await listKortixCustomersByAccountId(accountId);
 
   return pickCanonicalCustomer(rows);
@@ -146,14 +69,7 @@ export async function getCustomerByStripeId(stripeCustomerId: string) {
     .where(eq(billingCustomers.id, stripeCustomerId))
     .limit(1);
 
-  if (row) return row;
-
-  const legacy = await getLegacyCustomerByStripeId(stripeCustomerId);
-  if (legacy) {
-    return syncLegacyCustomerToKortix(legacy);
-  }
-
-  return null;
+  return row ?? null;
 }
 
 export async function upsertCustomer(data: {

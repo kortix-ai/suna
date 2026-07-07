@@ -7,11 +7,27 @@ Field-level reference for triggers. For the plain-language version, see [Automat
 
 A trigger fires and spawns a new session that runs the rendered prompt as its initial message. The platform creates a session branch like an interactive session; the agent works, commits, pushes. Landing on `main` goes through a [change request](/docs/reference/change-requests).
 
-Triggers live in `kortix.toml` as `[[triggers]]` array entries. The manifest is the source of truth for *config*; runtime state (`last_fired_at` only — there is no fire count) lives in `project_trigger_runtime` so a fire doesn't commit on every tick. For when a trigger last fired, check the dashboard, not the repo.
+Triggers live in the manifest — `triggers:` (a YAML list) in v2 `kortix.yaml`, `[[triggers]]` (a TOML array of tables) in legacy v1 `kortix.toml`. Same fields either way, just a different container. The manifest is the source of truth for *config*; runtime state (`last_fired_at` only — there is no fire count) lives in `project_trigger_runtime` so a fire doesn't commit on every tick. For when a trigger last fired, check the dashboard, not the repo.
 
 ## Cron triggers
 
+```yaml
+# kortix.yaml (v2)
+triggers:
+  - slug: daily-digest
+    name: Daily digest
+    type: cron
+    agent: kortix
+    enabled: true
+    cron: "0 0 9 * * 1-5"
+    timezone: America/Los_Angeles
+    prompt: |
+      Summarize yesterday's commits across the repo. Save the result to
+      notes/digest-{{ cron.fired_at }}.md and open a CR against main.
+```
+
 ```toml
+# kortix.toml (legacy v1) — same fields, TOML array of tables
 [[triggers]]
 slug     = "daily-digest"
 name     = "Daily digest"
@@ -30,7 +46,20 @@ notes/digest-{{ cron.fired_at }}.md and open a CR against main.
 
 ## Webhook triggers
 
+```yaml
+# kortix.yaml (v2)
+triggers:
+  - slug: slack-hook
+    name: Slack handler
+    type: webhook
+    agent: kortix
+    enabled: true
+    secret_env: WEBHOOK_SLACK_SECRET
+    prompt: "Slack event: {{ body.text }}"
+```
+
 ```toml
+# kortix.toml (legacy v1)
 [[triggers]]
 slug       = "slack-hook"
 name       = "Slack handler"
@@ -47,7 +76,7 @@ Fires on signed `POST` requests to:
 POST /v1/webhooks/projects/<project_id>/<slug>
 ```
 
-The secret value lives in `project_secrets`; the manifest references it by name. Declare it in `[env].optional` so it shows up in the Secrets Manager.
+The secret value lives in `project_secrets`; the manifest references it by name. Declare it in `env.optional` (v2) or `[env].optional` (v1 legacy) so it shows up in the dashboard's Environment variables page.
 
 ### Signature
 
@@ -65,7 +94,7 @@ The secret value lives in `project_secrets`; the manifest references it by name.
 | 400 | Malformed project id or slug in the URL. |
 | 401 | Signature missing or mismatched. |
 | 404 | Trigger not found, disabled, or not a webhook (also when the project isn't active). |
-| 409 | `secret_env` value is not configured in Secrets Manager. |
+| 409 | `secret_env` value is not configured in the dashboard's Environment variables page. |
 | 500 | The signature was valid but the session failed to fire. |
 
 ## Field reference
@@ -78,7 +107,7 @@ The secret value lives in `project_secrets`; the manifest references it by name.
 | `type` | yes | string | — | `"cron"` or `"webhook"`. |
 | `prompt` | yes | string | — | Mustache-templated body. May be multi-line via `"""…"""`. |
 | `name` | no | string | `slug` | Human label. |
-| `agent` | no | string | `"default"` | Agent name. Legacy projects resolve it through OpenCode discovery; declarative projects should use a registered `[[agents]]` name. |
+| `agent` | no | string | `"default"` | Agent name. In v2 (`kortix.yaml`), must name a key in `agents:` or be omitted to fall back to `default_agent`. Legacy v1 projects with no `[[agents]]` resolve it through OpenCode discovery instead. |
 | `enabled` | no | bool | `true` | When `false`, the scheduler / receiver skip the entry. |
 
 ### Cron-only fields
@@ -134,7 +163,7 @@ Missing values render as empty strings — no error, no leftover `{{ x }}`. Obje
 
 ## Common gotchas
 
-- `[triggers]` (single brackets) is wrong — must be `[[triggers]]` (array of tables). The parser surfaces a clear error.
+- In legacy `kortix.toml`, `[triggers]` (single brackets) is wrong — must be `[[triggers]]` (array of tables). The parser surfaces a clear error.
 - Slugs must be lowercase + URL-safe. Uppercase or spaces fail.
 - A webhook trigger without `secret_env` is rejected. There is no unauthenticated webhook surface — by design.
 - A cron trigger without a `cron` expression is rejected.

@@ -1,6 +1,7 @@
 ---
 name: pptx
 description: "Use for creating, editing, reviewing, and validating presentation decks in PPTX format."
+defaultProjectInstall: true
 ---
 
 # PPTX Skill
@@ -90,6 +91,15 @@ See `skills/design-foundations/SKILL.md` for font pairings (Slides Pairings tabl
 - **NEVER use `bullet: true` on all text in a slide** — bullet points should only be used for actual lists of 3+ items. Don't bullet a title, subtitle, description, or stat. Bullets on every text element makes slides look like a Word document
 - **NEVER use gradient backgrounds on shapes or text** — solid colors are more professional. Gradients on buttons, cards, or text blocks are a template cliché
 - **NEVER use generic filler phrases** — "Empowering your journey", "Unlock the power of...", "Your all-in-one solution". Use specific, concrete language that could only describe this actual content
+
+## Numbers and Charts
+
+Decks for executives and boards live or die on their numbers — sloppy figures read as careless even when the design is clean.
+
+- **Carry numbers across exactly** as the source states them. Don't round, restate, or let a value drift between the data and the slide.
+- **Pick one magnitude convention per deck** (`$1.2M`, `$1,200K`, or implied thousands) and apply it to every figure in a table or chart. Never mix suffixed and implied-thousands values in the same view. Use parentheses for negatives in financials (`($1,234)`).
+- **Label every unit.** Each metric, axis, and series needs a visible unit ($, %, K/M/bn, headcount). An unlabeled axis forces the reader to guess what they're looking at.
+- **Give every chart a title that matches its data.** Catch and fix any chart with a missing title, a title that overstates what the data shows, a missing axis or unit label, or a truncated/zoomed scale that distorts the comparison. Never imply causation the data doesn't establish.
 
 ## Source Citations
 
