@@ -748,7 +748,7 @@ const MEMORY_LOOKUP_TOOL_NAMES = new Set([
   'ltm_search',
   'ltm-search',
   'mem_search',
-  'mem-search',xQ
+  'mem-search',
   'memory_search',
   'memory-search',
   'oc-mem_search',
