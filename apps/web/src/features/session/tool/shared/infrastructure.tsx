@@ -748,23 +748,19 @@ const MEMORY_LOOKUP_TOOL_NAMES = new Set([
   'ltm_search',
   'ltm-search',
   'mem_search',
-  'mem-search',
+  'mem-search',xQ
   'memory_search',
   'memory-search',
   'oc-mem_search',
   'oc-mem-search',
 ]);
 
-function isMemoryPath(path: unknown): boolean {
-  return typeof path === 'string' && path.includes('.kortix/memory');
-}
-
 export function shouldShowToolPartInActionsPanel(part: Pick<ToolPart, 'tool' | 'state'>): boolean {
   if (MEMORY_LOOKUP_TOOL_NAMES.has(part.tool)) return false;
-  if (part.tool === 'read') {
-    const input = partInput(part as ToolPart);
-    if (isMemoryPath(input.filePath)) return false;
-  }
+  // The skill tool opens its content in a side sheet, not the Actions panel.
+  if (part.tool === 'skill') return false;
+  // File reads stay out of the Actions panel.
+  if (part.tool === 'read') return false;
   return true;
 }
 

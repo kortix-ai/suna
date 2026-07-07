@@ -69,7 +69,7 @@ function TerminalCommand({
           )}
           {line}
           {showCaret && i === lines.length - 1 && (
-            <span className="bg-foreground/70 ml-0.5 inline-block h-3 w-1.5 translate-y-0.5 animate-pulse" />
+            <span className="bg-foreground/70 ml-0.5 inline-block h-4 w-0.5 translate-y-0.5 animate-pulse" />
           )}
         </div>
       ))}

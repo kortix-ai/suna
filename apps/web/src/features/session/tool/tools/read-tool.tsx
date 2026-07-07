@@ -62,7 +62,7 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       <BasicTool
         trigger={{
           title: 'Read',
-          subtitle: filename || (isStalePending ? 'Working...' : undefined),
+          subtitle: isStalePending ? undefined : filename || (isStalePending ? 'Working...' : undefined),
           args: directory ? [directory] : undefined,
         }}
         onSubtitleClick={filePath ? () => openPreview(filePath) : undefined}
@@ -101,9 +101,13 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             })}
           </div>
         ) : isStalePending ? (
-          <TextShimmer>
-            {tHardcodedUi.raw('componentsSessionToolRenderers.line2853JsxTextWaitingForFileContent')}
-          </TextShimmer>
+          <div className='p-4 pt-0'>
+            <TextShimmer>
+              {tHardcodedUi.raw(
+                'componentsSessionToolRenderers.line2853JsxTextWaitingForFileContent',
+              )}
+            </TextShimmer>
+          </div>
         ) : isErrorOutput(output) ? (
           <ToolOutputFallback output={output} toolName="read" />
         ) : null}
