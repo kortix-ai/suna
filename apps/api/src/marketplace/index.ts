@@ -14,6 +14,7 @@ import {
   getCatalogItemDetail,
   getCatalogItemFile,
   listCatalogItemsLive,
+  listCatalogItemsPage,
   listFeaturedMarketplaces,
   listMarketplaces,
   registerMarketplaceSourceProvider,
@@ -39,7 +40,13 @@ marketplaceApp.openapi(
     tags: ['marketplace'],
     summary: 'GET /marketplace/items',
     request: {
-      query: z.object({ query: z.string().optional(), type: z.string().optional(), source: z.string().optional() }),
+      query: z.object({
+        query: z.string().optional(),
+        type: z.string().optional(),
+        source: z.string().optional(),
+        limit: z.string().optional(),
+        offset: z.string().optional(),
+      }),
     },
     responses: {
       200: json(z.any(), 'Catalog items'),
@@ -47,10 +54,32 @@ marketplaceApp.openapi(
   }),
   async (c: any) => {
     const q = c.req.query();
+    // Pagination is opt-in: only a present, numeric `limit` triggers slicing —
+    // absent/non-numeric `limit` must still return the full filtered list
+    // (existing callers, e.g. the web's default-project-skills lookup, filter
+    // client-side and rely on getting everything back). A present-but-out-of-
+    // range `limit` (e.g. 0, negative, >100) still opts in, clamped to [1,100].
+    const parsedLimit = q.limit !== undefined ? Number.parseInt(q.limit, 10) : NaN;
+    const hasLimit = Number.isFinite(parsedLimit);
+    const parsedOffset = q.offset !== undefined ? Number.parseInt(q.offset, 10) : NaN;
+    const offset = Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
+    if (hasLimit) {
+      const limit = Math.min(Math.max(parsedLimit, 1), 100);
+      const { items, total } = await listCatalogItemsPage({
+        query: q.query,
+        type: q.type,
+        source: q.source,
+        limit,
+        offset,
+      });
+      // `loading`/`pending`/`sources` let the UI stream sources in (Kortix first),
+      // poll, and show a spinner per still-resolving source.
+      return c.json({ items, total, hasMore: offset + items.length < total, ...catalogStatus() });
+    }
     const items = await listCatalogItemsLive({ query: q.query, type: q.type, source: q.source });
     // `loading`/`pending`/`sources` let the UI stream sources in (Kortix first),
     // poll, and show a spinner per still-resolving source.
-    return c.json({ items, ...catalogStatus() });
+    return c.json({ items, total: items.length, hasMore: false, ...catalogStatus() });
   },
 );
 
