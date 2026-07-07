@@ -34,6 +34,7 @@ export function ComposerChatInput({
   projectId,
   isBusy,
   stopDisabled,
+  isSending,
   disabled,
   autoFocus,
   placeholder,
@@ -51,6 +52,8 @@ export function ComposerChatInput({
   isBusy?: boolean;
   /** Show a disabled stop button while busy (e.g. the computer is still booting). */
   stopDisabled?: boolean;
+  /** Send in flight, not yet settled — spinner in the send slot (see SessionChatInput.isSending). */
+  isSending?: boolean;
   disabled?: boolean;
   /** Clear the composer optimistically on send. Set false on the project-home
    *  composer, whose send navigates it away (see SessionChatInput.clearOnSend). */
@@ -92,6 +95,7 @@ export function ComposerChatInput({
       clearOnSend={clearOnSend}
       isBusy={isBusy}
       stopDisabled={stopDisabled}
+      isSending={isSending}
       disabled={disabled}
       autoFocus={autoFocus}
       placeholder={placeholder}

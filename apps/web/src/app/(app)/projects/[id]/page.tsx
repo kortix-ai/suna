@@ -17,7 +17,7 @@ import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 const FREE_ONBOARDING_UPGRADE_MODAL_KEY = 'kortix:free-onboarding-upgrade-modal-shown';
 
@@ -35,6 +35,9 @@ export default function ProjectIndexPage() {
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
   const newSession = useNewProjectSession(projectId);
+  // Composer sending state: spans Enter → create confirmed → navigation. Reset
+  // only on create failure (success navigates this page away).
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     if (!isBillingEnabled() || !accountState || !projectAccountId) return;
@@ -70,16 +73,21 @@ export default function ProjectIndexPage() {
         return;
       }
 
-      // Identical optimistic path to every other new-session entry point: mint the
-      // id, paint the instant shell, and let the session page auto-send `text` once
-      // the box is ready. No server-side initial_prompt — the shell shows the
+      // Identical create-first path to every other new-session entry point: the
+      // composer shows a sending spinner for the create RTT (~one round trip),
+      // then navigates into the instant shell, which auto-sends `text` once the
+      // box is ready. No server-side initial_prompt — the shell shows the
       // message + inline boot status, matching the global dashboard composer.
       // Bind the chosen agent at session birth so it matches the `agent` the
       // composer sends on the first prompt — sessions are agent-immutable and the
       // API proxy 409s any prompt whose agent differs from the bound one, which
       // defaults to "default" when unset (see buildNewSessionCreateInput).
+      setSending(true);
       newSession({
         create: buildNewSessionCreateInput(options),
+        // Create failed (already surfaced by the hook) — we never left this
+        // page, so just unlock the composer with the text still in it.
+        onError: () => setSending(false),
         onNavigate: (sessionId) => {
           // `sessionId` here is the route/Kortix session id, not the OpenCode
           // pin the session page resolves later (`useCanonicalOpenCodeSession`
@@ -105,7 +113,7 @@ export default function ProjectIndexPage() {
 
   return (
     <ProjectShell projectId={projectId}>
-      <ProjectHome projectId={projectId} onSend={handleSend} busy={false} />
+      <ProjectHome projectId={projectId} onSend={handleSend} busy={sending} />
     </ProjectShell>
   );
 }

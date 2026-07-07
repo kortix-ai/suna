@@ -23,8 +23,6 @@ import {
   ClipboardCopy,
   Copy,
   Download,
-  Folder,
-  FolderCog,
   History,
   MoreVertical,
   Scissors,
@@ -32,6 +30,7 @@ import {
 import { useTranslations } from 'next-intl';
 import { useCallback, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import type { FileNode } from '@/features/file-browser/types';
+import { DriveFolderIcon } from './drive-folder-icon';
 import { getFileIcon } from './file-icon';
 import { FileThumbnail } from './file-thumbnail';
 import type { GitStatusType } from '@/features/file-browser/components/file-tree-item';
@@ -351,14 +350,39 @@ function FolderCard({
           onDrop={handleDrop}
           onClick={isRenaming ? undefined : onClick}
           className={cn(
-            'group border-border bg-popover hover:bg-foreground/4 flex h-11 cursor-pointer items-center gap-2.5 rounded-md border px-3 transition-colors select-none',
+            'group border-border bg-popover hover:bg-foreground/4 relative flex cursor-pointer flex-col overflow-hidden rounded-md border transition-colors select-none',
             isCut && 'opacity-40',
             isDragging && 'opacity-30',
-            isDragOver && 'bg-primary/[0.08] border-primary/40',
+            isDragOver && 'border-primary/40 ring-primary/50 ring-2',
           )}
         >
-          <Folder className="text-muted-foreground size-4 shrink-0" />
-          <div className="flex h-full min-w-0 flex-1 items-center">
+          <div className="flex h-[120px] items-center justify-center">
+            <DriveFolderIcon label={node.name} className="w-[72px] drop-shadow-sm" />
+          </div>
+
+          {!isRenaming && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  onClick={(e) => e.stopPropagation()}
+                  variant="secondary"
+                  size="icon-sm"
+                  className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+                >
+                  <MoreVertical className="text-muted-foreground size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <FolderDriveMenuItems
+                  Item={DropdownMenuItem}
+                  Separator={DropdownMenuSeparator}
+                  {...folderMenuProps}
+                />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          <div className="border-border/40 bg-background flex items-center border-t px-3 py-2.5">
             {isRenaming ? (
               <input
                 ref={renameInputRef}
@@ -374,30 +398,12 @@ function FolderCard({
                 className="border-primary/50 w-full border-b bg-transparent py-0.5 text-sm outline-none"
               />
             ) : (
-              <span className="text-foreground truncate text-sm font-medium">{node.name}</span>
+              <div className="flex w-full min-w-0 items-center gap-1.5">
+                <DriveFolderIcon label={node.name} className="size-4 shrink-0" />
+                <span className="text-foreground truncate text-sm font-medium">{node.name}</span>
+              </div>
             )}
           </div>
-          {!isRenaming && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  onClick={(e) => e.stopPropagation()}
-                  variant="ghost"
-                  size="icon-xs"
-                  className="shrink-0 opacity-0 group-hover:opacity-100"
-                >
-                  <MoreVertical className="text-muted-foreground size-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <FolderDriveMenuItems
-                  Item={DropdownMenuItem}
-                  Separator={DropdownMenuSeparator}
-                  {...folderMenuProps}
-                />
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48">
@@ -564,9 +570,9 @@ function FileCard({
 // ─── Main Grid View ─────────────────────────────────────────────────────────
 
 /** Descriptions for elevated system directories */
-const ELEVATED_DIR_META: Record<string, { description: string; icon: typeof FolderCog }> = {
-  '.kortix': { description: 'Project config, tasks, context', icon: FolderCog },
-  '.opencode': { description: 'Agents, skills, commands', icon: FolderCog },
+const ELEVATED_DIR_META: Record<string, { description: string }> = {
+  '.kortix': { description: 'Project config, tasks, context' },
+  '.opencode': { description: 'Agents, skills, commands' },
 };
 
 interface DriveGridViewProps {
@@ -625,25 +631,29 @@ export function DriveGridView({
         <section className="space-y-2">
           <SectionHeader label="System" count={elevatedDirs.length} />
           <div
-            className="grid gap-2"
-            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}
+            className="grid gap-3"
+            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}
           >
             {elevatedDirs.map((node) => {
               const meta = ELEVATED_DIR_META[node.name];
-              const DirIcon = meta?.icon ?? FolderCog;
               return (
                 <div
                   key={node.path}
                   onClick={() => onNavigateToDir(node)}
                   title={meta?.description}
                   className={cn(
-                    'group border-border bg-popover hover:bg-foreground/4 flex h-11 cursor-pointer items-center gap-2.5 rounded-md border px-3 select-none',
+                    'group border-border bg-popover hover:bg-foreground/4 relative flex cursor-pointer flex-col overflow-hidden rounded-md border transition-colors select-none',
                   )}
                 >
-                  <DirIcon className="text-muted-foreground size-4 shrink-0" />
-                  <span className="text-foreground min-w-0 flex-1 truncate text-sm">
-                    {node.name}
-                  </span>
+                  <div className="flex h-[120px] items-center justify-center">
+                    <DriveFolderIcon label={node.name} className="w-[72px] drop-shadow-sm" />
+                  </div>
+                  <div className="border-border/40 bg-background flex items-center gap-1.5 border-t px-3 py-2.5">
+                    <DriveFolderIcon label={node.name} className="size-4 shrink-0" />
+                    <span className="text-foreground truncate text-sm font-medium">
+                      {node.name}
+                    </span>
+                  </div>
                 </div>
               );
             })}
@@ -655,8 +665,8 @@ export function DriveGridView({
         <section className="space-y-2">
           <SectionHeader label="Folders" count={dirs.length} />
           <div
-            className="grid gap-2"
-            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}
+            className="grid gap-3"
+            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}
           >
             {dirs.map((node) => (
               <FolderCard
