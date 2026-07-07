@@ -18,7 +18,8 @@ import { projectSnapshotBuilds } from '@kortix/db';
 import { db } from '../shared/db';
 import { resolveCommitSha, type GitBackedProject } from '../projects/git';
 import { getSandboxProvider, type ProviderState, type SandboxProviderAdapter } from './providers';
-import { config } from '../config';
+import { config, normalizeProviderName, type SandboxProviderName } from '../config';
+import { warmPrebakeProviders } from '../projects/lib/provider-precedence';
 import { perProjectWarmImageName, ppwarmReapTargets } from './ppwarm-names';
 import {
   computeTemplateIdentity,
@@ -724,15 +725,47 @@ function kickBackgroundWarmBuild(
  * the default-branch tip is unchanged (the warm image for that tip is already
  * active) or a bake for it is already in flight. Best-effort: never throws, never
  * blocks the push; the session-start on-demand trigger remains the fallback.
+ *
+ * PROVIDER PARITY: a push must pre-warm the provider(s) a session on this project
+ * could actually land on — NOT just the default provider. With `opts.provider`
+ * set, warm exactly that one (the pre-existing single-provider behaviour, kept
+ * byte-identical for callers that already target a provider). Otherwise resolve
+ * the target set from the project's provider PIN, exactly as session creation does
+ * (`warmPrebakeProviders`): an enabled pin ⇒ that one provider; no/stale pin ⇒
+ * every enabled provider (the weighted balancer can route a session to any of
+ * them). This closes the gap where a git push only warmed the default provider
+ * while a Platinum-routed (or Platinum-pinned) session still baked lazily on its
+ * first miss.
  */
 export async function kickProjectWarmPrebake(
   project: GitBackedProject,
-  opts: { accountId?: string; provider?: string } = {},
+  opts: { accountId?: string; provider?: string; projectPin?: string | null } = {},
+): Promise<void> {
+  const providers = opts.provider
+    ? [opts.provider]
+    : warmPrebakeProviders({
+        // Canonicalise the stored pin (legacy 'daytona' → 'managed') so it matches
+        // ALLOWED_SANDBOX_PROVIDERS — exactly what session creation does before it
+        // routes on the pin. Without this a legacy-pinned project would fall through
+        // to the all-enabled branch (harmless, but not true parity).
+        projectPin: opts.projectPin ? normalizeProviderName(opts.projectPin) : null,
+        allowed: config.ALLOWED_SANDBOX_PROVIDERS,
+        isEnabled: (p) => config.isProviderEnabled(p as SandboxProviderName),
+      });
+  // Per-provider: content-addressed name, own getSnapshotState check, own dedup
+  // in kickBackgroundWarmBuild. Independent + best-effort — one provider failing
+  // (or being unconfigured) must not skip the others, so each is its own try.
+  await Promise.all(providers.map((buildProvider) => prebakeForProvider(project, buildProvider, opts.accountId)));
+}
+
+async function prebakeForProvider(
+  project: GitBackedProject,
+  buildProvider: string,
+  accountId?: string,
 ): Promise<void> {
   try {
     const template = await resolveTemplateBySlug(project, undefined);
     if (!template.isShared) return; // same gate as the session-start warm trigger
-    const buildProvider = opts.provider ?? config.getDefaultProvider();
     const provider = getSandboxProvider(buildProvider);
     if (!provider.isConfigured()) return;
     const identity = await computeTemplateIdentity(project, template);
@@ -741,14 +774,14 @@ export async function kickProjectWarmPrebake(
     const warmName = perProjectWarmImageName(project.projectId, tip, identity.snapshotName);
     // Tip unchanged (or already warm for this commit) → nothing to do.
     if ((await provider.getSnapshotState(warmName)) === 'active') return;
-    kickBackgroundWarmBuild(project, { accountId: opts.accountId, provider: buildProvider, snapshotName: warmName });
+    kickBackgroundWarmBuild(project, { accountId, provider: buildProvider, snapshotName: warmName });
     console.log(
       `[snapshots] warm prebake-on-push kicked: project ${project.projectId.slice(0, 8)} ` +
       `tip ${tip.slice(0, 8)} (${buildProvider})`,
     );
   } catch (err) {
     console.warn(
-      `[snapshots] warm prebake-on-push skipped for ${project.projectId}:`,
+      `[snapshots] warm prebake-on-push skipped for ${project.projectId} (${buildProvider}):`,
       err instanceof Error ? err.message : err,
     );
   }
