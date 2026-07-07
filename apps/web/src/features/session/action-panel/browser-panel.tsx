@@ -478,7 +478,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
 
   return (
     <div className="bg-background flex h-full flex-col">
-      <div className="border-border bg-background flex shrink-0 items-center gap-0.5 border-b p-2">
+      <div className="border-border bg-background flex shrink-0 items-center gap-0.5 border-b px-2 py-1">
         <Hint label="Back" side="bottom">
           <Button
             variant="ghost"
@@ -510,7 +510,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
         <form onSubmit={handleAddressSubmit} className="flex min-w-0 flex-1 items-center px-1">
           <div
             className={cn(
-              'group/address hover:bg-input focus-within:bg-input focus-within:border-border relative flex h-7 w-full items-center rounded-sm border border-transparent bg-transparent px-3.5 text-xs tracking-tight transition-colors',
+              'group/address hover:bg-input focus-within:bg-input focus-within:border-border relative flex h-7 w-full items-center rounded-sm border border-transparent bg-transparent px-3 text-xs tracking-tight transition-colors',
               addressError &&
                 'border-kortix-red/60 focus-within:border-kortix-red/60 animate-shake',
             )}
@@ -654,12 +654,8 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
               <section className="space-y-3">
                 <h3 className="text-muted-foreground px-2 text-sm">Recents</h3>
                 <ul className="space-y-1">
-                  {recents.map((recent, i) => (
-                    <li
-                      key={recent.url}
-                      className="animate-in fade-in-0 slide-in-from-bottom-1 fill-mode-both"
-                      style={{ animationDelay: `${i * 40}ms` }}
-                    >
+                  {recents.map((recent) => (
+                    <li key={recent.url}>
                       <button
                         type="button"
                         onClick={() => navigateTo(recent.url)}

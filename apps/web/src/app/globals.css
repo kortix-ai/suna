@@ -1559,7 +1559,17 @@ html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-customize-hea
   }
 }
 
-/* Material-style spinner: linear orbit + eased dash = smooth perceived speed change */
+/* Google/Material circular spinner. Two INDEPENDENTLY-SEAMLESS animations
+   compose into the signature "arc sweeps forward, growing then shrinking":
+     • the <svg> rotates the whole thing at a CONSTANT rate (linear) — base spin.
+     • the arc <circle> rotates a further 360° per cycle (ease-in-out, so it
+       speeds up then slows down) while its length grows then shrinks via
+       stroke-dashoffset.
+   Both loops return to their EXACT start state at 100% (offset 58→58, rotate
+   360°≡0°) AND meet at matching velocity (ease-in-out is ~0 at both ends, linear
+   is constant), so the loop boundary is invisible — no stop/restart glitch.
+   The old version jumped: its dash ended long (dasharray 37) and restarted as a
+   dot (dasharray 1) at a different offset, collapsing visibly every cycle. */
 @keyframes spinner-orbit {
   to {
     transform: rotate(360deg);
@@ -1567,54 +1577,60 @@ html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-customize-hea
 }
 
 @keyframes spinner-spin {
-  0% {
-    transform: rotate(0deg);
-    animation-timing-function: cubic-bezier(0.77, 0, 0.175, 1);
-  }
-  100% {
+  to {
     transform: rotate(360deg);
   }
 }
 
+/* r=10 → circumference ≈ 62.83. Visible arc = 62.83 − dashoffset, so it breathes
+   between ~28° (offset 58) and ~280° (offset 14). Rotate advances monotonically,
+   so the arc's head and tail only ever move forward — they never rewind. */
 @keyframes spinner-dash {
   0% {
-    stroke-dasharray: 1, 63;
-    stroke-dashoffset: 0;
+    stroke-dashoffset: 58;
+    transform: rotate(0deg);
   }
   50% {
-    stroke-dasharray: 37, 63;
-    stroke-dashoffset: -14;
+    stroke-dashoffset: 14;
+    transform: rotate(180deg);
   }
   100% {
-    stroke-dasharray: 37, 63;
-    stroke-dashoffset: -49;
+    stroke-dashoffset: 58;
+    transform: rotate(360deg);
   }
 }
 
 .animate-spinner-orbit {
   transform-origin: center;
-  animation: spinner-orbit 2s linear infinite;
+  animation: spinner-orbit 1.4s linear infinite;
 }
 
+/* Refresh icon etc. — constant rotation, so linear. (ease-in-out on an infinite
+   full turn visibly stutters at every seam: ends fast, restarts slow.) */
 .animate-spinner-spin {
   transform-origin: center;
-  animation: spinner-spin 1.1s infinite;
+  animation: spinner-spin 1s linear infinite;
 }
 
 .animate-spinner-dash {
   transform-origin: center;
-  animation: spinner-dash 1.5s cubic-bezier(0.77, 0, 0.175, 1) infinite;
+  transform-box: fill-box;
+  stroke-dasharray: 62.83;
+  animation: spinner-dash 1.4s cubic-bezier(0.77, 0, 0.175, 1) infinite;
 }
 
+/* Reduced motion: keep a calm, constant-speed spin (a loader still needs to
+   signal activity) but drop the arc's grow/shrink and speed modulation. */
 @media (prefers-reduced-motion: reduce) {
   .animate-spinner-orbit,
   .animate-spinner-spin {
-    animation: spinner-orbit 1.5s linear infinite;
+    animation: spinner-orbit 1.4s linear infinite;
   }
 
   .animate-spinner-dash {
-    animation-duration: 1.5s;
-    animation-timing-function: linear;
+    animation: none;
+    stroke-dashoffset: 34;
+    transform: none;
   }
 }
 
