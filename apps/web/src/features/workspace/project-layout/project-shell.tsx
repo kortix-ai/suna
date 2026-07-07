@@ -199,13 +199,14 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
             onClick={toggleSidebar}
             onPointerEnter={peekEnter}
             onPointerLeave={peekLeave}
+            variant="ghost"
             className={cn(
               // top-[12px] + 28px box centers the button on the traffic
               // lights' midline (y=26 — the app draws its own lights there;
               // see DesktopChrome → MacTrafficLights). px values on purpose:
               // the lights are positioned in window px, while rem sizes
               // drift with the root font size.
-              'kx-fade-up  text-muted-foreground hover:text-foreground fixed top-[12px] z-50 flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out [-webkit-app-region:no-drag] [app-region:no-drag] active:scale-[0.96] shrink-0',
+              '  text-muted-foreground hover:text-foreground fixed top-[12px] z-50 flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out [-webkit-app-region:no-drag] [app-region:no-drag] active:scale-[0.96] shrink-0',
               // macOS: sit just past the traffic lights (they end at x≈62),
               // mirroring their own 10px inset. Win/Linux: controls live
               // top-right, so hug the left edge instead.
@@ -229,7 +230,7 @@ const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
             onPointerLeave={peekLeave}
             variant="ghost"
             size="icon"
-            className="kx-fade-up text-muted-foreground hover:text-foreground absolute top-2 left-2 z-30 hidden shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96] md:flex"
+            className=" text-muted-foreground hover:text-foreground absolute top-2 left-2 z-30 hidden shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96] md:flex"
           >
             <PanelLeft className="cn-rtl-flip size-4" />
           </Button>
