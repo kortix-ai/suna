@@ -110,7 +110,7 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
         <div className="space-y-1.5">
           <Label className="text-xs">{tHardcodedUi.raw('componentsIamScimCard.line107JsxTextSCIMBaseURL')}</Label>
           <div className="flex items-center gap-2">
-            <code className="flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
+            <code className="min-w-0 flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
               {scimBaseUrl}
             </code>
             <Button
@@ -295,7 +295,7 @@ function CreateScimTokenDialog({
             <div>
               <Label className="text-xs">Token</Label>
               <div className="mt-1 flex items-center gap-2">
-                <code className="flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
+                <code className="min-w-0 flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
                   {created.secret}
                 </code>
                 <Button
@@ -311,7 +311,7 @@ function CreateScimTokenDialog({
             <div>
               <Label className="text-xs">{tHardcodedUi.raw('componentsIamScimCard.line301JsxTextSCIMBaseURL')}</Label>
               <div className="mt-1 flex items-center gap-2">
-                <code className="flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
+                <code className="min-w-0 flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
                   {scimBaseUrl}
                 </code>
                 <Button
