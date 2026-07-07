@@ -69,8 +69,8 @@ if (SENTRY_DSN) {
     // Opaque third-party vendor scripts outside our build pipeline — their
     // parse-time SyntaxErrors in old browsers are unfixable from here.
     denyUrls: [
-      /https:\/\/d2mvefebd70kbz\.cloudfront\.net\//,
-      /https:\/\/www\.googletagmanager\.com\//,
+      /^https:\/\/d2mvefebd70kbz\.cloudfront\.net\//,
+      /^https:\/\/www\.googletagmanager\.com\//,
     ],
 
     // Filter out internal/low-value errors before sending
