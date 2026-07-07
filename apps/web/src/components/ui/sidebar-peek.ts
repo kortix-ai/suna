@@ -7,6 +7,15 @@ export interface PeekController {
   enter: () => void;
   leave: () => void;
   cancel: () => void;
+  /**
+   * Hold the flyout open across pointer-leaves — used while a menu/popover
+   * anchored in the panel is open. Its content portals outside the panel, so
+   * moving the pointer onto it fires the panel's `leave` and would otherwise
+   * arm the close timer. Calls must be balanced: `hold(true)` on open,
+   * `hold(false)` on close. On the final release the close timer is armed
+   * unless `isPointerOver()` reports the pointer is back on the panel.
+   */
+  hold: (held: boolean, isPointerOver?: () => boolean) => void;
 }
 
 /**
@@ -24,12 +33,25 @@ export function createPeekController(
 ): PeekController {
   let timer: TimerId | null = null;
   let peeked = false;
+  // Number of menus/popovers currently pinning the flyout open. While > 0 a
+  // `leave` cannot close the panel; the last release re-arms the close timer.
+  let holds = 0;
 
   const clear = () => {
     if (timer !== null) {
       unschedule(timer);
       timer = null;
     }
+  };
+
+  const armClose = () => {
+    clear();
+    if (!peeked) return;
+    timer = schedule(() => {
+      timer = null;
+      peeked = false;
+      setPeek(false);
+    }, SIDEBAR_PEEK_CLOSE_DELAY_MS);
   };
 
   return {
@@ -43,19 +65,26 @@ export function createPeekController(
       }, SIDEBAR_PEEK_OPEN_DELAY_MS);
     },
     leave: () => {
-      clear();
-      if (!peeked) return;
-      timer = schedule(() => {
-        timer = null;
-        peeked = false;
-        setPeek(false);
-      }, SIDEBAR_PEEK_CLOSE_DELAY_MS);
+      if (holds > 0) return;
+      armClose();
     },
     cancel: () => {
       clear();
+      holds = 0;
       if (!peeked) return;
       peeked = false;
       setPeek(false);
+    },
+    hold: (held, isPointerOver) => {
+      if (held) {
+        holds += 1;
+        // Cancel any close armed by the leave that fired as the pointer
+        // travelled from the panel onto the portaled menu content.
+        clear();
+        return;
+      }
+      holds = Math.max(0, holds - 1);
+      if (holds === 0 && !isPointerOver?.()) armClose();
     },
   };
 }
