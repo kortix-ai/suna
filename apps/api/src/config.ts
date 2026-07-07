@@ -334,6 +334,13 @@ const envSchema = z.object({
   //   autostop   → idle box stops, compute billing ends. CLAMPED to >=1 at the
   //                use site so a box is NEVER created persistent.
   //                This is what actually stops the money burn.
+  //                Was 120 until 2026-07-07: prod never set the env var, so every
+  //                box idled a full 2h after its last real activity — 78% of all
+  //                billed sandbox-hours (Jul 1-7 audit) were idle tail charged to
+  //                users. 15 matches dev and the reaper's own default.
+  //                Trigger-fired sessions (source 'trigger:*') have no human
+  //                waiting on the box, so the reaper stops them after the much
+  //                shorter TRIGGER_AUTOSTOP window instead.
   //   autoarchive→ stopped box moves to cold storage after half a day (cheap,
   //                still resumable; kept warm-resumable in the meantime).
   //                Was 3 days (4320) until 2026-07-02: the org-wide (shared
@@ -347,7 +354,8 @@ const envSchema = z.object({
   //   autodelete → NEVER (-1). A sandbox is only ever removed when a user
   //                explicitly deletes the session — auto-stop + cold archive
   //                make an idle box nearly free, so we never destroy disk.
-  KORTIX_SANDBOX_AUTOSTOP_MINUTES:    optInt(120),
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES:    optInt(15),
+  KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: optInt(5),
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(720),    // 12 hours
   KORTIX_SANDBOX_AUTODELETE_MINUTES:  optInt(-1),     // never auto-delete
 
@@ -679,6 +687,7 @@ export const config = {
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
+  KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES,
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: env.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
   KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
 

@@ -24,9 +24,8 @@ const MEMBER_READS = [
 ];
 
 describe('isCustomizeSectionVisible — member vs editor+', () => {
-  test('a member (reads only, no customize.write) sees ONLY files', () => {
+  test('a member (reads only, no customize.write) sees no customize sections', () => {
     const can = canFrom(MEMBER_READS);
-    expect(isCustomizeSectionVisible('files', can)).toBe(true);
     expect(isCustomizeSectionVisible('agents', can)).toBe(false);
     expect(isCustomizeSectionVisible('connectors', can)).toBe(false);
     expect(isCustomizeSectionVisible('secrets', can)).toBe(false);
@@ -37,7 +36,6 @@ describe('isCustomizeSectionVisible — member vs editor+', () => {
 
   test('an editor (has customize.write + the read leaves) sees the customization sections', () => {
     const can = canFrom([...MEMBER_READS, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE]);
-    expect(isCustomizeSectionVisible('files', can)).toBe(true);
     expect(isCustomizeSectionVisible('agents', can)).toBe(true);
     expect(isCustomizeSectionVisible('connectors', can)).toBe(true);
     expect(isCustomizeSectionVisible('secrets', can)).toBe(true);

@@ -16,11 +16,10 @@ describe('Changes customize section naming', () => {
     expect(entry?.keywords).toContain('proposed');
   });
 
-  test('rail lists Files before Changes in the Workspace group', () => {
-    const filesIdx = customizePanelSource.indexOf("section: 'files'");
-    const changesIdx = customizePanelSource.indexOf("section: 'changes'");
-    expect(filesIdx).toBeGreaterThan(-1);
-    expect(changesIdx).toBeGreaterThan(-1);
-    expect(filesIdx).toBeLessThan(changesIdx);
+  test('Files is not a customize rail section — it lives on the standalone files page', () => {
+    expect(customizePanelSource).not.toContain("section: 'files'");
+    const entry = menuRegistry.find((item) => item.id === 'proj-files');
+    expect(entry?.label).toBe('Files');
+    expect(entry?.href).toBe('/projects/{projectId}/files');
   });
 });

@@ -25,6 +25,12 @@ export default function ProjectCustomizeSectionRedirect() {
 
   useEffect(() => {
     if (!projectId) return;
+    // Files graduated out of Customize into its own page — send legacy
+    // /customize/files links there instead of opening the overlay.
+    if (rawSection === 'files' || searchParams.get('section') === 'files') {
+      router.replace(`/projects/${projectId}/files`);
+      return;
+    }
     const section =
       parseCustomizeSection(rawSection) ??
       parseCustomizeSection(searchParams.get('section')) ??
