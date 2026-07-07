@@ -106,10 +106,11 @@ const MEET_ITEM: RailItem = { section: 'meet', label: 'Meetings', icon: AudioLin
 
 const REVIEW_ITEM: RailItem = { section: 'review', label: 'Review', icon: Inbox };
 
-// The Upgrades section is always reachable (it hosts the one-off prompt
-// runner), but it only claims the pinned top slot while a registry upgrade
-// is actually applicable (e.g. the project is still on a v1 manifest) —
-// otherwise it sits quietly in Manage next to Settings.
+// The Upgrades section is always reachable (it hosts the one-off prompt runner)
+// and lives pinned at the very bottom of the rail — out of the scrolling nav (see
+// the desktop footer / mobile tail below). When a registry upgrade is actually
+// applicable (e.g. the project is still on a v1 manifest) it carries a small
+// attention dot instead of claiming a more prominent slot.
 const UPGRADE_ITEM: RailItem = { section: 'upgrade', label: 'Upgrades', icon: ArrowUpCircle };
 
 function railGroups(
@@ -118,10 +119,8 @@ function railGroups(
   llmGatewayAvailable: boolean,
   meetEnabled: boolean,
   reviewEnabled: boolean,
-  upgradeAttention: boolean,
 ): readonly RailGroup[] {
-  const groups = upgradeAttention ? [{ items: [UPGRADE_ITEM] }, ...GROUPS] : GROUPS;
-  return groups.map((g) => {
+  return GROUPS.map((g) => {
     if (g.label === 'Build' && marketplaceEnabled) {
       return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
     }
@@ -138,9 +137,6 @@ function railGroups(
       const at = items.findIndex((it) => it.section === 'changes');
       items.splice(at >= 0 ? at + 1 : items.length, 0, REVIEW_ITEM);
       return { ...g, items };
-    }
-    if (g.label === 'Manage' && !upgradeAttention) {
-      return { ...g, items: [...g.items, UPGRADE_ITEM] };
     }
     return g;
   });
@@ -225,14 +221,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
     // BOTH its flag check (baked into railGroups) AND its read-leaf probe. Empty
     // groups drop out so no orphan header renders.
     () =>
-      railGroups(
-        tunnelEnabled,
-        marketplaceEnabled,
-        llmGatewayAvailable,
-        meetEnabled,
-        reviewEnabled,
-        upgradeAttention,
-      )
+      railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayAvailable, meetEnabled, reviewEnabled)
         .map((g) => ({ ...g, items: g.items.filter((item) => isSectionAllowed(item.section)) }))
         .filter((g) => g.items.length > 0),
     [
@@ -241,11 +230,16 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
       llmGatewayAvailable,
       meetEnabled,
       reviewEnabled,
-      upgradeAttention,
       isSectionAllowed,
     ],
   );
-  const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
+  // Upgrades lives in its own pinned footer, but stays in the item universe so
+  // deep-links, the mobile tail, and the active-section fallback all still see it.
+  const upgradeAllowed = isSectionAllowed('upgrade');
+  const allItems = useMemo(
+    () => [...groups.flatMap((g) => g.items), ...(upgradeAllowed ? [UPGRADE_ITEM] : [])],
+    [groups, upgradeAllowed],
+  );
   // `llm-management` stands in for every `llm-*` sub-section so deep-links still work.
   const sectionVisible = allItems.some((item) => isRailItemActive(item, section));
 
@@ -311,6 +305,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
                         onClick={() => setSection(item.section)}
                         orientation="horizontal"
                         count={item.section === 'review' ? reviewNeedsYou : undefined}
+                        attention={item.section === 'upgrade' && upgradeAttention}
                       />
                     </li>
                   ))}
@@ -330,8 +325,8 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
               </div>
             </nav>
           ) : (
-            <section className="bg-sidebar flex min-h-0 flex-col space-y-10 border-r py-4">
-              <div className="w-full px-2.5">
+            <section className="bg-sidebar flex min-h-0 flex-col border-r py-4">
+              <div className="w-full shrink-0 px-2.5">
                 <ModalClose asChild>
                   <Button
                     variant="ghost"
@@ -344,32 +339,46 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
                 </ModalClose>
               </div>
 
-              <nav aria-label="Customize">
-                <div className="flex-1 [scrollbar-width:none] overflow-y-auto px-2.5 py-3 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                  {groups.map((group, idx) => (
-                    <div
-                      key={group.label ?? idx}
-                      className={cn('space-y-1', idx > 0 ? 'mt-4' : undefined)}
-                    >
-                      {group.label && (
-                        <Label className="text-muted-foreground px-2 pb-1">{group.label}</Label>
-                      )}
-                      <ul className="space-y-0.5">
-                        {group.items.map((item) => (
-                          <li key={item.section}>
-                            <RailButton
-                              item={item}
-                              active={isRailItemActive(item, section)}
-                              onClick={() => setSection(item.section)}
-                              count={item.section === 'review' ? reviewNeedsYou : undefined}
-                            />
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
+              <nav
+                aria-label="Customize"
+                className="mt-8 min-h-0 flex-1 [scrollbar-width:none] overflow-y-auto px-2.5 py-3 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+              >
+                {groups.map((group, idx) => (
+                  <div
+                    key={group.label ?? idx}
+                    className={cn('space-y-1', idx > 0 ? 'mt-4' : undefined)}
+                  >
+                    {group.label && (
+                      <Label className="text-muted-foreground px-2 pb-1">{group.label}</Label>
+                    )}
+                    <ul className="space-y-0.5">
+                      {group.items.map((item) => (
+                        <li key={item.section}>
+                          <RailButton
+                            item={item}
+                            active={isRailItemActive(item, section)}
+                            onClick={() => setSection(item.section)}
+                            count={item.section === 'review' ? reviewNeedsYou : undefined}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
               </nav>
+
+              {/* Upgrades pinned to the extreme bottom of the rail, below the
+                  scrolling nav. Carries an attention dot on a v1 manifest. */}
+              {upgradeAllowed && (
+                <div className="mt-2 shrink-0 px-2.5 pt-3">
+                  <RailButton
+                    item={UPGRADE_ITEM}
+                    active={isRailItemActive(UPGRADE_ITEM, section)}
+                    onClick={() => setSection('upgrade')}
+                    attention={upgradeAttention}
+                  />
+                </div>
+              )}
             </section>
           )}
 
@@ -396,6 +405,7 @@ function RailButton({
   onClick,
   orientation = 'vertical',
   count,
+  attention,
 }: {
   item: RailItem;
   active: boolean;
@@ -403,6 +413,8 @@ function RailButton({
   orientation?: 'vertical' | 'horizontal';
   /** Optional attention count shown as a pill (e.g. review items needing you). */
   count?: number;
+  /** A quiet dot for a pending nudge with no count (e.g. an available upgrade). */
+  attention?: boolean;
 }) {
   const Icon = item.icon;
   const horizontal = orientation === 'horizontal';
@@ -421,7 +433,7 @@ function RailButton({
     >
       {Icon && <Icon className="size-4 shrink-0" />}
       <span className={cn(!horizontal && 'truncate')}>{item.label}</span>
-      {showCount && (
+      {showCount ? (
         <span
           className={cn(
             'shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
@@ -431,7 +443,15 @@ function RailButton({
         >
           {count}
         </span>
-      )}
+      ) : attention ? (
+        <span
+          aria-hidden
+          className={cn(
+            'bg-kortix-orange size-1.5 shrink-0 rounded-full',
+            !horizontal && 'ml-auto',
+          )}
+        />
+      ) : null}
     </Button>
   );
 }
