@@ -4,7 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { PackageSearch } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { RefObject } from 'react';
+import type { ReactNode, RefObject } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useInfiniteMarketplaceItems, useMarketplaces } from '@/hooks/marketplace';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
@@ -36,6 +37,32 @@ import {
 } from './marketplace-grid';
 import { MarketplaceItemAvatar } from './marketplace-item-avatar';
 import { TYPE_FILTERS } from './marketplace-meta';
+
+/** Scroll host for the virtualized list. In production the caller supplies the
+ *  scroll ancestor (`externalScrollElement`, from `CustomizeSectionWrapper`), so
+ *  this is a plain non-scrolling wrapper and the ancestor scrolls. With no
+ *  ancestor (e.g. `/debug/marketplace`) it owns a viewport-fit `FadedScrollArea`
+ *  and hands its inner scroller back through `scrollRef`. */
+function MarketplaceScrollShell({
+  externalScrollElement,
+  scrollRef,
+  children,
+}: {
+  externalScrollElement: HTMLElement | null;
+  scrollRef: (node: HTMLDivElement | null) => void;
+  children: ReactNode;
+}) {
+  if (externalScrollElement) {
+    return <div className="relative w-full">{children}</div>;
+  }
+  return (
+    <div className="h-[calc(100dvh-8rem)] w-full">
+      <FadedScrollArea ref={scrollRef} fadeColor="from-background">
+        {children}
+      </FadedScrollArea>
+    </div>
+  );
+}
 
 export function MarketplaceBrowser({
   onAdd,
@@ -255,12 +282,9 @@ export function MarketplaceBrowser({
           />
         )
       ) : (
-        <div
-          ref={setOwnScrollElement}
-          className={cn(
-            'relative w-full',
-            !externalScrollElement && 'max-h-[80vh] overflow-y-auto',
-          )}
+        <MarketplaceScrollShell
+          externalScrollElement={externalScrollElement}
+          scrollRef={setOwnScrollElement}
         >
           <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
@@ -311,7 +335,7 @@ export function MarketplaceBrowser({
               IO root only ever reports intersections for its own
               descendants. */}
           {hasNextPage && <div ref={sentinelRef} className="h-1" />}
-        </div>
+        </MarketplaceScrollShell>
       )}
 
       {items.length > 0 && isFetchingNextPage && (
