@@ -5,11 +5,11 @@ import { useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
+import { BootStatusLine } from '@/features/session/boot-status-line';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionLayout } from '@/features/session/session-layout';
-import { SessionBootChecklistInline } from '@/features/session/session-starting-loader';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { optimisticUploadedFileRef } from '@/features/session/uploaded-file-refs';
@@ -35,9 +35,9 @@ import { GridFileCard } from './grid-file-card';
  * (keyed by the route session id; the session page migrates it onto the
  * OpenCode pin) so the real {@link SessionChat} auto-sends it the instant the
  * runtime is healthy — and the thread shows an inline "starting your computer"
- * status under the assistant logo until the real chat crossfades in. The boot
- * checklist also lives in the side panel, but only
- * if the user opens it (never auto-opened); once the runtime is ready the panel
+ * status under the assistant logo until the real chat crossfades in. The same
+ * calm boot status line also lives in the side panel, but only if the user
+ * opens it (never auto-opened); once the runtime is ready the panel
  * gracefully falls back to the real (empty) Actions view.
  */
 export function InstantSessionShell({
@@ -234,12 +234,12 @@ export function InstantSessionShell({
                     </div>
                   </div>
                   {/* While the computer is still coming up we show the SAME
-                      stepped boot checklist as the side panel, inline under the
+                      calm boot status line as the side panel, inline under the
                       logomark — so the progress is visible without opening the
                       panel. Once ready it falls back to the regular thinking text. */}
                   <AssistantPendingRow
                     className="mt-6"
-                    body={ready ? undefined : <SessionBootChecklistInline stage={stage} />}
+                    body={ready ? undefined : <BootStatusLine />}
                   />
                 </div>
               </div>
@@ -261,9 +261,9 @@ export function InstantSessionShell({
       projectId={projectId}
       projectSessionId={sessionId}
       transient
-      // Side-panel content: the boot checklist while still coming up, then the
-      // real (empty) Actions view once ready — so an open panel is never stuck on
-      // "Connecting". Visibility stays user-controlled (no auto-open).
+      // Side-panel content: the calm boot status line while still coming up,
+      // then the real (empty) Actions view once ready — so an open panel is
+      // never stuck on "Connecting". Visibility stays user-controlled (no auto-open).
       bootStage={ready ? null : stage}
     >
       {column}
