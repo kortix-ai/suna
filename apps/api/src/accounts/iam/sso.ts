@@ -32,6 +32,7 @@ function ssoProviderResponse(p: NonNullable<Awaited<ReturnType<typeof getSsoProv
     primary_domain: p.primaryDomain,
     group_claim_name: p.groupClaimName,
     auto_create_members: p.autoCreateMembers,
+    auto_provision_groups: p.autoProvisionGroups,
     created_at: p.createdAt.toISOString(),
     updated_at: p.updatedAt.toISOString(),
   };
@@ -67,7 +68,7 @@ iamRouter.openapi(
     tags: ['iam'],
     summary: 'Create or update the SSO provider',
     ...auth,
-    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ supabase_sso_provider_id: z.string().optional(), supabaseSsoProviderId: z.string().optional(), name: z.string().optional(), primary_domain: z.string().optional(), primaryDomain: z.string().optional(), group_claim_name: z.string().optional(), groupClaimName: z.string().optional(), auto_create_members: z.boolean().optional(), autoCreateMembers: z.boolean().optional() }) } } } },
+    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ supabase_sso_provider_id: z.string().optional(), supabaseSsoProviderId: z.string().optional(), name: z.string().optional(), primary_domain: z.string().optional(), primaryDomain: z.string().optional(), group_claim_name: z.string().optional(), groupClaimName: z.string().optional(), auto_create_members: z.boolean().optional(), autoCreateMembers: z.boolean().optional(), auto_provision_groups: z.boolean().optional(), autoProvisionGroups: z.boolean().optional() }) } } } },
     responses: {
       200: json(z.object({ provider: SsoProviderSchema }), 'The upserted SSO provider'),
       ...errors(400, 401, 402, 403),
@@ -86,6 +87,7 @@ iamRouter.openapi(
   const primaryDomain = (body.primary_domain ?? body.primaryDomain) as unknown;
   const groupClaimName = (body.group_claim_name ?? body.groupClaimName) as unknown;
   const autoCreateMembers = (body.auto_create_members ?? body.autoCreateMembers) as unknown;
+  const autoProvisionGroups = (body.auto_provision_groups ?? body.autoProvisionGroups) as unknown;
 
   if (typeof supabaseSsoProviderId !== 'string' || !/^[0-9a-f-]{36}$/i.test(supabaseSsoProviderId)) {
     return c.json({ error: 'supabase_sso_provider_id must be a UUID' }, 400);
@@ -112,7 +114,8 @@ iamRouter.openapi(
     primaryDomain: primaryDomain.trim(),
     groupClaimName: typeof groupClaimName === 'string' ? groupClaimName : undefined,
     autoCreateMembers: typeof autoCreateMembers === 'boolean' ? autoCreateMembers : undefined,
-  createdBy: userId,
+    autoProvisionGroups: typeof autoProvisionGroups === 'boolean' ? autoProvisionGroups : undefined,
+    createdBy: userId,
   });
 
   await auditIam(c, {
@@ -127,6 +130,7 @@ iamRouter.openapi(
           primary_domain: before.primaryDomain,
           group_claim_name: before.groupClaimName,
           auto_create_members: before.autoCreateMembers,
+          auto_provision_groups: before.autoProvisionGroups,
         }
       : null,
     after: {
@@ -135,6 +139,7 @@ iamRouter.openapi(
       primary_domain: provider.primaryDomain,
       group_claim_name: provider.groupClaimName,
       auto_create_members: provider.autoCreateMembers,
+      auto_provision_groups: provider.autoProvisionGroups,
     },
   });
 
@@ -165,6 +170,7 @@ iamRouter.openapi(
               primary_domain: z.string(),
               group_claim_name: z.string().optional(),
               auto_create_members: z.boolean().optional(),
+              auto_provision_groups: z.boolean().optional(),
               domains: z.array(z.string()).optional(),
             }),
           },
@@ -190,6 +196,7 @@ iamRouter.openapi(
     const metadataUrl = (body.metadata_url ?? body.metadataUrl) as unknown;
     const groupClaimName = (body.group_claim_name ?? body.groupClaimName) as unknown;
     const autoCreateMembers = (body.auto_create_members ?? body.autoCreateMembers) as unknown;
+    const autoProvisionGroups = (body.auto_provision_groups ?? body.autoProvisionGroups) as unknown;
 
     if (typeof name !== 'string' || name.trim().length === 0) {
       return c.json({ error: 'name is required' }, 400);
@@ -235,6 +242,7 @@ iamRouter.openapi(
       primaryDomain: primaryDomain.trim(),
       groupClaimName: typeof groupClaimName === 'string' ? groupClaimName : undefined,
       autoCreateMembers: typeof autoCreateMembers === 'boolean' ? autoCreateMembers : undefined,
+      autoProvisionGroups: typeof autoProvisionGroups === 'boolean' ? autoProvisionGroups : undefined,
       createdBy: userId,
     });
 
@@ -250,6 +258,7 @@ iamRouter.openapi(
         primary_domain: provider.primaryDomain,
         group_claim_name: provider.groupClaimName,
         auto_create_members: provider.autoCreateMembers,
+        auto_provision_groups: provider.autoProvisionGroups,
         source: 'metadata_import',
       },
     });
