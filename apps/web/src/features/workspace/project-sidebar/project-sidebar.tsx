@@ -187,7 +187,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 variant="ghost"
                 size="icon"
                 onClick={toggleSidebar}
-                className="kx-fade-up text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground flex shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
+                className="text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground flex shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
               >
                 <PanelLeft className="cn-rtl-flip size-4" />
               </Button>
