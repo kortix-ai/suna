@@ -155,6 +155,8 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                 {tHardcodedUi.raw('componentsIamSsoCard.line139JsxTextAutoCreateMembers')}
               </dt>
               <dd className="text-foreground">{provider.auto_create_members ? 'Yes' : 'No'}</dd>
+              <dt className="text-muted-foreground">Auto-provision groups</dt>
+              <dd className="text-foreground">{provider.auto_provision_groups ? 'Yes' : 'No'}</dd>
               <dt className="text-muted-foreground">
                 {tHardcodedUi.raw('componentsIamSsoCard.line143JsxTextSupabaseProviderId')}
               </dt>
@@ -337,6 +339,7 @@ function EditProviderDialog({
   const [domain, setDomain] = useState(existing?.primary_domain ?? '');
   const [claim, setClaim] = useState(existing?.group_claim_name ?? 'groups');
   const [autoCreate, setAutoCreate] = useState(existing?.auto_create_members ?? true);
+  const [autoProvision, setAutoProvision] = useState(existing?.auto_provision_groups ?? false);
   // Import path (new providers only): paste the IdP metadata XML or its URL and
   // we register it with Supabase server-side. Editing an existing provider keeps
   // the advanced UUID form (the Supabase provider already exists).
@@ -353,6 +356,7 @@ function EditProviderDialog({
       setDomain(existing?.primary_domain ?? '');
       setClaim(existing?.group_claim_name ?? 'groups');
       setAutoCreate(existing?.auto_create_members ?? true);
+      setAutoProvision(existing?.auto_provision_groups ?? false);
       setMode(existing ? 'uuid' : 'metadata');
       setMetaKind('xml');
       setMetaXml('');
@@ -369,6 +373,7 @@ function EditProviderDialog({
             primary_domain: domain.trim().toLowerCase(),
             group_claim_name: claim.trim() || 'groups',
             auto_create_members: autoCreate,
+            auto_provision_groups: autoProvision,
             ...(metaKind === 'xml'
               ? { metadata_xml: metaXml.trim() }
               : { metadata_url: metaUrl.trim() }),
@@ -379,6 +384,7 @@ function EditProviderDialog({
             primary_domain: domain.trim().toLowerCase(),
             group_claim_name: claim.trim() || 'groups',
             auto_create_members: autoCreate,
+            auto_provision_groups: autoProvision,
           }),
     onSuccess: () => {
       toast.success(existing ? 'SSO provider updated' : 'SSO provider configured');
@@ -560,6 +566,23 @@ function EditProviderDialog({
                 {tHardcodedUi.raw(
                   'componentsIamSsoCard.line409JsxTextWhenOffOnlyUsersAnAdminHasAlready',
                 )}
+              </span>
+            </span>
+          </label>
+
+          <label className="text-foreground flex cursor-pointer items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={autoProvision}
+              onChange={(e) => setAutoProvision(e.target.checked)}
+              className="border-border accent-primary mt-0.5 h-3.5 w-3.5 rounded"
+              disabled={mutation.isPending}
+            />
+            <span>
+              <span className="font-medium">Auto-provision groups</span>
+              <span className="text-muted-foreground block text-[11px]">
+                Create an IAM group for every group the IdP sends and add users to it — no per-group
+                mapping. You just attach project roles to the auto-created groups.
               </span>
             </span>
           </label>

@@ -131,4 +131,40 @@ describe('Azure AD directory-sync → authorization', () => {
       await db.update(accountSsoProviders).set({ autoCreateMembers: true }).where(eq(accountSsoProviders.accountId, ACCOUNT));
     }
   });
+
+  test('autoProvisionGroups: an UNMAPPED claim auto-creates the IAM group + mapping and joins the user', async () => {
+    await db.update(accountSsoProviders).set({ autoProvisionGroups: true }).where(eq(accountSsoProviders.accountId, ACCOUNT));
+    try {
+      const user = crypto.randomUUID();
+      const claim = 'Engineering-AAD'; // not mapped by beforeAll — auto-provision must create it
+
+      const out = await syncSsoMembership({ userId: user, email: 'eng@essentia-inc.com', jwtPayload: jwt([claim]) });
+      expect(out.memberCreated).toBe(true);
+
+      // A group named after the claim was auto-created with source 'sso'.
+      const [grp] = await db
+        .select()
+        .from(accountGroups)
+        .where(and(eq(accountGroups.accountId, ACCOUNT), eq(accountGroups.name, claim)));
+      expect(grp).toBeTruthy();
+      expect(grp.source).toBe('sso');
+
+      // A claim->group mapping was created, and the user joined the group this run.
+      const [map] = await db
+        .select()
+        .from(accountSsoGroupMappings)
+        .where(and(eq(accountSsoGroupMappings.accountId, ACCOUNT), eq(accountSsoGroupMappings.claimValue, claim)));
+      expect(map?.groupId).toBe(grp.groupId);
+      expect(out.groupsAdded).toEqual([grp.groupId]);
+      const gm = await db.select().from(accountGroupMembers).where(and(eq(accountGroupMembers.groupId, grp.groupId), eq(accountGroupMembers.userId, user)));
+      expect(gm.length).toBe(1);
+
+      // Idempotent: a second user with the same claim reuses the one group — no duplicate.
+      await syncSsoMembership({ userId: crypto.randomUUID(), email: 'eng2@essentia-inc.com', jwtPayload: jwt([claim]) });
+      const groups = await db.select().from(accountGroups).where(and(eq(accountGroups.accountId, ACCOUNT), eq(accountGroups.name, claim)));
+      expect(groups.length).toBe(1);
+    } finally {
+      await db.update(accountSsoProviders).set({ autoProvisionGroups: false }).where(eq(accountSsoProviders.accountId, ACCOUNT));
+    }
+  });
 });
