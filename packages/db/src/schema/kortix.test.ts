@@ -18,14 +18,17 @@ import {
   tunnelStatusEnum,
   platformRoleEnum,
   changeRequestStatusEnum,
+  inboxItemKindEnum,
   accounts,
   accountMembers,
   projects,
   projectMembers,
   projectGitConnections,
+  projectSessions,
   sandboxes,
   sandboxMembers,
   deployments,
+  inboxItems,
   kortixApiKeys,
 } from './kortix';
 
@@ -159,6 +162,64 @@ describe('kortix enums', () => {
   test('change_request_status enum is non-empty and named', () => {
     expect(changeRequestStatusEnum.enumName).toBe('change_request_status');
     expect(changeRequestStatusEnum.enumValues.length).toBeGreaterThan(0);
+  });
+
+  test('inbox_item_kind enum covers the awareness signals', () => {
+    expect(inboxItemKindEnum.enumName).toBe('inbox_item_kind');
+    expect(inboxItemKindEnum.enumValues).toEqual(['run_completed', 'run_failed']);
+  });
+});
+
+describe('inbox_items table', () => {
+  test('is named inbox_items in the kortix schema', () => {
+    expect(getTableConfig(inboxItems).name).toBe('inbox_items');
+    expect(getTableConfig(inboxItems).schema).toBe('kortix');
+  });
+
+  test('has the awareness-feed columns with id as primary key', () => {
+    expect(columnNames(inboxItems)).toEqual([
+      'id',
+      'account_id',
+      'project_id',
+      'session_id',
+      'user_id',
+      'kind',
+      'title',
+      'source',
+      'metadata',
+      'dedup_key',
+      'read_at',
+      'created_at',
+    ]);
+    expect(primaryColumn(inboxItems)).toBe('id');
+  });
+
+  test('read_at and session_id are nullable; user_id and dedup_key are required', () => {
+    const cols = getTableConfig(inboxItems).columns;
+    const byName = (n: string) => cols.find((c) => c.name === n);
+    expect(byName('read_at')?.notNull).toBe(false);
+    expect(byName('session_id')?.notNull).toBe(false);
+    expect(byName('source')?.notNull).toBe(false);
+    expect(byName('user_id')?.notNull).toBe(true);
+    expect(byName('dedup_key')?.notNull).toBe(true);
+  });
+
+  test('foreign-keys account, project, and session (session on delete cascade)', () => {
+    const fks = getTableConfig(inboxItems).foreignKeys;
+    const referenced = fks.map((f) => getTableConfig(f.reference().foreignTable).name).sort();
+    expect(referenced).toEqual(['accounts', 'project_sessions', 'projects']);
+  });
+
+  test('indexes the unread feed and a per-user dedup uniqueness', () => {
+    const names = indexNames(inboxItems);
+    expect(names).toContain('idx_inbox_items_user_created');
+    expect(names).toContain('idx_inbox_items_user_unread');
+    expect(names).toContain('idx_inbox_items_session');
+    const dedup = getTableConfig(inboxItems).indexes.find(
+      (i) => i.config.name === 'idx_inbox_items_dedup',
+    );
+    expect(dedup?.config.unique).toBe(true);
+    expect(dedup?.config.columns.map((c: any) => c.name)).toEqual(['user_id', 'dedup_key']);
   });
 });
 

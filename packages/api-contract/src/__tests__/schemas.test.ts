@@ -41,6 +41,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       meet: false,
       llm_gateway: true,
       review_center: false,
+      inbox: false,
     },
     experimental_features: [
       {
@@ -349,6 +350,7 @@ describe('envelopes', () => {
       'meet',
       'llm_gateway',
       'review_center',
+      'inbox',
     ]);
   });
 

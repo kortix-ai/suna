@@ -22,6 +22,7 @@ describe('isExperimentalFeatureKey', () => {
     expect(isExperimentalFeatureKey('agent_tunnel')).toBe(true);
     expect(isExperimentalFeatureKey('agentmail_email')).toBe(true);
     expect(isExperimentalFeatureKey('llm_gateway')).toBe(true);
+    expect(isExperimentalFeatureKey('inbox')).toBe(true);
     expect(isExperimentalFeatureKey('nope')).toBe(false);
     expect(isExperimentalFeatureKey(undefined)).toBe(false);
     expect(isExperimentalFeatureKey(42)).toBe(false);
@@ -105,6 +106,13 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
       config.LLM_GATEWAY_ENABLED = previousEnabled;
       config.LLM_GATEWAY_DEFAULT_ENABLED = previousDefault;
     }
+  });
+
+  test('inbox is available and explicit opt-in (off by default)', () => {
+    expect(findCatalogFeature('inbox').available).toBe(true);
+    expect(resolveExperimentalFeature({}, 'inbox')).toBe(false);
+    expect(resolveExperimentalFeature({ experimental: { inbox: true } }, 'inbox')).toBe(true);
+    expect(resolveExperimentalFeature({ experimental: { inbox: false } }, 'inbox')).toBe(false);
   });
 
   test('null/empty metadata falls back to the operator default (no throw)', () => {

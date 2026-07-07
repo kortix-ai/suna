@@ -136,6 +136,9 @@ export {
   reviewItemSourceEnum,
   reviewItems,
   reviewItemsRelations,
+  // Automation Inbox
+  inboxItemKindEnum,
+  inboxItems,
   // IAM
   accountGroupSourceEnum,
   accountGroups,

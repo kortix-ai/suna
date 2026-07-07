@@ -137,6 +137,18 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     // Explicit opt-in: hidden unless a project enables it in Settings.
     platformDefault: () => false,
   },
+  {
+    key: 'inbox',
+    name: 'Automation Inbox',
+    description:
+      "An awareness feed for what your automations do on their own — a triggered run (webhook, schedule, channel) finishing or failing becomes an unread item, with a sidebar bell and unread dots on the sessions. Distinct from Review Center: no verdicts, just what's new. Shape and signals are still moving.",
+    stability: 'experimental',
+    // Pure web/DB surface — the routes + table ship with the app, so no operator
+    // env gates it. Always available; a project opts in per Settings.
+    available: () => true,
+    // Explicit opt-in: hidden unless a project enables it in Settings.
+    platformDefault: () => false,
+  },
 ];
 
 const FEATURE_BY_KEY: Record<ExperimentalFeatureKey, ExperimentalFeatureDef> = Object.fromEntries(
