@@ -16,7 +16,7 @@ import { revokeAllAccountTokensForUser } from '../../repositories/account-tokens
 import { db } from '../../shared/db';
 import { lookupUserIdByEmail } from '../../shared/users';
 import { buildInviteUrl, sendAccountInviteEmail } from '../email';
-import { visibleMemberRows } from './member-visibility';
+import { canSeeSensitiveMemberColumns } from './member-visibility';
 import {
   AccountIdParam,
   AccountInviteSchema,
@@ -56,13 +56,12 @@ export function registerMemberRoutes(): void {
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
 
-      // Full-roster visibility is a member-management capability. Owners,
-      // admins, and anyone granted member.invite by a custom policy see every
-      // member plus the sensitive columns (PATs, MFA, groups, project grants).
-      // Plain members only see who runs the account — owners/admins — and
-      // themselves: an account can host unrelated invitees (e.g. one demo
-      // account with several prospect orgs), and a bare membership must not
-      // enumerate the other invitees' emails or security posture.
+      // The member directory is visible to EVERY member of the account (the way
+      // Slack / GitHub show teammates within one company), so all rows are
+      // returned. What stays gated is the SENSITIVE per-member data (PAT count,
+      // MFA, group memberships, project grants): member-managers (owner / admin /
+      // member.invite) see it on every row, everyone else only on their own —
+      // enforced by canSeeSensitiveMemberColumns in the map below.
       const canManageMembers = (await authorize(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE))
         .allowed;
 
@@ -76,7 +75,9 @@ export function registerMemberRoutes(): void {
         .from(accountMembers)
         .where(eq(accountMembers.accountId, accountId));
 
-      const visibleRows = visibleMemberRows(rows, userId, canManageMembers);
+      // Everyone in the account sees the full directory; sensitive columns are
+      // gated per-row below.
+      const visibleRows = rows;
 
       const emails = await lookupEmailsByUserIds(rows.map((r) => r.userId));
       const projectGrantRows = await db
@@ -170,7 +171,7 @@ export function registerMemberRoutes(): void {
             // Sensitive columns (PATs, MFA, groups, grants) are visible on a
             // member's own row and to member-managers — never across rows for
             // plain members.
-            const showSensitive = canManageMembers || r.userId === userId;
+            const showSensitive = canSeeSensitiveMemberColumns(userId, r.userId, canManageMembers);
             return {
               user_id: r.userId,
               email: emails.get(r.userId) ?? null,

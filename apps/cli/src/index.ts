@@ -167,7 +167,7 @@ const SECTIONS: readonly CommandSection[] = [
       {
         name: 'grants',
         args: '<subcommand>',
-        blurb: "Assign agents to members or departments (they inherit the agent's skills/connectors/secrets)",
+        blurb: "Assign agents to members or groups (they inherit the agent's skills/connectors/secrets)",
       },
     ],
   },

@@ -8,7 +8,7 @@ import {
 import { C, pad, status } from '../style.ts';
 
 // Resource-access grants — the inheritance PYRAMID. Resources (secrets +
-// connectors) live on AGENTS; you assign an agent to a member or department and
+// connectors) live on AGENTS; you assign an agent to a member or group and
 // they inherit everything that agent declares. This wraps the same
 // /projects/:id/resource-grants routes the dashboard's "Members → Resource
 // access" panel uses. Grantable resource types: agent, skill, secret.
@@ -53,7 +53,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const HELP = `Usage: kortix grants <subcommand> [options]
 
 Assign project resources to people — the inheritance PYRAMID. Secrets and
-connectors live on AGENTS; assign an agent to a member (or department) and they
+connectors live on AGENTS; assign an agent to a member (or group) and they
 inherit everything that agent declares. Mirrors the dashboard's
 "Members → Resource access" panel. Authorization is centralized on the agent:
 \`assign\` only ever creates agent grants now (\`ls\` still lists any legacy
@@ -61,12 +61,12 @@ skill/secret rows for visibility — see Resource types: ${RESOURCE_TYPES.join('
 
 Subcommands:
   ls [--json]                          List grants + grantable agents/skills/secrets.
-  assign <agent-name> --to <who> [--group]   Assign an agent to a member (or --group department).
+  assign <agent-name> --to <who> [--group]   Assign an agent to a member (or a group with --group).
   revoke <grant-id>                    Remove a grant.
 
 Options:
-  --to <who>         Member email or user-id; department group-id with --group.
-  --group            Treat --to as a department (group) id, not a member.
+  --to <who>         Member email or user-id; group id with --group.
+  --group            Treat --to as a group id, not a member.
   --type <t>         agent (the only assignable type; default).
   --expires <iso>    Optional auto-revoke timestamp.
   --project <id>     Operate on this project id (default: linked).
@@ -183,7 +183,7 @@ export async function runGrants(argv: string[]): Promise<number> {
             .filter(Boolean)
             .join(' ');
           process.stdout.write(
-            `  ${pad(g.resource_type, 6)} ${C.bold}${pad(g.resource_id, 22)}${C.reset} → ${pad(`${g.principal_type === 'group' ? 'dept:' : ''}${g.principal_label}`, 26)} ${C.dim}${g.grant_id}${C.reset} ${flags}\n`,
+            `  ${pad(g.resource_type, 6)} ${C.bold}${pad(g.resource_id, 22)}${C.reset} → ${pad(`${g.principal_type === 'group' ? 'group:' : ''}${g.principal_label}`, 26)} ${C.dim}${g.grant_id}${C.reset} ${flags}\n`,
           );
         }
         process.stdout.write(
@@ -197,7 +197,7 @@ export async function runGrants(argv: string[]): Promise<number> {
         const resourceId = positional[0];
         if (!resourceId) return missing('an agent name');
         if (!f.to) return missing('--to <member-email|user-id|group-id>');
-        // Authorization is centralized on the AGENT: assigning a member/department
+        // Authorization is centralized on the AGENT: assigning a member/group
         // to an agent is the only grant this command creates. `ls` still shows
         // any legacy skill/secret rows for visibility, but they can't be created
         // here anymore.
@@ -218,7 +218,7 @@ export async function runGrants(argv: string[]): Promise<number> {
           principalId = resolved;
         } else if (!UUID_RE.test(f.to)) {
           process.stderr.write(
-            `${status.err('--group expects a department (group) id.')} Find it in the dashboard's Departments panel or via the API.\n`,
+            `${status.err('--group expects a group id.')} Find it in the dashboard's Groups panel or via the API.\n`,
           );
           return 2;
         }
@@ -233,7 +233,7 @@ export async function runGrants(argv: string[]): Promise<number> {
           emitJson(resp);
           return 0;
         }
-        const whoLabel = group ? `dept ${principalId}` : f.to;
+        const whoLabel = group ? `group ${principalId}` : f.to;
         process.stdout.write(
           `${status.ok(`Assigned ${resourceType} ${C.bold}${resourceId}${C.reset} → ${C.bold}${whoLabel}${C.reset}`)}\n`,
         );

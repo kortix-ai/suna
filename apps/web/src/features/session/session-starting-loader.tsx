@@ -1,15 +1,28 @@
 'use client';
 
-import { Check, Loader2, RotateCcw } from 'lucide-react';
+import { Check, RotateCcw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { restartProjectSession, sessionStartKey, type SessionStartStage } from '@kortix/sdk/projects-client';
-import { formatDuration } from '@kortix/sdk/turns';
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
+import {
+  Stepper,
+  StepperIndicator,
+  StepperItem,
+  StepperSeparator,
+  StepperTitle,
+} from '@/components/ui/stepper';
+import { TextShimmer } from '@/components/ui/text-shimmer';
 import { errorToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import {
+  restartProjectSession,
+  sessionStartKey,
+  type SessionStartStage,
+} from '@kortix/sdk/projects-client';
+import { formatDuration } from '@kortix/sdk/turns';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 /**
  * The ONE loader shown while a session's Kortix Computer comes up — full-screen
@@ -93,41 +106,74 @@ function useBootProgress(stage: SessionStartStage): { active: number; now: numbe
  */
 function BootStepList({ active }: { active: number }) {
   return (
-    <ol className="flex flex-col gap-3.5" aria-live="polite">
+    <Stepper
+      value={active}
+      orientation="vertical"
+      count={STEPS.length - 1}
+      className="w-auto"
+      aria-live="polite"
+    >
       {STEPS.map((step, i) => {
         const done = i < active;
         const current = i === active;
         return (
-          <li
-            key={step.label}
-            className="flex items-center gap-2.5"
-            aria-current={current ? 'step' : undefined}
-          >
-            <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-              {done ? (
-                <Check className="text-kortix-green h-3.5 w-3.5" strokeWidth={2.5} />
-              ) : current ? (
-                <Loader2 className="text-kortix-green h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <span className="bg-muted-foreground/25 h-1 w-1 rounded-full" />
-              )}
-            </span>
-            <span
-              className={cn(
-                'text-[13px] leading-none tracking-tight transition-colors duration-500',
-                current
-                  ? 'text-foreground font-medium'
-                  : done
-                    ? 'text-muted-foreground'
-                    : 'text-muted-foreground/40',
-              )}
+          <div key={step.label} className="flex items-start gap-2.5">
+            <StepperItem
+              step={i}
+              className="items-center"
+              aria-current={current ? 'step' : undefined}
             >
-              {step.label}
-            </span>
-          </li>
+              <StepperIndicator className="flex size-3.5 shrink-0 items-center justify-center rounded-none bg-transparent text-current">
+                {done ? (
+                  <Check className="text-kortix-green size-3.5" strokeWidth={2.5} />
+                ) : (
+                  <svg
+                    height="16"
+                    viewBox="0 0 16 16"
+                    width="16"
+                    strokeLinejoin="round"
+                    style={{ color: current ? 'var(--kortix-green)' : 'var(--muted-foreground)' }}
+                    className={cn(
+                      'relative flex shrink-0 items-center justify-center',
+                      current && 'animate-spin',
+                    )}
+                    aria-hidden
+                  >
+                    <circle
+                      cx="8"
+                      cy="8"
+                      r="6.3"
+                      stroke="currentColor"
+                      fill="none"
+                      strokeWidth="1.5"
+                      strokeDasharray="3 3.4"
+                    />
+                    {current ? <circle cx="8" cy="8" r="4" fill="currentColor" /> : null}
+                  </svg>
+                )}
+              </StepperIndicator>
+              <StepperSeparator className="bg-border group-data-[state=completed]/step:bg-kortix-green/40 m-0 my-0.5 group-data-[orientation=vertical]/stepper:min-h-3" />
+            </StepperItem>
+            <div className="flex h-4 min-w-0 items-center">
+              {current ? (
+                <TextShimmer
+                  as="span"
+                  duration={1.8}
+                  spread={1.25}
+                  className="text-[13px] leading-none font-medium tracking-tight"
+                >
+                  {step.label}
+                </TextShimmer>
+              ) : (
+                <StepperTitle className="text-muted-foreground/50 text-[13px] leading-none tracking-tight transition-colors duration-500">
+                  {step.label}
+                </StepperTitle>
+              )}
+            </div>
+          </div>
         );
       })}
-    </ol>
+    </Stepper>
   );
 }
 
@@ -208,7 +254,7 @@ export function SessionStartingLoader({
         {/* Auto-width so the checklist is a centered block under the heading. */}
         <BootStepList active={active} />
 
-        <p className="text-muted-foreground/40 text-center text-[11px] leading-relaxed">
+        <p className="text-muted-foreground text-center text-[11px] leading-relaxed">
           {slow ? 'A cold start can take a little longer.' : 'This usually takes a few seconds.'}
         </p>
 
@@ -222,7 +268,7 @@ export function SessionStartingLoader({
             onClick={() => restartMutation.mutate()}
           >
             {restartMutation.isPending ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
+              <Loading className="size-3 shrink-0 text-current" />
             ) : (
               <RotateCcw className="h-3 w-3" />
             )}
@@ -257,13 +303,13 @@ export function SessionBootChecklistInline({
   return (
     <div className={cn('flex flex-col items-start gap-2', className)}>
       <div
-        className="bg-popover w-full rounded-2xl border px-4.5 py-4"
+        className="bg-popover w-full rounded-md border px-4 py-3"
         aria-label="Starting your Kortix Computer"
       >
         <BootStepList active={active} />
       </div>
       {elapsed ? (
-        <span className="text-muted-foreground/50 pl-1 text-xs tabular-nums">· {elapsed}</span>
+        <span className="text-muted-foreground pl-1 text-[13px] tabular-nums">· {elapsed}</span>
       ) : null}
     </div>
   );
