@@ -852,12 +852,9 @@ function GroupProjectGrantsCard({
         description={
           detachTarget ? (
             <span>
-              <strong>{groupName}</strong>{' '}
-              {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextWilldd678991')}{' '}
-              <strong>{detachTarget.project_name}</strong>
-              {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextEvery76958122')}
-              <strong>{detachTarget.role}</strong>{' '}
-              {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextAccessf385fd87')}
+              <strong>{groupName}</strong> will no longer be attached to{' '}
+              <strong>{detachTarget.project_name}</strong>. Every group member will lose their
+              inherited <strong className="capitalize">{detachTarget.role}</strong> access.
             </span>
           ) : null
         }
