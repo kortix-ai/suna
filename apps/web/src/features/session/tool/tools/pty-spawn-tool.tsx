@@ -35,6 +35,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -226,6 +227,9 @@ export function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps
       forceOpen={forceOpen}
       locked={locked}
     >
+      {status === 'completed' && isErrorOutput(output) ? (
+        <ToolOutputFallback output={output} toolName="pty_spawn" />
+      ) : (
       <div className="space-y-2 px-3 py-2">
         {command && (
           <div className="font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
@@ -255,6 +259,7 @@ export function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps
           </InlineMeta>
         )}
       </div>
+      )}
     </BasicTool>
   );
 }

@@ -5,6 +5,7 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   partInput,
@@ -110,7 +111,9 @@ export function ExecutorDiscoverTool({ part, defaultOpen, forceOpen, locked }: T
       locked={locked}
     >
       <div className="p-2.5">
-        {matches.length > 0 ? (
+        {isErrorOutput(output) ? (
+          <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="discover" />
+        ) : matches.length > 0 ? (
           <div className="space-y-1.5">
             {matches.map((m, i) => (
               <div key={String(m.tool ?? i)} className="px-2 py-1 text-xs">
@@ -162,7 +165,9 @@ export function ExecutorDescribeTool({ part, defaultOpen, forceOpen, locked }: T
       locked={locked}
     >
       <div className="space-y-2.5 p-2.5">
-        {parsed ? (
+        {isErrorOutput(output) ? (
+          <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="describe" />
+        ) : parsed ? (
           <>
             <div className="flex items-center gap-2">
               <span className="text-foreground font-mono text-xs">{tool}</span>
@@ -259,7 +264,9 @@ export function ExecutorCallTool({ part, defaultOpen, forceOpen, locked }: ToolP
           </div>
         )}
 
-        {parsed ? (
+        {isErrorOutput(output) ? (
+          <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="call" />
+        ) : parsed ? (
           <div>
             <ExecutorSectionLabel>Response</ExecutorSectionLabel>
             {parsed.reason && !ok ? (

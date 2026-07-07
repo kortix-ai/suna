@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -279,6 +280,8 @@ export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolPr
             </div>
           ))}
         </div>
+      ) : isErrorOutput(output) ? (
+        <ToolOutputFallback output={output} toolName="session_read" />
       ) : output ? (
         <div data-scrollable className="max-h-72 overflow-auto px-3 py-2">
           <div className="text-muted-foreground font-mono text-xs whitespace-pre-wrap">

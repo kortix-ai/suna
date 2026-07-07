@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -205,16 +206,20 @@ export function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) 
       icon={<Plug className="text-muted-foreground size-3.5" />}
       trigger={{
         title: 'Connector Setup',
-        subtitle: data
-          ? `${data.count} connector${data.count !== 1 ? 's' : ''} configured`
-          : 'Setting up...',
+        subtitle: isErrorOutput(output)
+          ? 'failed'
+          : data
+            ? `${data.count} connector${data.count !== 1 ? 's' : ''} configured`
+            : 'Setting up...',
         args: data?.success ? ['configured'] : undefined,
       }}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
     >
       <div className="p-2">
-        {output ? (
+        {isErrorOutput(output) ? (
+          <ToolOutputFallback output={output} toolName="connector_setup" />
+        ) : output ? (
           <div className="space-y-1">
             {data?.connectors.map((conn, i) => (
               <div key={i} className="flex items-center gap-2 py-1 text-xs">

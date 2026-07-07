@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -279,7 +280,13 @@ export function AgentStatusTool({ part }: ToolProps) {
           </div>
         )}
 
-        {!isRunning && taskRows.length === 0 && cleanedOutput && (
+        {!isRunning && isErrorOutput(output) && (
+          <div className="border-border/30 border-t">
+            <ToolOutputFallback output={output} toolName="agent_status" />
+          </div>
+        )}
+
+        {!isRunning && !isErrorOutput(output) && taskRows.length === 0 && cleanedOutput && (
           <div className="border-border/30 border-t px-3 py-2.5">
             <div className="text-muted-foreground text-xs whitespace-pre-wrap">{cleanedOutput}</div>
           </div>

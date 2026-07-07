@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -203,7 +204,8 @@ export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const filePaths = useMemo(() => parseFilePaths(output), [output]);
   const hasResults = filePaths && filePaths.length > 0;
-  const isNoResults = !hasResults && status === 'completed' && !!output;
+  const isNoResults =
+    !hasResults && status === 'completed' && !!output && !isErrorOutput(output);
 
   return (
     <BasicTool

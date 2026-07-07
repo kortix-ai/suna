@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -216,7 +217,9 @@ export function DCPPruneTool({ part }: ToolProps) {
         </div>
       }
     >
-      {output ? (
+      {isErrorOutput(output) ? (
+        <ToolOutputFallback output={output} toolName="prune" />
+      ) : output ? (
         <div data-scrollable className="max-h-48 overflow-auto p-2">
           <pre className="text-muted-foreground/60 font-mono text-xs whitespace-pre-wrap">
             {output}

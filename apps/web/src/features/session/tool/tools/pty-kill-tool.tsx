@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -214,9 +215,11 @@ export function PtyKillTool({ part, defaultOpen, forceOpen, locked }: ToolProps)
       forceOpen={forceOpen}
       locked={locked}
     >
-      {cleanOutput && (
+      {isErrorOutput(output) ? (
+        <ToolOutputFallback output={output} toolName="pty_kill" />
+      ) : cleanOutput ? (
         <div className="text-muted-foreground px-3 py-2 text-xs leading-relaxed">{cleanOutput}</div>
-      )}
+      ) : null}
     </BasicTool>
   );
 }

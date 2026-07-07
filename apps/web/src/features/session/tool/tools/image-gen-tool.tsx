@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -264,6 +265,8 @@ export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
             </div>
           )}
         </div>
+      ) : isErrorOutput(output) ? (
+        <ToolOutputFallback output={output} toolName="image_gen" />
       ) : output ? (
         <div data-scrollable className="max-h-72 overflow-auto p-2">
           <pre className="text-muted-foreground font-mono text-xs whitespace-pre-wrap">

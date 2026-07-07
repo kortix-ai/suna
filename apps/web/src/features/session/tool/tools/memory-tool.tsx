@@ -2,10 +2,10 @@
 
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { DiffStat, STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
-import { Stepper, StepperItem, StepperSeparator, StepperTrigger } from '@/components/ui/stepper';
 import {
   BasicTool,
   InlineDiffView,
+  isErrorOutput,
   partInput,
   partOutput,
   partStatus,
@@ -21,15 +21,7 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ToolError } from '@/features/session/tool/tool-error';
 import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import {
-  Brain,
-  ChevronRight,
-  ExternalLink,
-  FileText,
-  Folder,
-  MessageCircle,
-  Trash2,
-} from 'lucide-react';
+import { Brain, ChevronRight, ExternalLink, MessageCircle, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
@@ -76,46 +68,27 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
   );
 
   let body: ReactNode = null;
-  if (command === 'view') {
+  if (status === 'completed' && isErrorOutput(output)) {
+    body = <ToolOutputFallback output={output} toolName="memory" />;
+  } else if (command === 'view') {
     if (view?.type === 'dir') {
       body =
         view.entries.length > 0 ? (
           <FadedScrollArea fadeColor="from-background">
-            <Stepper
-              orientation="vertical"
-              count={view.entries.length}
-              className="flex w-full flex-col"
-            >
-              {view.entries.map((entry, i) => {
-                const isLast = i + 1 >= view.entries.length;
-                return (
-                  <div key={entry.path} className="flex gap-2.5">
-                    <StepperItem step={i + 1} completed className="items-center">
-                      <StepperTrigger asChild>
-                        <span className="flex shrink-0">
-                          {entry.isDir ? (
-                            <Folder className="text-muted-foreground/50 size-3.5" />
-                          ) : (
-                            <FileText className="text-muted-foreground/50 size-3.5" />
-                          )}
-                        </span>
-                      </StepperTrigger>
-                      <StepperSeparator className="bg-border m-0 my-0.5 group-data-[orientation=vertical]/stepper:min-h-2" />
-                    </StepperItem>
-                    <div
-                      className={cn('flex min-w-0 flex-1 items-center gap-2', !isLast && 'pb-3')}
-                    >
-                      <span className="text-muted-foreground/80 truncate font-mono text-xs">
-                        {memoryRelPath(entry.path)}
-                      </span>
-                      <span className="text-muted-foreground/40 ml-auto shrink-0 text-xs tabular-nums">
-                        {entry.size}
-                      </span>
-                    </div>
+            {view.entries.map((entry, i) => {
+              const isLast = i + 1 >= view.entries.length;
+              const name = memoryRelPath(entry.path);
+              return (
+                <div key={entry.path} className="flex gap-2.5">
+                  <div className={cn('flex min-w-0 flex-1 items-center gap-2', !isLast && 'pb-3')}>
+                    <span className="text-muted-foreground truncate font-mono text-xs">{name}</span>
+                    <span className="text-muted-foreground/50 ml-auto shrink-0 text-xs tabular-nums">
+                      {entry.size}
+                    </span>
                   </div>
-                );
-              })}
-            </Stepper>
+                </div>
+              );
+            })}
           </FadedScrollArea>
         ) : (
           <ToolEmptyState

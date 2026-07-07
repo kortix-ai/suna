@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -237,6 +238,8 @@ export function ConnectorListTool({ part, defaultOpen, forceOpen }: ToolProps) {
             </div>
           ))}
         </div>
+      ) : isErrorOutput(output) ? (
+        <ToolOutputFallback output={output} toolName="connector_list" />
       ) : (
         <div className="text-muted-foreground p-3 text-xs">
           {output ? 'No connectors found' : 'Loading...'}

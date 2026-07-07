@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -202,6 +203,8 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
   const tHardcodedUi = useTranslations('hardcodedUi');
   const metadata = partMetadata(part);
   const status = partStatus(part);
+  const output = partOutput(part);
+  const isError = status === 'completed' && isErrorOutput(output);
   const running = useContext(ToolRunningContext);
   const { openPreview } = useFilePreviewStore();
 
@@ -251,7 +254,9 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
       forceOpen={forceOpen}
       locked={locked}
     >
-      {files.length > 0 ? (
+      {isError ? (
+        <ToolOutputFallback output={output} toolName="apply_patch" />
+      ) : files.length > 0 ? (
         <div data-scrollable className="max-h-[480px] overflow-auto">
           {files.map((file, i) => {
             const relPath = file.relativePath || file.filePath || '';

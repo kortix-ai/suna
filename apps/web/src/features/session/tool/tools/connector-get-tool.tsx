@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -235,6 +236,8 @@ export function ConnectorGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
                   </div>
                 )}
               </>
+            ) : isErrorOutput(output) ? (
+              <ToolOutputFallback output={output} toolName="connector_get" />
             ) : (
               <div className="text-muted-foreground max-h-48 overflow-y-auto font-mono text-xs whitespace-pre-wrap">
                 {output}

@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -206,13 +207,15 @@ export function VideoGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
       forceOpen={forceOpen}
       locked={locked}
     >
-      {output && (
+      {isErrorOutput(output) ? (
+        <ToolOutputFallback output={output} toolName="video_gen" />
+      ) : output ? (
         <div data-scrollable className="max-h-72 overflow-auto p-2">
           <pre className="text-muted-foreground font-mono text-xs whitespace-pre-wrap">
             {output}
           </pre>
         </div>
-      )}
+      ) : null}
     </BasicTool>
   );
 }

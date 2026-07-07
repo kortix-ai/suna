@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -212,11 +213,15 @@ export function ContextInfoTool({ part }: ToolProps) {
         </div>
       }
     >
-      <div data-scrollable className="scrollbar-hide max-h-32 overflow-auto p-2">
-        <pre className="text-muted-foreground/60 font-mono text-xs whitespace-pre-wrap">
-          {output}
-        </pre>
-      </div>
+      {isErrorOutput(output) ? (
+        <ToolOutputFallback output={output} toolName="context_info" />
+      ) : (
+        <div data-scrollable className="scrollbar-hide max-h-32 overflow-auto p-2">
+          <pre className="text-muted-foreground/60 font-mono text-xs whitespace-pre-wrap">
+            {output}
+          </pre>
+        </div>
+      )}
     </BasicTool>
   );
 }

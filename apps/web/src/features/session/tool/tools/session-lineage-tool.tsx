@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -215,7 +216,9 @@ export function SessionLineageTool({ part, defaultOpen, forceOpen, locked }: Too
       forceOpen={forceOpen}
       locked={locked}
     >
-      {output ? (
+      {isErrorOutput(output) ? (
+        <ToolOutputFallback output={output} toolName="session_lineage" />
+      ) : output ? (
         <div data-scrollable className="max-h-56 overflow-auto px-3 py-2">
           <div className="text-muted-foreground font-mono text-xs whitespace-pre-wrap">
             <UnifiedMarkdown content={output} isStreaming={false} />

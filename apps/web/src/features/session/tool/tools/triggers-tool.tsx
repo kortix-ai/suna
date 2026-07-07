@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -320,7 +321,9 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
       forceOpen={forceOpen}
     >
       <div className="p-2">
-        {triggerLines.length > 0 ? (
+        {isErrorOutput(output) ? (
+          <ToolOutputFallback output={output} toolName="triggers" />
+        ) : triggerLines.length > 0 ? (
           <div className="space-y-1">
             {triggerLines.map((t, i) =>
               'name' in t ? (

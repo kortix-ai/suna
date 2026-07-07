@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -211,7 +212,9 @@ export function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
       defaultOpen={defaultOpen || projects.length === 0}
       forceOpen={forceOpen}
     >
-      {projects.length > 0 ? (
+      {isErrorOutput(output) ? (
+        <ToolOutputFallback output={output} toolName="project_list" />
+      ) : projects.length > 0 ? (
         <div className="space-y-0.5">
           {projects.map((project: ProjectEntry) => (
             <div

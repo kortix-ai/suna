@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -224,7 +225,7 @@ export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: Tool
     return results;
   }, [output]);
 
-  const noResults = status === 'completed' && hits.length === 0;
+  const noResults = status === 'completed' && hits.length === 0 && !isErrorOutput(output);
 
   return (
     <BasicTool

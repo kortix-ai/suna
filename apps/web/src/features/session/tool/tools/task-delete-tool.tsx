@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -194,6 +195,20 @@ import {
 
 export function TaskDeleteTool({ part }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const output = partOutput(part);
+  const status = partStatus(part);
+
+  if (status === 'completed' && isErrorOutput(output)) {
+    return (
+      <BasicTool
+        icon={<Trash2 className="size-3.5 flex-shrink-0" />}
+        trigger={{ title: 'Delete task', subtitle: 'failed' }}
+      >
+        <ToolOutputFallback output={output} toolName="task_delete" />
+      </BasicTool>
+    );
+  }
+
   return (
     <div className="text-muted-foreground/40 flex items-center gap-2 px-2.5 py-1 text-xs">
       <Trash2 className="size-3 flex-shrink-0" />

@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -120,7 +121,6 @@ import {
   ChevronDown,
   ChevronRight,
   Circle,
-  CircleAlert,
   Clock,
   Code2,
   Cpu,
@@ -286,12 +286,7 @@ export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: To
       forceOpen={forceOpen}
       locked={locked}
     >
-      {isError && parsed?.error && (
-        <div className="text-muted-foreground flex items-start gap-2 px-3 py-2 text-xs">
-          <CircleAlert className="mt-0.5 size-3 flex-shrink-0" />
-          <span>{parsed.error}</span>
-        </div>
-      )}
+      {isError && <ToolOutputFallback output={output} toolName="presentation" />}
 
       {parsed?.success && (
         <div className="space-y-1.5 px-3 py-2.5">

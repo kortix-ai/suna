@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -201,6 +202,14 @@ export function ProjectSelectTool({ part }: ToolProps) {
   const project = (input.project as string) || '';
   const data = useMemo(() => parseProjectSelectOutput(output || ''), [output]);
   const name = data?.name || project;
+
+  if (isErrorOutput(output)) {
+    return (
+      <BasicTool icon={<Folder />} trigger={{ title: 'Workspace', subtitle: name || 'failed' }}>
+        <ToolOutputFallback output={output} toolName="project_select" />
+      </BasicTool>
+    );
+  }
 
   return (
     <BasicTool

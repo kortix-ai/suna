@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -200,13 +201,15 @@ export function TaskListTool({ part }: ToolProps) {
       trigger={{ title: 'Tasks', subtitle: '', args: [] }}
       defaultOpen={false}
     >
-      {output && (
+      {isErrorOutput(output) ? (
+        <ToolOutputFallback output={output} toolName="task_list" />
+      ) : output ? (
         <div data-scrollable className="max-h-48 overflow-auto px-3 py-2">
           <div className="text-muted-foreground text-xs whitespace-pre-wrap">
             <UnifiedMarkdown content={output} isStreaming={false} />
           </div>
         </div>
-      )}
+      ) : null}
     </BasicTool>
   );
 }

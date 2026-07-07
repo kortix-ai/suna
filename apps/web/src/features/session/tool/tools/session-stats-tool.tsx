@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -201,13 +202,15 @@ export function SessionStatsTool({ part }: ToolProps) {
       trigger={{ title: 'Session Stats', subtitle: '', args: [] }}
       defaultOpen={true}
     >
-      {output && (
+      {isErrorOutput(output) ? (
+        <ToolOutputFallback output={output} toolName="session_stats" />
+      ) : output ? (
         <div data-scrollable className="max-h-72 overflow-auto px-3 py-2">
           <div className="text-foreground font-mono text-xs whitespace-pre-wrap">
             <UnifiedMarkdown content={output} isStreaming={false} />
           </div>
         </div>
-      )}
+      ) : null}
     </BasicTool>
   );
 }

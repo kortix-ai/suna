@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -200,7 +201,7 @@ export function AgentMessageTool({ part }: ToolProps) {
   const rawMessage = (input.message as string) || '';
   const taskId = (input.id as string) || (input.agent_id as string) || '';
   const isRunning = status === 'running' || status === 'pending';
-  const isError = status === 'error';
+  const isError = status === 'error' || (status === 'completed' && isErrorOutput(output));
   const [expanded, setExpanded] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -256,13 +257,17 @@ export function AgentMessageTool({ part }: ToolProps) {
             )}
           </div>
 
-          {rawMessage && (
+          {isError ? (
+            <div className="mt-1.5 pl-[26px]">
+              <ToolOutputFallback output={output} toolName="agent_message" />
+            </div>
+          ) : rawMessage ? (
             <div className="mt-1.5 pl-[26px]">
               <span className="text-muted-foreground/70 text-xs leading-relaxed">
                 {expanded ? rawMessage : preview}
               </span>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 

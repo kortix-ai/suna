@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -208,7 +209,9 @@ export function ProjectGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
       forceOpen={forceOpen}
     >
       <div className="p-2">
-        {output ? (
+        {isErrorOutput(output) ? (
+          <ToolOutputFallback output={output} toolName="project_get" />
+        ) : output ? (
           <div className="text-muted-foreground max-h-48 overflow-y-auto font-mono text-xs whitespace-pre-wrap">
             {output}
           </div>

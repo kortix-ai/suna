@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -212,7 +213,9 @@ export function DCPDistillTool({ part }: ToolProps) {
         </div>
       }
     >
-      {output ? (
+      {isErrorOutput(output) ? (
+        <ToolOutputFallback output={output} toolName="distill" />
+      ) : output ? (
         <div data-scrollable className="max-h-48 overflow-auto p-2">
           <pre className="text-muted-foreground/60 font-mono text-xs whitespace-pre-wrap">
             {output}

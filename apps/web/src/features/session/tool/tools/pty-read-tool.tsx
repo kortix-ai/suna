@@ -34,6 +34,7 @@ import {
   ToolActivateContext,
   ToolDurationContext,
   ToolEmptyState,
+  isErrorOutput,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
@@ -258,7 +259,9 @@ export function PtyReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps)
       forceOpen={forceOpen}
       locked={locked}
     >
-      {parsed.content && (
+      {isErrorOutput(output) ? (
+        <ToolOutputFallback output={output} toolName="pty_read" />
+      ) : parsed.content ? (
         <div data-scrollable className="max-h-96 overflow-auto">
           <PreWithPaths
             text={parsed.content}
@@ -268,7 +271,7 @@ export function PtyReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps)
             <div className="text-muted-foreground/50 px-3 pb-2 text-xs">{parsed.bufferInfo}</div>
           )}
         </div>
-      )}
+      ) : null}
     </BasicTool>
   );
 }
