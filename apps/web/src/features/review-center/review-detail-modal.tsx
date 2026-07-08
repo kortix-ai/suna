@@ -34,6 +34,8 @@ import {
   SparklesSolid,
 } from '@mynaui/icons-react';
 import { useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { ChangeFilesModal } from './change-files';
 import { formatItemAgeLong } from './review-actions';
 import {
@@ -98,6 +100,72 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Compact markdown for agent-written descriptions (no Shiki/KaTeX/Mermaid —
+ * same lightweight approach as the session QuestionMarkdown). Styled to the
+ * modal's scale: sm body, small semibold headings, muted code chips.
+ */
+function ReviewMarkdown({ content }: { content: string }) {
+  return (
+    <div className="min-w-0 text-sm">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          h1: ({ children }) => (
+            <h4 className="text-foreground mt-4 mb-1.5 text-sm font-semibold first:mt-0">
+              {children}
+            </h4>
+          ),
+          h2: ({ children }) => (
+            <h4 className="text-foreground mt-4 mb-1.5 text-sm font-semibold first:mt-0">
+              {children}
+            </h4>
+          ),
+          h3: ({ children }) => (
+            <h5 className="text-foreground mt-3 mb-1 text-sm font-medium first:mt-0">{children}</h5>
+          ),
+          p: ({ children }) => (
+            <p className="text-foreground/90 my-1.5 leading-relaxed text-pretty">{children}</p>
+          ),
+          strong: ({ children }) => (
+            <strong className="text-foreground font-semibold">{children}</strong>
+          ),
+          em: ({ children }) => <em>{children}</em>,
+          ul: ({ children }) => <ul className="my-1.5 list-disc space-y-1 pl-5">{children}</ul>,
+          ol: ({ children }) => <ol className="my-1.5 list-decimal space-y-1 pl-5">{children}</ol>,
+          li: ({ children }) => <li className="text-foreground/90 text-pretty">{children}</li>,
+          code: ({ children }) => (
+            <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">{children}</code>
+          ),
+          pre: ({ children }) => (
+            <pre className="bg-muted my-2 overflow-x-auto rounded-md p-3 font-mono text-xs">
+              {children}
+            </pre>
+          ),
+          a: ({ children, href }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-foreground underline underline-offset-2"
+            >
+              {children}
+            </a>
+          ),
+          blockquote: ({ children }) => (
+            <blockquote className="border-border text-muted-foreground my-2 border-l-2 pl-3">
+              {children}
+            </blockquote>
+          ),
+          hr: () => <hr className="border-border my-3" />,
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
 // ── change ────────────────────────────────────────────────────────────────
 function ChangeBody({
   item,
@@ -148,18 +216,24 @@ function ChangeBody({
         </div>
       )}
 
-      {(whatChanged.length > 0 || d.impact) && (
+      {(whatChanged.length > 0 || d.descriptionMarkdown || d.impact) && (
         <div>
           <SectionLabel>What changed</SectionLabel>
-          {whatChanged.length > 0 && (
-            <ul className="space-y-1.5">
-              {whatChanged.map((line) => (
-                <li key={line} className="text-foreground flex items-start gap-2 text-sm">
-                  <Check className="text-kortix-green mt-0.5 size-4 shrink-0" />
-                  <span className="text-pretty">{line}</span>
-                </li>
-              ))}
-            </ul>
+          {/* An agent-written markdown description renders as real markdown;
+              structured/plain-line payloads keep the checkmark treatment. */}
+          {d.descriptionMarkdown ? (
+            <ReviewMarkdown content={d.descriptionMarkdown} />
+          ) : (
+            whatChanged.length > 0 && (
+              <ul className="space-y-1.5">
+                {whatChanged.map((line) => (
+                  <li key={line} className="text-foreground flex items-start gap-2 text-sm">
+                    <Check className="text-kortix-green mt-0.5 size-4 shrink-0" />
+                    <span className="text-pretty">{line}</span>
+                  </li>
+                ))}
+              </ul>
+            )
           )}
           {d.impact && (
             <div className="text-muted-foreground mt-2 text-sm text-pretty">{d.impact}</div>
