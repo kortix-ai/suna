@@ -204,6 +204,28 @@ export async function handleChatCompletions(
 
   const id = idOf(principal);
 
+  // Reject oversized bodies before the JSON parse and upstream dispatch. Off by
+  // default (`maxRequestBytes` unset/0); when configured it turns an upstream
+  // that silently drops an over-limit request into an immediate, actionable 413
+  // instead of a multi-second retry storm that ends in a generic 502.
+  if (config.maxRequestBytes && req.rawBody.length > config.maxRequestBytes) {
+    step('request_too_large', { bytes: req.rawBody.length, limit: config.maxRequestBytes });
+    emit({
+      ...id,
+      status: 413,
+      ok: false,
+      errorCode: 'request_too_large',
+      errorMessage: `Request body ${req.rawBody.length} bytes exceeds limit ${config.maxRequestBytes}`,
+    });
+    return json(
+      {
+        error: `Request body of ${req.rawBody.length} bytes exceeds the ${config.maxRequestBytes}-byte limit`,
+        code: 'request_too_large',
+      },
+      413,
+    );
+  }
+
   let body: Record<string, unknown>;
   try {
     body = JSON.parse(req.rawBody) as Record<string, unknown>;
@@ -321,11 +343,22 @@ export async function handleChatCompletions(
   let attempts = 0;
   let nonStreamBody: unknown;
   let streamProbe: StreamProbeResult | null = null;
+  // The real upstream error behind an empty stream, if a candidate returned one
+  // (see the error-frame branch below). Surfaced in place of the generic
+  // empty-completion 502 when every candidate ends up producing nothing usable.
+  let lastErrorFrame: SseErrorFrame | null = null;
 
   for (;;) {
     const remaining = candidates.filter((c) => !emptyProviders.has(c.provider));
     if (remaining.length === 0) {
-      step('all_candidates_empty', { ms: lap(), tried });
+      step('all_candidates_empty', { ms: lap(), tried, hadErrorFrame: Boolean(lastErrorFrame) });
+      // Prefer the real upstream cause (overloaded, request too large, content
+      // filter) that a candidate reported over the generic "empty" message that
+      // would otherwise bury it.
+      const errorCode = lastErrorFrame ? 'upstream_error' : 'empty_completion';
+      const message = lastErrorFrame
+        ? lastErrorFrame.message
+        : 'All upstream candidates returned an empty completion';
       emit({
         ...id,
         requestedModel,
@@ -333,13 +366,18 @@ export async function handleChatCompletions(
         streaming,
         status: 502,
         ok: false,
-        errorCode: 'empty_completion',
+        errorCode,
+        errorMessage: message,
         candidatesTried: tried,
         request: capture(payload),
         metadata,
       });
       return json(
-        { error: 'All upstream candidates returned an empty completion', code: 'empty_completion' },
+        {
+          error: message,
+          code: errorCode,
+          ...(lastErrorFrame?.code !== undefined ? { upstream_code: lastErrorFrame.code } : {}),
+        },
         502,
       );
     }
@@ -395,6 +433,23 @@ export async function handleChatCompletions(
       descriptor = chosen;
       streamProbe = probe;
       break;
+    }
+    // A structured error frame is a definitive failure for THIS candidate, not the
+    // transient empty-stop hiccup the same-candidate retry targets — so exclude the
+    // candidate at once (no in-place retry) and remember the real error to surface
+    // if nothing usable ever arrives. Other candidates, if any, still get a turn.
+    if (probe.errorFrame) {
+      lastErrorFrame = probe.errorFrame;
+      logger.warn(
+        `[llm-gateway] upstream error frame from ${chosen.provider} ${requestId}: "${probe.errorFrame.message}"${probe.errorFrame.code !== undefined ? ` (code ${probe.errorFrame.code})` : ''}`,
+      );
+      step('upstream_error_frame', {
+        provider: chosen.provider,
+        message: probe.errorFrame.message,
+        code: probe.errorFrame.code,
+      });
+      emptyProviders.add(chosen.provider);
+      continue;
     }
     await registerEmptyCompletion(chosen.provider, { streaming: true });
   }

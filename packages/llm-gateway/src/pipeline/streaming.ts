@@ -42,15 +42,22 @@ const PROBE_MAX_BYTES = 64 * 1024;
 
 export interface StreamProbeResult {
   hasContent: boolean;
+  // First structured upstream error frame seen during the probe, if any. An
+  // otherwise-200 stream that carries `data: {"error":{...}}` and no content is a
+  // definitive upstream failure (Anthropic `overloaded_error`, an OpenAI
+  // `response.failed`, a request-too-large rejection) — not the transient
+  // "empty stop" hiccup that same-candidate retries target. The caller surfaces
+  // this real error instead of retrying into a generic empty-completion.
+  errorFrame?: SseErrorFrame | null;
   reader: ReadableStreamDefaultReader<Uint8Array>;
   chunks: Uint8Array[];
 }
 
-// Reads from the upstream body until either real content/tool-call/reasoning
-// output is seen, the stream ends, or the probe budget is exhausted — whichever
-// comes first. Every chunk consumed is captured in `chunks` so the caller can
-// replay them verbatim (via `primed`) without losing a single byte, regardless
-// of which outcome is reached.
+// Reads from the upstream body until real content/tool-call/reasoning output is
+// seen, a structured upstream error frame is seen, the stream ends, or the probe
+// budget is exhausted — whichever comes first. Every chunk consumed is captured
+// in `chunks` so the caller can replay them verbatim (via `primed`) without
+// losing a single byte, regardless of which outcome is reached.
 export async function probeStream(body: ReadableStream<Uint8Array>): Promise<StreamProbeResult> {
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
@@ -68,15 +75,30 @@ export async function probeStream(body: ReadableStream<Uint8Array>): Promise<Str
       ({ done, value } = await reader.read());
     } catch {
       // A read error mid-probe is not this function's concern to report — whatever
-      // content (if any) arrived before the error is all there is to judge on.
-      return { hasContent: sseHasContent(buffer), reader, chunks };
+      // content/error (if any) arrived before it is all there is to judge on.
+      return {
+        hasContent: sseHasContent(buffer),
+        errorFrame: sseErrorFrame(buffer),
+        reader,
+        chunks,
+      };
     }
-    if (done) return { hasContent: sseHasContent(buffer), reader, chunks };
+    if (done)
+      return {
+        hasContent: sseHasContent(buffer),
+        errorFrame: sseErrorFrame(buffer),
+        reader,
+        chunks,
+      };
     if (!value) continue;
     chunks.push(value);
     bytes += value.byteLength;
     buffer += decoder.decode(value, { stream: true });
+    // Content wins over an error frame in the same buffer: real output already
+    // streamed, so relay it and let the relay path record any trailing error.
     if (sseHasContent(buffer)) return { hasContent: true, reader, chunks };
+    const errorFrame = sseErrorFrame(buffer);
+    if (errorFrame) return { hasContent: false, errorFrame, reader, chunks };
   }
 }
 
