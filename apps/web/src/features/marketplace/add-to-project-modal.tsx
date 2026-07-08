@@ -82,12 +82,6 @@ export function AddToProjectModal({
     }
   }, [open, usePicker, projects, pickedProjectId]);
 
-  // Reset any stale pending/close-guard state when a fresh item is opened.
-  useEffect(() => {
-    if (!open) return;
-    install.reset();
-  }, [open, item?.id]);
-
   const targetProjectId = fixedProjectId ?? pickedProjectId;
   const caps = item?.capabilities;
   const showCaps = hasCapabilities(caps);
@@ -216,7 +210,7 @@ export function AddToProjectModal({
                       </Badge>
                     </div>
                     <ul className="mt-2 space-y-1.5">
-                      {caps!.secrets.map((s) => (
+                      {caps?.secrets.map((s) => (
                         <li key={s} className="flex items-center gap-2.5">
                           <span className="bg-kortix-yellow/15 text-kortix-yellow flex size-6 shrink-0 items-center justify-center rounded-sm">
                             <KeyRound className="size-3.5" />
@@ -229,7 +223,7 @@ export function AddToProjectModal({
                           </Badge>
                         </li>
                       ))}
-                      {caps!.connectors.map((c) => (
+                      {caps?.connectors.map((c) => (
                         <li key={c} className="flex items-center gap-2.5">
                           <span className="bg-kortix-blue/15 text-kortix-blue flex size-6 shrink-0 items-center justify-center rounded-sm">
                             <Plug className="size-3.5" />
@@ -242,7 +236,7 @@ export function AddToProjectModal({
                           </Badge>
                         </li>
                       ))}
-                      {caps!.tools.map((t) => (
+                      {caps?.tools.map((t) => (
                         <li key={t} className="flex items-center gap-2.5">
                           <span className="bg-kortix-orange/15 text-kortix-orange flex size-6 shrink-0 items-center justify-center rounded-sm">
                             <Wrench className="size-3.5" />

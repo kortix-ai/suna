@@ -72,7 +72,12 @@ describe('capabilityCount', () => {
 
   test('sums across all three kinds', () => {
     expect(
-      capabilityCount({ secrets: ['A', 'B'], connectors: ['c'], tools: ['t1', 't2', 't3'], network: [] }),
+      capabilityCount({
+        secrets: ['A', 'B'],
+        connectors: ['c'],
+        tools: ['t1', 't2', 't3'],
+        network: [],
+      }),
     ).toBe(6);
   });
 });
