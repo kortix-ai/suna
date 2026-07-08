@@ -82,8 +82,10 @@ export function AuditTab({ accountId }: AuditTabProps) {
         toast.error('Not signed in');
         return;
       }
-      const base = getEnv().BACKEND_URL ?? '';
-      const url = `${base}/v1/accounts/${accountId}/audit/export?${params.toString()}`;
+      // BACKEND_URL already includes the `/v1` prefix (e.g. https://api.kortix.com/v1),
+      // so paths are appended WITHOUT another `/v1` — adding one 404'd the export.
+      const base = (getEnv().BACKEND_URL ?? '').replace(/\/+$/, '');
+      const url = `${base}/accounts/${accountId}/audit/export?${params.toString()}`;
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
