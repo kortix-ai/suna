@@ -101,7 +101,7 @@ its own verified increment (tsc + targeted tests), same as Stage 1.
 | `components/file-icon.tsx` | 450 | 305 | 67% |
 
 `files/file-icon.tsx` is a strict superset of `project-files/file-icon.tsx` —
-same icon-import list (just reordered) plus extra cases (a `kortix.toml`
+same icon-import list (just reordered) plus extra cases (a `kortix.yaml`
 special SVG glyph, a few more extension branches) that `project-files` lacks.
 Merging into one file (the superset) is mechanically simple and would unlock
 sharing `file-breadcrumbs.tsx`, `file-explorer-toolbar.tsx`,

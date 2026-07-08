@@ -94,10 +94,10 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
     return surfaceApiError(err);
   }
 
-  // The server's required/optional come from its mirror of kortix.toml, which
+  // The server's required/optional come from its mirror of kortix.yaml, which
   // is eventually-consistent — right after `kortix ship` it can still be empty
   // ("missing"), which would mislabel freshly-declared secrets as "undeclared".
-  // The local kortix.toml is authoritative + instant, so fall back to it
+  // The local kortix.yaml is authoritative + instant, so fall back to it
   // whenever the cloud mirror isn't loaded yet.
   const local = (() => {
     try {

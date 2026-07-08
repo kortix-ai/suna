@@ -48,7 +48,7 @@ flow("CONN-3", { domain: "connectors", routes: ["POST /v1/executor/call"] }, asy
 
 flow("CONN-4", { domain: "connectors", routes: ["POST /v1/executor/projects/:projectId/connectors/sync"] }, async (ctx) => {
   const p = await ctx.fixtures.project();
-  await ctx.step("sync re-materializes from kortix.toml → 200", async () => {
+  await ctx.step("sync re-materializes from kortix.yaml → 200", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).post("/v1/executor/projects/:projectId/connectors/sync", {}, { params: { projectId: p.id } });
     r.status(200);
   });

@@ -1,5 +1,5 @@
 /**
- * Canonical kortix.toml schema + validator.
+ * Canonical kortix.yaml schema + validator.
  *
  * One source of truth, exercised wherever manifest input is accepted:
  *
@@ -885,7 +885,7 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
       issues.push({
         path: `${where}.provider`,
         message:
-          'provider="computer" is managed automatically when you connect a machine (Computers) — it cannot be declared in kortix.toml.',
+          'provider="computer" is managed automatically when you connect a machine (Computers) — it cannot be declared in kortix.yaml.',
         severity: 'error',
       });
     } else if (!(CONNECTOR_PROVIDERS as readonly string[]).includes(provider)) {

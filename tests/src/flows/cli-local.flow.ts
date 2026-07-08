@@ -39,7 +39,7 @@ flow("INIT-1", { domain: "cli", routes: [] }, async (ctx) => {
     try {
       const r = await sb.run(["init", "-y"]);
       check("exit 0", r.exitCode === 0, 0, r.exitCode);
-      check("kortix.toml written", sb.exists("kortix.toml"), true, sb.exists("kortix.toml"));
+      check("kortix.yaml written", sb.exists("kortix.yaml"), true, sb.exists("kortix.yaml"));
       check(".kortix/ written", sb.exists(".kortix"), true, sb.exists(".kortix"));
       check(
         ".kortix/opencode/ runtime dir written (default agent + config)",
@@ -57,7 +57,7 @@ flow("INIT-1", { domain: "cli", routes: [] }, async (ctx) => {
 });
 
 flow("INIT-2", { domain: "cli", routes: [] }, async (ctx) => {
-  await ctx.step("kortix init when kortix.toml exists, no --force → exit 1 (refuses)", async () => {
+  await ctx.step("kortix init when kortix.yaml exists, no --force → exit 1 (refuses)", async () => {
     const sb = new CliSandbox("init2");
     ctx.track("cli-sandbox", sb.cwd);
     try {
@@ -65,7 +65,7 @@ flow("INIT-2", { domain: "cli", routes: [] }, async (ctx) => {
       check("first init exit 0", first.exitCode === 0, 0, first.exitCode);
       const second = await sb.run(["init", "-y", "--no-git"]);
       check("re-init without --force → exit 1", second.exitCode === 1, 1, second.exitCode);
-      check("refusal mentions existing kortix.toml", /already has a kortix\.toml/i.test(second.all), true, second.stderr.slice(0, 200));
+      check("refusal mentions existing kortix.yaml", /already has a kortix\.yaml/i.test(second.all), true, second.stderr.slice(0, 200));
     } finally {
       sb.dispose();
     }
@@ -114,7 +114,7 @@ flow("INIT-4", { domain: "cli", routes: [] }, async (ctx) => {
     try {
       const r = await sb.run(["init", "-y", "--no-git"]);
       check("exit 0", r.exitCode === 0, 0, r.exitCode);
-      check("scaffold written", sb.exists("kortix.toml"), true, sb.exists("kortix.toml"));
+      check("scaffold written", sb.exists("kortix.yaml"), true, sb.exists("kortix.yaml"));
       check("NO .git created", !sb.exists(".git"), false, sb.exists(".git"));
     } finally {
       sb.dispose();
@@ -131,7 +131,7 @@ flow("CREATE-1", { domain: "cli", routes: [] }, async (ctx) => {
     try {
       const r = await sb.run(["mywidget"]);
       check("exit 0", r.exitCode === 0, 0, r.exitCode);
-      check("sibling dir scaffolded (kortix.toml)", sb.exists("mywidget/kortix.toml"), true, sb.exists("mywidget/kortix.toml"));
+      check("sibling dir scaffolded (kortix.yaml)", sb.exists("mywidget/kortix.yaml"), true, sb.exists("mywidget/kortix.yaml"));
       check("git init ran in new dir", sb.exists("mywidget/.git"), true, sb.exists("mywidget/.git"));
       // create.ts makes the initial commit `chore: init kortix project` — verify it
       // landed (git identity is provided via the sandbox's GIT_* env).

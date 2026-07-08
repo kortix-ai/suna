@@ -103,7 +103,7 @@ export async function setConnectorPolicies(projectId: string, slug: string, poli
   );
 }
 
-/** The editable connection config for an existing connector (kortix.toml = source of truth). */
+/** The editable connection config for an existing connector (kortix.yaml = source of truth). */
 export interface ConnectorConfig {
   slug: string;
   provider: AdminConnector['provider'];

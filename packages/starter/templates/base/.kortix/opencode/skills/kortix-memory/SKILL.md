@@ -96,7 +96,7 @@ there's enough depth to warrant a click.
 - One user's personal preferences — those are not project memory.
 - Facts derivable from the repo layout, file names, or `git log`.
 - One-off task state that won't matter next week.
-- Anything that's already in `kortix.toml`, `AGENTS.md`, or a SKILL.md.
+- Anything that's already in `kortix.yaml`, `AGENTS.md`, or a SKILL.md.
 - Secrets, tokens, API keys, PII — those live in the Kortix Secrets
   Manager, never in memory files.
 - Speculation about future plans. Memory describes what *is*, not
@@ -186,8 +186,8 @@ To change *what the reflector remembers*, edit the **rubric** section
 of this skill. The reflector reads it fresh every run, so a merged CR
 to this file takes effect on the next reflection.
 
-To change *when the reflector runs*, edit the `[[triggers]]` block
-named `memory-reflector` in `kortix.toml`. The cron sweep picks up
+To change *when the reflector runs*, edit the `triggers:` entry
+named `memory-reflector` in `kortix.yaml`. The cron sweep picks up
 changes within a few seconds of the CR merging.
 
 </reflector>

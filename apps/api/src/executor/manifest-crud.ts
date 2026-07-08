@@ -1,10 +1,10 @@
 /**
- * Connector CRUD that round-trips `kortix.toml` — the web UI "Add connector"
+ * Connector CRUD that round-trips `kortix.yaml` — the web UI "Add connector"
  * flow (mirrors triggers/apps). The manifest holds the connector definition.
  * Credential MODE is always `shared` (`per_user` — each member brings their
  * own — was removed 2026-07-05, docs/specs/2026-07-05-agent-first-config-
  * unification.md §2.5). Connectors are project-wide visible — the only ACCESS
- * gate is the agent-side `[[agents]].connectors` grant (declared in git, on
+ * gate is the agent-side `agents.<name>.connectors` grant (declared in git, on
  * the agent, not the connector). Credentials live in the split store. See
  * docs/specs/executor.md §3, §5–6.
  */
@@ -95,7 +95,7 @@ async function connectorIdFor(projectId: string, slug: string): Promise<string |
   return row?.connectorId ?? null;
 }
 
-/** Create/update a connector in kortix.toml, then materialize it. */
+/** Create/update a connector in kortix.yaml, then materialize it. */
 export async function upsertConnectorInManifest(
   projectId: string,
   accountId: string,
@@ -207,7 +207,7 @@ export async function setConnectorCredentialShared(projectId: string, slug: stri
  * `shared` is now the only credential mode (`per_user` removed 2026-07-05,
  * docs/specs/2026-07-05-agent-first-config-unification.md §2.5). This entry
  * point is kept, restricted to a `shared`-only no-op: it strips a lingering
- * legacy `credential = "per_user"` key from kortix.toml (if present) and
+ * legacy `credential: per_user` key from kortix.yaml (if present) and
  * re-syncs, but never writes a mode back. Callers asking for anything other
  * than `shared` are rejected by the router before this is called.
  */
@@ -245,7 +245,7 @@ export async function setConnectorCredentialModeInManifest(
 }
 
 /**
- * Toggle a connector's `sensitive` flag in kortix.toml, commit, re-sync. A
+ * Toggle a connector's `sensitive` flag in kortix.yaml, commit, re-sync. A
  * sensitive connector gates its reads too (every action defaults to
  * require_approval unless an explicit policy opens it) — for email/files/
  * secrets-bearing integrations where reading is itself an exfiltration surface.
@@ -269,7 +269,7 @@ export async function setConnectorSensitiveInManifest(
   const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
   const entry = current.find((c) => c?.slug === slug);
   if (!entry) return { ok: false, error: 'connector not found', status: 404 };
-  // Omit the key when false so the emitted TOML stays minimal (false is the default).
+  // Omit the key when false so the emitted manifest stays minimal (false is the default).
   if (sensitive) entry.sensitive = true;
   else delete entry.sensitive;
   manifest.raw.connectors = current;
@@ -285,7 +285,7 @@ export async function setConnectorSensitiveInManifest(
   return { ok: true, sync };
 }
 
-/** Rename a connector — patches the kortix.toml entry's `name` (display label) + re-syncs. */
+/** Rename a connector — patches the kortix.yaml entry's `name` (display label) + re-syncs. */
 export async function setConnectorNameInManifest(
   projectId: string,
   accountId: string,
@@ -342,7 +342,7 @@ export interface ConnectorConfigView {
 }
 
 /**
- * Read a single connector's definition from kortix.toml (source of truth) in the
+ * Read a single connector's definition from kortix.yaml (source of truth) in the
  * same shape the dashboard edits. Parsed via extractConnectors so it round-trips
  * exactly with the upsert path. Returns null if the connector doesn't exist.
  */
@@ -372,11 +372,11 @@ export async function getConnectorConfigFromManifest(
   };
 }
 
-// ─── Per-connector policies ([[connectors.policies]]) ───────────────────────
+// ─── Per-connector policies (each connector's `policies:` list) ─────────────
 
 const CONNECTOR_POLICY_ACTIONS: readonly ConnectorPolicyAction[] = ['always_run', 'require_approval', 'block'];
 
-/** Read a single connector's [[connectors.policies]] from kortix.toml (source of truth). */
+/** Read a single connector's `policies:` list from kortix.yaml (source of truth). */
 export async function getConnectorPoliciesFromManifest(
   projectId: string,
   slug: string,
@@ -396,7 +396,7 @@ export async function getConnectorPoliciesFromManifest(
 }
 
 /**
- * Replace a connector's [[connectors.policies]] in kortix.toml, commit, re-sync
+ * Replace a connector's `policies:` list in kortix.yaml, commit, re-sync
  * (→ executor_connector_policies, which the gateway enforces). Matches are glob
  * or `/regex/` — validated here so a bad regex can't be persisted.
  */
@@ -444,7 +444,7 @@ export async function setConnectorPoliciesInManifest(
   return { ok: true, sync };
 }
 
-// ─── Project-level policies (top-level [[policies]] + [policy]) ──────────────
+// ─── Project-level policies (top-level `policies:` list + `policy:` block) ──
 
 export interface ProjectPoliciesView {
   policies: ProjectPolicySpec[];
@@ -452,7 +452,7 @@ export interface ProjectPoliciesView {
   errors: Array<{ path: string; error: string }>;
 }
 
-/** Read the project's [[policies]] + [policy] block (kortix.toml = source of truth). */
+/** Read the project's `policies:` list + `policy:` block (kortix.yaml = source of truth). */
 export async function getProjectPoliciesFromManifest(projectId: string): Promise<ProjectPoliciesView | null> {
   const row = await loadRow(projectId);
   if (!row) return null;
@@ -463,7 +463,7 @@ export async function getProjectPoliciesFromManifest(projectId: string): Promise
 }
 
 /**
- * Replace the WHOLE [[policies]] array + [policy].default_mode in kortix.toml,
+ * Replace the WHOLE `policies:` list + `policy.default_mode` in kortix.yaml,
  * commit, and re-sync so the runtime tables reflect the new posture. The UI is
  * an ordered list; "save" PUTs the whole list back. Per-rule add/edit/delete
  * remain client-side until commit.

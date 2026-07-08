@@ -157,7 +157,7 @@ core: the `kortix-executor` **MCP** (primary; auto-loaded), this **CLI**, and th
 | `kortix executor discover "<intent>"` | Search tools by natural language (`--limit`). |
 | `kortix executor describe <connector>.<action>` | Show one tool's input schema + risk. |
 | `kortix executor call <connector> <action> '<json>'` | Run a tool (gateway resolves the credential, enforces policy, audits). |
-| `kortix executor add <slug> --provider pipedream --app <app>` | Add a connector NOW (no CR) — commits to `kortix.toml` on main + syncs. |
+| `kortix executor add <slug> --provider pipedream --app <app>` | Add a connector NOW (no CR) — commits to `kortix.yaml` on main + syncs. |
 | `kortix executor rm <slug>` | Remove a connector. |
 | `kortix executor connect <slug>` | Mint a Pipedream Quick Connect link to hand the human. |
 | `kortix executor mcp` | Run the Executor as a stdio MCP server (opencode auto-loads this). |
@@ -230,7 +230,7 @@ can immediately drive); `sessions status` is the at-a-glance fleet view;
 
 ### Triggers
 
-Round-trip through `kortix.toml`'s `[[triggers]]`. Dashboard sees
+Round-trip through `kortix.yaml`'s `triggers:`. Dashboard sees
 the same state.
 
 | Command | Effect |
@@ -342,7 +342,7 @@ title. Sorted newest first.
 
 | Command | Effect |
 | --- | --- |
-| `kortix init` | Scaffold a Kortix project in the current directory. Writes `kortix.toml`, `.kortix/Dockerfile`, the OpenCode config dir with the default agent + kortix-system skill, and a `.kortix/link.json` placeholder. Then, for each coding agent you select (opencode/claude/codex/cursor), symlinks the OpenCode config dir into that agent's native location (`.opencode` / `.claude` → `.kortix/opencode`; codex wires `.agents` → `.kortix/opencode`, its documented cross-tool skills dir) so they share its skills + agents; Codex and Cursor also get a root `AGENTS.md` pointer they read natively (so Cursor needs no rule file). Note: Claude scans `.claude/skills` only one level deep, so skills nested under a grouping folder aren't discovered by Claude locally (they still load in the OpenCode sandbox and for Codex). |
+| `kortix init` | Scaffold a Kortix project in the current directory. Writes `kortix.yaml`, `.kortix/Dockerfile`, the OpenCode config dir with the default agent + kortix-system skill, and a `.kortix/link.json` placeholder. Then, for each coding agent you select (opencode/claude/codex/cursor), symlinks the OpenCode config dir into that agent's native location (`.opencode` / `.claude` → `.kortix/opencode`; codex wires `.agents` → `.kortix/opencode`, its documented cross-tool skills dir) so they share its skills + agents; Codex and Cursor also get a root `AGENTS.md` pointer they read natively (so Cursor needs no rule file). Note: Claude scans `.claude/skills` only one level deep, so skills nested under a grouping folder aren't discovered by Claude locally (they still load in the OpenCode sandbox and for Codex). |
 
 ## Token scope
 
@@ -510,7 +510,7 @@ warns.
   the kortix-system skill. Mention the CLI from there.
 - `change-requests.md` (alongside this file) — full CR data model,
   lifecycle, REST API, and the "MUST open a CR" agent mandate.
-- `kortix.toml` — the manifest the dashboard + the CLI both read.
+- `kortix.yaml` — the manifest the dashboard + the CLI both read.
 - `.kortix/Dockerfile` — your sandbox base image.
 - `.kortix/link.json` — current dir's binding to a remote project
   (project_id + host).

@@ -228,7 +228,7 @@ async function triggersActivation(opts: CtxOpts, paused: boolean): Promise<numbe
   return 0;
 }
 
-// add/rm a [[triggers]] block in the LOCAL kortix.toml (source of truth).
+// add/rm a [[triggers]] block in the LOCAL kortix.yaml (source of truth).
 function triggersAddLocal(
   slug: string | undefined,
   tf: Record<string, string | undefined>,
@@ -299,7 +299,7 @@ function triggersRmLocal(slug: string | undefined): number {
   }
 }
 
-// enabled is config — toggle it in the LOCAL kortix.toml `[[triggers]]` block
+// enabled is config — toggle it in the LOCAL kortix.yaml `[[triggers]]` block
 // (the source of truth), preserving the block's comments. `kortix ship` applies.
 function triggersToggle(slug: string | undefined, enabled: boolean): number {
   if (!slug) {

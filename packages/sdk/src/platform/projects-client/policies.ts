@@ -1,10 +1,10 @@
-// Executor policies — kortix.toml-backed project-wide tool policies.
+// Executor policies — kortix.yaml-backed project-wide tool policies.
 
 import { backendApi } from '../api-client';
 import { unwrap } from './shared';
 import type { ConnectorSyncResult } from './connectors';
 
-// ─── Executor policies (kortix.toml-backed) ────────────────────────────────
+// ─── Executor policies (kortix.yaml-backed) ────────────────────────────────
 
 export type PolicyAction = 'always_run' | 'require_approval' | 'block';
 export type PolicyDefaultMode = 'risk' | 'allow_all';

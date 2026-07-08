@@ -82,7 +82,7 @@ const envSchema = z.object({
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
   // Set to true on managed/cloud deployments; leave false for self-host + dev.
   KORTIX_BILLING_INTERNAL_ENABLED:  optBoolFalse,
-  // EXPERIMENTAL: turns on the [[apps]] section in kortix.toml — manifest
+  // EXPERIMENTAL: turns on the `apps:` section in kortix.yaml — manifest
   // parsing, CRUD routes, manual deploy, and the auto-deploy sweep. Off
   // by default until the wire is hardened.
   KORTIX_APPS_EXPERIMENTAL:         optBoolFalse,

@@ -94,7 +94,7 @@ projectsApp.openapi(
       // anything else as a 502 so the user knows something else is broken.
       const msg = err instanceof Error ? err.message : String(err);
       if (!/(not found|enoent|404)/i.test(msg)) {
-        return c.json({ error: `Failed to read kortix.toml from head branch: ${msg}` }, 502);
+        return c.json({ error: `Failed to read the manifest from head branch: ${msg}` }, 502);
       }
     }
 
@@ -135,7 +135,7 @@ projectsApp.openapi(
 
     invalidateProjectMirror(projectId);
 
-    // A merged CR may have edited a `[[sandbox.templates]]` Dockerfile or spec.
+    // A merged CR may have edited a `sandbox.templates` Dockerfile or spec.
     // Reconcile this project's own templates and pre-build any whose identity
     // drifted, so the next session boots off cache instead of a cold build. The
     // platform default is global (built at startup), so it's deliberately not
@@ -145,7 +145,7 @@ projectsApp.openapi(
       source: 'cr-merge',
     });
 
-    // A merged CR may have edited kortix.toml's [[connectors]]. The connector DB
+    // A merged CR may have edited kortix.yaml's `connectors:` list. The connector DB
     // cache (what the gateway + dashboard read) is derived from the manifest, so
     // reconcile it from the new tip — best-effort, never blocks the merge
     // response. The manifest in git stays the source of truth either way; the

@@ -1865,9 +1865,9 @@ projectsApp.openapi(
   },
 );
 
-// ── [[apps]] CRUD + deploy ──────────────────────────────────────────────────
+// ── apps CRUD + deploy ───────────────────────────────────────────────────────
 //
-// Apps are declared in `[[apps]]` blocks inside kortix.toml. The manifest
+// Apps are declared as `apps:` list entries inside kortix.yaml. The manifest
 // is the source of truth; the `deployments` table stores deploy attempts
 // (one row per version per app). The sweep loop in ./app-sweep.ts auto-
 // deploys on manifest drift; the routes below give the UI and CLI a
@@ -1917,7 +1917,7 @@ projectsApp.openapi(
   },
 );
 
-// POST /v1/projects/:projectId/apps — add a new app to kortix.toml
+// POST /v1/projects/:projectId/apps — add a new app to kortix.yaml
 
 projectsApp.openapi(
   createRoute({

@@ -19,7 +19,7 @@ export { useVisibleAgents } from '../use-visible-agents';
 
 /**
  * Load agents. With `projectId`, the server-side project config is source of
- * truth: it returns declarative `kortix.toml [[agents]]` entries for adopted
+ * truth: it returns declarative `kortix.yaml` `agents:` entries for adopted
  * projects and OpenCode file discovery for legacy projects. Without `projectId`,
  * this falls back to the sandbox OpenCode runtime.
  */

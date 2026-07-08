@@ -614,7 +614,7 @@ export async function authorizeV2(
   }
 
   // (standingRole|userRole) ∩ agentGrant — the central enforcement. A scoped
-  // agent session token can never exceed its kortix.toml kortixCli on a specific
+  // agent session token can never exceed its kortix.yaml kortixCli on a specific
   // capability, EVEN when the resolved role (the agent's standing SA role, or the
   // launching user) would allow it. This is the per-task narrowing on top of the
   // standing identity. Enforced here (not per-route) so it can't be forgotten on

@@ -1,13 +1,14 @@
 /**
- * `[[agents]]` parsing for `kortix.toml`.
+ * `agents` block parsing for `kortix.yaml` (a legacy v1 project may instead
+ * declare `[[agents]]` in `kortix.toml` — both are parsed here).
  *
  * An agent's *behavior* still comes from its OpenCode `.md` (front matter:
  * prompt/model/mode/tools/permission/skill-perms). Once a project declares
- * `[[agents]]`, this block is also the server-side launch roster and the
+ * `agents:`, this block is also the server-side launch roster and the
  * governance policy keyed by agent name. Its grant fields cover the two things
  * the agent `.md` can't express:
  *
- *   1. `connectors` — which integration profiles (by [[connectors]].slug) the
+ *   1. `connectors` — which integration profiles (by `connectors[].slug`) the
  *      agent may call. Default: none.
  *   2. `kortix_cli` — what the agent may do to Kortix itself via the `kortix`
  *      CLI/API (project-scoped iam actions: deploy, open CRs, triggers, …).
@@ -17,15 +18,13 @@
  * (agent ≤ human). The default `kortix` agent is granted everything (`"all"`),
  * which ∩ the user = exactly the user's own permissions.
  *
- * Example:
+ * Example (kortix.yaml, v2):
  *
- *   [[agents]]
- *   name = "kortix"                       # default GP agent — connectors/kortix_cli = "all" (∩ user)
- *
- *   [[agents]]
- *   name       = "release-bot"
- *   connectors = ["github"]               # which integration profiles
- *   kortix_cli = ["project.deploy", "project.cr.open"]   # Kortix CLI/API powers
+ *   agents:
+ *     kortix: {}                          # default GP agent — connectors/kortix_cli = "all" (∩ user)
+ *     release-bot:
+ *       connectors: ["github"]            # which integration profiles
+ *       kortix_cli: ["project.deploy", "project.cr.open"]   # Kortix CLI/API powers
  *
  * Parser mirrors `projects/connectors.ts`: never throws on a bad entry, collects
  * them in `errors` so the UI can render them next to the good ones.
@@ -79,7 +78,7 @@ export type GrantSet = string[] | 'all';
 export interface AgentSpec {
   /** Agent name — unique per project. Matches projectSessions.agentName + the `.md` filename. */
   name: string;
-  /** `kortix.toml#agents.<name>` for UI / error reporting. */
+  /** e.g. `kortix.yaml#agents.<name>` (or the project's actual manifest filename) for UI / error reporting. */
   path: string;
   /** When false the overlay is skipped (the agent still runs from its `.md`, with default-deny scope). */
   enabled: boolean;
@@ -414,7 +413,7 @@ export function resolveGovernedAgentGrant(
         code: 'AGENT_NOT_DECLARED',
         error:
           'This project requires declared agents but has no default_agent configured — ' +
-          'set one in the project settings or kortix.toml before starting a session.',
+          'set one in the project settings or kortix.yaml before starting a session.',
       };
     }
     const spec = findDeclared(declaredDefault);
@@ -422,7 +421,7 @@ export function resolveGovernedAgentGrant(
       return {
         ok: false,
         code: 'AGENT_NOT_DECLARED',
-        error: `This project's default agent "${declaredDefault}" is not declared (or is disabled) in [[agents]] — the "default" sentinel cannot resolve.`,
+        error: `This project's default agent "${declaredDefault}" is not declared (or is disabled) in \`agents\` — the "default" sentinel cannot resolve.`,
       };
     }
     return {
@@ -436,16 +435,17 @@ export function resolveGovernedAgentGrant(
     return {
       ok: false,
       code: 'AGENT_NOT_DECLARED',
-      error: `Agent "${agentName}" is not declared in this project's [[agents]] manifest — this project requires every session/trigger to name a declared agent.`,
+      error: `Agent "${agentName}" is not declared in this project's \`agents\` manifest — this project requires every session/trigger to name a declared agent.`,
     };
   }
   return { ok: true, grant: { agent: agentName, kortixCli: spec.kortixCli, connectors: spec.connectors, env: spec.env } };
 }
 
 /**
- * Convert an AgentSpec back to the TOML-shaped object for the CRUD round-trip.
- * Inverse of `parseAgentEntry`. Omits empty/default fields so the emitted TOML
- * stays minimal.
+ * Convert an AgentSpec back to the raw manifest-entry object for the CRUD
+ * round-trip (serialized as YAML for `kortix.yaml`, or TOML for a legacy v1
+ * `kortix.toml`). Inverse of `parseAgentEntry`. Omits empty/default fields so
+ * the emitted entry stays minimal.
  */
 export function agentSpecToTomlEntry(spec: AgentSpec): Record<string, unknown> {
   const entry: Record<string, unknown> = { name: spec.name };
@@ -462,11 +462,12 @@ export function agentSpecToTomlEntry(spec: AgentSpec): Record<string, unknown> {
 }
 
 /**
- * Apply a secrets/connectors scope edit to the RAW `[[agents]]` array (the
- * dashboard "Access scope" editor's write step), returning a new array. Pure —
- * the route wraps it with load/commit. Preserves every other field on the entry
- * (name, model, file, kortix_cli, enabled) and omits a key when it equals the
- * parser default so the emitted TOML matches hand-authored files:
+ * Apply a secrets/connectors scope edit to the RAW `agents` array (v1's
+ * `[[agents]]` array-of-tables shape; the dashboard "Access scope" editor's
+ * write step), returning a new array. Pure — the route wraps it with
+ * load/commit. Preserves every other field on the entry (name, model, file,
+ * kortix_cli, enabled) and omits a key when it equals the parser default so
+ * the emitted manifest matches hand-authored files:
  *   - env:        'all' is the default → omit; a list/`[]` narrows it.
  *   - connectors: none is the default → omit `[]`; 'all'/a list is explicit.
  * Returns an error (not a throw) when the agent isn't declared.

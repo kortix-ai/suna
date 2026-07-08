@@ -1,21 +1,21 @@
 ---
 name: scheduling
-description: "Schedule recurring or one-time agent runs with Kortix triggers — cron schedules, one-off run_at reminders, and signed webhooks. Use for reminders, recurring monitoring, daily/weekly digests, scheduled posts, and event-driven runs; covers the kortix.toml [[triggers]] format, 6-field croner syntax, fresh-vs-reuse sessions, dedup for recurring runs, and notifying via Slack. Load whenever the user wants something to happen later, on a schedule, repeatedly, or in response to an external event."
+description: "Schedule recurring or one-time agent runs with Kortix triggers — cron schedules, one-off run_at reminders, and signed webhooks. Use for reminders, recurring monitoring, daily/weekly digests, scheduled posts, and event-driven runs; covers the kortix.yaml triggers: format, 6-field croner syntax, fresh-vs-reuse sessions, dedup for recurring runs, and notifying via Slack. Load whenever the user wants something to happen later, on a schedule, repeatedly, or in response to an external event."
 defaultProjectInstall: true
 ---
 
 # Scheduling
 
 Kortix runs work on a schedule through **triggers**. A trigger is a small, durable
-piece of config in the project's `kortix.toml`. When it fires, the platform spins
+piece of config in the project's `kortix.yaml`. When it fires, the platform spins
 up a session and hands your agent a prompt — exactly as if a teammate had typed it.
 There is no separate "scheduler tool" to call at runtime; you *declare* a trigger,
 and the platform's sweep fires it for you.
 
 Two trigger types cover everything:
 
-- **`cron`** — time-based. Either a recurring schedule (`cron = "…"`) or a single
-  future moment (`run_at = "…"`). This is the workhorse for reminders, digests,
+- **`cron`** — time-based. Either a recurring schedule (`cron: "…"`) or a single
+  future moment (`run_at: "…"`). This is the workhorse for reminders, digests,
   and monitoring.
 - **`webhook`** — event-based. Fires on a signed `POST` from an external system
   (GitHub, a SaaS app, your own service). Use it when the *event*, not the clock,
@@ -31,9 +31,9 @@ Two trigger types cover everything:
 
 | The user wants… | Use | How |
 | --- | --- | --- |
-| A one-time reminder or delayed action ("remind me at 4pm", "send this tomorrow 9am") | **cron trigger, one-off** | `type = "cron"` + `run_at = "<ISO-8601>"` |
-| Something to repeat ("every weekday morning", "daily digest", "check hourly") | **cron trigger, recurring** | `type = "cron"` + `cron = "<6-field>"` + `timezone` |
-| To react to an external event ("when a PR opens", "when our error tracker alerts") | **webhook trigger** | `type = "webhook"` + `secret_env` |
+| A one-time reminder or delayed action ("remind me at 4pm", "send this tomorrow 9am") | **cron trigger, one-off** | `type: cron` + `run_at: "<ISO-8601>"` |
+| Something to repeat ("every weekday morning", "daily digest", "check hourly") | **cron trigger, recurring** | `type: cron` + `cron: "<6-field>"` + `timezone` |
+| To react to an external event ("when a PR opens", "when our error tracker alerts") | **webhook trigger** | `type: webhook` + `secret_env` |
 | To **pause mid-task and resume later with full context** | **No native equivalent** | See [Pausing mid-task](#pausing-mid-task-pause_and_wait) — re-fire later instead |
 
 Don't reach for a trigger when the work finishes in this turn, or when you just
@@ -44,48 +44,44 @@ that must outlive the current conversation.
 
 ## How a trigger is declared
 
-Triggers live in `kortix.toml` at the repo root, as `[[triggers]]` array-of-tables
+Triggers live in `kortix.yaml` at the repo root, as a `triggers:` list of
 entries. That file is the single source of truth — the dashboard, the CLI, and the
 platform sweep all read the same entries.
 
-```toml
-# Recurring: a weekday-morning digest
-[[triggers]]
-slug     = "support-digest"          # lowercase, URL-safe, unique among triggers
-name     = "Overnight support digest"
-type     = "cron"
-agent    = "default"                 # which agent the spawned session runs
-enabled  = true
-cron     = "0 0 8 * * 1-5"           # 08:00 Mon–Fri (see cron syntax below)
-timezone = "America/Los_Angeles"
-prompt   = """
-Summarize support tickets opened since {{ cron.last_fired_at }}. Group by theme,
-flag anything urgent, and post the summary to the #support Slack channel.
-"""
+```yaml
+triggers:
+  # Recurring: a weekday-morning digest
+  - slug: support-digest          # lowercase, URL-safe, unique among triggers
+    name: Overnight support digest
+    type: cron
+    agent: default                # which agent the spawned session runs
+    enabled: true
+    cron: "0 0 8 * * 1-5"         # 08:00 Mon–Fri (see cron syntax below)
+    timezone: America/Los_Angeles
+    prompt: |
+      Summarize support tickets opened since {{ cron.last_fired_at }}. Group by theme,
+      flag anything urgent, and post the summary to the #support Slack channel.
 
-# One-off: a reminder that fires once, then goes dormant
-[[triggers]]
-slug    = "contract-review-reminder"
-name    = "Review the Acme contract"
-type    = "cron"
-agent   = "default"
-enabled = true
-run_at  = "2026-07-01T16:00:00-07:00"   # fires once at/after this instant
-prompt  = "Remind the user to review the Acme contract redlines before the 5pm call."
+  # One-off: a reminder that fires once, then goes dormant
+  - slug: contract-review-reminder
+    name: Review the Acme contract
+    type: cron
+    agent: default
+    enabled: true
+    run_at: "2026-07-01T16:00:00-07:00"   # fires once at/after this instant
+    prompt: "Remind the user to review the Acme contract redlines before the 5pm call."
 
-# Event-based: fire when an external system POSTs to us
-[[triggers]]
-slug       = "github-releases"
-name       = "New release handler"
-type       = "webhook"
-agent      = "default"
-enabled    = true
-secret_env = "WEBHOOK_GITHUB_SECRET"     # name of a Secret holding the HMAC key
-prompt     = """
-A '{{ headers.user_agent }}' event arrived.
-Release: {{ body.release.tag_name }} — {{ body.release.name }}.
-Draft release notes and open a CR.
-"""
+  # Event-based: fire when an external system POSTs to us
+  - slug: github-releases
+    name: New release handler
+    type: webhook
+    agent: default
+    enabled: true
+    secret_env: WEBHOOK_GITHUB_SECRET     # name of a Secret holding the HMAC key
+    prompt: |
+      A '{{ headers.user_agent }}' event arrived.
+      Release: {{ body.release.tag_name }} — {{ body.release.name }}.
+      Draft release notes and open a CR.
 ```
 
 ### Required vs optional fields
@@ -117,9 +113,9 @@ dotted access) and `{{ headers.* }}` (`content_type`, `user_agent`,
 
 ### Three ways to create one
 
-1. **Dashboard** — easiest for the user; the UI writes the `[[triggers]]` entry
+1. **Dashboard** — easiest for the user; the UI writes the `triggers:` entry
    for them.
-2. **Edit `kortix.toml` from a session** — add the `[[triggers]]` entry, commit,
+2. **Edit `kortix.yaml` from a session** — add the `triggers:` entry, commit,
    and open a change request (`kortix cr open …`). The trigger goes live once the
    CR merges to the default branch (the sweep reads config from there).
 3. **Have the user add it in the dashboard** when you can't merge config yourself.
@@ -130,8 +126,8 @@ The `kortix` CLI **manages** existing triggers but does not create them:
 kortix triggers ls                 # list triggers + last_fired_at / status
 kortix triggers info <slug>        # full config for one
 kortix triggers fire <slug>        # fire once now (great for testing)
-kortix triggers enable <slug>      # set enabled = true
-kortix triggers disable <slug>     # set enabled = false
+kortix triggers enable <slug>      # set enabled: true
+kortix triggers disable <slug>     # set enabled: false
 ```
 
 After adding a recurring trigger, `kortix triggers fire <slug>` once to confirm
@@ -179,7 +175,7 @@ Croner also accepts the nicknames `@hourly @daily @weekly @monthly @yearly`.
   for anything fancier, schedule the broad slot and add a guard in the prompt
   ("…only proceed if today is in the first 7 days of the month").
 - **One cron expression per trigger.** You can't comma-join two full schedules in
-  one `cron`. For disjoint schedules, declare **multiple** `[[triggers]]` entries.
+  one `cron`. For disjoint schedules, declare **multiple** `triggers:` entries.
 - **No exact-minute wall-clock gates.** The sweep polls ~every 60s and a fire can
   land a few minutes after the scheduled instant. Never write a prompt that does
   `if current_time == "09:00"` — it will silently skip. Compare against a tolerance
@@ -274,21 +270,21 @@ an email reply, an API cooldown), do this instead:
 2. **Schedule a re-fire** for when the wait is over — a one-off `run_at` cron
    trigger (or a recurring one if you need to poll). Put everything the resumed run
    needs into its `prompt`.
-3. To carry context across the gap, set **`session_mode = "reuse"`** so the re-fire
+3. To carry context across the gap, set **`session_mode: reuse`** so the re-fire
    resumes the *same* session and its accumulated state — the closest equivalent to
    "continue where I left off."
 
-```toml
-# "Check back in an hour after the rate limit resets"
-[[triggers]]
-slug         = "resume-export"
-name         = "Resume the data export"
-type         = "cron"
-agent        = "default"
-enabled      = true
-run_at       = "2026-07-01T15:00:00Z"
-session_mode = "reuse"
-prompt       = "Rate-limit window has reset — resume the export from record 1,001 and continue to the end."
+```yaml
+triggers:
+  # "Check back in an hour after the rate limit resets"
+  - slug: resume-export
+    name: Resume the data export
+    type: cron
+    agent: default
+    enabled: true
+    run_at: "2026-07-01T15:00:00Z"
+    session_mode: reuse
+    prompt: "Rate-limit window has reset — resume the export from record 1,001 and continue to the end."
 ```
 
 For very short waits *within* a single turn (seconds to a couple of minutes), a
@@ -303,8 +299,8 @@ There is **no "paused" state for a single trigger** — only `enabled` on/off, o
 removal. Acknowledging "okay, I stopped it" without actually changing config means
 it keeps firing (and keeps costing runs).
 
-- **Stop temporarily:** `kortix triggers disable <slug>` (sets `enabled = false`).
-- **Stop permanently:** remove the `[[triggers]]` entry from `kortix.toml` and
+- **Stop temporarily:** `kortix triggers disable <slug>` (sets `enabled: false`).
+- **Stop permanently:** remove the `triggers:` entry from `kortix.yaml` and
   land the change (CR). One-off `run_at` triggers don't auto-remove after firing —
   they just go dormant; delete the entry to tidy up.
 - **Stop *all* of a project's triggers at once:** the project has a server-side
@@ -323,17 +319,17 @@ it keeps firing (and keeps costing runs).
 
 **"Remind me at 4pm to review the contract."**
 → One-off cron. Convert 4pm in the user's timezone to an ISO-8601 instant; create a
-`type = "cron"` trigger with `run_at` and a `prompt` that states the reminder and
+`type: cron` trigger with `run_at` and a `prompt` that states the reminder and
 posts it to the user's channel. It fires once, then sits dormant.
 
 **"Every weekday at 8am, give me a digest of overnight support tickets in Slack."**
-→ Recurring cron, `cron = "0 0 8 * * 1-5"`, `timezone` = the user's zone,
-`session_mode = "fresh"`. Prompt: pull tickets opened since
+→ Recurring cron, `cron: "0 0 8 * * 1-5"`, `timezone` = the user's zone,
+`session_mode: fresh`. Prompt: pull tickets opened since
 `{{ cron.last_fired_at }}`, summarize, `slack send` to #support. Stay silent on a
 zero-ticket night.
 
 **"Watch our GitHub repo and draft release notes whenever we ship."**
-→ Webhook trigger with `secret_env = "WEBHOOK_GITHUB_SECRET"`; point GitHub's
+→ Webhook trigger with `secret_env: WEBHOOK_GITHUB_SECRET`; point GitHub's
 webhook at `POST /v1/webhooks/projects/<project_id>/<slug>` (GitHub's
 `X-Hub-Signature-256` is accepted natively). Prompt reads `{{ body.release.* }}`,
 drafts notes, opens a CR.
@@ -345,7 +341,7 @@ This is the [idempotency](#idempotency--dedup-for-recurring-runs) pattern in act
 
 **"Process 50k records, but the API rate-limits me."**
 → Not a mid-turn pause. Process a batch, then schedule a `run_at` re-fire (with
-`session_mode = "reuse"`) for after the cooldown, prompting the next run to resume
+`session_mode: reuse`) for after the cooldown, prompting the next run to resume
 from where this one stopped. See [Pausing mid-task](#pausing-mid-task-pause_and_wait).
 
 ---
@@ -365,5 +361,5 @@ from where this one stopped. See [Pausing mid-task](#pausing-mid-task-pause_and_
 
 - **kortix-slack** — how a scheduled run reaches the user (the only eyes on a
   headless fire).
-- **kortix-system** (`references/kortix/kortix-toml.md`, `kortix-cli.md`) — full
+- **kortix-system** (`references/kortix/kortix-yaml.md`, `kortix-cli.md`) — full
   manifest + CLI reference behind everything above.

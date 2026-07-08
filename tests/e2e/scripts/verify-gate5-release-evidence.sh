@@ -547,7 +547,7 @@ jq -e --arg project_id "$api_curl_project_id" '
   and (.project.repo_url | type == "string" and length > 0)
   and (.config | type == "object")
   and (.file_count | type == "number" and . >= 1)
-  and (.files | type == "array" and any(.[]; ((.path // "") == "kortix.toml") or .name == "kortix.toml"))
+  and (.files | type == "array" and any(.[]; ((.path // "") == "kortix.yaml") or (.path // "") == "kortix.toml" or .name == "kortix.yaml" or .name == "kortix.toml"))
 ' "$api_project_detail_file" >/dev/null
 jq -e '
   type == "array"

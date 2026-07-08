@@ -44,7 +44,7 @@ export async function requestProjectSecret(
 }
 
 export interface RequestProjectConnectorInput {
-  /** The Pipedream connector slug (already declared in kortix.toml). */
+  /** The Pipedream connector slug (already declared in kortix.yaml). */
   slug: string;
   expiresInMinutes?: number;
 }

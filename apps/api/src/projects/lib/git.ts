@@ -981,9 +981,9 @@ export async function resolveProjectGitAuthTokenById(projectId: string): Promise
 }
 
 // GET /v1/projects/:projectId/sandboxes
-// Available templates for this project: platform default + any `[[sandbox.templates]]`
-// entries from kortix.toml. Each row includes its live Daytona state so the
-// picker can show "ready" / "building" / "missing" at a glance.
+// Available templates for this project: platform default + any `sandbox:`
+// `templates:` entries from kortix.yaml. Each row includes its live Daytona
+// state so the picker can show "ready" / "building" / "missing" at a glance.
 
 export function parseGitHubRepoUrl(repoUrl: string): { owner: string; repo: string } | null {
   // Accept https://github.com/owner/repo(.git) and git@github.com:owner/repo(.git).

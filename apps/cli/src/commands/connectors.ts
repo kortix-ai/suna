@@ -139,11 +139,11 @@ export async function runConnectors(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  // ── Config mutations edit the LOCAL kortix.toml (the source of truth). No
+  // ── Config mutations edit the LOCAL kortix.yaml (the source of truth). No
   //    cloud call, no auth — you `kortix ship` to apply. Only credentials,
   //    OAuth, reconcile + reads talk to the cloud. ───────────────────
   //    `--apply` skips the local-edit + ship/CR flow and applies the change
-  //    instantly on the cloud project (commit to kortix.toml on main + sync,
+  //    instantly on the cloud project (commit to kortix.yaml on main + sync,
   //    exactly like the dashboard) — handled in the switch below.
   if ((sub === 'add' || sub === 'create') && !applyRemote) return connectorAddLocal(positional[0], f);
   if ((sub === 'rm' || sub === 'remove' || sub === 'delete') && !applyRemote) return connectorRmLocal(positional[0]);
@@ -156,7 +156,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
   try {
     switch (sub) {
       // `--apply` paths: mutate the cloud project directly (commit to
-      // kortix.toml on main + sync, like the dashboard) — no local edit, no CR.
+      // kortix.yaml on main + sync, like the dashboard) — no local edit, no CR.
       case 'add':
       case 'create': {
         const slug = positional[0];
@@ -464,7 +464,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
   }
 }
 
-// ── Local kortix.toml config edits (source of truth; no cloud round-trip) ────
+// ── Local kortix.yaml config edits (source of truth; no cloud round-trip) ────
 
 function connectorAddLocal(slug: string | undefined, f: Record<string, string | undefined>): number {
   if (!slug) return missing('a connector slug');

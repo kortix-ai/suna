@@ -15,7 +15,7 @@ sessions (his old Suna chats), files archived under `legacy/<slug>/`.
 | `agentpress-mapper.ts` (+test) | ✅ done, tested — public.messages (OpenAI) → message+parts |
 | `opencode-db-writer.ts` (+test) | ✅ done, tested — schema-adaptive opencode.db build, returns session ids |
 | `suna-extract.ts` | ✅ done, **ran** — un-archive Daytona + tar /workspace |
-| `suna-push.ts` | ✅ wired — createRepo + push `legacy/<slug>/` + one root kortix.toml |
+| `suna-push.ts` | ✅ wired — createRepo + push `legacy/<slug>/` + one root kortix.yaml |
 | `suna-migration-runner.ts` | ✅ faithful mirror of legacy runner (lease/heartbeat/phases) |
 | `suna-migration-routes.ts` | ✅ eligibility/start/status, **registered** at `/v1/projects/suna-migration/*` |
 | `suna-migration-phases.ts` | ⚠️ **DRAFT** — extract/repo exercised by the script; `db` phase NOT run e2e |

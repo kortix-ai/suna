@@ -122,7 +122,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
     case 'add':
     case 'create': {
       // Add (or update) a connector on the project NOW — committed to
-      // kortix.toml on main + synced server-side, exactly like the dashboard's
+      // kortix.yaml on main + synced server-side, exactly like the dashboard's
       // "Add app". No change request needed; it's live this session. Then run
       // `kortix executor connect <slug>` to surface the auth link.
       const slug = args[0];
@@ -136,7 +136,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
         provider: draft.provider,
         applied: true,
         sync: res.sync,
-        note: `Live now (committed to kortix.toml on main + synced). Next: 'kortix executor connect ${slug}' to get the auth link.`,
+        note: `Live now (committed to kortix.yaml on main + synced). Next: 'kortix executor connect ${slug}' to get the auth link.`,
       });
       break;
     }
@@ -147,7 +147,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
       const slug = args[0];
       if (!slug) throw new CliError('usage: kortix executor rm <slug>', 'USAGE');
       await removeConnector(slug, flags.project);
-      out({ ok: true, slug, removed: true, note: 'Removed from kortix.toml on main + catalog.' });
+      out({ ok: true, slug, removed: true, note: 'Removed from kortix.yaml on main + catalog.' });
       break;
     }
 
@@ -156,7 +156,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
       // the URL to the human. SURFACE this url in your reply — in the web UI it
       // opens a 1-click connect popup; in Slack it's a tappable link. The agent
       // never touches the credential. The connector must already be declared in
-      // kortix.toml (add it + land the change request first).
+      // kortix.yaml (add it + land the change request first).
       const slug = args[0];
       if (!slug) throw new CliError('usage: kortix executor connect <connector-slug>', 'USAGE');
       rejectBuiltinChannel(slug);

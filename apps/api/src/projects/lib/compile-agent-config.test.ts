@@ -463,7 +463,7 @@ const PROJECT = {
   projectId: 'proj-1',
   repoUrl: 'https://example.test/acme/repo.git',
   defaultBranch: 'main',
-  manifestPath: 'kortix.toml',
+  manifestPath: 'kortix.yaml',
   gitAuthToken: null,
 };
 

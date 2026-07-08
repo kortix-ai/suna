@@ -251,7 +251,7 @@ LOG
     account_id: "account-fixture",
     repo_url: "https://github.com/kortix/fixture.git",
     default_branch: "main",
-    manifest_path: "kortix.toml",
+    manifest_path: "kortix.yaml",
     status: "active"
   }' >"$target_dir/api-curl-project.json"
   jq -n '{
@@ -263,13 +263,13 @@ LOG
     file_count: 3,
     files: [
       {type: "file", path: "README.md", name: "README.md"},
-      {type: "file", path: "kortix.toml", name: "kortix.toml"},
+      {type: "file", path: "kortix.yaml", name: "kortix.yaml"},
       {type: "file", path: ".opencode/opencode.jsonc", name: "opencode.jsonc"}
     ]
   }' >"$target_dir/api-curl-project-detail.json"
   jq -n '[
     {type: "file", path: "README.md", name: "README.md"},
-    {type: "file", path: "kortix.toml", name: "kortix.toml"},
+    {type: "file", path: "kortix.yaml", name: "kortix.yaml"},
     {type: "file", path: ".opencode/opencode.jsonc", name: "opencode.jsonc"}
   ]' >"$target_dir/api-curl-project-files.json"
   jq -n '{
