@@ -160,10 +160,15 @@ path, not the pre-existing Review Center submit endpoint.
 - Top-level `kortix submit` (agent muscle-memory verb), thin sugar over
   `POST /v1/projects/:id/review/items`. A `kortix review list|get` read surface can follow;
   submit is the v1 requirement.
-- **Session binding is server-derived, never self-reported.** In-sandbox, the CLI's session
-  identity comes from its existing runtime credentials; the server stamps
-  `origin_session_id` from the authenticated token, exactly like CR attribution. A submission
-  cannot claim to be from a session it isn't.
+- **Session binding is token-derived, never self-reported.** The server stamps
+  `origin_session_id` from the caller's *token* — a session executor token (the sandbox case)
+  carries its `session_id`, so an agent cannot attribute a submission to a session it isn't in.
+  A non-session token (a laptop CLI / automation) supplies the session with an explicit
+  `--session <id>`, still validated against a real session in the project; the token always
+  wins over the flag. There is deliberately no `KORTIX_SESSION_ID` env magic — binding is a
+  pure function of (token scope, explicit `--session`), identical locally and in-sandbox. This
+  is the shape the one-token identity model (`docs/specs/2026-07-08-one-kortix-token-and-cli-centric-platform.md`)
+  formalizes; submit reads `c.get('sessionId')` today and needs no change when that lands.
 - **Governance:** add `project.review.submit` (and `project.review.read`) to
   `GRANTABLE_KORTIX_CLI_ACTIONS`; per-agent grant via the standard `kortix_cli` grant set in
   the manifest. Ungoverned in ungoverned projects, deny-by-default under manifest v2 —

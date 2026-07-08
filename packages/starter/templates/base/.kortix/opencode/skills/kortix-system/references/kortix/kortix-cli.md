@@ -345,12 +345,16 @@ the sandbox forever.
 | `kortix submit --title "<text>" --attach <path> [--attach <path> …]` | Commit + push the attached files on the current branch and submit them for review. Repeatable `--attach` (alias `--attachment`); 25MB per-file cap. |
 | `kortix submit --title "<text>" --description "<text>"` | Submit a note — just a title + description, no files. |
 | `… --description "<text>"` | What it is / what to review (alias `--body`). Shown with the submission; doubles as the note body when there are no attachments. |
+| `… --session <id>` | Attribute the submission to a session. Only needed with a non-session token (e.g. a laptop CLI); inside a sandbox the session is read from your token automatically. |
 | `… --await [--await-timeout <sec>]` | Block until a human verdict. Exit `0` approved, `3` changes requested, `4` rejected, `5` timeout. |
 | `… --json` | Print the created review item (or, with `--await`, the resolved item) as JSON. |
 
-The server automatically binds the submission to your session and
-staples a tamper-proof trace (transcript pointer, the governed actions
-you took, cost so far) — you don't and can't send those yourself.
+The submission binds to your **session from the token itself** — inside a
+sandbox the session executor token carries it, so nothing is self-reported and
+you can't attribute a submission to a session you aren't in (a laptop CLI, whose
+token has no session, uses `--session <id>`). The server also staples a
+tamper-proof trace (transcript pointer, the governed actions you took, cost so
+far) — you don't and can't send those yourself.
 Human feedback on the submission comes back to you as a follow-up
 turn, exactly like a CR review or an answered question.
 

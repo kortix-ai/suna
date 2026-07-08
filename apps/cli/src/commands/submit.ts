@@ -11,7 +11,6 @@ import { statSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { emitJson, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { ApiError } from '../api/client.ts';
-import { sandboxEnvValue } from '../api/sandbox-env.ts';
 import { C, status } from '../style.ts';
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -30,6 +29,9 @@ Options:
   --description "<text>"  What it is / what to review. Doubles as the body of
                           a note when there are no attachments. Alias: --body.
   --attach <path>         File to attach (repeatable, 25MB each). Alias: --attachment.
+  --session <id>          Attribute the submission to a session. Only needed
+                          with a non-session token (e.g. from your laptop);
+                          inside a sandbox the session is read from the token.
   --await                 Block until a human verdict; exit code reflects it
                           (0 approved, 3 changes requested, 4 rejected).
   --await-timeout <sec>   Give up waiting after this many seconds (default: no
@@ -44,8 +46,8 @@ Global options:
 Requires the project's Work Submission experimental feature to be enabled
 (Customize → Settings → Experimental). Inside an agent sandbox the CLI reads
 KORTIX_CLI_TOKEN and KORTIX_PROJECT_ID from the environment automatically —
-you don't need to log in or link. (KORTIX_TOKEN is the sandbox service key,
-not a CLI token.)
+you don't need to log in or link, and the submission binds to that session's
+token. (KORTIX_TOKEN is the sandbox service key, not a CLI token.)
 `;
 
 const EXT_KIND: Record<string, string> = {
@@ -108,6 +110,7 @@ export async function runSubmit(argv: string[]): Promise<number> {
   const rest = [...argv];
   let title: string | undefined;
   let description: string | undefined;
+  let sessionFlag: string | undefined;
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   let awaitVerdict = false;
@@ -117,6 +120,7 @@ export async function runSubmit(argv: string[]): Promise<number> {
   try {
     title = takeFlagValue(rest, ['--title']);
     description = takeFlagValue(rest, ['--description', '--body']);
+    sessionFlag = takeFlagValue(rest, ['--session']);
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     awaitVerdict = takeFlagBool(rest, ['--await']);
@@ -173,8 +177,11 @@ export async function runSubmit(argv: string[]): Promise<number> {
     ...(desc ? { summary: desc } : {}),
     detail,
   };
-  const sessionId = sandboxEnvValue('KORTIX_SESSION_ID');
-  if (sessionId) body.session_id = sessionId;
+  // Session binding is authoritative from the token when it is session-scoped
+  // (the sandbox case — the server reads the session off the credential). An
+  // explicit --session only supplies the session for a non-session token (e.g.
+  // running the CLI from a laptop), and the server still validates it.
+  if (sessionFlag?.trim()) body.session_id = sessionFlag.trim();
 
   let item: ReviewItemResponse;
   try {
