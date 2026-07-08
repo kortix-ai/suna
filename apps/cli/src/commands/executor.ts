@@ -29,6 +29,24 @@ import { CliError, out, parseExecArgs } from '../executor/io.ts';
 
 const PROVIDERS = ['pipedream', 'mcp', 'openapi', 'graphql', 'http'];
 
+// Built-in channels are never added/connected through the executor — the
+// platform materializes their connectors automatically after the channel is
+// wired up. Catch the slugs client-side so an agent gets pointed at the ONE
+// right command instead of a generic reserved-slug error from the API.
+const BUILTIN_CHANNEL_HINTS: Record<string, string> = {
+  slack:
+    'Slack is a built-in channel, not an executor connector. Run `kortix channels connect` — ' +
+    'it prints a one-click "Add to Slack" install link. Once installed, its tools appear here as `kortix_slack.*`.',
+  kortix_slack:
+    'The Slack channel connector is materialized automatically. To (re)connect Slack, run `kortix channels connect` ' +
+    'for a one-click install link.',
+};
+
+function rejectBuiltinChannel(slug: string): void {
+  const hint = BUILTIN_CHANNEL_HINTS[slug];
+  if (hint) throw new CliError(hint, 'BUILTIN_CHANNEL');
+}
+
 // Build a connector draft (ConnectorDraft on the API) from CLI flags.
 function connectorDraftFromFlags(slug: string, flags: Record<string, string | undefined>): Record<string, unknown> {
   const provider = flags.provider;
@@ -109,6 +127,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
       // `kortix executor connect <slug>` to surface the auth link.
       const slug = args[0];
       if (!slug) throw new CliError('usage: kortix executor add <slug> --provider <p> [--app <app>] [--url <url>] …', 'USAGE');
+      rejectBuiltinChannel(slug);
       const draft = connectorDraftFromFlags(slug, flags);
       const res = await addConnector(draft, flags.project);
       out({
@@ -140,6 +159,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
       // kortix.toml (add it + land the change request first).
       const slug = args[0];
       if (!slug) throw new CliError('usage: kortix executor connect <connector-slug>', 'USAGE');
+      rejectBuiltinChannel(slug);
       const expires = flags.expires ? Number(flags.expires) : undefined;
       const link = await mintConnectLink({ slug, expiresInMinutes: expires, projectOverride: flags.project });
       out({
