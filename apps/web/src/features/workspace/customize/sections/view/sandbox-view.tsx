@@ -139,24 +139,14 @@ function describeState(state: string): { label: string; tone: 'ok' | 'busy' | 'f
   return DAYTONA_STATE_LABEL[state] ?? { label: state || 'Unknown', tone: 'idle' };
 }
 
-// Human label for a sandbox provider id. Mirrors the capitalize-first convention
-// used by the provider pin in Settings (see SandboxProviderRow), with a couple of
-// tidy overrides so multi-word ids never render awkwardly.
-const PROVIDER_LABEL: Record<string, string> = {
-  local_docker: 'Local',
-  justavps: 'JustAVPS',
-};
-function providerLabel(provider: string): string {
-  return PROVIDER_LABEL[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
-}
-
-// Small, muted chip naming the sandbox provider a template/build belongs to.
+// Small, muted chip naming the sandbox provider (Daytona / Platinum / Managed)
+// a template/build belongs to — reads the provider field directly, capitalized.
 // Omitted entirely when the provider is unknown — we never render "Unknown".
 function ProviderBadge({ provider }: { provider: string | null | undefined }) {
   if (!provider) return null;
   return (
     <Badge variant="muted" size="sm">
-      {providerLabel(provider)}
+      {provider.charAt(0).toUpperCase() + provider.slice(1)}
     </Badge>
   );
 }
