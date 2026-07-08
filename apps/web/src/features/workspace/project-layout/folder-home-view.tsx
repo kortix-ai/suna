@@ -3,6 +3,7 @@
 import {
   AUTO_FOLDER_LABELS,
   type AutoFolderKind,
+  folderShareLabel,
   isAutoFolderKind,
 } from '@/components/projects/session-folder-grouping';
 import { type SessionSourceKind, sessionSource } from '@/components/projects/session-label';
@@ -20,6 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { AutoFolderPanel } from '@/features/workspace/project-layout/auto-folder-panel';
 import { FolderNameModal } from '@/features/workspace/project-sidebar/modal/folder-name-modal';
 import { FolderShareModal } from '@/features/workspace/project-sidebar/modal/folder-share-modal';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
@@ -165,7 +167,7 @@ export function FolderHomeView({
 
   const title = isAuto ? AUTO_FOLDER_LABELS[folderKey] : (folder?.name ?? '');
   const HeaderIcon = isAuto ? SOURCE_ICONS[folderKey] : Folder;
-  const shared = folder?.visibility === 'project';
+  const shared = !!folder && folder.visibility !== 'private';
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -197,7 +199,7 @@ export function FolderHomeView({
                       {shared ? (
                         <Badge variant="outline" size="sm" className="gap-1">
                           <UsersSolid className="size-3" />
-                          Shared with project
+                          {folder ? folderShareLabel(folder.visibility) : 'Shared'}
                         </Badge>
                       ) : (
                         <span>Private</span>
@@ -256,6 +258,16 @@ export function FolderHomeView({
               )}
             </div>
           </header>
+
+          {isAuto && isAutoFolderKind(folderKey) ? (
+            <AutoFolderPanel projectId={projectId} kind={folderKey} />
+          ) : null}
+
+          {isAuto && (
+            <h3 className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+              Sessions
+            </h3>
+          )}
 
           {isLoading ? (
             <div className="space-y-2">

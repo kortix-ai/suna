@@ -41,6 +41,9 @@ import {
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import { ProjectFolderList } from '@/features/workspace/project-sidebar/project-folder-list';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { useSessionFoldersEnabled } from '@/hooks/projects/use-session-folders-enabled';
+import { SECTION_DEFAULT_OPEN, useSessionFolderUiStore } from '@/stores/session-folder-ui-store';
 import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-switcher';
 import { useAdminRole } from '@/hooks/admin';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
@@ -53,6 +56,7 @@ import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
   CalendarClock,
+  ChevronDown,
   List,
   Mail,
   MessagesSquare,
@@ -86,6 +90,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const isExpanded = state === 'expanded';
   const isMobile = useIsMobile();
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
+
+  const foldersEnabled = useSessionFoldersEnabled(projectId);
+  const sessionsOpen = useSessionFolderUiStore(
+    (s) => s.sectionOpenByProject[projectId]?.sessions ?? SECTION_DEFAULT_OPEN.sessions,
+  );
+  const setSectionOpen = useSessionFolderUiStore((s) => s.setSectionOpen);
 
   // Filter lives in a persisted store (keyed by project) so it survives the
   // project shell remounting on navigation — local state reset to "all" on
@@ -219,70 +229,77 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           </SidebarGroup>
 
           {/* FOLDERS — user-created silos (plus opt-in source folders), a
-              separate section ABOVE the sessions list. Rows link to each
-              folder's home page; the sessions themselves stay in SESSIONS. */}
-          <SidebarGroup className="py-0">
-            <ProjectFolderList projectId={projectId} />
-          </SidebarGroup>
+              collapsible section ABOVE the sessions list. Experimental. Rows
+              link to each folder's home page; the sessions stay in SESSIONS. */}
+          {foldersEnabled && (
+            <SidebarGroup className="py-0">
+              <ProjectFolderList projectId={projectId} />
+            </SidebarGroup>
+          )}
 
-          <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
-            {/* Sessions are always expanded — no collapse toggle. The header
-                label only carries the active filter; the ⋯ button opens the
-                filter menu. */}
-            <div className="flex min-h-0 flex-1 flex-col space-y-2">
-              <SidebarGroupLabel className="text-muted-foreground/60 mt-1 flex h-6 items-center px-0 text-xs font-medium tracking-wider uppercase">
-                <div className="flex w-full flex-row items-center gap-0.5">
-                  <div className="flex min-w-0 flex-1 flex-row items-center gap-0.5 px-2 text-[13px] font-normal">
+          {/* SESSIONS — a collapsible category. Open by default; fills the
+              remaining height when open, collapses to just its header when
+              closed. The ⋯ button opens the filter menu (not the toggle). */}
+          <Collapsible
+            open={sessionsOpen}
+            onOpenChange={(next) => setSectionOpen(projectId, 'sessions', next)}
+            className="group/sessions-section flex min-h-0 flex-col data-[state=open]:flex-1"
+          >
+            <SidebarGroup className="flex min-h-0 flex-col py-0" ref={sessionsGroupRef}>
+              <div className="flex h-7 items-center gap-0.5">
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className="text-muted-foreground/60 hover:text-muted-foreground flex min-w-0 flex-1 items-center gap-1 px-2 text-[13px] font-normal tracking-wider uppercase transition-colors"
+                  >
+                    <ChevronDown className="size-3 shrink-0 transition-transform duration-200 group-data-[state=closed]/sessions-section:-rotate-90" />
                     <span>Sessions</span>
                     {sessionFilter !== 'all' && (
-                      <span className="text-muted-foreground/90 truncate tracking-normal normal-case">
-                        {tI18nHardcoded.raw(
-                          'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextBulled44625b',
-                        )}{' '}
-                        {activeFilterOption.label}
+                      <span className="text-muted-foreground/80 truncate tracking-normal normal-case">
+                        · {activeFilterOption.label}
                       </span>
                     )}
-                  </div>
-                  <DropdownMenu onOpenChange={holdPeek}>
-                    <DropdownMenuContent align="start" className="w-44 p-1">
-                      {SESSION_FILTER_OPTIONS.map((option) => {
-                        const OptionIcon = SESSION_FILTER_ICONS[option.value];
-                        return (
-                          <DropdownMenuItem
-                            key={option.value}
-                            className="cursor-pointer"
-                            onClick={() => setSessionFilter(projectId, option.value)}
-                          >
-                            <OptionIcon className="h-4 w-4" />
-                            {option.label}
-                            <span className="text-muted-foreground ml-auto flex items-center gap-1.5 text-xs tabular-nums">
-                              {sessionFilterCounts.get(option.value) ?? 0}
-                            </span>
-                          </DropdownMenuItem>
-                        );
-                      })}
-                    </DropdownMenuContent>
-                    <DropdownMenuTrigger asChild>
-                      <SidebarMenuButton
-                        type="button"
-                        aria-label={tI18nHardcoded.raw(
-                          'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria39d6d82d',
-                        )}
-                        className="text-muted-foreground/90 hover:text-sidebar-foreground flex size-8 shrink-0 items-center justify-center px-2"
-                      >
-                        <HiDotsHorizontal className="size-3" />
-                      </SidebarMenuButton>
-                    </DropdownMenuTrigger>
-                  </DropdownMenu>
-                </div>
-              </SidebarGroupLabel>
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  </button>
+                </CollapsibleTrigger>
+                <DropdownMenu onOpenChange={holdPeek}>
+                  <DropdownMenuContent align="end" className="w-44 p-1">
+                    {SESSION_FILTER_OPTIONS.map((option) => {
+                      const OptionIcon = SESSION_FILTER_ICONS[option.value];
+                      return (
+                        <DropdownMenuItem
+                          key={option.value}
+                          className="cursor-pointer gap-2"
+                          onClick={() => setSessionFilter(projectId, option.value)}
+                        >
+                          <OptionIcon className="h-4 w-4 shrink-0" />
+                          {option.label}
+                          <span className="text-muted-foreground ml-auto flex items-center gap-1.5 text-xs tabular-nums">
+                            {sessionFilterCounts.get(option.value) ?? 0}
+                          </span>
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuContent>
+                  <DropdownMenuTrigger asChild>
+                    <SidebarMenuButton
+                      type="button"
+                      aria-label={tI18nHardcoded.raw(
+                        'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria39d6d82d',
+                      )}
+                      className="text-muted-foreground/90 hover:text-sidebar-foreground flex size-7 shrink-0 items-center justify-center px-2"
+                    >
+                      <HiDotsHorizontal className="size-3" />
+                    </SidebarMenuButton>
+                  </DropdownMenuTrigger>
+                </DropdownMenu>
+              </div>
+              <CollapsibleContent className="data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down flex min-h-0 flex-col overflow-hidden data-[state=open]:flex-1 data-[state=open]:pt-1">
                 <div className="flex h-full min-h-0 flex-col">
                   <ProjectSessionList projectId={projectId} filter={sessionFilter} />
                 </div>
-              </div>
-            </div>
-          </SidebarGroup>
+              </CollapsibleContent>
+            </SidebarGroup>
+          </Collapsible>
 
           <SidebarGroup className="mt-auto py-0.5">
             <SidebarMenu>

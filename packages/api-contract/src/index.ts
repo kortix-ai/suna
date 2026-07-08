@@ -52,6 +52,7 @@ export const ExperimentalFeatureMapSchema = z.object({
   meet: z.boolean(),
   llm_gateway: z.boolean(),
   review_center: z.boolean(),
+  session_folders: z.boolean(),
 });
 export type ExperimentalFeatureMap = z.infer<typeof ExperimentalFeatureMapSchema>;
 
@@ -181,10 +182,11 @@ export const ProjectSessionSchema = z.object({
 export type ProjectSession = z.infer<typeof ProjectSessionSchema>;
 
 /**
- * A sidebar session folder. `visibility` is 'private' (creator only) or
- * 'project' (every member sees the folder; sessions inside inherit
- * project-wide visibility). The 'restricted' enum value is reserved —
- * folders don't take member allow-lists yet.
+ * A sidebar session folder. Sharing uses the common team-share model:
+ * `visibility` is 'private' (creator only), 'project' (every member), or
+ * 'restricted' (creator + the members/groups in `sharing`). Sessions inside a
+ * shared folder inherit its audience. `sharing` is the same intent shape used
+ * for session sharing, so one picker drives both.
  */
 export const SessionFolderSchema = z.object({
   folder_id: z.string(),
@@ -192,6 +194,7 @@ export const SessionFolderSchema = z.object({
   account_id: z.string(),
   name: z.string(),
   visibility: SessionVisibilitySchema,
+  sharing: SharingIntentSchema,
   position: z.number(),
   created_by: z.string().nullable(),
   is_owner: z.boolean(),

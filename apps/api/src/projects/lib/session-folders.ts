@@ -6,27 +6,45 @@
  * (Slack / Email / Scheduled / Webhooks) are virtual — the web client derives
  * them from `metadata.source` — so they never appear here.
  *
- * Visibility reuses the session enum but only two values are accepted today:
- *   'private' — only the creator sees the folder (its sessions render unfiled
- *               for everyone else, still governed by their own visibility);
- *   'project' — every member sees the folder AND the sessions inside inherit
- *               project-wide visibility (folder sharing by inheritance; see
- *               folderInheritedSessionIds + the sessions list route).
+ * Sharing uses the SAME model as sessions (the common team-share system):
+ *   'private'    — only the creator sees the folder;
+ *   'project'    — every project member sees it;
+ *   'restricted' — the creator + the members/groups in `session_folder_grants`.
+ * Sessions inside a shared folder inherit that folder's audience (see
+ * folderInheritedVisibilityFor + the sessions list/read routes).
  */
 import type { SessionFolder } from '@kortix/api-contract';
-import type { sessionFolders } from '@kortix/db';
+import { sessionFolderGrants, sessionFolders } from '@kortix/db';
+import { eq, inArray } from 'drizzle-orm';
+import {
+  type SecretGrant,
+  type ShareSubject,
+  type SharingIntent,
+  sessionIntentToVisibility,
+  visibilityToIntent,
+} from '../../executor/share';
+import { db } from '../../shared/db';
 
 export type SessionFolderRow = typeof sessionFolders.$inferSelect;
 
-export type FolderVisibility = 'private' | 'project';
+export type FolderVisibility = 'private' | 'project' | 'restricted';
 
-/** Pure: may this viewer see the folder at all? */
+/** Pure: may this viewer SEE the folder in the sidebar? Owner always; project
+ *  folders → everyone; restricted → members/groups in the allow-list. */
 export function isFolderVisibleTo(
   row: Pick<SessionFolderRow, 'visibility' | 'createdBy'>,
-  viewerId: string,
+  grants: SecretGrant[],
+  subject: ShareSubject,
 ): boolean {
+  if (row.createdBy && row.createdBy === subject.userId) return true;
   if (row.visibility === 'project') return true;
-  return !!row.createdBy && row.createdBy === viewerId;
+  if (row.visibility === 'restricted') {
+    for (const g of grants) {
+      if (g.principalType === 'member' && g.principalId === subject.userId) return true;
+      if (g.principalType === 'group' && subject.groupIds.includes(g.principalId)) return true;
+    }
+  }
+  return false;
 }
 
 /** Pure: may this viewer rename/share/delete the folder? */
@@ -40,19 +58,22 @@ export function canManageFolder(
 }
 
 /**
- * Pure: the folder ids whose sessions inherit project-wide visibility. A
- * session in one of these folders is visible to every project member even if
- * its own visibility is 'private' — sharing the folder shares its contents.
+ * Pure: the folder ids whose sessions this viewer inherits access to. A session
+ * filed in one of these folders is visible to the viewer even if the session's
+ * own visibility is private — sharing the folder shares its contents. A private
+ * folder grants nothing beyond its owner (who sees their own sessions anyway).
  */
-export function projectVisibleFolderIds(
-  rows: Array<Pick<SessionFolderRow, 'folderId' | 'visibility'>>,
+export function inheritedFolderIdsFor(
+  rows: Array<Pick<SessionFolderRow, 'folderId' | 'visibility' | 'createdBy'>>,
+  grantsByFolder: Map<string, SecretGrant[]>,
+  subject: ShareSubject,
 ): Set<string> {
-  return new Set(rows.filter((r) => r.visibility === 'project').map((r) => r.folderId));
-}
-
-/** Validate an untrusted visibility value; folders accept private|project only. */
-export function parseFolderVisibility(value: unknown): FolderVisibility | null {
-  return value === 'private' || value === 'project' ? value : null;
+  const out = new Set<string>();
+  for (const r of rows) {
+    if (r.visibility === 'private') continue;
+    if (isFolderVisibleTo(r, grantsByFolder.get(r.folderId) ?? [], subject)) out.add(r.folderId);
+  }
+  return out;
 }
 
 /** Validate an untrusted folder name → trimmed, length-capped, or null. */
@@ -63,9 +84,59 @@ export function parseFolderName(value: unknown): string | null {
   return name;
 }
 
+/** Map a sharing intent → persisted (visibility, grants) using the shared
+ *  session mechanism (private | project | restricted+grants). */
+export function folderIntentToVisibility(intent: SharingIntent): {
+  visibility: FolderVisibility;
+  grants: SecretGrant[];
+} {
+  return sessionIntentToVisibility(intent);
+}
+
+/** Bulk-load folder grants → map folderId → grants. */
+export async function loadFolderGrants(folderIds: string[]): Promise<Map<string, SecretGrant[]>> {
+  const out = new Map<string, SecretGrant[]>();
+  if (folderIds.length === 0) return out;
+  const rows = await db
+    .select({
+      folderId: sessionFolderGrants.folderId,
+      principalType: sessionFolderGrants.principalType,
+      principalId: sessionFolderGrants.principalId,
+    })
+    .from(sessionFolderGrants)
+    .where(inArray(sessionFolderGrants.folderId, folderIds));
+  for (const r of rows) {
+    const list = out.get(r.folderId) ?? [];
+    list.push({ principalType: r.principalType as 'member' | 'group', principalId: r.principalId });
+    out.set(r.folderId, list);
+  }
+  return out;
+}
+
+/** Persist a folder's sharing: set visibility + replace its grants. */
+export async function setFolderSharing(folderId: string, intent: SharingIntent): Promise<void> {
+  const { visibility, grants } = sessionIntentToVisibility(intent);
+  await db
+    .update(sessionFolders)
+    .set({ visibility, updatedAt: new Date() })
+    .where(eq(sessionFolders.folderId, folderId));
+  await db.delete(sessionFolderGrants).where(eq(sessionFolderGrants.folderId, folderId));
+  if (grants.length > 0) {
+    await db
+      .insert(sessionFolderGrants)
+      .values(
+        grants.map((g) => ({
+          folderId,
+          principalType: g.principalType,
+          principalId: g.principalId,
+        })),
+      );
+  }
+}
+
 export function serializeSessionFolder(
   row: SessionFolderRow,
-  ctx: { viewerId: string; canManageProject: boolean },
+  ctx: { viewerId: string; canManageProject: boolean; grants?: SecretGrant[] },
 ): SessionFolder {
   const isOwner = !!row.createdBy && row.createdBy === ctx.viewerId;
   return {
@@ -74,6 +145,10 @@ export function serializeSessionFolder(
     account_id: row.accountId,
     name: row.name,
     visibility: row.visibility,
+    sharing: visibilityToIntent(
+      row.visibility as 'private' | 'project' | 'restricted',
+      ctx.grants ?? [],
+    ),
     position: row.position,
     created_by: row.createdBy,
     is_owner: isOwner,

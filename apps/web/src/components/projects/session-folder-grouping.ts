@@ -37,6 +37,13 @@ export function isAutoFolderKind(value: string): value is AutoFolderKind {
   return (AUTO_FOLDER_ORDER as string[]).includes(value);
 }
 
+/** Human label for a folder's share audience, from its unified visibility. */
+export function folderShareLabel(visibility: SessionFolder['visibility']): string {
+  if (visibility === 'project') return 'Shared with team';
+  if (visibility === 'restricted') return 'Shared with members';
+  return 'Private';
+}
+
 export interface FolderGroup {
   folder: SessionFolder;
   sessions: ProjectSession[];

@@ -545,11 +545,14 @@ flow(
         { params: { projectId: p.id } },
       );
       r.status(201);
-      r.body().has("$.visibility", "private").exists("$.folder_id");
+      r.body()
+        .has("$.visibility", "private")
+        .has("$.sharing.mode", "private")
+        .exists("$.folder_id");
       folderId = r.json<any>().folder_id;
     });
 
-    await ctx.step("empty name → 400; invalid visibility → 400", async () => {
+    await ctx.step("empty name → 400; invalid sharing → 400", async () => {
       const r1 = await owner.post(
         "/v1/projects/:projectId/session-folders",
         { name: "  " },
@@ -558,7 +561,7 @@ flow(
       r1.status(400);
       const r2 = await owner.post(
         "/v1/projects/:projectId/session-folders",
-        { name: "x", visibility: "restricted" },
+        { name: "x", sharing: { mode: "bogus" } },
         { params: { projectId: p.id } },
       );
       r2.status(400);
@@ -594,11 +597,14 @@ flow(
     await ctx.step("owner rename + share project-wide → 200", async () => {
       const r = await owner.patch(
         "/v1/projects/:projectId/session-folders/:folderId",
-        { name: "e2e Growth 2", visibility: "project" },
+        { name: "e2e Growth 2", sharing: { mode: "project" } },
         { params: { projectId: p.id, folderId } },
       );
       r.status(200);
-      r.body().has("$.name", "e2e Growth 2").has("$.visibility", "project");
+      r.body()
+        .has("$.name", "e2e Growth 2")
+        .has("$.visibility", "project")
+        .has("$.sharing.mode", "project");
     });
 
     await ctx.step("shared folder is now visible to the member, but not manageable → 403", async () => {
@@ -695,7 +701,7 @@ flow(
     await ctx.step("sharing the FOLDER makes the session visible by inheritance", async () => {
       const share = await owner.patch(
         "/v1/projects/:projectId/session-folders/:folderId",
-        { visibility: "project" },
+        { sharing: { mode: "project" } },
         { params: { projectId: p.id, folderId } },
       );
       share.status(200);

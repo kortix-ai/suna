@@ -1,16 +1,21 @@
 import { describe, expect, test } from 'bun:test';
+import type { SecretGrant, ShareSubject } from '../../executor/share';
 import {
-  type SessionFolderRow,
   canManageFolder,
+  folderIntentToVisibility,
+  inheritedFolderIdsFor,
   isFolderVisibleTo,
   parseFolderName,
-  parseFolderVisibility,
-  projectVisibleFolderIds,
   serializeSessionFolder,
+  type SessionFolderRow,
 } from './session-folders';
 
 const OWNER = 'user-owner';
 const OTHER = 'user-other';
+
+function subject(userId: string, groupIds: string[] = []): ShareSubject {
+  return { userId, groupIds };
+}
 
 function folderRow(overrides: Partial<SessionFolderRow> = {}): SessionFolderRow {
   return {
@@ -29,16 +34,28 @@ function folderRow(overrides: Partial<SessionFolderRow> = {}): SessionFolderRow 
 
 describe('isFolderVisibleTo', () => {
   test('private folder is visible only to its creator', () => {
-    expect(isFolderVisibleTo(folderRow(), OWNER)).toBe(true);
-    expect(isFolderVisibleTo(folderRow(), OTHER)).toBe(false);
+    expect(isFolderVisibleTo(folderRow(), [], subject(OWNER))).toBe(true);
+    expect(isFolderVisibleTo(folderRow(), [], subject(OTHER))).toBe(false);
   });
 
   test('project folder is visible to everyone', () => {
-    expect(isFolderVisibleTo(folderRow({ visibility: 'project' }), OTHER)).toBe(true);
+    expect(isFolderVisibleTo(folderRow({ visibility: 'project' }), [], subject(OTHER))).toBe(true);
   });
 
-  test('private folder with no creator is visible to nobody', () => {
-    expect(isFolderVisibleTo(folderRow({ createdBy: null }), OWNER)).toBe(false);
+  test('restricted folder is visible to a granted member', () => {
+    const grants: SecretGrant[] = [{ principalType: 'member', principalId: OTHER }];
+    expect(isFolderVisibleTo(folderRow({ visibility: 'restricted' }), grants, subject(OTHER))).toBe(true);
+    expect(isFolderVisibleTo(folderRow({ visibility: 'restricted' }), grants, subject('nope'))).toBe(false);
+  });
+
+  test('restricted folder is visible to a granted group member', () => {
+    const grants: SecretGrant[] = [{ principalType: 'group', principalId: 'g-1' }];
+    expect(isFolderVisibleTo(folderRow({ visibility: 'restricted' }), grants, subject(OTHER, ['g-1']))).toBe(true);
+    expect(isFolderVisibleTo(folderRow({ visibility: 'restricted' }), grants, subject(OTHER, ['g-2']))).toBe(false);
+  });
+
+  test('creator always sees their restricted folder even without a grant', () => {
+    expect(isFolderVisibleTo(folderRow({ visibility: 'restricted' }), [], subject(OWNER))).toBe(true);
   });
 });
 
@@ -56,28 +73,41 @@ describe('canManageFolder', () => {
   });
 });
 
-describe('projectVisibleFolderIds', () => {
-  test('collects only project-visible folder ids', () => {
-    const ids = projectVisibleFolderIds([
-      folderRow({ folderId: 'a', visibility: 'project' }),
-      folderRow({ folderId: 'b', visibility: 'private' }),
-      folderRow({ folderId: 'c', visibility: 'project' }),
-    ]);
-    expect([...ids].sort()).toEqual(['a', 'c']);
+describe('inheritedFolderIdsFor', () => {
+  test('project folders inherit to everyone; private folders inherit to nobody', () => {
+    const rows = [
+      folderRow({ folderId: 'proj', visibility: 'project' }),
+      folderRow({ folderId: 'priv', visibility: 'private' }),
+    ];
+    expect([...inheritedFolderIdsFor(rows, new Map(), subject(OTHER))]).toEqual(['proj']);
   });
 
-  test('empty input yields empty set', () => {
-    expect(projectVisibleFolderIds([]).size).toBe(0);
+  test('restricted folders inherit only to grantees', () => {
+    const rows = [folderRow({ folderId: 'r', visibility: 'restricted' })];
+    const grants = new Map<string, SecretGrant[]>([['r', [{ principalType: 'member', principalId: OTHER }]]]);
+    expect([...inheritedFolderIdsFor(rows, grants, subject(OTHER))]).toEqual(['r']);
+    expect([...inheritedFolderIdsFor(rows, grants, subject('nope'))]).toEqual([]);
   });
 });
 
-describe('parseFolderVisibility', () => {
-  test('accepts private and project only', () => {
-    expect(parseFolderVisibility('private')).toBe('private');
-    expect(parseFolderVisibility('project')).toBe('project');
-    expect(parseFolderVisibility('restricted')).toBeNull();
-    expect(parseFolderVisibility(undefined)).toBeNull();
-    expect(parseFolderVisibility(1)).toBeNull();
+describe('folderIntentToVisibility', () => {
+  test('project intent maps to project, no grants', () => {
+    expect(folderIntentToVisibility({ mode: 'project' })).toEqual({ visibility: 'project', grants: [] });
+  });
+
+  test('private intent maps to private', () => {
+    expect(folderIntentToVisibility({ mode: 'private', ownerId: OWNER })).toEqual({ visibility: 'private', grants: [] });
+  });
+
+  test('members intent maps to restricted + grants; empty collapses to private', () => {
+    expect(folderIntentToVisibility({ mode: 'members', memberIds: [OTHER], groupIds: ['g-1'] })).toEqual({
+      visibility: 'restricted',
+      grants: [
+        { principalType: 'member', principalId: OTHER },
+        { principalType: 'group', principalId: 'g-1' },
+      ],
+    });
+    expect(folderIntentToVisibility({ mode: 'members', memberIds: [], groupIds: [] })).toEqual({ visibility: 'private', grants: [] });
   });
 });
 
@@ -96,21 +126,25 @@ describe('parseFolderName', () => {
 });
 
 describe('serializeSessionFolder', () => {
-  test('marks owner + manage rights for the creator', () => {
+  test('marks owner + manage rights + sharing for the creator', () => {
     const out = serializeSessionFolder(folderRow(), { viewerId: OWNER, canManageProject: false });
     expect(out.is_owner).toBe(true);
     expect(out.can_manage).toBe(true);
     expect(out.folder_id).toBe('f-1');
+    expect(out.sharing).toEqual({ mode: 'private', ownerId: '' });
     expect(out.created_at).toBe('2026-07-01T00:00:00.000Z');
   });
 
-  test('non-owner without manage rights cannot manage', () => {
-    const out = serializeSessionFolder(folderRow(), { viewerId: OTHER, canManageProject: false });
-    expect(out.is_owner).toBe(false);
-    expect(out.can_manage).toBe(false);
+  test('restricted folder serializes grants into a members intent', () => {
+    const out = serializeSessionFolder(folderRow({ visibility: 'restricted' }), {
+      viewerId: OWNER,
+      canManageProject: false,
+      grants: [{ principalType: 'member', principalId: OTHER }],
+    });
+    expect(out.sharing).toEqual({ mode: 'members', memberIds: [OTHER], groupIds: [] });
   });
 
-  test("project manager can manage another user's folder", () => {
+  test('project manager can manage another users folder', () => {
     const out = serializeSessionFolder(folderRow(), { viewerId: OTHER, canManageProject: true });
     expect(out.can_manage).toBe(true);
   });

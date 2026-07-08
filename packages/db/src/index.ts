@@ -58,6 +58,7 @@ export {
   projectSessionPublicShares,
   projectSessionVisibilityEnum,
   sessionFolders,
+  sessionFolderGrants,
   projectSnapshotBuilds,
   sandboxTemplates,
   sessionSandboxes,

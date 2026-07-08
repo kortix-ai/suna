@@ -22,7 +22,7 @@ import { AnyObject, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, Ses
 import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
-import { projectVisibleFolderIds } from '../lib/session-folders';
+import { inheritedFolderIdsFor, loadFolderGrants } from '../lib/session-folders';
 import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
 import {
   createSession,
@@ -482,14 +482,21 @@ projectsApp.openapi(
   const grantsBySession = await loadSessionGrants(
     listableRows.filter((r) => r.visibility === 'restricted').map((r) => r.sessionId),
   );
-  // Folder sharing by inheritance: a session inside a project-visible folder
-  // is visible to every member, whatever its own visibility says.
-  const sharedFolderIds = projectVisibleFolderIds(
-    await db
-      .select({ folderId: sessionFolders.folderId, visibility: sessionFolders.visibility })
-      .from(sessionFolders)
-      .where(eq(sessionFolders.projectId, projectId)),
+  // Folder sharing by inheritance: a session inside a folder shared with this
+  // viewer (project-wide, or restricted+granted) is visible even if the session
+  // itself is private. Grant-aware, mirroring session sharing.
+  const folderRows = await db
+    .select({
+      folderId: sessionFolders.folderId,
+      visibility: sessionFolders.visibility,
+      createdBy: sessionFolders.createdBy,
+    })
+    .from(sessionFolders)
+    .where(eq(sessionFolders.projectId, projectId));
+  const folderGrants = await loadFolderGrants(
+    folderRows.filter((f) => f.visibility === 'restricted').map((f) => f.folderId),
   );
+  const sharedFolderIds = inheritedFolderIdsFor(folderRows, folderGrants, subject);
   let visible = listableRows.filter((r) =>
     (r.folderId != null && sharedFolderIds.has(r.folderId)) ||
     isSessionVisibleTo(

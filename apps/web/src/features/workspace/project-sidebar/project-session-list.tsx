@@ -3,11 +3,11 @@
 import { useTranslations } from 'next-intl';
 
 import {
+  type SessionFilterValue,
+  type SessionSourceKind,
   directSubsessions,
   matchesSessionFilter,
   sessionSource,
-  type SessionFilterValue,
-  type SessionSourceKind,
 } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,23 +25,23 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { Icon } from '@/features/icon/icon';
 import { FolderNameModal } from '@/features/workspace/project-sidebar/modal/folder-name-modal';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
-import { Icon } from '@/features/icon/icon';
+import { cn } from '@/lib/utils';
 import {
+  type ProjectSession,
+  type ProjectSessionStatus,
+  type SessionFolder,
   listProjectSessions,
   listSessionFolders,
   restartProjectSession,
   setSessionFolder,
   stopProjectSession,
-  type ProjectSession,
-  type ProjectSessionStatus,
-  type SessionFolder,
 } from '@kortix/sdk/projects-client';
-import { cn } from '@/lib/utils';
-import { Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
+import { type Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import {
@@ -50,17 +50,17 @@ import {
   FolderInput,
   FolderMinus,
   FolderPlus,
+  type LucideIcon,
   Mail,
   MoreHorizontal,
   RotateCcw,
   Square,
   Webhook,
-  type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
-import { IconType } from 'react-icons/lib';
+import type { IconType } from 'react-icons/lib';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -248,9 +248,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
                   restartMutation.isPending && restartMutation.variables === session.session_id
                 }
                 onStop={(id) => stopMutation.mutate(id)}
-                isStopping={
-                  stopMutation.isPending && stopMutation.variables === session.session_id
-                }
+                isStopping={stopMutation.isPending && stopMutation.variables === session.session_id}
                 onMove={moveSession}
                 onNewFolderForSession={(sessionId) => setNewFolderForSession(sessionId)}
               />

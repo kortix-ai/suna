@@ -3,11 +3,12 @@
 import {
   AUTO_FOLDER_LABELS,
   AUTO_FOLDER_ORDER,
-  groupSessions,
   type AutoFolderKind,
+  groupSessions,
 } from '@/components/projects/session-folder-grouping';
 import type { SessionSourceKind } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   DropdownMenu,
@@ -19,39 +20,46 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
+import { SidebarMenuButton, useSidebar } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
 import { FolderNameModal } from '@/features/workspace/project-sidebar/modal/folder-name-modal';
 import { FolderShareModal } from '@/features/workspace/project-sidebar/modal/folder-share-modal';
-import { SidebarGroupLabel, SidebarMenuButton, useSidebar } from '@/components/ui/sidebar';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { useSessionFolderUiStore } from '@/stores/session-folder-ui-store';
+import { cn } from '@/lib/utils';
+import { SECTION_DEFAULT_OPEN, useSessionFolderUiStore } from '@/stores/session-folder-ui-store';
 import {
+  type SessionFolder,
   deleteSessionFolder,
   listProjectSessions,
   listSessionFolders,
   setSessionFolder,
-  type SessionFolder,
 } from '@kortix/sdk/projects-client';
-import { cn } from '@/lib/utils';
-import { Icon as IconMynauiType, Pencil, Share, TrashSolid, UsersSolid } from '@mynaui/icons-react';
+import {
+  type Icon as IconMynauiType,
+  Pencil,
+  Share,
+  TrashSolid,
+  UsersSolid,
+} from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowUpRight,
   CalendarClock,
+  ChevronDown,
   EyeOff,
   Folder,
   FolderPlus,
+  type LucideIcon,
   Mail,
   MoreHorizontal,
   Plus,
   Webhook,
-  type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
-import { IconType } from 'react-icons/lib';
+import type { IconType } from 'react-icons/lib';
 
 const SOURCE_ICONS: Record<
   Exclude<SessionSourceKind, 'chat'>,
@@ -66,16 +74,18 @@ const SOURCE_ICONS: Record<
 
 const SESSION_DRAG_TYPE = 'application/x-kortix-session';
 
-// Stable fallback for the zustand selector — a fresh `{}` per render changes
+// Stable fallback for the zustand selectors — a fresh `{}` per render changes
 // identity every time and re-renders forever (getSnapshot loop).
 const NO_AUTO_PREFS: Partial<Record<AutoFolderKind, boolean>> = {};
+const NO_SECTION_STATE: Partial<Record<'folders' | 'sessions', boolean>> = {};
 
 /**
- * The FOLDERS sidebar section — user-created folders as flat rows above the
- * SESSIONS list, styled exactly like session rows (icon in the dot slot, count
- * where the timestamp sits). Clicking a folder opens its home page; sessions
- * are dropped onto rows to file them. Virtual source folders (Slack / Email /
- * Scheduled / Webhooks…) are opt-in via the ⋯ menu.
+ * The FOLDERS sidebar category — a collapsible section (closed by default)
+ * holding user-created folders as flat rows styled like session rows (icon in
+ * the dot slot, count where the timestamp sits). Clicking a folder opens its
+ * home page; sessions are dropped onto rows to file them. Virtual source
+ * folders (Slack / Email / Scheduled / Webhooks…) are opt-in via the ⋯ menu.
+ * Gated as an experimental feature by the caller.
  */
 export function ProjectFolderList({ projectId }: { projectId: string }) {
   const pathname = usePathname();
@@ -89,10 +99,13 @@ export function ProjectFolderList({ projectId }: { projectId: string }) {
   const [folderToDelete, setFolderToDelete] = useState<SessionFolder | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
-  const showAuto = useSessionFolderUiStore(
-    (s) => s.showAutoByProject[projectId] ?? NO_AUTO_PREFS,
-  );
+  const showAuto = useSessionFolderUiStore((s) => s.showAutoByProject[projectId] ?? NO_AUTO_PREFS);
   const setShowAuto = useSessionFolderUiStore((s) => s.setShowAuto);
+  const sectionState = useSessionFolderUiStore(
+    (s) => s.sectionOpenByProject[projectId] ?? NO_SECTION_STATE,
+  );
+  const setSectionOpen = useSessionFolderUiStore((s) => s.setSectionOpen);
+  const open = sectionState.folders ?? SECTION_DEFAULT_OPEN.folders;
 
   const { data: sessions } = useQuery({
     queryKey: ['project-sessions', projectId],
@@ -132,11 +145,7 @@ export function ProjectFolderList({ projectId }: { projectId: string }) {
     },
   });
 
-  // Counts only — the section renders flat rows, the sessions stay in SESSIONS.
-  const grouped = useMemo(
-    () => groupSessions(sessions ?? [], folders ?? []),
-    [sessions, folders],
-  );
+  const grouped = useMemo(() => groupSessions(sessions ?? [], folders ?? []), [sessions, folders]);
   const autoCounts = useMemo(() => {
     const counts = new Map<AutoFolderKind, number>();
     for (const group of grouped.auto) counts.set(group.kind, group.sessions.length);
@@ -144,6 +153,7 @@ export function ProjectFolderList({ projectId }: { projectId: string }) {
   }, [grouped]);
 
   const enabledAutoKinds = AUTO_FOLDER_ORDER.filter((kind) => showAuto[kind] ?? false);
+  const totalCount = grouped.folders.length + enabledAutoKinds.length;
 
   const folderHref = (key: string) => `/projects/${projectId}/folders/${key}`;
 
@@ -169,175 +179,188 @@ export function ProjectFolderList({ projectId }: { projectId: string }) {
   });
 
   return (
-    <div className="flex flex-col space-y-2">
-      <SidebarGroupLabel className="text-muted-foreground/60 mt-1 flex h-6 items-center px-0 text-xs font-medium tracking-wider uppercase">
-        <div className="flex w-full flex-row items-center gap-0.5">
-          <div className="flex min-w-0 flex-1 flex-row items-center gap-0.5 px-2 text-[13px] font-normal">
+    <Collapsible
+      open={open}
+      onOpenChange={(next) => setSectionOpen(projectId, 'folders', next)}
+      className="group/folders-section flex flex-col"
+    >
+      <div className="flex h-7 items-center gap-0.5">
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className="text-muted-foreground/60 hover:text-muted-foreground flex min-w-0 flex-1 items-center gap-1 px-2 text-[13px] font-normal tracking-wider uppercase transition-colors"
+          >
+            <ChevronDown className="size-3 shrink-0 transition-transform duration-200 group-data-[state=closed]/folders-section:-rotate-90" />
             <span>Folders</span>
-          </div>
-          <Hint label="New folder" side="bottom">
+            {totalCount > 0 && (
+              <span className="text-muted-foreground/50 tracking-normal tabular-nums normal-case">
+                {totalCount}
+              </span>
+            )}
+          </button>
+        </CollapsibleTrigger>
+        <DropdownMenu onOpenChange={holdPeek}>
+          <DropdownMenuContent align="end" className="w-52 p-1">
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onSelect={() => setFolderModal({ folder: null })}
+            >
+              <FolderPlus />
+              New folder
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-muted-foreground/70 px-2 text-[11px] font-normal tracking-wide uppercase">
+              Automatic folders
+            </DropdownMenuLabel>
+            {AUTO_FOLDER_ORDER.map((kind) => {
+              const OptionIcon = SOURCE_ICONS[kind];
+              return (
+                <DropdownMenuCheckboxItem
+                  key={kind}
+                  className="cursor-pointer gap-2"
+                  checked={showAuto[kind] ?? false}
+                  onCheckedChange={(checked) => setShowAuto(projectId, kind, checked === true)}
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  <OptionIcon className="size-4 shrink-0" />
+                  {AUTO_FOLDER_LABELS[kind]}
+                  <span className="text-muted-foreground ml-auto text-xs tabular-nums">
+                    {autoCounts.get(kind) ?? 0}
+                  </span>
+                </DropdownMenuCheckboxItem>
+              );
+            })}
+          </DropdownMenuContent>
+          <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               type="button"
-              aria-label="New folder"
-              onClick={() => setFolderModal({ folder: null })}
-              className="text-muted-foreground/90 hover:text-sidebar-foreground flex size-8 shrink-0 items-center justify-center px-2"
+              aria-label="Folder options"
+              className="text-muted-foreground/90 hover:text-sidebar-foreground flex size-7 shrink-0 items-center justify-center px-2"
             >
-              <FolderPlus className="size-3.5" />
+              <MoreHorizontal className="size-3.5" />
             </SidebarMenuButton>
-          </Hint>
-          <DropdownMenu onOpenChange={holdPeek}>
-            <DropdownMenuContent align="start" className="w-48 p-1">
-              <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
-                Show source folders
-              </DropdownMenuLabel>
-              {AUTO_FOLDER_ORDER.map((kind) => {
-                const OptionIcon = SOURCE_ICONS[kind];
-                return (
-                  <DropdownMenuCheckboxItem
-                    key={kind}
-                    className="cursor-pointer"
-                    checked={showAuto[kind] ?? false}
-                    onCheckedChange={(checked) => setShowAuto(projectId, kind, checked === true)}
-                    onSelect={(e) => e.preventDefault()}
-                  >
-                    <OptionIcon className="size-4" />
-                    {AUTO_FOLDER_LABELS[kind]}
-                    <span className="text-muted-foreground ml-auto text-xs tabular-nums">
-                      {autoCounts.get(kind) ?? 0}
-                    </span>
-                  </DropdownMenuCheckboxItem>
-                );
-              })}
-            </DropdownMenuContent>
-            <DropdownMenuTrigger asChild>
-              <SidebarMenuButton
-                type="button"
-                aria-label="Folder options"
-                className="text-muted-foreground/90 hover:text-sidebar-foreground flex size-8 shrink-0 items-center justify-center px-2"
-              >
-                <MoreHorizontal className="size-3" />
-              </SidebarMenuButton>
-            </DropdownMenuTrigger>
-          </DropdownMenu>
-        </div>
-      </SidebarGroupLabel>
-
-      <div className="max-h-56 space-y-px overflow-y-auto">
-        {grouped.folders.length === 0 && enabledAutoKinds.length === 0 ? (
-          <div className="text-muted-foreground/60 px-2 pb-1 text-xs">
-            No folders yet — create one to organize sessions.
-          </div>
-        ) : (
-          <>
-            {grouped.folders.map(({ folder, sessions: folderSessions }) => (
-              <FolderRow
-                key={folder.folder_id}
-                name={folder.name}
-                count={folderSessions.length}
-                icon={Folder}
-                shared={folder.visibility === 'project'}
-                href={folderHref(folder.folder_id)}
-                isActive={!!pathname?.includes(`/folders/${folder.folder_id}`)}
-                isDropTarget={dropTarget === folder.folder_id}
-                {...dropHandlers(folder.folder_id)}
-                menu={
-                  <>
-                    <DropdownMenuItem
-                      className="cursor-pointer"
-                      onSelect={() => router.push(folderHref(folder.folder_id))}
-                    >
-                      <ArrowUpRight />
-                      Open folder
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="cursor-pointer"
-                      onSelect={() => newSession({ create: { folder_id: folder.folder_id } })}
-                    >
-                      <Plus />
-                      New session here
-                    </DropdownMenuItem>
-                    {folder.can_manage && (
-                      <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="cursor-pointer"
-                          onSelect={() => setFolderModal({ folder })}
-                        >
-                          <Pencil />
-                          Rename
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="cursor-pointer"
-                          onSelect={() => setFolderToShare(folder)}
-                        >
-                          <Share />
-                          Share
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="cursor-pointer"
-                          variant="destructive"
-                          onSelect={() => setFolderToDelete(folder)}
-                        >
-                          <TrashSolid />
-                          Delete
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                  </>
-                }
-              />
-            ))}
-            {enabledAutoKinds.map((kind) => (
-              <FolderRow
-                key={kind}
-                name={AUTO_FOLDER_LABELS[kind]}
-                count={autoCounts.get(kind) ?? 0}
-                icon={SOURCE_ICONS[kind]}
-                shared={false}
-                href={folderHref(kind)}
-                isActive={!!pathname?.includes(`/folders/${kind}`)}
-                isDropTarget={false}
-                menu={
-                  <>
-                    <DropdownMenuItem
-                      className="cursor-pointer"
-                      onSelect={() => router.push(folderHref(kind))}
-                    >
-                      <ArrowUpRight />
-                      Open folder
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="cursor-pointer"
-                      onSelect={() => setShowAuto(projectId, kind, false)}
-                    >
-                      <EyeOff />
-                      Hide from sidebar
-                    </DropdownMenuItem>
-                  </>
-                }
-              />
-            ))}
-          </>
-        )}
+          </DropdownMenuTrigger>
+        </DropdownMenu>
       </div>
+
+      <CollapsibleContent className="data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden">
+        <div className="max-h-52 space-y-px overflow-y-auto pt-1">
+          {totalCount === 0 ? (
+            <div className="text-muted-foreground/60 px-2 pb-1 text-xs">
+              No folders yet — create one to organize sessions.
+            </div>
+          ) : (
+            <>
+              {grouped.folders.map(({ folder, sessions: folderSessions }) => (
+                <FolderRow
+                  key={folder.folder_id}
+                  name={folder.name}
+                  count={folderSessions.length}
+                  icon={Folder}
+                  shared={folder.visibility !== 'private'}
+                  href={folderHref(folder.folder_id)}
+                  isActive={!!pathname?.includes(`/folders/${folder.folder_id}`)}
+                  isDropTarget={dropTarget === folder.folder_id}
+                  {...dropHandlers(folder.folder_id)}
+                  menu={
+                    <>
+                      <DropdownMenuItem
+                        className="cursor-pointer"
+                        onSelect={() => router.push(folderHref(folder.folder_id))}
+                      >
+                        <ArrowUpRight />
+                        Open folder
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="cursor-pointer"
+                        onSelect={() => newSession({ create: { folder_id: folder.folder_id } })}
+                      >
+                        <Plus />
+                        New session here
+                      </DropdownMenuItem>
+                      {folder.can_manage && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="cursor-pointer"
+                            onSelect={() => setFolderModal({ folder })}
+                          >
+                            <Pencil />
+                            Rename
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="cursor-pointer"
+                            onSelect={() => setFolderToShare(folder)}
+                          >
+                            <Share />
+                            Share
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="cursor-pointer"
+                            variant="destructive"
+                            onSelect={() => setFolderToDelete(folder)}
+                          >
+                            <TrashSolid />
+                            Delete
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </>
+                  }
+                />
+              ))}
+              {enabledAutoKinds.map((kind) => (
+                <FolderRow
+                  key={kind}
+                  name={AUTO_FOLDER_LABELS[kind]}
+                  count={autoCounts.get(kind) ?? 0}
+                  icon={SOURCE_ICONS[kind]}
+                  shared={false}
+                  href={folderHref(kind)}
+                  isActive={!!pathname?.includes(`/folders/${kind}`)}
+                  isDropTarget={false}
+                  menu={
+                    <>
+                      <DropdownMenuItem
+                        className="cursor-pointer"
+                        onSelect={() => router.push(folderHref(kind))}
+                      >
+                        <ArrowUpRight />
+                        Open folder
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="cursor-pointer"
+                        onSelect={() => setShowAuto(projectId, kind, false)}
+                      >
+                        <EyeOff />
+                        Hide from sidebar
+                      </DropdownMenuItem>
+                    </>
+                  }
+                />
+              ))}
+            </>
+          )}
+        </div>
+      </CollapsibleContent>
 
       <FolderNameModal
         projectId={projectId}
         folder={folderModal?.folder ?? null}
         open={!!folderModal}
-        onOpenChange={(open) => !open && setFolderModal(null)}
+        onOpenChange={(o) => !o && setFolderModal(null)}
       />
 
       <FolderShareModal
         projectId={projectId}
         folder={folderToShare}
         open={!!folderToShare}
-        onOpenChange={(open) => !open && setFolderToShare(null)}
+        onOpenChange={(o) => !o && setFolderToShare(null)}
       />
 
       <ConfirmDialog
         open={!!folderToDelete}
-        onOpenChange={(open) => !open && setFolderToDelete(null)}
+        onOpenChange={(o) => !o && setFolderToDelete(null)}
         title="Delete folder?"
         description={
           <>
@@ -350,7 +373,7 @@ export function ProjectFolderList({ projectId }: { projectId: string }) {
         isPending={deleteFolderMutation.isPending}
         onConfirm={() => folderToDelete && deleteFolderMutation.mutate(folderToDelete.folder_id)}
       />
-    </div>
+    </Collapsible>
   );
 }
 
@@ -413,7 +436,7 @@ function FolderRow({
 
         <div className="flex shrink-0 items-center gap-0">
           {shared && (
-            <Hint side="top" label="Shared with the project">
+            <Hint side="top" label="Shared">
               <span className="flex size-4 shrink-0 items-center justify-center">
                 <UsersSolid className="text-muted-foreground/70 size-3" />
               </span>

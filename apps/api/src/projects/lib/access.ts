@@ -12,6 +12,7 @@ import { getSupabase } from '../../shared/supabase';
 import { ttlMemo } from '../../shared/ttl-memo';
 import { effectiveProjectRole, roleAllows, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
 import { accountMembers, projectMembers, projectSessions, projects, sessionFolders } from '@kortix/db';
+import { isFolderVisibleTo, loadFolderGrants } from './session-folders';
 import { and, eq, sql } from 'drizzle-orm';
 import { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -81,13 +82,23 @@ async function loadProjectSessionRow(
   return row ?? null;
 }
 
-async function sessionFolderIsProjectVisible(folderId: string): Promise<boolean> {
+/** Grant-aware: does the session's folder (if any) share it with this viewer?
+ *  A project folder → everyone; a restricted folder → its members/groups; a
+ *  private folder → nobody beyond its owner. Mirrors the list route. */
+async function sessionInheritsFolderVisibility(
+  folderId: string,
+  subject: ShareSubject,
+): Promise<boolean> {
   const [folder] = await db
-    .select({ visibility: sessionFolders.visibility })
+    .select({ visibility: sessionFolders.visibility, createdBy: sessionFolders.createdBy })
     .from(sessionFolders)
     .where(eq(sessionFolders.folderId, folderId))
     .limit(1);
-  return folder?.visibility === 'project';
+  if (!folder || folder.visibility === 'private') return false;
+  const grants = folder.visibility === 'restricted'
+    ? (await loadFolderGrants([folderId])).get(folderId) ?? []
+    : [];
+  return isFolderVisibleTo(folder, grants, subject);
 }
 
 export async function loadVisibleSession(
@@ -108,7 +119,7 @@ export async function loadVisibleSession(
   // Folder sharing by inheritance: a session filed in a project-visible folder
   // is readable by every member even when its own visibility is private.
   // Mirrors the list route (routes/r7.ts GET /sessions).
-  const inheritsFolderVisibility = row.folderId != null && (await sessionFolderIsProjectVisible(row.folderId));
+  const inheritsFolderVisibility = row.folderId != null && (await sessionInheritsFolderVisibility(row.folderId, subject));
   if (
     !inheritsFolderVisibility &&
     !isSessionVisibleTo(row.visibility as 'private' | 'project' | 'restricted', row.createdBy, grants, subject)

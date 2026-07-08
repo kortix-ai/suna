@@ -1,10 +1,13 @@
 // Sidebar session folders — organize a project's sessions into named silos.
 // Manual folders live server-side; auto-folders (Slack/Email/Scheduled/
 // Webhooks) are virtual and derived client-side from session metadata.
+//
+// Folder sharing uses the SAME intent shape as session sharing (the common
+// team-share system): project | private | members(+groups).
 
 import { backendApi } from '../api-client';
 import type { ProjectSession } from './sessions';
-import { unwrap } from './shared';
+import { type ConnectorSharing, unwrap } from './shared';
 
 export type SessionFolderVisibility = 'private' | 'project' | 'restricted';
 
@@ -13,12 +16,9 @@ export interface SessionFolder {
   project_id: string;
   account_id: string;
   name: string;
-  /**
-   * 'private' = only the creator sees the folder; 'project' = every member
-   * sees it and its sessions inherit project-wide visibility. 'restricted'
-   * is reserved (not yet assignable).
-   */
   visibility: SessionFolderVisibility;
+  /** Who the folder (and its sessions, by inheritance) is shared with. */
+  sharing: ConnectorSharing;
   position: number;
   created_by: string | null;
   is_owner: boolean;
@@ -33,7 +33,7 @@ export async function listSessionFolders(projectId: string) {
 
 export async function createSessionFolder(
   projectId: string,
-  input: { name: string; visibility?: 'private' | 'project' },
+  input: { name: string; sharing?: ConnectorSharing },
 ) {
   return unwrap(
     await backendApi.post<SessionFolder>(`/projects/${projectId}/session-folders`, input),
@@ -43,7 +43,7 @@ export async function createSessionFolder(
 export async function updateSessionFolder(
   projectId: string,
   folderId: string,
-  input: { name?: string; visibility?: 'private' | 'project'; position?: number },
+  input: { name?: string; sharing?: ConnectorSharing; position?: number },
 ) {
   return unwrap(
     await backendApi.patch<SessionFolder>(

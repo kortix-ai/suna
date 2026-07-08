@@ -35,6 +35,7 @@ function folder(overrides: Partial<SessionFolder> = {}): SessionFolder {
     account_id: 'acc',
     name: 'Growth',
     visibility: 'private',
+    sharing: { mode: 'private', ownerId: '' },
     position: 0,
     created_by: 'user-1',
     is_owner: true,
