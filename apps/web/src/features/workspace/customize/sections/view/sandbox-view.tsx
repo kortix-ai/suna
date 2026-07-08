@@ -14,6 +14,7 @@ import { InlineMeta } from '@/components/ui/inline-meta';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -30,7 +31,6 @@ import {
   type SandboxTemplate,
   type SnapshotErrorCategory,
 } from '@kortix/sdk/projects-client';
-import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
   AlarmClockSolid,
@@ -44,7 +44,6 @@ import {
   Container,
   Edit3,
   FileCode,
-  Loader2,
   Package,
   Plus,
   RefreshCw,
@@ -83,7 +82,6 @@ const BUILD_STATUS_TILE: Record<
     tileBg: string;
     iconColor: string;
     Icon: typeof CheckCircleSolid;
-    spin?: boolean;
   }
 > = {
   ready: {
@@ -99,7 +97,6 @@ const BUILD_STATUS_TILE: Record<
     tileBg: 'bg-kortix-yellow/15',
     iconColor: 'text-kortix-yellow',
     Icon: Loading,
-    spin: true,
   },
   failed: {
     label: 'failed',
@@ -166,7 +163,7 @@ function BuildRow({ build }: { build: ProjectSnapshotBuild }) {
       <span
         className={cn('flex size-9 shrink-0 items-center justify-center rounded-sm', status.tileBg)}
       >
-        <Icon className={cn('size-5', status.iconColor, status.spin && 'animate-spin')} />
+        <Icon className={cn('size-5 shrink-0', status.iconColor)} />
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
@@ -298,7 +295,7 @@ function LatestFailureBanner({
                     onClick={onFix}
                   >
                     {isFixPending ? (
-                      <Loading className="size-3.5 shrink-0 animate-spin" />
+                      <Loading className="size-3.5 shrink-0" />
                     ) : (
                       <SparklesSolid className="size-3.5 shrink-0" />
                     )}
@@ -353,19 +350,19 @@ function TemplateRow({
   const buildMut = useMutation({
     mutationFn: () => buildSandboxTemplate(projectId, template.template_id!),
     onSuccess: () => {
-      toast.success(`Rebuild started for "${template.name}"`);
+      successToast(`Rebuild started for "${template.name}"`);
       queryClient.invalidateQueries({ queryKey: SNAPSHOTS_QUERY_KEY(projectId) });
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to start build'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to start build'),
   });
   const deleteMut = useMutation({
     mutationFn: () => deleteSandboxTemplate(projectId, template.template_id!),
     onSuccess: () => {
-      toast.success(`Deleted "${template.name}"`);
+      successToast(`Deleted "${template.name}"`);
       queryClient.invalidateQueries({ queryKey: SNAPSHOTS_QUERY_KEY(projectId) });
       queryClient.invalidateQueries({ queryKey: ['project-sandboxes', projectId] });
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to delete template'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to delete template'),
   });
 
   const Icon = template.is_default ? Container : template.has_image ? Package : FileCode;
@@ -426,7 +423,7 @@ function TemplateRow({
         variant={stateBadge.variant}
         color={'color' in stateBadge ? stateBadge.color : undefined}
       >
-        <StateIcon className={cn(stateInfo.tone === 'busy' && 'animate-spin', 'size-4')} />
+        <StateIcon className="size-4 shrink-0" />
         {stateInfo.label}
       </Badge>
       {canManage && (
@@ -459,9 +456,9 @@ function TemplateRow({
                 )}
               >
                 {deleteMut.isPending ? (
-                  <Loader2 className="size-3.5 animate-spin" />
+                  <Loading className="size-3.5 shrink-0" />
                 ) : (
-                  <Trash2 className="size-3.5" />
+                  <Trash2 className="size-3.5 shrink-0" />
                 )}
               </Button>
             </>
@@ -475,9 +472,9 @@ function TemplateRow({
               onClick={() => buildMut.mutate()}
             >
               {buildMut.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loading className="size-3.5 shrink-0" />
               ) : (
-                <RefreshCw className="h-3.5 w-3.5" />
+                <RefreshCw className="size-3.5 shrink-0" />
               )}
               Rebuild
             </Button>
