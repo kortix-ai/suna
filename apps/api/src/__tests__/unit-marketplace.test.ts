@@ -26,16 +26,16 @@ describe('marketplace catalog', () => {
     expect(DEFAULT_MARKETPLACES).not.toContain('NousResearch/hermes-agent');
   });
 
-  test('lists the starter skill pack; non-skill items are hidden from browse', async () => {
+  test('surfaces skills + bundles through browse; support types stay internal', async () => {
     const all = await listCatalogItems();
     expect(all.length).toBeGreaterThan(50);
 
-    // Launch scope: marketplace browsing is the skill library. Non-skill
-    // registry entries remain internal for compatibility/dependency handling.
-    expect(all.some((i) => i.type === 'registry:bundle')).toBe(false);
-    expect(all.some((i) => i.type === 'registry:agent')).toBe(false);
+    // The marketplace surfaces the one-click importables (skills, agents,
+    // commands, bundles). Tools/files stay internal for dependency handling.
+    expect(all.some((i) => i.type === 'registry:bundle')).toBe(true);
     expect(all.some((i) => i.type === 'registry:tool')).toBe(false);
-    expect(all.find((i) => i.id === 'kortix:research-pack')).toBeUndefined();
+    expect(all.some((i) => i.type === 'registry:file')).toBe(false);
+    expect(all.find((i) => i.id === 'kortix:research-pack')).toBeTruthy();
 
     expect(all.find((i) => i.name === 'pdf')).toBeTruthy();
   });
@@ -89,7 +89,9 @@ describe('marketplace catalog', () => {
   });
 
   test('filters by type and query', async () => {
-    expect((await listCatalogItems({ type: 'bundle' })).length).toBe(0); // bundles hidden
+    const bundles = await listCatalogItems({ type: 'bundle' });
+    expect(bundles.length).toBeGreaterThan(0); // bundles are browseable one-click starters
+    expect(bundles.every((i) => i.type === 'registry:bundle')).toBe(true);
     expect((await listCatalogItems({ query: 'pdf' })).some((i) => i.name === 'pdf')).toBe(true);
     expect((await listCatalogItems({ query: 'zzzznotathing' })).length).toBe(0);
   });

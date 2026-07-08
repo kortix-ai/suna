@@ -81,12 +81,29 @@ describe('pageCatalogItems', () => {
     const items = [
       ...synthetic(3, (i) => ({ name: `alpha-${i}`, title: `Alpha ${i}`, type: 'registry:skill', registry: 'kortix-starter' })),
       ...synthetic(3, (i) => ({ name: `beta-${i}`, title: `Beta ${i}`, type: 'registry:skill', registry: 'other-registry' })),
-      item({ id: 'hidden-agent', name: 'hidden-agent', title: 'Hidden Agent', type: 'registry:agent', registry: 'kortix-starter' }),
+      item({ id: 'hidden-tool', name: 'hidden-tool', title: 'Hidden Tool', type: 'registry:tool', registry: 'kortix-starter' }),
     ];
     const result = pageCatalogItems(items, { query: 'alpha', source: 'kortix', limit: 2, offset: 0 });
     expect(result.total).toBe(3);
     expect(result.items.length).toBe(2);
     expect(result.items.every((it) => it.name.startsWith('alpha'))).toBe(true);
+  });
+
+  test('surfaces skills, agents, commands, and bundles as browseable; hides support types', () => {
+    const items = [
+      item({ id: 'k:skill', name: 'a-skill', type: 'registry:skill' }),
+      item({ id: 'k:agent', name: 'a-agent', type: 'registry:agent' }),
+      item({ id: 'k:command', name: 'a-command', type: 'registry:command' }),
+      item({ id: 'k:bundle', name: 'a-bundle', type: 'registry:bundle' }),
+      item({ id: 'k:tool', name: 'a-tool', type: 'registry:tool' }),
+      item({ id: 'k:rules', name: 'a-rules', type: 'registry:rules' }),
+    ];
+    const result = pageCatalogItems(items, {});
+    const visible = new Set(result.items.map((it) => it.type));
+    expect(visible).toEqual(
+      new Set(['registry:skill', 'registry:agent', 'registry:command', 'registry:bundle']),
+    );
+    expect(result.total).toBe(4);
   });
 
   test('offset past the end returns empty items, hasMore false, and a correct total', () => {

@@ -46,6 +46,23 @@ describe('buildMarketplaceGridRows', () => {
     ]);
   });
 
+  test('groups skills, agents, commands, and bundles into their own sections in taxonomy order', () => {
+    // Interleaved + out of section order on input; grouping must sort into the
+    // TYPE_SECTIONS order regardless.
+    const rows = buildMarketplaceGridRows({
+      items: [
+        ...makeItems('registry:command', ['c1']),
+        ...makeItems('registry:bundle', ['b1']),
+        ...makeItems('registry:skill', ['s1', 's2']),
+        ...makeItems('registry:agent', ['a1']),
+      ],
+      grouped: true,
+    });
+
+    const headers = rows.flatMap((r) => (r.kind === 'header' ? [r.label] : []));
+    expect(headers).toEqual(['Skills', 'Agents', 'Commands', 'Bundles']);
+  });
+
   test('for a large dataset, row count is far smaller than item count', () => {
     const items = makeItems(
       'registry:skill',
