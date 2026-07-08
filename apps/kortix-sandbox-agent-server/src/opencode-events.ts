@@ -42,6 +42,14 @@ type OpencodeEventHandlers = {
   // filtering down to the root turn.
   onSessionIdle?: (sessionID: string) => void
   onSessionError?: (sessionID: string, error?: OpencodeTurnError) => void
+  // Fired every time the /event SSE (re)subscribes successfully. Used to
+  // reconcile a turn that finished BEFORE the subscription was live: a fast
+  // boot could reach session.idle inside the gap between prompt_async and the
+  // subscribe, so we read the root's last-turn state on connect and relay a
+  // synthetic turn-end if it already completed. Belt-and-suspenders next to the
+  // subscribe-before-prompt ordering — makes finalize independent of subscription
+  // timing.
+  onConnected?: () => void
 }
 
 // Subscribe to opencode's SSE event stream and dispatch known event types.
@@ -51,9 +59,16 @@ export function startOpencodeEventLoop(
   opencode: Opencode,
   cfg: Config,
   handlers: OpencodeEventHandlers,
-): { stop(): void } {
+): { stop(): void; connected: Promise<void> } {
   let stopping = false
   let abortController: AbortController | null = null
+  // Resolves the FIRST time the SSE subscribes. The initial-prompt path awaits
+  // this before firing prompt_async so the subscription is guaranteed live
+  // before the first turn is launched — closing the fast-boot event-loss race.
+  let markConnected: () => void
+  const connected = new Promise<void>((resolve) => {
+    markConnected = resolve
+  })
 
   async function connectOnce(): Promise<void> {
     const url = `${opencode.getInternalUrl()}/event?directory=${encodeURIComponent(cfg.workspace)}`
@@ -66,6 +81,11 @@ export function startOpencodeEventLoop(
       throw new Error(`/event subscribe non-ok: ${res.status}`)
     }
     logger.info('[opencode-events] subscribed')
+    markConnected()
+    // Reconcile any turn that finished before this subscription was live. Fires
+    // on every (re)connect; the handler is idempotent (per-turn dedup), so a
+    // reconnect after the turn already relayed is a no-op.
+    handlers.onConnected?.()
 
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
@@ -100,7 +120,10 @@ export function startOpencodeEventLoop(
   }
 
   ;(async () => {
-    let backoffMs = 1_000
+    // Start tight (250ms): on a cold boot the first connect races opencode's
+    // port bind, and the initial-prompt path is blocked awaiting `connected`, so
+    // a fast retry minimizes the added latency before the subscription is live.
+    let backoffMs = 250
     while (!stopping) {
       try {
         await connectOnce()
@@ -122,6 +145,7 @@ export function startOpencodeEventLoop(
       stopping = true
       abortController?.abort()
     },
+    connected,
   }
 }
 
