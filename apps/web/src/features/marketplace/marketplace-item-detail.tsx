@@ -181,7 +181,9 @@ export function MarketplaceItemDetail({
 
               {isBundle && bundleMembers.length > 0 && (
                 <section>
-                  <SectionLabel>What&rsquo;s inside {bundleMembers.length}</SectionLabel>
+                  <SectionLabel>
+                    What&rsquo;s inside <span className="tabular-nums">{bundleMembers.length}</span>
+                  </SectionLabel>
                   <ul className="space-y-2">
                     {bundleMembers.map((member) => (
                       <li key={member.key}>
@@ -217,7 +219,9 @@ export function MarketplaceItemDetail({
 
               {capCount > 0 && (
                 <section>
-                  <SectionLabel>Requires {capCount}</SectionLabel>
+                  <SectionLabel>
+                    Requires <span className="tabular-nums">{capCount}</span>
+                  </SectionLabel>
                   <div className="space-y-3">
                     {capGroups.map((group) => (
                       <div key={group.kind}>
@@ -242,7 +246,9 @@ export function MarketplaceItemDetail({
 
               {data.files.length > 0 && (
                 <section>
-                  <SectionLabel>Files {data.files.length}</SectionLabel>
+                  <SectionLabel>
+                    Files <span className="tabular-nums">{data.files.length}</span>
+                  </SectionLabel>
                   <div className="bg-popover max-h-72 overflow-y-auto rounded-md border">
                     <ul className="divide-border divide-y">
                       {data.files.map((file) => (

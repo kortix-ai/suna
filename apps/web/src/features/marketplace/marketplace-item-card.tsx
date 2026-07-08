@@ -61,13 +61,13 @@ export function MarketplaceItemCard({
         <div className="text-muted-foreground/70 mt-1.5 flex items-center gap-1.5 text-xs">
           <span>{label}</span>
           <span aria-hidden>·</span>
-          <span>
+          <span className="tabular-nums">
             {count} {unit}
           </span>
           {secretCount > 0 && (
             <>
               <span aria-hidden>·</span>
-              <span className="inline-flex items-center gap-0.5">
+              <span className="inline-flex items-center gap-0.5 tabular-nums">
                 <KeyRound className="size-3" />
                 {secretCount}
               </span>
