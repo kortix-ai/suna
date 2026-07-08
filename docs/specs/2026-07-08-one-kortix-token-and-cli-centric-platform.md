@@ -176,8 +176,8 @@ non-identity credentials each documented with one sentence of why they exist.
 - [ ] Remove `kyolo_` mint/validate/attribute (verify no live tokens
       presented in gateway logs first).
 - [ ] Remove or properly wire `session-llm-token.ts`.
-- [ ] Accept `kortix_sa_` in `combinedAuth` (or document the restriction as
-      intentional — decide, don't leave implicit).
+- [x] Accept `kortix_sa_` in `combinedAuth` (or document the restriction as
+      intentional — decide, don't leave implicit). **Shipped: PR #4298.**
 - [ ] Consistency pass on token hashing: scrypt+pepper for OAuth
       access/refresh tokens (migration: hash-on-next-use or rotate).
 - [ ] `token_context` on `/accounts/me` covers every token type; `kortix
@@ -310,7 +310,9 @@ a manifest annotation away.
 
 1. Session permission/approval + question-prompt replies — a CLI-driven
    session that pauses for permission is currently unanswerable from the
-   CLI; it hangs. Highest impact.
+   CLI; it hangs. Highest impact. **Shipped: PR #4299** (`kortix sessions
+   pending/approve/answer`); inline REPL prompts in `sessions chat` remain
+   a follow-up.
 2. Review Center inbox (`review/items`, `approvals`) — the async loop an
    orchestrating agent polls and acts on.
 3. Skills/commands/file-writes as first-class verbs (`kortix skills`,
