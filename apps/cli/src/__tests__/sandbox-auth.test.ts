@@ -147,10 +147,10 @@ describe('env token vs .kortix/link.json host', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('resolveProjectContext uses the env token even when link.json names a host', () => {
+  it('resolveProjectContext uses the env token even when link.json names a host', async () => {
     process.env.KORTIX_CLI_TOKEN = 'kortix_pat_cli';
     process.env.KORTIX_API_URL = 'https://tunnel.example/v1';
-    const ctx = resolveProjectContext();
+    const ctx = await resolveProjectContext();
     expect(ctx).not.toBeNull();
     expect(ctx?.auth.token).toBe('kortix_pat_cli');
     expect(ctx?.auth.api_base).toBe('https://tunnel.example/v1');
@@ -158,18 +158,18 @@ describe('env token vs .kortix/link.json host', () => {
     expect(ctx?.projectId).toBe('proj-from-link');
   });
 
-  it('without an env token the link host is still honored (and fails logged-out)', () => {
+  it('without an env token the link host is still honored (and fails logged-out)', async () => {
     // Config file points at a nonexistent path → the named host has no token →
     // the pre-existing behavior (refuse with "not logged in") is preserved.
-    const ctx = resolveProjectContext();
+    const ctx = await resolveProjectContext();
     expect(ctx).toBeNull();
   });
 
-  it('an explicit --host override still wins over the env token', () => {
+  it('an explicit --host override still wins over the env token', async () => {
     process.env.KORTIX_CLI_TOKEN = 'kortix_pat_cli';
     // 'nonexistent-host' has no credentials → context resolution must fail
     // rather than silently falling back to the env token the caller did not ask for.
-    const ctx = resolveProjectContext({ hostArg: 'nonexistent-host' });
+    const ctx = await resolveProjectContext({ hostArg: 'nonexistent-host' });
     expect(ctx).toBeNull();
   });
 });

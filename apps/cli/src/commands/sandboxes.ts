@@ -112,7 +112,7 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   if (sub === 'update' || sub === 'edit') return sandboxUpdateLocal(positional[0], f);
   if (sub === 'rm' || sub === 'remove' || sub === 'delete') return sandboxRmLocal(positional[0]);
 
-  const ctx = resolveProjectContext({ projectArg: f.project, hostArg: f.host });
+  const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
   const base = `/projects/${ctx.projectId}`;
 

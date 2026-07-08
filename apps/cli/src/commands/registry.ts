@@ -317,7 +317,7 @@ async function registryRemove(argv: string[], json: boolean): Promise<number> {
 
   // Cloud path: remove from a linked project's repo (commits the removal).
   if (project) {
-    const ctx = resolveProjectContext({ projectArg: project });
+    const ctx = await resolveProjectContext({ projectArg: project });
     if (!ctx) return 1;
     try {
       const res = await ctx.client.delete<{ removed: string; commit_sha?: string; branch?: string; file_count: number }>(

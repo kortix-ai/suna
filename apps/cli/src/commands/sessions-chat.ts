@@ -32,7 +32,7 @@ interface ResolvedSession {
   /** The OpenCode session id INSIDE the sandbox. May need creating. */
   opencodeSessionId: string | null;
   /** Kortix-side API client (for PATCH/save-back). */
-  ctx: NonNullable<ReturnType<typeof resolveProjectContext>>;
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
 }
 
 /**
@@ -46,7 +46,7 @@ export async function loadSessionForChat(
   sessionId: string,
   opts: CtxOpts,
 ): Promise<ResolvedSession | null> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return null;
 
   let session: ProjectSession;
@@ -348,7 +348,7 @@ async function resolveChatSessionId(
 ): Promise<string | null> {
   if (explicit) return explicit;
 
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return null;
 
   if (wantNew) {
@@ -400,7 +400,7 @@ async function resolveChatSessionId(
  * Returns the sentinel `'error'` (after printing the API error) on failure.
  */
 export async function chooseRunningSession(
-  ctx: NonNullable<ReturnType<typeof resolveProjectContext>>,
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>,
   pickTitle: string,
 ): Promise<ProjectSession | null | 'error'> {
   let sessions: ProjectSession[];
@@ -432,7 +432,7 @@ export async function chooseRunningSession(
 
 /** Poll a freshly-created session until it's running (or fails / times out). */
 async function waitForRunning(
-  ctx: NonNullable<ReturnType<typeof resolveProjectContext>>,
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>,
   sessionId: string,
 ): Promise<boolean> {
   for (let i = 0; i < 75; i += 1) {
@@ -511,7 +511,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
   // Resolve which session: explicit id → most-recent running.
   let sessionId = positional[0];
   if (!sessionId) {
-    const ctx = resolveProjectContext(opts);
+    const ctx = await resolveProjectContext(opts);
     if (!ctx) return 1;
     const chosen = await chooseRunningSession(ctx, 'Pick a session to read');
     if (chosen === 'error') return 1;
@@ -680,7 +680,7 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
     return 2;
   }
   const opts: CtxOpts = { projectArg, hostArg };
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   // Same auth the project context resolved with — needed for the OpenCode proxy.

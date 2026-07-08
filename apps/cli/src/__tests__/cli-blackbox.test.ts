@@ -720,9 +720,16 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(noAuth.code).toBe(1);
     expect(noAuth.stderr).toContain('Not logged in');
 
+    // No project bound + logged in + exactly one project in the account →
+    // the always-bound invariant auto-binds it and the command proceeds
+    // instead of dead-ending with "No project linked".
     const noLink = await runCli(['marketplace', 'status', '--json'], tmp, { KORTIX_CONFIG_FILE: configFile });
-    expect(noLink.code).toBe(1);
-    expect(noLink.stderr).toContain('No project linked');
+    expect(noLink.code).toBe(0);
+    expect(noLink.stderr).toContain('Default project:');
+    const boundConfig = JSON.parse(readFileSync(configFile, 'utf8'));
+    expect(boundConfig.hosts.test.default_project.project_id).toBe('proj_e2e');
+    delete boundConfig.hosts.test.default_project;
+    writeFileSync(configFile, JSON.stringify(boundConfig));
 
     const init = await runCli(['init', 'edge-e2e', '--yes', '--no-git']);
     expect(init.code).toBe(0);
@@ -749,6 +756,8 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(add.stderr).toContain('`add` is not a kortix subcommand');
 
     expect(requests.map((r) => [r.method, r.path, r.body ?? null])).toEqual([
+      ['GET', '/v1/projects?account_id=account_1', null],
+      ['GET', '/v1/projects/proj_e2e/marketplace', null],
       ['GET', '/v1/projects/missing', null],
       ['GET', '/v1/marketplace/items/does-not-exist', null],
       ['GET', '/v1/marketplace/items?query=does-not-exist', null],

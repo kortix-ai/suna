@@ -149,7 +149,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
   if ((sub === 'rm' || sub === 'remove' || sub === 'delete') && !applyRemote) return connectorRmLocal(positional[0]);
   if ((sub === 'policy' || sub === 'policies') && positional[0] === 'set') return policySetLocal(f.default);
 
-  const ctx = resolveProjectContext({ projectArg: f.project, hostArg: f.host });
+  const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
   const ex = `/executor/projects/${ctx.projectId}`;
 

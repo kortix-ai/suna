@@ -58,7 +58,7 @@ export async function runAgents(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  const ctx = resolveProjectContext({ projectArg: projectFlag, hostArg: hostFlag });
+  const ctx = await resolveProjectContext({ projectArg: projectFlag, hostArg: hostFlag });
   if (!ctx) return 1;
   const base = `/projects/${ctx.projectId}/model-defaults`;
 

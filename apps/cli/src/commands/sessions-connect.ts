@@ -112,7 +112,7 @@ async function resolveConnectSessionId(
   opts: CtxOpts,
 ): Promise<string | null> {
   if (explicit) return explicit;
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return null;
   const chosen = await chooseRunningSession(ctx, 'Pick a session to connect to');
   if (chosen === 'error') return null;

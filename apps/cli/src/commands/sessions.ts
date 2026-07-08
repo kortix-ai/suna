@@ -136,7 +136,7 @@ export async function runSessions(argv: string[]): Promise<number> {
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
 async function sessionsLs(opts: CtxOpts, json = false): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let sessions: ProjectSession[];
@@ -181,7 +181,7 @@ async function sessionsNew(
   json = false,
   wait = false,
 ): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   const body: Record<string, unknown> = {};
@@ -313,7 +313,7 @@ async function sessionsInfo(
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let s: ProjectSession;
@@ -364,7 +364,7 @@ async function sessionsPreview(
     process.stderr.write(`${status.err(`Invalid port "${portArg}".`)}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let s: ProjectSession;
@@ -412,7 +412,7 @@ async function sessionsRestart(sessionId: string | undefined, opts: CtxOpts): Pr
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   try {
@@ -439,7 +439,7 @@ async function sessionsRename(
     process.stderr.write(`${status.err('Pass a name (use "" to clear it).')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let updated: ProjectSession;
@@ -465,7 +465,7 @@ async function sessionsRm(sessionId: string | undefined, opts: CtxOpts): Promise
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   try {
@@ -482,7 +482,7 @@ async function sessionsOpen(sessionId: string | undefined, opts: CtxOpts): Promi
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   const auth = loadAuth();
   if (!auth) return 1;
