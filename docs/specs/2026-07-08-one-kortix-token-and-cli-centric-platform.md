@@ -19,8 +19,8 @@ Two threads, one plan:
    the CLI — which makes it possible for agents, because agents drive the CLI
    from sandboxes under the same authorization model. The CLI's project
    binding must be zero-friction: a global default project is always bound;
-   a directory link overrides it; starting a cloud coding session is one
-   command.
+   a directory link overrides it; reaching a live cloud session takes as few
+   keystrokes as possible.
 
 These are the same problem: the CLI can only be safely exposed 100% to agents
 once the identity model is one coherent token with enforceable per-agent
@@ -231,29 +231,36 @@ Closes the agent-switch hole and turns switching into a feature:
 
 ### Phase B0 — always-bound project UX
 
-- [ ] `kortix login` ends by binding a global default project: if the
+- [x] `kortix login` ends by binding a global default project: if the
       account has projects, interactive picker (single project =
       auto-bind); if none, offer `kortix init` / create; `--no-project` and
-      non-TTY skip cleanly.
-- [ ] Unbound project + TTY = inline picker, not a dead end: replace the
+      non-TTY skip cleanly. **Shipped: PR #4297.**
+- [x] Unbound project + TTY = inline picker, not a dead end: replace the
       `No project linked.` error in `resolveProjectContext` with the same
       picker, offering to save the choice as the global default. Non-TTY
-      (agents, CI) keeps the hard error.
+      (agents, CI) keeps the hard error. **Shipped: PR #4297** (single
+      project auto-binds even non-TTY; multi-project non-TTY keeps the
+      error).
 - [ ] `kortix` bare landing shows the bound project prominently (it already
       shows host/account/project context) and says how to switch.
 - [ ] `kortix projects use` (already interactive) advertised as the switch
       verb everywhere the binding is surfaced.
 
-### Phase B1 — one-command cloud coding session
+### Phase B1 — minimal keystrokes to a live session
 
-- [ ] `kortix code [prompt]` (name TBD): resolve project → create session →
-      wait ready → attach local OpenCode (`sessions connect` internals).
-      One command from any directory to a live cloud opencode.
-- [ ] `kortix code --web` variant opens the dashboard session instead of
-      attaching the TUI.
+**Status 2026-07-08: composite verb DEFERRED by Marko.** A top-level
+one-command verb (create session → wait → attach OpenCode) was prototyped as
+`kortix code` and rejected: sessions are general work sessions, not coding
+sessions — no coding terminology anywhere in the product surface — and no
+name felt right (`work`, `connect`, `start` all considered). The flow exists
+today as `kortix sessions new --wait` + `kortix sessions connect`; revisit
+the composite verb only when a name earns its place.
+
 - [ ] Measure and minimize keystrokes-to-session as a tracked UX metric
-      (target: installed+logged-in user reaches a working cloud session with
-      one command, zero flags).
+      (target: installed+logged-in user reaches a live cloud session with
+      one short command, zero flags).
+- [ ] (deferred) composite verb wrapping `sessions new --wait` +
+      `sessions connect`; naming TBD, nothing code-flavored.
 
 ### Phase B2 — web↔CLI parity program
 
@@ -339,8 +346,9 @@ a manifest annotation away.
 1. Trigger/schedule-launched sessions: which user cap applies when no human
    launched? (Inherited from governance spec #8; must be answered in
    Phase A1 because SA-as-principal makes it acute.)
-2. Should `kortix code` be the bare `kortix` behavior once logged-in+bound
-   (vercel-style), or stay an explicit verb?
+2. What is the right name for the deferred one-command session verb — and
+   should it be the bare `kortix` behavior once logged-in+bound
+   (vercel-style) instead of a verb at all? (No coding terminology.)
 3. Gateway keys: absorb (A2) or keep as a separate product surface for
    external LLM-proxy customers who should never hold an identity token?
 4. Do we want per-token IP/network claims (enterprise ask) while we're
@@ -355,8 +363,9 @@ a manifest annotation away.
    row exists.
 4. A service account can drive every `combinedAuth` route it has policies
    for.
-5. Fresh laptop: `curl install → kortix login → kortix code` reaches a live
-   cloud opencode with zero additional commands.
+5. Fresh laptop: `curl install → kortix login → kortix sessions new --wait
+   → kortix sessions connect` reaches a live cloud session with nothing else
+   typed — login already bound the project.
 6. CI fails when a new API route lands with neither a CLI mapping nor an
    exemption.
 7. `/accounts/me token_context`, `kortix token`, and sandbox health report
@@ -366,7 +375,7 @@ a manifest annotation away.
 
 - [ ] Review this doc, strike/confirm the open questions.
 - [ ] Phase A0 PRs (each independently shippable).
-- [ ] Phase B0 login/binding UX PR (small, high-visibility).
+- [x] Phase B0 login/binding UX PR (small, high-visibility) — PR #4297.
 - [ ] Spike: per-agent re-mint + hot-swap on a dev sandbox (Phase A1
       de-risk) — prove `setExecutorProxyToken` works for a live switch.
 - [ ] Convert the parity table into tracked issues.
