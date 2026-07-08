@@ -126,7 +126,7 @@ export function AppsList({ projectId, data, isLoading, onAdd, onEdit, onLogs }: 
             {tI18nHardcoded.raw(
               'autoComponentsProjectsAppsAppsListJsxTextWebsitesDeployedFrom4a7cee39',
             )}{' '}
-            <code className="bg-muted rounded px-1 py-0.5 font-mono text-[11px]">kortix.toml</code>{' '}
+            <code className="bg-muted rounded px-1 py-0.5 font-mono text-[11px]">kortix.yaml</code>{' '}
             {tI18nHardcoded.raw(
               'autoComponentsProjectsAppsAppsListJsxTextChangesHereCommitc5472cbc',
             )}
@@ -207,7 +207,7 @@ export function AppsList({ projectId, data, isLoading, onAdd, onEdit, onLogs }: 
         description={
           <>
             {tI18nHardcoded.raw('autoComponentsProjectsAppsAppsListJsxTextThisRemovesThe4dfd4851')}
-            <code className="font-mono">kortix.toml</code>{' '}
+            <code className="font-mono">kortix.yaml</code>{' '}
             {tI18nHardcoded.raw('autoComponentsProjectsAppsAppsListJsxTextAndStopsAuto6f27bb16')}
           </>
         }

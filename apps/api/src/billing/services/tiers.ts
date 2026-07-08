@@ -55,8 +55,8 @@ export const TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD = 15;
 /** Display-only split of INCLUDED_CREDITS_PER_SEAT_USD for pricing-page copy. */
 export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 10;
 
-// Per-second sandbox compute pricing, keyed off the reserved spec (kortix.toml
-// [sandbox]). The constants below are Daytona's PUBLISHED LIST rates (kept as
+// Per-second sandbox compute pricing, keyed off the reserved spec (kortix.yaml's
+// `sandbox:` block). The constants below are Daytona's PUBLISHED LIST rates (kept as
 // list so they're easy to re-sync from the pricing page). Our ACTUAL cost is
 // list × the volume discount Daytona gives us (DAYTONA_DISCOUNT). The debit
 // emitter charges:

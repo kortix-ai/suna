@@ -7,7 +7,6 @@ import { appsExperimentalEnabled, runApps } from './commands/apps.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
-import { runCreate } from './commands/create.ts';
 import { runDev } from './commands/dev.ts';
 import { runEnv } from './commands/env.ts';
 import { runExecutor } from './commands/executor.ts';
@@ -61,8 +60,11 @@ const SECTIONS: readonly CommandSection[] = [
   {
     title: 'Project',
     commands: [
-      { name: 'init', blurb: 'Start a new Kortix project (a fresh standalone directory)' },
-      { name: '<project-name>', blurb: 'Create a new directory and scaffold it' },
+      {
+        name: 'init',
+        args: '[project-name]',
+        blurb: 'Start a new Kortix project (a fresh standalone directory)',
+      },
       { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
       { name: 'validate', blurb: "Statically validate this project's kortix.yaml" },
       {
@@ -125,7 +127,7 @@ const SECTIONS: readonly CommandSection[] = [
       {
         name: 'channels',
         args: '<subcommand>',
-        blurb: 'Connect Slack to this project (status/connect/disconnect/manifest)',
+        blurb: 'Connect Slack to this project — `connect` prints a one-click install link',
       },
       {
         name: 'sandboxes',
@@ -353,29 +355,89 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'uninstall') {
     return runUninstall(argv.slice(1));
   }
-  // Reserved subcommand names we don't ship yet — don't let them fall
-  // through to the project scaffold (`kortix <new-project-name>`), which
-  // would otherwise create a directory called `deploy/`, etc.
-  const RESERVED_FUTURE_COMMANDS = new Set([
-    'add',
-    'mcp',
-    'logs',
-    'start',
-    'stop',
-    'restart',
-    'open',
-    'status',
-  ]);
-  if (RESERVED_FUTURE_COMMANDS.has(argv[0])) {
-    process.stderr.write(
-      `${C.red}kortix:${C.reset} \`${argv[0]}\` is not a kortix subcommand (yet).\n` +
-        `       Run ${C.cyan}kortix --help${C.reset} for the full list.\n`,
-    );
-    return 2;
-  }
+  // Anything else is an unknown command. This must NEVER fall through to a
+  // project scaffold — `kortix <new-project-name>` used to, which turned
+  // every mistyped subcommand into a freshly scaffolded directory in cwd.
+  // Scaffolding is explicit-only: `kortix init [project-name]`.
+  const suggestion = closestCommand(argv[0]);
+  const lines = [`${C.red}kortix:${C.reset} unknown command \`${argv[0]}\``];
+  if (suggestion) lines.push(`       Did you mean ${C.cyan}kortix ${suggestion}${C.reset}?`);
+  lines.push(
+    `       Run ${C.cyan}kortix --help${C.reset} for the full list, or ${C.cyan}kortix init <name>${C.reset} to start a new project.`,
+  );
+  process.stderr.write(`${lines.join('\n')}\n`);
+  return 2;
+}
 
-  // Anything else is the "create new directory" form (`kortix my-new-project`).
-  return runCreate(argv);
+const KNOWN_COMMANDS = [
+  'init',
+  'ship',
+  'deploy',
+  'validate',
+  'schema',
+  'dev',
+  'self-host',
+  'login',
+  'logout',
+  'whoami',
+  'token',
+  'hosts',
+  'accounts',
+  'projects',
+  'sessions',
+  'chat',
+  'files',
+  'cr',
+  'triggers',
+  'connectors',
+  'secrets',
+  'env',
+  'channels',
+  'sandboxes',
+  'marketplace',
+  'executor',
+  'registry',
+  'apps',
+  'agents',
+  'access',
+  'roles',
+  'grants',
+  'update',
+  'uninstall',
+  'help',
+  'version',
+] as const;
+
+function editDistance(a: string, b: string): number {
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    let diagonal = prev[0];
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const next = Math.min(
+        prev[j] + 1,
+        prev[j - 1] + 1,
+        diagonal + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+      diagonal = prev[j];
+      prev[j] = next;
+    }
+  }
+  return prev[b.length];
+}
+
+function closestCommand(input: string): string | undefined {
+  const needle = input.toLowerCase();
+  let best: { name: string; distance: number } | undefined;
+  for (const name of KNOWN_COMMANDS) {
+    const distance = editDistance(needle, name);
+    // The distance cap alone lets tiny inputs match anything short ("us" →
+    // "cr"), so also require most of the input to survive the edit.
+    if (distance <= 2 && distance < needle.length && (best === undefined || distance < best.distance)) {
+      best = { name, distance };
+    }
+  }
+  return best?.name;
 }
 
 function printActiveHostNotice(argv: readonly string[]): void {

@@ -1,5 +1,6 @@
 'use client';
 
+import { ShaderSafe } from '@/components/ui/shader-safe';
 import { useWallpaperTheme } from '@/components/ui/wallpaper-shaders';
 import dynamic from 'next/dynamic';
 import { memo, type ReactNode } from 'react';
@@ -32,7 +33,7 @@ function PaperRoot({ children, className }: { children: ReactNode; className?: s
       className={`pointer-events-none absolute inset-0 overflow-hidden ${className ?? ''}`}
       aria-hidden="true"
     >
-      {children}
+      <ShaderSafe>{children}</ShaderSafe>
     </div>
   );
 }

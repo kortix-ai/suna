@@ -855,7 +855,10 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
       const linkClassName = cn(
         "font-medium text-foreground",
         "underline decoration-foreground/30 underline-offset-[3px] decoration-[1px]",
-        "hover:decoration-foreground/60 transition-colors duration-150"
+        "hover:decoration-foreground/60 transition-colors duration-150",
+        // Bare-URL link text (autolinks, tokens) has no break opportunities —
+        // without this a long URL forces the whole message to scroll sideways.
+        "[overflow-wrap:anywhere]"
       );
 
       if (isHashLink) {
@@ -938,6 +941,14 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
             </HighlightedCode>
           </CodeBlock>
         );
+      }
+
+      // Agents sometimes wrap a setup link in backticks instead of a markdown
+      // link — same interception as `a` above, so the human still gets the
+      // in-chat form chip instead of a wall of token characters.
+      const inlineSetupLink = parseSetupLinkHref(code.trim());
+      if (inlineSetupLink) {
+        return <SetupLinkButton kind={inlineSetupLink.kind} token={inlineSetupLink.token} />;
       }
 
       // Inline code - subtle pill style, clickable if it looks like a file path

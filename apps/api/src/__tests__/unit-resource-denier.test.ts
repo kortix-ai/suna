@@ -22,8 +22,8 @@ const CONFIG = {
   agents: [
     { name: 'release-bot', path: '.opencode/agent/release-bot.md', description: null, mode: null, source: 'opencode' },
     { name: 'free-bot', path: '.opencode/agent/free-bot.md', description: null, mode: null, source: 'opencode' },
-    // A kortix.toml agent has no separate file — never produces a deny path.
-    { name: 'manifest-bot', path: '(manifest)', description: null, mode: null, source: 'kortix.toml' },
+    // A kortix.yaml (manifest-declared) agent has no separate file — never produces a deny path.
+    { name: 'manifest-bot', path: '(manifest)', description: null, mode: null, source: 'kortix.yaml' },
   ],
   skills: [
     { name: 'lead-research', path: '.opencode/skills/lead-research/SKILL.md', description: null },

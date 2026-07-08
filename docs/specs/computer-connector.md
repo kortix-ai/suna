@@ -50,7 +50,7 @@ The Executor is provider-pluggable. The `channel` provider (Slack) is the worked
 
 ## 3. Design overview
 
-Add a new Executor provider **`computer`**. When a project's account owns ≥1 tunnel, the Executor **synthesizes a single `computer` connector** — no `kortix.toml` entry, no experimental opt-in; connecting a machine IS the registration, exactly like a Slack install. (Superseding the original D4 gating: the connector is a **regular** connector and no longer requires the per-project `agent_tunnel` flag — see §"D4".) That one connector exposes:
+Add a new Executor provider **`computer`**. When a project's account owns ≥1 tunnel, the Executor **synthesizes a single `computer` connector** — no `kortix.yaml` entry, no experimental opt-in; connecting a machine IS the registration, exactly like a Slack install. (Superseding the original D4 gating: the connector is a **regular** connector and no longer requires the per-project `agent_tunnel` flag — see §"D4".) That one connector exposes:
 
 - **`list_computers`** — a meta action (handled server-side, no relay): returns the account's machines with `{ id, name, online, capabilities, platform }` so the agent can pick one.
 - The **tunnel RPC method set** (`fs.*`, `shell.exec`, curated `desktop.cua.*` + a `desktop.cua.call` passthrough), each taking an extra **`computer`** selector arg (machine name or id; optional when exactly one machine is online → defaults to it).

@@ -1,5 +1,5 @@
 /**
- * Auto-deploy sweep for `[[apps]]` in `kortix.toml`.
+ * Auto-deploy sweep for the `apps` list in `kortix.yaml`.
  *
  * Runs on the same cadence as the trigger sweep (≈30s by default). For
  * each active project, loads the manifest, computes a stable hash of each
@@ -138,7 +138,7 @@ export async function getLatestDeployment(
  * Translate an AppSpec into the provider's DeploymentRequest shape. If
  * the spec's git source has no explicit `repo`, we fall back to the
  * project's own repo URL so the most common case (deploy this project's
- * repo) works with zero TOML boilerplate.
+ * repo) works with zero manifest boilerplate.
  */
 function buildDeploymentRequest(input: {
   project: ProjectRow;

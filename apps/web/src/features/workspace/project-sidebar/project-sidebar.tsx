@@ -180,7 +180,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             <ProjectSwitcher variant="sidebar" />
           </div>
           {!peek && (
-            <Hint label="Collapse sidebar" side="right">
+            <Hint label="Collapse sidebar" side="bottom">
               <Button
                 type="button"
                 aria-label="Collapse sidebar"

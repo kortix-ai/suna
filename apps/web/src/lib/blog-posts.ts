@@ -532,12 +532,12 @@ const aiTransformationCompanyOs: BlogPostEntry = {
     { type: 'h2', text: 'One client, one repo' },
     {
       type: 'p',
-      text: 'In Kortix, a project is a repo. That repo contains the company’s agents, skills, memory, triggers, connector policy, sandbox definition, and operating instructions. One `kortix.toml` defines how the workspace runs. Every session happens on an isolated branch. Every persistent change comes back through a change request.',
+      text: 'In Kortix, a project is a repo. That repo contains the company’s agents, skills, memory, triggers, connector policy, sandbox definition, and operating instructions. One `kortix.yaml` defines how the workspace runs. Every session happens on an isolated branch. Every persistent change comes back through a change request.',
     },
     {
       type: 'code',
       code: `acme-ai-workspace/
-├─ kortix.toml              # project, sandboxes, triggers, connectors, policy
+├─ kortix.yaml              # project, sandboxes, triggers, connectors, policy
 ├─ .kortix/opencode/
 │  ├─ agents/               # role-specific agents: finance, support, sales, legal
 │  ├─ skills/               # repeatable client playbooks and workflows

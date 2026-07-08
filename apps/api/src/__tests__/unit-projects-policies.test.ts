@@ -1,5 +1,5 @@
 /**
- * Top-level [[policies]] + [policy] parser for kortix.toml. Mirrors the
+ * Top-level `policies:` + `policy:` parser for kortix.yaml. Mirrors the
  * connectors parser shape — collects bad entries into `errors` instead of
  * throwing — and validates the engine vocabulary (action, default_mode).
  */
@@ -13,7 +13,11 @@ import {
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
 
 function parseFrom(body: string) {
-  const m = parseManifestString(`kortix_version = ${KNOWN_SCHEMA_VERSION}\n[project]\nname="t"\n${body}`);
+  const m = parseManifestString(
+    `kortix_version: ${KNOWN_SCHEMA_VERSION}\nproject:\n  name: t\n${body}`,
+    'yaml',
+    'kortix.yaml',
+  );
   return extractProjectPolicies(m);
 }
 
@@ -25,19 +29,15 @@ describe('extractProjectPolicies — happy paths', () => {
     expect(r.errors).toEqual([]);
   });
 
-  test('parses top-level [[policies]] in declared order', () => {
+  test('parses top-level policies: in declared order', () => {
     const r = parseFrom(`
-[[policies]]
-match = "*.delete*"
-action = "block"
-
-[[policies]]
-match = "stripe.*"
-action = "require_approval"
-
-[[policies]]
-match = "*"
-action = "always_run"
+policies:
+  - match: "*.delete*"
+    action: block
+  - match: stripe.*
+    action: require_approval
+  - match: "*"
+    action: always_run
 `);
     expect(r.policies).toEqual([
       { match: '*.delete*', action: 'block' },
@@ -47,40 +47,40 @@ action = "always_run"
     expect(r.errors).toEqual([]);
   });
 
-  test('[policy].default_mode = "risk" overrides allow_all default', () => {
+  test('policy.default_mode = "risk" overrides allow_all default', () => {
     const r = parseFrom(`
-[policy]
-default_mode = "risk"
+policy:
+  default_mode: risk
 `);
     expect(r.settings.defaultMode).toBe('risk');
     expect(r.errors).toEqual([]);
   });
 
-  test('[policy].default_mode = "allow_all" parses explicitly', () => {
+  test('policy.default_mode = "allow_all" parses explicitly', () => {
     const r = parseFrom(`
-[policy]
-default_mode = "allow_all"
+policy:
+  default_mode: allow_all
 `);
     expect(r.settings.defaultMode).toBe('allow_all');
   });
 });
 
 describe('extractProjectPolicies — error cases', () => {
-  test('policies = [single-table] is rejected (must be [[policies]])', () => {
+  test('policies as a mapping is rejected (must be a list)', () => {
     const r = parseFrom(`
-[policies]
-match = "*"
-action = "block"
+policies:
+  match: "*"
+  action: block
 `);
-    // smol-toml parses `[policies]` as an object, not array — parser rejects.
+    // A mapping, not an array — parser rejects.
     expect(r.policies).toEqual([]);
     expect(r.errors[0]?.error).toMatch(/`policies` must be an array of tables/);
   });
 
   test('entry missing match', () => {
     const r = parseFrom(`
-[[policies]]
-action = "block"
+policies:
+  - action: block
 `);
     expect(r.policies).toEqual([]);
     expect(r.errors[0]?.error).toMatch(/missing `match`/);
@@ -88,9 +88,9 @@ action = "block"
 
   test('entry with invalid action', () => {
     const r = parseFrom(`
-[[policies]]
-match = "*"
-action = "skip"
+policies:
+  - match: "*"
+    action: skip
 `);
     expect(r.policies).toEqual([]);
     expect(r.errors[0]?.error).toMatch(/action.*must be one of/);
@@ -98,8 +98,8 @@ action = "skip"
 
   test('default_mode with invalid value', () => {
     const r = parseFrom(`
-[policy]
-default_mode = "yolo"
+policy:
+  default_mode: yolo
 `);
     expect(r.settings.defaultMode).toBe('allow_all'); // unchanged default
     expect(r.errors[0]?.error).toMatch(/default_mode must be one of/);
@@ -107,17 +107,13 @@ default_mode = "yolo"
 
   test('partial failures still collect good entries', () => {
     const r = parseFrom(`
-[[policies]]
-match = "good"
-action = "block"
-
-[[policies]]
-match = ""
-action = "block"
-
-[[policies]]
-match = "*"
-action = "always_run"
+policies:
+  - match: good
+    action: block
+  - match: ""
+    action: block
+  - match: "*"
+    action: always_run
 `);
     expect(r.policies).toEqual([
       { match: 'good', action: 'block' },

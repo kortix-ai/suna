@@ -52,7 +52,7 @@ export function ApiKeyConnectForm({
     onSuccess: () => {
       successToast(`${provider.label} connected`);
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
-      refreshProjectProviderState(queryClient, projectId);
+      refreshProjectProviderState(queryClient, projectId, { expectProviderId: provider.id });
       onConnected();
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save credentials'),

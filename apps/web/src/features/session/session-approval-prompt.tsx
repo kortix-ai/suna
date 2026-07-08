@@ -117,10 +117,11 @@ export function SessionApprovalPrompt() {
     }
   };
 
-  // Persist "always run this tool" into the project's policies (kortix.toml
-  // [[policies]] — the same list the Policies panel edits), then release the
-  // pending rows it covers. PREPENDED: policy resolution is first-match-wins,
-  // so the new allow must outrank an existing require_approval pattern.
+  // Persist "always run this tool" into the project's policies (kortix.yaml
+  // connectors[].policies — the same list the Policies panel edits), then
+  // release the pending rows it covers. PREPENDED: policy resolution is
+  // first-match-wins, so the new allow must outrank an existing
+  // require_approval pattern.
   const alwaysRunInPolicy = async (qualified: string) => {
     if (!projectId) return;
     setBusy(`policy:${qualified}`);

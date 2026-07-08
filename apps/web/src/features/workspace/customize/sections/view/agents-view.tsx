@@ -484,7 +484,7 @@ function ScopeEditor({
   const selected = value === 'all' ? new Set<string>() : new Set(value);
   const optionIds = new Set(options.map((o) => o.id));
   // Selected names that aren't in the current option list (deleted resource, or
-  // typed via kortix.toml) — keep them visible so they can be unchecked.
+  // typed via kortix.yaml) — keep them visible so they can be unchecked.
   const orphanRows = [...selected]
     .filter((id) => !optionIds.has(id))
     .map((id) => ({ id, label: id }));

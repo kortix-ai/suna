@@ -127,7 +127,7 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
   }
 
   const opts: CtxOpts = { projectArg, hostArg };
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let sessions: ProjectSession[];

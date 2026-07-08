@@ -1,0 +1,16 @@
+# gitleaks false positives — reviewed and intentionally ignored.
+#
+# apps/api/src/__tests__/unit-executor-execute.test.ts contains the PUBLISHED
+# X (Twitter) OAuth 1.0a example test vectors — the exact sample values from
+# X's own developer docs (consumer key "xvz1evFS4wEEPTGEFPHBog", token
+# "370773112-GmHxMAgYyLbNEtIKZeRNFsMKPR9EyMZeS9weJAEb", etc.). They are public
+# documentation constants used to assert oauth1Signature/oauth1Header against
+# the known-good vector; none are live credentials.
+e1f0bcd84ccd4685211bfa3b47ae6b07d9e3437c:apps/api/src/__tests__/unit-executor-execute.test.ts:generic-api-key:277
+e1f0bcd84ccd4685211bfa3b47ae6b07d9e3437c:apps/api/src/__tests__/unit-executor-execute.test.ts:generic-api-key:278
+e1f0bcd84ccd4685211bfa3b47ae6b07d9e3437c:apps/api/src/__tests__/unit-executor-execute.test.ts:generic-api-key:281
+e1f0bcd84ccd4685211bfa3b47ae6b07d9e3437c:apps/api/src/__tests__/unit-executor-execute.test.ts:generic-api-key:284
+e1f0bcd84ccd4685211bfa3b47ae6b07d9e3437c:apps/api/src/__tests__/unit-executor-execute.test.ts:generic-api-key:285
+e1f0bcd84ccd4685211bfa3b47ae6b07d9e3437c:apps/api/src/__tests__/unit-executor-execute.test.ts:generic-api-key:310
+e1f0bcd84ccd4685211bfa3b47ae6b07d9e3437c:apps/api/src/__tests__/unit-executor-execute.test.ts:generic-api-key:312
+e1f0bcd84ccd4685211bfa3b47ae6b07d9e3437c:apps/api/src/__tests__/unit-executor-execute.test.ts:generic-api-key:319

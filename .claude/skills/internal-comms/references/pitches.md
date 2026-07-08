@@ -8,7 +8,7 @@ Each pitch: **who → pain → promise → proof/mechanism → sanctioned phrase
 
 - **Who:** Engineers already running coding agents (OpenCode, Claude, Codex) who want them in the cloud, in the background, with state that sticks.
 - **Pain:** Agents stuck on one laptop; no shared state, no isolation, no preview per change; every tool wants its own setup.
-- **Promise:** A managed cloud for OpenCode, Claude, and Codex agents. One `kortix.toml`, one config, one repo for the state that sticks — and you're running background coding agents.
+- **Promise:** A managed cloud for OpenCode, Claude, and Codex agents. One `kortix.yaml`, one config, one repo for the state that sticks — and you're running background coding agents.
 - **Proof / mechanism:** `kortix init`, `kortix ship` — that's the loop. Every PR gets a preview you can click through. Have your local agent spin up cloud sessions and go wide. Bring the subscription you already pay for.
 - **Sanctioned phrases:** "managed cloud for your coding agents," "background agents with a preview per change," "one repo for the state that sticks," "bring your own subscription."
 - **Don't say:** "replaces your IDE," "no more code," or anything implying autonomous merge without review — work lands via change request.

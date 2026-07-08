@@ -25,12 +25,12 @@ Kortix is what you build when you refuse both.
 
 ## Product narrative (the arc)
 
-1. **A company is a git repository.** A Kortix project is a git repo, and the repo *is* the company — configuration and accumulated state in one place, all text, all under version control, readable by a person and editable by an agent. Two files define it: `kortix.toml` (the Kortix layer) and the OpenCode config (the runtime agents think in). Everything past that is files. You can `grep` your entire company.
+1. **A company is a git repository.** A Kortix project is a git repo, and the repo *is* the company — configuration and accumulated state in one place, all text, all under version control, readable by a person and editable by an agent. Two files define it: `kortix.yaml` (the Kortix layer) and the OpenCode config (the runtime agents think in). Everything past that is files. You can `grep` your entire company.
 2. **It ships like code.** `kortix init` turns any directory into a Kortix; `kortix ship` checks it compiles, asks for missing secrets, pushes it up, and runs it. The repo behaves the same on your laptop as in the cloud. Local dev and the live system stop being different categories.
 3. **Work runs in isolated sessions.** Start a session and a sandbox boots from one snapshot running the `kortix-sandbox-agent-server` daemon: it clones the repo, cuts a fresh branch, and hands you a ready machine. The agent works fully walled off; when it wants to keep something, it commits and opens a change request back toward `main`, and a human decides whether it lands.
 4. **It scales to a workforce.** Because each session is its own sandbox on its own branch, you can run thousands in parallel without them touching each other — fifty coding agents, fifty doing outreach. The only genuinely shared thing is the world outside. This parallel, isolated workforce is the part nobody else has.
 5. **It improves itself.** `main` is always up. Triggers fire in the night. Any agent can edit its own configuration and propose the change, so the company files patches against itself — all tracked — and gets better at being a company over time instead of freezing on the day you set it up.
-6. **It feels easy.** Anyone can open it day one from the web, their phone, or a Slack thread, like any chat app. Most people never see a `kortix.toml`. The interface and the code are the same system from two angles — click or edit a file, identical change.
+6. **It feels easy.** Anyone can open it day one from the web, their phone, or a Slack thread, like any chat app. Most people never see a `kortix.yaml`. The interface and the code are the same system from two angles — click or edit a file, identical change.
 
 ## Message house
 

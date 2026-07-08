@@ -3,7 +3,7 @@
 Create a new Kortix project.
 
 ```sh
-kortix my-project
+kortix init my-project
 ```
 
 Makes `./my-project/`, runs `git init -b main`, drops the full OpenCode
@@ -14,30 +14,21 @@ makes an initial commit.
 ## Usage
 
 ```sh
-kortix                       # prompt for a project name, then create
-kortix my-project            # use the given name, no prompt
-kortix init                  # fuller interactive flow: pick a template,
+kortix init                  # interactive flow: pick a name + template,
                               # wire up coding agents, install marketplace skills
+kortix init my-project       # use the given name
 kortix ship                  # create the cloud project (first run) + push your code
 kortix self-host start       # run your own Kortix Cloud from Docker images
 ```
 
-`kortix <project-name>` is the fast path (like `create-next-app`): name it
-and go. `kortix init` is the same scaffold with more choices up front —
-which coding agent(s) to wire (`--primary`, `--agents`), which starter
-template (`--template minimal|general-knowledge-worker`), and which
-marketplace skills to install (`--marketplace`).
+Scaffolding is explicit-only: `kortix init` is the one command that creates
+a project directory. An unknown subcommand (`kortix use`, `kortix inti`, …)
+errors with a suggestion — it never scaffolds. Init's choices: which coding
+agent(s) to wire (`--primary`, `--agents`), which starter template
+(`--template minimal|general-knowledge-worker`), and which marketplace
+skills to install (`--marketplace`).
 
-### Flags (`kortix <project-name>`)
-
-| Flag | Effect |
-|---|---|
-| `--no-commit` | Run `git init` but don't create the initial commit. |
-| `--no-git` | Skip `git init` entirely. |
-| `--help` / `-h` | Show help. |
-| `--version` / `-v` | Print version. |
-
-Run `kortix init --help` for the fuller flow's flags, or `kortix --help`
+Run `kortix init --help` for the full flag list, or `kortix --help`
 for the full command list (project, auth, work, and resource subcommands —
 sessions, triggers, connectors, secrets, sandboxes, marketplace, and more).
 

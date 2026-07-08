@@ -63,9 +63,9 @@ export function agentMayUseEnv(grant: AgentGrant | null, identifier: string): bo
   if (!grant) return true; // no grant = no restriction
   const env = grant.env ?? 'all';
   if (env === 'all') return true;
-  // Identifiers are free-form-ish but a kortix.toml `secrets = [...]` allowlist
+  // Identifiers are free-form-ish but a kortix.yaml `secrets:` allowlist
   // is hand-written and may use any case. Match case-insensitively so
-  // `secrets = ["gmaps-primary"]` still admits identifier "GMAPS-primary".
+  // `secrets: ["gmaps-primary"]` still admits identifier "GMAPS-primary".
   const target = identifier.toUpperCase();
   return env.some((e) => e.toUpperCase() === target);
 }
@@ -78,6 +78,6 @@ export function assertAgentScope(c: Context, action: string): void {
   const grant = getAgentGrant(c);
   if (agentMayPerform(grant, action)) return;
   throw new HTTPException(403, {
-    message: `Agent "${grant!.agent}" is not granted "${action}". Add it to this agent's kortix_cli in kortix.toml (CR-merged).`,
+    message: `Agent "${grant!.agent}" is not granted "${action}". Add it to this agent's kortix_cli in kortix.yaml (CR-merged).`,
   });
 }

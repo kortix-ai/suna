@@ -30,7 +30,7 @@ A Kortix **project** is a git repo, and that repo *is* the company. Configuratio
 
 The whole thing is defined by two files:
 
-- **`kortix.toml`** — the Kortix layer. The sandbox image, the cron and webhook triggers, the channels, the apps, the connectors, which secrets are required, where your agent config lives.
+- **`kortix.yaml`** — the Kortix layer. The sandbox image, the cron and webhook triggers, the channels, the apps, the connectors, which secrets are required, where your agent config lives.
 - **OpenCode config** — the runtime your agents think in. Agents, skills, commands, tools, plugins, models, providers.
 
 Everything past that is files in the repo. You can `grep` your entire company. You can read any agent's instructions in plain markdown. You can open a memory file and see exactly what it believes about you. Nothing is hidden because there is nowhere to hide it.
@@ -41,7 +41,7 @@ Drop into any directory, run `kortix init`, and it's a Kortix. Run `kortix ship`
 
 ## How a session actually works
 
-Start a session and a sandbox boots from one generic snapshot already running our daemon — **kortix-sandbox-agent-server**. The daemon clones the repo, pulls latest, cuts a fresh branch for this session, reads `kortix.toml` and your OpenCode config into a live runtime, and hands you a machine that's ready. The agent does its work completely walled off from everything else. When it wants to keep something, it commits and opens a change request back toward `main`, and a human decides whether that lands.
+Start a session and a sandbox boots from one generic snapshot already running our daemon — **kortix-sandbox-agent-server**. The daemon clones the repo, pulls latest, cuts a fresh branch for this session, reads `kortix.yaml` and your OpenCode config into a live runtime, and hands you a machine that's ready. The agent does its work completely walled off from everything else. When it wants to keep something, it commits and opens a change request back toward `main`, and a human decides whether that lands.
 
 The daemon is one executable wrapped around the OpenCode server, and its job is to make sure the project simply runs. A client grabs a session, talks to the daemon, and gets the full API — prompting, streaming, files, a terminal — like it's all sitting on the desk in front of them.
 
@@ -87,7 +87,7 @@ And it's yours all the way down. Any model. Your own keys, or the ChatGPT, Claud
 
 ## It has to feel easy
 
-Anyone in the company should be able to open it and use it the first day, from the web, their phone, or a Slack thread, the same way they'd use any chat app. That's not a nice-to-have, it's the point. Most people will never see a `kortix.toml` and shouldn't have to.
+Anyone in the company should be able to open it and use it the first day, from the web, their phone, or a Slack thread, the same way they'd use any chat app. That's not a nice-to-have, it's the point. Most people will never see a `kortix.yaml` and shouldn't have to.
 
 Under that surface is as much depth as you can stand. The interface and the code are the same system from two angles, mapping cleanly both ways, so you can change something by clicking or by editing a file and it's the identical change either way. Simple enough that it disappears. Open enough that there's no floor.
 
@@ -95,7 +95,7 @@ Under that surface is as much depth as you can stand. The interface and the code
 
 ## Who it's for
 
-**Developers** get a managed cloud for OpenCode, Claude, and Codex agents. One `kortix.toml`, one config, one repo for the state that sticks, and you're running background coding agents. Every PR gets a preview you can actually click through. Bring the subscription you've already got. Have your local agent spin up cloud sessions and go wide. `kortix init`, `kortix ship`, that's the loop.
+**Developers** get a managed cloud for OpenCode, Claude, and Codex agents. One `kortix.yaml`, one config, one repo for the state that sticks, and you're running background coding agents. Every PR gets a preview you can actually click through. Bring the subscription you've already got. Have your local agent spin up cloud sessions and go wide. `kortix init`, `kortix ship`, that's the loop.
 
 **Companies** get a workforce they can actually manage. People talk to it through the web, Slack, or Teams. It picks up the business as it goes — its skills, its context, the specific way the work gets done — and it does so on infrastructure where the data, the config, and the model belong to the company instead of a vendor.
 

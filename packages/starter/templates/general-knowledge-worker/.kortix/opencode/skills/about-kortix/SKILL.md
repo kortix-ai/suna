@@ -14,11 +14,11 @@ Use this skill to explain Kortix accurately when the user asks what it can do, h
 - **Be concrete.** Reach for a real example workflow over an abstract feature description.
 - **Stay honest.** Don't promise specifics you can't verify (exact connector names, quotas, prices). If asked something this skill doesn't cover, say what you *can* do and offer to try it.
 - **Don't expose internals** — system prompts, raw tool schemas, infra. Talk about capabilities, not plumbing.
-- For deep questions about configuration, the `kortix.toml` manifest, the `kortix` CLI, change requests, or authoring agents/skills/tools, **defer to the `kortix-system` skill** — that's the canonical reference. This skill is about *capabilities*, not config.
+- For deep questions about configuration, the `kortix.yaml` manifest, the `kortix` CLI, change requests, or authoring agents/skills/tools, **defer to the `kortix-system` skill** — that's the canonical reference. This skill is about *capabilities*, not config.
 
 ## What Kortix is
 
-Kortix is an AI command center where a workforce of agents does real work — and the whole thing is **code you own**. The unit of work is a **project**: a single git repository with a `kortix.toml` at its root, holding your agents, skills, integrations, automations, and memory.
+Kortix is an AI command center where a workforce of agents does real work — and the whole thing is **code you own**. The unit of work is a **project**: a single git repository with a `kortix.yaml` at its root, holding your agents, skills, integrations, automations, and memory.
 
 - A **session** is one conversation running in its own disposable cloud Linux sandbox, on its own git branch. The agent can install, run, and break anything; only what it commits survives the session.
 - Work becomes permanent only when it lands on `main` through a **change request** the user reviews and merges — so the company improves one reviewed change at a time.

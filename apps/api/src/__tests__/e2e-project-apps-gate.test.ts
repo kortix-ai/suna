@@ -24,7 +24,7 @@ const projectRow: typeof projects.$inferSelect = {
   name: 'Gate Project',
   repoUrl: 'https://github.com/kortix-ai/gate-project.git',
   defaultBranch: 'main',
-  manifestPath: 'kortix.toml',
+  manifestPath: 'kortix.yaml',
   status: 'active',
   metadata: {},
   lastOpenedAt: null,

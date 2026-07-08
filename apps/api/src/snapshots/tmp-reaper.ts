@@ -49,6 +49,22 @@ async function sweepOnce(): Promise<void> {
   if (reclaimed > 0) {
     logger.info('[tmp-reaper] reclaimed stale build contexts', { count: reclaimed });
   }
+
+  try {
+    const { reapGitCacheOverBudget } = await import('../projects/git/mirror');
+    const { totalBytes, deleted, freedBytes } = await reapGitCacheOverBudget();
+    if (deleted > 0) {
+      logger.info('[tmp-reaper] evicted LRU git mirrors over cache budget', {
+        deleted,
+        freedMb: Math.round(freedBytes / (1024 * 1024)),
+        remainingMb: Math.round(totalBytes / (1024 * 1024)),
+      });
+    }
+  } catch (err) {
+    logger.warn('[tmp-reaper] git-cache sweep failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 export function startTmpReaper(): void {

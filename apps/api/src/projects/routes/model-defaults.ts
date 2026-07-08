@@ -1,5 +1,5 @@
 // Model-defaults CRUD — the SDK/UI surface for setting the default model at
-// account (personal), project, and agent scope. The committed kortix.toml holds
+// account (personal), project, and agent scope. The committed kortix.yaml holds
 // an agent's/trigger's declarative model; these routes manage the dynamic,
 // per-account defaults the gateway resolves `auto` against.
 //

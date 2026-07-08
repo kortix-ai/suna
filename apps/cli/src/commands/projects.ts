@@ -376,7 +376,7 @@ async function projectsLink(arg?: string): Promise<number> {
 
   // Refuse to scatter `.kortix/link.json` into random directories. A
   // project is only "Kortix-linkable" if it already has a `.kortix/`
-  // dir (from `kortix init`) or a `kortix.toml` at the root.
+  // dir (from `kortix init`) or a `kortix.yaml` at the root.
   if (!isKortixProject()) {
     process.stderr.write(
       `${status.err(`Not a Kortix project — no .kortix/ or kortix.yaml in ${process.cwd()}.`)}\n`,
@@ -569,6 +569,10 @@ function formatRelative(iso: string): string {
 
 
 function openInBrowser(url: string): void {
+  // Only hand a real web URL to the OS opener — a value starting with '-' would
+  // be read as a flag by open/xdg-open, and Windows `start` parses its argument,
+  // so an unvalidated URL is a command-injection vector.
+  if (!/^https?:\/\//i.test(url)) return;
   const cmd =
     process.platform === 'darwin'
       ? 'open'

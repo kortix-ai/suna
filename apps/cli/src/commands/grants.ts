@@ -128,7 +128,7 @@ export async function runGrants(argv: string[]): Promise<number> {
     return 2;
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
-  const ctx = resolveProjectContext({ projectArg: f.project, hostArg: f.host });
+  const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
   const base = `/projects/${ctx.projectId}`;
 

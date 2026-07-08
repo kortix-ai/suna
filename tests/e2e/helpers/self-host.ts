@@ -81,7 +81,7 @@ insert into kortix.projects (
   '${escapeSql(name)}',
   '${escapeSql(projectRepoUrl)}',
   'main',
-  'kortix.toml',
+  'kortix.yaml',
   'active',
   '{"self_host_e2e":true}'::jsonb
 );

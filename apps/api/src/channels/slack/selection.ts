@@ -182,7 +182,7 @@ export interface ProjectAgent {
 export interface ProjectAgentGovernance {
   agents: ProjectAgent[];
   /**
-   * True when the project has adopted `kortix.toml [[agents]]` — the listed
+   * True when the project has adopted `kortix.yaml`'s `agents:` block — the listed
    * names are ENFORCED (an undeclared name isn't a real launchable agent), not
    * merely discovered from `.kortix/opencode/agents/*.md`. Mirrors
    * `ProjectConfigSummary.agent_discovery === 'declarative'`. Callers that
@@ -195,7 +195,7 @@ export interface ProjectAgentGovernance {
 
 /**
  * The project's launchable agents from the server-side config summary:
- * declarative `kortix.toml [[agents]]` for adopted projects, OpenCode markdown
+ * declarative `kortix.yaml` `agents:` for adopted projects, OpenCode markdown
  * discovery for legacy projects. Touches git, so callers must use the async
  * slash response path (response_url) to stay inside Slack's 3s window.
  */
