@@ -173,7 +173,12 @@ export function MembersView({ projectId }: { projectId: string }) {
         />
       )}
 
-      {project?.account_id && (
+      {/* Resource-access grants and custom-role bindings are manager-only
+          DATA (the grants list and the account policies route both deny
+          non-managers), so the cards hide entirely for viewers who can't
+          read them — an inert husk with an error or empty body is worse
+          than absence. Group access above stays: its list is member-readable. */}
+      {project?.account_id && canManage && (
         <ResourceAccessCard
           projectId={projectId}
           accountId={project.account_id}
@@ -182,7 +187,7 @@ export function MembersView({ projectId }: { projectId: string }) {
         />
       )}
 
-      {project?.account_id && (
+      {project?.account_id && canManage && (
         <ProjectRoleAssignmentsCard
           projectId={projectId}
           accountId={project.account_id}
@@ -2138,6 +2143,10 @@ function ProjectRoleAssignmentsCard({
 
   const policiesQuery = useQuery({
     queryKey: policiesKey,
+    // Gated like every sibling below: the account-IAM policies route asserts
+    // policy.read, which a non-manager doesn't hold — firing it anyway just
+    // 403s for data this card can never show them.
+    enabled: canManage,
     queryFn: () => listPolicies(accountId, { scopeId: projectId }),
     staleTime: 20_000,
   });
