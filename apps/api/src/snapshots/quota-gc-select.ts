@@ -32,6 +32,23 @@
  * mean the project is gone — it may be another environment's. `lastUsedAt` is the
  * only cross-env liveness signal we have, and it is the sole basis on which a
  * ppwarm tip belonging to nobody-we-know is reclaimed.
+ *
+ * ── Why ppwarm needs an LRU budget, not just a liveness rule ────────────────
+ * `kortix-ppwarm-<proj8>-<hash>` is minted unconditionally on session-start of the
+ * shared default (builder.ts), one live tip per project. So the cache's floor is the
+ * number of projects that have ever started a session. Measured 2026-07-08: 69 tips
+ * for 69 distinct, non-archived projects — 69 of the org's 100 slots, before a single
+ * default or user template. Liveness rules reclaim NOTHING there (every tip is a live
+ * project's only tip), so a purely liveness-based GC sits at 100% pressure doing
+ * nothing, which is exactly the outage we hit.
+ *
+ * ppwarm is a pure CACHE — evicting a tip costs one cold boot plus a re-bake, never
+ * data — so it is the namespace that absorbs budget pressure. Evict LRU until the org
+ * is back at target, skipping recently-used tips (they'd re-bake at once: churn, not
+ * reclamation). When even that can't reach target, `budgetUnresolved` is set so the
+ * caller can alarm — a GC that silently can't keep up is how this failed the first
+ * time. The real remedy at that point is capacity (raise the org snapshot quota) or
+ * gating the warm bake; GC can only buy time.
  */
 
 /** The Daytona org-wide snapshot cap. Counts every snapshot, ours or not. */
@@ -39,6 +56,9 @@ export const DAYTONA_ORG_SNAPSHOT_LIMIT = 100;
 
 /** Start reclaiming once the ORG total reaches this. Leaves room to act before builds fail. */
 export const QUOTA_GC_ORG_HIGH_WATER = 80;
+
+/** Once reclaiming, free down to here — a buffer, not just back under the high-water mark. */
+export const QUOTA_GC_ORG_TARGET = 85;
 
 /** Live env defaults are booted constantly, so they're always in the freshest set. */
 export const QUOTA_GC_KEEP_FRESHEST_DEFAULTS = 12;
@@ -51,6 +71,13 @@ export const QUOTA_GC_MIN_IDLE_MS = 7 * 24 * 60 * 60 * 1000;
  * it is. Cross-env safe: any environment still booting from it keeps lastUsedAt fresh.
  */
 export const QUOTA_GC_PPWARM_MAX_IDLE_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * Under budget pressure, ppwarm tips are evicted LRU — but never one used this
+ * recently. An actively-used project would simply re-bake on its next session, so
+ * evicting it is churn (a slot freed and immediately reclaimed), not reclamation.
+ */
+export const QUOTA_GC_PPWARM_EVICT_PROTECT_MS = 6 * 60 * 60 * 1000;
 
 /** Max deletions per sweep pass — keeps each pass cheap and observable. */
 export const QUOTA_GC_MAX_PER_PASS = 15;
@@ -102,6 +129,13 @@ export interface SelectResult {
   doomed: ReapCandidate[];
   /** Reapable but dropped by the per-pass cap — logged so truncation is never silent. */
   deferred: number;
+  /**
+   * True when, even after evicting every eligible ppwarm tip, the org still can't
+   * reach QUOTA_GC_ORG_TARGET. The cache floor (one tip per active project) has
+   * outgrown the quota: GC cannot fix this, only capacity or a warm-bake gate can.
+   * Callers MUST surface this rather than log a quiet no-op.
+   */
+  budgetUnresolved: boolean;
 }
 
 export function isManaged(name: string): boolean {
@@ -149,6 +183,7 @@ export function selectSnapshotsToReap(input: SelectInput): SelectResult {
     underPressure,
     doomed: [],
     deferred: 0,
+    budgetUnresolved: false,
   };
   if (!underPressure) return result;
 
@@ -217,6 +252,32 @@ export function selectSnapshotsToReap(input: SelectInput): SelectResult {
     if (now - t > QUOTA_GC_MIN_IDLE_MS) {
       claim(s, `unreferenced + idle ${Math.floor((now - t) / 86_400_000)}d`);
     }
+  }
+
+  // 6. BUDGET. Everything above is "provably unneeded". If the org is still over
+  //    target after all of it, the shortfall is live cache: one ppwarm tip per active
+  //    project, which no liveness rule can touch (see the header). ppwarm is a pure
+  //    cache, so it is what gives. Evict LRU until we reach target, skipping tips used
+  //    recently enough that they'd just re-bake.
+  const stillOver = () => orgTotal - candidates.length - QUOTA_GC_ORG_TARGET;
+  if (stillOver() > 0) {
+    const evictable = pool
+      .filter((s) => ppwarmProj8(s.name) && !claimed.has(s.id))
+      .filter((s) => {
+        const t = lastTouch(s);
+        return Number.isFinite(t) && now - t > QUOTA_GC_PPWARM_EVICT_PROTECT_MS;
+      })
+      .sort((a, b) => lastTouch(a) - lastTouch(b)); // least-recently-used first
+
+    for (const s of evictable) {
+      if (stillOver() <= 0) break;
+      claim(
+        s,
+        `ppwarm LRU eviction (idle ${Math.floor((now - lastTouch(s)) / 3_600_000)}h, over budget)`,
+      );
+    }
+    // Exhausted every evictable tip and still over: the cache floor beats the quota.
+    result.budgetUnresolved = stillOver() > 0;
   }
 
   result.deferred = Math.max(0, candidates.length - QUOTA_GC_MAX_PER_PASS);
