@@ -14,7 +14,7 @@
  *               folderInheritedSessionIds + the sessions list route).
  */
 import type { SessionFolder } from '@kortix/api-contract';
-import { sessionFolders } from '@kortix/db';
+import type { sessionFolders } from '@kortix/db';
 
 export type SessionFolderRow = typeof sessionFolders.$inferSelect;
 

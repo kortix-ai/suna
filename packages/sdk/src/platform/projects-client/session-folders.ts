@@ -28,9 +28,7 @@ export interface SessionFolder {
 }
 
 export async function listSessionFolders(projectId: string) {
-  return unwrap(
-    await backendApi.get<SessionFolder[]>(`/projects/${projectId}/session-folders`),
-  );
+  return unwrap(await backendApi.get<SessionFolder[]>(`/projects/${projectId}/session-folders`));
 }
 
 export async function createSessionFolder(
@@ -58,9 +56,7 @@ export async function updateSessionFolder(
 /** Deleting a folder unfiles its sessions — it never deletes them. */
 export async function deleteSessionFolder(projectId: string, folderId: string) {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/session-folders/${folderId}`,
-    ),
+    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/session-folders/${folderId}`),
   );
 }
 
@@ -71,9 +67,8 @@ export async function setSessionFolder(
   folderId: string | null,
 ) {
   return unwrap(
-    await backendApi.put<ProjectSession>(
-      `/projects/${projectId}/sessions/${sessionId}/folder`,
-      { folder_id: folderId },
-    ),
+    await backendApi.put<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}/folder`, {
+      folder_id: folderId,
+    }),
   );
 }

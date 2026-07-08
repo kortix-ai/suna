@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/modal';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { updateSessionFolder, type SessionFolder } from '@kortix/sdk/projects-client';
+import { type SessionFolder, updateSessionFolder } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
@@ -52,9 +52,7 @@ export function FolderShareModal({
       queryClient.invalidateQueries({ queryKey: ['session-folders', projectId] });
       queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
       successToast(
-        visibility === 'project'
-          ? 'Folder shared with the project'
-          : 'Folder is now private',
+        visibility === 'project' ? 'Folder shared with the project' : 'Folder is now private',
       );
       onOpenChange(false);
     },

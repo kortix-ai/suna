@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  type SessionFolderRow,
   canManageFolder,
   isFolderVisibleTo,
   parseFolderName,
   parseFolderVisibility,
   projectVisibleFolderIds,
   serializeSessionFolder,
-  type SessionFolderRow,
 } from './session-folders';
 
 const OWNER = 'user-owner';
@@ -110,7 +110,7 @@ describe('serializeSessionFolder', () => {
     expect(out.can_manage).toBe(false);
   });
 
-  test('project manager can manage another user\'s folder', () => {
+  test("project manager can manage another user's folder", () => {
     const out = serializeSessionFolder(folderRow(), { viewerId: OTHER, canManageProject: true });
     expect(out.can_manage).toBe(true);
   });

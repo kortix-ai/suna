@@ -1,6 +1,6 @@
 import type { ProjectSession, SessionFolder } from '@kortix/sdk/projects-client';
 
-import { sessionSource, type SessionSourceKind } from './session-label';
+import { type SessionSourceKind, sessionSource } from './session-label';
 
 /**
  * Sidebar folder grouping — the single place that decides which folder a

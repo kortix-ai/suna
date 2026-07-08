@@ -13,9 +13,9 @@ import {
 } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
+  type SessionFolder,
   createSessionFolder,
   updateSessionFolder,
-  type SessionFolder,
 } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';

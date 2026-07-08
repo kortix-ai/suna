@@ -68,7 +68,10 @@ describe('groupSessions', () => {
   test('unfiled automation sessions group under auto folders in fixed order', () => {
     const grouped = groupSessions(
       [
-        session({ session_id: 'w', metadata: { trigger_source: 'webhook', trigger_type: 'webhook' } }),
+        session({
+          session_id: 'w',
+          metadata: { trigger_source: 'webhook', trigger_type: 'webhook' },
+        }),
         session({ session_id: 'c', metadata: { trigger_source: 'cron', trigger_type: 'cron' } }),
         session({ session_id: 's', metadata: { source: 'slack' } }),
       ],

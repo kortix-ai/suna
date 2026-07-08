@@ -95,6 +95,10 @@ const SOURCE_ICONS: Record<
 
 const SESSION_DRAG_TYPE = 'application/x-kortix-session';
 
+// Stable fallback for the zustand selector — a fresh `{}` per render changes
+// identity every time and re-renders forever (getSnapshot loop).
+const NO_EXPANDED_STATE: Record<string, boolean> = {};
+
 function shouldPollProjectSessions(sessions: ProjectSession[] | undefined): boolean {
   return (sessions ?? []).some((session) => LIVE_SESSION_STATUSES.includes(session.status));
 }
@@ -145,7 +149,9 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   // Drag-and-drop: the folder id a dragged session is currently hovering.
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
-  const expandedMap = useSessionFolderUiStore((s) => s.expandedByProject[projectId] ?? {});
+  const expandedMap = useSessionFolderUiStore(
+    (s) => s.expandedByProject[projectId] ?? NO_EXPANDED_STATE,
+  );
   const setExpanded = useSessionFolderUiStore((s) => s.setExpanded);
 
   const newSession = useNewProjectSession(projectId);

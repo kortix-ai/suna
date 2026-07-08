@@ -2,10 +2,10 @@
 
 import {
   AUTO_FOLDER_LABELS,
-  isAutoFolderKind,
   type AutoFolderKind,
+  isAutoFolderKind,
 } from '@/components/projects/session-folder-grouping';
-import { sessionSource, type SessionSourceKind } from '@/components/projects/session-label';
+import { type SessionSourceKind, sessionSource } from '@/components/projects/session-label';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -18,35 +18,41 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { Icon } from '@/features/icon/icon';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { FolderNameModal } from '@/features/workspace/project-sidebar/modal/folder-name-modal';
 import { FolderShareModal } from '@/features/workspace/project-sidebar/modal/folder-share-modal';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
+import { cn } from '@/lib/utils';
 import {
+  type ProjectSession,
+  type SessionFolder,
   deleteSessionFolder,
   listProjectSessions,
   listSessionFolders,
-  type ProjectSession,
-  type SessionFolder,
 } from '@kortix/sdk/projects-client';
-import { cn } from '@/lib/utils';
-import { Icon as IconMynauiType, Pencil, Share, TrashSolid, UsersSolid } from '@mynaui/icons-react';
+import {
+  type Icon as IconMynauiType,
+  Pencil,
+  Share,
+  TrashSolid,
+  UsersSolid,
+} from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import {
   CalendarClock,
   Folder,
+  type LucideIcon,
   Mail,
   MoreHorizontal,
   Plus,
   Webhook,
-  type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
-import { IconType } from 'react-icons/lib';
+import type { IconType } from 'react-icons/lib';
 
 const SOURCE_ICONS: Record<
   Exclude<SessionSourceKind, 'chat'>,
@@ -115,9 +121,7 @@ export function FolderHomeView({
       // not the source bucket.
       const manualIds = new Set((folders ?? []).map((f) => f.folder_id));
       return all.filter(
-        (s) =>
-          sessionSource(s).kind === folderKey &&
-          !(s.folder_id && manualIds.has(s.folder_id)),
+        (s) => sessionSource(s).kind === folderKey && !(s.folder_id && manualIds.has(s.folder_id)),
       );
     }
     return all.filter((s) => s.folder_id === folderKey);
@@ -231,7 +235,10 @@ export function FolderHomeView({
                       <Pencil />
                       Rename
                     </DropdownMenuItem>
-                    <DropdownMenuItem className="cursor-pointer" onSelect={() => setShareOpen(true)}>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      onSelect={() => setShareOpen(true)}
+                    >
                       <Share />
                       Share
                     </DropdownMenuItem>
