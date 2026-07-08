@@ -22,7 +22,7 @@ import { C, pad, status } from '../style.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
-interface ResolvedSession {
+export interface ResolvedSession {
   /** Kortix session row. */
   session: ProjectSession;
   /** Auth used (so opencodeClient builds with the right base URL). */

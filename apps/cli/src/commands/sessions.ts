@@ -8,6 +8,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
+import { runSessionsAnswer, runSessionsApprove, runSessionsPending } from './sessions-approvals.ts';
 import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
 import { runSessionsConnect } from './sessions-connect.ts';
 import { runSessionsDigest } from './sessions-digest.ts';
@@ -37,6 +38,14 @@ Subcommands:
                                     (read-only) — peek at what an agent is
                                     doing without sending it anything.
                                     --limit <N>, --json. Aliases: messages.
+  pending <session-id>              List open interactive prompts the agent
+                                    is blocked on: tool-permission asks +
+                                    questions. --json. Aliases: prompts.
+  approve <session-id> [<req-id>]   Answer a pending tool-permission ask.
+                                    --always, --reject, --message "<why>".
+  answer <session-id> [<req-id>]    Answer a pending question.
+                                    --option <value> (repeatable),
+                                    --text "<answer>", --reject.
   digest                            Compact review of recent sessions for
                                     reflection: metadata + compressed
                                     transcript snippets with tool outputs
@@ -86,6 +95,17 @@ export async function runSessions(argv: string[]): Promise<number> {
   // `digest` owns its own time-window + compaction flags.
   if (sub === 'digest' || sub === 'review' || sub === 'summary') {
     return runSessionsDigest(argv.slice(1));
+  }
+  // Interactive-prompt commands own their own flag parsing (repeatable
+  // --option, --message, positional request ids).
+  if (sub === 'pending' || sub === 'prompts') {
+    return runSessionsPending(argv.slice(1));
+  }
+  if (sub === 'approve') {
+    return runSessionsApprove(argv.slice(1));
+  }
+  if (sub === 'answer') {
+    return runSessionsAnswer(argv.slice(1));
   }
   const rest = argv.slice(1);
   const json = takeFlagBool(rest, ['--json']);
