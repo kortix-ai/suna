@@ -112,6 +112,7 @@ export const MeSchema = z
       agent: z.string().nullable(),
       connectors: z.union([z.literal('all'), z.array(z.string())]).nullable(),
       kortix_cli: z.union([z.literal('all'), z.array(z.string())]).nullable(),
+      env: z.union([z.literal('all'), z.array(z.string())]).nullable(),
     }).optional(),
     accounts: z.array(
       z.object({

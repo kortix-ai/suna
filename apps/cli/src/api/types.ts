@@ -18,6 +18,7 @@ export interface MeResponse {
     agent: string | null;
     connectors: string[] | 'all' | null;
     kortix_cli: string[] | 'all' | null;
+    env?: string[] | 'all' | null;
   };
   accounts: AccountMembership[];
 }
