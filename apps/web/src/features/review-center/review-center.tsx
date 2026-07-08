@@ -19,8 +19,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import { Kbd } from '@/components/ui/kbd';
+import Loading from '@/components/ui/loading';
 import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status';
@@ -33,6 +35,7 @@ import {
 } from '@/components/ui/tabs';
 import { infoToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { cn } from '@/lib/utils';
 import type { ReviewVerdict } from '@kortix/sdk/projects-client';
 import { CheckCircleSolid, InboxSolid, ShieldCheckSolid, X } from '@mynaui/icons-react';
@@ -41,6 +44,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { statusToVerdict } from './map';
 import { MOCK_ITEMS } from './mock-data';
+import { formatItemAge, isQuickDecidableApproval } from './review-actions';
 import { type ReviewActions, ReviewDetailModal } from './review-detail-modal';
 import { KIND_META, RISK_BAR, RISK_META, SOURCE_META, STATUS_META } from './review-meta';
 import {
@@ -59,14 +63,6 @@ import { type ReviewItem, type ReviewKind, type ReviewSegment, segmentForStatus 
 /** Calm, premium easing for the inbox's enter/exit/layout motion. */
 const EASE = [0.2, 0, 0, 1] as const;
 
-function rel(iso: string): string {
-  const mins = Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
-  if (mins < 60) return `${mins}m`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h`;
-  return `${Math.round(hrs / 24)}d`;
-}
-
 /**
  * Relative time is client-only: it depends on `Date.now()`, which differs between
  * the server render and hydration. Render nothing until mounted so SSR and the
@@ -75,7 +71,7 @@ function rel(iso: string): string {
 function TimeAgo({ iso }: { iso: string }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  return <span className="tabular-nums">{mounted ? rel(iso) : ''}</span>;
+  return <span className="tabular-nums">{mounted ? formatItemAge(iso) : ''}</span>;
 }
 
 /** A count that rolls when it changes — the satisfying tick as you clear the inbox. */
@@ -134,8 +130,13 @@ function ItemRow({
   showCheck,
   fresh,
   reduce,
+  quickDecidable,
+  pendingDecision,
+  sessionLabel,
   onOpen,
   onToggleSelect,
+  onQuickApprove,
+  onQuickDeny,
 }: {
   item: ReviewItem;
   idx: number;
@@ -146,13 +147,25 @@ function ItemRow({
   fresh: boolean;
   /** prefers-reduced-motion: collapse enter/stagger to instant. */
   reduce: boolean;
+  /** A single-action approval with a real client-side resolve path (an
+   *  executor approval) — show Approve/Deny right on the row, no modal hop. */
+  quickDecidable: boolean;
+  /** 'approve' | 'deny' while this row's own resolve mutation is in flight. */
+  pendingDecision?: 'approve' | 'deny' | null;
+  /** The item's originating session name, when known — shown inline so a
+   *  Change Request or approval's origin is legible without opening it.
+   *  Omitted in the grouped view (the session already names the group). */
+  sessionLabel?: string;
   onOpen: () => void;
   onToggleSelect: () => void;
+  onQuickApprove?: () => void;
+  onQuickDeny?: () => void;
 }) {
   const kind = KIND_META[item.kind];
   const Source = SOURCE_META[item.source];
   const segment = segmentForStatus(item.status);
   const risk = RISK_META[item.risk];
+  const busy = !!pendingDecision;
   // Left accent bar: kind tone by default; in Needs-you it escalates to the
   // risk tone for medium/high so risky work glows at the row's edge.
   const barClass =
@@ -228,14 +241,32 @@ function ItemRow({
           <span className="text-muted-foreground/70 font-medium">{kind.label}</span>
           {item.summary ? <span className="text-muted-foreground/40"> · </span> : null}
           {item.summary}
+          {sessionLabel ? <span className="text-muted-foreground/40"> · </span> : null}
+          {sessionLabel}
         </div>
       </button>
 
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1.5">
         {segment === 'needs_you' ? (
-          <Button size="sm" variant="secondary" onClick={onOpen}>
-            {item.primaryAction}
-          </Button>
+          quickDecidable ? (
+            <>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={onQuickDeny}>
+                {pendingDecision === 'deny' ? <Loading className="size-3.5 shrink-0" /> : null}
+                Deny
+              </Button>
+              <Button size="sm" variant="secondary" disabled={busy} onClick={onQuickApprove}>
+                {pendingDecision === 'approve' ? <Loading className="size-3.5 shrink-0" /> : null}
+                Approve
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" variant="secondary" onClick={onOpen}>
+              {/* "Ship it" reads as instant-merge, but this only opens the
+                  detail (the modal's own button ships) — label the row
+                  action for what it does: open the full diff to decide. */}
+              {item.kind === 'change' ? 'Review' : item.primaryAction}
+            </Button>
+          )
         ) : (
           <Badge variant={STATUS_META[item.status].badge} size="sm">
             {STATUS_META[item.status].label}
@@ -277,8 +308,10 @@ export function ReviewCenter({
   onAct,
   onBulkAct,
   onOpenSession,
+  onRefresh,
   isLoading,
   isFetching,
+  isError,
   sessionLabels,
 }: {
   /** When provided, the inbox renders real data instead of the mock fixtures. */
@@ -289,9 +322,15 @@ export function ReviewCenter({
   onBulkAct?: (ids: string[], verdict: ReviewVerdict) => void;
   /** Connected mode: open a session (e.g. to watch the agent revise a change). */
   onOpenSession?: (sessionId: string) => void;
+  /** Connected mode: force an immediate poll instead of waiting for the
+   *  interval — the "Live" indicator doubles as this refresh affordance. */
+  onRefresh?: () => void;
   isLoading?: boolean;
   /** A background poll is in flight — drives the "Live" refreshing affordance. */
   isFetching?: boolean;
+  /** The initial/only load failed — show a retry state instead of an empty
+   *  inbox (an empty list and a failed fetch must never look the same). */
+  isError?: boolean;
   /** sessionId → human name, for the per-session filter + group headers. */
   sessionLabels?: Record<string, string>;
 } = {}) {
@@ -317,6 +356,12 @@ export function ReviewCenter({
   const knownIdsRef = useRef<Set<string> | null>(null);
   const [freshIds, setFreshIds] = useState<Set<string>>(new Set());
   const markSeen = () => setFreshIds((prev) => (prev.size ? new Set() : prev));
+  // The single item id currently mid-mutation (row quick-decide or the detail
+  // modal's approve/deny) + which verdict, so the row/modal button that fired
+  // it — and only that one — shows `Loading` while connected. Cleared on the
+  // next `initialItems` reconciliation (the refetch that follows a mutation).
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pendingDecision, setPendingDecision] = useState<'approve' | 'deny' | null>(null);
 
   const undoRef = useRef<ReviewItem[] | null>(null);
   // Query root for scroll-into-view — a container of the [data-idx] rows. It wraps
@@ -377,9 +422,15 @@ export function ReviewCenter({
       ?.scrollIntoView({ block: 'nearest' });
   }, [focusedIdx]);
 
-  // Connected mode: reconcile with the server list as it (re)loads.
+  // Connected mode: reconcile with the server list as it (re)loads. Each
+  // reconciliation is also the "settled" signal for a row/modal quick-decide
+  // mutation (there's no per-call settle callback threaded through `apply`),
+  // so clear the pending marker here rather than leave a button spinning
+  // forever if the item already left the list (e.g. a stale poll raced it).
   useEffect(() => {
     if (initialItems) setItems(initialItems);
+    setPendingId(null);
+    setPendingDecision(null);
   }, [initialItems]);
 
   // Detect items that arrived since the user last looked → flag them "fresh".
@@ -450,6 +501,10 @@ export function ReviewCenter({
   const actions: ReviewActions = {
     resolve: (id, status, message, feedback) => {
       const verdict = statusToVerdict(status);
+      if (connected && (status === 'approved' || status === 'rejected')) {
+        setPendingId(id);
+        setPendingDecision(status === 'approved' ? 'approve' : 'deny');
+      }
       apply(
         setStatus(items, id, status),
         message ?? 'Updated',
@@ -462,11 +517,30 @@ export function ReviewCenter({
     approveAllSafe: (itemId) => setItems(approveAllSafe(items, itemId)),
     openSession: onOpenSession,
     connected,
+    pendingId,
+    pendingDecision,
+  };
+
+  /** Row-level Approve/Deny for a single-action executor approval — resolves
+   *  it directly via `actions.resolve`, no modal hop. */
+  const quickDecide = (item: ReviewItem, decision: 'approve' | 'deny') => {
+    actions.resolve(
+      item.id,
+      decision === 'approve' ? 'approved' : 'rejected',
+      decision === 'approve' ? 'Approved — the agent will continue' : 'Denied',
+    );
   };
 
   const quickPrimary = (item: ReviewItem) => {
-    if (item.kind === 'approval' || item.kind === 'decision') {
-      setSelectedId(item.id); // needs a choice — open the detail
+    if (connected && isQuickDecidableApproval(item)) {
+      quickDecide(item, 'approve');
+      return;
+    }
+    // Change Requests never one-click-ship from the inbox, even via the `a`
+    // shortcut — merging needs the full diff in view, so this always opens
+    // the detail (its "Ship it" button is the real merge action).
+    if (item.kind === 'approval' || item.kind === 'decision' || item.kind === 'change') {
+      setSelectedId(item.id); // needs a choice / full context — open the detail
       return;
     }
     apply(
@@ -478,6 +552,10 @@ export function ReviewCenter({
   };
 
   const quickAskChanges = (item: ReviewItem) => {
+    if (connected && isQuickDecidableApproval(item)) {
+      quickDecide(item, 'deny');
+      return;
+    }
     if (item.kind === 'change' || item.kind === 'output') {
       apply(
         setStatus(items, item.id, 'changes_requested'),
@@ -674,18 +752,22 @@ export function ReviewCenter({
                 </TabsList>
               </Tabs>
               {connected && (
-                <span
-                  className="text-muted-foreground/70 hidden shrink-0 items-center gap-1.5 text-xs sm:flex"
-                  title={isFetching ? 'Refreshing…' : 'Live — auto-updating as agents work'}
-                >
-                  <span
-                    className={cn(
-                      'bg-kortix-green size-1.5 rounded-full',
-                      isFetching && !reduce && 'animate-pulse',
-                    )}
-                  />
-                  Live
-                </span>
+                <Hint label={isFetching ? 'Refreshing…' : 'Auto-updating — click to refresh now'}>
+                  <button
+                    type="button"
+                    onClick={onRefresh}
+                    disabled={!onRefresh || isFetching}
+                    className="text-muted-foreground/70 hover:text-foreground disabled:hover:text-muted-foreground/70 hidden shrink-0 items-center gap-1.5 text-xs transition-colors sm:flex"
+                  >
+                    <span
+                      className={cn(
+                        'bg-kortix-green size-1.5 rounded-full',
+                        isFetching && !reduce && 'animate-pulse',
+                      )}
+                    />
+                    Live
+                  </button>
+                </Hint>
               )}
             </div>
 
@@ -781,9 +863,10 @@ export function ReviewCenter({
             )}
 
             {/* Bulk bar (safe approvals across the current view). Prototype-only:
-                connected-mode approvals are executor-adapted (exec:) and resume
-                via the session's connector prompt, so there's no inbox bulk path
-                to approve them yet (KORTIX-207) — hide rather than fake it. */}
+                connected mode already surfaces "approve all safe" per-item via
+                each approval's own inline Approve/Deny + the floating
+                multi-select bar below, so this global banner would be a
+                second, redundant safe-approve entry point there. */}
             <AnimatePresence initial={false}>
               {!connected &&
                 segment === 'needs_you' &&
@@ -812,7 +895,21 @@ export function ReviewCenter({
           </div>
 
           {/* List */}
-          {isLoading && items.length === 0 ? (
+          {isError && items.length === 0 ? (
+            <div className="pt-6">
+              <ErrorState
+                size="sm"
+                title="Couldn't load the review inbox"
+                description="Check your connection and try again."
+                action={
+                  <Button variant="outline" size="sm" onClick={onRefresh} disabled={isFetching}>
+                    {isFetching ? <Loading className="size-3.5 shrink-0" /> : null}
+                    Retry
+                  </Button>
+                }
+              />
+            </div>
+          ) : isLoading && items.length === 0 ? (
             <ul className="space-y-2">
               {['a', 'b', 'c', 'd'].map((k) => (
                 <li key={k}>
@@ -892,8 +989,12 @@ export function ReviewCenter({
                           showCheck={selectionCount > 0}
                           fresh={freshIds.has(item.id)}
                           reduce={reduce}
+                          quickDecidable={connected && isQuickDecidableApproval(item)}
+                          pendingDecision={pendingId === item.id ? pendingDecision : null}
                           onOpen={() => setSelectedId(item.id)}
                           onToggleSelect={() => toggleSelect(item.id)}
+                          onQuickApprove={() => quickDecide(item, 'approve')}
+                          onQuickDeny={() => quickDecide(item, 'deny')}
                         />
                       );
                     })}
@@ -922,8 +1023,13 @@ export function ReviewCenter({
                   showCheck={selectionCount > 0}
                   fresh={freshIds.has(item.id)}
                   reduce={reduce}
+                  quickDecidable={connected && isQuickDecidableApproval(item)}
+                  pendingDecision={pendingId === item.id ? pendingDecision : null}
+                  sessionLabel={item.sessionId ? labelFor(item.sessionId) : undefined}
                   onOpen={() => setSelectedId(item.id)}
                   onToggleSelect={() => toggleSelect(item.id)}
+                  onQuickApprove={() => quickDecide(item, 'approve')}
+                  onQuickDeny={() => quickDecide(item, 'deny')}
                 />
               ))}
             </ul>

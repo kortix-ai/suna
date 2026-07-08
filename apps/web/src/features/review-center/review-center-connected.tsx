@@ -7,7 +7,10 @@
  * items act through THEIR OWN source flow — a Change Request ships via merge,
  * is dismissed via close, and "request changes" persists the feedback + delivers
  * it to the change's agent (the review `/act` endpoint 409s on adapted ids by
- * design). The presentational inbox (review-center.tsx) is shared with the mock
+ * design). Executor approvals (`exec:`) resolve directly via `resolveApproval` —
+ * the same client call the in-session approval prompt uses
+ * (session-approval-prompt.tsx) — so Approve/Deny work inline in the inbox too.
+ * The presentational inbox (review-center.tsx) is shared with the mock
  * prototype. See docs/REVIEW_CENTER_DESIGN.md.
  */
 
@@ -24,12 +27,16 @@ import { clearStartStash } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useMemo } from 'react';
-import { useActReviewItem, useBulkActReviewItems, useReviewItems } from './hooks/use-review-items';
+import {
+  useActReviewItem,
+  useBulkActReviewItems,
+  useResolveReviewApproval,
+  useReviewItems,
+} from './hooks/use-review-items';
 import { mapApiReviewItem } from './map';
+import { crChangeRequestId, execExecutionId, itemDeepLink, planBulkAction } from './review-actions';
 import { ReviewCenter } from './review-center';
-
-const CR_PREFIX = 'cr:';
-const EXEC_PREFIX = 'exec:';
+import { isSafeRisk } from './types';
 
 export function ReviewCenterConnected({ projectName }: { projectName: string }) {
   const ctx = useProjectContext();
@@ -37,9 +44,10 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
   const qc = useQueryClient();
   const router = useRouter();
   const closeCustomize = useCustomizeStore((s) => s.close);
-  const { data, isLoading, isFetching } = useReviewItems();
+  const { data, isLoading, isFetching, isError, refetch } = useReviewItems();
   const act = useActReviewItem();
   const bulk = useBulkActReviewItems();
+  const resolve = useResolveReviewApproval();
   const merge = useMergeChangeRequest();
   const close = useCloseChangeRequest();
   const requestChanges = useRequestChangesOnChangeRequest();
@@ -69,10 +77,28 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
   const refreshInbox = () => qc.invalidateQueries({ queryKey: ['review-center', projectId] });
 
   function handleAct(id: string, verdict: ReviewVerdict, feedback?: string) {
+    // Executor approvals resolve directly — the same call + payload the
+    // in-session approval prompt uses (resolveApproval, 'once' scope: this
+    // acts on the one call the row represents, not "for the rest of the
+    // session" — that broader grant stays a session-view affordance).
+    const executionId = execExecutionId(id);
+    if (executionId) {
+      resolve.mutate(
+        { executionId, decision: verdict === 'approve' ? 'approve' : 'deny' },
+        {
+          onSuccess: () =>
+            verdict === 'approve'
+              ? successToast('Approved — the agent will continue')
+              : infoToast('Denied'),
+          onError: (e) => errorToast(e.message),
+        },
+      );
+      return;
+    }
     // Change Requests ship/close through their own flow — the review `/act`
     // endpoint 409s on `cr:` ids ("act on this item from its source view").
-    if (id.startsWith(CR_PREFIX)) {
-      const crId = id.slice(CR_PREFIX.length);
+    const crId = crChangeRequestId(id);
+    if (crId) {
       if (verdict === 'approve') {
         merge.mutate(crId, {
           onSuccess: () => {
@@ -115,13 +141,38 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
       }
       return;
     }
-    // Executor approvals resume through the connector flow (KORTIX-207); not yet
-    // actionable from the inbox, so guide rather than throw a 409.
-    if (id.startsWith(EXEC_PREFIX)) {
-      infoToast('Approve tool actions from the connector’s policy view for now.');
-      return;
-    }
     act.mutate({ id, verdict, feedback }, { onError: (e) => errorToast(e.message) });
+  }
+
+  // Bulk (multi-select) verdicts: split the selection by how each id can
+  // actually be acted on. Native ids go through the batch endpoint; executor
+  // approvals resolve one call each (no bulk endpoint for them, but each is
+  // a real approve/deny — not a no-op); Change Requests have no bulk path
+  // (merging needs full diff context per item) so they're skipped with a
+  // toast rather than silently ignored. Bulk APPROVE of executor approvals
+  // additionally respects "approve all safe" — the same none/low-risk-only
+  // rule the single-item bulk bar already applies (never silently sweep a
+  // risky action through a multi-select); bulk DENY has no such risk floor.
+  function handleBulkAct(ids: string[], verdict: ReviewVerdict) {
+    const { native, resolvable, unsupported } = planBulkAction(ids);
+    if (native.length > 0) {
+      bulk.mutate({ ids: native, verdict }, { onError: (e) => errorToast(e.message) });
+    }
+    if (resolvable.length > 0) {
+      const decision = verdict === 'approve' ? 'approve' : 'deny';
+      const riskById = new Map(items.map((i) => [i.id, i.risk]));
+      for (const id of resolvable) {
+        if (decision === 'approve' && !isSafeRisk(riskById.get(id) ?? 'high')) continue;
+        const executionId = execExecutionId(id);
+        if (executionId)
+          resolve.mutate({ executionId, decision }, { onError: (e) => errorToast(e.message) });
+      }
+    }
+    if (unsupported.length > 0) {
+      infoToast(
+        `${unsupported.length} ${unsupported.length === 1 ? 'change needs' : 'changes need'} its own review — open ${unsupported.length === 1 ? 'it' : 'them'} to ship.`,
+      );
+    }
   }
 
   return (
@@ -129,18 +180,20 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
       initialItems={items}
       isLoading={isLoading}
       isFetching={isFetching}
+      isError={isError}
       sessionLabels={sessionLabels}
       onAct={handleAct}
-      onBulkAct={(ids, verdict) =>
-        bulk.mutate({ ids, verdict }, { onError: (e) => errorToast(e.message) })
-      }
+      onBulkAct={handleBulkAct}
+      onRefresh={() => void refetch()}
       onOpenSession={(sessionId) => {
         // "See progress" only VIEWS the session — feedback delivery goes through
         // the backend now. Clear any stale queued prompt so navigating can't
         // auto-send a leftover message (e.g. from an earlier client-side attempt).
+        const href = itemDeepLink(projectId, sessionId);
+        if (!href) return;
         clearStartStash(sessionId);
         closeCustomize();
-        router.push(`/projects/${projectId}/sessions/${sessionId}`);
+        router.push(href);
       }}
     />
   );

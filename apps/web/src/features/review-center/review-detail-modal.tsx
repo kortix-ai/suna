@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Kbd } from '@/components/ui/kbd';
+import Loading from '@/components/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -34,6 +35,7 @@ import {
 } from '@mynaui/icons-react';
 import { useEffect, useRef, useState } from 'react';
 import { ChangeFilesModal } from './change-files';
+import { formatItemAgeLong } from './review-actions';
 import {
   APPROVAL_ACTION_ICON,
   KIND_META,
@@ -49,17 +51,16 @@ export interface ReviewActions {
   approveAllSafe: (itemId: string) => void;
   /** Open the item's originating session (e.g. to watch the agent revise). */
   openSession?: (sessionId: string) => void;
-  /** Live-data mode. Executor approvals are resolved in-session (KORTIX-207), so
-   *  the inbox guides to the session rather than faking an inline decision. */
+  /** Live-data mode: executor approvals resolve inline via `resolve()` too
+   *  (the same `resolveApproval` call the in-session prompt uses), not just
+   *  native/CR items. */
   connected?: boolean;
-}
-
-function rel(iso: string): string {
-  const mins = Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.round(hrs / 24)}d ago`;
+  /** The review item id currently mid-mutation, if any — drives the
+   *  per-item `Loading` state on Approve/Deny while connected. */
+  pendingId?: string | null;
+  /** Which verdict `pendingId`'s in-flight mutation is — so Approve and Deny
+   *  don't both show `Loading` at once. */
+  pendingDecision?: 'approve' | 'deny' | null;
 }
 
 /** A muted bordered panel — the friendly content surface. */
@@ -241,14 +242,16 @@ function ChangeBody({
 function ApprovalActionRow({
   action,
   connected,
+  pending,
   onApprove,
   onDeny,
   onAlwaysAllow,
   onOpenSession,
 }: {
   action: ApprovalAction;
-  /** Live mode: resolve in-session (KORTIX-207), so hide the fake inline verdict. */
   connected?: boolean;
+  /** 'approve' | 'deny' while this row's own mutation is in flight. */
+  pending?: 'approve' | 'deny' | null;
   onApprove: () => void;
   onDeny: () => void;
   onAlwaysAllow: () => void;
@@ -257,6 +260,7 @@ function ApprovalActionRow({
   const Icon = APPROVAL_ACTION_ICON[action.icon];
   const safe = isSafeRisk(action.risk);
   const args = action.argsPreview ?? [];
+  const busy = !!pending;
   return (
     <div className="bg-popover rounded-md border px-4 py-3">
       <div className="flex items-start gap-3">
@@ -305,30 +309,40 @@ function ApprovalActionRow({
             <Badge variant={action.decided === 'approved' ? 'success' : 'destructive'} size="sm">
               {action.decided === 'approved' ? 'Approved' : 'Denied'}
             </Badge>
-          ) : connected ? (
-            // Executor approvals resume in the session's own approval prompt.
-            <Button variant="secondary" size="sm" onClick={onOpenSession} disabled={!onOpenSession}>
-              Approve in session
-              <ArrowUpRight className="size-3.5" />
-            </Button>
           ) : (
             <div className="flex flex-col items-end gap-1.5">
               <div className="flex items-center gap-1.5">
-                <Button variant="ghost" size="sm" onClick={onDeny}>
+                <Button variant="ghost" size="sm" disabled={busy} onClick={onDeny}>
+                  {pending === 'deny' ? <Loading className="size-3.5 shrink-0" /> : null}
                   Deny
                 </Button>
-                <Button size="sm" onClick={onApprove}>
-                  <Check className="size-3.5" />
+                <Button size="sm" disabled={busy} onClick={onApprove}>
+                  {pending === 'approve' ? (
+                    <Loading className="size-3.5 shrink-0" />
+                  ) : (
+                    <Check className="size-3.5" />
+                  )}
                   Approve
                 </Button>
               </div>
-              <button
-                type="button"
-                onClick={onAlwaysAllow}
-                className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
-              >
-                Always allow this
-              </button>
+              {connected && onOpenSession ? (
+                <button
+                  type="button"
+                  onClick={onOpenSession}
+                  className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs underline-offset-2 hover:underline"
+                >
+                  See it in the session
+                  <ArrowUpRight className="size-3" />
+                </button>
+              ) : !connected ? (
+                <button
+                  type="button"
+                  onClick={onAlwaysAllow}
+                  className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
+                >
+                  Always allow this
+                </button>
+              ) : null}
             </div>
           )}
         </div>
@@ -350,68 +364,65 @@ function ApprovalBody({
     actions.openSession && item.sessionId
       ? () => actions.openSession?.(item.sessionId as string)
       : undefined;
+  // Connected mode resolves each action for real via `resolve()` (routes to
+  // `resolveApproval` — the same call the in-session prompt uses), so the row
+  // pending state is keyed off the shared `pendingId` rather than local proto
+  // state. Prototype mode keeps the instant local `decideAction` + "Always
+  // allow this" full-allow affordance.
   return (
     <>
-      {actions.connected ? (
-        // Live mode: executor approvals are resolved in the session's connector
-        // prompt, not the inbox (KORTIX-207) — guide there rather than fake it.
+      {!actions.connected && safePending.length > 0 && (
         <InfoBanner
-          tone="info"
-          title="Approve these from the session"
+          tone="success"
+          title={`${safePending.length} ${safePending.length === 1 ? 'action is' : 'actions are'} safe to approve together`}
           action={
-            openSession && (
-              <Button size="sm" variant="secondary" onClick={openSession}>
-                Open session
-                <ArrowUpRight className="size-3.5" />
-              </Button>
-            )
+            <Button
+              size="sm"
+              onClick={() => {
+                actions.approveAllSafe(item.id);
+                successToast(`Approved ${safePending.length} safe actions`);
+              }}
+            >
+              Approve all safe
+            </Button>
           }
         >
-          Tool approvals resume in the agent&apos;s own conversation, where you can approve or deny
-          with full context. This is the read-only preview.
+          Reads and low-risk writes. Risky actions stay below for you to decide one by one.
         </InfoBanner>
-      ) : (
-        safePending.length > 0 && (
-          <InfoBanner
-            tone="success"
-            title={`${safePending.length} ${safePending.length === 1 ? 'action is' : 'actions are'} safe to approve together`}
-            action={
-              <Button
-                size="sm"
-                onClick={() => {
-                  actions.approveAllSafe(item.id);
-                  successToast(`Approved ${safePending.length} safe actions`);
-                }}
-              >
-                Approve all safe
-              </Button>
-            }
-          >
-            Reads and low-risk writes. Risky actions stay below for you to decide one by one.
-          </InfoBanner>
-        )
       )}
       <div className="space-y-2">
-        {list.map((a) => (
-          <ApprovalActionRow
-            key={a.id}
-            action={a}
-            connected={actions.connected}
-            onOpenSession={openSession}
-            onApprove={() => {
-              actions.decideAction(item.id, a.id, 'approved');
-              successToast(`Approved · ${a.title}`);
-            }}
-            onDeny={() => {
-              actions.decideAction(item.id, a.id, 'denied');
-              infoToast(`Denied · ${a.title}`);
-            }}
-            onAlwaysAllow={() => {
-              actions.decideAction(item.id, a.id, 'approved');
-              infoToast(`Saved — ${a.connector} ${a.action} won’t ask again`);
-            }}
-          />
-        ))}
+        {list.map((a) => {
+          const busy = actions.connected && actions.pendingId === item.id;
+          return (
+            <ApprovalActionRow
+              key={a.id}
+              action={a}
+              connected={actions.connected}
+              pending={busy ? (actions.pendingDecision ?? 'approve') : null}
+              onOpenSession={openSession}
+              onApprove={() => {
+                if (actions.connected) {
+                  actions.resolve(item.id, 'approved', `Approved · ${a.title}`);
+                  return;
+                }
+                actions.decideAction(item.id, a.id, 'approved');
+                successToast(`Approved · ${a.title}`);
+              }}
+              onDeny={() => {
+                if (actions.connected) {
+                  actions.resolve(item.id, 'rejected', `Denied · ${a.title}`);
+                  return;
+                }
+                actions.decideAction(item.id, a.id, 'denied');
+                infoToast(`Denied · ${a.title}`);
+              }}
+              onAlwaysAllow={() => {
+                actions.decideAction(item.id, a.id, 'approved');
+                infoToast(`Saved — ${a.connector} ${a.action} won’t ask again`);
+              }}
+            />
+          );
+        })}
       </div>
     </>
   );
@@ -617,7 +628,7 @@ function Footer({
     return (
       <ModalFooter className="border-border/60 border-t pt-4">
         <span className="text-muted-foreground mr-auto text-xs">
-          {STATUS_META[item.status].label} · {rel(item.createdAt)}
+          {STATUS_META[item.status].label} · {formatItemAgeLong(item.createdAt)}
         </span>
         <Button variant="outline-ghost" onClick={onClose}>
           Close
@@ -754,7 +765,7 @@ export function ReviewDetailModal({
 
         <ModalBody className="space-y-3">
           <div className="text-muted-foreground text-xs">
-            {item.agent} · {rel(item.createdAt)}
+            {item.agent} · {formatItemAgeLong(item.createdAt)}
           </div>
 
           {item.kind === 'change' && <ChangeBody item={item} actions={actions} onClose={onClose} />}
