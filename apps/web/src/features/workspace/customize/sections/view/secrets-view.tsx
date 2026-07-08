@@ -8,6 +8,7 @@ import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -113,6 +114,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const [providerModalOpen, setProviderModalOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogRow, setDialogRow] = useState<SecretRow | null>(null);
+  const [deleteRow, setDeleteRow] = useState<SecretRow | null>(null);
 
   const refreshSecretsAndProviders = useCallback(() => {
     queryClient.invalidateQueries({ queryKey });
@@ -262,7 +264,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
                         canManage={canManage}
                         busy={removeShared.isPending && removeShared.variables === row.identifier}
                         onEdit={() => openEdit(row)}
-                        onDelete={() => removeShared.mutate(row.identifier)}
+                        onDelete={() => setDeleteRow(row)}
                       />
                     ))}
                   </TableBody>
@@ -285,6 +287,29 @@ export function SecretsView({ projectId }: { projectId: string }) {
         open={providerModalOpen}
         onOpenChange={setProviderModalOpen}
         canWrite={canManage}
+      />
+      <ConfirmDialog
+        open={deleteRow !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteRow(null);
+        }}
+        title="Delete secret"
+        description={
+          deleteRow ? `Delete ${deleteRow.identifier}? The stored value can't be recovered.` : ''
+        }
+        confirmLabel="Delete"
+        confirmVariant="destructive"
+        onConfirm={() => {
+          if (!deleteRow) return;
+          removeShared.mutate(deleteRow.identifier, {
+            onSuccess: () => {
+              setDeleteRow(null);
+              successToast('Secret deleted');
+            },
+            onError: (e) => errorToast(e instanceof Error ? e.message : 'Could not delete secret'),
+          });
+        }}
+        isPending={removeShared.isPending}
       />
     </>
   );
@@ -356,8 +381,12 @@ function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefi
     });
   }
 
-  const rank = (r: SecretRow) => (r.requirement === 'required' ? 0 : r.requirement === 'optional' ? 1 : 2);
-  rows.sort((a, b) => rank(a) - rank(b) || a.key.localeCompare(b.key) || a.identifier.localeCompare(b.identifier));
+  const rank = (r: SecretRow) =>
+    r.requirement === 'required' ? 0 : r.requirement === 'optional' ? 1 : 2;
+  rows.sort(
+    (a, b) =>
+      rank(a) - rank(b) || a.key.localeCompare(b.key) || a.identifier.localeCompare(b.identifier),
+  );
   return rows;
 }
 
@@ -412,7 +441,7 @@ function SecretTableRow({
           </div>
         </div>
       </TableCell>
-      <TableCell className="text-muted-foreground max-w-[200px] text-xs font-medium whitespace-normal">
+      <TableCell className="text-muted-foreground max-w-[200px] whitespace-normal text-xs font-medium">
         {statusLabel(row)}
       </TableCell>
       <TableCell>
@@ -504,7 +533,9 @@ function SecretDialog({
       });
     },
     onSuccess: () => {
-      successToast(`Saved ${(row?.identifier ?? identifier).trim() || (row?.key ?? key).trim().toUpperCase()}`);
+      successToast(
+        `Saved ${(row?.identifier ?? identifier).trim() || (row?.key ?? key).trim().toUpperCase()}`,
+      );
       onSaved();
       onOpenChange(false);
     },
@@ -518,7 +549,11 @@ function SecretDialog({
     save.mutate();
   }
 
-  const title = !row ? 'Add secret' : row.configured ? `Edit ${row.identifier}` : `Set ${row.identifier}`;
+  const title = !row
+    ? 'Add secret'
+    : row.configured
+      ? `Edit ${row.identifier}`
+      : `Set ${row.identifier}`;
 
   return (
     <Modal
@@ -541,7 +576,10 @@ function SecretDialog({
           <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
             <div className="border-border bg-sidebar flex flex-col overflow-hidden rounded-md border">
               <div className="flex flex-col gap-1 border-b px-3 py-2">
-                <label className="text-muted-foreground text-xs font-medium" htmlFor="secret-dialog-identifier">
+                <label
+                  className="text-muted-foreground text-xs font-medium"
+                  htmlFor="secret-dialog-identifier"
+                >
                   Identifier
                 </label>
                 <Input
@@ -592,8 +630,8 @@ function SecretDialog({
 
             {!isEdit && (
               <p className="text-muted-foreground text-xs">
-                Leave the identifier blank to use the key as its own identifier — the common case. Set
-                it explicitly to keep a second value under the same key (e.g. a backup key).
+                Leave the identifier blank to use the key as its own identifier — the common case.
+                Set it explicitly to keep a second value under the same key (e.g. a backup key).
               </p>
             )}
             {row?.configured && (
@@ -618,7 +656,9 @@ function SecretDialog({
               type="submit"
               size="sm"
               className="w-full sm:w-auto"
-              disabled={(!isEdit && !key.trim()) || (requiresValue && !value.trim()) || save.isPending}
+              disabled={
+                (!isEdit && !key.trim()) || (requiresValue && !value.trim()) || save.isPending
+              }
             >
               {save.isPending && <Loading className="size-4 shrink-0 animate-spin" />}
               Save
