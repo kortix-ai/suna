@@ -25,7 +25,10 @@ export interface DetailCaps {
  * only the resource lists / raw config are emptied. Files are capped at 300 (the
  * same cap the handler used inline) and dropped entirely without file.read.
  */
-export function applyDetailCapabilityFilter<C extends Record<string, unknown>, F>(
+// `C extends object` (not Record<string, unknown>): the handler's config is a
+// concrete interface (ProjectConfigSummary), which TS won't implicitly widen to
+// a Record index signature. `object` accepts both interfaces and literals.
+export function applyDetailCapabilityFilter<C extends object, F>(
   config: C,
   visibleFiles: F[],
   caps: DetailCaps,

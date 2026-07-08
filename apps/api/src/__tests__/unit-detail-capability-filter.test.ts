@@ -1,7 +1,10 @@
 import { describe, test, expect } from 'bun:test';
 import { applyDetailCapabilityFilter } from '../projects/lib/detail-capability-filter';
 
-const sampleConfig = {
+// Record<string, unknown> so the filtered fields (which the runtime blanks to
+// {} / [] / null) type as `unknown` at the assertions — otherwise the literal
+// type (e.g. manifest: { name: string }) rejects `.toEqual({})`.
+const sampleConfig: Record<string, unknown> = {
   is_kortix_repo: true,
   signals: { manifest: true },
   manifest_raw: 'raw toml',
