@@ -7,7 +7,7 @@
  * sandbox separately (rehydrate). We move it out of the tree before pushing.
  */
 import { dirname, join } from 'node:path';
-import { existsSync, mkdirSync, writeFileSync, rmSync, readdirSync, statSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, readdirSync, statSync } from 'node:fs';
 import { getDefaultManagedBackend } from '../git-backends/registry';
 import type { GitConnectionRef } from '../git-backends/types';
 import { buildStarterFiles } from '../starter';
@@ -61,9 +61,17 @@ export async function pushBundleAsRepo(accountId: string, bundleDir: string): Pr
   const repoFullName = repo.repoOwner && repo.repoName ? `${repo.repoOwner}/${repo.repoName}` : undefined;
   for (const f of buildStarterFiles({ projectName: 'Legacy (Suna) projects', repoFullName, template: STARTER_TEMPLATE })) {
     const full = join(bundleDir, f.path);
-    if (existsSync(full)) continue; // never clobber his content
     mkdirSync(dirname(full), { recursive: true });
-    writeFileSync(full, f.content);
+    // Exclusive create (O_EXCL via 'wx', mode 0600): the bundle dir is a
+    // predictable /tmp path, so a plain write could clobber his content or
+    // follow a pre-planted symlink. Exclusive creation both preserves the
+    // "never clobber his content" rule (EEXIST → skip) and closes the
+    // existsSync-then-write race in one step.
+    try {
+      writeFileSync(full, f.content, { flag: 'wx', mode: 0o600 });
+    } catch (e: any) {
+      if (e?.code !== 'EEXIST') throw e; // his file already present — leave it
+    }
   }
 
   // GitHub rejects oversized blobs (and LFS isn't wired up for managed repos),
@@ -87,8 +95,16 @@ export async function pushBundleAsRepo(accountId: string, bundleDir: string): Pr
   };
   strip(bundleDir);
   if (dropped.length) {
-    writeFileSync(join(bundleDir, '.kortix-skipped-large-files.txt'),
-      `Omitted from this repo — exceeded GitHub's ${MAX_BLOB_BYTES / 1048576}MB file limit:\n\n${dropped.join('\n')}\n`);
+    const reportPath = join(bundleDir, '.kortix-skipped-large-files.txt');
+    // Exclusive create (O_EXCL, 0600) into the predictable /tmp bundle dir; a
+    // retry that re-enters this step just re-uses the existing report (EEXIST).
+    try {
+      writeFileSync(reportPath,
+        `Omitted from this repo — exceeded GitHub's ${MAX_BLOB_BYTES / 1048576}MB file limit:\n\n${dropped.join('\n')}\n`,
+        { flag: 'wx', mode: 0o600 });
+    } catch (e: any) {
+      if (e?.code !== 'EEXIST') throw e;
+    }
   }
 
   rmSync(join(bundleDir, '.git'), { recursive: true, force: true });
