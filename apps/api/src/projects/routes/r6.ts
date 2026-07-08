@@ -391,8 +391,13 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  // Floor is 'read' (project membership); the real gate is the members.manage
+  // leaf below, so a custom role granting ONLY members.manage (no project.write)
+  // works, and — matching the sibling approve/reject routes — a plain editor
+  // (project.write but not members.manage) can't list pending access requests.
+  const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const rows = await db
     .select()
