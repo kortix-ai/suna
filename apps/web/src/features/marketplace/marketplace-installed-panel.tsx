@@ -215,7 +215,12 @@ export function MarketplaceInstalledPanel({
               <InstalledItemCard
                 item={it}
                 catalogItem={catalogByName.get(it.name)}
-                status={deriveInstalledItemStatus(it.name, statusByName)}
+                // Only assert a status once the updates check has resolved —
+                // before that (loading/failed) the map is empty and every item
+                // would false-claim "Up to date".
+                status={
+                  updates.isSuccess ? deriveInstalledItemStatus(it.name, statusByName) : undefined
+                }
                 busy={busy}
                 onUpdate={() => onUpdate(it)}
                 onRemove={() => onRemove(it)}
@@ -238,7 +243,9 @@ function InstalledItemCard({
 }: {
   item: InstalledItem;
   catalogItem?: MarketplaceItem;
-  status: RegistryItemStatus;
+  /** Absent while the registry-updates check is loading or failed — render no
+   *  freshness claim rather than a false "Up to date". */
+  status: RegistryItemStatus | undefined;
   busy: boolean;
   onUpdate: () => void;
   onRemove: () => void;

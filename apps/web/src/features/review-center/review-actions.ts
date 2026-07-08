@@ -8,7 +8,7 @@
  * endpoint, which 409s on them by design (see review-center-connected.tsx).
  */
 
-import type { ReviewItem } from './types';
+import { type ReviewItem, type ReviewRisk, isSafeRisk } from './types';
 
 export const CR_ID_PREFIX = 'cr:';
 export const EXEC_ID_PREFIX = 'exec:';
@@ -34,11 +34,15 @@ export function crChangeRequestId(id: string): string | null {
  * several independent decisions.
  */
 export function isQuickDecidableApproval(
-  item: Pick<ReviewItem, 'kind' | 'id'> & { detail?: { actions?: unknown[] } },
+  // `detail` is `unknown` (not `{ actions?: ... }`) so every ReviewItem union
+  // member is assignable — ChangeDetail/OutputDetail have no `actions` and a
+  // weak object type would reject them at the call sites.
+  item: Pick<ReviewItem, 'kind' | 'id'> & { detail?: unknown },
 ): boolean {
   if (item.kind !== 'approval') return false;
   if (execExecutionId(item.id) === null) return false;
-  const count = item.detail?.actions?.length ?? 0;
+  const detail = item.detail as { actions?: readonly unknown[] } | undefined;
+  const count = detail?.actions?.length ?? 0;
   return count <= 1;
 }
 
@@ -77,6 +81,69 @@ export function planBulkAction(ids: Iterable<string>): BulkActionPlan {
     else native.push(id);
   }
   return { native, resolvable, unsupported };
+}
+
+/**
+ * What a bulk verdict on a connected selection will REALLY do, decided before
+ * any optimistic UI update so the toast/removal can never claim more than the
+ * server was asked. The rules the buckets encode:
+ *  - Executor approvals are a live question to the agent: "dismiss" doesn't
+ *    answer it, so they're KEPT (never mapped to a deny) under any non-approve
+ *    verdict, and an approve sweep still respects the safe-risk floor.
+ *  - Change Requests have no bulk path at all (merging needs the diff in view).
+ */
+export interface BulkOutcome {
+  /** Ids the verdict genuinely acts on — safe to optimistically update. */
+  act: string[];
+  /** Exec approvals blocked by the approve safe-risk floor. */
+  skippedRisky: string[];
+  /** Exec approvals kept under a non-approve verdict (dismiss ≠ deny). */
+  skippedApprovals: string[];
+  /** Change Requests — each needs its own review. */
+  skippedChanges: string[];
+}
+
+export function resolveBulkOutcome(
+  ids: Iterable<string>,
+  verdict: 'approve' | 'dismiss',
+  riskOf: (id: string) => ReviewRisk | undefined,
+): BulkOutcome {
+  const act: string[] = [];
+  const skippedRisky: string[] = [];
+  const skippedApprovals: string[] = [];
+  const skippedChanges: string[] = [];
+  for (const id of ids) {
+    if (crChangeRequestId(id) !== null) {
+      skippedChanges.push(id);
+    } else if (execExecutionId(id) !== null) {
+      if (verdict !== 'approve') skippedApprovals.push(id);
+      else if (!isSafeRisk(riskOf(id) ?? 'high')) skippedRisky.push(id);
+      else act.push(id);
+    } else {
+      act.push(id);
+    }
+  }
+  return { act, skippedRisky, skippedApprovals, skippedChanges };
+}
+
+/** One compact sentence describing what a bulk verdict skipped (empty string
+ *  when nothing was). Kept pure so the copy is unit-testable. */
+export function bulkSkipMessage(outcome: BulkOutcome): string {
+  const parts: string[] = [];
+  const plural = (n: number, s: string, p: string) => (n === 1 ? s : p);
+  if (outcome.skippedApprovals.length > 0)
+    parts.push(
+      `${outcome.skippedApprovals.length} ${plural(outcome.skippedApprovals.length, 'approval', 'approvals')} kept — dismissing doesn't answer the agent; approve or deny ${plural(outcome.skippedApprovals.length, 'it', 'them')}`,
+    );
+  if (outcome.skippedRisky.length > 0)
+    parts.push(
+      `${outcome.skippedRisky.length} risky ${plural(outcome.skippedRisky.length, 'approval', 'approvals')} skipped — review ${plural(outcome.skippedRisky.length, 'it', 'them')} individually`,
+    );
+  if (outcome.skippedChanges.length > 0)
+    parts.push(
+      `${outcome.skippedChanges.length} ${plural(outcome.skippedChanges.length, 'change', 'changes')} skipped — open ${plural(outcome.skippedChanges.length, 'it', 'each')} to review`,
+    );
+  return parts.join('. ');
 }
 
 /** Relative age like "7m", "3h", "2d" — the compact inbox-row idiom (see

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  bulkSkipMessage,
   crChangeRequestId,
   execExecutionId,
   formatItemAge,
@@ -7,7 +8,9 @@ import {
   isQuickDecidableApproval,
   itemDeepLink,
   planBulkAction,
+  resolveBulkOutcome,
 } from './review-actions';
+import type { ReviewRisk } from './types';
 
 describe('execExecutionId', () => {
   test('strips the exec: prefix', () => {
@@ -111,5 +114,66 @@ describe('formatItemAgeLong', () => {
     expect(formatItemAgeLong(new Date(base - 7 * 60_000).toISOString(), base)).toBe('7m ago');
     expect(formatItemAgeLong(new Date(base - 3 * 3_600_000).toISOString(), base)).toBe('3h ago');
     expect(formatItemAgeLong(new Date(base - 50 * 3_600_000).toISOString(), base)).toBe('2d ago');
+  });
+});
+
+describe('resolveBulkOutcome', () => {
+  const risk =
+    (m: Record<string, ReviewRisk>) =>
+    (id: string): ReviewRisk | undefined =>
+      m[id];
+
+  test('dismiss NEVER answers an executor approval — exec ids are kept, not denied', () => {
+    const out = resolveBulkOutcome(['exec:e1', 'rv-1'], 'dismiss', risk({ 'exec:e1': 'none' }));
+    expect(out.act).toEqual(['rv-1']);
+    expect(out.skippedApprovals).toEqual(['exec:e1']);
+    expect(out.skippedRisky).toEqual([]);
+  });
+
+  test('approve sweeps only safe exec approvals; risky ones are skipped', () => {
+    const out = resolveBulkOutcome(
+      ['exec:safe', 'exec:risky', 'rv-1'],
+      'approve',
+      risk({ 'exec:safe': 'low', 'exec:risky': 'high' }),
+    );
+    expect(out.act).toEqual(['exec:safe', 'rv-1']);
+    expect(out.skippedRisky).toEqual(['exec:risky']);
+    expect(out.skippedApprovals).toEqual([]);
+  });
+
+  test('an exec approval with unknown risk is treated as risky on approve', () => {
+    const out = resolveBulkOutcome(['exec:mystery'], 'approve', risk({}));
+    expect(out.act).toEqual([]);
+    expect(out.skippedRisky).toEqual(['exec:mystery']);
+  });
+
+  test('Change Requests are skipped under any verdict', () => {
+    expect(resolveBulkOutcome(['cr:1'], 'approve', risk({})).skippedChanges).toEqual(['cr:1']);
+    expect(resolveBulkOutcome(['cr:1'], 'dismiss', risk({})).skippedChanges).toEqual(['cr:1']);
+  });
+
+  test('native ids act under both verdicts', () => {
+    expect(resolveBulkOutcome(['rv-1', 'rv-2'], 'dismiss', risk({})).act).toEqual(['rv-1', 'rv-2']);
+    expect(resolveBulkOutcome(['rv-1'], 'approve', risk({})).act).toEqual(['rv-1']);
+  });
+});
+
+describe('bulkSkipMessage', () => {
+  test('empty when nothing was skipped', () => {
+    expect(
+      bulkSkipMessage({ act: ['a'], skippedRisky: [], skippedApprovals: [], skippedChanges: [] }),
+    ).toBe('');
+  });
+
+  test('names every skip bucket with counts', () => {
+    const msg = bulkSkipMessage({
+      act: [],
+      skippedRisky: ['exec:r'],
+      skippedApprovals: ['exec:a', 'exec:b'],
+      skippedChanges: ['cr:1'],
+    });
+    expect(msg).toContain('2 approvals kept');
+    expect(msg).toContain('1 risky approval skipped');
+    expect(msg).toContain('1 change skipped');
   });
 });

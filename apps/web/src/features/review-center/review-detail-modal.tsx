@@ -243,6 +243,7 @@ function ApprovalActionRow({
   action,
   connected,
   pending,
+  readOnly,
   onApprove,
   onDeny,
   onAlwaysAllow,
@@ -252,6 +253,9 @@ function ApprovalActionRow({
   connected?: boolean;
   /** 'approve' | 'deny' while this row's own mutation is in flight. */
   pending?: 'approve' | 'deny' | null;
+  /** Display-only row — the decision lives elsewhere (the whole-item bar for
+   *  connected multi-action approvals, where one verdict covers every row). */
+  readOnly?: boolean;
   onApprove: () => void;
   onDeny: () => void;
   onAlwaysAllow: () => void;
@@ -309,7 +313,7 @@ function ApprovalActionRow({
             <Badge variant={action.decided === 'approved' ? 'success' : 'destructive'} size="sm">
               {action.decided === 'approved' ? 'Approved' : 'Denied'}
             </Badge>
-          ) : (
+          ) : readOnly ? null : (
             <div className="flex flex-col items-end gap-1.5">
               <div className="flex items-center gap-1.5">
                 <Button variant="ghost" size="sm" disabled={busy} onClick={onDeny}>
@@ -390,40 +394,87 @@ function ApprovalBody({
           Reads and low-risk writes. Risky actions stay below for you to decide one by one.
         </InfoBanner>
       )}
-      <div className="space-y-2">
-        {list.map((a) => {
-          const busy = actions.connected && actions.pendingId === item.id;
-          return (
-            <ApprovalActionRow
-              key={a.id}
-              action={a}
-              connected={actions.connected}
-              pending={busy ? (actions.pendingDecision ?? 'approve') : null}
-              onOpenSession={openSession}
-              onApprove={() => {
-                if (actions.connected) {
-                  actions.resolve(item.id, 'approved', `Approved · ${a.title}`);
-                  return;
-                }
-                actions.decideAction(item.id, a.id, 'approved');
-                successToast(`Approved · ${a.title}`);
-              }}
-              onDeny={() => {
-                if (actions.connected) {
-                  actions.resolve(item.id, 'rejected', `Denied · ${a.title}`);
-                  return;
-                }
-                actions.decideAction(item.id, a.id, 'denied');
-                infoToast(`Denied · ${a.title}`);
-              }}
-              onAlwaysAllow={() => {
-                actions.decideAction(item.id, a.id, 'approved');
-                infoToast(`Saved — ${a.connector} ${a.action} won’t ask again`);
-              }}
-            />
-          );
-        })}
-      </div>
+      {/* A connected item resolves as ONE unit (`/act` and `resolveApproval`
+          take a single verdict for the whole item), so with several pending
+          actions the per-row button pairs would misrepresent their granularity
+          — clicking Approve on one row would green-light all of them. Rows go
+          display-only and one clearly-labeled decision bar carries the verdict. */}
+      {(() => {
+        const wholeItem = !!actions.connected && list.filter((a) => !a.decided).length > 1;
+        const busy = actions.connected && actions.pendingId === item.id;
+        return (
+          <>
+            <div className="space-y-2">
+              {list.map((a) => (
+                <ApprovalActionRow
+                  key={a.id}
+                  action={a}
+                  connected={actions.connected}
+                  readOnly={wholeItem}
+                  pending={busy && !wholeItem ? (actions.pendingDecision ?? 'approve') : null}
+                  onOpenSession={openSession}
+                  onApprove={() => {
+                    if (actions.connected) {
+                      actions.resolve(item.id, 'approved', `Approved · ${a.title}`);
+                      return;
+                    }
+                    actions.decideAction(item.id, a.id, 'approved');
+                    successToast(`Approved · ${a.title}`);
+                  }}
+                  onDeny={() => {
+                    if (actions.connected) {
+                      actions.resolve(item.id, 'rejected', `Denied · ${a.title}`);
+                      return;
+                    }
+                    actions.decideAction(item.id, a.id, 'denied');
+                    infoToast(`Denied · ${a.title}`);
+                  }}
+                  onAlwaysAllow={() => {
+                    actions.decideAction(item.id, a.id, 'approved');
+                    infoToast(`Saved — ${a.connector} ${a.action} won’t ask again`);
+                  }}
+                />
+              ))}
+            </div>
+            {wholeItem && (
+              <div className="bg-popover flex items-center justify-between gap-3 rounded-md border px-4 py-3">
+                <p className="text-muted-foreground min-w-0 text-sm text-pretty">
+                  These {list.length} actions resolve together — one decision covers all of them.
+                </p>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() =>
+                      actions.resolve(item.id, 'rejected', `Denied all ${list.length} actions`)
+                    }
+                  >
+                    {busy && actions.pendingDecision === 'deny' ? (
+                      <Loading className="size-3.5 shrink-0" />
+                    ) : null}
+                    Deny all
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() =>
+                      actions.resolve(item.id, 'approved', `Approved all ${list.length} actions`)
+                    }
+                  >
+                    {busy && actions.pendingDecision === 'approve' ? (
+                      <Loading className="size-3.5 shrink-0" />
+                    ) : (
+                      <Check className="size-3.5" />
+                    )}
+                    Approve all
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
     </>
   );
 }

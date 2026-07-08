@@ -44,7 +44,12 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { statusToVerdict } from './map';
 import { MOCK_ITEMS } from './mock-data';
-import { formatItemAge, isQuickDecidableApproval } from './review-actions';
+import {
+  bulkSkipMessage,
+  formatItemAge,
+  isQuickDecidableApproval,
+  resolveBulkOutcome,
+} from './review-actions';
 import { type ReviewActions, ReviewDetailModal } from './review-detail-modal';
 import { KIND_META, RISK_BAR, RISK_META, SOURCE_META, STATUS_META } from './review-meta';
 import {
@@ -568,8 +573,32 @@ export function ReviewCenter({
     }
   };
 
+  /** Connected mode: decide up-front what the verdict will really act on so
+   *  the optimistic removal + toast never claim more than the server was
+   *  asked (exec approvals are never denied by a dismiss; risky approvals
+   *  survive an approve sweep; CRs each need their own review). */
+  const connectedBulkOutcome = (ids: string[], verdict: 'approve' | 'dismiss') => {
+    const riskById = new Map(items.map((i) => [i.id, i.risk]));
+    return resolveBulkOutcome(ids, verdict, (id) => riskById.get(id));
+  };
+
   const dismissIds = (ids: string[]) => {
     if (ids.length === 0) return;
+    if (connected && onBulkAct) {
+      const outcome = connectedBulkOutcome(ids, 'dismiss');
+      const skipped = bulkSkipMessage(outcome);
+      if (skipped) infoToast(skipped);
+      if (outcome.act.length > 0) {
+        apply(
+          bulkSetStatus(items, outcome.act, 'dismissed'),
+          `Dismissed ${outcome.act.length}`,
+          'info',
+          () => onBulkAct(outcome.act, 'dismiss'),
+        );
+      }
+      setSelectedIds(new Set());
+      return;
+    }
     apply(
       bulkSetStatus(items, ids, 'dismissed'),
       `Dismissed ${ids.length}`,
@@ -581,6 +610,21 @@ export function ReviewCenter({
 
   const approveIds = (ids: string[]) => {
     if (ids.length === 0) return;
+    if (connected && onBulkAct) {
+      const outcome = connectedBulkOutcome(ids, 'approve');
+      const skipped = bulkSkipMessage(outcome);
+      if (skipped) infoToast(skipped);
+      if (outcome.act.length > 0) {
+        apply(
+          bulkSetStatus(items, outcome.act, 'approved'),
+          `Approved ${outcome.act.length}`,
+          'success',
+          () => onBulkAct(outcome.act, 'approve'),
+        );
+      }
+      setSelectedIds(new Set());
+      return;
+    }
     let next = items;
     for (const id of ids) {
       const it = items.find((x) => x.id === id);

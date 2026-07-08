@@ -144,28 +144,31 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
     act.mutate({ id, verdict, feedback }, { onError: (e) => errorToast(e.message) });
   }
 
-  // Bulk (multi-select) verdicts: split the selection by how each id can
-  // actually be acted on. Native ids go through the batch endpoint; executor
-  // approvals resolve one call each (no bulk endpoint for them, but each is
-  // a real approve/deny — not a no-op); Change Requests have no bulk path
-  // (merging needs full diff context per item) so they're skipped with a
-  // toast rather than silently ignored. Bulk APPROVE of executor approvals
-  // additionally respects "approve all safe" — the same none/low-risk-only
-  // rule the single-item bulk bar already applies (never silently sweep a
-  // risky action through a multi-select); bulk DENY has no such risk floor.
+  // Bulk (multi-select) verdicts: the presentational layer pre-filters the
+  // selection through `resolveBulkOutcome` (same pure helper), so what
+  // arrives here is already actionable — native ids for any verdict, exec
+  // approvals only under an APPROVE that passed the safe-risk floor. The
+  // guards below are defense in depth, not the primary filter:
+  //  - an executor approval is a live question to the agent; a bulk
+  //    "dismiss" must NEVER answer it with a deny, so exec ids resolve only
+  //    on an explicit approve (single-item Deny goes through handleAct).
+  //  - the safe-risk floor is re-checked before each resolve.
+  //  - Change Requests have no bulk path (merging needs the diff in view).
   function handleBulkAct(ids: string[], verdict: ReviewVerdict) {
     const { native, resolvable, unsupported } = planBulkAction(ids);
     if (native.length > 0) {
       bulk.mutate({ ids: native, verdict }, { onError: (e) => errorToast(e.message) });
     }
-    if (resolvable.length > 0) {
-      const decision = verdict === 'approve' ? 'approve' : 'deny';
+    if (resolvable.length > 0 && verdict === 'approve') {
       const riskById = new Map(items.map((i) => [i.id, i.risk]));
       for (const id of resolvable) {
-        if (decision === 'approve' && !isSafeRisk(riskById.get(id) ?? 'high')) continue;
+        if (!isSafeRisk(riskById.get(id) ?? 'high')) continue;
         const executionId = execExecutionId(id);
         if (executionId)
-          resolve.mutate({ executionId, decision }, { onError: (e) => errorToast(e.message) });
+          resolve.mutate(
+            { executionId, decision: 'approve' },
+            { onError: (e) => errorToast(e.message) },
+          );
       }
     }
     if (unsupported.length > 0) {
