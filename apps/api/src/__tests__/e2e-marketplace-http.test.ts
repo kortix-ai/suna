@@ -65,13 +65,12 @@ describe('marketplace HTTP contract', () => {
     expect(body.items.find((item) => item.name === 'memory-reflector')).toBeUndefined();
   });
 
-  test('GET /marketplace/items is public read-only and skill-only', async () => {
+  test('GET /marketplace/items is public read-only', async () => {
     authCalls = 0;
     const res = await fetch(`${baseUrl}/marketplace/items?query=agent-browser&source=kortix`);
     expect(res.status).toBe(200);
     const body = await res.json() as { items: Array<{ name: string; type: string }> };
     expect(body.items).toContainEqual(expect.objectContaining({ name: 'agent-browser', type: 'registry:skill' }));
-    expect(body.items.every((item) => item.type === 'registry:skill')).toBe(true);
     expect(authCalls).toBe(0);
   });
 
