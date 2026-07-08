@@ -15,13 +15,14 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountGroups, accountMembers, executorConnectors, executorExecutions, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
+import { accountGroupMembers, accountGroups, accountMembers, executorConnectors, executorExecutions, projectGroupGrants, projectSessions, sessionFolders, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid } from '../lib/access';
 import { AnyObject, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
+import { inheritedFolderIdsFor, loadFolderGrants } from '../lib/session-folders';
 import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
 import {
   createSession,
@@ -481,7 +482,23 @@ projectsApp.openapi(
   const grantsBySession = await loadSessionGrants(
     listableRows.filter((r) => r.visibility === 'restricted').map((r) => r.sessionId),
   );
+  // Folder sharing by inheritance: a session inside a folder shared with this
+  // viewer (project-wide, or restricted+granted) is visible even if the session
+  // itself is private. Grant-aware, mirroring session sharing.
+  const folderRows = await db
+    .select({
+      folderId: sessionFolders.folderId,
+      visibility: sessionFolders.visibility,
+      createdBy: sessionFolders.createdBy,
+    })
+    .from(sessionFolders)
+    .where(eq(sessionFolders.projectId, projectId));
+  const folderGrants = await loadFolderGrants(
+    folderRows.filter((f) => f.visibility === 'restricted').map((f) => f.folderId),
+  );
+  const sharedFolderIds = inheritedFolderIdsFor(folderRows, folderGrants, subject);
   let visible = listableRows.filter((r) =>
+    (r.folderId != null && sharedFolderIds.has(r.folderId)) ||
     isSessionVisibleTo(
       r.visibility as 'private' | 'project' | 'restricted',
       r.createdBy,

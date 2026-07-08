@@ -527,6 +527,64 @@ export const projectSessionVisibilityEnum = kortixSchema.enum('project_session_v
   'restricted',
 ]);
 
+/**
+ * User-created folders for organizing sessions in the project sidebar. Sharing
+ * uses the SAME model as sessions (the common team-share system): `private`
+ * (default) = only the creator; `project` = every project member; `restricted`
+ * = the creator + the members/groups in `session_folder_grants`. Sessions
+ * inside a shared folder INHERIT that folder's audience (folder sharing by
+ * inheritance). Auto-folders (Slack, Email, Scheduled, Webhooks) are virtual —
+ * derived from session metadata, never stored here.
+ */
+export const sessionFolders = kortixSchema.table(
+  'session_folders',
+  {
+    folderId: uuid('folder_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 120 }).notNull(),
+    visibility: projectSessionVisibilityEnum('visibility').default('private').notNull(),
+    position: integer('position').default(0).notNull(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_session_folders_project').on(table.projectId),
+    index('idx_session_folders_account').on(table.accountId),
+  ],
+);
+
+/**
+ * Allow-list for a `restricted` folder — which members/groups (besides the
+ * creator) can see the folder and its sessions. Mirrors `project_session_grants`
+ * so folder + session sharing share one mechanism.
+ */
+export const sessionFolderGrants = kortixSchema.table(
+  'session_folder_grants',
+  {
+    grantId: uuid('grant_id').defaultRandom().primaryKey(),
+    folderId: uuid('folder_id')
+      .notNull()
+      .references(() => sessionFolders.folderId, { onDelete: 'cascade' }),
+    principalType: secretGrantPrincipalEnum('principal_type').notNull(),
+    principalId: uuid('principal_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_session_folder_grants_folder').on(table.folderId),
+    uniqueIndex('idx_session_folder_grants_unique').on(
+      table.folderId,
+      table.principalType,
+      table.principalId,
+    ),
+  ],
+);
+
 export const projectSessions = kortixSchema.table(
   'project_sessions',
   {
@@ -549,6 +607,11 @@ export const projectSessions = kortixSchema.table(
     // Session ownership + org-visibility (default private to the creator).
     createdBy: uuid('created_by'),
     visibility: projectSessionVisibilityEnum('visibility').default('private').notNull(),
+    // Manual sidebar folder assignment; null = unfiled (may still group under a
+    // virtual auto-folder client-side). Folder deletion unfiles, never deletes.
+    folderId: uuid('folder_id').references(() => sessionFolders.folderId, {
+      onDelete: 'set null',
+    }),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

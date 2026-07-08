@@ -88,6 +88,7 @@ export function serializeSession(
     sharing: visibilityToIntent(row.visibility as 'private' | 'project' | 'restricted', ctx?.grants ?? []),
     is_owner: isOwner,
     can_manage_sharing: isOwner || Boolean(ctx?.canManageProject),
+    folder_id: row.folderId,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };

@@ -53,6 +53,7 @@ function sessionRow(
     error: null,
     createdBy: USER_ID,
     visibility: 'private',
+    folderId: null,
     metadata: { name: 'Fix the login bug' },
     createdAt: NOW,
     updatedAt: NOW,

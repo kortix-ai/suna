@@ -6,6 +6,7 @@ import {
   ProjectSessionSchema as ContractProjectSessionSchema,
   SecretSchema as ContractSecretSchema,
   SessionCreateAcceptedSchema as ContractSessionCreateAcceptedSchema,
+  SessionFolderSchema as ContractSessionFolderSchema,
   SessionStartResultSchema as ContractSessionStartResultSchema,
   TriggerSchema as ContractTriggerSchema,
 } from '@kortix/api-contract';
@@ -24,6 +25,8 @@ export const projectWebhooksApp = new Hono<AppEnv>();
 export const ProjectSchema = ContractProjectSchema.openapi('Project');
 
 export const SessionSchema = ContractProjectSessionSchema.openapi('Session');
+
+export const SessionFolderSchema = ContractSessionFolderSchema.openapi('SessionFolder');
 
 export const SessionStartResultSchema = ContractSessionStartResultSchema.openapi('SessionStartResult');
 

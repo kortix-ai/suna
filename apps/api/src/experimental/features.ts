@@ -126,6 +126,17 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     platformDefault: () => config.LLM_GATEWAY_DEFAULT_ENABLED,
   },
   {
+    key: 'session_folders',
+    name: 'Session Folders',
+    description:
+      'Organize a project\'s sessions into folders in the sidebar — your own silos plus opt-in folders for Slack, email, scheduled, and webhook sessions. Share a folder with the team and its sessions follow. Still taking shape.',
+    stability: 'experimental',
+    // Pure web/DB surface — routes + table ship with the app, no operator gate.
+    available: () => true,
+    // Explicit opt-in per project in Settings.
+    platformDefault: () => false,
+  },
+  {
     key: 'review_center',
     name: 'Review Center',
     description:

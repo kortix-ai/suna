@@ -11,7 +11,8 @@ import { resolveAccountId } from '../../shared/resolve-account';
 import { getSupabase } from '../../shared/supabase';
 import { ttlMemo } from '../../shared/ttl-memo';
 import { effectiveProjectRole, roleAllows, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
-import { accountMembers, projectMembers, projectSessions, projects } from '@kortix/db';
+import { accountMembers, projectMembers, projectSessions, projects, sessionFolders } from '@kortix/db';
+import { isFolderVisibleTo, loadFolderGrants } from './session-folders';
 import { and, eq, sql } from 'drizzle-orm';
 import { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -81,6 +82,25 @@ async function loadProjectSessionRow(
   return row ?? null;
 }
 
+/** Grant-aware: does the session's folder (if any) share it with this viewer?
+ *  A project folder → everyone; a restricted folder → its members/groups; a
+ *  private folder → nobody beyond its owner. Mirrors the list route. */
+async function sessionInheritsFolderVisibility(
+  folderId: string,
+  subject: ShareSubject,
+): Promise<boolean> {
+  const [folder] = await db
+    .select({ visibility: sessionFolders.visibility, createdBy: sessionFolders.createdBy })
+    .from(sessionFolders)
+    .where(eq(sessionFolders.folderId, folderId))
+    .limit(1);
+  if (!folder || folder.visibility === 'private') return false;
+  const grants = folder.visibility === 'restricted'
+    ? (await loadFolderGrants([folderId])).get(folderId) ?? []
+    : [];
+  return isFolderVisibleTo(folder, grants, subject);
+}
+
 export async function loadVisibleSession(
   loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole; adminBypass?: boolean },
   sessionId: string,
@@ -96,7 +116,14 @@ export async function loadVisibleSession(
   if (!row) return null;
   const subject = await resolveShareSubject(loaded.userId);
   const grants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
-  if (!isSessionVisibleTo(row.visibility as 'private' | 'project' | 'restricted', row.createdBy, grants, subject)) {
+  // Folder sharing by inheritance: a session filed in a project-visible folder
+  // is readable by every member even when its own visibility is private.
+  // Mirrors the list route (routes/r7.ts GET /sessions).
+  const inheritsFolderVisibility = row.folderId != null && (await sessionInheritsFolderVisibility(row.folderId, subject));
+  if (
+    !inheritsFolderVisibility &&
+    !isSessionVisibleTo(row.visibility as 'private' | 'project' | 'restricted', row.createdBy, grants, subject)
+  ) {
     // A platform-admin bypass already verified for the parent project (see
     // loadProjectForUser) also covers a session that would otherwise be
     // invisible (private / not-my-grant). Audit every use — this is a real

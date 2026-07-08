@@ -52,6 +52,8 @@ export interface ProjectSession {
   sharing?: ConnectorSharing | null;
   is_owner?: boolean;
   can_manage_sharing?: boolean;
+  /** Manual sidebar folder assignment; null/absent = unfiled. */
+  folder_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -186,6 +188,8 @@ export async function createProjectSession(
     sandbox_slug?: string;
     initial_prompt?: string;
     name?: string;
+    /** File the new session into a sidebar folder at birth. */
+    folder_id?: string;
     /**
      * Client-generated session id. The API accepts any RFC 4122 v4 UUID;
      * we use this so the FE can navigate optimistically the moment the user
