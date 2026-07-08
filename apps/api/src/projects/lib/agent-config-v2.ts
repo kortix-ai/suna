@@ -126,3 +126,52 @@ export function applyAgentBlockV2(
   }
   return { ok: true, raw: nextRaw };
 }
+
+/**
+ * Apply a secrets/connectors SCOPE edit to a v2 `agents:` MAP manifest — the v2
+ * counterpart of `applyAgentScope` in `../agents.ts` (which only handles the v1
+ * `[[agents]]` array and would treat a v2 map as an empty array → "agent not
+ * found"). Reads the agent's existing governance block, merges in JUST the two
+ * scope grants, and reuses `applyAgentBlockV2` for the upsert + `validateManifest`
+ * gate (so every other governance field on the block is preserved verbatim).
+ *
+ * Two v2 semantics the v1 path gets wrong: (1) v1's wire `env` is v2's `secrets`
+ * key; (2) v2 is deny-by-default, so a none/`[]` selection is written by OMITTING
+ * the key (matching hand-authored kortix.yaml), NOT by v1's env-default-is-'all'
+ * omit rule. `notFound` distinguishes "agent not declared" (route → 404) from a
+ * validation failure (route → 400) — this path scopes an existing agent, it
+ * never creates one.
+ */
+export function applyAgentScopeV2(
+  manifest: ParsedManifest,
+  agentName: string,
+  scope: { env?: string[] | 'all'; connectors?: string[] | 'all' },
+): ApplyAgentBlockResult & { notFound?: boolean } {
+  const rawAgents = manifest.raw.agents;
+  const existing =
+    rawAgents && typeof rawAgents === 'object' && !Array.isArray(rawAgents)
+      ? (rawAgents as Record<string, unknown>)[agentName]
+      : undefined;
+  if (existing === undefined || existing === null) {
+    return {
+      ok: false,
+      notFound: true,
+      error: `No agent "${agentName}" declared in ${manifest.path || 'kortix.yaml'}`,
+    };
+  }
+  if (typeof existing !== 'object' || Array.isArray(existing)) {
+    return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
+  }
+  const merged: Record<string, unknown> = { ...(existing as Record<string, unknown>) };
+  if (scope.env !== undefined) {
+    if (scope.env === 'all') merged.secrets = 'all';
+    else if (scope.env.length === 0) delete merged.secrets;
+    else merged.secrets = scope.env;
+  }
+  if (scope.connectors !== undefined) {
+    if (scope.connectors === 'all') merged.connectors = 'all';
+    else if (scope.connectors.length === 0) delete merged.connectors;
+    else merged.connectors = scope.connectors;
+  }
+  return applyAgentBlockV2(manifest, agentName, merged as AgentBlockV2);
+}

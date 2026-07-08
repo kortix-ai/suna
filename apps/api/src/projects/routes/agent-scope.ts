@@ -19,6 +19,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json } from '../../openapi';
 import { applyAgentScope, extractAgents } from '../agents';
+import { applyAgentScopeV2 } from '../lib/agent-config-v2';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -75,14 +76,27 @@ projectsApp.openapi(
       );
     }
 
-    // The agent must already be declared — this route scopes an existing
-    // `[[agents]]`, it doesn't create the roster entry (that's a fuller edit).
-    const current = Array.isArray(manifest.raw.agents)
-      ? (manifest.raw.agents as Record<string, unknown>[])
-      : [];
-    const applied = applyAgentScope(current, agentName, { env, connectors }, manifest.path);
-    if (!applied.ok) return c.json({ error: applied.error, code: 'agent_not_found' }, 404);
-    manifest.raw.agents = applied.agents;
+    // The agent must already be declared — this route SCOPES an existing agent,
+    // it doesn't create the roster entry (that's the fuller /config editor). v1
+    // stores agents as a `[[agents]]` array; v2 (kortix.yaml) as an `agents:`
+    // map. The v1-only path treated a v2 map as an empty array, so EVERY scope
+    // edit on a YAML project 404'd "agent not found" — branch on the schema.
+    if (manifest.schemaVersion >= 2) {
+      const applied = applyAgentScopeV2(manifest, agentName, { env, connectors });
+      if (!applied.ok) {
+        return applied.notFound
+          ? c.json({ error: applied.error, code: 'agent_not_found' }, 404)
+          : c.json({ error: applied.error, code: 'invalid_scope', issues: applied.issues }, 400);
+      }
+      manifest.raw = applied.raw;
+    } else {
+      const current = Array.isArray(manifest.raw.agents)
+        ? (manifest.raw.agents as Record<string, unknown>[])
+        : [];
+      const applied = applyAgentScope(current, agentName, { env, connectors }, manifest.path);
+      if (!applied.ok) return c.json({ error: applied.error, code: 'agent_not_found' }, 404);
+      manifest.raw.agents = applied.agents;
+    }
 
     // Shape-validate through the real parser before committing — a malformed
     // grant set is a clean 400, never a broken manifest.

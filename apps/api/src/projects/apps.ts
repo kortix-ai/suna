@@ -88,7 +88,10 @@ export function extractApps(manifest: ParsedManifest): LoadedApps {
       errors: [{
         slug: '(top-level)',
         path: filename,
-        error: '`apps` must be an array of tables — use [[apps]], not [apps]',
+        error:
+          manifest.format === 'yaml'
+            ? '`apps` must be a list — write it as a YAML `apps:` list, not a map or scalar.'
+            : '`apps` must be an array of tables — use [[apps]], not [apps]',
       }],
     };
   }

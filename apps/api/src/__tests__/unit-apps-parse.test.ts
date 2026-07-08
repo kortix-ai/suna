@@ -315,7 +315,8 @@ apps:
 `);
     expect(specs).toEqual([]);
     expect(errors).toHaveLength(1);
-    expect(errors[0]!.error).toMatch(/must be an array of tables/);
+    // YAML manifest → the hint names the YAML shape (a list), not TOML `[[apps]]`.
+    expect(errors[0]!.error).toMatch(/must be a list/);
   });
 
   test('missing slug', () => {
