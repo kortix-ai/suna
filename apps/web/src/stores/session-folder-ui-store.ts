@@ -3,19 +3,18 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+import type { AutoFolderKind } from '@/components/projects/session-folder-grouping';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 /**
- * Sidebar folder expand/collapse state, persisted per project so folders keep
- * their open state across the project shell remounting on navigation.
+ * FOLDERS sidebar preferences, persisted per project.
  *
- * Keys are `folder_id` for manual folders and the auto-folder kind ('slack',
- * 'email', …) for virtual ones. Folders default to COLLAPSED — silos stay
- * closed until opened; the list auto-expands the folder holding the active
- * session on top of this state.
+ * The folders section shows user-created folders only by default; the virtual
+ * source folders (Slack / Email / Scheduled / Webhooks…) are opt-in via the
+ * section's ⋯ menu — mirroring how the SESSIONS filter works.
  */
 
-const STORAGE_KEY = 'kortix.project-session-folders';
+const STORAGE_KEY = 'kortix.project-folder-prefs';
 
 const MAX_TRACKED_PROJECTS = 24;
 
@@ -26,24 +25,24 @@ function pruneProjects<V>(map: Record<string, V>): Record<string, V> {
 }
 
 interface State {
-  expandedByProject: Record<string, Record<string, boolean>>;
+  showAutoByProject: Record<string, Partial<Record<AutoFolderKind, boolean>>>;
 }
 
 interface Actions {
-  setExpanded: (projectId: string, folderKey: string, expanded: boolean) => void;
+  setShowAuto: (projectId: string, kind: AutoFolderKind, show: boolean) => void;
 }
 
 export const useSessionFolderUiStore = create<State & Actions>()(
   persist(
     (set, get) => ({
-      expandedByProject: {},
-      setExpanded: (projectId, folderKey, expanded) => {
-        const current = get().expandedByProject[projectId] ?? {};
-        if ((current[folderKey] ?? false) === expanded) return;
+      showAutoByProject: {},
+      setShowAuto: (projectId, kind, show) => {
+        const current = get().showAutoByProject[projectId] ?? {};
+        if ((current[kind] ?? false) === show) return;
         set({
-          expandedByProject: {
-            ...get().expandedByProject,
-            [projectId]: { ...current, [folderKey]: expanded },
+          showAutoByProject: {
+            ...get().showAutoByProject,
+            [projectId]: { ...current, [kind]: show },
           },
         });
       },
@@ -51,7 +50,7 @@ export const useSessionFolderUiStore = create<State & Actions>()(
     {
       name: STORAGE_KEY,
       storage: createSafeJSONStorage(),
-      partialize: (state) => ({ expandedByProject: pruneProjects(state.expandedByProject) }),
+      partialize: (state) => ({ showAutoByProject: pruneProjects(state.showAutoByProject) }),
     },
   ),
 );

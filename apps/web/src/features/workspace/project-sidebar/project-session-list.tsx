@@ -9,9 +9,7 @@ import {
   type SessionFilterValue,
   type SessionSourceKind,
 } from '@/components/projects/session-label';
-import { groupSessions } from '@/components/projects/session-folder-grouping';
 import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,15 +26,11 @@ import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { FolderNameModal } from '@/features/workspace/project-sidebar/modal/folder-name-modal';
-import { FolderShareModal } from '@/features/workspace/project-sidebar/modal/folder-share-modal';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import { Icon } from '@/features/icon/icon';
-import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { useSessionFolderUiStore } from '@/stores/session-folder-ui-store';
 import {
-  deleteSessionFolder,
   listProjectSessions,
   listSessionFolders,
   restartProjectSession,
@@ -47,29 +41,25 @@ import {
   type SessionFolder,
 } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
-import { Icon as IconMynauiType, Pencil, Share, TrashSolid, UsersSolid } from '@mynaui/icons-react';
+import { Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import {
-  ArrowUpRight,
   CalendarClock,
-  ChevronRight,
   Folder,
   FolderInput,
   FolderMinus,
-  FolderOpen,
   FolderPlus,
   Mail,
   MoreHorizontal,
-  Plus,
   RotateCcw,
   Square,
   Webhook,
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { useState } from 'react';
 import { IconType } from 'react-icons/lib';
 
 interface ProjectSessionListProps {
@@ -94,10 +84,6 @@ const SOURCE_ICONS: Record<
 };
 
 const SESSION_DRAG_TYPE = 'application/x-kortix-session';
-
-// Stable fallback for the zustand selector — a fresh `{}` per render changes
-// identity every time and re-renders forever (getSnapshot loop).
-const NO_EXPANDED_STATE: Record<string, boolean> = {};
 
 function shouldPollProjectSessions(sessions: ProjectSession[] | undefined): boolean {
   return (sessions ?? []).some((session) => LIVE_SESSION_STATUSES.includes(session.status));
@@ -126,7 +112,6 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const activeOpenCodeSessionId = searchParams.get('oc');
   const queryClient = useQueryClient();
@@ -135,26 +120,8 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   );
   const [sessionToShare, setSessionToShare] = useState<ProjectSession | null>(null);
   const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
-
-  // Folder modal state. `folderModal` covers create + rename; a create kicked
-  // off from a session's "Move to → New folder…" carries the session id so the
-  // fresh folder immediately receives it.
-  const [folderModal, setFolderModal] = useState<{
-    folder: SessionFolder | null;
-    moveSessionId?: string;
-  } | null>(null);
-  const [folderToShare, setFolderToShare] = useState<SessionFolder | null>(null);
-  const [folderToDelete, setFolderToDelete] = useState<SessionFolder | null>(null);
-
-  // Drag-and-drop: the folder id a dragged session is currently hovering.
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
-
-  const expandedMap = useSessionFolderUiStore(
-    (s) => s.expandedByProject[projectId] ?? NO_EXPANDED_STATE,
-  );
-  const setExpanded = useSessionFolderUiStore((s) => s.setExpanded);
-
-  const newSession = useNewProjectSession(projectId);
+  // "Move to → New folder…" — the fresh folder immediately receives the session.
+  const [newFolderForSession, setNewFolderForSession] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['project-sessions', projectId],
@@ -214,50 +181,8 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
     },
   });
 
-  const deleteFolderMutation = useMutation({
-    mutationFn: (folderId: string) => deleteSessionFolder(projectId, folderId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['session-folders', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
-      successToast('Folder deleted — its sessions were kept');
-      setFolderToDelete(null);
-    },
-    onError: (err) => {
-      errorToast(err instanceof Error ? err.message : 'Failed to delete folder');
-    },
-  });
-
   const moveSession = (sessionId: string, folderId: string | null) =>
     moveMutation.mutate({ sessionId, folderId });
-
-  const sessions = useMemo(
-    () =>
-      (data ?? [])
-        .slice()
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
-    [data],
-  );
-
-  // Filtering itself lives in the SESSIONS header dropdown (project-sidebar);
-  // this list applies the chosen filter, then groups into folders.
-  const grouped = useMemo(() => {
-    const visible = sessions.filter((session) => matchesSessionFilter(session, filter));
-    return groupSessions(visible, folders ?? []);
-  }, [sessions, filter, folders]);
-
-  // The folder holding the active session opens by default; an explicit
-  // collapse (stored=false) still wins.
-  const activeFolderKey = useMemo(() => {
-    const active = sessions.find((s) => pathname?.includes(`/sessions/${s.session_id}`));
-    if (!active) return null;
-    if (active.folder_id && (folders ?? []).some((f) => f.folder_id === active.folder_id)) {
-      return active.folder_id;
-    }
-    const kind = sessionSource(active).kind;
-    return kind === 'chat' ? null : kind;
-  }, [sessions, folders, pathname]);
-
-  const isExpanded = (key: string) => expandedMap[key] ?? key === activeFolderKey;
 
   if (isLoading) {
     return <ProjectSessionListSkeleton />;
@@ -273,7 +198,11 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
     );
   }
 
-  if (sessions.length === 0 && (folders ?? []).length === 0) {
+  const sessions = (data ?? [])
+    .slice()
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  if (sessions.length === 0) {
     return (
       <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
         {tHardcodedUi.raw('componentsProjectsProjectSessionList.line132JsxTextNoSessionsYet')}
@@ -281,14 +210,11 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
     );
   }
 
-  const filtering = filter !== 'all';
-  const visibleFolderGroups = filtering
-    ? grouped.folders.filter((g) => g.sessions.length > 0)
-    : grouped.folders;
-  const hasAnyRow =
-    visibleFolderGroups.length > 0 || grouped.auto.length > 0 || grouped.loose.length > 0;
+  // Filtering itself lives in the SESSIONS header dropdown (project-sidebar);
+  // this list only applies the chosen filter.
+  const visibleSessions = sessions.filter((session) => matchesSessionFilter(session, filter));
 
-  if (!hasAnyRow) {
+  if (visibleSessions.length === 0) {
     return (
       <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
         {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectSidebarProjectSessionListJsxText1fba7ca0')}
@@ -298,204 +224,56 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
 
   const manualFolders = (folders ?? []).slice().sort((a, b) => a.position - b.position);
 
-  const renderSession = (session: ProjectSession, inFolder: boolean) => {
-    const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
-    const isActive = pathname?.includes(`/sessions/${session.session_id}`);
-    const children = directSubsessions(session);
-    return (
-      <div key={session.session_id} className="space-y-px">
-        <ProjectSessionRow
-          session={session}
-          href={href}
-          isActive={!!isActive && !activeOpenCodeSessionId}
-          displayTitle={getSessionDisplayTitle(session)}
-          childCount={children.length}
-          folders={manualFolders}
-          inFolder={inFolder}
-          onDelete={(id, label) => setSessionToDelete({ id, label })}
-          onShare={(s) => setSessionToShare(s)}
-          onRename={(id, name) => setSessionToRename({ id, name })}
-          onRestart={(id) => restartMutation.mutate(id)}
-          isRestarting={
-            restartMutation.isPending && restartMutation.variables === session.session_id
-          }
-          onStop={(id) => stopMutation.mutate(id)}
-          isStopping={stopMutation.isPending && stopMutation.variables === session.session_id}
-          onMove={moveSession}
-          onNewFolderForSession={(sessionId) =>
-            setFolderModal({ folder: null, moveSessionId: sessionId })
-          }
-        />
-        {children.length > 0 && isActive && (
-          <div className="border-border ml-3.5 border-l-2 pl-2">
-            {children.map((child) => {
-              const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
-              const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
-              return (
-                <ProjectSubsessionRow
-                  key={child.id}
-                  title={child.title || 'Sub-session'}
-                  href={childHref}
-                  isActive={activeChild}
-                  updatedAt={child.updated_at}
-                />
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const folderDropHandlers = (folderId: string) => ({
-    onDragOver: (e: React.DragEvent) => {
-      if (!e.dataTransfer.types.includes(SESSION_DRAG_TYPE)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      e.dataTransfer.dropEffect = 'move';
-      setDropTarget(folderId);
-    },
-    onDragLeave: (e: React.DragEvent) => {
-      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-      setDropTarget((current) => (current === folderId ? null : current));
-    },
-    onDrop: (e: React.DragEvent) => {
-      const sessionId = e.dataTransfer.getData(SESSION_DRAG_TYPE);
-      if (!sessionId) return;
-      e.preventDefault();
-      e.stopPropagation();
-      setDropTarget(null);
-      moveSession(sessionId, folderId);
-    },
-  });
-
   return (
     <>
-      <FadedScrollArea
-        className="h-full min-h-0 space-y-px"
-        // Dropping on the list background (outside a folder) unfiles the session.
-        onDragOver={(e: React.DragEvent) => {
-          if (!e.dataTransfer.types.includes(SESSION_DRAG_TYPE)) return;
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'move';
-        }}
-        onDrop={(e: React.DragEvent) => {
-          const sessionId = e.dataTransfer.getData(SESSION_DRAG_TYPE);
-          if (!sessionId) return;
-          e.preventDefault();
-          setDropTarget(null);
-          moveSession(sessionId, null);
-        }}
-      >
-        {visibleFolderGroups.map(({ folder, sessions: folderSessions }) => {
-          const expanded = isExpanded(folder.folder_id);
+      <FadedScrollArea className="h-full min-h-0 space-y-px">
+        {visibleSessions.map((session) => {
+          const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
+          const isActive = pathname?.includes(`/sessions/${session.session_id}`);
+          const children = directSubsessions(session);
           return (
-            <div key={folder.folder_id} className="space-y-px">
-              <FolderRow
-                name={folder.name}
-                count={folderSessions.length}
-                expanded={expanded}
-                shared={folder.visibility === 'project'}
-                isDropTarget={dropTarget === folder.folder_id}
-                icon={expanded ? FolderOpen : Folder}
-                onToggle={() => setExpanded(projectId, folder.folder_id, !expanded)}
-                {...folderDropHandlers(folder.folder_id)}
-                menu={
-                  <>
-                    <DropdownMenuItem
-                      className="cursor-pointer"
-                      onSelect={() =>
-                        router.push(`/projects/${projectId}/folders/${folder.folder_id}`)
-                      }
-                    >
-                      <ArrowUpRight />
-                      Open folder
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="cursor-pointer"
-                      onSelect={() => newSession({ create: { folder_id: folder.folder_id } })}
-                    >
-                      <Plus />
-                      New session here
-                    </DropdownMenuItem>
-                    {folder.can_manage && (
-                      <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="cursor-pointer"
-                          onSelect={() => setFolderModal({ folder })}
-                        >
-                          <Pencil />
-                          Rename
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="cursor-pointer"
-                          onSelect={() => setFolderToShare(folder)}
-                        >
-                          <Share />
-                          Share
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="cursor-pointer"
-                          variant="destructive"
-                          onSelect={() => setFolderToDelete(folder)}
-                        >
-                          <TrashSolid />
-                          Delete
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                  </>
+            <div key={session.session_id} className="space-y-px">
+              <ProjectSessionRow
+                session={session}
+                href={href}
+                isActive={!!isActive && !activeOpenCodeSessionId}
+                displayTitle={getSessionDisplayTitle(session)}
+                childCount={children.length}
+                folders={manualFolders}
+                onDelete={(id, label) => setSessionToDelete({ id, label })}
+                onShare={(s) => setSessionToShare(s)}
+                onRename={(id, name) => setSessionToRename({ id, name })}
+                onRestart={(id) => restartMutation.mutate(id)}
+                isRestarting={
+                  restartMutation.isPending && restartMutation.variables === session.session_id
                 }
+                onStop={(id) => stopMutation.mutate(id)}
+                isStopping={
+                  stopMutation.isPending && stopMutation.variables === session.session_id
+                }
+                onMove={moveSession}
+                onNewFolderForSession={(sessionId) => setNewFolderForSession(sessionId)}
               />
-              {expanded && (
+              {children.length > 0 && isActive && (
                 <div className="border-border ml-3.5 border-l-2 pl-2">
-                  {folderSessions.length === 0 ? (
-                    <div className="text-muted-foreground/50 px-2 py-1.5 text-xs">
-                      Empty — drag sessions here
-                    </div>
-                  ) : (
-                    folderSessions.map((s) => renderSession(s, true))
-                  )}
+                  {children.map((child) => {
+                    const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
+                    const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
+                    return (
+                      <ProjectSubsessionRow
+                        key={child.id}
+                        title={child.title || 'Sub-session'}
+                        href={childHref}
+                        isActive={activeChild}
+                        updatedAt={child.updated_at}
+                      />
+                    );
+                  })}
                 </div>
               )}
             </div>
           );
         })}
-
-        {grouped.auto.map((group) => {
-          const expanded = isExpanded(group.kind);
-          const SourceIcon = SOURCE_ICONS[group.kind];
-          return (
-            <div key={group.kind} className="space-y-px">
-              <FolderRow
-                name={group.label}
-                count={group.sessions.length}
-                expanded={expanded}
-                shared={false}
-                isDropTarget={false}
-                icon={SourceIcon}
-                onToggle={() => setExpanded(projectId, group.kind, !expanded)}
-                menu={
-                  <DropdownMenuItem
-                    className="cursor-pointer"
-                    onSelect={() => router.push(`/projects/${projectId}/folders/${group.kind}`)}
-                  >
-                    <ArrowUpRight />
-                    Open folder
-                  </DropdownMenuItem>
-                }
-              />
-              {expanded && (
-                <div className="border-border ml-3.5 border-l-2 pl-2">
-                  {group.sessions.map((s) => renderSession(s, false))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-
-        {grouped.loose.map((s) => renderSession(s, false))}
       </FadedScrollArea>
 
       <ShareSessionModal
@@ -524,154 +302,14 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
 
       <FolderNameModal
         projectId={projectId}
-        folder={folderModal?.folder ?? null}
-        open={!!folderModal}
-        onOpenChange={(open) => !open && setFolderModal(null)}
+        folder={null}
+        open={!!newFolderForSession}
+        onOpenChange={(open) => !open && setNewFolderForSession(null)}
         onCreated={(created) => {
-          const moveId = folderModal?.moveSessionId;
-          if (moveId) moveSession(moveId, created.folder_id);
-          setExpanded(projectId, created.folder_id, true);
+          if (newFolderForSession) moveSession(newFolderForSession, created.folder_id);
         }}
-      />
-
-      <FolderShareModal
-        projectId={projectId}
-        folder={folderToShare}
-        open={!!folderToShare}
-        onOpenChange={(open) => !open && setFolderToShare(null)}
-      />
-
-      <ConfirmDialog
-        open={!!folderToDelete}
-        onOpenChange={(open) => !open && setFolderToDelete(null)}
-        title="Delete folder?"
-        description={
-          <>
-            <span className="font-medium">{folderToDelete?.name}</span> will be deleted. The
-            sessions inside are kept and return to the main list.
-          </>
-        }
-        confirmLabel="Delete folder"
-        confirmVariant="destructive"
-        isPending={deleteFolderMutation.isPending}
-        onConfirm={() => folderToDelete && deleteFolderMutation.mutate(folderToDelete.folder_id)}
       />
     </>
-  );
-}
-
-interface FolderRowProps {
-  name: string;
-  count: number;
-  expanded: boolean;
-  shared: boolean;
-  isDropTarget: boolean;
-  icon: LucideIcon | IconMynauiType | IconType;
-  onToggle: () => void;
-  menu: React.ReactNode;
-  onDragOver?: (e: React.DragEvent) => void;
-  onDragLeave?: (e: React.DragEvent) => void;
-  onDrop?: (e: React.DragEvent) => void;
-}
-
-function FolderRow({
-  name,
-  count,
-  expanded,
-  shared,
-  isDropTarget,
-  icon: FolderIcon,
-  onToggle,
-  menu,
-  onDragOver,
-  onDragLeave,
-  onDrop,
-}: FolderRowProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  return (
-    <div
-      className="group/folder-row"
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-    >
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onToggle}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onToggle();
-          }
-        }}
-        className={cn(
-          'dark:hover:bg-sidebar-accent/50 hover:bg-sidebar-foreground/7 relative flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 transition-colors duration-150',
-          'text-muted-foreground hover:text-sidebar-foreground',
-          isDropTarget && 'bg-primary/[0.06] ring-primary/40 ring-1',
-        )}
-      >
-        <span className="flex size-4 shrink-0 items-center justify-center">
-          <ChevronRight
-            className={cn(
-              'text-muted-foreground/70 size-3 transition-transform duration-150',
-              expanded && 'rotate-90',
-            )}
-          />
-        </span>
-        <FolderIcon className="text-muted-foreground/80 size-3.5 shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-sm">{name}</span>
-        {shared && (
-          <Hint side="top" label="Shared with the project">
-            <span className="flex size-4 shrink-0 items-center justify-center">
-              <UsersSolid className="text-muted-foreground/70 size-3" />
-            </span>
-          </Hint>
-        )}
-
-        <div className="relative w-10 min-w-10 shrink-0">
-          <span
-            className={cn(
-              SESSION_RELATIVE_TIME_CLASS,
-              'pr-1.5 transition-opacity duration-150',
-              'opacity-100 group-hover/folder-row:opacity-0 group-has-data-[state=open]/folder-row:opacity-0',
-            )}
-          >
-            {count}
-          </span>
-          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                type="button"
-                aria-label="Folder actions"
-                className={cn(
-                  'absolute top-1/2 right-0 -translate-y-1/2 transition-opacity duration-150 focus:ring-0 focus-visible:ring-0',
-                  'pointer-events-none opacity-0',
-                  'group-hover/folder-row:pointer-events-auto group-hover/folder-row:opacity-100',
-                  'data-[state=open]:pointer-events-auto data-[state=open]:opacity-100',
-                )}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-              >
-                <MoreHorizontal className="size-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="w-48"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {menu}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -681,7 +319,6 @@ interface ProjectSessionRowProps {
   isActive: boolean;
   displayTitle: string;
   folders: SessionFolder[];
-  inFolder: boolean;
   onDelete: (sessionId: string, label: string) => void;
   onShare: (session: ProjectSession) => void;
   onRename: (sessionId: string, currentName: string) => void;
@@ -700,7 +337,6 @@ function ProjectSessionRow({
   isActive,
   displayTitle,
   folders,
-  inFolder,
   onDelete,
   onShare,
   onRename,
@@ -730,6 +366,9 @@ function ProjectSessionRow({
 
   const source = sessionSource(session);
   const SourceIcon = source.kind !== 'chat' ? SOURCE_ICONS[source.kind] : null;
+  const currentFolder = session.folder_id
+    ? folders.find((f) => f.folder_id === session.folder_id)
+    : undefined;
 
   return (
     <div
@@ -764,17 +403,25 @@ function ProjectSessionRow({
 
         <div className="flex shrink-0 items-center gap-0">
           <span className="flex size-4 shrink-0 items-center justify-center">
-            {SourceIcon && (
-              <Hint
-                side="top"
-                label={
-                  source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label
-                }
-              >
+            {currentFolder ? (
+              <Hint side="top" label={`In ${currentFolder.name}`}>
                 <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
-                  <SourceIcon className="size-3" />
+                  <Folder className="size-3" />
                 </span>
               </Hint>
+            ) : (
+              SourceIcon && (
+                <Hint
+                  side="top"
+                  label={
+                    source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label
+                  }
+                >
+                  <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
+                    <SourceIcon className="size-3" />
+                  </span>
+                </Hint>
+              )
             )}
           </span>
 
@@ -827,7 +474,7 @@ function ProjectSessionRow({
                   Rename
                 </DropdownMenuItem>
                 <DropdownMenuSub>
-                  <DropdownMenuSubTrigger className="cursor-pointer [&>svg:first-child]:text-muted-foreground">
+                  <DropdownMenuSubTrigger className="[&>svg:first-child]:text-muted-foreground cursor-pointer">
                     <FolderInput className="size-4" />
                     Move to
                   </DropdownMenuSubTrigger>
@@ -855,7 +502,7 @@ function ProjectSessionRow({
                       <FolderPlus />
                       New folder…
                     </DropdownMenuItem>
-                    {inFolder && session.folder_id && (
+                    {session.folder_id && (
                       <DropdownMenuItem
                         className="cursor-pointer"
                         onSelect={() => deferAfterClose(() => onMove(session.session_id, null))}
