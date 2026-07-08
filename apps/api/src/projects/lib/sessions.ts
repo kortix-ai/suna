@@ -571,8 +571,12 @@ export async function createProjectSession(input: {
       .returning();
     sessionRow = row;
   } catch (error) {
-    // (project_id, branch_name) unique index + PK on session_id mean a
-    // randomUUID() collision is the only realistic insert failure here.
+    // Besides a randomUUID() collision on the PK / (project_id, branch_name)
+    // unique index, `sandbox_provider` is an ENUM: a provider this env enables
+    // but the target DB's type is missing fails here with 22P02, not upstream —
+    // resolveSessionProvider validates against config, never against the DB.
+    // (That is how prod, whose faked baseline skipped 'platinum', 500'd every
+    // create on a project pinned to it.) verify-live-schema.ts now gates that drift.
     const message = (error as Error).message || 'Insert failed';
     return { error: { status: 500, body: { error: message, retry: true } } };
   }
