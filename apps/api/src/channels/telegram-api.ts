@@ -159,3 +159,43 @@ export async function telegramDeleteWebhook(
   const r = await telegramApiCall(token, 'deleteWebhook', { drop_pending_updates: false });
   return r.ok ? { ok: true } : { ok: false, error: r.description ?? 'unknown error' };
 }
+
+/** Register the bot's `/` command menu (shown by Telegram's command UI). */
+export async function telegramSetMyCommands(
+  token: string,
+  commands: ReadonlyArray<{ command: string; description: string }>,
+): Promise<{ ok: boolean; error?: string }> {
+  const r = await telegramApiCall(token, 'setMyCommands', { commands });
+  return r.ok ? { ok: true } : { ok: false, error: r.description ?? 'unknown error' };
+}
+
+/**
+ * Send a plain message. A WRITE — ambiguous 5xx/timeouts are not retried so a
+ * slow success can't become a duplicate (429 still retries; it wasn't
+ * processed). Returns the new message id, or null on failure.
+ */
+export async function telegramSendMessage(
+  token: string,
+  chatId: number | string,
+  text: string,
+  opts: { replyToMessageId?: number; parseMode?: 'HTML' } = {},
+): Promise<number | null> {
+  const r = await telegramApiCall<{ message_id?: number }>(
+    token,
+    'sendMessage',
+    {
+      chat_id: chatId,
+      text,
+      ...(opts.parseMode ? { parse_mode: opts.parseMode } : {}),
+      ...(opts.replyToMessageId
+        ? { reply_parameters: { message_id: opts.replyToMessageId, allow_sending_without_reply: true } }
+        : {}),
+    },
+    { idempotent: false },
+  );
+  if (!r.ok) {
+    console.warn('[telegram-api] sendMessage failed', { error: redactToken(r.description ?? 'unknown') });
+    return null;
+  }
+  return typeof r.result?.message_id === 'number' ? r.result.message_id : null;
+}

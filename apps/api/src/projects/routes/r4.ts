@@ -19,8 +19,10 @@ import {
   telegramBotIdFromToken,
   telegramDeleteWebhook,
   telegramGetMe,
+  telegramSetMyCommands,
   telegramSetWebhook,
 } from "../../channels/telegram-api";
+import { TELEGRAM_BOT_COMMANDS } from "../../channels/telegram/inbound";
 import { randomBytes } from "node:crypto";
 import { reconcileChannelConnectors } from "../../executor/sync";
 import {
@@ -694,6 +696,10 @@ projectsApp.openapi(
         502,
       );
     }
+
+    // Register the `/` command menu (start/help/new) — best-effort: a failure
+    // here degrades discoverability, not function, so it never fails connect.
+    await telegramSetMyCommands(botToken, TELEGRAM_BOT_COMMANDS).catch(() => {});
 
     const summary = await saveTelegramInstall({
       projectId,
