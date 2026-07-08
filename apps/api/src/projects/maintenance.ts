@@ -241,10 +241,10 @@ export async function runProjectMaintenance(): Promise<void> {
       }),
       // GC superseded template snapshots (content-addressed names orphaned by
       // every identity drift) before the 100/org Daytona quota fills up.
-      // Pressure-gated + bounded; no-op while the namespace is small.
+      // Pressure-gated + bounded; no-op while the ORG total is small.
       reconcileSnapshotQuota().catch((err) => {
         console.warn('[project-maintenance] snapshot quota GC failed:', err instanceof Error ? err.message : err);
-        return { namespaceCount: 0, eligible: 0, deleted: 0, dryRun: false };
+        return { orgTotal: 0, managedCount: 0, eligible: 0, deleted: 0, deferred: 0, dryRun: false };
       }),
     ]);
     const hadAction = Boolean(
