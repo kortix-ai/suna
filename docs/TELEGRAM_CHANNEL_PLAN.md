@@ -36,7 +36,10 @@ pattern. One branch (`telegram-channel`), one PR, one commit per stage below.
 - `DELETE /:projectId/channels/telegram/installation` (manage ACL) — `deleteWebhook`, purge secrets + install row.
 BYO-token only (BotFather) — no shared OAuth app, mirroring the Slack BYO mode.
 
-### Stage 2 — Bindings + conversation continuity (`feat(channels): telegram bindings + thread continuity`)
+### Stage 2 — Bindings, continuity + command menu (`feat(channels): telegram bindings + thread continuity`)
+Also: register `setMyCommands` at connect time (`/start` welcome + link hint, `/help`,
+`/new` reset conversation → fresh session) and handle them in the webhook; in groups,
+respond only when @-mentioned or replied-to (bot username cached from `getMe`).
 Replace the stub's hardcoded `agent_name: 'default'` / session-per-update:
 - Resolve `chat_channel_bindings` (platform `telegram`, channelId = `String(chat.id)`) →
   agentName / opencodeModel / conversationPolicy, same fold Slack uses.
@@ -57,10 +60,24 @@ Replace the stub's hardcoded `agent_name: 'default'` / session-per-update:
 - Sandbox env for telegram-originated turns: `TELEGRAM_CHAT_ID`, `TELEGRAM_MESSAGE_ID`,
   `TELEGRAM_USER_ID` — context only, **no token** (mirrors `buildSlackTurnEnv`).
 
-### Stage 4 — Outbound relay (`feat(channels): telegram reply relay`)
-Deliver agent replies to the chat: on turn answer/end (Slack `relayTurn*` analog, simplified —
-no streaming/Block Kit), `sendMessage(chat_id, text, reply_parameters)` + `sendChatAction`
-typing indicator while running. Markdown → Telegram-safe rendering (fallback plain text).
+### Stage 4 — Outbound relay, Telegram-native UX (`feat(channels): telegram reply relay`)
+The **nicest UX Telegram can express**, not a lowest-common-denominator port:
+- **Live status message**: immediately `sendMessage` a placeholder ("⏳ Working…"), then
+  progressively `editMessageText` it with the evolving answer (≤1 edit/sec, respecting
+  429 `retry_after`) — the Telegram-native equivalent of Slack's streaming plan UI.
+- **Typing indicator loop** (`sendChatAction` every ~5s) while the turn runs.
+- **Rich text**: agent markdown → Telegram HTML parse mode (safe subset; plain-text
+  fallback on parse failure) — bold/italic/code/links render properly.
+- **Reply threading** via `reply_parameters` to the triggering message; **smart chunking**
+  at 4096 chars on paragraph boundaries for long answers.
+- **Inline keyboard** on the final message: `Open in Kortix` URL button deep-linking to
+  the session.
+
+### Stage 4b — Approvals from Telegram (`feat(channels): telegram approval buttons`)
+When a telegram-originated session pauses on a pending executor approval, post the
+approval prompt with **inline Approve / Deny buttons** (`callback_query` → the same
+`resolveApproval` endpoint the web inbox uses; `answerCallbackQuery` for the tap feedback;
+message edits to show the outcome). Human-in-the-loop without leaving the chat.
 
 ### Stage 5 — Files (`feat(channels): telegram file receive/send`)
 - Inbound: `message.document`/`photo` → `getFile` → server-side download (size cap +
