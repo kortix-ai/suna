@@ -41,7 +41,7 @@ export interface ConnectorDraft {
    *  removed 2026-07-05) — accepted for back-compat callers but never emitted
    *  into the manifest, since `shared` is already the implicit default. */
   credential?: 'shared';
-  auth?: { type?: 'none' | 'bearer' | 'basic' | 'custom'; in?: 'header' | 'query'; name?: string; prefix?: string };
+  auth?: { type?: 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1'; in?: 'header' | 'query'; name?: string; prefix?: string };
 }
 
 export type CrudResult =
@@ -338,7 +338,7 @@ export interface ConnectorConfigView {
   endpoint: string | null;
   baseUrl: string | null;
   spec: string | null;
-  auth: { type: 'none' | 'bearer' | 'basic' | 'custom'; in: 'header' | 'query'; name: string | null; prefix: string | null };
+  auth: { type: 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1'; in: 'header' | 'query'; name: string | null; prefix: string | null };
 }
 
 /**

@@ -12,10 +12,10 @@ beforeEach(() => {
   stdout = '';
   fetchCalls = 0;
   (process.stdout as any).write = (chunk: unknown) => ((stdout += String(chunk)), true);
-  globalThis.fetch = (async () => {
+  globalThis.fetch = (async (_input: RequestInfo | URL, _init?: RequestInit) => {
     fetchCalls += 1;
     return new Response('{}', { status: 200 });
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
 });
 
 afterEach(() => {

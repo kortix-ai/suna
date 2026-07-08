@@ -419,12 +419,11 @@ Options: `--to <who>` (member email or user-id; group id with `--group`), `--exp
 
 ### Project scaffold
 
-`kortix init` and `kortix <project-name>` both create a **new, standalone** directory — like `create-next-app`, neither ever scaffolds into an existing folder or the current directory, and `init` refuses to run against a non-empty one. They are not aliases of each other, though: `init` runs the full interactive wizard (coding-agent symlinks, starter-template choice, marketplace skill picker), while `kortix <project-name>` is the lighter direct form that skips the wizard and auto-commits the scaffold with git.
+`kortix init` creates a **new, standalone** directory — like `create-next-app`, it never scaffolds into an existing folder or the current directory, and it refuses to run against a non-empty one. Scaffolding is explicit-only: `init` is the single command that creates a project. An unrecognized subcommand (`kortix use`, `kortix inti`, …) exits with an error and a did-you-mean suggestion — it never creates a directory. (Older CLI versions treated any unknown first argument as a project name to scaffold; that form is gone.)
 
 | Command | Effect |
 | --- | --- |
 | `kortix init [project-name] [options]` | Prompts for a project name if omitted, then creates that directory and scaffolds it: `kortix.yaml` (the v2 manifest), `.kortix/Dockerfile`, and the OpenCode config dir (default agent + the kortix-system skill + tools). Runs the wizard: pick coding agent(s) to wire up (symlinks `.opencode`/`.claude`/`.agents` + `AGENTS.md` into `.kortix/opencode` so skills/agents are shared), pick a starter template, pick marketplace skills to install. Does **not** write `.kortix/link.json` — that's created later by `projects link` or `ship`. |
-| `kortix <project-name> [options]` | Makes a fresh directory next to your shell cwd, runs `git init -b main`, drops the same OpenCode-native scaffold at the repo root, then stages everything and makes an initial commit (skip with `--no-commit`; skip git entirely with `--no-git`). No coding-agent wizard, no template/marketplace prompts. |
 
 `kortix init` options: `--name <project>` (alias for the positional name), `--primary <agent>` (opencode\|claude\|codex\|cursor), `--agents <list>` (comma-separated extras to wire up alongside `--primary`), `--template <minimal\|general-knowledge-worker>` (default `minimal`; `general-knowledge-worker` includes the optional skill pack), `--marketplace <list>` (comma-separated marketplace skills, or `none`; interactive mode opens a preselected picker), `--no-git` (skip `git init`), `-y`/`--yes` (skip prompts — requires a project name).
 

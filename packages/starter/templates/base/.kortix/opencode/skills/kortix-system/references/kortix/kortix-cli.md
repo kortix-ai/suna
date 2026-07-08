@@ -343,7 +343,6 @@ title. Sorted newest first.
 | Command | Effect |
 | --- | --- |
 | `kortix init` | Scaffold a Kortix project in the current directory. Writes `kortix.toml`, `.kortix/Dockerfile`, the OpenCode config dir with the default agent + kortix-system skill, and a `.kortix/link.json` placeholder. Then, for each coding agent you select (opencode/claude/codex/cursor), symlinks the OpenCode config dir into that agent's native location (`.opencode` / `.claude` → `.kortix/opencode`; codex wires `.agents` → `.kortix/opencode`, its documented cross-tool skills dir) so they share its skills + agents; Codex and Cursor also get a root `AGENTS.md` pointer they read natively (so Cursor needs no rule file). Note: Claude scans `.claude/skills` only one level deep, so skills nested under a grouping folder aren't discovered by Claude locally (they still load in the OpenCode sandbox and for Codex). |
-| `kortix <project-name>` | Same as `init` but creates a new directory next to cwd. |
 
 ## Token scope
 

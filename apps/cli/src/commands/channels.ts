@@ -57,7 +57,7 @@ interface SlackMode {
   install_url: string | null;
 }
 
-type ProjectCtx = NonNullable<ReturnType<typeof resolveProjectContext>>;
+type ProjectCtx = NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
 
 export async function runChannels(argv: string[]): Promise<number> {
   if (argv[0] === '-h' || argv[0] === '--help') {
@@ -116,7 +116,7 @@ async function channelsStatus(
   ctxOpts: { projectArg?: string; hostArg?: string },
   json: boolean,
 ): Promise<number> {
-  const ctx = resolveProjectContext(ctxOpts);
+  const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
   try {
     const install = await ctx.client.get<SlackInstallation | null>(
@@ -153,7 +153,7 @@ async function channelsConnect(
   ctxOpts: { projectArg?: string; hostArg?: string },
   opts: ConnectOpts,
 ): Promise<number> {
-  const ctx = resolveProjectContext(ctxOpts);
+  const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
 
   // Explicit credentials always mean manual mode — never second-guess them.
@@ -312,7 +312,7 @@ function printInstall(ctx: ProjectCtx, install: SlackInstallation, headline: str
 async function channelsDisconnect(
   ctxOpts: { projectArg?: string; hostArg?: string },
 ): Promise<number> {
-  const ctx = resolveProjectContext(ctxOpts);
+  const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
   try {
     await ctx.client.delete(`/projects/${ctx.projectId}/channels/slack/installation`);
@@ -326,7 +326,7 @@ async function channelsDisconnect(
 async function channelsManifest(
   ctxOpts: { projectArg?: string; hostArg?: string },
 ): Promise<number> {
-  const ctx = resolveProjectContext(ctxOpts);
+  const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
 
   const baseUrl = ctx.client.apiBase.replace(/\/$/, '');

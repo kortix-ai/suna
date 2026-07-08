@@ -8,10 +8,11 @@
  * string from the field + selection — is a follow-up; normalization already
  * works.) See docs/specs/executor.md §7.
  */
+import { createHmac, randomBytes } from 'node:crypto';
 import type { ActionBinding } from './types';
 
 export interface ExecutorAuth {
-  type: 'bearer' | 'basic' | 'custom' | 'none';
+  type: 'bearer' | 'basic' | 'custom' | 'oauth1' | 'none';
   in: 'header' | 'query';
   name: string | null;
   prefix: string | null;
@@ -34,14 +35,19 @@ export interface ExecResult {
 
 const NO_AUTH: ExecutorAuth = { type: 'none', in: 'header', name: null, prefix: null };
 
-/** Attach a credential to a request per the connector's auth method. */
+/**
+ * Attach a credential to a request per the connector's auth method.
+ * `oauth1` is not handled here — it needs the method + final URL + query to
+ * sign, so buildHttpRequest applies it (manifest validation restricts oauth1
+ * to openapi/http connectors, the only bindings that route through there).
+ */
 function applyAuth(
   headers: Record<string, string>,
   query: URLSearchParams,
   auth: ExecutorAuth,
   secret: string | null,
 ): void {
-  if (auth.type === 'none' || !secret) return;
+  if (auth.type === 'none' || auth.type === 'oauth1' || !secret) return;
   if (auth.type === 'bearer') {
     const prefix = auth.prefix ?? 'Bearer';
     headers['Authorization'] = `${prefix} ${secret}`.trim();
@@ -57,6 +63,102 @@ function applyAuth(
   const name = auth.name ?? 'Authorization';
   if (auth.in === 'query') query.set(name, value);
   else headers[name] = value;
+}
+
+/* ─── OAuth 1.0a (RFC 5849) — HMAC-SHA1 request signing ─────────────────── */
+
+/**
+ * The oauth1 credential is ONE stored secret whose value is a JSON object with
+ * all four values (same pack-into-one convention as basic's "user:pass"):
+ * `{"consumer_key":"…","consumer_secret":"…","token":"…","token_secret":"…"}`.
+ */
+interface Oauth1Creds {
+  consumer_key: string;
+  consumer_secret: string;
+  token: string;
+  token_secret: string;
+}
+
+function parseOauth1Secret(secret: string | null): Oauth1Creds | null {
+  if (!secret) return null;
+  try {
+    const o = JSON.parse(secret) as Record<string, unknown>;
+    if (
+      typeof o?.consumer_key === 'string' &&
+      typeof o?.consumer_secret === 'string' &&
+      typeof o?.token === 'string' &&
+      typeof o?.token_secret === 'string'
+    ) {
+      return o as unknown as Oauth1Creds;
+    }
+  } catch {
+    /* not JSON */
+  }
+  return null;
+}
+
+/** RFC 3986 percent-encoding — stricter than encodeURIComponent. */
+function rfc3986(s: string): string {
+  return encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+/**
+ * Compute the OAuth 1.0a HMAC-SHA1 signature (RFC 5849 §3.4). Pure — exported
+ * for unit tests against the spec's published test vector. `params` are the
+ * decoded oauth_* + query pairs; JSON bodies are excluded per §3.4.1.3.1.
+ */
+export function oauth1Signature(opts: {
+  method: string;
+  /** Base string URI — scheme://host/path, no query. */
+  url: string;
+  params: Array<[string, string]>;
+  consumerSecret: string;
+  tokenSecret: string;
+}): string {
+  const normalized = opts.params
+    .map(([k, v]) => [rfc3986(k), rfc3986(v)] as const)
+    .sort(([ak, av], [bk, bv]) => (ak === bk ? (av < bv ? -1 : av > bv ? 1 : 0) : ak < bk ? -1 : 1))
+    .map(([k, v]) => `${k}=${v}`)
+    .join('&');
+  const base = `${opts.method.toUpperCase()}&${rfc3986(opts.url)}&${rfc3986(normalized)}`;
+  const key = `${rfc3986(opts.consumerSecret)}&${rfc3986(opts.tokenSecret)}`;
+  return createHmac('sha1', key).update(base).digest('base64');
+}
+
+/** Build the `Authorization: OAuth …` header for a request. */
+export function oauth1Header(opts: {
+  method: string;
+  /** Request URL without the query string. */
+  url: string;
+  query: URLSearchParams;
+  creds: Oauth1Creds;
+  /** Test seams — real calls omit these. */
+  nonce?: string;
+  timestamp?: string;
+}): string {
+  const oauth: Record<string, string> = {
+    oauth_consumer_key: opts.creds.consumer_key,
+    oauth_nonce: opts.nonce ?? randomBytes(16).toString('hex'),
+    oauth_signature_method: 'HMAC-SHA1',
+    oauth_timestamp: opts.timestamp ?? Math.floor(Date.now() / 1000).toString(),
+    oauth_token: opts.creds.token,
+    oauth_version: '1.0',
+  };
+  const params: Array<[string, string]> = [
+    ...Object.entries(oauth),
+    ...[...opts.query.entries()],
+  ];
+  oauth.oauth_signature = oauth1Signature({
+    method: opts.method,
+    url: opts.url,
+    params,
+    consumerSecret: opts.creds.consumer_secret,
+    tokenSecret: opts.creds.token_secret,
+  });
+  return `OAuth ${Object.keys(oauth)
+    .sort()
+    .map((k) => `${rfc3986(k)}="${rfc3986(oauth[k]!)}"`)
+    .join(', ')}`;
 }
 
 /** Derive where each input property goes from its `x-in` hint (from normalization). */
@@ -131,7 +233,25 @@ function buildHttpRequest(opts: {
     else appendQuery(query, key, value);
   }
 
-  applyAuth(headers, query, opts.auth ?? NO_AUTH, opts.secret ?? null);
+  const auth = opts.auth ?? NO_AUTH;
+  if (auth.type === 'oauth1') {
+    // Signed over method + URL + query (JSON bodies are excluded per RFC 5849
+    // §3.4.1.3.1) — must run after the query is final, so not in applyAuth.
+    const creds = parseOauth1Secret(opts.secret ?? null);
+    if (!creds) {
+      throw new Error(
+        'oauth1 credential must be a JSON object {"consumer_key","consumer_secret","token","token_secret"}',
+      );
+    }
+    headers['Authorization'] = oauth1Header({
+      method: opts.method,
+      url: joinUrl(opts.baseUrl, path),
+      query,
+      creds,
+    });
+  } else {
+    applyAuth(headers, query, auth, opts.secret ?? null);
+  }
 
   let url = joinUrl(opts.baseUrl, path);
   const qs = query.toString();

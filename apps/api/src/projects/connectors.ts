@@ -75,8 +75,8 @@ export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
 /** Chat platforms a `channel` connector can target. */
 export type ChannelPlatform = 'slack' | 'email' | 'meet';
 
-type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'none';
-const AUTH_TYPES: readonly ConnectorAuthType[] = ['bearer', 'basic', 'custom', 'none'];
+type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'oauth1' | 'none';
+const AUTH_TYPES: readonly ConnectorAuthType[] = ['bearer', 'basic', 'custom', 'oauth1', 'none'];
 
 interface ConnectorAuthSpec {
   /** How the credential is attached to outbound calls. */
@@ -439,6 +439,9 @@ function parseAuth(
   }
   if (provider === 'channel' && type !== 'none') {
     return err(slug, 'provider="channel" authenticates via its platform install token — omit [connectors.auth]');
+  }
+  if (type === 'oauth1' && provider !== 'openapi' && provider !== 'http') {
+    return err(slug, '[connectors.auth] type="oauth1" is only supported for openapi/http connectors');
   }
 
   if (type === 'none') return { ok: true, value: { ...NO_AUTH } };

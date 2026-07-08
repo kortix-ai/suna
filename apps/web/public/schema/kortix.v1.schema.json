@@ -393,6 +393,7 @@
                   "bearer",
                   "basic",
                   "custom",
+                  "oauth1",
                   "none"
                 ]
               },
