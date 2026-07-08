@@ -245,7 +245,7 @@ function printPlan(resolved: ResolvedItem, plan: InstallPlan, flags: Flags): voi
 
 /** Install a marketplace item straight into a linked cloud project's repo. */
 async function installToProject(address: string, flags: Flags): Promise<number> {
-  const ctx = resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
+  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
   if (!ctx) return 1;
 
   let items: CatalogItem[];

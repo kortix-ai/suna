@@ -122,7 +122,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
 async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: ProjectTriggersResponse;
@@ -183,7 +183,7 @@ async function triggersFire(slug: string | undefined, opts: CtxOpts): Promise<nu
     process.stderr.write(`${status.err('Pass a trigger slug.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: TriggerFireResponse;
@@ -208,7 +208,7 @@ async function triggersFire(slug: string | undefined, opts: CtxOpts): Promise<nu
 // Server-side activation switch (cloud state in projects.metadata, NOT the
 // manifest). Pause = the platform stops auto-running this project's triggers.
 async function triggersActivation(opts: CtxOpts, paused: boolean): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   try {
@@ -327,7 +327,7 @@ async function triggersInfo(slug: string | undefined, opts: CtxOpts, json = fals
     process.stderr.write(`${status.err('Pass a trigger slug.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: ProjectTriggersResponse;

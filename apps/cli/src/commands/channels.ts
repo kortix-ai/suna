@@ -85,7 +85,7 @@ export async function runChannels(argv: string[]): Promise<number> {
 async function channelsStatus(
   ctxOpts: { projectArg?: string; hostArg?: string },
 ): Promise<number> {
-  const ctx = resolveProjectContext(ctxOpts);
+  const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
   try {
     const install = await ctx.client.get<SlackInstallation | null>(
@@ -117,7 +117,7 @@ async function channelsConnect(
   botTokenFlag: string | undefined,
   signingSecretFlag: string | undefined,
 ): Promise<number> {
-  const ctx = resolveProjectContext(ctxOpts);
+  const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
 
   const botToken = resolveSecret('bot token', botTokenFlag, 'SLACK_BOT_TOKEN');
@@ -156,7 +156,7 @@ async function channelsConnect(
 async function channelsDisconnect(
   ctxOpts: { projectArg?: string; hostArg?: string },
 ): Promise<number> {
-  const ctx = resolveProjectContext(ctxOpts);
+  const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
   try {
     await ctx.client.delete(`/projects/${ctx.projectId}/channels/slack/installation`);
@@ -170,7 +170,7 @@ async function channelsDisconnect(
 async function channelsManifest(
   ctxOpts: { projectArg?: string; hostArg?: string },
 ): Promise<number> {
-  const ctx = resolveProjectContext(ctxOpts);
+  const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
 
   const baseUrl = ctx.client.apiBase.replace(/\/$/, '');
