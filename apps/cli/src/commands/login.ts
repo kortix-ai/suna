@@ -232,6 +232,10 @@ function safeHostname(): string {
 }
 
 function openInBrowser(url: string): void {
+  // Only hand a real web URL to the OS opener — a value starting with '-' would
+  // be read as a flag by open/xdg-open, and Windows `start` parses its argument,
+  // so an unvalidated URL is a command-injection vector.
+  if (!/^https?:\/\//i.test(url)) return;
   const platform = process.platform;
   let cmd: string;
   let args: string[];

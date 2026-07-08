@@ -115,4 +115,25 @@ describe('autoLinkUrls', () => {
   test('inline math spanning a url keeps it unlinked', () => {
     expect(autoLinkUrls('math $x = example.com$ end')).toBe('math $x = example.com$ end');
   });
+
+  test('adversarial (ReDoS-shaped) input stays fast and correct', () => {
+    // Before the quantifiers were bounded, these repetitive strings drove the
+    // email / markdown-link / angle-link regexes into polynomial backtracking
+    // (seconds+) on user-controlled chat content. Bounded quantifiers keep every
+    // match attempt constant-work, so the whole scan stays linear. A generous
+    // time budget still fails hard if the super-linear behaviour ever returns.
+    const cases = [
+      '%'.repeat(50_000), // email local-part run that never reaches '@'
+      'a.'.repeat(30_000), // dotted run with no '@' and no TLD
+      '['.repeat(50_000), // markdown-link opens that never reach ']('
+      '[]('.repeat(15_000), // link prefixes that never close
+      '<http://'.repeat(15_000), // angle links that never close '>'
+    ];
+    for (const input of cases) {
+      const start = Date.now();
+      const out = autoLinkUrls(input);
+      expect(typeof out).toBe('string');
+      expect(Date.now() - start).toBeLessThan(2_000);
+    }
+  });
 });
