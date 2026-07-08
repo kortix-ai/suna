@@ -243,9 +243,9 @@ describe('projects table', () => {
     expect(col?.default).toBe('main');
   });
 
-  test('manifest_path defaults to kortix.toml', () => {
+  test('manifest_path defaults to kortix.yaml', () => {
     const col = getTableConfig(projects).columns.find((c) => c.name === 'manifest_path');
-    expect(col?.default).toBe('kortix.toml');
+    expect(col?.default).toBe('kortix.yaml');
   });
 
   test('status defaults to active', () => {

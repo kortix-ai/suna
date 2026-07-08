@@ -42,7 +42,7 @@ projectsApp.openapi(
     : repoUrlInput;
   if (!repoUrl) return c.json({ error: 'repo_url or repo_full_name is required' }, 400);
 
-  const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.toml';
+  const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.yaml';
 
   // PAT path: link an existing repo with a caller-supplied token — no GitHub
   // App install needed. This is the seamless `kortix ship` flow for a repo you
@@ -340,8 +340,8 @@ projectsApp.openapi(
 );
 
 // ─── Sandbox templates ─────────────────────────────────────────────────────
-// One platform-default image, optionally extended by `[[sandbox.templates]]` entries
-// in kortix.toml. Session boot is stateless: it computes the expected snapshot
+// One platform-default image, optionally extended by `sandbox: templates:` entries
+// in kortix.yaml. Session boot is stateless: it computes the expected snapshot
 // name from the resolved template, asks Daytona if it exists, builds if not.
 // The append-only `project_snapshot_builds` log feeds the UI but is never
 // consulted by the boot path.
@@ -661,7 +661,7 @@ projectsApp.openapi(
     errorText.slice(0, 4000),
     '```',
     ``,
-    `The sandbox image is built from the template definition (see [[sandbox.templates]] in kortix.toml).`,
+    `The sandbox image is built from the template definition (see sandbox.templates in kortix.yaml).`,
     ``,
     `Steps:`,
     `1. Inspect the relevant Dockerfile and the build error above.`,

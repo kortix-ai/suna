@@ -55,7 +55,7 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
 The single flow that, if green, proves the platform end-to-end. Each substep links to a section.
 
 `GOLD-1`
-1. `kortix init -y` in an empty dir → writes `kortix.toml` + `.kortix/`, wires agent skill, `git init -b main`. No API call. (§2)
+1. `kortix init -y` in an empty dir → writes `kortix.yaml` + `.kortix/`, wires agent skill, `git init -b main`. No API call. (§2)
 2. `kortix login --token $PAT` → `GET /accounts/me` → 200, host saved active. (§2)
 3. `kortix ship -y` (no `origin` present) → managed path: `POST /projects/provision` → 201 `{push_token, repo_id, repo_url}`; `git remote add origin <freestyle>`; commit; token-header push; writes `.kortix/link.json`. (§14)
 4. Poll `GET /projects/:id/snapshots` → wait for a `ready` snapshot. (§4)
@@ -70,8 +70,8 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 
 ## 2. CLI — local + auth (no/low API)
 
-`INIT-1` `kortix init -y` empty dir → `kortix.toml` + `.kortix/` (Dockerfile, `.kortix/opencode/…`, canonical skill) written, agent skill wired (codex default → `AGENTS.md`; `--primary opencode|claude|cursor` → respective skill file/symlink), `git init -b main`. **Zero API calls.** Exit 0.
-`INIT-2` `kortix init` when `kortix.toml` exists, no `--force` → exit 1 (refuses).
+`INIT-1` `kortix init -y` empty dir → `kortix.yaml` + `.kortix/` (Dockerfile, `.kortix/opencode/…`, canonical skill) written, agent skill wired (codex default → `AGENTS.md`; `--primary opencode|claude|cursor` → respective skill file/symlink), `git init -b main`. **Zero API calls.** Exit 0.
+`INIT-2` `kortix init` when `kortix.yaml` exists, no `--force` → exit 1 (refuses).
 `INIT-3` `kortix init --primary opencode --agents claude,cursor -y` → chosen agents wired via symlinks (native dir → OpenCode config) + `AGENTS.md` for Codex/Cursor; no `.cursor` rule file; unselected agents skipped.
 `INIT-4` `kortix init --no-git` → no repo created.
 `CREATE-1` `kortix <name>` (bare name, not a known/reserved subcommand) → creates sibling dir, scaffolds, `git init`, `git commit "chore: init kortix project"`. No API. Reserved names (`apps accounts mcp tunnel logs start stop restart open status`) → exit 2.
@@ -160,7 +160,7 @@ The human-in-the-loop surface an agent's write/destructive tool calls gate on, p
 `IAM-28` `POST /projects/:id/access-requests/:rid/approve {role?}` / `.../reject` (`project.members.manage` — stricter than plain `manage`/`project.write`, so an editor without members-manage → 403) → 200 grants the project role (`ensureOrgMembership` + `grantProjectRole`) and marks the request `approved`/`rejected`; invalid `role` → 400; already-reviewed → 409; unknown request id → 404.
 `IAM-29` `GET /projects/:id/approvals` (manager-only inbox of unresolved `pending_approval` executor actions) → 200 `{count,approvals}`; out-of-range `limit` → 400; non-manager with no grant → 404. `GET /projects/:id/approvals/needs-input` (`read` — any project member) → 200 `{total,sessions}`; a manager sees every session's pending count, a non-manager only their own launched sessions; non-member → 404.
 `IAM-30` `POST /projects/:id/approvals/:executionId {decision:"approve"|"deny",scope?}` (manager OR the session launcher) → resolves a pending executor action atomically (TOCTOU-safe); malformed execution id → 400; invalid `decision` → 400 (validated before the row lookup); unknown execution id → 404; already-resolved → 409 (happy-path resolve of a REAL pending row needs a live governed connector call from an agent session — not black-box reproducible here, same constraint as `SESS-11`).
-`IAM-31` `PUT /projects/:id/agents/:agentName/scope {env?,connectors?}` (`manage`) — writes the `[[agents]].env`/`.connectors` allowlists into `kortix.toml`; empty body (`nothing_to_update`) → 400; malformed grant set → 400; unknown agent name → 404 (`agent_not_found`); caller with no project grant → 404.
+`IAM-31` `PUT /projects/:id/agents/:agentName/scope {env?,connectors?}` (`manage`) — writes the `[[agents]].env`/`.connectors` allowlists into `kortix.yaml` (or legacy `kortix.toml`); empty body (`nothing_to_update`) → 400; malformed grant set → 400; unknown agent name → 404 (`agent_not_found`); caller with no project grant → 404.
 `IAM-32` `GET/PUT /accounts/:id/iam/enterprise-demo {enabled}` (`account.read`/`account.write`; deliberately NOT behind `requireEntitlement` — self-serve preview of the Enterprise surface, fail-closed/default-off) → 200 `{enabled}`; non-boolean → 400; NONMEMBER → 403.
 `IAM-33` `POST /accounts/:id/iam/sso/provider/from-metadata {metadata_xml|metadata_url,name,primary_domain,domains?}` (`account.write` + `sso` entitlement) — self-serve SAML IdP registration via the Supabase auth admin API; non-Enterprise account → 402 `{code:"entitlement_required",entitlement:"sso"}` (enabling `enterprise-demo` above unlocks it for the same account); missing name/invalid domain → 400; neither `metadata_xml` nor `metadata_url` → 400 (or 501 if the deployment has no `SUPABASE_SERVICE_ROLE_KEY`); existing provider → 409; NONMEMBER → 403.
 
@@ -175,7 +175,7 @@ DB `projects` (`status active|archived`, unique `(account_id, repo_url)`). Soft 
 `PROJ-3` `POST /projects/provision {name,provider:freestyle}` (managed) → `PROJECT_CREATE` → 201 `{push_token,repo_id,repo_url}`. Missing `FREESTYLE_API_KEY` → 503.
 `PROJ-4` `POST /projects/create-repo {name,private?}` (new GitHub repo) → `PROJECT_CREATE` → 201; no account GitHub App install → 409 + `install_url`; auto-dedupes name collision.
 `PROJ-5` `GET /projects/:id` → `read` → 200 (bumps `last_opened_at`); archived → 404; `NONMEMBER` → 403.
-`PROJ-6` `GET /projects/:id/detail` → `read` → 200 project + parsed `kortix.toml` (agents/skills/env) + file list.
+`PROJ-6` `GET /projects/:id/detail` → `read` → 200 project + parsed `kortix.yaml` (agents/skills/env) + file list.
 `PROJ-7` `PATCH /projects/:id {name,default_branch,manifest_path}` → `manage` (M_MANAGER/OWNER/ADMIN) → 200; M_EDITOR/M_VIEWER → 403.
 `PROJ-8` `DELETE /projects/:id` → `manage` → 200 status `archived`; M_EDITOR → 403.
 
@@ -283,7 +283,7 @@ DB `review_items` (per-project; `kind change|approval|output|decision|batch`, `s
 
 ---
 
-## 12. Triggers (cron + webhook; source of truth = `kortix.toml`)
+## 12. Triggers (cron + webhook; source of truth = `kortix.yaml`)
 
 Specs in `[[triggers]]`; CRUD commits the manifest; runtime `last_fired_at` in `project_trigger_runtime`. Types: `cron`, `webhook` only.
 
@@ -304,7 +304,8 @@ Specs in `[[triggers]]`; CRUD commits the manifest; runtime `last_fired_at` in `
 
 Tokens stored as encrypted project secrets; webhooks public + signature-gated.
 
-`CHN-1` `kortix channels connect --bot-token xoxb-… --signing-secret …` → validates `xoxb-` via `auth.test` → `POST /projects/:id/channels/slack/connect` (`manage`) → 200, prints webhook `$API/webhooks/slack/:id`.
+`CHN-1` `kortix channels connect --bot-token xoxb-… --signing-secret …` (manual/BYO mode) → validates `xoxb-` via `auth.test` → `POST /projects/:id/channels/slack/connect` (`manage`) → 200, prints webhook `$API/webhooks/slack/:id`.
+`CHN-1b` `kortix channels connect` (no creds) → `GET /projects/:id/channels/slack/mode` (`read`) → `{oauth_available, install_url}`; when available the CLI prints the pre-signed one-click "Add to Slack" URL (signed `state`, 10-min TTL — same flow as CHN-7) instead of manual mode.
 `CHN-2` `GET /projects/:id/channels/slack/installation` → `read` → workspace/team/bot/url or "not connected".
 `CHN-3` `DELETE /projects/:id/channels/slack/installation` → `manage`.
 `CHN-4` Slack inbound (OAuth mode) — `POST /webhooks/slack` (shared `SLACK_SIGNING_SECRET`): `v0=HMAC(v0:{ts}:{body})`, ±5min replay window; `url_verification` → echo `challenge`; `event_callback` routed by `team_id`→binding→project.
@@ -551,14 +552,14 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `CONN-1` `GET /executor/connectors` → executor-principal (sandbox KORTIX_TOKEN) route; user JWT + `ANON` → 401 (200 path exercised in-sandbox).
 `CONN-2` `GET /executor/projects/:id/connectors` → project admin → 200; `NONMEMBER` → 403.
 `CONN-3` `POST /executor/call {connector,action,args}` → executor-principal route; user JWT + `ANON` → 401.
-`CONN-4` `POST /executor/projects/:id/connectors/sync` → admin → 200 (re-materialize from kortix.toml).
+`CONN-4` `POST /executor/projects/:id/connectors/sync` → admin → 200 (re-materialize from kortix.yaml).
 `CONN-5` `GET /executor/projects/:id/policies` → admin → 200; `PUT …/policies {policies[]}` → admin → 200.
 `CONN-7` `PUT /executor/projects/:id/connectors/:slug/credential` → missing value → 400.
 `CONN-8` `POST /executor/projects/:id/connectors` → admin; invalid json → 400. `DELETE …/:slug` → admin → ok/404.
 `CONN-9` `GET /executor/projects/:id/pipedream/apps` → admin → 200 or 501 (pipedream not configured).
 `CONN-13` `PUT /executor/projects/:id/connectors/:slug/credential-mode|name|policies` → admin (`project.connector.write`); body validated before the connector lookup (bad mode/empty name/invalid policy action → 400 even against an unknown slug); well-formed body + unknown connector → 404; NONMEMBER → 403.
 
-**Connector authorization is centralized on the AGENT (2026-07-06).** `PUT /executor/projects/:id/connectors/:slug/sharing` and `PUT …/agent-scope` are both RETIRED (route removed — `CONN-6`'s id is intentionally not reused). A connector is now unconditionally project-wide visible to every project member; the only gate on which agents may call it is the agent's own `connectors` grant (`[[agents]].connectors` in kortix.toml, enforced by `iam/agent-scope.ts` — see `PROJ-agents` flows), not anything configured per-connector.
+**Connector authorization is centralized on the AGENT (2026-07-06).** `PUT /executor/projects/:id/connectors/:slug/sharing` and `PUT …/agent-scope` are both RETIRED (route removed — `CONN-6`'s id is intentionally not reused). A connector is now unconditionally project-wide visible to every project member; the only gate on which agents may call it is the agent's own `connectors` grant (`[[agents]].connectors` in kortix.yaml, enforced by `iam/agent-scope.ts` — see `PROJ-agents` flows), not anything configured per-connector.
 
 ---
 

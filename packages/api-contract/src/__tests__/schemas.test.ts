@@ -24,7 +24,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     repo_url: 'https://github.com/acme/demo',
     git_origin_url: 'https://github.com/acme/demo',
     default_branch: 'main',
-    manifest_path: 'kortix.toml',
+    manifest_path: 'kortix.yaml',
     status: 'active',
     metadata: { onboarding_completed_at: NOW },
     last_opened_at: NOW,
@@ -112,7 +112,7 @@ function sandboxFixture(overrides: Record<string, unknown> = {}) {
 function triggerFixture(overrides: Record<string, unknown> = {}) {
   return {
     slug: 'nightly-report',
-    path: 'kortix.toml#triggers.nightly-report',
+    path: 'kortix.yaml#triggers.nightly-report',
     name: 'Nightly report',
     type: 'cron',
     agent: 'default',
@@ -277,7 +277,7 @@ describe('TriggerSchema', () => {
       TriggerListSchema.strict().parse({
         triggers: [triggerFixture()],
         triggers_paused: false,
-        errors: [{ slug: 'bad', path: 'kortix.toml#triggers.bad', error: 'invalid cron' }],
+        errors: [{ slug: 'bad', path: 'kortix.yaml#triggers.bad', error: 'invalid cron' }],
       }),
     ).not.toThrow();
     expect(TriggerListSchema.safeParse([triggerFixture()]).success).toBe(false);

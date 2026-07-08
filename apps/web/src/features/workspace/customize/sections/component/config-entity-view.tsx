@@ -79,7 +79,7 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
   renderDetailExtra?: (entity: T, config: ProjectConfigSummary) => ReactNode;
   emptyBodyLabel: string;
 
-  /** Section-level context rendered above the search (e.g. kortix.toml manifest). */
+  /** Section-level context rendered above the search (e.g. kortix.yaml manifest). */
   renderContext?: (config: ProjectConfigSummary) => ReactNode;
 
   /**

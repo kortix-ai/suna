@@ -25,7 +25,7 @@ function projectRow(
     name: 'Demo Project',
     repoUrl: 'https://github.com/acme/demo',
     defaultBranch: 'main',
-    manifestPath: 'kortix.toml',
+    manifestPath: 'kortix.yaml',
     status: 'active',
     metadata: {},
     lastOpenedAt: NOW,

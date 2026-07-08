@@ -2,6 +2,7 @@ import { loadAuth, loadAuthForHost, type Auth } from './api/auth.ts';
 import { hasEnvTokenHost } from './api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
 import { loadLink, resolveProjectId } from './project-link.ts';
+import { ensureDefaultProjectBinding } from './project-bind.ts';
 import { C, status } from './style.ts';
 
 interface ProjectContextOpts {
@@ -27,9 +28,9 @@ interface ProjectContextOpts {
  * Backward-compatible call shape: callers that pass a string get the
  * `(projectArg)` behavior; callers that need --host pass an object.
  */
-export function resolveProjectContext(
+export async function resolveProjectContext(
   optsOrProjectArg?: ProjectContextOpts | string,
-): { client: ApiClient; projectId: string; auth: Auth } | null {
+): Promise<{ client: ApiClient; projectId: string; auth: Auth } | null> {
   const opts: ProjectContextOpts =
     typeof optsOrProjectArg === 'string'
       ? { projectArg: optsOrProjectArg }
@@ -55,11 +56,21 @@ export function resolveProjectContext(
     }
     return null;
   }
-  const projectId = resolveProjectId(opts.projectArg);
+  let projectId = resolveProjectId(opts.projectArg);
+  if (!projectId) {
+    // The always-bound invariant: recover by binding a default project right
+    // here instead of dead-ending. (Inside a sandbox the env-token host
+    // always carries KORTIX_PROJECT_ID, so this never fires there; on a
+    // non-TTY it degrades to a hint and the error below.)
+    const outcome = await ensureDefaultProjectBinding(auth, {
+      promptTitle: 'No project bound — pick one for this command',
+    });
+    projectId = outcome.project?.project_id ?? null;
+  }
   if (!projectId) {
     process.stderr.write(
-      `${status.err('No project linked.')} Run \`kortix projects link\` ` +
-        `or pass ${C.cyan}--project <id>${C.reset}.\n`,
+      `${status.err('No project linked.')} Run \`kortix projects use\`, ` +
+        `\`kortix projects link\`, or pass ${C.cyan}--project <id>${C.reset}.\n`,
     );
     return null;
   }

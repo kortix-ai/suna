@@ -17,7 +17,7 @@ from a terminal or a local coding agent. Concretely:
 - **Secrets** — list, set, unset env vars for a project.
 - **Sessions** — list, create, connect / open the live URL, restart.
 - **Triggers** — list, fire, enable / disable. (These round-trip
-  through `kortix.toml` already; CLI is convenience over the existing
+  through `kortix.yaml` already; CLI is convenience over the existing
   API routes, not a new surface.)
 - **Deploy / apps** — list, deploy, stop, tail logs.
 - **Project init** — already exists (`kortix init` scaffolds a repo).
@@ -35,7 +35,7 @@ from a terminal or a local coding agent. Concretely:
 
 The CLI must consume the **same HTTP API the dashboard consumes**. We
 do not build a parallel "CLI API." If the dashboard currently reads
-`kortix.toml` straight off GitHub for some view, that logic moves into
+`kortix.yaml` straight off GitHub for some view, that logic moves into
 the API so both surfaces share one source of truth. (See §5 for the
 audit-and-move list.)
 
@@ -182,7 +182,7 @@ The user's directive: **don't build a CLI-only API. Use the same
 endpoints the dashboard uses.** Two implications:
 
 1. Anywhere the dashboard currently shells out to GitHub / reads
-   `kortix.toml` directly client-side, move that logic to the API so
+   `kortix.yaml` directly client-side, move that logic to the API so
    the CLI gets it without re-implementation. (Audit needed — TODO.)
 2. Any endpoint the CLI needs that isn't already exposed for the
    dashboard becomes a shared addition (PAT mgmt, device flow, account
@@ -213,7 +213,7 @@ router pattern. The dashboard for the approve / tokens pages goes in
 ### 5.3 To investigate (might already be shared)
 
 - Does the manifest-editor in the dashboard hit an API endpoint to
-  read `kortix.toml`, or does it fetch directly from GitHub?
+  read `kortix.yaml`, or does it fetch directly from GitHub?
   - If it fetches direct: move to API.
 - Does the trigger / app list in the dashboard hit
   `/v1/projects/:id/{triggers,apps}` or re-parse the manifest in JS?

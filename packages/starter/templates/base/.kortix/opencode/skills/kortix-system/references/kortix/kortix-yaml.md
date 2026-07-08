@@ -1,133 +1,164 @@
-# `kortix.toml` — in-depth reference
+# `kortix.yaml` — in-depth reference
 
-`kortix.toml` is the single source of truth for everything the
+`kortix.yaml` is the single source of truth for everything the
 Kortix platform reads about a project. It lives at the repo root.
-Any repo with a valid `kortix.toml` at the root is a Kortix project.
+Any repo with a valid `kortix.yaml` (or, for legacy v1 projects, a
+`kortix.toml`) at the root is a Kortix project.
 
 The platform parser is permissive: it never throws on a bad entry.
 Instead, bad triggers and apps go into an `errors` list returned
 alongside the good ones, so a single typo doesn't break the whole
 file.
 
-**This page documents `kortix_version: 1`** (the `[[agents]]`
-array + `[[channels]]` shape below). This project's own `kortix.yaml`
-is `kortix_version: 2` (YAML-only, `agents:` is a governance-only
-name→block map, `[[channels]]` removed, `env` renamed `secrets`) — see
+**This page documents `kortix_version: 2`** — the current, YAML-only
+manifest schema (`agents:` is a governance-only name→block **map**,
+`[[channels]]` is removed outright, per-agent env access is called
+`secrets`). This project's own `kortix.yaml` is on this version — see
 the `<canonical-schema>` section of this skill's `SKILL.md` and
-`docs/specs/2026-07-05-agent-first-config-unification.md`. Either way,
-the authoritative, always-current structural spec is the public JSON
-Schema, not this page: `https://kortix.com/schema/kortix.v1.schema.json`
-(this shape), `https://kortix.com/schema/kortix.v2.schema.json` (this
-project's version), or `https://kortix.com/schema/kortix.schema.json`
-(both, dispatched by `kortix_version`) — also available offline via
+`docs/specs/2026-07-05-agent-first-config-unification.md`. The
+authoritative, always-current structural spec is always the public
+JSON Schema, not this page: `https://kortix.com/schema/kortix.v2.schema.json`
+(this shape), `https://kortix.com/schema/kortix.v1.schema.json` (legacy
+v1), or `https://kortix.com/schema/kortix.schema.json` (both,
+dispatched by `kortix_version`) — also available offline via
 `kortix schema --version 2`.
+
+> **Legacy note — v1 used TOML.** Projects created before v2 shipped
+> may still have a `kortix.toml` at the root with `kortix_version: 1`
+> (or no `kortix_version` at all). The platform resolves the manifest
+> by trying `kortix.yaml`, then `kortix.yml`, then falling back to
+> `kortix.toml` — so a v1 TOML project keeps working as-is; nothing
+> breaks. To move a project onto v2, rename `kortix.toml` to
+> `kortix.yaml`, convert its contents to YAML, bump `kortix_version` to
+> `2`, add the now-required `default_agent`, and rework any `[[agents]]`
+> array into the `agents:` map described below (or run `kortix migrate`
+> once available). `kortix_version: 2` manifests must be YAML — TOML
+> only supports `kortix_version: 1`.
 
 ## Full example
 
-```toml
-# Pinned schema version. Lets the platform evolve safely.
-kortix_version = 1
+```yaml
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
+kortix_version: 2
 
-[project]
-name = "my-project"
-description = "What this project is."
+default_agent: kortix
+
+project:
+  name: my-project
+  description: What this project is.
 
 # Env vars the runtime needs. `required` is *advisory* — surfaced in
 # the dashboard so the user knows what to set, but not enforced at
 # session start.
-[env]
-required = ["DATABASE_URL"]
-optional = ["STRIPE_API_KEY", "WEBHOOK_SLACK_SECRET"]
+env:
+  required:
+    - DATABASE_URL
+  optional:
+    - STRIPE_API_KEY
+    - WEBHOOK_SLACK_SECRET
 
 # Sandbox base image. Sessions run from a snapshot built off this
 # Dockerfile. Both paths default to ".kortix/Dockerfile" / "." when
 # omitted — declaring them just makes the intent explicit.
-[sandbox]
-dockerfile = ".kortix/Dockerfile"   # repo-relative
-context = "."                       # build context
+sandbox:
+  dockerfile: .kortix/Dockerfile   # repo-relative
+  context: .                       # build context
 
 # OpenCode runtime config dir. Defaults to ".kortix/opencode" when
 # omitted. The agent daemon launches opencode with
 # OPENCODE_CONFIG_DIR pointed here. OpenCode-native runtime config
 # remains in this directory; Kortix-side launchability and grants live
-# in [[agents]] when a project opts into declarative agents.
-[opencode]
-config_dir = ".kortix/opencode"
+# in the `agents:` map below.
+opencode:
+  config_dir: .kortix/opencode
 
 # ─── Triggers ─────────────────────────────────────────────────────
-# Each `[[triggers]]` entry spawns a fresh session that runs `prompt`
+# Each `triggers:` entry spawns a fresh session that runs `prompt`
 # as its initial message. Slugs must be lowercase URL-safe and
 # unique among triggers.
+triggers:
+  - slug: daily-digest
+    name: Daily digest
+    type: cron
+    agent: kortix
+    enabled: true
+    cron: "0 0 9 * * 1-5"            # 09:00 Mon–Fri
+    timezone: America/Los_Angeles
+    prompt: |
+      Summarize yesterday's commits across the repo. Save the result to
+      notes/digest-{{ fired_at }}.md and open a CR against main.
 
-[[triggers]]
-slug = "daily-digest"
-name = "Daily digest"
-type = "cron"
-agent = "kortix"
-enabled = true
-cron = "0 0 9 * * 1-5"            # 09:00 Mon–Fri
-timezone = "America/Los_Angeles"
-prompt = """
-Summarize yesterday's commits across the repo. Save the result to
-notes/digest-{{ fired_at }}.md and open a PR against main.
-"""
-
-[[triggers]]
-slug = "slack-hook"
-name = "Slack handler"
-type = "webhook"
-agent = "kortix"
-enabled = true
-secret_env = "WEBHOOK_SLACK_SECRET"   # add value via Secrets Manager
-prompt = """
-Slack event from {{ headers.user_agent }}.
-User said: {{ body.text }}
-"""
+  - slug: slack-hook
+    name: Slack handler
+    type: webhook
+    agent: kortix
+    enabled: true
+    secret_env: WEBHOOK_SLACK_SECRET   # add value via Secrets Manager
+    prompt: |
+      Slack event from {{ headers.user_agent }}.
+      User said: {{ body.text }}
 
 # ─── Apps (experimental) ──────────────────────────────────────────
 # Gated by the platform flag KORTIX_APPS_EXPERIMENTAL. When off,
 # entries are parsed but never acted on.
+apps:
+  - slug: marketing-site
+    name: Marketing site
+    enabled: true
+    framework: next
+    domains:
+      - marketing.example.com   # optional — omit it and Freestyle issues a free *.style.dev URL
+    source:
+      type: git
+      repo: https://github.com/me/site   # optional — falls back to project repo
+      branch: main
+      root_path: apps/site
+    build:
+      command: pnpm build
+      out_dir: dist
+    env:
+      NEXT_PUBLIC_API_URL: https://api.example.com
 
-[[apps]]
-slug = "marketing-site"
-name = "Marketing site"
-enabled = true
-framework = "next"
-domains = ["marketing.example.com"]    # optional — omit it and Freestyle issues a free *.style.dev URL
-
-  [apps.source]
-  type = "git"
-  repo = "https://github.com/me/site"  # optional — falls back to project repo
-  branch = "main"
-  root_path = "apps/site"
-
-  [apps.build]
-  command = "pnpm build"
-  out_dir = "dist"
-
-  [apps.env]
-  NEXT_PUBLIC_API_URL = "https://api.example.com"
+# ─── Agents (governance only) ─────────────────────────────────────
+agents:
+  kortix:
+    connectors: all
+    secrets: all
+    kortix_cli: all
+    skills: all
+  release-bot:
+    connectors: [github]
+    kortix_cli: [project.deploy, project.cr.open]   # may OPEN a CR, but not merge it
 ```
 
-## `[[agents]]`
+## `agents:`
 
 Per-agent **governance overlay**. OpenCode-native behavior (prompt, mode,
-model, tools, permissions, skills) stays in `.kortix/opencode/` and
-`opencode.jsonc`; `[[agents]]` declares which agents Kortix should treat as
-platform-launchable and what server-side authority each one receives. Keyed by
-the agent's `name`.
+model, tools, permissions, skills selection logic) stays in
+`.kortix/opencode/` and `opencode.jsonc`; the manifest's `agents:` map
+declares which agents Kortix should treat as platform-launchable and
+what server-side authority each one receives. Keyed by the agent's name
+(matches its `.kortix/opencode/agents/<name>.md`).
+
+`agents:` is **required** in v2 and is **deny-by-default**: an omitted
+`connectors`/`secrets`/`skills`/`kortix_cli` on a declared agent
+resolves to `none`, not `all`. `default_agent` is also required and
+must name a declared, enabled agent.
 
 | Key          | Notes                                                                                           |
 | ------------ | ----------------------------------------------------------------------------------------------- |
-| `name`       | Agent name. In legacy OpenCode mode this usually matches `.kortix/opencode/agents/<name>.md`; declarative mode treats the manifest entry as the platform registry key. |
-| `connectors` | Connector profiles the agent may call. `["slug", …]` \| `"all"` \| `"none"` (default: none).    |
-| `kortix_cli` | What it may do to Kortix via the CLI/API (project-scoped iam actions). Same shape (default: none). |
+| `enabled`    | Whether the platform may launch this agent. Default: `true`.                                     |
+| `connectors` | Connector profiles the agent may call. `["slug", …]` \| `"all"` \| `"none"` (default: `none`).   |
+| `secrets`    | Env-var / secret names the agent may read. Same shape (default: `none`).                        |
+| `skills`     | Skill names the agent may load. Same shape (default: `none`).                                   |
+| `kortix_cli` | What it may do via the Kortix CLI/API (project-scoped iam actions). Same shape (default: `none`). |
+| `workspace`  | `"runtime"` \| `"read"` \| `"branch"` — the git workspace mode granted to the agent.              |
 
-```toml
-[[agents]]
-name       = "release-bot"
-connectors = ["github"]
-kortix_cli = ["project.deploy", "project.cr.open"]   # may OPEN a CR, but not merge it
+```yaml
+agents:
+  release-bot:
+    connectors: [github]
+    kortix_cli: [project.deploy, project.cr.open]   # may OPEN a CR, but not merge it
 ```
 
 **Grantable `kortix_cli` actions** (project-scoped only — account-level admin
@@ -137,31 +168,28 @@ actions can never be granted to an agent; run `kortix validate --scopes`):
 `project.trigger.read|create|update|delete|fire`, `project.connector.read|write`
 (channels — Slack/meet/email send + connect — are gated on `project.connector.write`).
 
-**Resolution at session start:** no `[[agents]]` section → legacy mode: no
-agent-grant restriction and older paths may discover agents directly from
-OpenCode (backward-compatible); agent listed → its grant; section present but
-agent unlisted → default-deny for Kortix grants. The grant is always
-intersected with the launching user's role (agent ≤ user) and takes effect only
-once a CR is merged (read from the default branch).
+**Resolution at session start:** every agent must be declared under
+`agents:`; an undeclared or disabled agent cannot be launched by the
+platform. `default_agent` must resolve to a declared, enabled agent —
+give it `connectors: all`, `secrets: all`, `kortix_cli: all`,
+`skills: all` explicitly if it should keep full access. The grant is
+always intersected with the launching user's role (agent ≤ user) and
+takes effect only once a CR is merged (read from the default branch).
 
-**Discovery direction:** `[[agents]]` is an opt-in to declarative, server-side
-agent discovery. It is not a rule that every native OpenCode agent file must be
-registered. Unregistered files can exist for local experiments or runtime
-internals, but once a project adopts declarative agents, Kortix product UI
-(chat input, triggers, channels) should fetch the server-side registered list
-rather than querying sandbox OpenCode directly. Model pickers should similarly
-come from the server/LLM-gateway catalog rather than a sandbox-local provider
-list. Future manifest versions / new project templates may default to this
-declarative mode; old projects remain in legacy discovery until they opt in or
-are migrated.
+**Discovery direction:** declaring `agents:` is server-side, declarative
+agent discovery — it is not a rule that every native OpenCode agent file
+must be registered. Unregistered files can exist for local experiments
+or runtime internals. Kortix product UI (chat input, triggers, channels)
+fetches the server-side registered agent list rather than querying
+sandbox OpenCode directly. Model pickers similarly come from the
+server/LLM-gateway catalog rather than a sandbox-local provider list.
 
 ## Schema versioning
 
-`kortix_version` is the schema version. Manifests without it are
-treated as v1 for backward compat (`null`, `1`, and `"1"` all decode
-to v1). A manifest declaring a version higher than the platform knows
-about is rejected outright — the platform won't silently misread
-future fields.
+`kortix_version` is the schema version. `2` is YAML-only and requires
+`default_agent` + `agents:`. A manifest declaring a version higher than
+the platform knows about is rejected outright — the platform won't
+silently misread future fields.
 
 When the platform writes the manifest back (after a dashboard edit),
 it ensures `kortix_version` is the first key, so the file is
@@ -171,19 +199,19 @@ self-describing at a glance.
 
 | Surface                | What it reads                                                       |
 | ---------------------- | ------------------------------------------------------------------- |
-| Trigger sweep          | `[[triggers]]`                                                      |
-| Sandbox builder        | `[sandbox]`                                                         |
-| Sandbox runtime        | `[opencode]` (where to launch opencode with its config)             |
-| Session bootstrap      | `[env]` (advisory — surfaced to dashboard, not enforced)            |
-| Apps deploy sweep      | `[[apps]]` (when `KORTIX_APPS_EXPERIMENTAL=true`)                   |
-| Session token mint     | `[[agents]]` (per-agent connectors + kortix_cli scope)              |
-| Agent/model UI         | Legacy: OpenCode discovery; declarative projects: server-side registry + LLM-gateway catalog |
-| Dashboard UI           | All of the above + `[project]` + the raw manifest                   |
+| Trigger sweep          | `triggers:`                                                          |
+| Sandbox builder        | `sandbox:`                                                           |
+| Sandbox runtime        | `opencode:` (where to launch opencode with its config)               |
+| Session bootstrap      | `env:` (advisory — surfaced to dashboard, not enforced)              |
+| Apps deploy sweep      | `apps:` (when `KORTIX_APPS_EXPERIMENTAL=true`)                       |
+| Session token mint     | `agents:` (per-agent connectors/secrets/skills/kortix_cli scope)     |
+| Agent/model UI         | Server-side agent registry + LLM-gateway model catalog                |
+| Dashboard UI           | All of the above + `project:` + the raw manifest                     |
 
-Unknown top-level tables are ignored — safe to add your own metadata,
+Unknown top-level keys are ignored — safe to add your own metadata,
 but the platform won't react to it.
 
-## `[project]`
+## `project:`
 
 Project metadata for the dashboard.
 
@@ -192,7 +220,7 @@ Project metadata for the dashboard.
 | `name`        | yes      | Display name. Shown in the UI.       |
 | `description` | no       | One-liner shown beside the name.     |
 
-## `[env]`
+## `env:`
 
 Declares the env vars your sessions need. The values themselves live
 in the **Kortix Secrets Manager** — never inline.
@@ -215,13 +243,13 @@ actually create the matching secret. Keep names ≤ 64 chars.
 
 **`KORTIX_*` is only reserved at the Secrets Manager surface**, not
 at manifest parse time. The dashboard rejects creating secrets with
-that prefix, but you can list `KORTIX_FOO` in `[env]` without an
+that prefix, but you can list `KORTIX_FOO` in `env:` without an
 error from the parser. Don't — it'll just never have a value.
 
-## `[sandbox]`
+## `sandbox:`
 
 Sandbox base image **and hardware spec**. **Entirely optional.** Omitting
-the table (or any key) falls back to defaults.
+the key (or any sub-key) falls back to defaults.
 
 | Key          | Default               | Notes                                                                                  |
 | ------------ | --------------------- | -------------------------------------------------------------------------------------- |
@@ -246,13 +274,35 @@ the platform ceiling (cpu 32, memory 128, disk 500, gpu 8) clamp down.
 See the runtime / layered-build documentation for how the snapshot
 builder appends the Kortix runtime layer on top of your image.
 
-## `[opencode]`
+### `sandbox.templates`
+
+Optional named alternate sandbox images/Dockerfiles a trigger or
+session can select instead of the project default.
+
+```yaml
+sandbox:
+  templates:
+    - slug: gpu-worker
+      name: GPU worker
+      dockerfile: .kortix/Dockerfile.gpu
+      cpu: 4
+      memory: 16
+    - slug: browser-test
+      name: Browser testing
+      image: mcr.microsoft.com/playwright:v1.45.0
+```
+
+Each entry needs exactly one of `image` or `dockerfile`, never both.
+`slug` may not be `"default"` (that's reserved for the top-level
+`sandbox:` config).
+
+## `opencode:`
 
 Where the OpenCode runtime config lives. **Optional**, with a default.
 
 | Key          | Default              | Notes                                                                            |
-| ------------ | -------------------- | -------------------------------------------------------------------------------- |
-| `config_dir` | `.kortix/opencode`   | Repo-relative dir. Same silent-fallback behavior as `[sandbox]` paths.            |
+| ------------ | --------------------- | -------------------------------------------------------------------------------- |
+| `config_dir` | `.kortix/opencode`   | Repo-relative dir. Same silent-fallback behavior as `sandbox:` paths.            |
 
 The agent daemon launches `opencode serve` with
 `OPENCODE_CONFIG_DIR=<config_dir>`, so everything under that folder
@@ -261,12 +311,12 @@ becomes the OpenCode runtime: agents, skills, commands, tools, plugins,
 
 `opencode.jsonc` remains the OpenCode-native registry for plugins, MCP servers,
 providers, model/provider settings, permissions, and default runtime behavior.
-Do not duplicate those details in `kortix.toml`; use `[[agents]]` only for the
+Do not duplicate those details in `kortix.yaml`; use `agents:` only for the
 Kortix-side decision of which agents are launchable/authorized by the platform.
 
-## `[[triggers]]`
+## `triggers:`
 
-Array of tables. Each entry is a trigger that spawns a fresh session
+A list. Each entry is a trigger that spawns a fresh session
 on fire. Triggers are sorted alphabetically by slug in the parsed
 output — UI ordering is stable, not authoring-order.
 
@@ -278,7 +328,7 @@ output — UI ordering is stable, not authoring-order.
 | `type`       | yes      | string  | —           | `"cron"` or `"webhook"`.                                       |
 | `prompt`     | yes      | string  | —           | Mustache-style template.                                      |
 | `name`       | no       | string  | `slug`      | Human label.                                                   |
-| `agent`      | no       | string  | `"default"` | Agent name. Legacy projects resolve through OpenCode discovery; declarative projects should use a registered `[[agents]]` name. |
+| `agent`      | no       | string  | `default_agent` | Must name a declared agent in `agents:`.                  |
 | `enabled`    | no       | bool    | `true`      | Accepts strings: `"true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"`. |
 
 The parser accepts only the canonical trigger field names shown here.
@@ -348,7 +398,7 @@ Variables available on every fire:
 Cron-only additions:
 
 | Variable                | Source                                  |
-| ----------------------- | --------------------------------------- |
+| ----------------------- | ---------------------------------------- |
 | `{{ cron.schedule }}`   | The croner expression that just fired.  |
 | `{{ cron.timezone }}`   | Configured tz (defaults to `"UTC"`).    |
 | `{{ cron.fired_at }}`   | Same as top-level `fired_at`.           |
@@ -358,7 +408,7 @@ Cron-only additions:
 Webhook-only additions:
 
 | Variable          | Source                                                          |
-| ----------------- | --------------------------------------------------------------- |
+| ----------------- | ----------------------------------------------------------------- |
 | `{{ body.* }}`    | JSON-parsed request body. Dotted access works.                  |
 | `{{ headers.* }}` | `content_type`, `user_agent`, `forwarded_for`.                  |
 
@@ -373,22 +423,22 @@ not the repo.
 
 ### Common gotchas
 
-- `[triggers]` (single brackets) is wrong — must be `[[triggers]]`
-  (array of tables). The parser surfaces a clear error.
+- `triggers:` must be a **list** (`- slug: …`), not a map — the parser
+  surfaces a clear error otherwise.
 - Slugs must be lowercase + URL-safe. Uppercase or spaces fail.
 - A webhook trigger without `secret_env` is rejected.
 - A cron trigger without a `cron` expression is rejected.
 - Bad entries surface in `errors` next to the good ones — they don't
   break the whole file.
 
-## `[[apps]]` (experimental)
+## `apps:` (experimental)
 
 Gated behind `KORTIX_APPS_EXPERIMENTAL=true`. When the flag is off,
 the `/apps` routes return 404 (with a JSON error explaining the
 flag) and the deploy sweep skips every project.
 
-`[[apps]]` declares deployable surfaces alongside the agent — think
-fly.toml-style entries inside `kortix.toml`. The platform dispatches
+`apps:` declares deployable surfaces alongside the agent — think
+fly.toml-style entries inside `kortix.yaml`. The platform dispatches
 through a provider adapter (Freestyle today; pluggable) and records
 each deploy in the `deployments` table.
 
@@ -403,7 +453,7 @@ Entries sort alphabetically by slug. Slug uniqueness is per-section
 | `domains`  | no       | `string[]` | Custom hostnames. Omit / empty → Freestyle issues a `*.style.dev` subdomain and persists it back into `deployments.live_url`. |
 | `framework`| no       | string     | Hint for the provider adapter (e.g. `"next"`).         |
 
-### `[apps.source]`
+### `apps[].source`
 
 | Field       | Required for `git` | Required for `tar` | Notes                                                                 |
 | ----------- | ------------------ | ------------------ | --------------------------------------------------------------------- |
@@ -413,7 +463,7 @@ Entries sort alphabetically by slug. Slug uniqueness is per-section
 | `root_path` | no                 | —                  | Path inside the source to deploy from. Defaults to `"."`.              |
 | `url`       | —                  | yes                | HTTPS URL of the tarball.                                              |
 
-### `[apps.build]`
+### `apps[].build`
 
 | Field     | Required | Notes                                                                |
 | --------- | -------- | -------------------------------------------------------------------- |
@@ -423,10 +473,10 @@ Entries sort alphabetically by slug. Slug uniqueness is per-section
 If both are empty, the parsed entry collapses to `null` — the
 provider treats it as "no build phase."
 
-### `[apps.env]`
+### `apps[].env`
 
 Key/value map. Keys must match `^[A-Za-z_][A-Za-z0-9_]*$` (mixed
-case allowed, unlike `[env]` secrets which are uppercase-only).
+case allowed, unlike `env:` secrets which are uppercase-only).
 Values must be strings — numbers and booleans are rejected.
 
 ### Hash-based redeploy
@@ -445,11 +495,14 @@ inline in the repo**.
 
 ### Flow
 
-1. Declare the secret name under `[env]`:
-   ```toml
-   [env]
-   required = ["DATABASE_URL"]
-   optional = ["STRIPE_API_KEY", "WEBHOOK_SLACK_SECRET"]
+1. Declare the secret name under `env:`:
+   ```yaml
+   env:
+     required:
+       - DATABASE_URL
+     optional:
+       - STRIPE_API_KEY
+       - WEBHOOK_SLACK_SECRET
    ```
 2. Set the value in the Kortix Secrets Manager (dashboard).
 3. When a session boots, the platform decrypts every secret on the
@@ -461,10 +514,10 @@ inline in the repo**.
 - Names in the Secrets Manager match `^[A-Z_][A-Z0-9_]{0,63}$`.
 - `KORTIX_*` is reserved **at the Secrets Manager surface** — the
   CRUD endpoint rejects it. The manifest parser does not enforce
-  this; declaring `KORTIX_FOO` in `[env]` is accepted but no matching
+  this; declaring `KORTIX_FOO` in `env:` is accepted but no matching
   secret can be created.
 - Webhook triggers reference signing secrets by env-var name only
-  (`secret_env = "WEBHOOK_FOO_SECRET"`). The value is resolved at
+  (`secret_env: WEBHOOK_FOO_SECRET`). The value is resolved at
   fire-time — the manifest never sees the plaintext.
 - Mid-session rotation: secrets come in at sandbox-create time.
   Rotating a key in the dashboard takes effect on the **next**
@@ -479,5 +532,5 @@ then `prompt` last). This avoids needless diffs when the user later
 edits the same trigger from the UI.
 
 If you add a new trigger and don't yet have a value for `secret_env`,
-declare it in `[env].optional` so it shows up in the Secrets Manager,
-and leave the trigger `enabled = false` until the user sets the value.
+declare it in `env.optional` so it shows up in the Secrets Manager,
+and leave the trigger `enabled: false` until the user sets the value.

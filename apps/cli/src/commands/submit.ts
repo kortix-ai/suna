@@ -164,7 +164,7 @@ export async function runSubmit(argv: string[]): Promise<number> {
     return 2;
   }
 
-  const ctx = resolveProjectContext({ projectArg: projectFlag, hostArg: hostFlag });
+  const ctx = await resolveProjectContext({ projectArg: projectFlag, hostArg: hostFlag });
   if (!ctx) return 1;
 
   const detail: Record<string, unknown> = { submission_version: 1 };

@@ -1,5 +1,5 @@
 /**
- * Canonical kortix.toml schema + validator.
+ * Canonical kortix.yaml schema + validator.
  *
  * One source of truth, exercised wherever manifest input is accepted:
  *
@@ -885,7 +885,7 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
       issues.push({
         path: `${where}.provider`,
         message:
-          'provider="computer" is managed automatically when you connect a machine (Computers) — it cannot be declared in kortix.toml.',
+          'provider="computer" is managed automatically when you connect a machine (Computers) — it cannot be declared in kortix.yaml.',
         severity: 'error',
       });
     } else if (!(CONNECTOR_PROVIDERS as readonly string[]).includes(provider)) {
@@ -1050,6 +1050,13 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
             path: `${where}.auth`,
             message:
               'channel connectors authenticate via the platform install token — omit [connectors.auth].',
+            severity: 'error',
+          });
+        }
+        if (t === 'oauth1' && provider !== 'openapi' && provider !== 'http') {
+          issues.push({
+            path: `${where}.auth.type`,
+            message: 'auth.type "oauth1" is only supported for openapi/http connectors.',
             severity: 'error',
           });
         }

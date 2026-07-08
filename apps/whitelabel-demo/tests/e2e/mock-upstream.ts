@@ -94,7 +94,7 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
       name: overrides.name ?? `Mock Project ${projectCounter}`,
       repo_url: `https://git.kortix.test/${id}`,
       default_branch: 'main',
-      manifest_path: 'kortix.toml',
+      manifest_path: 'kortix.yaml',
       status: 'active',
       metadata: {},
       created_at: now,

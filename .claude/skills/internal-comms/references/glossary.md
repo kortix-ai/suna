@@ -13,7 +13,7 @@ Companion to `../SKILL.md`. Definitions trace to `suna/MANIFESTO.md` and `suna/R
 
 - **Project** — a git repo that *is* the company: configuration plus accumulated state, all text, all version-controlled. Not "workspace" or "account."
   - Say: "your project is a repo you own." Not: "your workspace in our cloud."
-- **`kortix.toml`** — the Kortix layer of a project: sandbox image, cron/webhook triggers, channels, apps, connectors, required secrets, and where agent config lives. Mono.
+- **`kortix.yaml`** — the Kortix layer of a project: sandbox image, cron/webhook triggers, channels, apps, connectors, required secrets, and where agent config lives. Mono.
 - **OpenCode config** — the runtime agents think in: agents, skills, commands, tools, plugins, models, providers.
 - **Session** — one unit of agent work, running in its own sandbox on its own branch, owned by whoever or whatever started it. Not "chat," "thread," or "conversation."
   - Say: "start a session." Not: "open a chat."
@@ -43,5 +43,5 @@ Companion to `../SKILL.md`. Definitions trace to `suna/MANIFESTO.md` and `suna/R
 
 - **Kortix**, **Suna**, **Kortix Cloud**, **Platinum.dev** — exactly as written above.
 - Product objects (project, session, sandbox, agent, skill, connector, secret, channel, trigger, memory, app, change request) are common nouns — lowercase in prose, capitalized only at sentence start or as table/UI labels.
-- Config tokens and commands in Roobert Mono: `kortix.toml`, `kortix init`, `kortix ship`, `kortix cr`, `main`.
+- Config tokens and commands in Roobert Mono: `kortix.yaml`, `kortix init`, `kortix ship`, `kortix cr`, `main`.
 - "git repository" / "repo," "`main` branch," "change request" — lowercase.

@@ -330,7 +330,7 @@ function buildSteps(project: KortixProject | undefined): DevStep[] {
   steps.push({
     kind: 'launchers',
     title: 'Build it in your coding agent',
-    hint: 'Open the repo in the agent you wired up and just talk to it — the Kortix skill is loaded, so it knows how to configure agents, edit kortix.toml, add triggers, and write skills.',
+    hint: 'Open the repo in the agent you wired up and just talk to it — the Kortix skill is loaded, so it knows how to configure agents, edit kortix.yaml, add triggers, and write skills.',
   });
   steps.push({
     kind: 'commands',

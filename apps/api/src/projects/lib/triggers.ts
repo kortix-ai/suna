@@ -8,6 +8,7 @@ import { config } from '../../config';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import { isLeader } from '../../shared/leader-election';
+import { manifestCandidatePaths } from '@kortix/manifest-schema';
 import { runProjectAppSweep } from '../app-sweep';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { type GitHubAuthContext, commitFile, getFileSha } from '../github';
@@ -345,8 +346,9 @@ export function withTriggersPaused(metadata: unknown, paused: boolean): Record<s
 
 /**
  * Walks every active project's git repo for `.opencode/triggers/*.md` and
- * fires due cron triggers. Triggers are 100% file-defined now (kortix.toml);
- * the old DB-backed trigger tables have been removed.
+ * fires due cron triggers. Triggers are 100% file-defined now (kortix.yaml,
+ * or kortix.toml for a legacy v1 project); the old DB-backed trigger tables
+ * have been removed.
  */
 
 export async function runProjectTriggerSweep(now = new Date()): Promise<{
@@ -396,7 +398,7 @@ export async function runProjectTriggerSweep(now = new Date()): Promise<{
 }
 
 /**
- * Reconcile every active project's connector DB cache against its kortix.toml.
+ * Reconcile every active project's connector DB cache against its kortix.yaml.
  * This is the reliability backstop for connectors: the UI CRUD path and the
  * CR-merge hook reconcile inline, but a raw `git push` / `kortix` CLI edit that
  * bypasses both is only caught here. We invalidate the git mirror per project
@@ -490,7 +492,7 @@ export async function resolveGitTriggerActor(accountId: string): Promise<string 
  * right after the row exists — "attribution and authorization stop sharing
  * one field" (docs/specs/2026-07-05-agent-first-config-unification.md §2.2).
  * What a run can actually ACCESS is governed by the AGENT's declared scope in
- * kortix.toml `[[agents]]` (secrets + connectors), applied when the session
+ * kortix.yaml's `agents:` map (secrets + connectors), applied when the session
  * env is built — not by this stand-in.
  */
 export async function resolveTriggerActor(project: ProjectRow): Promise<string | null> {
@@ -665,7 +667,7 @@ export async function findReusableTriggerSession(
 }
 
 /**
- * Fire a git-backed trigger. Triggers are file-defined (kortix.toml), so there
+ * Fire a git-backed trigger. Triggers are file-defined (kortix.yaml), so there
  * is no DB trigger/event row — the project_sessions row carries `trigger_slug`
  * in metadata so audits can still reconstruct the firing path.
  */
@@ -1240,7 +1242,7 @@ export function draftToSpec(draft: TriggerDraft): GitTriggerSpec {
 }
 
 /**
- * Read the project's manifest. If kortix.toml doesn't exist yet (brand-new
+ * Read the project's manifest. If the manifest doesn't exist yet (brand-new
  * repo), synthesize a minimal valid one so the first POST /triggers can
  * scaffold it on save.
  */
@@ -1248,8 +1250,11 @@ export function draftToSpec(draft: TriggerDraft): GitTriggerSpec {
 export async function loadManifestForEdit(project: ProjectRow): Promise<ParsedManifest> {
   const existing = await readManifest(await withProjectGitAuth(project));
   if (existing) return existing;
-  // No manifest yet → synthesize a minimal one. Brand-new repos scaffold TOML
-  // (matching the CLI scaffold); YAML is opt-in by committing a kortix.yaml.
+  // No manifest yet → synthesize a minimal one. Brand-new repos scaffold
+  // kortix.yaml (matching the CLI scaffold); resolve the yaml sibling of
+  // whatever manifestPath is configured (defaults to `kortix`'s stem) rather
+  // than trusting a stale/legacy `.toml` value literally, so format and path
+  // stay in sync on commit.
   return {
     schemaVersion: KNOWN_SCHEMA_VERSION,
     raw: {
@@ -1257,8 +1262,8 @@ export async function loadManifestForEdit(project: ProjectRow): Promise<ParsedMa
       runtime: { root: '.opencode' },
       env: { required: [], optional: [] },
     },
-    format: 'toml',
-    path: project.manifestPath || MANIFEST_FILENAME,
+    format: 'yaml',
+    path: manifestCandidatePaths(project.manifestPath)[0].path,
   };
 }
 
@@ -1381,8 +1386,9 @@ export async function commitRepoFile(
 }
 
 /**
- * Commit a new revision of kortix.toml to the project's default branch.
- * All trigger CRUD funnels through this — one file, one commit per edit.
+ * Commit a new revision of the project manifest (kortix.yaml, or kortix.toml
+ * for a legacy v1 project) to the project's default branch. All trigger CRUD
+ * funnels through this — one file, one commit per edit.
  */
 
 export async function commitManifest(

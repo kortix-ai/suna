@@ -416,6 +416,7 @@
                         "bearer",
                         "basic",
                         "custom",
+                        "oauth1",
                         "none"
                       ]
                     },
@@ -1415,6 +1416,7 @@
                         "bearer",
                         "basic",
                         "custom",
+                        "oauth1",
                         "none"
                       ]
                     },

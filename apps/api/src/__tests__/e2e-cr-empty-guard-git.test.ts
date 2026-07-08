@@ -60,7 +60,7 @@ function makeFixture() {
     projectId: `00000000-0000-4000-a000-${String(projectCounter).padStart(12, '0')}`,
     repoUrl: origin,
     defaultBranch: 'main',
-    manifestPath: 'kortix.toml',
+    manifestPath: 'kortix.yaml',
     // A present token makes ensureMirrorAuthToken return early instead of
     // dynamic-importing ../lib/git (which drags in the full env-validated
     // config and process.exits outside a configured environment). Local

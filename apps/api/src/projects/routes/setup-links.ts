@@ -139,7 +139,7 @@ projectsApp.openapi(
     const conn = await loadPipedreamConnector(projectId, slug);
     if (!conn) {
       return c.json(
-        { error: `"${slug}" is not a connected-via-Pipedream connector on this project. Add it to kortix.toml first.` },
+        { error: `"${slug}" is not a connected-via-Pipedream connector on this project. Add it to kortix.yaml first.` },
         404,
       );
     }

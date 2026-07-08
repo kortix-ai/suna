@@ -3,7 +3,9 @@
  * storage) but resumable: start() un-archives, we tar+base64 /workspace over
  * stdout (the proven pull pattern from legacy-migration-rehydrate.ts), then
  * re-archive to control cost. Config/system files are stripped so the legacy
- * dir is just the user's content — there is ONE root kortix.toml per repo.
+ * dir is just the user's content — there is ONE root kortix.yaml per repo
+ * (the synthesized config from buildStarterFiles; each legacy sandbox's own
+ * v1 kortix.toml is excluded below, it isn't carried over).
  */
 import { getDaytona } from '../../shared/daytona';
 

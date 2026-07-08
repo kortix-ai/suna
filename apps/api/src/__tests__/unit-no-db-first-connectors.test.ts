@@ -1,12 +1,12 @@
 /**
  * Guardrail: connectors and triggers are config-first. Their definitions live
- * in kortix.toml; the DB is only ever a derived cache (connectors) or absent
+ * in kortix.yaml; the DB is only ever a derived cache (connectors) or absent
  * (triggers — read live from the manifest). This test fails the build if any
  * code path writes an entity definition straight to the DB, which would
  * reintroduce the "lands in the DB before it's in config" race.
  *
  * Allowed writers:
- *   - executor/sync.ts        — THE connector materializer (toml → DB)
+ *   - executor/sync.ts        — THE connector materializer (manifest → DB)
  *   - __tests__/*             — fixtures / seeds
  */
 import { describe, expect, test } from 'bun:test';
@@ -57,7 +57,7 @@ describe('config-first invariant (no DB-first creation)', () => {
   });
 
   test('projectTriggers (legacy definition table) is never inserted — triggers are file-defined', () => {
-    // No allowance: trigger definitions live in kortix.toml, period.
+    // No allowance: trigger definitions live in kortix.yaml, period.
     expect(offenders('projectTriggers', () => false)).toEqual([]);
   });
 });

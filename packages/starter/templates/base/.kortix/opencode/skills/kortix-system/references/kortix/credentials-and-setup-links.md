@@ -22,6 +22,11 @@ There are exactly two kinds of credential you'll ever need, and one link each:
 | an **API key / token / secret value** (e.g. `APOLLO_API_KEY`) | a **secret link** | a fill-in form |
 | an **app connected** via Pipedream (e.g. `smartlead`, `apollo`) | a **connect link** (Pipedream Quick Connect) | a 1-click authorize |
 
+> **Slack is neither of these.** Connecting Slack is a built-in channel flow:
+> run `kortix channels connect` — it prints a one-click "Add to Slack" install
+> link. Do NOT mint a secret link for `SLACK_BOT_TOKEN`/`SLACK_SIGNING_SECRET`
+> and do NOT add a Pipedream `slack` connector (the slug is reserved).
+
 Both links render the same way everywhere:
 
 - **In the web app** the link opens an in-app **modal/popup** (a fill-in form, or
@@ -73,7 +78,7 @@ For an app you connect via Pipedream, mint a 1-click connect link. If the
 connector isn't on the project yet, **add it instantly first — no change
 request**: the `add_connector` tool / `kortix executor add <slug> --provider pipedream
 --app <app>` (humans: `kortix connectors add … --apply`). That commits it to
-`kortix.toml` on main and syncs the catalog server-side, exactly like the
+`kortix.yaml` on main and syncs the catalog server-side, exactly like the
 dashboard's "Add app" — it's live this session. Then mint the connect link.
 
 **Preferred — the `connect` tool on the `kortix-executor` MCP:**

@@ -63,7 +63,7 @@ Canonical product nouns. Style product nouns and config in Roobert Mono (per bra
 | **Trigger** | Cron or signed webhook that spawns sessions automatically. |
 | **Memory** | The living company brain — files today, a system that compounds what it learns. |
 | **App** | A declarative, durable deployment defined in config. |
-| **`kortix.toml`** | The Kortix layer: sandbox image, triggers, channels, connectors, required secrets. |
+| **`kortix.yaml`** | The Kortix layer: sandbox image, triggers, channels, connectors, required secrets. |
 
 ## Approved wording — don't say / prefer
 

@@ -40,7 +40,7 @@ export const KORTIX_ITEM_TYPES = [
   'registry:agent', // an agent persona .md
   'registry:command', // an OpenCode slash command .md
   'registry:tool', // a custom OpenCode tool (.ts) or plugin
-  'registry:trigger', // a kortix.toml [[triggers]] block (declarative)
+  'registry:trigger', // a kortix.yaml triggers: block (declarative)
   'registry:connector', // an integration definition (Pipedream/MCP/HTTP)
   'registry:rules', // AGENTS.md / rules files
   'registry:memory', // seed memory files
@@ -67,7 +67,7 @@ export const KORTIX_PRIMITIVE_TYPES: readonly KortixItemType[] = [
 /**
  * Target placeholders. A file's `target` may start with one of these aliases;
  * the installer expands it against the consuming project's resolved layout
- * (the OpenCode config dir comes from `[opencode] config_dir` in kortix.toml,
+ * (the OpenCode config dir comes from `opencode.config_dir` in kortix.yaml,
  * defaulting to `.kortix/opencode`).
  *
  *   ~/<path>            → repo root, relative                (shadcn-compatible)
