@@ -222,7 +222,7 @@ export interface ExecutorRouterDeps {
     spec: string | null;
     auth: {
       type: 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1';
-      in: 'header' | 'query';
+      in: 'header' | 'query' | 'path';
       name: string | null;
       prefix: string | null;
     };

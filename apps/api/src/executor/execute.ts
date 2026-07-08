@@ -13,7 +13,11 @@ import type { ActionBinding } from './types';
 
 export interface ExecutorAuth {
   type: 'bearer' | 'basic' | 'custom' | 'oauth1' | 'none';
-  in: 'header' | 'query';
+  /** Where the credential goes. `path` (custom only) substitutes the secret
+   *  into a `{name}` placeholder in the binding's PATH TEMPLATE — Telegram's
+   *  `/bot<token>/<method>` shape. The substitution happens server-side BEFORE
+   *  caller-arg templating, so sandbox args can never influence or read it. */
+  in: 'header' | 'query' | 'path';
   name: string | null;
   prefix: string | null;
 }
@@ -48,6 +52,9 @@ function applyAuth(
   secret: string | null,
 ): void {
   if (auth.type === 'none' || auth.type === 'oauth1' || !secret) return;
+  // Path credentials are substituted into the URL template by buildHttpRequest
+  // (they have to exist before arg templating); nothing to attach here.
+  if (auth.in === 'path') return;
   if (auth.type === 'bearer') {
     const prefix = auth.prefix ?? 'Bearer';
     headers['Authorization'] = `${prefix} ${secret}`.trim();
@@ -206,8 +213,22 @@ function buildHttpRequest(opts: {
   const query = new URLSearchParams();
   const consumed = new Set<string>();
 
+  // Path-placed credential (e.g. Telegram's /bot{token}/method): substitute the
+  // SERVER-RESOLVED secret first, so the placeholder is gone before caller args
+  // are templated — a caller-supplied arg named like the placeholder can never
+  // override it (it just falls through to the body/query like any other arg).
+  // Inserted raw, not percent-encoded: path credentials are charset-validated
+  // at install time (bot tokens are [0-9A-Za-z_:-]) and Telegram expects the
+  // literal `:`.
+  let template = opts.pathTemplate;
+  const authForPath = opts.auth ?? NO_AUTH;
+  if (authForPath.type === 'custom' && authForPath.in === 'path' && opts.secret) {
+    const placeholder = `{${authForPath.name ?? 'token'}}`;
+    template = template.split(placeholder).join(opts.secret);
+  }
+
   // Path params: {name} → value.
-  let path = opts.pathTemplate.replace(/\{([^}]+)\}/g, (_m, name: string) => {
+  let path = template.replace(/\{([^}]+)\}/g, (_m, name: string) => {
     consumed.add(name);
     const v = args[name];
     return encodeURIComponent(v == null ? '' : String(v));
@@ -372,9 +393,22 @@ export function parseResponseBody(text: string): unknown {
   return text;
 }
 
+/** Strip path-placed credentials (Telegram bot tokens) out of transport-error
+ *  messages — fetch failures often embed the full URL, and those errors
+ *  propagate to the caller (the sandbox must never see the token). */
+function redactPathCredentials(text: string): string {
+  return text.replace(/bot\d{1,20}:[A-Za-z0-9_-]{30,64}/g, 'bot<redacted>');
+}
+
 /** Perform a built request and parse the response (JSON or SSE-framed JSON). */
 async function performRequest(req: BuiltRequest, fetchImpl: FetchImpl): Promise<ExecResult> {
-  const res = await fetchImpl(req.url, { method: req.method, headers: req.headers, body: req.body });
+  let res: Awaited<ReturnType<FetchImpl>>;
+  try {
+    res = await fetchImpl(req.url, { method: req.method, headers: req.headers, body: req.body });
+  } catch (err) {
+    const e = err as Error;
+    throw new Error(redactPathCredentials(e?.message ?? 'fetch failed'));
+  }
   const text = await res.text();
   return { status: res.status, ok: res.ok, data: parseResponseBody(text) };
 }

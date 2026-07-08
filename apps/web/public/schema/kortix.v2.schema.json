@@ -530,7 +530,8 @@
             "enum": [
               "slack",
               "email",
-              "meet"
+              "meet",
+              "telegram"
             ]
           },
           "credential": {

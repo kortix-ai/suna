@@ -33,7 +33,7 @@ import {
 import { channelApiBase, channelCatalog } from './channels';
 import { synthesizeChannelConnectors } from './channel-materialize';
 import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';
-import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
+import { listAgentMailInstalls, loadSlackInstall, loadTelegramInstall } from '../channels/install-store';
 import { computerCatalog } from './computers';
 import { synthesizeComputerConnectors } from './computer-materialize';
 import { parseSpecDocument } from './spec-doc';
@@ -71,6 +71,10 @@ export async function reconcileChannelConnectors(
     const slackInstalled = (await loadSlackInstall(projectId).catch(() => null)) != null;
     if (slackInstalled) await ensureChannelConnectorDeclared(projectId, 'slack');
     else await removeChannelConnectorDeclared(projectId, 'slack');
+
+    const telegramInstalled = (await loadTelegramInstall(projectId).catch(() => null)) != null;
+    if (telegramInstalled) await ensureChannelConnectorDeclared(projectId, 'telegram');
+    else await removeChannelConnectorDeclared(projectId, 'telegram');
 
     const emailEnabled = resolveExperimentalFeature(row.metadata, 'agentmail_email');
     if (removed?.platform === 'email' || !emailEnabled) {

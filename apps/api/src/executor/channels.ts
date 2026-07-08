@@ -26,6 +26,7 @@ import type { ActionBinding, NormalizedAction, Risk } from './types';
 export const SLACK_CHANNEL_CONNECTOR_SLUG = 'kortix_slack';
 export const EMAIL_CHANNEL_CONNECTOR_SLUG = 'kortix_email';
 export const MEET_CHANNEL_CONNECTOR_SLUG = 'kortix_meet';
+export const TELEGRAM_CHANNEL_CONNECTOR_SLUG = 'kortix_telegram';
 
 export function channelDefaultSlug(platform: string): string {
   switch (platform) {
@@ -35,6 +36,8 @@ export function channelDefaultSlug(platform: string): string {
       return EMAIL_CHANNEL_CONNECTOR_SLUG;
     case 'meet':
       return MEET_CHANNEL_CONNECTOR_SLUG;
+    case 'telegram':
+      return TELEGRAM_CHANNEL_CONNECTOR_SLUG;
     default:
       return platform;
   }
@@ -48,6 +51,11 @@ export function channelDefaultSlug(platform: string): string {
  */
 export function channelAuth(platform: string): ExecutorAuth {
   if (platform === 'meet') return { type: 'custom', in: 'header', name: 'Authorization', prefix: 'Token ' };
+  // Telegram authenticates via the URL PATH (`/bot<token>/<method>`), not a
+  // header. The `path` placement substitutes the server-resolved token into
+  // the binding's `{token}` placeholder before caller args are templated —
+  // see buildHttpRequest — so the sandbox neither supplies nor sees it.
+  if (platform === 'telegram') return { type: 'custom', in: 'path', name: 'token', prefix: null };
   return { type: 'bearer', in: 'header', name: null, prefix: null };
 }
 
@@ -66,6 +74,10 @@ export function channelApiBase(platform: string): string {
     case 'meet':
       // Recall.ai regional gateway. Swappable via RECALL_BASE_URL.
       return config.RECALL_BASE_URL;
+    case 'telegram':
+      // Overridable (KORTIX_TELEGRAM_API_BASE) so the ke2e suite can point the
+      // send/read/file actions at a local stub instead of the real Bot API.
+      return (process.env.KORTIX_TELEGRAM_API_BASE || 'https://api.telegram.org').replace(/\/+$/, '');
     default:
       return '';
   }
@@ -80,6 +92,8 @@ export function channelLabel(platform: string): string {
       return 'Email';
     case 'meet':
       return 'Google Meet';
+    case 'telegram':
+      return 'Telegram';
     default:
       return platform;
   }
@@ -532,6 +546,109 @@ const MEET_ACTIONS: ChannelActionDef[] = [
   },
 ];
 
+/**
+ * The Telegram catalog — the Bot API surface an agent needs to converse, edit
+ * its own messages, signal liveness, and move files. Property names match
+ * Telegram's API exactly (chat_id, message_id, parse_mode, file_id…). Every
+ * binding path carries the `{token}` placeholder that channelAuth('telegram')
+ * fills SERVER-SIDE (in: 'path') — it is not an input property, so callers
+ * can neither supply nor read it.
+ *
+ * NOT included here (by design):
+ *   • getUpdates — webhook mode owns update delivery; polling would conflict.
+ *   • multipart sandbox-file upload / getFile byte download — CLI/file-proxy
+ *     side (stage 5), same split as Slack's `send --file` / `download`.
+ */
+const TELEGRAM_ACTIONS: ChannelActionDef[] = [
+  {
+    path: 'send_message',
+    method: 'bot{token}/sendMessage',
+    verb: 'POST',
+    name: 'Send message',
+    description:
+      'Send a message to a Telegram chat. Provide `chat_id` (see TELEGRAM_CHAT_ID) and `text`; optional `parse_mode: "HTML"` for rich text and `reply_parameters: {"message_id": N}` to reply to a specific message.',
+    risk: 'write',
+    properties: {
+      chat_id: { type: 'string', description: 'Target chat id (TELEGRAM_CHAT_ID in this session).' },
+      text: { type: 'string', description: 'Message text, up to 4096 chars. With parse_mode HTML, use the Telegram-safe HTML subset.' },
+      parse_mode: { type: 'string', description: 'Optional formatting mode — use "HTML".' },
+      reply_parameters: { type: 'object', description: 'Optional { "message_id": N } to reply to a message.' },
+    },
+    required: ['chat_id', 'text'],
+  },
+  {
+    path: 'edit_message_text',
+    method: 'bot{token}/editMessageText',
+    verb: 'POST',
+    name: 'Edit message',
+    description:
+      'Edit the text of a message the bot sent. Requires `chat_id` and `message_id` (returned by send_message).',
+    risk: 'write',
+    properties: {
+      chat_id: { type: 'string', description: 'Chat the message is in.' },
+      message_id: { type: 'number', description: 'Id of the bot message to edit.' },
+      text: { type: 'string', description: 'Replacement text.' },
+      parse_mode: { type: 'string', description: 'Optional formatting mode — use "HTML".' },
+    },
+    required: ['chat_id', 'message_id', 'text'],
+  },
+  {
+    path: 'send_chat_action',
+    method: 'bot{token}/sendChatAction',
+    verb: 'POST',
+    name: 'Send chat action',
+    description:
+      'Show a status indicator in the chat ("typing", "upload_document", …) — a liveness cue while working on something slow.',
+    risk: 'write',
+    properties: {
+      chat_id: { type: 'string', description: 'Target chat id.' },
+      action: { type: 'string', description: 'One of: typing, upload_photo, upload_document, find_location, …' },
+    },
+    required: ['chat_id', 'action'],
+  },
+  {
+    path: 'send_document',
+    method: 'bot{token}/sendDocument',
+    verb: 'POST',
+    name: 'Send document',
+    description:
+      'Send a file to a chat by Telegram `file_id` (re-share a received file) or by public HTTPS URL. Uploading a local sandbox file goes through the telegram CLI instead.',
+    risk: 'write',
+    properties: {
+      chat_id: { type: 'string', description: 'Target chat id.' },
+      document: { type: 'string', description: 'A Telegram file_id or a public HTTPS URL.' },
+      caption: { type: 'string', description: 'Optional caption shown with the document.' },
+      reply_parameters: { type: 'object', description: 'Optional { "message_id": N } to reply to a message.' },
+    },
+    required: ['chat_id', 'document'],
+  },
+  {
+    path: 'get_file',
+    method: 'bot{token}/getFile',
+    verb: 'GET',
+    name: 'Get file info',
+    description:
+      'Resolve a `file_id` (from a received message) to file metadata incl. its `file_path`. Downloading the bytes goes through the telegram CLI.',
+    risk: 'read',
+    properties: {
+      file_id: { type: 'string', description: 'Telegram file id from a message payload.' },
+    },
+    required: ['file_id'],
+  },
+  {
+    path: 'get_chat',
+    method: 'bot{token}/getChat',
+    verb: 'GET',
+    name: 'Get chat info',
+    description: 'Fetch chat metadata (type, title, description) for a chat id.',
+    risk: 'read',
+    properties: {
+      chat_id: { type: 'string', description: 'Chat id to inspect.' },
+    },
+    required: ['chat_id'],
+  },
+];
+
 function toAction(def: ChannelActionDef): NormalizedAction {
   const binding: ActionBinding = { kind: 'http', method: def.verb, path: `/${def.method}` };
   const properties: Record<string, { type: string; description: string; 'x-in'?: string }> = {};
@@ -568,6 +685,8 @@ export function channelCatalog(platform: string): NormalizedAction[] {
       return EMAIL_ACTIONS.map(toAction);
     case 'meet':
       return MEET_ACTIONS.map(toAction);
+    case 'telegram':
+      return TELEGRAM_ACTIONS.map(toAction);
     default:
       return [];
   }

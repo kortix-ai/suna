@@ -1,4 +1,4 @@
-import { listAgentMailInstalls, loadMeetInstall, loadSlackInstall } from '../channels/install-store';
+import { listAgentMailInstalls, loadMeetInstall, loadSlackInstall, loadTelegramInstall } from '../channels/install-store';
 /**
  * Auto-materialize channel connectors from platform installs.
  *
@@ -76,6 +76,14 @@ export async function synthesizeChannelConnectors(
   if (!channelAlreadyDeclared(declared, 'slack', slackSlug)) {
     const install = await loadSlackInstall(projectId).catch(() => null);
     if (install) specs.push(channelSpec('slack', slackSlug));
+  }
+
+  // Telegram — like Slack, a BYO-bot install IS the registration (optional
+  // channel, no experimental gate: connecting is already the explicit opt-in).
+  const telegramSlug = channelDefaultSlug('telegram');
+  if (!channelAlreadyDeclared(declared, 'telegram', telegramSlug)) {
+    const install = await loadTelegramInstall(projectId).catch(() => null);
+    if (install) specs.push(channelSpec('telegram', telegramSlug));
   }
 
   const [project] = await db

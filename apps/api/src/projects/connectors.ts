@@ -70,7 +70,7 @@ export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
 ]);
 
 /** Chat platforms a `channel` connector can target. */
-export type ChannelPlatform = 'slack' | 'email' | 'meet';
+export type ChannelPlatform = 'slack' | 'email' | 'meet' | 'telegram';
 
 type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'oauth1' | 'none';
 const AUTH_TYPES: readonly ConnectorAuthType[] = ['bearer', 'basic', 'custom', 'oauth1', 'none'];
@@ -79,7 +79,7 @@ interface ConnectorAuthSpec {
   /** How the credential is attached to outbound calls. */
   type: ConnectorAuthType;
   /** For `custom`: where the credential goes. Defaults to `header`. */
-  in: 'header' | 'query';
+  in: 'header' | 'query' | 'path';
   /** For `custom`: the header/param name (e.g. `Authorization`, `X-API-Key`). */
   name: string | null;
   /** Optional value prefix (e.g. `Bearer`). */
