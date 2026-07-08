@@ -61,6 +61,7 @@ flow(
     routes: [
       'POST /v1/projects/:projectId/review/items',
       'POST /v1/projects/:projectId/review/items/:reviewItemId/act',
+      'PATCH /v1/projects/:projectId/experimental',
     ],
   },
   async (ctx) => {
@@ -94,6 +95,36 @@ flow(
           { params: { projectId: p.id } },
         );
       r.status(400);
+    });
+    // Structured work submissions (submission_version payloads) are gated behind
+    // the work_submission experimental flag. Start from a known-off state.
+    await ctx.step('disable work_submission → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).patch(
+        '/v1/projects/:projectId/experimental',
+        { feature: 'work_submission', enabled: false },
+        { params: { projectId: p.id } },
+      );
+      r.status(200);
+    });
+    await ctx.step('structured submit while work_submission disabled → 403', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/review/items',
+        {
+          kind: 'output',
+          title: ctx.fixtures.name('rv'),
+          detail: { submission_version: 1, storage: 'inline', content: 'gated' },
+        },
+        { params: { projectId: p.id } },
+      );
+      r.status(403);
+    });
+    await ctx.step('enable work_submission → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).patch(
+        '/v1/projects/:projectId/experimental',
+        { feature: 'work_submission', enabled: true },
+        { params: { projectId: p.id } },
+      );
+      r.status(200);
     });
     await ctx.step('structured submit: server-owned detail.trace → 400', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
@@ -180,6 +211,14 @@ flow(
         { params: { projectId: p.id, reviewItemId: created.review_item_id } },
       );
       dismissed.status(200);
+    });
+    await ctx.step('clear work_submission override → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).patch(
+        '/v1/projects/:projectId/experimental',
+        { feature: 'work_submission', enabled: null },
+        { params: { projectId: p.id } },
+      );
+      r.status(200);
     });
   },
 );

@@ -1,11 +1,13 @@
 # Session Work Submission — `kortix submit`
 
 **Status:** P1 + P2 core shipped — Marko + Fable, 2026-07-08 (this branch). Built: the
-`kortix submit` CLI verb, structured `output` detail validation, git keep-ref pinning
-(`refs/kortix/submissions/<id>`, mirror refspec widened), server-derived session binding,
-trace stapling (audit slice + cost + transcript ref), SDK types + `submitWorkOutput`, and
-the Review Center claims checklist / artifact viewer / trace disclosure. Still open: P3
-hygiene (keep-ref GC, size-cap telemetry, blob tier) and §6 open questions.
+`kortix submit` CLI verb (CR-shaped: title / description / attachments), structured `output`
+detail validation, git keep-ref pinning (`refs/kortix/submissions/<id>`, mirror refspec
+widened), server-derived session binding, trace stapling (audit slice + cost + transcript
+ref), SDK types + `submitWorkOutput`, the Review Center claims checklist / artifact viewer /
+trace disclosure, and a per-project `work_submission` experimental flag gating the whole
+surface (off by default). Still open: P3 hygiene (keep-ref GC, size-cap telemetry, blob tier)
+and §6 open questions.
 **Builds on:** `docs/REVIEW_CENTER_DESIGN.md` (ino@) — this spec extends the Review Center's
 `output` kind into a full submission primitive; it does not replace or fork that design.
 Review with ino@ before implementation.
@@ -94,7 +96,7 @@ neat and elegant"). Rejected as the *interface*, adopted as the *storage*:
 
 ### 3.3 Artifact storage: git-pinned to the session branch, protected by a keep-ref
 
-`kortix submit --artifact <path>...` does, in order:
+`kortix submit --attach <path>...` does, in order:
 
 1. Commits the named files on the **session's own branch** (the branch already exists; reuse
    the `commit-push` plumbing) and pushes.
@@ -129,18 +131,31 @@ cheapest possible "session produced an answer, a human should see it."
 
 ### 3.4 One standardized CLI verb, session-bound by construction
 
+Shaped like `kortix cr open` — **title, description, attachments** — so it reads as
+"submit stuff for review" with no fiddly taxonomy (revised 2026-07-08 per Marko: the
+earlier `--kind`/`--artifact`/`--claim`/`--risk` surface was too much; a submission is
+generic, like a change request). Attachments are pinned in git; no attachments = a note
+whose body is the description.
+
 ```
 kortix submit \
   --title "Q2 churn analysis" \
-  --summary "Cohort analysis across 4 segments; churn concentrated in trial-to-paid" \
-  --kind report \
-  --artifact ./out/churn-analysis.md --artifact ./out/cohorts.csv \
-  --claim "numbers computed from the attached raw export, not estimated" \
-  --claim "no customer-identifying data included" \
-  --risk low \
+  --description "Cohort analysis across 4 segments; churn concentrated in trial-to-paid" \
+  --attach ./out/churn-analysis.md --attach ./out/cohorts.csv \
   [--await]        # block until a human verdict, exit code reflects it
   [--json]
 ```
+
+The richer detail fields the backend still supports — `claims` (the self-report checklist)
+and per-file `kind` — remain in the API/SDK/web (see §4.2) for programmatic callers and the
+eval story (§7); the CLI just doesn't surface them, keeping the everyday verb minimal.
+
+**Gated by the `work_submission` project experimental flag** (registry entry in
+`apps/api/src/experimental/features.ts`, off by default, per-project opt-in in Customize →
+Settings → Experimental). The API rejects a structured submission (`detail.submission_version`)
+with 403 when the flag is off; the CLI surfaces that message verbatim. Plain
+output/decision/batch review items are unaffected — the flag gates only the `kortix submit`
+path, not the pre-existing Review Center submit endpoint.
 
 - Top-level `kortix submit` (agent muscle-memory verb), thin sugar over
   `POST /v1/projects/:id/review/items`. A `kortix review list|get` read surface can follow;
@@ -162,10 +177,10 @@ kortix submit \
 
 Two halves, trusted differently:
 
-- **Self-report (agent-authored):** `title`, `summary`, `--claim` (repeatable). Claims are
-  short, checkable assertions about the work. They are the reviewer's checklist — review
-  becomes "verify the claims," not "reconstruct the intent." Stored as
-  `detail.claims: string[]`.
+- **Self-report (agent-authored):** `title`, `summary`/description, and optional `claims`
+  (`detail.claims: string[]`, an API/SDK field — not surfaced on the minimal CLI). Claims are
+  short, checkable assertions about the work: the reviewer's checklist, so review becomes
+  "verify the claims," not "reconstruct the intent."
 - **Trace (platform-stapled, tamper-proof):** at submit time the server attaches, into
   `detail.trace`: the transcript digest reference (not a copy — the digest endpoint already
   exists), the governed-action audit slice for the session so far (action, connector, risk,

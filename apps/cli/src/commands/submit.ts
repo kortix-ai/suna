@@ -1,14 +1,16 @@
 // kortix submit — the standardized work-submission verb. Records a session's
-// finished output as a review item (Review Center kind: output): artifacts are
-// committed on the current branch, pushed, and pinned server-side under a
-// keep-ref (refs/kortix/submissions/<id>) so they outlive the sandbox; small
-// text results go inline with no files at all. `show` presents, `submit`
-// records — anything a human should review or keep gets submitted.
+// finished work as a review item for a human to review — the same shape as a
+// change request (a title, a description, and attachments), but for anything,
+// not just code. Attachments are committed on the current branch, pushed, and
+// pinned server-side under a keep-ref (refs/kortix/submissions/<id>) so they
+// outlive the sandbox; a submission with no attachments is just a note.
+// `show` presents in-conversation, `submit` records for review.
 
 import { execFileSync } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { emitJson, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { ApiError } from '../api/client.ts';
 import { sandboxEnvValue } from '../api/sandbox-env.ts';
 import { C, status } from '../style.ts';
 
@@ -17,21 +19,19 @@ const AWAIT_POLL_MS = 5_000;
 
 const HELP = `Usage: kortix submit --title "<text>" [options]
 
-Submit finished work for human review in the project's Review Center. With
---artifact, the named files are committed on the current branch, pushed, and
-pinned so they survive the sandbox; with --content, a small text result is
-submitted inline with no files.
+Submit finished work for human review — like opening a change request, but
+for anything (a report, a document, an answer, generated assets), not just
+code. With --attach, the named files are committed on the current branch,
+pushed, and pinned so they survive the sandbox; with no attachments it's a
+note carrying just the title + description.
 
 Options:
   --title "<text>"        Required. Plain-language name for the work.
-  --summary "<text>"      One-line description shown in the inbox.
-  --artifact <path>       File to submit (repeatable). Committed + pushed.
-  --content "<text>"      Inline text result (mutually exclusive w/ --artifact).
-  --claim "<text>"        Checkable statement about the work (repeatable).
-  --kind <label>          Artifact kind label (report, document, image, …).
-  --risk none|low|medium|high   Reviewer triage hint. Default: none.
+  --description "<text>"  What it is / what to review. Doubles as the body of
+                          a note when there are no attachments. Alias: --body.
+  --attach <path>         File to attach (repeatable, 25MB each). Alias: --attachment.
   --await                 Block until a human verdict; exit code reflects it
-                          (0 approved/done, 3 changes requested, 4 rejected).
+                          (0 approved, 3 changes requested, 4 rejected).
   --await-timeout <sec>   Give up waiting after this many seconds (default: no
                           timeout). Exit 5 on timeout; the item stays open.
   --json                  Print the review item as JSON.
@@ -41,9 +41,11 @@ Global options:
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 
-Inside an agent sandbox the CLI reads KORTIX_CLI_TOKEN and KORTIX_PROJECT_ID
-from the environment automatically — you don't need to log in or link.
-(KORTIX_TOKEN is the sandbox service key, not a CLI token.)
+Requires the project's Work Submission experimental feature to be enabled
+(Customize → Settings → Experimental). Inside an agent sandbox the CLI reads
+KORTIX_CLI_TOKEN and KORTIX_PROJECT_ID from the environment automatically —
+you don't need to log in or link. (KORTIX_TOKEN is the sandbox service key,
+not a CLI token.)
 `;
 
 const EXT_KIND: Record<string, string> = {
@@ -105,38 +107,26 @@ export async function runSubmit(argv: string[]): Promise<number> {
 
   const rest = [...argv];
   let title: string | undefined;
-  let summary: string | undefined;
-  let content: string | undefined;
-  let artifactKind: string | undefined;
-  let risk: string | undefined;
+  let description: string | undefined;
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   let awaitVerdict = false;
   let awaitTimeoutRaw: string | undefined;
   let json = false;
-  const artifacts: string[] = [];
-  const claims: string[] = [];
+  const attachments: string[] = [];
   try {
     title = takeFlagValue(rest, ['--title']);
-    summary = takeFlagValue(rest, ['--summary']);
-    content = takeFlagValue(rest, ['--content']);
-    artifactKind = takeFlagValue(rest, ['--kind']);
-    risk = takeFlagValue(rest, ['--risk']);
+    description = takeFlagValue(rest, ['--description', '--body']);
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     awaitVerdict = takeFlagBool(rest, ['--await']);
     awaitTimeoutRaw = takeFlagValue(rest, ['--await-timeout']);
     json = takeFlagBool(rest, ['--json']);
-    // Repeatable flags — drain until absent.
+    // --attach is repeatable — drain until absent.
     for (;;) {
-      const a = takeFlagValue(rest, ['--artifact']);
+      const a = takeFlagValue(rest, ['--attach', '--attachment']);
       if (a === undefined) break;
-      artifacts.push(a);
-    }
-    for (;;) {
-      const cl = takeFlagValue(rest, ['--claim']);
-      if (cl === undefined) break;
-      claims.push(cl);
+      attachments.push(a);
     }
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
@@ -150,12 +140,8 @@ export async function runSubmit(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err('--title is required.')}\n\n${HELP}`);
     return 2;
   }
-  if (artifacts.length > 0 && content !== undefined) {
-    process.stderr.write(`${status.err('--artifact and --content are mutually exclusive.')}\n`);
-    return 2;
-  }
-  if (artifacts.length === 0 && !content?.trim()) {
-    process.stderr.write(`${status.err('Pass at least one --artifact, or --content for an inline result.')}\n`);
+  if (attachments.length === 0 && !description?.trim()) {
+    process.stderr.write(`${status.err('Pass a --description, at least one --attach, or both.')}\n`);
     return 2;
   }
   const awaitTimeoutSec = awaitTimeoutRaw !== undefined ? Number(awaitTimeoutRaw) : undefined;
@@ -167,25 +153,24 @@ export async function runSubmit(argv: string[]): Promise<number> {
   const ctx = await resolveProjectContext({ projectArg: projectFlag, hostArg: hostFlag });
   if (!ctx) return 1;
 
+  const desc = description?.trim();
   const detail: Record<string, unknown> = { submission_version: 1 };
-  if (artifactKind?.trim()) detail.artifact_kind = artifactKind.trim();
-  if (claims.length > 0) detail.claims = claims;
 
-  if (artifacts.length > 0) {
-    const pinned = pinArtifacts(artifacts);
+  if (attachments.length > 0) {
+    const pinned = pinAttachments(attachments);
     if (typeof pinned === 'number') return pinned;
     detail.storage = 'git';
     detail.git = pinned;
   } else {
+    // A note: the description IS the submitted content.
     detail.storage = 'inline';
-    detail.content = content;
+    detail.content = desc;
   }
 
   const body: Record<string, unknown> = {
     kind: 'output',
     title: title.trim(),
-    ...(summary?.trim() ? { summary: summary.trim() } : {}),
-    ...(risk ? { risk } : {}),
+    ...(desc ? { summary: desc } : {}),
     detail,
   };
   const sessionId = sandboxEnvValue('KORTIX_SESSION_ID');
@@ -195,6 +180,13 @@ export async function runSubmit(argv: string[]): Promise<number> {
   try {
     item = await ctx.client.post<ReviewItemResponse>(`/projects/${ctx.projectId}/review/items`, body);
   } catch (err) {
+    // A 403 here is almost always the work_submission flag being off — the
+    // server sends a precise, actionable message; show it verbatim rather than
+    // the generic "Forbidden".
+    if (err instanceof ApiError && err.status === 403) {
+      process.stderr.write(`${status.err(err.message)}\n`);
+      return 1;
+    }
     return surfaceApiError(err);
   }
 
@@ -252,15 +244,15 @@ export async function runSubmit(argv: string[]): Promise<number> {
 }
 
 /**
- * Commit the named files on the current branch, push, and return the git
+ * Commit the attached files on the current branch, push, and return the git
  * detail payload — or an exit code when something is wrong locally.
  */
-function pinArtifacts(paths: string[]): Record<string, unknown> | number {
+function pinAttachments(paths: string[]): Record<string, unknown> | number {
   let repoRoot: string;
   try {
     repoRoot = git(['rev-parse', '--show-toplevel']);
   } catch {
-    process.stderr.write(`${status.err('Not inside a git repository — --artifact needs the project workspace.')}\n`);
+    process.stderr.write(`${status.err('Not inside a git repository — --attach needs the project workspace.')}\n`);
     return 1;
   }
   let branch: string;
@@ -270,7 +262,7 @@ function pinArtifacts(paths: string[]): Record<string, unknown> | number {
     branch = 'HEAD';
   }
   if (!branch || branch === 'HEAD') {
-    process.stderr.write(`${status.err('Detached HEAD — check out a branch before submitting artifacts.')}\n`);
+    process.stderr.write(`${status.err('Detached HEAD — check out a branch before submitting attachments.')}\n`);
     return 1;
   }
 
@@ -282,7 +274,7 @@ function pinArtifacts(paths: string[]): Record<string, unknown> | number {
     try {
       const stat = statSync(abs);
       if (!stat.isFile()) {
-        process.stderr.write(`${status.err(`Not a file: ${raw} (submit files, not directories)`)}\n`);
+        process.stderr.write(`${status.err(`Not a file: ${raw} (attach files, not directories)`)}\n`);
         return 1;
       }
       bytes = stat.size;
@@ -314,13 +306,13 @@ function pinArtifacts(paths: string[]): Record<string, unknown> | number {
   const hasStaged = !gitOk(['diff', '--cached', '--quiet', '--', ...repoRelative], repoRoot);
   if (hasStaged) {
     try {
-      git(['commit', '-m', `chore(submit): pin ${files.length} artifact(s) for review`, '--', ...repoRelative], repoRoot);
+      git(['commit', '-m', `chore(submit): attach ${files.length} file(s) for review`, '--', ...repoRelative], repoRoot);
     } catch (err) {
       process.stderr.write(`${status.err(`git commit failed: ${(err as Error).message}`)}\n`);
       return 1;
     }
   } else {
-    // Nothing new to commit — the artifacts must already be tracked at HEAD.
+    // Nothing new to commit — the attachments must already be tracked at HEAD.
     for (const rel of repoRelative) {
       if (!gitOk(['cat-file', '-e', `HEAD:${rel}`], repoRoot)) {
         process.stderr.write(`${status.err(`${rel} has no committed content to submit.`)}\n`);

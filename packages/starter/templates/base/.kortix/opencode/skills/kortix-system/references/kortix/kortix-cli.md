@@ -330,21 +330,22 @@ title. Sorted newest first.
 ### Work submission (`submit`)
 
 The standardized verb for recording finished work for human review in
-the project's **Review Center**. A CR is for code that should land on
-`main`; `submit` is for **everything else a human should review or
-keep** — reports, documents, analyses, answers, generated assets. The
-`show` tool only *presents* (its cards die with the sandbox); `submit`
-*records*: artifacts are committed on the current session branch,
-pushed, and pinned server-side under `refs/kortix/submissions/<id>`, so
-they outlive the sandbox forever.
+the project's **Review Center**. It's shaped like opening a change
+request — a **title, a description, and attachments** — but for anything,
+not just code. A CR is for code that should land on `main`; `submit` is
+for **everything else a human should review or keep** — reports,
+documents, analyses, answers, generated assets. The `show` tool only
+*presents* (its cards die with the sandbox); `submit` *records*:
+attachments are committed on the current session branch, pushed, and
+pinned server-side under `refs/kortix/submissions/<id>`, so they outlive
+the sandbox forever.
 
 | Command | Effect |
 | --- | --- |
-| `kortix submit --title "<text>" --artifact <path> [--artifact <path> …]` | Commit + push the named files on the current branch and submit them for review. Repeatable `--artifact`; 25MB per-file cap. |
-| `kortix submit --title "<text>" --content "<text>"` | Submit a small inline text/markdown result with no files at all. |
-| `… --claim "<text>"` | Attach a checkable statement about the work (repeatable). Claims become the reviewer's checklist — assert things a reviewer can verify ("numbers computed from the attached export", "no customer PII included"). |
-| `… --summary "<text>" --kind <label> --risk none\|low\|medium\|high` | Inbox envelope: one-line summary, artifact-kind label (report, document, image, …), triage risk. |
-| `… --await [--await-timeout <sec>]` | Block until a human verdict. Exit `0` approved/done, `3` changes requested, `4` rejected, `5` timeout. |
+| `kortix submit --title "<text>" --attach <path> [--attach <path> …]` | Commit + push the attached files on the current branch and submit them for review. Repeatable `--attach` (alias `--attachment`); 25MB per-file cap. |
+| `kortix submit --title "<text>" --description "<text>"` | Submit a note — just a title + description, no files. |
+| `… --description "<text>"` | What it is / what to review (alias `--body`). Shown with the submission; doubles as the note body when there are no attachments. |
+| `… --await [--await-timeout <sec>]` | Block until a human verdict. Exit `0` approved, `3` changes requested, `4` rejected, `5` timeout. |
 | `… --json` | Print the created review item (or, with `--await`, the resolved item) as JSON. |
 
 The server automatically binds the submission to your session and
@@ -352,6 +353,10 @@ staples a tamper-proof trace (transcript pointer, the governed actions
 you took, cost so far) — you don't and can't send those yourself.
 Human feedback on the submission comes back to you as a follow-up
 turn, exactly like a CR review or an answered question.
+
+**Requires the project's Work Submission experimental feature** to be
+enabled (Customize → Settings → Experimental). If it's off, `kortix
+submit` fails with a clear message pointing there.
 
 **When to submit:** any finished deliverable the user asked for. Rule
 of thumb — in-progress glances → `show`; finished work a human should
@@ -362,11 +367,8 @@ commit, push, `kortix cr open`.
 # Typical flow: a research report with supporting data
 kortix submit \
   --title "Q2 churn analysis" \
-  --summary "Cohort analysis across 4 segments" \
-  --kind report \
-  --artifact out/churn-analysis.md --artifact out/cohorts.csv \
-  --claim "numbers computed from the attached raw export, not estimated" \
-  --claim "no customer-identifying data included"
+  --description "Cohort analysis across 4 segments; churn concentrated in trial-to-paid." \
+  --attach out/churn-analysis.md --attach out/cohorts.csv
 ```
 
 > See `change-requests.md` (alongside this file) for the full

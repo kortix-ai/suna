@@ -200,7 +200,7 @@ describe('structured work submissions (submission_version 1)', () => {
           cost: { tokens: 4200, llm_cost: 0.31, compute_cost: 0.04 },
         },
       },
-    });
+    }, 'P');
     const d = outputDetailOf(item);
     expect(d.storage).toBe('git');
     expect(d.claims).toEqual(['numbers from live data', 'no PII included']);
@@ -215,7 +215,7 @@ describe('structured work submissions (submission_version 1)', () => {
     const item = mapApiReviewItem({
       ...row,
       detail: { submission_version: 1, storage: 'inline', artifact_kind: 'answer', content: 'All 4 checks passed.' },
-    });
+    }, 'P');
     const d = outputDetailOf(item);
     expect(d.storage).toBe('inline');
     expect(d.content).toBe('All 4 checks passed.');
@@ -224,7 +224,7 @@ describe('structured work submissions (submission_version 1)', () => {
   });
 
   test('legacy output detail keeps the passthrough shape with no structured fields', () => {
-    const item = mapApiReviewItem(row);
+    const item = mapApiReviewItem(row, 'P');
     const d = outputDetailOf(item);
     expect(d.storage).toBeUndefined();
     expect(d.claims).toBeUndefined();

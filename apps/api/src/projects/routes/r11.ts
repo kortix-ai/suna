@@ -13,6 +13,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
+import { resolveExperimentalFeature } from '../../experimental/features';
 import { commitExistsOnRemote, createKeepRef, deleteKeepRef } from '../git';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
@@ -119,7 +120,7 @@ projectsApp.openapi(
     },
     responses: {
       201: json(AnyObject, 'The created review item'),
-      ...errors(400, 404, 502),
+      ...errors(400, 403, 404, 502),
     },
   }),
   async (c: any) => {
@@ -145,6 +146,22 @@ projectsApp.openapi(
       body.detail && typeof body.detail === 'object' && !Array.isArray(body.detail)
         ? (body.detail as Record<string, unknown>)
         : {};
+
+    // Structured work submissions (the `kortix submit` path — a
+    // `submission_version` payload) are gated behind the per-project
+    // `work_submission` experimental flag. Plain output/decision/batch review
+    // items are unaffected (they belong to the Review Center's own surface).
+    if (kind === 'output' && detail.submission_version !== undefined) {
+      if (!resolveExperimentalFeature(loaded.row.metadata, 'work_submission')) {
+        return c.json(
+          {
+            error:
+              'Work submission is not enabled for this project. Enable it in Customize → Settings → Experimental (Work Submission).',
+          },
+          403,
+        );
+      }
+    }
 
     // Session binding: the token's own session id (set on session executor
     // tokens by the auth middleware) is authoritative — a submission can't
