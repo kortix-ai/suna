@@ -597,7 +597,7 @@ function RepoCollaboratorInvite({
               <Button
                 type="submit"
                 className="w-full shrink-0 sm:w-auto"
-                disabled={!canManage || !username.trim() || inviteMutation.isPending}
+                disabled={!username.trim() || inviteMutation.isPending}
               >
                 {inviteMutation.isPending ? <Loading className="size-3.5 animate-spin" /> : null}
                 Add

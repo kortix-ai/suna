@@ -1,12 +1,14 @@
 'use client';
 
-import { FileText, KeyRound, Layers, Plug, Wrench } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 
 import { UnifiedMarkdown } from '@/components/markdown';
+import { Badge } from '@/components/ui/badge';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -18,13 +20,21 @@ import {
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { useAuth } from '@/features/providers/auth-provider';
 import type { MarketplaceItemDetail, MarketplaceSummary } from '@/lib/marketplace-client';
 import { marketplaceCompanyHref, marketplaceItemHref } from '@/lib/marketplace-slug';
 import { MarketplaceAddButton } from './marketplace-add-button';
 import { MarketplaceAvatar } from './marketplace-avatar';
 import { displayCompanyLabel } from './marketplace-company-filter';
 import { MarketplaceItemAvatar } from './marketplace-item-avatar';
-import { typeMeta } from './marketplace-meta';
+import {
+  emptyDescriptionCopy,
+  emptyReadmeCopy,
+  groupCapabilities,
+  resolveBundleMembers,
+  totalCapabilityCount,
+} from './marketplace-item-view';
+import { TypeTile, typeMeta } from './marketplace-meta';
 
 function stripFrontmatter(md: string): string {
   if (md.startsWith('---')) {
@@ -106,24 +116,30 @@ function CompanyAside({
   );
 }
 
-function MetaRow({
-  icon: IconComponent,
+function BundleMemberRow({
   title,
-  subtitle,
+  type,
   href,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
   title: string;
-  subtitle?: string;
-  href?: string;
+  type: string | null;
+  href: string | null;
 }) {
   const body = (
     <>
-      <IconComponent className="text-muted-foreground size-4 shrink-0" />
-      <span className="text-foreground min-w-0 flex-1 truncate text-sm">{title}</span>
-      {subtitle ? (
-        <span className="text-muted-foreground/70 shrink-0 text-xs">{subtitle}</span>
-      ) : null}
+      {type ? (
+        <TypeTile type={type} size="sm" />
+      ) : (
+        <span className="bg-foreground/5 text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-lg">
+          <FileText className="size-4" />
+        </span>
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="text-foreground block truncate text-sm">{title}</span>
+        {type ? (
+          <span className="text-muted-foreground/70 block text-xs">{typeMeta(type).label}</span>
+        ) : null}
+      </span>
     </>
   );
   if (href) {
@@ -207,12 +223,18 @@ export function MarketplacePublicDetail({
   company?: MarketplaceSummary;
 }) {
   const tm = typeMeta(data.type);
-  const caps = data.capabilities;
-  const capItems = [
-    ...caps.secrets.map((s) => ({ kind: 'secret' as const, id: s })),
-    ...caps.connectors.map((c) => ({ kind: 'connector' as const, id: c })),
-    ...caps.tools.map((t) => ({ kind: 'tool' as const, id: t })),
-  ];
+  const { user, isLoading: authLoading } = useAuth();
+  const pathname = usePathname();
+  const capGroups = groupCapabilities(data.capabilities);
+  const capCount = totalCapabilityCount(data.capabilities);
+  const isBundle = data.type === 'registry:bundle';
+  const bundleMembers = isBundle
+    ? resolveBundleMembers({
+        dependencies: data.dependencies,
+        dependencyItems: data.dependencyItems,
+        hrefForId: marketplaceItemHref,
+      })
+    : [];
   const readme = data.readme ? stripFrontmatter(data.readme) : '';
   const itemTitle = data.title.replaceAll('-', ' ');
   const companyLabel = displayCompanyLabel(data.marketplaceId, data.marketplaceLabel);
@@ -259,65 +281,90 @@ export function MarketplacePublicDetail({
             <div className="flex items-start justify-between gap-4">
               <div className="flex min-w-0 items-center gap-4">
                 <MarketplaceItemAvatar item={data} size="md" showSource={false} />
-                <h1 className="text-foreground text-2xl font-semibold tracking-tight text-balance capitalize sm:text-3xl">
-                  {itemTitle}
-                </h1>
+                <div className="min-w-0 space-y-1">
+                  <h1 className="text-foreground text-2xl font-semibold tracking-tight text-balance capitalize sm:text-3xl">
+                    {itemTitle}
+                  </h1>
+                  <span className="text-muted-foreground inline-flex items-center gap-1.5 text-xs">
+                    <tm.Icon className="size-3.5 shrink-0" />
+                    {tm.label}
+                  </span>
+                </div>
               </div>
-              <MarketplaceAddButton item={data} />
+              <div className="flex shrink-0 flex-col items-end gap-2">
+                <MarketplaceAddButton item={data} />
+                {!authLoading && !user ? (
+                  <Link
+                    href={`/auth?redirect=${encodeURIComponent(pathname)}`}
+                    className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+                  >
+                    Sign in to add to a project
+                  </Link>
+                ) : null}
+              </div>
             </div>
-            {data.description ? (
-              <p className="text-foreground text-base leading-relaxed text-pretty">
-                {data.description}
-              </p>
-            ) : null}
+            <p className="text-foreground text-base leading-relaxed text-pretty">
+              {data.description || emptyDescriptionCopy(data.type)}
+            </p>
           </header>
 
-          {capItems.length > 0 ? (
+          {isBundle && bundleMembers.length > 0 ? (
             <section>
-              <SectionLabel count={capItems.length}>Permissions</SectionLabel>
+              <SectionLabel count={bundleMembers.length}>What&rsquo;s inside</SectionLabel>
               <RowPanel>
-                {capItems.map((item) =>
-                  item.kind === 'secret' ? (
-                    <MetaRow
-                      key={`secret:${item.id}`}
-                      icon={KeyRound}
-                      title={item.id}
-                      subtitle="Secret"
-                    />
-                  ) : item.kind === 'connector' ? (
-                    <MetaRow
-                      key={`connector:${item.id}`}
-                      icon={Plug}
-                      title={item.id}
-                      subtitle="Connector"
-                    />
-                  ) : (
-                    <MetaRow
-                      key={`tool:${item.id}`}
-                      icon={Wrench}
-                      title={item.id}
-                      subtitle="Tool"
-                    />
-                  ),
-                )}
+                {bundleMembers.map((member) => (
+                  <BundleMemberRow
+                    key={member.key}
+                    title={member.title}
+                    type={member.type}
+                    href={member.href}
+                  />
+                ))}
               </RowPanel>
             </section>
           ) : null}
 
-          {data.dependencyItems.length > 0 ? (
+          {capCount > 0 ? (
             <section>
-              <SectionLabel count={data.dependencyItems.length}>Includes</SectionLabel>
-              <RowPanel>
-                {data.dependencyItems.map((dep) => (
-                  <MetaRow
-                    key={dep.id}
-                    icon={Layers}
-                    title={dep.title}
-                    subtitle={typeMeta(dep.type).label}
-                    href={marketplaceItemHref(dep.id)}
-                  />
+              <SectionLabel count={capCount}>Requires</SectionLabel>
+              <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
+                {capGroups.map((group) => (
+                  <div key={group.kind}>
+                    <div className="text-muted-foreground mb-1.5 text-xs">{group.label}</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {group.items.map((value) => (
+                        <Badge
+                          key={`${group.kind}:${value}`}
+                          variant="outline"
+                          size="sm"
+                          className="font-mono"
+                        >
+                          {value}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
                 ))}
-              </RowPanel>
+              </div>
+            </section>
+          ) : null}
+
+          {data.files.length > 0 ? (
+            <section>
+              <SectionLabel count={data.files.length}>Files</SectionLabel>
+              <div className="bg-popover max-h-72 overflow-y-auto rounded-md border">
+                <ul className="divide-border divide-y">
+                  {data.files.map((file) => (
+                    <li
+                      key={file.target}
+                      className="text-foreground/90 truncate px-4 py-2 font-mono text-xs"
+                      title={file.target}
+                    >
+                      {file.target}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </section>
           ) : null}
 
@@ -329,7 +376,7 @@ export function MarketplacePublicDetail({
                 icon={FileText}
                 size="sm"
                 title="No README"
-                description="This item doesn't ship a README yet."
+                description={emptyReadmeCopy(data.type)}
               />
             )}
           </section>

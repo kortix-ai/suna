@@ -59,14 +59,22 @@ export function TypeTile({
   );
 }
 
-// Launch scope: marketplace browsing is the skill library. Keep the visual type
-// taxonomy above for detail/legacy data, but only expose skill filters here.
+// The one-click importables users browse + install. Filters and grouped
+// sections auto-hide any type with no items (marketplace-browser derives
+// `typeOptions` from live typeCounts; marketplace-grid only emits a section for
+// present items), so listing a type here is safe even before content exists.
 export const TYPE_FILTERS: Array<{ value: string; label: string }> = [
   { value: 'all', label: 'All' },
   { value: 'skill', label: 'Skills' },
+  { value: 'agent', label: 'Agents' },
+  { value: 'command', label: 'Commands' },
+  { value: 'bundle', label: 'Bundles' },
 ];
 
 /** Section order + labels for the grouped (filter=All) gallery view. */
 export const TYPE_SECTIONS: Array<{ type: string; label: string }> = [
   { type: 'registry:skill', label: 'Skills' },
+  { type: 'registry:agent', label: 'Agents' },
+  { type: 'registry:command', label: 'Commands' },
+  { type: 'registry:bundle', label: 'Bundles' },
 ];

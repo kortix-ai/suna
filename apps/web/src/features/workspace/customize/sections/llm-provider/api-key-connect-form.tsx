@@ -1,7 +1,9 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
+import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
@@ -9,7 +11,7 @@ import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { cn } from '@/lib/utils';
 import { upsertProjectSecret } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ChevronLeft, ExternalLink, Info, Loader2 } from 'lucide-react';
+import { AlertCircle, ChevronLeft, ExternalLink, Info } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { type FormEvent, useMemo, useState } from 'react';
 
@@ -159,19 +161,16 @@ export function ApiKeyConnectForm({
           </div>
         )}
 
-        <div className="flex items-start gap-2.5 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2.5">
-          <Info className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500" />
-          <p className="text-foreground/80 text-xs leading-relaxed">
-            {tHardcodedUi.raw(
-              'autoComponentsProjectsProjectProviderModalJsxTextASandboxPicks96cfb428',
-            )}
-          </p>
-        </div>
+        <InfoBanner tone="warning" icon={Info} className="rounded-2xl">
+          {tHardcodedUi.raw(
+            'autoComponentsProjectsProjectProviderModalJsxTextASandboxPicks96cfb428',
+          )}
+        </InfoBanner>
 
         <Button type="submit" size="sm" className="px-4" disabled={upsert.isPending || !allFilled}>
           {upsert.isPending ? (
             <>
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              <Loading className="mr-1.5 size-3.5 shrink-0" />
               {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line847JsxTextConnecting')}
             </>
           ) : (

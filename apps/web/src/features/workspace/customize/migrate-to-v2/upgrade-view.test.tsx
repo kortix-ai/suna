@@ -11,6 +11,8 @@ describe('UpgradesViewContent — per-state rendering', () => {
     expect(html).toContain('Upgrades');
     expect(html).toContain('Migrate manifest to v2');
     expect(html).toContain('Run');
+    // Applicable upgrades are surfaced as a highlighted, recommended action.
+    expect(html).toContain('Recommended');
     expect(html).toContain('One-off upgrade');
     expect(html).not.toContain('up to date');
   });
@@ -21,6 +23,8 @@ describe('UpgradesViewContent — per-state rendering', () => {
     );
     expect(html).toContain('up to date');
     expect(html).not.toContain('Migrate manifest to v2');
+    // No applicable upgrade ⇒ no recommended-action highlight.
+    expect(html).not.toContain('Recommended');
     expect(html).toContain('One-off upgrade');
   });
 

@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import Loading from '@/components/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -49,9 +50,9 @@ export function RenameSessionModal({
       if (!sessionId) throw new Error('No session selected');
       return updateProjectSession(projectId, sessionId, { name });
     },
-    onSuccess: () => {
+    onSuccess: (_updated, name) => {
       queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
-      successToast('Session renamed');
+      successToast(name ? `Renamed to "${name}"` : 'Session renamed');
       onSaved?.();
       onOpenChange(false);
     },
@@ -69,7 +70,12 @@ export function RenameSessionModal({
   };
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange}>
+    <Modal
+      open={open}
+      onOpenChange={(o) => {
+        if (!renameMutation.isPending) onOpenChange(o);
+      }}
+    >
       <ModalContent className="lg:max-w-md">
         <ModalHeader>
           <ModalTitle>
@@ -106,6 +112,7 @@ export function RenameSessionModal({
             size="sm"
             className="w-full sm:w-auto"
             onClick={() => onOpenChange(false)}
+            disabled={renameMutation.isPending}
           >
             Cancel
           </Button>
@@ -115,7 +122,8 @@ export function RenameSessionModal({
             onClick={submit}
             disabled={renameMutation.isPending || isUnchanged}
           >
-            {renameMutation.isPending ? 'Saving…' : 'Save'}
+            {renameMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
+            Save
           </Button>
         </ModalFooter>
       </ModalContent>

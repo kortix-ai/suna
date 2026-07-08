@@ -16,6 +16,7 @@
  * Nothing here merges anything.
  */
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
@@ -78,13 +79,20 @@ export function UpgradesViewContent({
             {upgrades.map((upgrade: ProjectUpgrade) => (
               <li
                 key={upgrade.id}
-                className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3"
+                className="border-kortix-base/30 bg-kortix-base/[0.06] shadow-kortix-base/20 flex items-center gap-3 rounded-md border px-4 py-3 shadow-md transition-colors hover:border-kortix-base/45 hover:bg-kortix-base/[0.09]"
               >
-                <span className="bg-kortix-base/15 flex size-9 shrink-0 items-center justify-center rounded-sm">
+                <span className="bg-kortix-base/15 ring-kortix-base/25 flex size-9 shrink-0 items-center justify-center rounded-sm ring-1 ring-inset">
                   <ArrowUpCircle className="text-kortix-base size-5" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-foreground text-sm font-medium">{upgrade.title}</p>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <p className="text-foreground text-sm font-medium text-balance">
+                      {upgrade.title}
+                    </p>
+                    <Badge variant="kortix" size="xs" className="shrink-0">
+                      Recommended
+                    </Badge>
+                  </div>
                   <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
                     {upgrade.description}
                   </p>

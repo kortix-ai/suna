@@ -2,11 +2,12 @@
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { upsertProjectSecret } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ChevronLeft, Copy, Loader2 } from 'lucide-react';
+import { AlertCircle, ChevronLeft, Copy } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { type FormEvent, useState } from 'react';
 
@@ -252,7 +253,7 @@ export function CustomProviderForm({
         <Button type="submit" size="sm" className="px-4" disabled={save.isPending}>
           {save.isPending ? (
             <>
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              <Loading className="mr-1.5 size-3.5 shrink-0" />
               {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1094JsxTextGenerating')}
             </>
           ) : (
@@ -289,7 +290,7 @@ function CustomProviderSnippetView({
 
   return (
     <div className="space-y-3 px-5 pt-3 pb-5">
-      <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.04] px-3.5 py-3">
+      <div className="border-kortix-green/30 bg-kortix-green/[0.04] rounded-2xl border px-3.5 py-3">
         <div className="text-foreground text-sm font-medium">
           {secretName ? 'API key saved' : 'Snippet ready'}
         </div>

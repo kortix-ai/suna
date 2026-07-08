@@ -72,7 +72,8 @@ export type MarketplaceItemAvatarItem = Pick<
 >;
 
 /**
- * Identity tile for a single marketplace ITEM (a skill). Picks a deterministic
+ * Identity tile for a single marketplace ITEM (skill, agent, command, or
+ * bundle). Picks a deterministic
  * icon from the item's name and pins the source avatar as a corner badge for
  * provenance. All deterministic — no flash, no layout shift.
  */
