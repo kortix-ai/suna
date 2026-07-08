@@ -52,20 +52,23 @@ const DEFAULT_SETTINGS: ProjectPolicySettings = { defaultMode: 'allow_all' };
  */
 export function extractProjectPolicies(manifest: ParsedManifest): LoadedProjectPolicies {
   const errors: ProjectPolicyParseError[] = [];
+  // Use the ACTUAL manifest file in error paths so a YAML project reports
+  // `kortix.yaml#policy`, not a hardcoded `kortix.toml#…`.
+  const filename = manifest.path || MANIFEST_FILENAME;
 
   // ── policy block (default_mode) ────────────────────────────────────────────
   let settings: ProjectPolicySettings = { ...DEFAULT_SETTINGS };
   const policyBlock = manifest.raw.policy;
   if (policyBlock !== undefined && policyBlock !== null) {
     if (typeof policyBlock !== 'object' || Array.isArray(policyBlock)) {
-      errors.push({ path: `${MANIFEST_FILENAME}#policy`, error: '`policy` must be an object' });
+      errors.push({ path: `${filename}#policy`, error: '`policy` must be an object' });
     } else {
       const row = policyBlock as Record<string, unknown>;
       if (row.default_mode !== undefined) {
         const mode = typeof row.default_mode === 'string' ? row.default_mode.trim().toLowerCase() : '';
         if (!DEFAULT_MODES.includes(mode as DefaultMode)) {
           errors.push({
-            path: `${MANIFEST_FILENAME}#policy.default_mode`,
+            path: `${filename}#policy.default_mode`,
             error: `policy.default_mode must be one of ${DEFAULT_MODES.join(', ')} (got "${mode || 'unset'}")`,
           });
         } else {
@@ -81,12 +84,12 @@ export function extractProjectPolicies(manifest: ParsedManifest): LoadedProjectP
   if (raw !== undefined && raw !== null) {
     if (!Array.isArray(raw)) {
       errors.push({
-        path: MANIFEST_FILENAME,
+        path: filename,
         error: '`policies` must be an array of tables — a YAML list (or a legacy TOML [[policies]]), not a single mapping',
       });
     } else {
       raw.forEach((entry, i) => {
-        const path = `${MANIFEST_FILENAME}#policies[${i}]`;
+        const path = `${filename}#policies[${i}]`;
         if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
           errors.push({ path, error: `policies entry #${i + 1} is not an object` });
           return;

@@ -202,7 +202,7 @@ projectsApp.openapi(
       );
     }
 
-    const next = upsertTriggerInManifest(manifest, draftToSpec(draft));
+    const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
     const result = await commitManifest(
       loaded.row,
       next,
@@ -322,7 +322,7 @@ projectsApp.openapi(
       );
       if ("error" in draft) return c.json({ error: draft.error }, 400);
 
-      const next = upsertTriggerInManifest(manifest, draftToSpec(draft));
+      const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
       const result = await commitManifest(
         loaded.row,
         next,

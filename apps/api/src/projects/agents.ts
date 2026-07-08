@@ -152,7 +152,10 @@ export function extractAgents(manifest: ParsedManifest): LoadedAgents {
       errors: [{
         name: '(top-level)',
         path: filename,
-        error: '`agents` must be an array of tables — use [[agents]], not [agents]',
+        error:
+          manifest.format === 'yaml'
+            ? '`agents` must be a list — write it as a YAML `agents:` list (or a name→block map in v2), not a scalar.'
+            : '`agents` must be an array of tables — use [[agents]], not [agents]',
       }],
       defaultAgent: null,
     };
