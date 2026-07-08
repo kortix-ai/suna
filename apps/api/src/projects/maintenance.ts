@@ -1,16 +1,16 @@
-import { and, eq, inArray, lt, ne } from 'drizzle-orm';
 import { projectSessions, projects } from '@kortix/db';
-import { db } from '../shared/db';
-import { deleteRemoteSessionBranch, type GitBackedProject } from './git';
+import { and, eq, inArray, lt, ne } from 'drizzle-orm';
 import { tickRunningComputeCharges } from '../billing/services/compute-metering';
+import { db } from '../shared/db';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
+import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import {
+  countBillingInvariantViolations,
   reapAndReconcileSandboxes,
+  reapOrphanProviderBoxes,
   reconcileOrphanComputeSessions,
   reconcileStuckActiveSessions,
-  reapOrphanProviderBoxes,
-  countBillingInvariantViolations,
 } from './sandbox-reaper';
 
 const DEFAULT_BRANCH_RETENTION_DAYS = 90;
@@ -50,7 +50,10 @@ function branchRetentionDays(): number {
 }
 
 function maintenanceIntervalMs(): number {
-  return positiveInt(process.env.KORTIX_PROJECT_MAINTENANCE_INTERVAL_MS, DEFAULT_MAINTENANCE_INTERVAL_MS);
+  return positiveInt(
+    process.env.KORTIX_PROJECT_MAINTENANCE_INTERVAL_MS,
+    DEFAULT_MAINTENANCE_INTERVAL_MS,
+  );
 }
 
 // STALL WATCHDOG — the second, independent line of defense against this exact
@@ -74,7 +77,9 @@ export function shouldForceResetStaleLock(heldForMs: number, thresholdMs: number
   return heldForMs >= thresholdMs;
 }
 
-export function hasOpenPullRequestMarker(metadata: Record<string, unknown> | null | undefined): boolean {
+export function hasOpenPullRequestMarker(
+  metadata: Record<string, unknown> | null | undefined,
+): boolean {
   if (!metadata) return false;
   if (metadata.open_pr === true || metadata.has_open_pr === true) return true;
   for (const key of ['pull_request', 'github_pull_request', 'pr']) {
@@ -117,11 +122,13 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
     })
     .from(projectSessions)
     .innerJoin(projects, eq(projectSessions.projectId, projects.projectId))
-    .where(and(
-      inArray(projectSessions.status, [...TERMINAL_SESSION_STATUSES]),
-      lt(projectSessions.updatedAt, cutoff),
-      ne(projectSessions.branchName, projects.defaultBranch),
-    ))
+    .where(
+      and(
+        inArray(projectSessions.status, [...TERMINAL_SESSION_STATUSES]),
+        lt(projectSessions.updatedAt, cutoff),
+        ne(projectSessions.branchName, projects.defaultBranch),
+      ),
+    )
     .limit(GC_BATCH_SIZE);
 
   let deleted = 0;
@@ -190,24 +197,46 @@ export async function runProjectMaintenance(): Promise<void> {
     // below so it can no longer clobber this (or a later) run's lock.
     console.error(
       `[project-maintenance] STALLED — lock held for ${heldForMs}ms (threshold ${stallThresholdMs()}ms), forcing reset. ` +
-      'This means a prior cycle hung on an unbounded call — file a bug, this should not happen with all provider calls timeout-bounded.',
+        'This means a prior cycle hung on an unbounded call — file a bug, this should not happen with all provider calls timeout-bounded.',
     );
   }
   const myGeneration = ++maintenanceGeneration;
   maintenanceRunning = true;
   maintenanceStartedAt = Date.now();
   try {
-    const [idle, orphanCompute, stuckSessions, orphanBoxes, branches, computeTick, staleBuilds, snapshotGc] = await Promise.all([
+    const [
+      idle,
+      orphanCompute,
+      stuckSessions,
+      orphanBoxes,
+      branches,
+      computeTick,
+      staleBuilds,
+      snapshotGc,
+    ] = await Promise.all([
       // Provider-authoritative idle reaper + state/billing reconcile (the fix for
       // boxes that never auto-stopped and kept billing). Backstops the webhooks.
       reapAndReconcileSandboxes().catch((err) => {
-        console.warn('[project-maintenance] reaper failed:', err instanceof Error ? err.message : err);
-        return { candidates: 0, stopped: 0, reconciled: 0, billingClosed: 0, skipped: 0, errors: 0 };
+        console.warn(
+          '[project-maintenance] reaper failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return {
+          candidates: 0,
+          stopped: 0,
+          reconciled: 0,
+          billingClosed: 0,
+          skipped: 0,
+          errors: 0,
+        };
       }),
       // Billing safety net: close metering for any active compute row whose box
       // is not actually running (catches orphans / missed webhooks).
       reconcileOrphanComputeSessions().catch((err) => {
-        console.warn('[project-maintenance] orphan-compute reconcile failed:', err instanceof Error ? err.message : err);
+        console.warn(
+          '[project-maintenance] orphan-compute reconcile failed:',
+          err instanceof Error ? err.message : err,
+        );
         return { checked: 0, closed: 0, errors: 0 };
       }),
       // Session-side leak fix: reconcile project_sessions stuck in an ACTIVE
@@ -216,47 +245,88 @@ export async function runProjectMaintenance(): Promise<void> {
       // account's concurrent-session cap fills up and wedges Slack. DB-only, so
       // it drains the cap even while Daytona is throttling the box reaper.
       reconcileStuckActiveSessions().catch((err) => {
-        console.warn('[project-maintenance] stuck-session reconcile failed:', err instanceof Error ? err.message : err);
+        console.warn(
+          '[project-maintenance] stuck-session reconcile failed:',
+          err instanceof Error ? err.message : err,
+        );
         return { candidates: 0, reconciled: 0, billingClosed: 0, errors: 0 };
       }),
       // Provider-authoritative orphan-BOX reaper: stops boxes still running on
       // the provider (this env) with no live DB row — the leak the DB-driven
       // reaper above structurally can't see. STOP-only, label-scoped, age-gated.
       reapOrphanProviderBoxes().catch((err) => {
-        console.warn('[project-maintenance] orphan-box reaper failed:', err instanceof Error ? err.message : err);
+        console.warn(
+          '[project-maintenance] orphan-box reaper failed:',
+          err instanceof Error ? err.message : err,
+        );
         return { listed: 0, orphans: 0, stopped: 0, errors: 0 };
       }),
       sweepExpiredSessionBranches(),
       // Billing v2 — partial-bill any active compute sessions that haven't
       // settled in > 1h, so a missed stop hook can't accrue uncharged compute.
       tickRunningComputeCharges().catch((err) => {
-        console.warn('[project-maintenance] compute tick failed:', err instanceof Error ? err.message : err);
+        console.warn(
+          '[project-maintenance] compute tick failed:',
+          err instanceof Error ? err.message : err,
+        );
         return { settled: 0 };
       }),
       // Heal snapshot build-log rows orphaned at "building" by a process
       // restart/crash, globally across all projects.
       reconcileStaleBuilds().catch((err) => {
-        console.warn('[project-maintenance] stale-build reconcile failed:', err instanceof Error ? err.message : err);
+        console.warn(
+          '[project-maintenance] stale-build reconcile failed:',
+          err instanceof Error ? err.message : err,
+        );
         return { checked: 0, closedReady: 0, closedFailed: 0 };
       }),
       // GC superseded template snapshots (content-addressed names orphaned by
       // every identity drift) before the 100/org Daytona quota fills up.
-      // Pressure-gated + bounded; no-op while the namespace is small.
+      // Pressure-gated + bounded; no-op while the ORG total is small.
       reconcileSnapshotQuota().catch((err) => {
-        console.warn('[project-maintenance] snapshot quota GC failed:', err instanceof Error ? err.message : err);
-        return { namespaceCount: 0, eligible: 0, deleted: 0, dryRun: false };
+        console.warn(
+          '[project-maintenance] snapshot quota GC failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return {
+          orgTotal: 0,
+          managedCount: 0,
+          eligible: 0,
+          deleted: 0,
+          deferred: 0,
+          budgetUnresolved: false,
+          dryRun: false,
+        };
       }),
     ]);
     const hadAction = Boolean(
-      idle.stopped || idle.reconciled || idle.errors || orphanCompute.closed || orphanCompute.errors ||
-      stuckSessions.reconciled || stuckSessions.errors ||
-      orphanBoxes.stopped || orphanBoxes.errors ||
-      branches.deleted || branches.errors ||
-      computeTick.settled || staleBuilds.closedReady || staleBuilds.closedFailed ||
-      snapshotGc.deleted,
+      idle.stopped ||
+        idle.reconciled ||
+        idle.errors ||
+        orphanCompute.closed ||
+        orphanCompute.errors ||
+        stuckSessions.reconciled ||
+        stuckSessions.errors ||
+        orphanBoxes.stopped ||
+        orphanBoxes.errors ||
+        branches.deleted ||
+        branches.errors ||
+        computeTick.settled ||
+        staleBuilds.closedReady ||
+        staleBuilds.closedFailed ||
+        snapshotGc.deleted,
     );
     if (hadAction) {
-      console.log('[project-maintenance] completed', { idle, orphanCompute, stuckSessions, orphanBoxes, branches, computeTick, staleBuilds, snapshotGc });
+      console.log('[project-maintenance] completed', {
+        idle,
+        orphanCompute,
+        stuckSessions,
+        orphanBoxes,
+        branches,
+        computeTick,
+        staleBuilds,
+        snapshotGc,
+      });
     }
     // Unconditional heartbeat — proof-of-life independent of whether any
     // action happened. A stuck lock (see the watchdog above) produces total
@@ -266,7 +336,9 @@ export async function runProjectMaintenance(): Promise<void> {
     // the 2026-07-02 incident went undetected for hours. This line is cheap
     // (one per cycle, ~every 5min) and makes "the loop is alive" observable —
     // wire an alert on its absence for N cycles instead of trusting silence.
-    console.log(`[project-maintenance] heartbeat idle_candidates=${idle.candidates} action=${hadAction}`);
+    console.log(
+      `[project-maintenance] heartbeat idle_candidates=${idle.candidates} action=${hadAction}`,
+    );
 
     // Invariant monitor: in steady state, every `active` compute session has a
     // running box. A non-zero count means billing is leaking — make it loud so a
@@ -274,10 +346,15 @@ export async function runProjectMaintenance(): Promise<void> {
     try {
       const billingLeak = await countBillingInvariantViolations();
       if (billingLeak > 0) {
-        console.warn(`[project-maintenance] BILLING INVARIANT VIOLATED: ${billingLeak} active compute session(s) with a non-running box`);
+        console.warn(
+          `[project-maintenance] BILLING INVARIANT VIOLATED: ${billingLeak} active compute session(s) with a non-running box`,
+        );
       }
     } catch (err) {
-      console.warn('[project-maintenance] billing invariant check failed:', err instanceof Error ? err.message : err);
+      console.warn(
+        '[project-maintenance] billing invariant check failed:',
+        err instanceof Error ? err.message : err,
+      );
     }
   } finally {
     // Only the run that's still current may release the lock — see

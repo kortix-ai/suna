@@ -26,6 +26,9 @@ interface TunnelSettingsDialogProps {
   tunnel: TunnelConnection | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** When false, the permissions toggles and delete action are hidden — the
+   *  dialog stays open as a read-only view of the connection's data. */
+  canWrite?: boolean;
   onDelete?: () => void;
 }
 
@@ -35,6 +38,7 @@ export function TunnelSettingsDialog({
   tunnel,
   open,
   onOpenChange,
+  canWrite = false,
   onDelete,
 }: TunnelSettingsDialogProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -120,7 +124,7 @@ export function TunnelSettingsDialog({
             <div className="min-h-0 flex-1 overflow-y-auto">
               <TabsContent value="permissions">
                 {activeTab === 'permissions' && tunnelId ? (
-                  <TunnelScopeToggles tunnelId={tunnelId || ''} />
+                  <TunnelScopeToggles tunnelId={tunnelId || ''} canWrite={canWrite} />
                 ) : null}
               </TabsContent>
 

@@ -258,7 +258,10 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
         {
           slug: '(top-level)',
           path: filename,
-          error: '`triggers` must be an array of tables — use [[triggers]], not [triggers]',
+          error:
+            manifest.format === 'yaml'
+              ? '`triggers` must be a list — write it as a YAML `triggers:` list, not a map or scalar.'
+              : '`triggers` must be an array of tables — use [[triggers]], not [triggers]',
         },
       ],
     };

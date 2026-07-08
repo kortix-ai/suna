@@ -4,7 +4,8 @@ import { DEFAULT_SANDBOX_SLUG, deleteSandboxImage, kickPreBuild, kickProjectTemp
 import { classifySnapshotError, describeSnapshotError } from '../../snapshots/error-classify';
 import { getSandboxProvider } from '../../snapshots/providers';
 import { withTimeout } from '../../shared/with-timeout';
-import { createTemplate, deleteTemplate, getTemplateById, updateTemplate } from '../../snapshots/templates';
+import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
+import { createTemplate, deleteTemplate, getTemplateById, TemplateNotFoundError, updateTemplate } from '../../snapshots/templates';
 import { commitFile, createRepo, getFileSha } from '../github';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -591,6 +592,13 @@ projectsApp.openapi(
       202,
     );
   } catch (err) {
+    // A slug that names no template is the caller's mistake, not a provider
+    // outage — folding it into 502 hid the real bug (a build slug like
+    // `default-warm` being sent where a template slug was required) behind a
+    // status that reads as "Daytona is down".
+    if (err instanceof TemplateNotFoundError) {
+      return c.json({ error: err.message, code: 'TEMPLATE_NOT_FOUND' }, 404);
+    }
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: message }, 502);
   }
@@ -633,6 +641,26 @@ projectsApp.openapi(
     return c.json({ error: 'No failed snapshot build to fix.' }, 409);
   }
 
+  const errorText = failed.error ?? 'Snapshot build failed';
+  const category = failed.errorCategory ?? classifySnapshotError(errorText);
+  const info = describeSnapshotError(category as ReturnType<typeof classifySnapshotError>);
+
+  // Infra failures (quota, provider blip, timeout) are not repo-editable. Spinning up
+  // a fix session for one is worse than useless: the session must boot a sandbox from
+  // a snapshot, which is exactly what the failure prevented — so it fails to start the
+  // very session meant to diagnose it. Refuse loudly rather than 400 from deep inside
+  // session creation.
+  if (!info.fixableByAgent) {
+    return c.json(
+      {
+        error: `${info.title}: ${info.hint}`,
+        code: 'NOT_AGENT_FIXABLE',
+        category,
+      },
+      409,
+    );
+  }
+
   const hostBuild = builds.find((b) => b.status === 'ready');
   if (!hostBuild) {
     return c.json(
@@ -644,10 +672,6 @@ projectsApp.openapi(
       409,
     );
   }
-
-  const errorText = failed.error ?? 'Snapshot build failed';
-  const category = failed.errorCategory ?? classifySnapshotError(errorText);
-  const info = describeSnapshotError(category as ReturnType<typeof classifySnapshotError>);
 
   const prompt = [
     `The sandbox image build for the "${failed.slug}" template is failing, so new sessions on it can't boot. Diagnose and fix the root cause, then open a change request.`,
@@ -676,7 +700,9 @@ projectsApp.openapi(
       initial_prompt: prompt,
       name: 'Fix sandbox build',
       metadata: { kind: 'sandbox-build-fix', failed_slug: failed.slug },
-      sandbox_slug: hostBuild.slug,
+      // hostBuild.slug is a BUILD slug — for a warm bake it reads `default-warm`,
+      // which names no template, so session creation rejected it with a 400.
+      sandbox_slug: templateSlugFromBuildSlug(hostBuild.slug),
     },
     request: requestAuditContext(c),
   });

@@ -54,6 +54,7 @@ const SEVERITY_LABEL: Record<Severity, string> = {
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
+  quota: 'Snapshot quota reached',
   dockerfile: 'Dockerfile build failed',
   git: 'Repository access failed',
   tunnel: 'Sandbox callback unreachable',
@@ -122,8 +123,16 @@ function SandboxAlertContent({
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const { retry, fixWithAgent } = useSandboxRecovery(projectId);
   const failure = health.latest_failure;
+  // Only offer the agent for failures it can actually act on. Infra categories
+  // (quota, provider, timeout, runtime, tunnel) aren't repo-editable, and the fix
+  // session itself needs a bootable sandbox — the very thing the failure denied —
+  // so the button would fail to start the session meant to diagnose the failure.
+  // `fixable_by_agent` is server-derived; the API rejects the rest with 409.
   const canFixWithAgent =
-    !!failure && !!health.latest_build && health.latest_build.status === 'ready';
+    !!failure &&
+    failure.fixable_by_agent &&
+    !!health.latest_build &&
+    health.latest_build.status === 'ready';
 
   return (
     <div className="w-full overflow-hidden">
@@ -191,7 +200,7 @@ function SandboxAlertContent({
           variant="secondary"
           className="w-full border"
           disabled={retry.isPending}
-          onClick={() => retry.mutate(failure?.slug)}
+          onClick={() => retry.mutate(failure?.template_slug)}
         >
           {retry.isPending ? (
             <Loading className="text-foreground! size-3.5" />

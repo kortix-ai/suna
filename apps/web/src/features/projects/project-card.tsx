@@ -46,10 +46,15 @@ const ProjectCard = ({
         <div className="flex w-full items-center gap-3">
           <EntityAvatar label={project.name} size="lg" className="bg-background" />
           <div className="min-w-0 flex-1 space-y-1">
-            <h3 className="text-foreground truncate text-sm leading-tight font-semibold">
+            <h3
+              title={project.name}
+              className="text-foreground truncate text-sm leading-tight font-semibold"
+            >
               {project.name}
             </h3>
-            <p className="text-muted-foreground truncate text-xs">Updated {updatedLabel}</p>
+            <p className="text-muted-foreground truncate text-xs tabular-nums">
+              Updated {updatedLabel}
+            </p>
           </div>
         </div>
       </button>
@@ -81,7 +86,7 @@ const ProjectCard = ({
               onSelect={onArchive}
               disabled={archiving || !canManageProject}
             >
-              {archiving ? <Loading /> : <TrashSolid className="size-4" />}
+              {archiving ? <Loading className="size-4 shrink-0" /> : <TrashSolid className="size-4" />}
               Archive
             </DropdownMenuItem>
           </DropdownMenuContent>

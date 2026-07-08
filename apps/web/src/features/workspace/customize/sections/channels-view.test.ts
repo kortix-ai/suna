@@ -41,7 +41,9 @@ describe('Channels view — connect in place', () => {
 describe('Channels view — per-channel binding management (spec §2.5)', () => {
   test('renders the channel-bindings table only once a channel is connected', () => {
     expect(channelsSource).toContain('function ChannelBindingsSection');
-    expect(channelsSource).toContain('install ? <ChannelBindingsSection projectId={projectId} /> : null');
+    // The bindings table renders only when a channel is connected (`install`).
+    // Robust to formatting + extra props (e.g. read-only `canWrite` gating).
+    expect(channelsSource).toMatch(/install \? \(?\s*<ChannelBindingsSection\b/);
   });
 
   test('reads/writes bindings through the shared channel-bindings hook (no ad-hoc fetches)', () => {

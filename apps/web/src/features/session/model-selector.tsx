@@ -40,6 +40,8 @@ import { useModelStore } from '@/hooks/opencode/use-model-store';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk/projects-client';
 import { useCustomizeStore } from '@/stores/customize-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
@@ -158,6 +160,13 @@ export function ModelSelector({
     staleTime: 30_000,
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
+  // The legacy (non-gateway) provider modal lets you connect/disconnect
+  // providers — all writes. Gate them so a read-only member sees the catalog
+  // but no mutating controls (fails safe to read-only until the probe resolves).
+  const canWriteProviders =
+    useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_WRITE, {
+      accountId: projectDetailQuery.data?.project.account_id,
+    }).allowed === true;
   const baseModels = useMemo(() => {
     return llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix');
   }, [models, llmGatewayEnabled]);
@@ -344,6 +353,7 @@ export function ModelSelector({
           open={projectModalOpen}
           onOpenChange={setProjectModalOpen}
           defaultTab={projectModalTab}
+          canWrite={canWriteProviders}
         />
       )}
       <CommandPopover open={open} onOpenChange={setOpen}>

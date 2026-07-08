@@ -167,7 +167,10 @@ export function extractConnectors(manifest: ParsedManifest): LoadedConnectors {
       errors: [{
         slug: '(top-level)',
         path: filename,
-        error: '`connectors` must be an array of tables — use [[connectors]], not [connectors]',
+        error:
+          manifest.format === 'yaml'
+            ? '`connectors` must be a list — write it as a YAML `connectors:` list, not a map or scalar.'
+            : '`connectors` must be an array of tables — use [[connectors]], not [connectors]',
       }],
     };
   }

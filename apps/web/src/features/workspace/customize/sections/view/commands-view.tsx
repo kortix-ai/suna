@@ -4,17 +4,21 @@ import {
   type ConfigEntity,
   ConfigEntityView,
 } from '@/features/workspace/customize/sections/component/config-entity-view';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { SquareSlash } from 'lucide-react';
 
 type Command = ConfigEntity;
 
 export function CommandsView({ projectId }: { projectId: string }) {
+  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_COMMAND_WRITE).allowed === true;
   return (
     <ConfigEntityView<Command>
       projectId={projectId}
       kind="command"
       noun="command"
       layout="split"
+      canWrite={canWrite}
       title="Commands"
       searchPlaceholder="Search commands"
       emptyIcon={SquareSlash}

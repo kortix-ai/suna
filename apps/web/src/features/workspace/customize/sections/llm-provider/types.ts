@@ -14,6 +14,12 @@ export interface ProjectProviderModalProps {
   initialProviderId?: string;
   asPanel?: boolean;
   allowedTabs?: ActiveTab[];
+  /**
+   * Read-only members see connected providers + catalog but not the
+   * add/connect/remove controls (which POST and would 403). Fails safe: a
+   * missing value is treated as read-only.
+   */
+  canWrite?: boolean;
 }
 
 export interface CustomFormState {

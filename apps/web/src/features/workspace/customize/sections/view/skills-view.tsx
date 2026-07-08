@@ -4,17 +4,21 @@ import {
   type ConfigEntity,
   ConfigEntityView,
 } from '@/features/workspace/customize/sections/component/config-entity-view';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { Sparkles } from 'lucide-react';
 
 type Skill = ConfigEntity;
 
 export function SkillsView({ projectId }: { projectId: string }) {
+  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SKILL_WRITE).allowed === true;
   return (
     <ConfigEntityView<Skill>
       projectId={projectId}
       kind="skill"
       noun="skill"
       layout="split"
+      canWrite={canWrite}
       title="Skills"
       searchPlaceholder="Search skills"
       emptyIcon={Sparkles}

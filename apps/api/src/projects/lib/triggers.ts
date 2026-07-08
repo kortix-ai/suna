@@ -1223,10 +1223,12 @@ export function slugify(input: string): string {
   );
 }
 
-export function draftToSpec(draft: TriggerDraft): GitTriggerSpec {
+export function draftToSpec(draft: TriggerDraft, manifestPath: string = MANIFEST_FILENAME): GitTriggerSpec {
   return {
     slug: draft.slug,
-    path: `${MANIFEST_FILENAME}#triggers.${draft.slug}`,
+    // Use the ACTUAL manifest path so a YAML project's trigger spec reports
+    // `kortix.yaml#triggers.<slug>`, not a hardcoded `kortix.toml#…`.
+    path: `${manifestPath}#triggers.${draft.slug}`,
     name: draft.name,
     type: draft.type,
     agent: draft.agent,

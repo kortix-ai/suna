@@ -1428,10 +1428,18 @@ export async function listFeaturedMarketplaces(): Promise<
 // ── public read API ────────────────────────────────────────────────────────
 type ItemQuery = { query?: string; type?: string; source?: string };
 
-// Launch scope: the marketplace is the skill library. Agents, commands, tools,
-// bundles, and support files may still exist in registries for compatibility
-// and dependency resolution, but they are not browse/install choices.
-const MARKETPLACE_VISIBLE_TYPES = new Set<string>(["registry:skill"]);
+// The one-click importables the marketplace surfaces to users: skills, agents,
+// commands, and bundles (curated starters / use-cases). Tools, rules, and other
+// support files still exist in registries for dependency resolution but aren't
+// browse/install choices on their own. Install is capability-gated per committed
+// file path (see projects/routes/r10 assertCommitCapabilities), so widening this
+// set never bypasses authz.
+const MARKETPLACE_VISIBLE_TYPES = new Set<string>([
+  "registry:skill",
+  "registry:agent",
+  "registry:command",
+  "registry:bundle",
+]);
 
 function isBrowseableCatalogItem(it: CatalogItem): boolean {
   return MARKETPLACE_VISIBLE_TYPES.has(it.type) && !it.hidden;

@@ -202,9 +202,9 @@ export function validateManifest(
   const version = validateRoot(parsed, format, issues);
 
   if (version === 2) {
-    validateManifestBodyV2(parsed, issues);
+    validateManifestBodyV2(parsed, format, issues);
   } else {
-    validateManifestBodyV1(parsed, issues);
+    validateManifestBodyV1(parsed, format, issues);
   }
 
   return {
@@ -219,17 +219,21 @@ export function validateManifest(
  * Byte-for-byte the same calls as always; v1 manifests must keep validating
  * identically no matter what v2 support is added alongside it.
  */
-function validateManifestBodyV1(parsed: Record<string, unknown>, issues: ManifestIssue[]): void {
+function validateManifestBodyV1(
+  parsed: Record<string, unknown>,
+  format: ManifestFormat,
+  issues: ManifestIssue[],
+): void {
   validateProject(parsed.project, 'project', issues);
   validateEnv(parsed.env, 'env', issues);
   validateOpenCode(parsed.opencode, 'opencode', issues);
-  validateSandbox(parsed.sandbox, 'sandbox', issues);
+  validateSandbox(parsed.sandbox, 'sandbox', issues, format);
   rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
-  validateTriggers(parsed.triggers, 'triggers', issues);
-  validateConnectors(parsed.connectors, 'connectors', issues, 1);
-  validateAgents(parsed.agents, 'agents', issues);
-  validateChannels(parsed.channels, 'channels', issues);
-  validateApps(parsed.apps, 'apps', issues);
+  validateTriggers(parsed.triggers, 'triggers', issues, format);
+  validateConnectors(parsed.connectors, 'connectors', issues, 1, format);
+  validateAgents(parsed.agents, 'agents', issues, format);
+  validateChannels(parsed.channels, 'channels', issues, format);
+  validateApps(parsed.apps, 'apps', issues, format);
 }
 
 /**
@@ -239,15 +243,19 @@ function validateManifestBodyV1(parsed: Record<string, unknown>, issues: Manifes
  * is removed (§2.5), and `default_agent` + `runtime` are new top-level keys
  * (§2.1/§2.3).
  */
-function validateManifestBodyV2(parsed: Record<string, unknown>, issues: ManifestIssue[]): void {
+function validateManifestBodyV2(
+  parsed: Record<string, unknown>,
+  format: ManifestFormat,
+  issues: ManifestIssue[],
+): void {
   validateProject(parsed.project, 'project', issues);
   validateEnv(parsed.env, 'env', issues);
   validateOpenCode(parsed.opencode, 'opencode', issues);
-  validateSandbox(parsed.sandbox, 'sandbox', issues);
+  validateSandbox(parsed.sandbox, 'sandbox', issues, format);
   rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
-  validateTriggers(parsed.triggers, 'triggers', issues);
-  validateConnectors(parsed.connectors, 'connectors', issues, 2);
-  validateApps(parsed.apps, 'apps', issues);
+  validateTriggers(parsed.triggers, 'triggers', issues, format);
+  validateConnectors(parsed.connectors, 'connectors', issues, 2, format);
+  validateApps(parsed.apps, 'apps', issues, format);
   rejectChannelsV2(parsed.channels, 'channels', issues);
   validateRuntimeV2(parsed.runtime, 'runtime', issues);
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
@@ -268,6 +276,19 @@ export function formatIssues(issues: ManifestIssue[], opts: { color?: boolean } 
       return `  ${tag} ${dim(i.path)}: ${i.message}${where}`;
     })
     .join('\n');
+}
+
+/**
+ * A format-appropriate "this section must be a list" hint. Legacy TOML uses
+ * `[[key]]` table-arrays; YAML (every v2 manifest, and any v1 YAML) uses a
+ * plain `key:` list — so a YAML author who malforms a section should never be
+ * told to "use `[[triggers]]`". Defaults to TOML so v1 TOML messages stay
+ * byte-for-byte identical.
+ */
+function listSectionHint(key: string, format: ManifestFormat = 'toml'): string {
+  return format === 'yaml'
+    ? `\`${key}\` must be a list of entries — write it as a YAML \`${key}:\` list, not a map or scalar.`
+    : `\`${key}\` must be an array of tables — use \`[[${key}]]\`.`;
 }
 
 // ─── Section validators ───────────────────────────────────────────────────
@@ -348,12 +369,12 @@ export function validateGrantList(
 }
 
 /** `[[agents]]` — the per-agent scoping overlay (name + connectors + kortix_cli). */
-function validateAgents(node: unknown, path: string, issues: ManifestIssue[]): void {
+function validateAgents(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
       path,
-      message: '`agents` must be an array of tables — use `[[agents]]`.',
+      message: listSectionHint('agents', format),
       severity: 'error',
     });
     return;
@@ -516,7 +537,7 @@ function validateOpenCode(node: unknown, path: string, issues: ManifestIssue[]):
  * carries no direct image keys — those belonged to the removed singular
  * `[sandbox]` table, so any that linger are flagged as legacy.
  */
-function validateSandbox(node: unknown, path: string, issues: ManifestIssue[]): void {
+function validateSandbox(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!isTable(node)) {
     issues.push({
@@ -538,7 +559,7 @@ function validateSandbox(node: unknown, path: string, issues: ManifestIssue[]): 
       severity: 'error',
     });
   }
-  validateSandboxTemplates(node.templates, `${path}.templates`, issues);
+  validateSandboxTemplates(node.templates, `${path}.templates`, issues, format);
 
   // `default` selects which template EVERY session in the project boots
   // (UI, triggers, channels) without passing `sandbox_slug`. It must name a
@@ -573,13 +594,13 @@ function validateSandbox(node: unknown, path: string, issues: ManifestIssue[]): 
   }
 }
 
-function validateSandboxTemplates(node: unknown, path: string, issues: ManifestIssue[]): void {
+function validateSandboxTemplates(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
       path,
       message:
-        '`sandbox.templates` must be an array of tables — use `[[sandbox.templates]]`, not `[sandbox.templates]`.',
+        listSectionHint('sandbox.templates', format),
       severity: 'error',
     });
     return;
@@ -685,12 +706,12 @@ function rejectLegacySandboxes(node: unknown, path: string, issues: ManifestIssu
   });
 }
 
-function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]): void {
+function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
       path,
-      message: '`triggers` must be an array of tables — use `[[triggers]]`.',
+      message: listSectionHint('triggers', format),
       severity: 'error',
     });
     return;
@@ -841,12 +862,12 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
   });
 }
 
-function validateConnectors(node: unknown, path: string, issues: ManifestIssue[], version: 1 | 2 = 1): void {
+function validateConnectors(node: unknown, path: string, issues: ManifestIssue[], version: 1 | 2 = 1, format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
       path,
-      message: '`connectors` must be an array of tables — use `[[connectors]]`.',
+      message: listSectionHint('connectors', format),
       severity: 'error',
     });
     return;
@@ -1107,12 +1128,12 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
   });
 }
 
-function validateChannels(node: unknown, path: string, issues: ManifestIssue[]): void {
+function validateChannels(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
       path,
-      message: '`channels` must be an array of tables — use `[[channels]]`.',
+      message: listSectionHint('channels', format),
       severity: 'error',
     });
     return;
@@ -1169,12 +1190,12 @@ function validateChannels(node: unknown, path: string, issues: ManifestIssue[]):
   });
 }
 
-function validateApps(node: unknown, path: string, issues: ManifestIssue[]): void {
+function validateApps(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
       path,
-      message: '`apps` must be an array of tables — use `[[apps]]`.',
+      message: listSectionHint('apps', format),
       severity: 'error',
     });
     return;

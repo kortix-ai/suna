@@ -25,23 +25,50 @@ mock.module('../shared/db', () => ({
   },
 }));
 mock.module('./git', () => ({ deleteRemoteSessionBranch: async () => false }));
-mock.module('../billing/services/compute-metering', () => ({ tickRunningComputeCharges: async () => ({ settled: 0 }) }));
-mock.module('../snapshots/builder', () => ({ reconcileStaleBuilds: async () => ({ checked: 0, closedReady: 0, closedFailed: 0 }) }));
-mock.module('../snapshots/quota-gc', () => ({ reconcileSnapshotQuota: async () => ({ namespaceCount: 0, eligible: 0, deleted: 0, dryRun: false }) }));
+mock.module('../billing/services/compute-metering', () => ({
+  tickRunningComputeCharges: async () => ({ settled: 0 }),
+}));
+mock.module('../snapshots/builder', () => ({
+  reconcileStaleBuilds: async () => ({ checked: 0, closedReady: 0, closedFailed: 0 }),
+}));
+mock.module('../snapshots/quota-gc', () => ({
+  reconcileSnapshotQuota: async () => ({
+    orgTotal: 0,
+    managedCount: 0,
+    eligible: 0,
+    deleted: 0,
+    deferred: 0,
+    budgetUnresolved: false,
+    dryRun: false,
+  }),
+}));
 // Controllable per-test: the first call can be made to hang forever (to
 // simulate the exact 2026-07-02 failure mode — an unbounded provider call
 // stuck inside reapAndReconcileSandboxes), later calls resolve normally.
-let reapAndReconcileSandboxesImpl = async () => ({ candidates: 0, stopped: 0, reconciled: 0, billingClosed: 0, skipped: 0, errors: 0 });
+let reapAndReconcileSandboxesImpl = async () => ({
+  candidates: 0,
+  stopped: 0,
+  reconciled: 0,
+  billingClosed: 0,
+  skipped: 0,
+  errors: 0,
+});
 
 mock.module('./sandbox-reaper', () => ({
   reapAndReconcileSandboxes: () => reapAndReconcileSandboxesImpl(),
   reconcileOrphanComputeSessions: async () => ({ checked: 0, closed: 0, errors: 0 }),
-  reconcileStuckActiveSessions: async () => ({ candidates: 0, reconciled: 0, billingClosed: 0, errors: 0 }),
+  reconcileStuckActiveSessions: async () => ({
+    candidates: 0,
+    reconciled: 0,
+    billingClosed: 0,
+    errors: 0,
+  }),
   reapOrphanProviderBoxes: async () => ({ listed: 0, orphans: 0, stopped: 0, errors: 0 }),
   countBillingInvariantViolations: async () => 0,
 }));
 
-const { shouldForceResetStaleLock, runProjectMaintenance, __isMaintenanceRunningForTest } = await import('./maintenance');
+const { shouldForceResetStaleLock, runProjectMaintenance, __isMaintenanceRunningForTest } =
+  await import('./maintenance');
 
 // Regression coverage for the 2026-07-02 incident: an unbounded Daytona SDK
 // call inside a maintenance cycle left `maintenanceRunning` stuck `true`
@@ -85,7 +112,7 @@ describe('shouldForceResetStaleLock', () => {
 // THIRD cycle start concurrently. The fix gates the `finally` release on a
 // generation counter so only the run that's still current can release it.
 describe('runProjectMaintenance stale-lock generation guard', () => {
-  test('an abandoned run settling late does not release a newer run\'s lock', async () => {
+  test("an abandoned run settling late does not release a newer run's lock", async () => {
     process.env.KORTIX_PROJECT_MAINTENANCE_STALL_MS = '20';
 
     let releaseHungRun: () => void = () => {};
@@ -95,7 +122,14 @@ describe('runProjectMaintenance stale-lock generation guard', () => {
 
     // Run A: hangs until we explicitly release it.
     reapAndReconcileSandboxesImpl = () =>
-      hungRunSettled.then(() => ({ candidates: 0, stopped: 0, reconciled: 0, billingClosed: 0, skipped: 0, errors: 0 }));
+      hungRunSettled.then(() => ({
+        candidates: 0,
+        stopped: 0,
+        reconciled: 0,
+        billingClosed: 0,
+        skipped: 0,
+        errors: 0,
+      }));
     const runA = runProjectMaintenance();
 
     // Let run A acquire the lock before we try to stall past the threshold.
@@ -105,7 +139,14 @@ describe('runProjectMaintenance stale-lock generation guard', () => {
     // Wait past the (tiny, test-only) stall threshold, then start run B —
     // this is the watchdog force-reset path.
     await new Promise((r) => setTimeout(r, 30));
-    reapAndReconcileSandboxesImpl = async () => ({ candidates: 0, stopped: 0, reconciled: 0, billingClosed: 0, skipped: 0, errors: 0 });
+    reapAndReconcileSandboxesImpl = async () => ({
+      candidates: 0,
+      stopped: 0,
+      reconciled: 0,
+      billingClosed: 0,
+      skipped: 0,
+      errors: 0,
+    });
     const errorSpy = mock((..._args: unknown[]) => {});
     const originalError = console.error;
     console.error = errorSpy;

@@ -1,9 +1,9 @@
 'use client';
 
-import { ExternalLink, FileText, KeyRound, Plug, Wrench } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { ExternalLink, FileText } from 'lucide-react';
 
 import { UnifiedMarkdown } from '@/components/markdown';
+import { Badge } from '@/components/ui/badge';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -23,7 +23,14 @@ import { TrashSolid } from '@mynaui/icons-react';
 import { Icon } from '../icon/icon';
 import { MarketplaceAvatar } from './marketplace-avatar';
 import { MarketplaceItemAvatar } from './marketplace-item-avatar';
-import { typeMeta } from './marketplace-meta';
+import { TypeTile, typeMeta } from './marketplace-meta';
+import {
+  emptyDescriptionCopy,
+  emptyReadmeCopy,
+  groupCapabilities,
+  resolveBundleMembers,
+  totalCapabilityCount,
+} from './marketplace-item-view';
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <div className="text-muted-foreground/60 mb-3 text-xs font-medium">{children}</div>;
@@ -40,26 +47,6 @@ function stripFrontmatter(md: string): string {
   return md;
 }
 
-function CapabilityCard({
-  icon: IconComponent,
-  title,
-  subtitle,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <div className="bg-muted/40 flex items-start gap-3 rounded-lg px-4 py-3">
-      <IconComponent className="text-muted-foreground mt-0.5 size-4 shrink-0" />
-      <div className="min-w-0">
-        <div className="text-foreground truncate text-sm font-medium">{title}</div>
-        <div className="text-muted-foreground text-xs">{subtitle}</div>
-      </div>
-    </div>
-  );
-}
-
 export function MarketplaceItemDetail({
   onBack,
   onAdd,
@@ -73,20 +60,23 @@ export function MarketplaceItemDetail({
   addLabel?: string;
   installedNames?: Set<string>;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const openId = useMarketplaceDetailStore((s) => s.openId);
+  const openItem = useMarketplaceDetailStore((s) => s.openItem);
   const { data, isLoading } = useMarketplaceItem(openId);
   const tm = data ? typeMeta(data.type) : null;
-  const caps = data?.capabilities;
-  const capItems = caps
-    ? [
-        ...caps.secrets.map((s) => ({ kind: 'secret' as const, id: s })),
-        ...caps.connectors.map((c) => ({ kind: 'connector' as const, id: c })),
-        ...caps.tools.map((t) => ({ kind: 'tool' as const, id: t })),
-      ]
-    : [];
+  const capGroups = groupCapabilities(data?.capabilities);
+  const capCount = totalCapabilityCount(data?.capabilities);
   const readme = data?.readme ? stripFrontmatter(data.readme) : '';
   const isInstalled = !!(data && installedNames?.has(data.name));
+  const isBundle = data?.type === 'registry:bundle';
+  const bundleMembers =
+    data && isBundle
+      ? resolveBundleMembers({
+          dependencies: data.dependencies,
+          dependencyItems: data.dependencyItems,
+          hrefForId: (id) => id,
+        })
+      : [];
 
   const actions = !data ? null : isInstalled ? (
     <ButtonGroup>
@@ -155,11 +145,9 @@ export function MarketplaceItemDetail({
                   {actions}
                 </div>
 
-                {data.description && (
-                  <p className="text-muted-foreground max-w-prose text-sm leading-relaxed">
-                    {data.description}
-                  </p>
-                )}
+                <p className="text-muted-foreground max-w-prose text-sm leading-relaxed text-pretty">
+                  {data.description || emptyDescriptionCopy(data.type)}
+                </p>
 
                 <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
                   <span className="inline-flex min-w-0 items-center gap-1.5">
@@ -191,40 +179,88 @@ export function MarketplaceItemDetail({
                 </div>
               </header>
 
-              {capItems.length > 0 && (
+              {isBundle && bundleMembers.length > 0 && (
                 <section>
-                  <SectionLabel>Permissions {capItems.length}</SectionLabel>
-                  <div className="space-y-2">
-                    {capItems.map((item) => {
-                      if (item.kind === 'secret') {
-                        return (
-                          <CapabilityCard
-                            key={`secret:${item.id}`}
-                            icon={KeyRound}
-                            title={item.id}
-                            subtitle="Secret"
-                          />
-                        );
-                      }
-                      if (item.kind === 'connector') {
-                        return (
-                          <CapabilityCard
-                            key={`connector:${item.id}`}
-                            icon={Plug}
-                            title={item.id}
-                            subtitle="Connector"
-                          />
-                        );
-                      }
-                      return (
-                        <CapabilityCard
-                          key={`tool:${item.id}`}
-                          icon={Wrench}
-                          title={item.id}
-                          subtitle="Tool"
-                        />
-                      );
-                    })}
+                  <SectionLabel>
+                    What&rsquo;s inside <span className="tabular-nums">{bundleMembers.length}</span>
+                  </SectionLabel>
+                  <ul className="space-y-2">
+                    {bundleMembers.map((member) => (
+                      <li key={member.key}>
+                        <button
+                          type="button"
+                          disabled={!member.href}
+                          onClick={() => member.href && openItem(member.href)}
+                          className="group bg-popover hover:bg-muted/70 disabled:hover:bg-popover flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors disabled:cursor-default"
+                        >
+                          {member.type ? (
+                            <TypeTile type={member.type} size="sm" />
+                          ) : (
+                            <span className="bg-foreground/5 text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-lg">
+                              <FileText className="size-4" />
+                            </span>
+                          )}
+                          <span className="min-w-0 flex-1">
+                            <span className="text-foreground block truncate text-sm font-medium">
+                              {member.title}
+                            </span>
+                            {member.type && (
+                              <span className="text-muted-foreground block text-xs">
+                                {typeMeta(member.type).label}
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {capCount > 0 && (
+                <section>
+                  <SectionLabel>
+                    Requires <span className="tabular-nums">{capCount}</span>
+                  </SectionLabel>
+                  <div className="space-y-3">
+                    {capGroups.map((group) => (
+                      <div key={group.kind}>
+                        <div className="text-muted-foreground mb-1.5 text-xs">{group.label}</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {group.items.map((value) => (
+                            <Badge
+                              key={`${group.kind}:${value}`}
+                              variant="outline"
+                              size="sm"
+                              className="font-mono"
+                            >
+                              {value}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {data.files.length > 0 && (
+                <section>
+                  <SectionLabel>
+                    Files <span className="tabular-nums">{data.files.length}</span>
+                  </SectionLabel>
+                  <div className="bg-popover max-h-72 overflow-y-auto rounded-md border">
+                    <ul className="divide-border divide-y">
+                      {data.files.map((file) => (
+                        <li
+                          key={file.target}
+                          className="text-foreground/90 truncate px-4 py-2 font-mono text-xs"
+                          title={file.target}
+                        >
+                          {file.target}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 </section>
               )}
@@ -237,12 +273,8 @@ export function MarketplaceItemDetail({
                 ) : (
                   <EmptyState
                     icon={FileText}
-                    title={tI18nHardcoded.raw(
-                      'autoComponentsMarketplaceMarketplaceItemDetailJsxAttrTitleNoREADME4966916b',
-                    )}
-                    description={tI18nHardcoded.raw(
-                      'autoComponentsMarketplaceMarketplaceItemDetailJsxAttrDescriptionThisSkill2316ce31',
-                    )}
+                    title="No README"
+                    description={emptyReadmeCopy(data.type)}
                   />
                 )}
               </section>
