@@ -113,7 +113,10 @@ export async function upsertConnectorInManifest(
   ) {
     return {
       ok: false,
-      error: `"${draft.slug}" is reserved for a built-in channel profile. Pick a different slug.`,
+      error:
+        draft.slug === 'slack' || draft.slug === 'kortix_slack'
+          ? `"${draft.slug}" is the built-in Slack channel — run \`kortix channels connect\` for a one-click install link instead of adding a connector. Once installed it appears here as \`kortix_slack\` automatically.`
+          : `"${draft.slug}" is reserved for a built-in channel profile. Pick a different slug.`,
       status: 400,
     };
   }

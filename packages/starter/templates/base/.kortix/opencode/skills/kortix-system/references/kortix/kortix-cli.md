@@ -241,6 +241,18 @@ the same state.
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
 | `kortix triggers disable <slug>` | Set `enabled = false`. |
 
+### Channels (Slack)
+
+The project's Slack wiring. **Connecting Slack is one command** — never a
+manifest, bot token, or secret-intake link on Kortix Cloud.
+
+| Command | Effect |
+| --- | --- |
+| `kortix channels connect` | **THE way to connect Slack.** Prints a one-click "Add to Slack" install link (Kortix Cloud) — surface the URL; the human picks a workspace and clicks Allow. Add `--wait` to block until the install lands. Self-host without the shared Slack app: falls back to manual token mode and says so. `--json` for machine output. |
+| `kortix channels status` | Show the connected workspace (or "not connected"). `--json`. |
+| `kortix channels disconnect` | Drop the project's Slack connection. |
+| `kortix channels manifest` | Slack app manifest JSON — **manual/self-host setup only**. |
+
 ### Change requests (`cr`)
 
 Kortix-native PR layer for session work landing on `main`. A change

@@ -100,6 +100,12 @@ modal (web) or a tappable link (Slack); you never touch the raw value. Do this
 automatically whenever you add or need a tool. Full playbook in the
 **credentials-and-setup-links** reference below.
 
+**Exception — connecting Slack itself.** Slack is a built-in channel, not a
+connector or a secret. `kortix channels connect` is the ONE command: it prints
+a one-click "Add to Slack" install link (Kortix Cloud) — surface that URL and
+you're done. No manifest, no bot token, no secret-intake link. Details in the
+`kortix-slack` skill.
+
 **Full reference:** `.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md`
 — every command, every flag, every env var, common workflows. Load it
 when you need exact syntax.

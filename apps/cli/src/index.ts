@@ -125,7 +125,7 @@ const SECTIONS: readonly CommandSection[] = [
       {
         name: 'channels',
         args: '<subcommand>',
-        blurb: 'Connect Slack to this project (status/connect/disconnect/manifest)',
+        blurb: 'Connect Slack to this project — `connect` prints a one-click install link',
       },
       {
         name: 'sandboxes',

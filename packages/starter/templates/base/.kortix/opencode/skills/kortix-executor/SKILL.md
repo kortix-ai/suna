@@ -191,6 +191,23 @@ Surface the returned setup URL to the user. Never ask the user to paste raw
 credentials into chat. For API-key style connectors, use setup-link flows
 (`request_secret` via the optional MCP face when available, or the equivalent
 Kortix connector/secret setup command when exposed by the CLI).
+
+**Connecting Slack is ONE command — do not use the executor for it.** Slack is
+a built-in channel (`slack`/`kortix_slack` are reserved slugs; `executor add`
+rejects them). When the user asks to connect Slack, run:
+
+```sh
+kortix channels connect
+```
+
+On Kortix Cloud that prints a one-click "Add to Slack" install link — surface
+the URL to the user and you are done. No Slack app to create, no manifest, no
+bot token, no signing secret, no secret-intake link. After the user clicks
+Allow, `kortix channels status` shows the connected workspace and the `slack`
+CLI + `kortix_slack.*` tools work immediately. Only if `connect` itself reports
+that one-click install is unavailable (self-host without the shared Slack app)
+does the manual path apply — it walks you through `kortix channels manifest` +
+`kortix channels connect --manual`.
 </adding-connectors>
 
 <rules>

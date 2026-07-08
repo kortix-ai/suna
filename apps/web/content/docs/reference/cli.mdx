@@ -180,10 +180,11 @@ Manages the per-project Slack connection. Tokens are stored encrypted in the pro
 
 | Command | Effect |
 | --- | --- |
-| `kortix channels status` | Show the current Slack connection. |
-| `kortix channels connect [--bot-token <xoxb-…>] [--signing-secret <…>]` | Save bot token + signing secret to project secrets. Flags, `SLACK_BOT_TOKEN`/`SLACK_SIGNING_SECRET` env vars, or `-` to read from stdin. |
+| `kortix channels status` | Show the current Slack connection. `--json` for machine output. |
+| `kortix channels connect` | **Connect Slack in one step.** On Kortix Cloud (or any host with the shared Slack app configured) it prints a one-click "Add to Slack" install link — open it, pick the workspace, click Allow. Add `--wait` to poll until the install lands (`--timeout <sec>`, default 300). Hosts without the shared app fall back to manual token mode automatically. |
+| `kortix channels connect --manual [--bot-token <xoxb-…>] [--signing-secret <…>]` | Bring-your-own-app mode: save a bot token + signing secret to project secrets. Flags (which imply `--manual`), `SLACK_BOT_TOKEN`/`SLACK_SIGNING_SECRET` env vars, or `-` to read from stdin. |
 | `kortix channels disconnect` | Drop the project's Slack secrets. |
-| `kortix channels manifest` | Print the Slack app manifest JSON — paste into `api.slack.com/apps` → "From a manifest". |
+| `kortix channels manifest` | Print the Slack app manifest JSON for the bring-your-own-app path — paste into `api.slack.com/apps` → "From a manifest". Not needed for the one-click install. |
 
 ### Sandboxes
 
