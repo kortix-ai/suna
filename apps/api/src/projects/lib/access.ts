@@ -377,6 +377,36 @@ export async function assertProjectCapability(
 }
 
 /**
+ * Non-throwing sibling of assertProjectCapability: returns WHETHER the leaf is
+ * allowed for the current request (threading the acting token so the agent-grant
+ * fold fires), instead of 403-ing. For response-level filtering where a coarse
+ * gate already passed but individual sections must be hidden per-capability —
+ * e.g. GET /detail returns the project shell to any member but omits the file
+ * list / a config sub-section the caller can't read, rather than denying the
+ * whole bundle (which would lock a plain `member`, who lacks file.read, out of
+ * the workspace entirely).
+ */
+export async function projectCapabilityAllowed(
+  c: Context,
+  userId: string,
+  accountId: string,
+  projectId: string,
+  action: string,
+): Promise<boolean> {
+  const actingTokenId =
+    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as string | undefined) ?? undefined;
+  const verdict = await authorize(
+    userId,
+    accountId,
+    action,
+    { type: 'project', id: projectId },
+    actingTokenId,
+    deriveRequestContext(c),
+  );
+  return verdict.allowed;
+}
+
+/**
  * The per-capability WRITE leaf that governs editing a given repo path. Agents,
  * skills and commands live under their own directories; everything else is a
  * generic project file. Lets an API edit path (e.g. a marketplace install) gate
