@@ -151,10 +151,14 @@ export function getComputeDescription(serverType: string): string {
 
 // ─── Tiers ──────────────────────────────────────────────────────────────────
 
-// Enterprise feature gates. Every self-serve tier (Free / Team) gets NONE;
-// the sales-assigned `enterprise` tier gets ALL. See TierEntitlements in
-// ../../types and the requireEntitlement() guard in the IAM routes.
-const NO_ENTERPRISE: TierEntitlements = { sso: false, scim: false, rbac: false, auditAccess: false };
+// Enterprise feature gates. Groups + custom roles/policies (`rbac`) are
+// available on EVERY tier — they're the platform's core collaboration and
+// access model, not an upsell (un-gated 2026-07-08; they were briefly
+// enterprise-gated by #4135). The enterprise identity surface (SAML SSO +
+// SCIM) and audit access remain exclusive to the sales-assigned `enterprise`
+// tier. See TierEntitlements in ../../types and the requireEntitlement()
+// guard in the IAM routes, which keys off this matrix.
+const SELF_SERVE: TierEntitlements = { sso: false, scim: false, rbac: true, auditAccess: false };
 const ALL_ENTERPRISE: TierEntitlements = { sso: true, scim: true, rbac: true, auditAccess: true };
 
 const TIERS: Record<string, TierConfig> = {
@@ -169,7 +173,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 50,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
 
   free: {
@@ -183,7 +187,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: false,
     concurrentSessionLimit: 50,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
 
   pro: {
@@ -197,7 +201,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: false,
     concurrentSessionLimit: 200,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
 
   // Billing v2 — per-member seat plan. $25 × seat_count / month.
@@ -214,7 +218,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: false,
     concurrentSessionLimit: 200,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
 
   // ── Enterprise (sales-assigned, not self-serve) ──────────────────────────
@@ -252,7 +256,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 200,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
   tier_6_50: {
     name: 'tier_6_50',
@@ -265,7 +269,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 300,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
   tier_12_100: {
     name: 'tier_12_100',
@@ -278,7 +282,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 400,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
   tier_25_200: {
     name: 'tier_25_200',
@@ -291,7 +295,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 500,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
   tier_50_400: {
     name: 'tier_50_400',
@@ -304,7 +308,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 750,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
   tier_125_800: {
     name: 'tier_125_800',
@@ -317,7 +321,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 1000,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
   tier_200_1000: {
     name: 'tier_200_1000',
@@ -330,7 +334,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 1500,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
   tier_150_1200: {
     name: 'tier_150_1200',
@@ -343,7 +347,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 2000,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
 };
 
