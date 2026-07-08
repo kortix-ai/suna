@@ -95,7 +95,7 @@ describe('sessions new CLI flow', () => {
             name: 'test',
             repo_url: origin,
             default_branch: 'main',
-            manifest_path: 'kortix.toml',
+            manifest_path: 'kortix.yaml',
             status: 'active',
             metadata: {},
             last_opened_at: null,

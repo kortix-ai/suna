@@ -175,7 +175,7 @@ describe('kortix projects use', () => {
             name: 'Beta',
             repo_url: 'https://github.com/x/beta.git',
             default_branch: 'main',
-            manifest_path: 'kortix.toml',
+            manifest_path: 'kortix.yaml',
             status: 'active',
             last_opened_at: null,
             created_at: '2026-01-01T00:00:00.000Z',

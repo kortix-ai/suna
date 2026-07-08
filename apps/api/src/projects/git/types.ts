@@ -29,7 +29,7 @@ export interface ProjectConfigSummary {
     path: string;
     description: string | null;
     mode: string | null;
-    source: 'opencode' | 'kortix.toml';
+    source: 'opencode' | 'kortix.yaml';
     enabled?: boolean;
     /** Per-agent governance from the manifest's `agents` declarations (v2
      *  `agents:` map, or legacy v1 `[[agents]]`; declarative agents only).

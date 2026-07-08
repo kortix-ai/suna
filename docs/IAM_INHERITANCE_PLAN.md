@@ -15,7 +15,7 @@ Turning the meeting notes into a grounded plan: what's real today, what the
 - **The pyramid idea is real and solves a genuine friction.** Today an agent's
   runtime access is `(launcher's own grants) ∩ (agent's declared needs)`, so to
   make an agent work for a person you must grant the resource **twice** — once
-  to the agent (`kortix.toml`) and once to the human. Assigning the human to the
+  to the agent (`kortix.yaml`) and once to the human. Assigning the human to the
   agent and letting them **inherit** the agent's declared resources removes that
   double-grant.
 - **But "human automatically HAS that resource" globally is over-permissive** —
@@ -24,7 +24,7 @@ Turning the meeting notes into a grounded plan: what's real today, what the
   assigning a human to an agent satisfies the agent's cap *for that agent's
   sessions*, not for the human's whole account.
 - **Recommendation:** make the **agent the unit of capability** (it declares
-  `env` / `connectors` / `skills` / `cli` in `kortix.toml`), assign
+  `env` / `connectors` / `skills` / `cli` in `kortix.yaml`), assign
   **humans/departments → agents**, and inherit **session-scoped** by default with
   an explicit **"grant standalone"** opt-in when a person genuinely needs the
   resource outside the agent. Keep the "agent ⊆ launcher" cap as the security
@@ -38,7 +38,7 @@ Turning the meeting notes into a grounded plan: what's real today, what the
 
 | Capability | Status | Where |
 |---|---|---|
-| Agent declares its resources (`env`, `connectors`, `kortix_cli`) | **Live** | `kortix.toml [[agents]]`; parsed in `agents.ts` |
+| Agent declares its resources (`env`, `connectors`, `kortix_cli`) | **Live** | `kortix.yaml agents:`; parsed in `agents.ts` |
 | Per-agent env allowlist enforced at session boot | **Live** | `sessions.ts buildSessionSandboxEnvVars` |
 | Agent capped at its launcher (standing identity ∩ launcher ∩ agentGrant) | **Live** | `iam/engine-v2.ts` |
 | Assign an **agent → member/department** (who may use it) | **Live** | `iam_resource_grants` type `agent`; Resource-access card |
@@ -74,7 +74,7 @@ agent-for-a-person setup therefore needs the resource granted in two places.
 They're compatible: inheritance grants the human exactly the agent's declared
 set, so the cap is met for that set, and the cap still prevents the agent from
 going beyond it. No circularity, because the agent's needs are **declared** in
-`kortix.toml`, not themselves inherited.
+`kortix.yaml`, not themselves inherited.
 
 ### The security fork — how far does "human has that resource" reach?
 
@@ -120,7 +120,7 @@ Department ──assigned──▶ Agent ──declares──▶ Resources (env 
   Human ─────────────────────────────────────────▶ effective access when running that agent
 ```
 
-- **Agent = capability bundle.** `kortix.toml [[agents]]` gains `skills = [...]`
+- **Agent = capability bundle.** `kortix.yaml agents:` gains `skills: [...]`
   alongside the existing `env` / `connectors` / `kortix_cli`. Reviewed in-repo,
   auditable via `kortix validate`.
 - **Assignment = human/department → agent** (reuse `iam_resource_grants` type
@@ -150,7 +150,7 @@ Department ──assigned──▶ Agent ──declares──▶ Resources (env 
   build; the latter is a natural extension of the env/connector allowlist.
 
 ### 2. Inheritance (the pyramid) — core work
-- Add per-agent **`skills`** allowlist to `kortix.toml` + parser + `kortix validate`.
+- Add per-agent **`skills`** allowlist to `kortix.yaml` + parser + `kortix validate`.
 - Add **assignment semantics**: human/dept → agent grant carries "inherit"; the
   Members UI gains an "Agents" way to assign people to agents (mirrors the
   Resource-access card, inverted).

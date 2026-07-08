@@ -116,7 +116,7 @@ function projectSummary(overrides: Partial<Record<string, unknown>> = {}) {
     repo_url: 'https://github.com/kortix/e2e-project',
     git_origin_url: 'https://git.kortix.test/proj_e2e',
     default_branch: 'main',
-    manifest_path: 'kortix.toml',
+    manifest_path: 'kortix.yaml',
     status: 'active',
     metadata: {},
     last_opened_at: null,

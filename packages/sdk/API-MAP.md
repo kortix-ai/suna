@@ -163,9 +163,10 @@ value/credential. `projects-client/setup-links.ts` ✅; facade
 ### 13e. Manifest validate + git token  ✅
 Two small project-scoped mutations, added to `projects-client/projects.ts`:
 - `project(id).validateManifest(raw)` → `POST /v1/projects/:id/manifest/validate`
-  (validates `kortix.toml` raw TOML text server-side — same schema `kortix
-  ship`/`kortix validate`/the CR-merge gate use; always resolves with
-  `{valid, issues}`, never throws on an invalid manifest).
+  (validates a `kortix.yaml` — or legacy `kortix.toml` — manifest's raw text
+  server-side, format auto-resolved from the project's manifest path; same
+  schema `kortix ship`/`kortix validate`/the CR-merge gate use; always
+  resolves with `{valid, issues}`, never throws on an invalid manifest).
 - `project(id).gitToken()` → `POST /v1/projects/:id/git-token` (mints a
   fresh scoped git push token for a *managed* project; throws/409s for BYO
   repos).

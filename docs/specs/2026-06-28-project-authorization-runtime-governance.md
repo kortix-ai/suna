@@ -144,16 +144,18 @@ there is a strong product reason.
 
 ### Agent grant shape
 
-`kortix.toml` already has a first project-agent governance surface:
+`kortix.yaml` already has a first project-agent governance surface:
 
-```toml
-[[agents]]
-name = "veyris"
-connectors = "all"
-kortix_cli = ["project.read", "project.cr.open"]
+```yaml
+agents:
+  veyris:
+    connectors: all
+    kortix_cli:
+      - project.read
+      - project.cr.open
 ```
 
-When a project adopts `[[agents]]`, listed agents receive connector and
+When a project adopts `agents:`, listed agents receive connector and
 Kortix-CLI grants, while unlisted agents become default-deny. The effective
 permission is intended to be:
 
@@ -271,7 +273,7 @@ the direct runtime surface for every session.
 At session birth, the control plane should build an effective runtime bundle:
 
 ```text
-kortix.toml
+kortix.yaml
   + project resource ACLs
   + selected boot agent
   + launching user role/groups
@@ -382,8 +384,8 @@ Use this rule:
 
 | Concern | Source of truth |
 | --- | --- |
-| Resource definitions | `kortix.toml` and `.kortix/*` |
-| Default project policy | `kortix.toml` |
+| Resource definitions | `kortix.yaml` and `.kortix/*` |
+| Default project policy | `kortix.yaml` |
 | Installed skills/tools/agents | Git repo |
 | User membership | DB |
 | Group membership/SCIM sync | DB |
@@ -568,7 +570,7 @@ Add audit events for:
 
 ## Open Questions
 
-1. Should resource ACLs be committed to `kortix.toml`, stored only in DB, or
+1. Should resource ACLs be committed to `kortix.yaml`, stored only in DB, or
    stored in DB with TOML defaults?
 2. Do project viewers get `project.session.start`, or is starting an agent an
    editor-level action by default?

@@ -137,42 +137,94 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
 }
 
+type ManifestFormat = 'yaml' | 'toml'
+
 /**
- * Pick the opencode config dir for this sandbox. Honors `[opencode] config_dir`
- * in the project's kortix.toml when present (defaulting to `.kortix/opencode`
- * relative to the cloned repo) and falls back to KORTIX_DEFAULT_OPENCODE_CONFIG_DIR
- * if the project doesn't have an opencode.jsonc — that's what keeps a freshly
- * provisioned sandbox bootable before a project has been cloned.
+ * Read the project manifest, preferring the canonical `kortix.yaml` (schema v2)
+ * and falling back to the legacy `kortix.toml` (v1) — the same resolution order
+ * the API and CLI use. Returns null when neither file exists. The daemon has no
+ * TOML/YAML parser dependency, so callers regex the returned body per `format`.
  */
+async function readProjectManifest(
+  fs: typeof import('node:fs/promises'),
+  projectTarget: string,
+): Promise<{ body: string; format: ManifestFormat } | null> {
+  const candidates: { file: string; format: ManifestFormat }[] = [
+    { file: 'kortix.yaml', format: 'yaml' },
+    { file: 'kortix.yml', format: 'yaml' },
+    { file: 'kortix.toml', format: 'toml' },
+  ]
+  for (const { file, format } of candidates) {
+    try {
+      return { body: await fs.readFile(`${projectTarget}/${file}`, 'utf8'), format }
+    } catch {}
+  }
+  return null
+}
+
 /**
- * Read `[sandbox] on_boot` from the project's kortix.toml — a shell command the
- * daemon runs (backgrounded) once the repo is materialized and opencode is up,
- * so a session can auto-start its dev stack (e.g. `on_boot = "pnpm dev"`).
- * Returns null when unset. Parsed with the same regex approach as
- * resolveOpencodeConfigDir (no TOML dep in the daemon).
+ * Pull a single string value at `<section>.<key>` out of a manifest body without
+ * a full parser. Handles both shapes:
+ *   YAML — `section:` then an indented `key: value` (value optionally quoted)
+ *   TOML — `[section]` then `key = "value"` (value quoted)
+ * Returns null if the section/key is absent or the value is empty.
+ */
+function extractNestedString(
+  body: string,
+  format: ManifestFormat,
+  section: string,
+  key: string,
+): string | null {
+  if (format === 'toml') {
+    // The `[section]` table body runs up to the next `[…]` header or EOF.
+    // `(?![\s\S])` is the JS end-of-string anchor (`\Z` matches a literal Z).
+    const sectionMatch = body.match(
+      new RegExp(`^\\[${section}\\]\\s*$([\\s\\S]*?)(?=^\\s*\\[|(?![\\s\\S]))`, 'm'),
+    )
+    const sectionBody = sectionMatch?.[1]
+    if (!sectionBody) return null
+    const keyMatch = sectionBody.match(new RegExp(`^\\s*${key}\\s*=\\s*['"]([^'"]+)['"]`, 'm'))
+    const value = keyMatch?.[1]?.trim()
+    return value && value.length > 0 ? value : null
+  }
+  // YAML: a top-level `section:` mapping whose block is the indented lines that
+  // follow, up to the next non-indented (non-blank) line or EOF.
+  const sectionMatch = body.match(
+    new RegExp(`^${section}:\\s*$([\\s\\S]*?)(?=^\\S|(?![\\s\\S]))`, 'm'),
+  )
+  const sectionBody = sectionMatch?.[1]
+  if (!sectionBody) return null
+  const keyMatch = sectionBody.match(
+    new RegExp(`^\\s+${key}\\s*:\\s*(?:['"]([^'"]+)['"]|([^\\s#][^#\\n]*?))\\s*(?:#.*)?$`, 'm'),
+  )
+  const value = (keyMatch?.[1] ?? keyMatch?.[2])?.trim()
+  return value && value.length > 0 ? value : null
+}
+
+/**
+ * Read `sandbox.on_boot` from the project manifest — a shell command the daemon
+ * runs (backgrounded) once the repo is materialized and opencode is up, so a
+ * session can auto-start its dev stack (e.g. `on_boot: "pnpm dev"`). Resolves
+ * kortix.yaml first, then legacy kortix.toml. Returns null when unset.
  */
 export async function resolveSandboxOnBoot(cfg: Config): Promise<string | null> {
   const fs = await import('node:fs/promises')
-  let body: string
-  try {
-    body = await fs.readFile(`${cfg.projectTarget}/kortix.toml`, 'utf8')
-  } catch {
-    return null
-  }
-  // The `[sandbox]` table body runs up to the next `[section]` (e.g.
-  // `[[sandbox.templates]]`) or end of file.
-  const sectionMatch = body.match(/^\[sandbox\]\s*$([\s\S]*?)(?=^\s*\[|(?![\s\S]))/m)
-  const sectionBody = sectionMatch?.[1]
-  if (!sectionBody) return null
-  const keyMatch = sectionBody.match(/^\s*on_boot\s*=\s*['"]([^'"]+)['"]/m)
-  const cmd = keyMatch?.[1]?.trim()
-  return cmd && cmd.length > 0 ? cmd : null
+  const manifest = await readProjectManifest(fs, cfg.projectTarget)
+  if (!manifest) return null
+  return extractNestedString(manifest.body, manifest.format, 'sandbox', 'on_boot')
 }
 
+/**
+ * Pick the opencode config dir for this sandbox. Honors `opencode.config_dir` in
+ * the project's manifest (kortix.yaml, or legacy kortix.toml) when present,
+ * defaulting to `.kortix/opencode` relative to the cloned repo, and falls back
+ * to KORTIX_DEFAULT_OPENCODE_CONFIG_DIR if the project doesn't have an
+ * opencode.jsonc — that's what keeps a freshly provisioned sandbox bootable
+ * before a project has been cloned.
+ */
 export async function resolveOpencodeConfigDir(cfg: Config): Promise<string> {
   const fs = await import('node:fs/promises')
-  const manifestPath = `${cfg.projectTarget}/kortix.toml`
-  const relConfigDir = await readOpencodeConfigDirFromManifest(fs, manifestPath)
+  const relConfigDir = await readOpencodeConfigDirFromManifest(fs, cfg.projectTarget)
   const candidate = `${cfg.projectTarget}/${relConfigDir}`
   for (const filename of ['opencode.jsonc', 'opencode.json']) {
     try {
@@ -192,31 +244,19 @@ export async function resolveOpencodeConfigDir(cfg: Config): Promise<string> {
 }
 
 /**
- * Pluck `[opencode] config_dir` out of a kortix.toml without dragging in a
- * full TOML parser. The field has one canonical shape; we look for it
- * explicitly and fall back to the default if anything's off.
+ * Pluck `opencode.config_dir` out of the project manifest without dragging in a
+ * full parser. Resolves kortix.yaml first, then legacy kortix.toml, and reads
+ * the field from whichever format it found. Falls back to the default if the
+ * manifest is absent or anything's off.
  */
 async function readOpencodeConfigDirFromManifest(
   fs: typeof import('node:fs/promises'),
-  manifestPath: string,
+  projectTarget: string,
 ): Promise<string> {
   const fallback = '.kortix/opencode'
-  let body: string
-  try {
-    body = await fs.readFile(manifestPath, 'utf8')
-  } catch {
-    return fallback
-  }
-  // Match the `[opencode]` table body up to the next `[section]` line or the
-  // end of the file. `\Z` is NOT a valid JS anchor (it matches a literal `Z`),
-  // so use `(?![\s\S])` for end-of-string — otherwise an `[opencode]` table
-  // that's the LAST section in the manifest never matches and silently falls
-  // back to the default config dir.
-  const sectionMatch = body.match(/^\[opencode\]\s*$([\s\S]*?)(?=^\s*\[|(?![\s\S]))/m)
-  const sectionBody = sectionMatch?.[1]
-  if (!sectionBody) return fallback
-  const keyMatch = sectionBody.match(/^\s*config_dir\s*=\s*['"]([^'"]+)['"]/m)
-  const rawValue = keyMatch?.[1]
+  const manifest = await readProjectManifest(fs, projectTarget)
+  if (!manifest) return fallback
+  const rawValue = extractNestedString(manifest.body, manifest.format, 'opencode', 'config_dir')
   if (!rawValue) return fallback
   const raw = rawValue.trim().replace(/\/+$/, '')
   // Reject absolute paths and parent traversal — matches the API's validator.

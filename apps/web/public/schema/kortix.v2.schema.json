@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kortix.com/schema/kortix.v2.schema.json",
   "title": "Kortix manifest (kortix_version 2)",
-  "description": "kortix.toml / kortix.yaml, schema version 2 — YAML-only. `agents` is a name→block MAP, GOVERNANCE ONLY (connectors/secrets/skills/kortix_cli/workspace/enabled); every agent must be declared, and OpenCode behavior (description/model/mode/temperature/permission/the prompt itself) lives entirely in that agent’s own native `.kortix/opencode/agents/<name>.md` frontmatter + body — authoring any of those fields here is a hard error. `[[channels]]` is removed outright. See docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2/§2.5.",
+  "description": "kortix.yaml, schema version 2 — YAML-only. `agents` is a name→block MAP, GOVERNANCE ONLY (connectors/secrets/skills/kortix_cli/workspace/enabled); every agent must be declared, and OpenCode behavior (description/model/mode/temperature/permission/the prompt itself) lives entirely in that agent’s own native `.kortix/opencode/agents/<name>.md` frontmatter + body — authoring any of those fields here is a hard error. `[[channels]]` is removed outright. See docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2/§2.5.",
   "type": "object",
   "required": [
     "kortix_version",
