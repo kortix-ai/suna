@@ -23,6 +23,8 @@ import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { ArrowUpCircle, CircleCheckBig } from 'lucide-react';
 import { useState } from 'react';
 
@@ -39,11 +41,15 @@ export function UpgradesViewContent({
   version,
   onRun,
   pending,
+  canWrite = false,
 }: {
   /** `null` = the manifest read hasn't resolved yet. */
   version: ManifestVersion | null;
   onRun: (prompt: string) => void;
   pending: boolean;
+  /** When false, the Run action buttons are hidden — the upgrade explanation
+   *  and one-off description stay visible as a read-only view. */
+  canWrite?: boolean;
 }) {
   const [oneOff, setOneOff] = useState('');
   const upgrades = version === null ? null : applicableUpgrades({ manifestVersion: version });
@@ -91,15 +97,17 @@ export function UpgradesViewContent({
                     {upgrade.description}
                   </p>
                 </div>
-                <Button
-                  size="sm"
-                  className="shrink-0"
-                  disabled={pending}
-                  onClick={() => onRun(upgrade.prompt)}
-                >
-                  {pending ? <Loading className="size-3.5 shrink-0" /> : null}
-                  Run
-                </Button>
+                {canWrite ? (
+                  <Button
+                    size="sm"
+                    className="shrink-0"
+                    disabled={pending}
+                    onClick={() => onRun(upgrade.prompt)}
+                  >
+                    {pending ? <Loading className="size-3.5 shrink-0" /> : null}
+                    Run
+                  </Button>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -113,23 +121,27 @@ export function UpgradesViewContent({
             Describe a single change to this project. An agent session makes it, validates, and
             opens a change request — it never merges on its own.
           </p>
-          <Textarea
-            value={oneOff}
-            onChange={(event) => setOneOff(event.target.value)}
-            placeholder="e.g. Rename the release-bot agent to deploy-bot everywhere it's referenced"
-            minHeight={72}
-          />
-          <div className="flex justify-end">
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={pending || !oneOff.trim()}
-              onClick={() => onRun(buildOneOffUpgradePrompt(oneOff))}
-            >
-              {pending ? <Loading className="size-3.5 shrink-0" /> : null}
-              Run upgrade
-            </Button>
-          </div>
+          {canWrite ? (
+            <>
+              <Textarea
+                value={oneOff}
+                onChange={(event) => setOneOff(event.target.value)}
+                placeholder="e.g. Rename the release-bot agent to deploy-bot everywhere it's referenced"
+                minHeight={72}
+              />
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={pending || !oneOff.trim()}
+                  onClick={() => onRun(buildOneOffUpgradePrompt(oneOff))}
+                >
+                  {pending ? <Loading className="size-3.5 shrink-0" /> : null}
+                  Run upgrade
+                </Button>
+              </div>
+            </>
+          ) : null}
         </div>
       </section>
     </CustomizeSectionWrapper>
@@ -139,5 +151,13 @@ export function UpgradesViewContent({
 export function UpgradesView({ projectId }: { projectId: string }) {
   const { version } = useProjectManifestVersion(projectId);
   const run = useRunUpgrade(projectId);
-  return <UpgradesViewContent version={version} onRun={run.start} pending={run.pending} />;
+  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
+  return (
+    <UpgradesViewContent
+      version={version}
+      onRun={run.start}
+      pending={run.pending}
+      canWrite={canWrite}
+    />
+  );
 }

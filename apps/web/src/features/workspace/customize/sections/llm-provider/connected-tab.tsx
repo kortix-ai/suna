@@ -23,11 +23,13 @@ export function ConnectedTab({
   connectedProviders,
   search,
   onAddProvider,
+  canWrite = false,
 }: {
   projectId: string;
   connectedProviders: LlmProviderEntry[];
   search: string;
   onAddProvider: () => void;
+  canWrite?: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -78,9 +80,13 @@ export function ConnectedTab({
             'componentsProjectsProjectProviderModal.line300JsxTextNoProvidersConnectedYet',
           )}
           action={
-            <Button variant="outline" size="sm" onClick={onAddProvider}>
-              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line302JsxTextAddProvider')}
-            </Button>
+            canWrite ? (
+              <Button variant="outline" size="sm" onClick={onAddProvider}>
+                {tHardcodedUi.raw(
+                  'componentsProjectsProjectProviderModal.line302JsxTextAddProvider',
+                )}
+              </Button>
+            ) : undefined
           }
         />
       </div>
@@ -130,7 +136,7 @@ export function ConnectedTab({
                     : `${providerCredentialSummary(provider)} · ${provider.models.length} model${provider.models.length === 1 ? '' : 's'}`}
                 </p>
               </div>
-              {!provider.managed && (
+              {canWrite && !provider.managed && (
                 <Hint label="Disconnect">
                   <Button
                     type="button"

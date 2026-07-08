@@ -22,6 +22,8 @@ import {
 } from '@/features/project-files/hooks/use-change-requests';
 import { useCommits } from '@/features/project-files/hooks/use-commits';
 import { getProject, type ProjectCommit } from '@kortix/sdk/projects-client';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   Check,
@@ -127,7 +129,15 @@ function CheckpointRow({
   );
 }
 
-function ChangeRequestRow({ cr, onOpen }: { cr: ChangeRequest; onOpen: (crId: string) => void }) {
+function ChangeRequestRow({
+  cr,
+  onOpen,
+  canAct,
+}: {
+  cr: ChangeRequest;
+  onOpen: (crId: string) => void;
+  canAct: boolean;
+}) {
   const merge = useMergeChangeRequest();
   const close = useCloseChangeRequest();
   const reopen = useReopenChangeRequest();
@@ -189,7 +199,7 @@ function ChangeRequestRow({ cr, onOpen }: { cr: ChangeRequest; onOpen: (crId: st
         </span>
       </button>
 
-      {cr.status === 'open' && (
+      {canAct && cr.status === 'open' && (
         <div className="flex shrink-0 items-center gap-2">
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
             Dismiss
@@ -200,7 +210,7 @@ function ChangeRequestRow({ cr, onOpen }: { cr: ChangeRequest; onOpen: (crId: st
           </Button>
         </div>
       )}
-      {cr.status === 'closed' && (
+      {canAct && cr.status === 'closed' && (
         <Button variant="secondary" size="sm" onClick={onReopen} disabled={busy}>
           Reopen
         </Button>
@@ -214,16 +224,18 @@ function TimelineRow({
   index,
   onOpenCheckpoint,
   onOpenCr,
+  canAct,
 }: {
   item: TimelineItem;
   index: number;
   onOpenCheckpoint: (sha: string) => void;
   onOpenCr: (crId: string) => void;
+  canAct: boolean;
 }) {
   if (item.kind === 'checkpoint') {
     return <CheckpointRow commit={item.commit} index={index} onOpen={onOpenCheckpoint} />;
   }
-  return <ChangeRequestRow cr={item.cr} onOpen={onOpenCr} />;
+  return <ChangeRequestRow cr={item.cr} onOpen={onOpenCr} canAct={canAct} />;
 }
 
 function ListSkeleton({ rows = 6 }: { rows?: number }) {
@@ -253,10 +265,18 @@ export function ChangesView({ projectId }: { projectId: string }) {
     staleTime: 60_000,
   });
   const defaultBranch = projectQuery.data?.default_branch ?? '';
+  // Apply/Dismiss/Reopen assert project.gitops.push server-side; a read-only role
+  // (gitops.read but not gitops.push) still SEES the change list + diffs, just no
+  // action buttons that would 403. Fails safe: false until the probe resolves.
+  const canAct = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH).allowed === true;
 
   return (
     <ProjectFilesProvider value={{ projectId, ref: defaultBranch, defaultBranch }}>
-      <ChangesTimeline defaultBranch={defaultBranch} projectLoading={projectQuery.isLoading} />
+      <ChangesTimeline
+        defaultBranch={defaultBranch}
+        projectLoading={projectQuery.isLoading}
+        canAct={canAct}
+      />
     </ProjectFilesProvider>
   );
 }
@@ -264,9 +284,11 @@ export function ChangesView({ projectId }: { projectId: string }) {
 function ChangesTimeline({
   defaultBranch,
   projectLoading,
+  canAct,
 }: {
   defaultBranch: string;
   projectLoading: boolean;
+  canAct: boolean;
 }) {
   const [selectedSha, setSelectedSha] = useState<string | null>(null);
   const [detailCrId, setDetailCrId] = useState<string | null>(null);
@@ -381,6 +403,7 @@ function ChangesTimeline({
                     index={i}
                     onOpenCheckpoint={setSelectedSha}
                     onOpenCr={setDetailCrId}
+                    canAct={canAct}
                   />
                 ))}
               </ul>

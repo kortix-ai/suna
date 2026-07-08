@@ -65,6 +65,8 @@ import {
   listProjectAccess,
   type ProjectConfigSummary,
 } from '@kortix/sdk/projects-client';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { Check, CheckCircleSolid, ExternalLinkSolid } from '@mynaui/icons-react';
 import { Copy, Mail, MessageSquare, X } from 'lucide-react';
@@ -93,6 +95,8 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
   const loading =
     loadingInstall || loadingMode || projectQuery.isLoading || (emailChannelEnabled && loadingEmail);
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
+  const canWrite =
+    useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
 
   return (
     <CustomizeSectionWrapper
@@ -101,7 +105,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
         'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextRunThisb83f74db',
       )}
       action={
-        projectId && !loading && !install && oauthInstallUrl ? (
+        canWrite && projectId && !loading && !install && oauthInstallUrl ? (
           <Button size="sm" variant="secondary" asChild>
             <Link href={oauthInstallUrl} target="_blank" rel="noopener noreferrer">
               {tI18nHardcoded.raw(
@@ -168,11 +172,13 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                   projectId={projectId}
                   installation={install ?? null}
                   oauthInstallUrl={oauthInstallUrl}
+                  canWrite={canWrite}
                 />
                 {emailChannelEnabled ? (
                   <EmailChannelRow
                     projectId={projectId}
                     installation={emailInstall ?? null}
+                    canWrite={canWrite}
                   />
                 ) : null}
               </TableBody>
@@ -199,7 +205,9 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
               <BringYourOwnPanel projectId={projectId} />
             ) : null}
 
-            {install ? <ChannelBindingsSection projectId={projectId} /> : null}
+            {install ? (
+              <ChannelBindingsSection projectId={projectId} canWrite={canWrite} />
+            ) : null}
           </>
         )}
       </div>
@@ -213,7 +221,13 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
  * the only other way to change these is the in-Slack `/kortix agent|model|policy`
  * commands; this edits the same row through `PATCH …/channels/bindings/:id`.
  */
-function ChannelBindingsSection({ projectId }: { projectId: string }) {
+function ChannelBindingsSection({
+  projectId,
+  canWrite,
+}: {
+  projectId: string;
+  canWrite: boolean;
+}) {
   const bindingsQuery = useChannelBindings(projectId);
   const bindings = bindingsQuery.data?.bindings ?? [];
 
@@ -250,6 +264,7 @@ function ChannelBindingsSection({ projectId }: { projectId: string }) {
               projectId={projectId}
               binding={b}
               projectDefaultAgent={bindingsQuery.data?.projectDefaultAgent ?? null}
+              canWrite={canWrite}
             />
           ))}
         </TableBody>
@@ -271,17 +286,22 @@ function ChannelBindingTableRow({
   projectId,
   binding,
   projectDefaultAgent,
+  canWrite,
 }: {
   projectId: string;
   binding: ChannelBinding;
   projectDefaultAgent: string | null;
+  canWrite: boolean;
 }) {
   const accessQuery = useQuery({
     queryKey: ['project-access', projectId],
     queryFn: () => listProjectAccess(projectId),
     staleTime: 20_000,
   });
-  const canManage = Boolean(accessQuery.data?.can_manage);
+  // `can_manage` is the coarse project-manage flag; AND it with the real
+  // connector write leaf so a READ-only connector role can't edit bindings
+  // (the PATCH route asserts project.connector.write and would 403).
+  const canManage = Boolean(accessQuery.data?.can_manage) && canWrite;
 
   const detailQuery = useQuery({
     queryKey: ['project-detail', projectId],
@@ -415,10 +435,12 @@ function SlackChannelRow({
   projectId,
   installation,
   oauthInstallUrl,
+  canWrite,
 }: {
   projectId: string;
   installation: SlackInstallation | null;
   oauthInstallUrl: string | null;
+  canWrite: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const disconnect = useDisconnectSlack();
@@ -449,7 +471,7 @@ function SlackChannelRow({
         {connected ? (installation?.workspaceName ?? installation?.workspaceId ?? '—') : '—'}
       </TableCell>
       <TableCell>
-        {connected ? (
+        {!canWrite ? null : connected ? (
           confirming ? (
             <div className="flex items-center justify-end gap-1">
               <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
@@ -497,9 +519,11 @@ function SlackChannelRow({
 function EmailChannelRow({
   projectId,
   installation,
+  canWrite,
 }: {
   projectId: string;
   installation: EmailInstallation | null;
+  canWrite: boolean;
 }) {
   const disconnect = useDisconnectEmail();
   const [connectOpen, setConnectOpen] = useState(false);
@@ -535,7 +559,7 @@ function EmailChannelRow({
           )}
         </TableCell>
         <TableCell>
-          {connected ? (
+          {!canWrite ? null : connected ? (
             confirming ? (
               <div className="flex items-center justify-end gap-1">
                 <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>

@@ -45,7 +45,13 @@ function fmtDate(s: string | null): string {
   });
 }
 
-export function GatewayKeys({ projectId }: { projectId: string }) {
+export function GatewayKeys({
+  projectId,
+  canWrite = false,
+}: {
+  projectId: string;
+  canWrite?: boolean;
+}) {
   const { data, isError } = useGatewayKeys(projectId);
   const createKey = useCreateGatewayKey(projectId);
   const revokeKey = useRevokeGatewayKey(projectId);
@@ -93,9 +99,11 @@ export function GatewayKeys({ projectId }: { projectId: string }) {
                 logged and billed here.
               </p>
             </div>
-            <Button size="sm" className="shrink-0" onClick={() => setCreating(true)}>
-              Create key
-            </Button>
+            {canWrite && (
+              <Button size="sm" className="shrink-0" onClick={() => setCreating(true)}>
+                Create key
+              </Button>
+            )}
           </div>
 
           {keys.length === 0 ? (
@@ -105,9 +113,11 @@ export function GatewayKeys({ projectId }: { projectId: string }) {
               title="No keys yet"
               description="Create a project-scoped key to call the gateway from outside a Kortix session."
               action={
-                <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
-                  Create key
-                </Button>
+                canWrite ? (
+                  <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
+                    Create key
+                  </Button>
+                ) : undefined
               }
             />
           ) : (
@@ -139,7 +149,7 @@ export function GatewayKeys({ projectId }: { projectId: string }) {
                         <span>last used {fmtDate(k.last_used_at)}</span>
                       </InlineMeta>
                     </div>
-                    {active && (
+                    {active && canWrite && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button

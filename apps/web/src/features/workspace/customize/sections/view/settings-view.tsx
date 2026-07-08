@@ -50,6 +50,8 @@ import {
   type ProjectDetail,
 } from '@kortix/sdk/projects-client';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { TrashSolid } from '@mynaui/icons-react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 
@@ -66,6 +68,12 @@ export function SettingsView({ projectId }: { projectId: string }) {
 
   const project = projectQuery.data;
   const canManage = project?.effective_project_role === 'manager';
+  // Real per-leaf write cap: a custom role granted project.write edits the
+  // general controls (name/repo/experimental) without being a full manager.
+  // The mutating routes assert project.write, so a READ-only role sees the
+  // section read-only. Archive/danger-zone stays manager-only below.
+  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
+  const canEdit = canManage || canWrite;
 
   const archiveMutation = useMutation({
     mutationFn: () => archiveProject(projectId),
@@ -103,15 +111,15 @@ export function SettingsView({ projectId }: { projectId: string }) {
 
       {project && (
         <div className="space-y-8">
-          <GeneralProjectCard project={project} canManage={!!canManage} />
-          <RepositoryCard project={project} canManage={!!canManage} />
+          <GeneralProjectCard project={project} canManage={canEdit} />
+          <RepositoryCard project={project} canManage={canEdit} />
           {canManage && (
             <section className="space-y-4">
               <Label>Automation</Label>
-              <TriggersActivationCard projectId={projectId} canManage={!!canManage} />
+              <TriggersActivationCard projectId={projectId} canManage={canEdit} />
             </section>
           )}
-          <ExperimentalCard project={project} canManage={!!canManage} />
+          <ExperimentalCard project={project} canManage={canEdit} />
           {canManage && (
             <section className="space-y-4">
               <Label>
@@ -269,7 +277,7 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
 
         {managed ? (
           <div className="border-border/60 border-t pt-5">
-            <RepoCollaboratorInvite projectId={project.project_id} />
+            <RepoCollaboratorInvite projectId={project.project_id} canManage={canManage} />
           </div>
         ) : null}
       </div>
@@ -492,7 +500,13 @@ function TriggersActivationCard({
   );
 }
 
-function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
+function RepoCollaboratorInvite({
+  projectId,
+  canManage,
+}: {
+  projectId: string;
+  canManage: boolean;
+}) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [username, setUsername] = useState('');
   const [permission, setPermission] = useState<'read' | 'write'>('write');
@@ -512,6 +526,7 @@ function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    if (!canManage) return;
     if (username.trim() && !inviteMutation.isPending) inviteMutation.mutate();
   };
 
@@ -528,6 +543,7 @@ function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
         </p>
       </div>
 
+      {canManage ? (
       <form onSubmit={submit}>
         <FieldGroup className="gap-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem_auto] sm:items-end sm:gap-x-3">
@@ -590,6 +606,7 @@ function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
           </div>
         </FieldGroup>
       </form>
+      ) : null}
     </div>
   );
 }

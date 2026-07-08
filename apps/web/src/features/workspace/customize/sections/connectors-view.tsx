@@ -32,6 +32,8 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { PoliciesPanel } from '@/components/projects/policies-panel';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -245,6 +247,11 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
   const connectors = useMemo(() => query.data?.connectors ?? [], [query.data]);
   const emailChannelEnabled = projectQuery.data?.experimental?.agentmail_email === true;
   const isForbidden = query.isError && /403|forbidden/i.test((query.error as Error)?.message ?? '');
+  // READ vs WRITE: the section is visible to project.connector.read, but every
+  // mutating control (rename/remove/reconnect/credentials/permissions/channels/
+  // config) is gated on project.connector.write. Fails closed until the probe
+  // resolves, matching the backend's assertProjectCapability on those routes.
+  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
 
   // Selection persists in ?c= (slug | "global" | "add") for deep links.
   const search = useSearchParams();
@@ -330,6 +337,7 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
           onSelect={select}
           onSync={() => sync.mutate()}
           syncing={sync.isPending}
+          canWrite={canWrite}
         />
       )}
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
@@ -337,6 +345,7 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
           <AddAppPanel
             projectId={projectId}
             emailChannelEnabled={emailChannelEnabled}
+            canWrite={canWrite}
             onAdded={(slug) => {
               invalidate();
               if (slug) select({ kind: 'connector', slug });
@@ -349,6 +358,7 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
             key={active.slug}
             projectId={projectId}
             connector={active}
+            canWrite={canWrite}
             onChanged={invalidate}
             onRemoved={() => {
               invalidate();
@@ -455,6 +465,7 @@ function ConnectorRail({
   onSelect,
   onSync,
   syncing,
+  canWrite = false,
 }: {
   projectId: string;
   connectors: AdminConnector[];
@@ -462,6 +473,7 @@ function ConnectorRail({
   onSelect: (s: Selection) => void;
   onSync: () => void;
   syncing: boolean;
+  canWrite?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [q, setQ] = useState('');
@@ -478,17 +490,19 @@ function ConnectorRail({
       className="border-border/60 bg-muted/20 flex w-72 shrink-0 flex-col border-r"
     >
       <div className="border-border/60 space-y-2 border-b p-3">
-        <Button
-          size="sm"
-          className="w-full justify-start gap-2"
-          variant={selection.kind === 'add' ? 'secondary' : 'default'}
-          onClick={() => onSelect({ kind: 'add' })}
-        >
-          <Plus className="h-4 w-4" />
-          {tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddAppb53818fa',
-          )}
-        </Button>
+        {canWrite && (
+          <Button
+            size="sm"
+            className="w-full justify-start gap-2"
+            variant={selection.kind === 'add' ? 'secondary' : 'default'}
+            onClick={() => onSelect({ kind: 'add' })}
+          >
+            <Plus className="h-4 w-4" />
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddAppb53818fa',
+            )}
+          </Button>
+        )}
         <div className="relative">
           <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
           <Input
@@ -567,24 +581,26 @@ function ConnectorRail({
         )}
       </div>
 
-      <div className="border-border/60 border-t p-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-muted-foreground w-full justify-start gap-2"
-          onClick={onSync}
-          disabled={syncing}
-        >
-          {syncing ? (
-            <Loading className="size-3.5 shrink-0" />
-          ) : (
-            <RefreshCw className="h-3.5 w-3.5" />
-          )}
-          {tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextSyncFromb820661f',
-          )}
-        </Button>
-      </div>
+      {canWrite && (
+        <div className="border-border/60 border-t p-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground w-full justify-start gap-2"
+            onClick={onSync}
+            disabled={syncing}
+          >
+            {syncing ? (
+              <Loading className="size-3.5 shrink-0" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextSyncFromb820661f',
+            )}
+          </Button>
+        </div>
+      )}
     </nav>
   );
 }
@@ -728,11 +744,13 @@ function ConnectorDetail({
   connector,
   onChanged,
   onRemoved,
+  canWrite = false,
 }: {
   projectId: string;
   connector: AdminConnector;
   onChanged: () => void;
   onRemoved: () => void;
+  canWrite?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const isPipedream = connector.provider === 'pipedream';
@@ -782,7 +800,7 @@ function ConnectorDetail({
       <div className="flex items-start gap-3.5">
         <ConnectorAppIcon projectId={projectId} connector={connector} size="lg" />
         <div className="min-w-0 flex-1">
-          {editingName ? (
+          {editingName && canWrite ? (
             <form
               className="flex items-center gap-1.5"
               onSubmit={(e) => {
@@ -829,16 +847,18 @@ function ConnectorDetail({
           ) : (
             <div className="group flex items-center gap-2">
               <h2 className="text-foreground truncate text-lg font-semibold">{displayName}</h2>
-              <Hint label="Rename">
-                <button
-                  type="button"
-                  onClick={() => setEditingName(true)}
-                  aria-label="Rename"
-                  className="text-muted-foreground hover:text-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-              </Hint>
+              {canWrite && (
+                <Hint label="Rename">
+                  <button
+                    type="button"
+                    onClick={() => setEditingName(true)}
+                    aria-label="Rename"
+                    className="text-muted-foreground hover:text-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                </Hint>
+              )}
             </div>
           )}
           <div className="mt-1.5 flex items-center gap-2">
@@ -856,7 +876,8 @@ function ConnectorDetail({
             When NOT connected, the connect action is a big CTA below — not a
             small header button buried next to the title. (Channel connectors
             are managed from the Channels tab, so neither shows.) */}
-        {connector.authSecret &&
+        {canWrite &&
+          connector.authSecret &&
           connected &&
           !isChannel &&
           (isPipedream ? (
@@ -919,15 +940,17 @@ function ConnectorDetail({
             icon={KeyRound}
             title={`Connect ${displayName}`}
             action={
-              <Button
-                size="lg"
-                className="h-11 shrink-0 gap-2 px-5 font-semibold"
-                onClick={() => (isPipedream ? reconnect.mutate() : setCredOpen(true))}
-                disabled={isPipedream && reconnect.isPending}
-              >
-                {isPipedream && reconnect.isPending && <Loading className="size-4 shrink-0" />}
-                {isPipedream ? `Connect ${displayName}` : 'Set credential'}
-              </Button>
+              canWrite ? (
+                <Button
+                  size="lg"
+                  className="h-11 shrink-0 gap-2 px-5 font-semibold"
+                  onClick={() => (isPipedream ? reconnect.mutate() : setCredOpen(true))}
+                  disabled={isPipedream && reconnect.isPending}
+                >
+                  {isPipedream && reconnect.isPending && <Loading className="size-4 shrink-0" />}
+                  {isPipedream ? `Connect ${displayName}` : 'Set credential'}
+                </Button>
+              ) : undefined
             }
           >
             {isPipedream
@@ -951,12 +974,14 @@ function ConnectorDetail({
                   connector={connector}
                   onChanged={onChanged}
                   onRemoved={onRemoved}
+                  canWrite={canWrite}
                 />
               ) : (
                 <ConnectionSection
                   projectId={projectId}
                   connector={connector}
                   onChanged={onChanged}
+                  canWrite={canWrite}
                 />
               )}
             </TabsContent>
@@ -966,11 +991,12 @@ function ConnectorDetail({
               projectId={projectId}
               connector={connector}
               onChanged={onChanged}
+              canWrite={canWrite}
             />
           </TabsContent>
         </Tabs>
 
-        {!isManaged && !isChannel && (
+        {canWrite && !isManaged && !isChannel && (
           <div className="bg-popover rounded-md border px-4 py-3">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
@@ -1050,11 +1076,13 @@ function ChannelConnectionSection({
   connector,
   onChanged,
   onRemoved,
+  canWrite = false,
 }: {
   projectId: string;
   connector: AdminConnector;
   onChanged: () => void;
   onRemoved: () => void;
+  canWrite?: boolean;
 }) {
   const platform = connectorPlatform(connector);
   if (platform === 'email') {
@@ -1064,12 +1092,18 @@ function ChannelConnectionSection({
         connector={connector}
         onChanged={onChanged}
         onRemoved={onRemoved}
+        canWrite={canWrite}
       />
     );
   }
   if (platform === 'slack') {
     return (
-      <SlackChannelProfile projectId={projectId} onChanged={onChanged} onRemoved={onRemoved} />
+      <SlackChannelProfile
+        projectId={projectId}
+        onChanged={onChanged}
+        onRemoved={onRemoved}
+        canWrite={canWrite}
+      />
     );
   }
   return (
@@ -1087,11 +1121,13 @@ function EmailChannelProfile({
   connector,
   onChanged,
   onRemoved,
+  canWrite = false,
 }: {
   projectId: string;
   connector: AdminConnector;
   onChanged: () => void;
   onRemoved: () => void;
+  canWrite?: boolean;
 }) {
   const install = useEmailInstall(projectId, connector.slug);
 
@@ -1110,13 +1146,18 @@ function EmailChannelProfile({
             connectorSlug={connector.slug}
             installation={install.data}
             onRemoved={onRemoved}
+            canWrite={canWrite}
           />
-        ) : (
+        ) : canWrite ? (
           <EmailConnectForm
             projectId={projectId}
             connectorSlug={connector.slug}
             onConnected={onChanged}
           />
+        ) : (
+          <InfoBanner tone="neutral" icon={Mail} title="Email not connected">
+            This channel profile has no AgentMail inbox yet.
+          </InfoBanner>
         )}
       </div>
     </section>
@@ -1128,11 +1169,13 @@ function ConnectedEmailProfile({
   connectorSlug,
   installation,
   onRemoved,
+  canWrite = false,
 }: {
   projectId: string;
   connectorSlug: string;
   installation: EmailInstallation;
   onRemoved: () => void;
+  canWrite?: boolean;
 }) {
   const disconnect = useDisconnectEmail();
   const [confirming, setConfirming] = useState(false);
@@ -1152,7 +1195,9 @@ function ConnectedEmailProfile({
         projectId={projectId}
         connectorSlug={connectorSlug}
         policy={installation.senderPolicy}
+        canWrite={canWrite}
       />
+      {canWrite && (
       <div className="flex items-center justify-end gap-2">
         {confirming ? (
           <>
@@ -1188,6 +1233,7 @@ function ConnectedEmailProfile({
           </Button>
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -1218,10 +1264,12 @@ function EmailSenderPolicyEditor({
   projectId,
   connectorSlug,
   policy,
+  canWrite = false,
 }: {
   projectId: string;
   connectorSlug: string;
   policy: EmailSenderPolicy | null | undefined;
+  canWrite?: boolean;
 }) {
   const update = useUpdateEmailPolicy();
   const initial = normalizeEmailSenderPolicy(policy);
@@ -1278,6 +1326,7 @@ function EmailSenderPolicyEditor({
           checked={restricted}
           onCheckedChange={(checked) => setRestricted(Boolean(checked))}
           className="mt-0.5"
+          disabled={!canWrite}
         />
         <div className="min-w-0 flex-1 space-y-3">
           <div>
@@ -1294,6 +1343,7 @@ function EmailSenderPolicyEditor({
                   value={emails}
                   onChange={(e) => setEmails(e.target.value)}
                   placeholder="person@example.com"
+                  disabled={!canWrite}
                 />
               </Field>
               <Field>
@@ -1301,6 +1351,7 @@ function EmailSenderPolicyEditor({
                   value={domains}
                   onChange={(e) => setDomains(e.target.value)}
                   placeholder="example.com"
+                  disabled={!canWrite}
                 />
               </Field>
               <div className="sm:col-span-2">
@@ -1310,24 +1361,27 @@ function EmailSenderPolicyEditor({
                     onChange={(e) => setRegex(e.target.value)}
                     placeholder=".*@customer-[0-9]+\\.com$"
                     spellCheck={false}
+                    disabled={!canWrite}
                   />
                 </Field>
               </div>
             </div>
           ) : null}
           {error ? <InfoBanner tone="destructive">{error}</InfoBanner> : null}
-          <SaveBar
-            dirty={dirty}
-            saving={update.isPending}
-            onSave={save}
-            onReset={() => {
-              setRestricted(initial.mode === 'restricted');
-              setEmails(initial.allowedEmails.join('\n'));
-              setDomains(initial.allowedDomains.join('\n'));
-              setRegex(initial.allowedRegex ?? '');
-            }}
-            label="Save policy"
-          />
+          {canWrite && (
+            <SaveBar
+              dirty={dirty}
+              saving={update.isPending}
+              onSave={save}
+              onReset={() => {
+                setRestricted(initial.mode === 'restricted');
+                setEmails(initial.allowedEmails.join('\n'));
+                setDomains(initial.allowedDomains.join('\n'));
+                setRegex(initial.allowedRegex ?? '');
+              }}
+              label="Save policy"
+            />
+          )}
         </div>
       </div>
     </div>
@@ -1600,10 +1654,12 @@ function SlackChannelProfile({
   projectId,
   onChanged,
   onRemoved,
+  canWrite = false,
 }: {
   projectId: string;
   onChanged: () => void;
   onRemoved: () => void;
+  canWrite?: boolean;
 }) {
   const install = useSlackInstall(projectId);
   return (
@@ -1620,9 +1676,14 @@ function SlackChannelProfile({
             projectId={projectId}
             installation={install.data}
             onRemoved={onRemoved}
+            canWrite={canWrite}
           />
-        ) : (
+        ) : canWrite ? (
           <SlackConnectForm projectId={projectId} onConnected={onChanged} />
+        ) : (
+          <InfoBanner tone="neutral" icon={<SlackLogo />} title="Slack not connected">
+            This channel profile has no Slack workspace yet.
+          </InfoBanner>
         )}
       </div>
     </section>
@@ -1633,10 +1694,12 @@ function ConnectedSlackProfile({
   projectId,
   installation,
   onRemoved,
+  canWrite = false,
 }: {
   projectId: string;
   installation: SlackInstallation;
   onRemoved: () => void;
+  canWrite?: boolean;
 }) {
   const disconnect = useDisconnectSlack();
   const [confirming, setConfirming] = useState(false);
@@ -1646,6 +1709,7 @@ function ConnectedSlackProfile({
         Workspace{' '}
         <code className="font-mono">{installation.workspaceName || installation.workspaceId}</code>
       </InfoBanner>
+      {canWrite && (
       <div className="flex items-center justify-end gap-2">
         {confirming ? (
           <>
@@ -1678,6 +1742,7 @@ function ConnectedSlackProfile({
           </Button>
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -1932,10 +1997,12 @@ function ConnectionSection({
   projectId,
   connector,
   onChanged,
+  canWrite = false,
 }: {
   projectId: string;
   connector: AdminConnector;
   onChanged: () => void;
+  canWrite?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -2005,17 +2072,19 @@ function ConnectionSection({
           </div>
         ) : (
           <div className="space-y-4">
-            <ConnectorConfigFields draft={draft} onChange={setDraft} />
-            <SaveBar
-              dirty={dirty}
-              saving={save.isPending}
-              disabled={!connectionValid(draft)}
-              onSave={() => save.mutate()}
-              onReset={reset}
-              label={tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSave8c6f945f',
-              )}
-            />
+            <ConnectorConfigFields draft={draft} onChange={setDraft} readOnly={!canWrite} />
+            {canWrite && (
+              <SaveBar
+                dirty={dirty}
+                saving={save.isPending}
+                disabled={!connectionValid(draft)}
+                onSave={() => save.mutate()}
+                onReset={reset}
+                label={tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSave8c6f945f',
+                )}
+              />
+            )}
           </div>
         )}
       </div>
@@ -2041,14 +2110,28 @@ const POLICY_LABEL: Record<ConnectorPolicyAction, { label: string; tint: string 
 function PermissionPicker({
   value,
   onChange,
+  readOnly = false,
 }: {
   value: PolicyChoice;
   onChange: (c: PolicyChoice) => void;
+  readOnly?: boolean;
 }) {
   const meta =
     value === 'default'
       ? { label: 'Default', tint: 'text-muted-foreground' }
       : { label: POLICY_LABEL[value].label, tint: POLICY_LABEL[value].tint };
+  if (readOnly) {
+    return (
+      <span
+        className={cn(
+          'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium',
+          meta.tint,
+        )}
+      >
+        {meta.label}
+      </span>
+    );
+  }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -2132,10 +2215,12 @@ function PermissionsSection({
   projectId,
   connector,
   onChanged,
+  canWrite = false,
 }: {
   projectId: string;
   connector: AdminConnector;
   onChanged: () => void;
+  canWrite?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -2295,7 +2380,7 @@ function PermissionsSection({
           <Label>Default</Label>
           <RadioGroup
             value={connector.sensitive ? 'ask_first' : 'follow_rules'}
-            onValueChange={(v) => sensitiveMut.mutate(v === 'ask_first')}
+            onValueChange={(v) => canWrite && sensitiveMut.mutate(v === 'ask_first')}
             className="space-y-2"
           >
             <RadioGroupItem
@@ -2305,7 +2390,7 @@ function PermissionsSection({
               description="Reads run automatically; writes and destructive actions still ask, per the rules below."
               size="lg"
               variant="outline"
-              disabled={sensitiveMut.isPending}
+              disabled={sensitiveMut.isPending || !canWrite}
             />
             <RadioGroupItem
               value="ask_first"
@@ -2322,7 +2407,7 @@ function PermissionsSection({
               }
               size="lg"
               variant="outline"
-              disabled={sensitiveMut.isPending}
+              disabled={sensitiveMut.isPending || !canWrite}
             />
           </RadioGroup>
         </div>
@@ -2342,17 +2427,19 @@ function PermissionsSection({
           <div className="border-border/60 overflow-hidden rounded-2xl border">
             {/* Select-all + bulk apply */}
             <div className="border-border/60 bg-muted/30 flex h-9 items-center gap-2 border-b px-3">
-              <Checkbox
-                checked={
-                  allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false
-                }
-                onCheckedChange={toggleAllFiltered}
-                aria-label={tI18nHardcoded.raw(
-                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrAriaLabel924a321f',
-                )}
-                className="size-3.5"
-              />
-              {selected.size > 0 ? (
+              {canWrite && (
+                <Checkbox
+                  checked={
+                    allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false
+                  }
+                  onCheckedChange={toggleAllFiltered}
+                  aria-label={tI18nHardcoded.raw(
+                    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrAriaLabel924a321f',
+                  )}
+                  className="size-3.5"
+                />
+              )}
+              {canWrite && selected.size > 0 ? (
                 <>
                   <span className="text-foreground text-xs font-medium">
                     {selected.size} selected
@@ -2409,17 +2496,19 @@ function PermissionsSection({
                         isSel ? 'bg-primary/[0.05]' : 'hover:bg-muted/30',
                       )}
                     >
-                      <Checkbox
-                        checked={isSel}
-                        onCheckedChange={() => toggleSel(t.path)}
-                        aria-label={`Select ${t.path}`}
-                        className={cn(
-                          'size-3.5 shrink-0 transition-opacity',
-                          isSel
-                            ? ''
-                            : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
-                        )}
-                      />
+                      {canWrite && (
+                        <Checkbox
+                          checked={isSel}
+                          onCheckedChange={() => toggleSel(t.path)}
+                          aria-label={`Select ${t.path}`}
+                          className={cn(
+                            'size-3.5 shrink-0 transition-opacity',
+                            isSel
+                              ? ''
+                              : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+                          )}
+                        />
+                      )}
                       <button
                         type="button"
                         onClick={() => setExpanded(isOpen ? null : t.path)}
@@ -2457,6 +2546,7 @@ function PermissionsSection({
                       <PermissionPicker
                         value={explicit ?? 'default'}
                         onChange={(c) => setChoice(t.path, c)}
+                        readOnly={!canWrite}
                       />
                     </div>
                     {isOpen && (
@@ -2560,9 +2650,11 @@ function PermissionsSection({
                         'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderSend3b0a4ee1',
                       )}
                       className="h-8 flex-1 font-mono text-xs"
+                      disabled={!canWrite}
                     />
                     <Select
                       value={r.action}
+                      disabled={!canWrite}
                       onValueChange={(v) =>
                         setRules((rs) =>
                           rs.map((x) =>
@@ -2584,19 +2676,22 @@ function PermissionsSection({
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="hover:text-destructive h-8 w-8 shrink-0"
-                      onClick={() => setRules((rs) => rs.filter((x) => x.id !== r.id))}
-                      aria-label={tI18nHardcoded.raw(
-                        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrAriaLabeld2296c34',
-                      )}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    {canWrite && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="hover:text-destructive h-8 w-8 shrink-0"
+                        onClick={() => setRules((rs) => rs.filter((x) => x.id !== r.id))}
+                        aria-label={tI18nHardcoded.raw(
+                          'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrAriaLabeld2296c34',
+                        )}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                 ))}
+                {canWrite && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -2613,21 +2708,24 @@ function PermissionsSection({
                     'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddRule873a093f',
                   )}
                 </Button>
+                )}
               </div>
             )}
           </div>
         )}
         </div>
 
-        <SaveBar
-          dirty={dirty}
-          saving={save.isPending}
-          onSave={() => save.mutate()}
-          onReset={reset}
-          label={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSave783950c7',
-          )}
-        />
+        {canWrite && (
+          <SaveBar
+            dirty={dirty}
+            saving={save.isPending}
+            onSave={() => save.mutate()}
+            onReset={reset}
+            label={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSave783950c7',
+            )}
+          />
+        )}
       </div>
     </section>
   );
@@ -2662,10 +2760,12 @@ function AddAppPanel({
   projectId,
   emailChannelEnabled,
   onAdded,
+  canWrite = false,
 }: {
   projectId: string;
   emailChannelEnabled: boolean;
   onAdded: (slug?: string) => void;
+  canWrite?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const connectStatus = useQuery({
@@ -2673,6 +2773,17 @@ function AddAppPanel({
     queryFn: getConnectStatus,
     staleTime: 5 * 60_000,
   });
+  if (!canWrite) {
+    return (
+      <div className="mx-auto w-full max-w-2xl px-6 py-10">
+        <EmptyState
+          icon={Plug}
+          title="No connectors yet"
+          description="You have read-only access to this project's connectors. Ask a project manager to add one."
+        />
+      </div>
+    );
+  }
   const easyConnectDisabled = connectStatus.data?.configured === false;
   const easyConnectLabel = tI18nHardcoded.raw(
     'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnect19ca1c01',
@@ -3078,11 +3189,13 @@ function ConnectorConfigFields({
   onChange,
   slugEditable,
   emailChannelEnabled = true,
+  readOnly = false,
 }: {
   draft: ConnectorDraftInput;
   onChange: (d: ConnectorDraftInput) => void;
   slugEditable?: boolean;
   emailChannelEnabled?: boolean;
+  readOnly?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const set = (patch: Partial<ConnectorDraftInput>) => onChange({ ...draft, ...patch });
@@ -3105,7 +3218,7 @@ function ConnectorConfigFields({
             placeholder="my-api"
             className="font-mono text-xs"
             variant="popover"
-            disabled={!slugEditable}
+            disabled={!slugEditable || readOnly}
             required
           />
         </Field>
@@ -3113,6 +3226,7 @@ function ConnectorConfigFields({
           <FieldLabel htmlFor="connector-provider">Provider</FieldLabel>
           <Select
             value={p}
+            disabled={readOnly}
             onValueChange={(v) => {
               const provider = v as ConnectorDraftInput['provider'];
               set({
@@ -3149,6 +3263,7 @@ function ConnectorConfigFields({
                 ? 'slack'
                 : (draft.platform ?? (emailChannelEnabled ? 'email' : 'slack'))
             }
+            disabled={readOnly}
             onValueChange={(v) => set({ platform: v as ChannelPlatform, auth: { type: 'none' } })}
           >
             <SelectTrigger>
@@ -3174,6 +3289,7 @@ function ConnectorConfigFields({
             onChange={(e) => set({ spec: e.target.value })}
             placeholder="https://…/openapi.json"
             variant="popover"
+            disabled={readOnly}
             required
           />
         </Field>
@@ -3188,6 +3304,7 @@ function ConnectorConfigFields({
               onChange={(e) => set({ endpoint: e.target.value })}
               placeholder="https://api/graphql"
               variant="popover"
+              disabled={readOnly}
               required
             />
           </Field>
@@ -3203,6 +3320,7 @@ function ConnectorConfigFields({
               onChange={(e) => set({ spec: e.target.value })}
               placeholder=".kortix/executor/schema.graphql"
               variant="popover"
+              disabled={readOnly}
             />
           </Field>
         </>
@@ -3217,6 +3335,7 @@ function ConnectorConfigFields({
               onChange={(e) => set({ url: e.target.value })}
               placeholder="https://mcp…/mcp"
               variant="popover"
+              disabled={readOnly}
               required
             />
           </Field>
@@ -3224,6 +3343,7 @@ function ConnectorConfigFields({
             <FieldLabel htmlFor="connector-transport">Transport</FieldLabel>
             <Select
               value={draft.transport ?? 'http'}
+              disabled={readOnly}
               onValueChange={(v) => set({ transport: v as 'http' | 'sse' })}
             >
               <SelectTrigger id="connector-transport" className="w-full" variant="popover">
@@ -3251,6 +3371,7 @@ function ConnectorConfigFields({
               onChange={(e) => set({ baseUrl: e.target.value })}
               placeholder="https://api.internal"
               variant="popover"
+              disabled={readOnly}
               required
             />
           </Field>
@@ -3266,6 +3387,7 @@ function ConnectorConfigFields({
               onChange={(e) => set({ spec: e.target.value })}
               placeholder=".kortix/executor/routes.toml"
               variant="popover"
+              disabled={readOnly}
             />
           </Field>
         </>
@@ -3276,6 +3398,7 @@ function ConnectorConfigFields({
             <FieldLabel htmlFor="connector-auth">Auth</FieldLabel>
             <Select
               value={draft.auth?.type ?? 'none'}
+              disabled={readOnly}
               onValueChange={(v) => setAuth({ type: v as 'none' | 'bearer' | 'basic' | 'custom' })}
             >
               <SelectTrigger id="connector-auth" className="w-full" variant="popover">
@@ -3306,6 +3429,7 @@ function ConnectorConfigFields({
                 onChange={(e) => setAuth({ name: e.target.value })}
                 placeholder="X-API-Key"
                 variant="popover"
+                disabled={readOnly}
                 required
               />
             </Field>

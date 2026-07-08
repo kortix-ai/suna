@@ -38,7 +38,16 @@ import { crChangeRequestId, execExecutionId, itemDeepLink, planBulkAction } from
 import { ReviewCenter } from './review-center';
 import { isSafeRisk } from './types';
 
-export function ReviewCenterConnected({ projectName }: { projectName: string }) {
+export function ReviewCenterConnected({
+  projectName,
+  canAct = true,
+}: {
+  projectName: string;
+  // When false (a review.read-only role), withhold the act handlers so the
+  // ReviewCenter renders its inbox read-only — no mutation UI that would 403.
+  // Defaults to true to preserve behavior for callers that don't gate.
+  canAct?: boolean;
+}) {
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
   const qc = useQueryClient();
@@ -185,8 +194,8 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
       isFetching={isFetching}
       isError={isError}
       sessionLabels={sessionLabels}
-      onAct={handleAct}
-      onBulkAct={handleBulkAct}
+      onAct={canAct ? handleAct : undefined}
+      onBulkAct={canAct ? handleBulkAct : undefined}
       onRefresh={() => void refetch()}
       onOpenSession={(sessionId) => {
         // "See progress" only VIEWS the session — feedback delivery goes through

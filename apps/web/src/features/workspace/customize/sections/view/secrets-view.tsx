@@ -284,6 +284,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
         projectId={projectId}
         open={providerModalOpen}
         onOpenChange={setProviderModalOpen}
+        canWrite={canManage}
       />
     </>
   );

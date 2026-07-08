@@ -24,6 +24,8 @@ import { Icon } from '@/features/icon/icon';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useCopy } from '@/hooks/use-copy';
 import { getProject, inviteRepoCollaborator, isManagedGithubProject } from '@kortix/sdk/projects-client';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 
@@ -36,6 +38,11 @@ export function DevView({ projectId }: { projectId: string }) {
   });
 
   const project = projectQuery.data;
+  // The GitHub-invite form calls inviteRepoCollaborator, which asserts
+  // project.write server-side. A read-only role (project.read only) still sees the
+  // whole dev walkthrough — just not the invite control that would 403. Fails safe:
+  // false until the probe resolves.
+  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
 
   return (
     <CustomizeSectionWrapper
@@ -68,7 +75,7 @@ export function DevView({ projectId }: { projectId: string }) {
         />
       )}
 
-      {project && <DevSteps project={project} />}
+      {project && <DevSteps project={project} canWrite={canWrite} />}
     </CustomizeSectionWrapper>
   );
 }
@@ -79,7 +86,13 @@ type DevStep = {
   content: ReactNode;
 };
 
-function DevSteps({ project }: { project: Awaited<ReturnType<typeof getProject>> }) {
+function DevSteps({
+  project,
+  canWrite,
+}: {
+  project: Awaited<ReturnType<typeof getProject>>;
+  canWrite: boolean;
+}) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const cloneUrl = cloneUrlFor(project.repo_url);
   const repoDir = repoDirFor(project.repo_url) || 'my-project';
@@ -88,7 +101,9 @@ function DevSteps({ project }: { project: Awaited<ReturnType<typeof getProject>>
 
   const steps: DevStep[] = [];
 
-  if (managed) {
+  // The invite step is the only WRITE surface in this walkthrough; hide it for
+  // read-only roles so they don't hit a 403 on submit. The rest stays visible.
+  if (managed && canWrite) {
     steps.push({
       title: tI18nHardcoded.raw(
         'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleGetd1e11afa',

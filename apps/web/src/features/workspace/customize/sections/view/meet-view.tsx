@@ -24,11 +24,16 @@ import {
   useSetMeetBotName,
   useSetMeetVoice,
 } from '@/hooks/channels/use-meet-voices';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 
 export function MeetView({ projectId }: { projectId: string }) {
   const voicesQuery = useMeetVoices(projectId);
   const setVoice = useSetMeetVoice();
   const setBotName = useSetMeetBotName();
+  // Read-only unless the role can write connectors (meet is connector-backed);
+  // fails closed while the probe resolves.
+  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
   const [previewing, setPreviewing] = useState<string | null>(null);
   const [draftName, setDraftName] = useState<string | null>(null);
 
@@ -102,6 +107,10 @@ export function MeetView({ projectId }: { projectId: string }) {
           <div className="bg-popover rounded-md border px-4 py-5">
             {voicesQuery.isLoading ? (
               <Skeleton className="h-10 w-full rounded-lg" />
+            ) : !canWrite ? (
+              <p className="text-foreground text-sm font-medium">
+                {(data?.bot_name ?? '').trim() || defaultBotName}
+              </p>
             ) : (
               <div className="flex items-center gap-2">
                 <Input
@@ -138,6 +147,17 @@ export function MeetView({ projectId }: { projectId: string }) {
               <Skeleton className="h-11 w-full rounded-lg" />
             ) : voices.length === 0 ? (
               <p className="text-muted-foreground text-sm">No voices available.</p>
+            ) : !canWrite ? (
+              <p className="text-muted-foreground text-sm">
+                {selectedVoice ? (
+                  <>
+                    <span className="text-foreground font-medium">{selectedVoice.name}</span> —{' '}
+                    {selectedVoice.desc}
+                  </>
+                ) : (
+                  'No voice selected.'
+                )}
+              </p>
             ) : (
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
