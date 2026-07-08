@@ -27,7 +27,7 @@ mock.module('../shared/db', () => ({
 mock.module('./git', () => ({ deleteRemoteSessionBranch: async () => false }));
 mock.module('../billing/services/compute-metering', () => ({ tickRunningComputeCharges: async () => ({ settled: 0 }) }));
 mock.module('../snapshots/builder', () => ({ reconcileStaleBuilds: async () => ({ checked: 0, closedReady: 0, closedFailed: 0 }) }));
-mock.module('../snapshots/quota-gc', () => ({ reconcileSnapshotQuota: async () => ({ namespaceCount: 0, eligible: 0, deleted: 0, dryRun: false }) }));
+mock.module('../snapshots/quota-gc', () => ({ reconcileSnapshotQuota: async () => ({ orgTotal: 0, managedCount: 0, eligible: 0, deleted: 0, deferred: 0, dryRun: false }) }));
 // Controllable per-test: the first call can be made to hang forever (to
 // simulate the exact 2026-07-02 failure mode — an unbounded provider call
 // stuck inside reapAndReconcileSandboxes), later calls resolve normally.

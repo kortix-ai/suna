@@ -56,6 +56,7 @@ import { useState, type ReactNode } from 'react';
 const SNAPSHOTS_QUERY_KEY = (projectId: string) => ['project-snapshots', projectId];
 
 const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
+  quota: 'Snapshot quota reached',
   dockerfile: 'Dockerfile build failed',
   git: 'Repository access failed',
   tunnel: 'Sandbox callback unreachable',
