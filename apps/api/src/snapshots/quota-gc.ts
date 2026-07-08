@@ -19,18 +19,20 @@
  * Never acts on a partial view: if the org listing fails, the pass does nothing.
  */
 
-import { isNotNull, sql } from 'drizzle-orm';
 import { sandboxTemplates } from '@kortix/db';
-import { db } from '../shared/db';
+import { isNotNull, sql } from 'drizzle-orm';
 import {
   deleteDaytonaSnapshotById,
   isDaytonaConfigured,
   listDaytonaSnapshots,
 } from '../shared/daytona';
+import { db } from '../shared/db';
 import {
+  DAYTONA_ORG_SNAPSHOT_LIMIT,
   QUOTA_GC_MAX_PER_PASS,
-  selectSnapshotsToReap,
+  QUOTA_GC_ORG_TARGET,
   type SnapshotLike,
+  selectSnapshotsToReap,
 } from './quota-gc-select';
 
 /** A project counts as ACTIVE (its legacy warm pointer is protected) when it has a
@@ -46,6 +48,8 @@ export interface QuotaGcResult {
   deleted: number;
   /** Reapable but dropped by the per-pass cap. Never silently truncate. */
   deferred: number;
+  /** GC cannot get the org back to target — capacity problem, needs a human. */
+  budgetUnresolved: boolean;
   dryRun: boolean;
 }
 
@@ -63,6 +67,7 @@ export async function reconcileSnapshotQuota(
     eligible: 0,
     deleted: 0,
     deferred: 0,
+    budgetUnresolved: false,
     dryRun,
   };
   if (!isDaytonaConfigured()) return result;
@@ -71,7 +76,10 @@ export async function reconcileSnapshotQuota(
   try {
     all = await listDaytonaSnapshots();
   } catch (err) {
-    console.warn('[snapshot-gc] org listing failed — pass skipped:', err instanceof Error ? err.message : err);
+    console.warn(
+      '[snapshot-gc] org listing failed — pass skipped:',
+      err instanceof Error ? err.message : err,
+    );
     return result;
   }
 
@@ -105,8 +113,10 @@ export async function reconcileSnapshotQuota(
     FROM kortix.projects p
     WHERE p.metadata -> 'warm_snapshot' ->> 'name' IS NOT NULL
   `);
-  const pointerList = ((pointerRows as unknown as { rows?: any[] }).rows ?? (pointerRows as unknown as any[])) as Array<{
-    name: string; active: boolean;
+  const pointerList = ((pointerRows as unknown as { rows?: any[] }).rows ??
+    (pointerRows as unknown as any[])) as Array<{
+    name: string;
+    active: boolean;
   }>;
   for (const r of pointerList) {
     if (r.name && r.active) referenced.add(r.name);
@@ -117,8 +127,22 @@ export async function reconcileSnapshotQuota(
   result.managedCount = plan.managedCount;
   result.eligible = plan.doomed.length + plan.deferred;
   result.deferred = plan.deferred;
+  result.budgetUnresolved = plan.budgetUnresolved;
 
   if (!plan.underPressure) return result;
+
+  // GC has run out of road: one warm tip per active project already exceeds the
+  // budget, so no amount of sweeping will keep builds from failing. Only capacity
+  // (a bigger org snapshot quota) or gating the warm bake fixes this. Say so —
+  // the first outage happened because a GC that couldn't cope logged nothing.
+  if (plan.budgetUnresolved) {
+    console.error(
+      `[snapshot-gc] BUDGET UNRESOLVED: org=${plan.orgTotal} target=${QUOTA_GC_ORG_TARGET} ` +
+        `limit=${DAYTONA_ORG_SNAPSHOT_LIMIT} — evicted everything eligible and still over. ` +
+        `The per-project warm cache floor exceeds the org snapshot quota; raise the quota ` +
+        `or gate the warm bake. Builds will start failing with 'Snapshot quota exceeded'.`,
+    );
+  }
 
   for (const { snapshot, reason } of plan.doomed) {
     if (dryRun) {
@@ -134,7 +158,9 @@ export async function reconcileSnapshotQuota(
   console.log(
     `[snapshot-gc] org=${result.orgTotal} managed=${result.managedCount} ` +
       `eligible=${result.eligible} ${dryRun ? 'would-delete' : 'deleted'}=${result.deleted}` +
-      (result.deferred > 0 ? ` deferred=${result.deferred} (cap ${QUOTA_GC_MAX_PER_PASS}/pass)` : ''),
+      (result.deferred > 0
+        ? ` deferred=${result.deferred} (cap ${QUOTA_GC_MAX_PER_PASS}/pass)`
+        : ''),
   );
   return result;
 }
