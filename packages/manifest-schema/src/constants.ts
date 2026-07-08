@@ -26,7 +26,7 @@ export const TRIGGER_TYPES = ['cron', 'webhook'] as const;
 // by apps/api/src/__tests__/unit-connectors-parse.test.ts. `computer` is
 // deliberately absent: it is synth-only and never written to a manifest.
 export const CONNECTOR_PROVIDERS = ['pipedream', 'mcp', 'openapi', 'graphql', 'http', 'channel'] as const;
-export const CONNECTOR_AUTH_TYPES = ['bearer', 'basic', 'custom', 'none'] as const;
+export const CONNECTOR_AUTH_TYPES = ['bearer', 'basic', 'custom', 'oauth1', 'none'] as const;
 /** Platforms a `channel` connector can target — mirrors connectors.ts CHANNEL_PLATFORMS. */
 export const CHANNEL_PLATFORMS = ['slack', 'email', 'meet'] as const;
 /**

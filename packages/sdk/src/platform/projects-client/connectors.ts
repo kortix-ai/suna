@@ -116,7 +116,7 @@ export interface ConnectorConfig {
   endpoint: string | null;
   baseUrl: string | null;
   spec: string | null;
-  auth: { type: 'none' | 'bearer' | 'basic' | 'custom'; in: 'header' | 'query'; name: string | null; prefix: string | null };
+  auth: { type: 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1' | 'oauth1'; in: 'header' | 'query'; name: string | null; prefix: string | null };
 }
 
 export async function getConnectorConfig(projectId: string, slug: string) {
@@ -161,7 +161,7 @@ export interface ConnectorDraftInput {
    *  removed 2026-07-05). */
   credential?: 'shared';
   auth?: {
-    type?: 'none' | 'bearer' | 'basic' | 'custom';
+    type?: 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1';
     in?: 'header' | 'query';
     name?: string;
     prefix?: string;

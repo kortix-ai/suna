@@ -1053,6 +1053,13 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
             severity: 'error',
           });
         }
+        if (t === 'oauth1' && provider !== 'openapi' && provider !== 'http') {
+          issues.push({
+            path: `${where}.auth.type`,
+            message: 'auth.type "oauth1" is only supported for openapi/http connectors.',
+            severity: 'error',
+          });
+        }
         if (auth.secret !== undefined) {
           issues.push({
             path: `${where}.auth.secret`,
