@@ -136,6 +136,10 @@ export async function listInboxItems(
 }
 
 export interface InsertReviewItemInput {
+  /** Pre-generated id — lets a git-backed submission name its keep-ref
+   *  (refs/kortix/submissions/<id>) before the row exists, so the ref and the
+   *  row land in one pass instead of insert-then-update. */
+  reviewItemId?: string;
   accountId: string;
   projectId: string;
   kind: SubmittableKind;
@@ -153,6 +157,7 @@ export async function insertReviewItem(input: InsertReviewItemInput) {
   const [row] = await db
     .insert(reviewItems)
     .values({
+      ...(input.reviewItemId ? { reviewItemId: input.reviewItemId } : {}),
       accountId: input.accountId,
       projectId: input.projectId,
       kind: input.kind,

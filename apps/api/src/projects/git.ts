@@ -69,6 +69,8 @@ export {
   commitFileToBranch,
 } from './git/branches';
 
+export { commitExistsOnRemote, createKeepRef, deleteKeepRef } from './git/refs';
+
 export {
   getMergeBase,
   getBranchDiff,

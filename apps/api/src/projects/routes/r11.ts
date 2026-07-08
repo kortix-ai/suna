@@ -4,6 +4,7 @@
 // items only this pass — change requests and executor/tunnel approvals are folded
 // in by adapters later. See docs/REVIEW_CENTER_DESIGN.md.
 
+import { randomUUID } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
@@ -12,10 +13,14 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
+import { commitExistsOnRemote, createKeepRef, deleteKeepRef } from '../git';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
+import { withProjectGitAuth } from '../lib/git';
 import { normalizeString, readBody } from '../lib/serializers';
+import { buildSubmissionTrace } from '../lib/submission-trace';
 import { isAdaptedId } from '../review-adapters';
+import { parseOutputSubmissionDetail, submissionKeepRef } from '../submission-detail';
 import {
   type ReviewSegment,
   applyVerdict,
@@ -114,7 +119,7 @@ projectsApp.openapi(
     },
     responses: {
       201: json(AnyObject, 'The created review item'),
-      ...errors(400, 404),
+      ...errors(400, 404, 502),
     },
   }),
   async (c: any) => {
@@ -141,33 +146,100 @@ projectsApp.openapi(
         ? (body.detail as Record<string, unknown>)
         : {};
 
-    let originSessionId: string | null = normalizeString(body.session_id ?? body.sessionId);
-    if (originSessionId) {
+    // Session binding: the token's own session id (set on session executor
+    // tokens by the auth middleware) is authoritative — a submission can't
+    // claim a session it doesn't run in. The body's session_id is only a
+    // fallback for non-session callers; both must resolve to a real session
+    // in THIS project or they're dropped.
+    const sessionCandidates = [
+      normalizeString(c.get('sessionId')),
+      normalizeString(body.session_id ?? body.sessionId),
+    ].filter((v): v is string => Boolean(v));
+    let originSessionId: string | null = null;
+    for (const candidate of sessionCandidates) {
       const [sessionRow] = await db
         .select({ sessionId: projectSessions.sessionId })
         .from(projectSessions)
         .where(
           and(
-            eq(projectSessions.sessionId, originSessionId),
+            eq(projectSessions.sessionId, candidate),
             eq(projectSessions.projectId, projectId),
           ),
         )
         .limit(1);
-      if (!sessionRow) originSessionId = null;
+      if (sessionRow) {
+        originSessionId = sessionRow.sessionId;
+        break;
+      }
     }
 
-    const row = await insertReviewItem({
-      accountId: loaded.row.accountId,
-      projectId,
-      kind,
-      title,
-      summary: normalizeString(body.summary) ?? '',
-      risk: risk as (typeof RISKS)[number],
-      detail,
-      agent: normalizeString(body.agent) ?? '',
-      originSessionId,
-      createdBy: loaded.userId,
-    });
+    // Structured work submissions (kind: output) — validated payload, git
+    // keep-ref pinning, and the server-stapled trace. Legacy free-form output
+    // details pass through unchanged (minus the server-owned trace key).
+    let finalDetail: Record<string, unknown> = detail;
+    let reviewItemId: string | undefined;
+    let keepRefCreated: string | null = null;
+    if (kind === 'output') {
+      const parsed = parseOutputSubmissionDetail(detail);
+      if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+      if (parsed.structured && parsed.value.storage === 'git' && parsed.value.git) {
+        const gitProject = await withProjectGitAuth(loaded.row);
+        const sha = parsed.value.git.commit_sha;
+        const exists = await commitExistsOnRemote(gitProject, sha).catch(() => false);
+        if (!exists) {
+          return c.json(
+            { error: 'git.commit_sha not found on the project remote — push the commit before submitting' },
+            400,
+          );
+        }
+        reviewItemId = randomUUID();
+        const keepRef = submissionKeepRef(reviewItemId);
+        try {
+          await createKeepRef(gitProject, sha, keepRef);
+        } catch (error) {
+          console.error('[review] keep-ref creation failed', {
+            projectId,
+            sha,
+            keepRef,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return c.json({ error: 'Could not pin the submission artifacts on the project remote' }, 502);
+        }
+        keepRefCreated = keepRef;
+        parsed.value.git.keep_ref = keepRef;
+      }
+      finalDetail = { ...parsed.value };
+      if (originSessionId) {
+        const trace = await buildSubmissionTrace(projectId, originSessionId);
+        if (trace) finalDetail.trace = trace;
+      }
+    }
+
+    let row: Awaited<ReturnType<typeof insertReviewItem>>;
+    try {
+      row = await insertReviewItem({
+        reviewItemId,
+        accountId: loaded.row.accountId,
+        projectId,
+        kind,
+        title,
+        summary: normalizeString(body.summary) ?? '',
+        risk: risk as (typeof RISKS)[number],
+        detail: finalDetail,
+        agent: normalizeString(body.agent) ?? '',
+        originSessionId,
+        createdBy: loaded.userId,
+      });
+    } catch (error) {
+      // Don't strand a remote ref pointing at a submission that never existed.
+      const strandedRef = keepRefCreated;
+      if (strandedRef) {
+        void withProjectGitAuth(loaded.row)
+          .then((p) => deleteKeepRef(p, strandedRef))
+          .catch(() => {});
+      }
+      throw error;
+    }
     // If this was submitted from a live Slack session, post an actionable card
     // into that thread so a human can approve/deny it right there. Best-effort and
     // a no-op for web sessions (postReviewCard returns early when there's no live

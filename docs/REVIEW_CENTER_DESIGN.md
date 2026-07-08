@@ -20,6 +20,16 @@ Built and tested for **native review items** (agent-submitted `output` / `decisi
 
 Also built since:
 
+- **Work submissions (`kortix submit`)** — the `output` kind is now a full submission
+  primitive (see `docs/specs/2026-07-08-session-work-submission.md`): one standardized
+  CLI verb; artifacts committed on the session branch and pinned under
+  `refs/kortix/submissions/<id>` (durable past sandbox teardown; served through the
+  existing files-at-ref read path); inline mode for small text results; agent `claims`;
+  server-derived session binding (token wins over body); a server-stapled trace
+  (governed-action audit slice + cost snapshot + transcript ref); and the inbox detail
+  modal rendering claims checklist, artifact previews at the keep-ref, and the trace
+  behind Advanced.
+
 - **Placement** — the connected inbox is now a flag-gated **"Review" customize section** (`review-view.tsx`,
   registered in `customize-panel.tsx`; `CustomizeSection`/`project-actions.ts` updated). Visible when the
   project's `review_center` experimental flag is on.

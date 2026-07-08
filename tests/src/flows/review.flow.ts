@@ -56,7 +56,13 @@ flow(
 
 flow(
   'RV-3',
-  { domain: 'review', routes: ['POST /v1/projects/:projectId/review/items'] },
+  {
+    domain: 'review',
+    routes: [
+      'POST /v1/projects/:projectId/review/items',
+      'POST /v1/projects/:projectId/review/items/:reviewItemId/act',
+    ],
+  },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step('missing title → 400', async () => {
@@ -88,6 +94,92 @@ flow(
           { params: { projectId: p.id } },
         );
       r.status(400);
+    });
+    await ctx.step('structured submit: server-owned detail.trace → 400', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/review/items',
+        {
+          kind: 'output',
+          title: ctx.fixtures.name('rv'),
+          detail: { submission_version: 1, storage: 'inline', content: 'x', trace: { audit: [] } },
+        },
+        { params: { projectId: p.id } },
+      );
+      r.status(400);
+    });
+    await ctx.step('structured submit: malformed git sha → 400', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/review/items',
+        {
+          kind: 'output',
+          title: ctx.fixtures.name('rv'),
+          detail: {
+            submission_version: 1,
+            storage: 'git',
+            git: { commit_sha: 'abc123', files: [{ path: 'out/report.md' }] },
+          },
+        },
+        { params: { projectId: p.id } },
+      );
+      r.status(400);
+    });
+    await ctx.step('structured submit: traversal file path → 400', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/review/items',
+        {
+          kind: 'output',
+          title: ctx.fixtures.name('rv'),
+          detail: {
+            submission_version: 1,
+            storage: 'git',
+            git: { commit_sha: 'a'.repeat(40), files: [{ path: '../escape.md' }] },
+          },
+        },
+        { params: { projectId: p.id } },
+      );
+      r.status(400);
+    });
+    await ctx.step('structured submit: sha not on the project remote → 400', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/review/items',
+        {
+          kind: 'output',
+          title: ctx.fixtures.name('rv'),
+          detail: {
+            submission_version: 1,
+            storage: 'git',
+            git: { commit_sha: 'a'.repeat(40), files: [{ path: 'out/report.md' }] },
+          },
+        },
+        { params: { projectId: p.id } },
+      );
+      r.status(400);
+    });
+    await ctx.step('structured submit: inline → 201 echoing storage, then dismissed', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/review/items',
+        {
+          kind: 'output',
+          title: ctx.fixtures.name('rv'),
+          detail: {
+            submission_version: 1,
+            storage: 'inline',
+            content: 'All checks passed.',
+            claims: ['ran against live data'],
+          },
+        },
+        { params: { projectId: p.id } },
+      );
+      r.status(201).body().exists('$.review_item_id');
+      r.body().has('$.detail.storage', 'inline');
+      const created = r.json<{ review_item_id: string }>();
+      // Keep the shared inbox clean — this flow must not leave durable rows.
+      const dismissed = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/review/items/:reviewItemId/act',
+        { verdict: 'dismiss' },
+        { params: { projectId: p.id, reviewItemId: created.review_item_id } },
+      );
+      dismissed.status(200);
     });
   },
 );

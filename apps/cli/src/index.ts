@@ -7,6 +7,7 @@ import { appsExperimentalEnabled, runApps } from './commands/apps.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
+import { runSubmit } from './commands/submit.ts';
 import { runCreate } from './commands/create.ts';
 import { runDev } from './commands/dev.ts';
 import { runEnv } from './commands/env.ts';
@@ -109,6 +110,7 @@ const SECTIONS: readonly CommandSection[] = [
       { name: 'chat', args: '[session-id]', blurb: "Talk to a session's agent (REPL or --prompt)" },
       { name: 'files', args: '<subcommand>', blurb: 'Browse repo files, commits, branches, diffs' },
       { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
+      { name: 'submit', args: '--title "…" [options]', blurb: 'Submit finished work for human review' },
       { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
     ],
   },
@@ -337,6 +339,9 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'cr') {
     return runCr(argv.slice(1));
+  }
+  if (argv[0] === 'submit') {
+    return runSubmit(argv.slice(1));
   }
   if (argv[0] === 'access') {
     return runAccess(argv.slice(1));

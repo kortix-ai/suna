@@ -362,8 +362,12 @@ prints each agent's resolved scope. Use `kortix validate --scopes` to see the fu
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md">
   In-depth `kortix` CLI reference. Every subcommand (login, hosts,
-  projects, secrets, env, sessions, triggers, cr, init, update,
-  uninstall), every flag, every env var the CLI reads. Includes the
+  projects, secrets, env, sessions, triggers, cr, submit, init, update,
+  uninstall), every flag, every env var the CLI reads. `kortix submit`
+  is the standardized verb for recording finished non-code work
+  (reports, documents, answers, assets) for human review in the Review
+  Center — artifacts are pinned in git and outlive the sandbox; use it
+  whenever a deliverable is done (`show` presents, `submit` records). Includes the
   project-scoped token model and what the CLI can do **from inside a
   session sandbox** (where `KORTIX_SANDBOX_TOKEN` + `KORTIX_API_URL` are
   pre-injected so `kortix sessions ls`, `kortix secrets set FOO=bar`,

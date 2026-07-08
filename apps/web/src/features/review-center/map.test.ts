@@ -175,3 +175,59 @@ describe('statusToVerdict', () => {
     expect(statusToVerdict('needs_you')).toBeNull();
   });
 });
+
+describe('structured work submissions (submission_version 1)', () => {
+  const outputDetailOf = (i: ReviewItem) => (i as Extract<ReviewItem, { kind: 'output' }>).detail;
+
+  test('maps git storage: claims, files, keep-ref, sha and the stapled trace', () => {
+    const item = mapApiReviewItem({
+      ...row,
+      detail: {
+        submission_version: 1,
+        storage: 'git',
+        artifact_kind: 'report',
+        claims: ['numbers from live data', 'no PII included'],
+        git: {
+          commit_sha: 'a'.repeat(40),
+          branch: 'session/x',
+          keep_ref: 'refs/kortix/submissions/rv-1',
+          files: [{ path: 'out/report.md', kind: 'markdown', bytes: 1234 }],
+        },
+        trace: {
+          transcript_ref: '/v1/projects/proj-1/sessions/s-1/transcript',
+          audit: [{ action: 'gmail.send_email', connector: 'c-1', risk: 'medium', status: 'completed', at: '2026-07-08T00:00:00.000Z' }],
+          audit_truncated: false,
+          cost: { tokens: 4200, llm_cost: 0.31, compute_cost: 0.04 },
+        },
+      },
+    });
+    const d = outputDetailOf(item);
+    expect(d.storage).toBe('git');
+    expect(d.claims).toEqual(['numbers from live data', 'no PII included']);
+    expect(d.keepRef).toBe('refs/kortix/submissions/rv-1');
+    expect(d.commitSha).toBe('a'.repeat(40));
+    expect(d.files).toEqual([{ path: 'out/report.md', kind: 'markdown', bytes: 1234 }]);
+    expect(d.trace?.audit).toHaveLength(1);
+    expect(d.trace?.cost).toEqual({ tokens: 4200, llmCost: 0.31, computeCost: 0.04 });
+  });
+
+  test('maps inline storage content and defaults label from artifact_kind', () => {
+    const item = mapApiReviewItem({
+      ...row,
+      detail: { submission_version: 1, storage: 'inline', artifact_kind: 'answer', content: 'All 4 checks passed.' },
+    });
+    const d = outputDetailOf(item);
+    expect(d.storage).toBe('inline');
+    expect(d.content).toBe('All 4 checks passed.');
+    expect(d.artifactLabel).toBe('answer');
+    expect(d.trace).toBeUndefined();
+  });
+
+  test('legacy output detail keeps the passthrough shape with no structured fields', () => {
+    const item = mapApiReviewItem(row);
+    const d = outputDetailOf(item);
+    expect(d.storage).toBeUndefined();
+    expect(d.claims).toBeUndefined();
+    expect(d.artifactLabel).toBe('Landing page');
+  });
+});
