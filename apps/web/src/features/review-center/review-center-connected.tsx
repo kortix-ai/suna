@@ -31,7 +31,16 @@ import { ReviewCenter } from './review-center';
 const CR_PREFIX = 'cr:';
 const EXEC_PREFIX = 'exec:';
 
-export function ReviewCenterConnected({ projectName }: { projectName: string }) {
+export function ReviewCenterConnected({
+  projectName,
+  canAct = true,
+}: {
+  projectName: string;
+  // When false (a review.read-only role), withhold the act handlers so the
+  // ReviewCenter renders its inbox read-only — no mutation UI that would 403.
+  // Defaults to true to preserve behavior for callers that don't gate.
+  canAct?: boolean;
+}) {
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
   const qc = useQueryClient();
@@ -130,9 +139,12 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
       isLoading={isLoading}
       isFetching={isFetching}
       sessionLabels={sessionLabels}
-      onAct={handleAct}
-      onBulkAct={(ids, verdict) =>
-        bulk.mutate({ ids, verdict }, { onError: (e) => errorToast(e.message) })
+      onAct={canAct ? handleAct : undefined}
+      onBulkAct={
+        canAct
+          ? (ids, verdict) =>
+              bulk.mutate({ ids, verdict }, { onError: (e) => errorToast(e.message) })
+          : undefined
       }
       onOpenSession={(sessionId) => {
         // "See progress" only VIEWS the session — feedback delivery goes through

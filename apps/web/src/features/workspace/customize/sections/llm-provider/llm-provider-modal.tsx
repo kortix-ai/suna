@@ -36,6 +36,7 @@ export function ProjectProviderModal({
   initialProviderId,
   asPanel = false,
   allowedTabs,
+  canWrite = false,
 }: ProjectProviderModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { secretsQuery, connectedProviders, llmGatewayEnabled } = useConnectedProviders(
@@ -44,9 +45,14 @@ export function ProjectProviderModal({
   );
   const hasConnections = connectedProviders.length > 0;
 
+  // Read-only members never reach the catalog (its detail → connect forms POST
+  // secrets and would 403); fold any attempt to land there back to Connected.
   const clampTab = useCallback(
-    (t: ActiveTab): ActiveTab => (allowedTabs && !allowedTabs.includes(t) ? allowedTabs[0] : t),
-    [allowedTabs],
+    (t: ActiveTab): ActiveTab => {
+      const resolved = allowedTabs && !allowedTabs.includes(t) ? allowedTabs[0] : t;
+      return !canWrite && resolved === 'catalog' ? 'connected' : resolved;
+    },
+    [allowedTabs, canWrite],
   );
 
   const [activeTab, setActiveTab] = useState<ActiveTab>(() =>
@@ -57,7 +63,7 @@ export function ProjectProviderModal({
 
   useEffect(() => {
     if (open) {
-      if (initialProviderId) {
+      if (initialProviderId && canWrite) {
         setActiveTab(clampTab('catalog'));
         setSubview({ kind: 'connect', providerId: initialProviderId });
       } else {
@@ -84,7 +90,8 @@ export function ProjectProviderModal({
         ? 'Search models...'
         : 'Search providers...';
 
-  const showTab = (t: ActiveTab) => !allowedTabs || allowedTabs.includes(t);
+  const showTab = (t: ActiveTab) =>
+    (!allowedTabs || allowedTabs.includes(t)) && (canWrite || t !== 'catalog');
   const showTabBar = !allowedTabs || allowedTabs.length > 1;
 
   const body = (
@@ -152,6 +159,7 @@ export function ProjectProviderModal({
                 projectId={projectId}
                 connectedProviders={connectedProviders}
                 search={search}
+                canWrite={canWrite}
                 onAddProvider={() => switchTab('catalog')}
               />
             </TabsContent>
@@ -163,6 +171,7 @@ export function ProjectProviderModal({
                 search={search}
                 subview={subview}
                 setSubview={setSubview}
+                canWrite={canWrite}
               />
             </TabsContent>
 

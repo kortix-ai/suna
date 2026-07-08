@@ -14,7 +14,9 @@ import {
 import { formatMode } from '@/features/workspace/customize/shared/utils';
 import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { toast } from '@/lib/toast';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type AgentGrantSet,
@@ -33,12 +35,14 @@ import { useEffect, useMemo, useState } from 'react';
 type Agent = ProjectConfigSummary['agents'][number];
 
 export function AgentsView({ projectId }: { projectId: string }) {
+  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_AGENT_WRITE).allowed === true;
   return (
     <ConfigEntityView<Agent>
       projectId={projectId}
       kind="agent"
       noun="agent"
       layout="split"
+      canWrite={canWrite}
       title="Agents"
       searchPlaceholder="Search agents"
       emptyIcon={Bot}

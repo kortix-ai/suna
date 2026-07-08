@@ -29,6 +29,8 @@ import { GatewayOverview } from '@/features/workspace/customize/sections/view/ga
 import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import type { CustomizeSection } from '@/lib/customize-sections';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { useCustomizeStore } from '@/stores/customize-store';
 
 type LlmTab = 'providers' | 'overview' | 'logs' | 'budgets' | 'keys';
@@ -63,6 +65,11 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
   const models = useMemo(() => flattenModels(providers), [providers]);
   const modelDefaults = useModelDefaults(projectId);
   const effectiveDefault = modelDefaults.accountDefault ?? modelDefaults.platformDefault ?? null;
+  // A role with the LLM section's READ leaf (project.read) but not project.write
+  // sees the gateway read-only: logs/overview/spend stay visible, but the
+  // account-default model picker — the one mutating control in this bar, which
+  // POSTs setAccountDefault — is hidden so a read-only user can't 403.
+  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
 
   // Follow an external deep-link (e.g. openCustomize('llm-providers')) to its
   // tab. Plain in-view tab clicks stay local and never move the main rail.
@@ -88,14 +95,16 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
             </TabsTrigger>
           ))}
         </TabsList>
-        <ModelSelector
-          models={models}
-          providers={providers}
-          selectedModel={effectiveDefault}
-          onSelect={(m) => {
-            if (m) void modelDefaults.setAccountDefault(m);
-          }}
-        />
+        {canWrite ? (
+          <ModelSelector
+            models={models}
+            providers={providers}
+            selectedModel={effectiveDefault}
+            onSelect={(m) => {
+              if (m) void modelDefaults.setAccountDefault(m);
+            }}
+          />
+        ) : null}
       </div>
 
       {/* min-h-0 lets each panel actually shrink inside the flex column so
@@ -107,6 +116,7 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
           open={open}
           onOpenChange={() => {}}
           defaultTab={llmProvidersTab}
+          canWrite={canWrite}
         />
       </TabsContent>
       <TabsContent value="overview" className="min-h-0 overflow-y-auto">
@@ -116,10 +126,10 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
         <GatewayLogs projectId={projectId} />
       </TabsContent>
       <TabsContent value="budgets" className="min-h-0 overflow-y-auto">
-        <GatewayBudgets projectId={projectId} />
+        <GatewayBudgets projectId={projectId} canWrite={canWrite} />
       </TabsContent>
       <TabsContent value="keys" className="min-h-0 overflow-y-auto">
-        <GatewayKeys projectId={projectId} />
+        <GatewayKeys projectId={projectId} canWrite={canWrite} />
       </TabsContent>
     </Tabs>
   );

@@ -98,6 +98,8 @@ import {
   useSlackMode,
   useUpdateEmailPolicy,
 } from '@/hooks/channels/use-channels-installations';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type AdminConnector,
@@ -254,6 +256,11 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
     staleTime: 10_000,
   });
   const connectors = useMemo(() => query.data?.connectors ?? [], [query.data]);
+  // Section shows to any role holding the connector READ leaf; the mutating
+  // controls below gate on WRITE. Defaults false until the probe resolves →
+  // fails safe (read-only) rather than flashing editable controls that 403.
+  const canWrite =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
   const emailChannelEnabled = projectQuery.data?.experimental?.agentmail_email === true;
   const isForbidden = query.isError && /403|forbidden/i.test((query.error as Error)?.message ?? '');
 
@@ -360,6 +367,7 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
             key={active.slug}
             projectId={projectId}
             connector={active}
+            canWrite={canWrite}
             onChanged={invalidate}
             onRemoved={() => {
               invalidate();
@@ -737,11 +745,13 @@ function RailItem({
 function ConnectorDetail({
   projectId,
   connector,
+  canWrite,
   onChanged,
   onRemoved,
 }: {
   projectId: string;
   connector: AdminConnector;
+  canWrite: boolean;
   onChanged: () => void;
   onRemoved: () => void;
 }) {
@@ -793,7 +803,9 @@ function ConnectorDetail({
       <div className="flex items-start gap-3.5">
         <ConnectorAppIcon projectId={projectId} connector={connector} size="lg" />
         <div className="min-w-0 flex-1">
-          {editingName ? (
+          {!canWrite ? (
+            <h2 className="text-foreground truncate text-lg font-semibold">{displayName}</h2>
+          ) : editingName ? (
             <form
               className="flex items-center gap-1.5"
               onSubmit={(e) => {
@@ -870,7 +882,8 @@ function ConnectorDetail({
             When NOT connected, the connect action is a big CTA below — not a
             small header button buried next to the title. (Channel connectors
             are managed from the Channels tab, so neither shows.) */}
-        {connector.authSecret &&
+        {canWrite &&
+          connector.authSecret &&
           connected &&
           !isChannel &&
           (isPipedream ? (
@@ -927,7 +940,7 @@ function ConnectorDetail({
           </InfoBanner>
         )}
         {/* Prominent connect CTA — the first thing you see on an unconnected connector. */}
-        {connector.authSecret && !connected && !isChannel && (
+        {canWrite && connector.authSecret && !connected && !isChannel && (
           <InfoBanner
             tone="info"
             icon={KeyRound}
@@ -952,7 +965,10 @@ function ConnectorDetail({
         {/* The sensitive toggle lives under Permissions (it IS a permission
             default), so Profile only exists when there's a connection to
             manage — for Pipedream/managed connectors it would be empty. */}
-        <Tabs defaultValue={!isPipedream && !isManaged ? 'profile' : 'permissions'} className="gap-3">
+        <Tabs
+          defaultValue={!isPipedream && !isManaged ? 'profile' : 'permissions'}
+          className="gap-3"
+        >
           <TabsList>
             {!isPipedream && !isManaged && <TabsTrigger value="profile">Profile</TabsTrigger>}
             <TabsTrigger value="permissions">Permissions</TabsTrigger>
@@ -963,6 +979,7 @@ function ConnectorDetail({
                 <ChannelConnectionSection
                   projectId={projectId}
                   connector={connector}
+                  canWrite={canWrite}
                   onChanged={onChanged}
                   onRemoved={onRemoved}
                 />
@@ -970,6 +987,7 @@ function ConnectorDetail({
                 <ConnectionSection
                   projectId={projectId}
                   connector={connector}
+                  canWrite={canWrite}
                   onChanged={onChanged}
                 />
               )}
@@ -979,12 +997,13 @@ function ConnectorDetail({
             <PermissionsSection
               projectId={projectId}
               connector={connector}
+              canWrite={canWrite}
               onChanged={onChanged}
             />
           </TabsContent>
         </Tabs>
 
-        {!isManaged && !isChannel && (
+        {canWrite && !isManaged && !isChannel && (
           <SectionCard
             tone="destructive"
             title={tI18nHardcoded.raw(
@@ -1057,11 +1076,13 @@ function connectorPlatform(connector: AdminConnector): ChannelPlatform | null {
 function ChannelConnectionSection({
   projectId,
   connector,
+  canWrite,
   onChanged,
   onRemoved,
 }: {
   projectId: string;
   connector: AdminConnector;
+  canWrite: boolean;
   onChanged: () => void;
   onRemoved: () => void;
 }) {
@@ -1071,6 +1092,7 @@ function ChannelConnectionSection({
       <EmailChannelProfile
         projectId={projectId}
         connector={connector}
+        canWrite={canWrite}
         onChanged={onChanged}
         onRemoved={onRemoved}
       />
@@ -1078,7 +1100,12 @@ function ChannelConnectionSection({
   }
   if (platform === 'slack') {
     return (
-      <SlackChannelProfile projectId={projectId} onChanged={onChanged} onRemoved={onRemoved} />
+      <SlackChannelProfile
+        projectId={projectId}
+        canWrite={canWrite}
+        onChanged={onChanged}
+        onRemoved={onRemoved}
+      />
     );
   }
   return (
@@ -1091,11 +1118,13 @@ function ChannelConnectionSection({
 function EmailChannelProfile({
   projectId,
   connector,
+  canWrite,
   onChanged,
   onRemoved,
 }: {
   projectId: string;
   connector: AdminConnector;
+  canWrite: boolean;
   onChanged: () => void;
   onRemoved: () => void;
 }) {
@@ -1113,14 +1142,19 @@ function EmailChannelProfile({
           projectId={projectId}
           connectorSlug={connector.slug}
           installation={install.data}
+          canWrite={canWrite}
           onRemoved={onRemoved}
         />
-      ) : (
+      ) : canWrite ? (
         <EmailConnectForm
           projectId={projectId}
           connectorSlug={connector.slug}
           onConnected={onChanged}
         />
+      ) : (
+        <InfoBanner tone="neutral" icon={Mail} title="No email inbox connected">
+          You have read-only access to connectors. Ask a workspace admin to connect an inbox.
+        </InfoBanner>
       )}
     </SectionCard>
   );
@@ -1130,11 +1164,13 @@ function ConnectedEmailProfile({
   projectId,
   connectorSlug,
   installation,
+  canWrite,
   onRemoved,
 }: {
   projectId: string;
   connectorSlug: string;
   installation: EmailInstallation;
+  canWrite: boolean;
   onRemoved: () => void;
 }) {
   const disconnect = useDisconnectEmail();
@@ -1155,42 +1191,47 @@ function ConnectedEmailProfile({
         projectId={projectId}
         connectorSlug={connectorSlug}
         policy={installation.senderPolicy}
+        canWrite={canWrite}
       />
-      <div className="flex items-center justify-end gap-2">
-        {confirming ? (
-          <>
-            <span className="text-muted-foreground mr-auto text-xs">
-              Removes the Email channel profile from this project.
-            </span>
-            <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={disconnect.isPending}
-              onClick={() =>
-                disconnect.mutate(
-                  { projectId, connectorSlug },
-                  {
-                    onSuccess: () => {
-                      setConfirming(false);
-                      onRemoved();
+      {canWrite && (
+        <div className="flex items-center justify-end gap-2">
+          {confirming ? (
+            <>
+              <span className="text-muted-foreground mr-auto text-xs">
+                Removes the Email channel profile from this project.
+              </span>
+              <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={disconnect.isPending}
+                onClick={() =>
+                  disconnect.mutate(
+                    { projectId, connectorSlug },
+                    {
+                      onSuccess: () => {
+                        setConfirming(false);
+                        onRemoved();
+                      },
                     },
-                  },
-                )
-              }
-            >
-              {disconnect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+                  )
+                }
+              >
+                {disconnect.isPending ? (
+                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                ) : null}
+                Disconnect
+              </Button>
+            </>
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
               Disconnect
             </Button>
-          </>
-        ) : (
-          <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
-            Disconnect
-          </Button>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1221,10 +1262,12 @@ function EmailSenderPolicyEditor({
   projectId,
   connectorSlug,
   policy,
+  canWrite,
 }: {
   projectId: string;
   connectorSlug: string;
   policy: EmailSenderPolicy | null | undefined;
+  canWrite: boolean;
 }) {
   const update = useUpdateEmailPolicy();
   const initial = normalizeEmailSenderPolicy(policy);
@@ -1280,6 +1323,7 @@ function EmailSenderPolicyEditor({
           id="email-sender-restricted"
           checked={restricted}
           onCheckedChange={(checked) => setRestricted(Boolean(checked))}
+          disabled={!canWrite}
           className="mt-0.5"
         />
         <div className="min-w-0 flex-1 space-y-3">
@@ -1297,6 +1341,7 @@ function EmailSenderPolicyEditor({
                   value={emails}
                   onChange={(e) => setEmails(e.target.value)}
                   placeholder="person@example.com"
+                  disabled={!canWrite}
                 />
               </Field>
               <Field>
@@ -1304,6 +1349,7 @@ function EmailSenderPolicyEditor({
                   value={domains}
                   onChange={(e) => setDomains(e.target.value)}
                   placeholder="example.com"
+                  disabled={!canWrite}
                 />
               </Field>
               <div className="sm:col-span-2">
@@ -1313,24 +1359,27 @@ function EmailSenderPolicyEditor({
                     onChange={(e) => setRegex(e.target.value)}
                     placeholder=".*@customer-[0-9]+\\.com$"
                     spellCheck={false}
+                    disabled={!canWrite}
                   />
                 </Field>
               </div>
             </div>
           ) : null}
           {error ? <InfoBanner tone="destructive">{error}</InfoBanner> : null}
-          <SaveBar
-            dirty={dirty}
-            saving={update.isPending}
-            onSave={save}
-            onReset={() => {
-              setRestricted(initial.mode === 'restricted');
-              setEmails(initial.allowedEmails.join('\n'));
-              setDomains(initial.allowedDomains.join('\n'));
-              setRegex(initial.allowedRegex ?? '');
-            }}
-            label="Save policy"
-          />
+          {canWrite && (
+            <SaveBar
+              dirty={dirty}
+              saving={update.isPending}
+              onSave={save}
+              onReset={() => {
+                setRestricted(initial.mode === 'restricted');
+                setEmails(initial.allowedEmails.join('\n'));
+                setDomains(initial.allowedDomains.join('\n'));
+                setRegex(initial.allowedRegex ?? '');
+              }}
+              label="Save policy"
+            />
+          )}
         </div>
       </div>
     </div>
@@ -1601,10 +1650,12 @@ export function EmailConnectForm({
 
 function SlackChannelProfile({
   projectId,
+  canWrite,
   onChanged,
   onRemoved,
 }: {
   projectId: string;
+  canWrite: boolean;
   onChanged: () => void;
   onRemoved: () => void;
 }) {
@@ -1620,10 +1671,15 @@ function SlackChannelProfile({
         <ConnectedSlackProfile
           projectId={projectId}
           installation={install.data}
+          canWrite={canWrite}
           onRemoved={onRemoved}
         />
-      ) : (
+      ) : canWrite ? (
         <SlackConnectForm projectId={projectId} onConnected={onChanged} />
+      ) : (
+        <InfoBanner tone="neutral" icon={<SlackLogo />} title="No Slack workspace connected">
+          You have read-only access to connectors. Ask a workspace admin to connect Slack.
+        </InfoBanner>
       )}
     </SectionCard>
   );
@@ -1632,10 +1688,12 @@ function SlackChannelProfile({
 function ConnectedSlackProfile({
   projectId,
   installation,
+  canWrite,
   onRemoved,
 }: {
   projectId: string;
   installation: SlackInstallation;
+  canWrite: boolean;
   onRemoved: () => void;
 }) {
   const disconnect = useDisconnectSlack();
@@ -1646,38 +1704,42 @@ function ConnectedSlackProfile({
         Workspace{' '}
         <code className="font-mono">{installation.workspaceName || installation.workspaceId}</code>
       </InfoBanner>
-      <div className="flex items-center justify-end gap-2">
-        {confirming ? (
-          <>
-            <span className="text-muted-foreground mr-auto text-xs">
-              Removes the Slack channel profile from this project.
-            </span>
-            <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={disconnect.isPending}
-              onClick={() =>
-                disconnect.mutate(projectId, {
-                  onSuccess: () => {
-                    setConfirming(false);
-                    onRemoved();
-                  },
-                })
-              }
-            >
-              {disconnect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+      {canWrite && (
+        <div className="flex items-center justify-end gap-2">
+          {confirming ? (
+            <>
+              <span className="text-muted-foreground mr-auto text-xs">
+                Removes the Slack channel profile from this project.
+              </span>
+              <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={disconnect.isPending}
+                onClick={() =>
+                  disconnect.mutate(projectId, {
+                    onSuccess: () => {
+                      setConfirming(false);
+                      onRemoved();
+                    },
+                  })
+                }
+              >
+                {disconnect.isPending ? (
+                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                ) : null}
+                Disconnect
+              </Button>
+            </>
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
               Disconnect
             </Button>
-          </>
-        ) : (
-          <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
-            Disconnect
-          </Button>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1931,10 +1993,12 @@ function connectionSig(d: ConnectorDraftInput): string {
 function ConnectionSection({
   projectId,
   connector,
+  canWrite,
   onChanged,
 }: {
   projectId: string;
   connector: AdminConnector;
+  canWrite: boolean;
   onChanged: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -2003,17 +2067,19 @@ function ConnectionSection({
         </div>
       ) : (
         <div className="space-y-4">
-          <ConnectorConfigFields draft={draft} onChange={setDraft} />
-          <SaveBar
-            dirty={dirty}
-            saving={save.isPending}
-            disabled={!connectionValid(draft)}
-            onSave={() => save.mutate()}
-            onReset={reset}
-            label={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSave8c6f945f',
-            )}
-          />
+          <ConnectorConfigFields draft={draft} onChange={setDraft} readOnly={!canWrite} />
+          {canWrite && (
+            <SaveBar
+              dirty={dirty}
+              saving={save.isPending}
+              disabled={!connectionValid(draft)}
+              onSave={() => save.mutate()}
+              onReset={reset}
+              label={tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSave8c6f945f',
+              )}
+            />
+          )}
         </div>
       )}
     </SectionCard>
@@ -2128,10 +2194,12 @@ function tsSignature(slug: string, action: ConnectorAction): string {
 function PermissionsSection({
   projectId,
   connector,
+  canWrite,
   onChanged,
 }: {
   projectId: string;
   connector: AdminConnector;
+  canWrite: boolean;
   onChanged: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -2298,7 +2366,7 @@ function PermissionsSection({
               description="Reads run automatically; writes and destructive actions still ask, per the rules below."
               size="lg"
               variant="outline"
-              disabled={sensitiveMut.isPending}
+              disabled={!canWrite || sensitiveMut.isPending}
             />
             <RadioGroupItem
               value="ask_first"
@@ -2315,7 +2383,7 @@ function PermissionsSection({
               }
               size="lg"
               variant="outline"
-              disabled={sensitiveMut.isPending}
+              disabled={!canWrite || sensitiveMut.isPending}
             />
           </RadioGroup>
         </div>
@@ -2335,17 +2403,19 @@ function PermissionsSection({
           <div className="border-border/60 overflow-hidden rounded-2xl border">
             {/* Select-all + bulk apply */}
             <div className="border-border/60 bg-muted/30 flex h-9 items-center gap-2 border-b px-3">
-              <Checkbox
-                checked={
-                  allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false
-                }
-                onCheckedChange={toggleAllFiltered}
-                aria-label={tI18nHardcoded.raw(
-                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrAriaLabel924a321f',
-                )}
-                className="size-3.5"
-              />
-              {selected.size > 0 ? (
+              {canWrite && (
+                <Checkbox
+                  checked={
+                    allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false
+                  }
+                  onCheckedChange={toggleAllFiltered}
+                  aria-label={tI18nHardcoded.raw(
+                    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrAriaLabel924a321f',
+                  )}
+                  className="size-3.5"
+                />
+              )}
+              {canWrite && selected.size > 0 ? (
                 <>
                   <span className="text-foreground text-xs font-medium">
                     {selected.size} selected
@@ -2402,17 +2472,19 @@ function PermissionsSection({
                         isSel ? 'bg-primary/[0.05]' : 'hover:bg-muted/30',
                       )}
                     >
-                      <Checkbox
-                        checked={isSel}
-                        onCheckedChange={() => toggleSel(t.path)}
-                        aria-label={`Select ${t.path}`}
-                        className={cn(
-                          'size-3.5 shrink-0 transition-opacity',
-                          isSel
-                            ? ''
-                            : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
-                        )}
-                      />
+                      {canWrite && (
+                        <Checkbox
+                          checked={isSel}
+                          onCheckedChange={() => toggleSel(t.path)}
+                          aria-label={`Select ${t.path}`}
+                          className={cn(
+                            'size-3.5 shrink-0 transition-opacity',
+                            isSel
+                              ? ''
+                              : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+                          )}
+                        />
+                      )}
                       <button
                         type="button"
                         onClick={() => setExpanded(isOpen ? null : t.path)}
@@ -2447,10 +2519,21 @@ function PermissionsSection({
                             : 'text-muted-foreground/40 opacity-0 group-hover:opacity-100',
                         )}
                       />
-                      <PermissionPicker
-                        value={explicit ?? 'default'}
-                        onChange={(c) => setChoice(t.path, c)}
-                      />
+                      {canWrite ? (
+                        <PermissionPicker
+                          value={explicit ?? 'default'}
+                          onChange={(c) => setChoice(t.path, c)}
+                        />
+                      ) : (
+                        <span
+                          className={cn(
+                            'shrink-0 px-2 py-0.5 text-xs font-medium',
+                            explicit ? POLICY_LABEL[explicit].tint : 'text-muted-foreground',
+                          )}
+                        >
+                          {explicit ? POLICY_LABEL[explicit].label : 'Default'}
+                        </span>
+                      )}
                     </div>
                     {isOpen && (
                       <div className="bg-muted/20 space-y-3 px-4 pt-1 pb-3">
@@ -2553,9 +2636,11 @@ function PermissionsSection({
                         'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderSend3b0a4ee1',
                       )}
                       className="h-8 flex-1 font-mono text-xs"
+                      disabled={!canWrite}
                     />
                     <Select
                       value={r.action}
+                      disabled={!canWrite}
                       onValueChange={(v) =>
                         setRules((rs) =>
                           rs.map((x) =>
@@ -2577,50 +2662,58 @@ function PermissionsSection({
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="hover:text-destructive h-8 w-8 shrink-0"
-                      onClick={() => setRules((rs) => rs.filter((x) => x.id !== r.id))}
-                      aria-label={tI18nHardcoded.raw(
-                        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrAriaLabeld2296c34',
-                      )}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    {canWrite && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="hover:text-destructive h-8 w-8 shrink-0"
+                        onClick={() => setRules((rs) => rs.filter((x) => x.id !== r.id))}
+                        aria-label={tI18nHardcoded.raw(
+                          'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrAriaLabeld2296c34',
+                        )}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                 ))}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 gap-1.5 text-xs"
-                  onClick={() =>
-                    setRules((rs) => [
-                      ...rs,
-                      { id: ruleId(), match: '', action: 'require_approval' },
-                    ])
-                  }
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  {tI18nHardcoded.raw(
-                    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddRule873a093f',
-                  )}
-                </Button>
+                {canWrite ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5 text-xs"
+                    onClick={() =>
+                      setRules((rs) => [
+                        ...rs,
+                        { id: ruleId(), match: '', action: 'require_approval' },
+                      ])
+                    }
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {tI18nHardcoded.raw(
+                      'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddRule873a093f',
+                    )}
+                  </Button>
+                ) : rules.length === 0 ? (
+                  <p className="text-muted-foreground text-xs">No pattern rules.</p>
+                ) : null}
               </div>
             )}
           </div>
         )}
       </div>
 
-      <SaveBar
-        dirty={dirty}
-        saving={save.isPending}
-        onSave={() => save.mutate()}
-        onReset={reset}
-        label={tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSave783950c7',
-        )}
-      />
+      {canWrite && (
+        <SaveBar
+          dirty={dirty}
+          saving={save.isPending}
+          onSave={() => save.mutate()}
+          onReset={reset}
+          label={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSave783950c7',
+          )}
+        />
+      )}
     </SectionCard>
   );
 }
@@ -2648,7 +2741,6 @@ function GlobalRulesPanel({ projectId }: { projectId: string }) {
     </div>
   );
 }
-
 
 function AddAppPanel({
   projectId,
@@ -3069,11 +3161,13 @@ function ConnectorConfigFields({
   draft,
   onChange,
   slugEditable,
+  readOnly = false,
   emailChannelEnabled = true,
 }: {
   draft: ConnectorDraftInput;
   onChange: (d: ConnectorDraftInput) => void;
   slugEditable?: boolean;
+  readOnly?: boolean;
   emailChannelEnabled?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -3097,7 +3191,7 @@ function ConnectorConfigFields({
             placeholder="my-api"
             className="font-mono text-xs"
             variant="popover"
-            disabled={!slugEditable}
+            disabled={!slugEditable || readOnly}
             required
           />
         </Field>
@@ -3105,6 +3199,7 @@ function ConnectorConfigFields({
           <FieldLabel htmlFor="connector-provider">Provider</FieldLabel>
           <Select
             value={p}
+            disabled={readOnly}
             onValueChange={(v) => {
               const provider = v as ConnectorDraftInput['provider'];
               set({
@@ -3141,6 +3236,7 @@ function ConnectorConfigFields({
                 ? 'slack'
                 : (draft.platform ?? (emailChannelEnabled ? 'email' : 'slack'))
             }
+            disabled={readOnly}
             onValueChange={(v) => set({ platform: v as ChannelPlatform, auth: { type: 'none' } })}
           >
             <SelectTrigger>
@@ -3166,6 +3262,7 @@ function ConnectorConfigFields({
             onChange={(e) => set({ spec: e.target.value })}
             placeholder="https://…/openapi.json"
             variant="popover"
+            disabled={readOnly}
             required
           />
         </Field>
@@ -3180,6 +3277,7 @@ function ConnectorConfigFields({
               onChange={(e) => set({ endpoint: e.target.value })}
               placeholder="https://api/graphql"
               variant="popover"
+              disabled={readOnly}
               required
             />
           </Field>
@@ -3195,6 +3293,7 @@ function ConnectorConfigFields({
               onChange={(e) => set({ spec: e.target.value })}
               placeholder=".kortix/executor/schema.graphql"
               variant="popover"
+              disabled={readOnly}
             />
           </Field>
         </>
@@ -3209,6 +3308,7 @@ function ConnectorConfigFields({
               onChange={(e) => set({ url: e.target.value })}
               placeholder="https://mcp…/mcp"
               variant="popover"
+              disabled={readOnly}
               required
             />
           </Field>
@@ -3216,6 +3316,7 @@ function ConnectorConfigFields({
             <FieldLabel htmlFor="connector-transport">Transport</FieldLabel>
             <Select
               value={draft.transport ?? 'http'}
+              disabled={readOnly}
               onValueChange={(v) => set({ transport: v as 'http' | 'sse' })}
             >
               <SelectTrigger id="connector-transport" className="w-full" variant="popover">
@@ -3243,6 +3344,7 @@ function ConnectorConfigFields({
               onChange={(e) => set({ baseUrl: e.target.value })}
               placeholder="https://api.internal"
               variant="popover"
+              disabled={readOnly}
               required
             />
           </Field>
@@ -3258,6 +3360,7 @@ function ConnectorConfigFields({
               onChange={(e) => set({ spec: e.target.value })}
               placeholder=".kortix/executor/routes.toml"
               variant="popover"
+              disabled={readOnly}
             />
           </Field>
         </>
@@ -3268,6 +3371,7 @@ function ConnectorConfigFields({
             <FieldLabel htmlFor="connector-auth">Auth</FieldLabel>
             <Select
               value={draft.auth?.type ?? 'none'}
+              disabled={readOnly}
               onValueChange={(v) => setAuth({ type: v as 'none' | 'bearer' | 'basic' | 'custom' })}
             >
               <SelectTrigger id="connector-auth" className="w-full" variant="popover">
@@ -3298,6 +3402,7 @@ function ConnectorConfigFields({
                 onChange={(e) => setAuth({ name: e.target.value })}
                 placeholder="X-API-Key"
                 variant="popover"
+                disabled={readOnly}
                 required
               />
             </Field>
@@ -3377,7 +3482,9 @@ export function CustomConnectorForm({
             <Button
               type="submit"
               size="sm"
-              disabled={!draft.slug || save.isPending || !connectionValid(draft, emailChannelEnabled)}
+              disabled={
+                !draft.slug || save.isPending || !connectionValid(draft, emailChannelEnabled)
+              }
               className="gap-1.5"
             >
               {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
