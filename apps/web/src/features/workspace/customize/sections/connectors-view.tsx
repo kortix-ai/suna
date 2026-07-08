@@ -12,7 +12,6 @@ import {
   ExternalLink,
   Globe,
   KeyRound,
-  Loader2,
   type LucideIcon,
   Mail,
   MessageSquare,
@@ -39,14 +38,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { CodeBlockCode } from '@/components/ui/code-block';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -70,7 +61,6 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { SectionCard } from '@/components/ui/section-card';
 import {
   Select,
   SelectContent,
@@ -81,7 +71,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   type EmailInstallation,
@@ -452,7 +441,7 @@ function SaveBar({
         </Button>
       )}
       <Button size="sm" onClick={onSave} disabled={saving || disabled} className="gap-1.5">
-        {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+        {saving && <Loading className="size-4 shrink-0" />}
         {label}
       </Button>
     </div>
@@ -587,7 +576,7 @@ function ConnectorRail({
           disabled={syncing}
         >
           {syncing ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loading className="size-3.5 shrink-0" />
           ) : (
             <RefreshCw className="h-3.5 w-3.5" />
           )}
@@ -819,7 +808,7 @@ function ConnectorDetail({
                 )}
               >
                 {rename.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loading className="size-4 shrink-0" />
                 ) : (
                   <Check className="h-4 w-4" />
                 )}
@@ -840,19 +829,16 @@ function ConnectorDetail({
           ) : (
             <div className="group flex items-center gap-2">
               <h2 className="text-foreground truncate text-lg font-semibold">{displayName}</h2>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => setEditingName(true)}
-                    aria-label="Rename"
-                    className="text-muted-foreground hover:text-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>Rename</TooltipContent>
-              </Tooltip>
+              <Hint label="Rename">
+                <button
+                  type="button"
+                  onClick={() => setEditingName(true)}
+                  aria-label="Rename"
+                  className="text-muted-foreground hover:text-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              </Hint>
             </div>
           )}
           <div className="mt-1.5 flex items-center gap-2">
@@ -882,7 +868,7 @@ function ConnectorDetail({
               disabled={reconnect.isPending}
             >
               {reconnect.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loading className="size-4 shrink-0" />
               ) : (
                 <KeyRound className="h-4 w-4" />
               )}
@@ -939,7 +925,7 @@ function ConnectorDetail({
                 onClick={() => (isPipedream ? reconnect.mutate() : setCredOpen(true))}
                 disabled={isPipedream && reconnect.isPending}
               >
-                {isPipedream && reconnect.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isPipedream && reconnect.isPending && <Loading className="size-4 shrink-0" />}
                 {isPipedream ? `Connect ${displayName}` : 'Set credential'}
               </Button>
             }
@@ -985,26 +971,31 @@ function ConnectorDetail({
         </Tabs>
 
         {!isManaged && !isChannel && (
-          <SectionCard
-            tone="destructive"
-            title={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleRemove74be1411',
-            )}
-            description={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionDeletes0a130396',
-            )}
-            action={
+          <div className="bg-popover rounded-md border px-4 py-3">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-foreground text-sm font-medium">
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleRemove74be1411',
+                  )}
+                </p>
+                <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionDeletes0a130396',
+                  )}
+                </p>
+              </div>
               <Button
                 size="sm"
                 variant="outline"
-                className="gap-1.5"
+                className="shrink-0 gap-1.5"
                 onClick={() => setConfirmDelete(true)}
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Remove
               </Button>
-            }
-          />
+            </div>
+          </div>
         )}
       </div>
 
@@ -1082,9 +1073,12 @@ function ChannelConnectionSection({
     );
   }
   return (
-    <SectionCard title="Connection">
-      <InfoBanner tone="warning">This channel profile is missing its platform setting.</InfoBanner>
-    </SectionCard>
+    <section className="space-y-4">
+      <Label>Connection</Label>
+      <div className="bg-popover rounded-md border px-4 py-5">
+        <InfoBanner tone="warning">This channel profile is missing its platform setting.</InfoBanner>
+      </div>
+    </section>
   );
 }
 
@@ -1102,27 +1096,30 @@ function EmailChannelProfile({
   const install = useEmailInstall(projectId, connector.slug);
 
   return (
-    <SectionCard
-      title="Email connection"
-      description="AgentMail inbox assigned to this connector profile."
-    >
-      {install.isLoading ? (
-        <Skeleton className="h-24 w-full rounded-2xl" />
-      ) : install.data ? (
-        <ConnectedEmailProfile
-          projectId={projectId}
-          connectorSlug={connector.slug}
-          installation={install.data}
-          onRemoved={onRemoved}
-        />
-      ) : (
-        <EmailConnectForm
-          projectId={projectId}
-          connectorSlug={connector.slug}
-          onConnected={onChanged}
-        />
-      )}
-    </SectionCard>
+    <section className="space-y-4">
+      <Label>Email connection</Label>
+      <p className="text-muted-foreground -mt-2 text-xs">
+        AgentMail inbox assigned to this connector profile.
+      </p>
+      <div className="bg-popover rounded-md border px-4 py-5">
+        {install.isLoading ? (
+          <Skeleton className="h-24 w-full rounded-2xl" />
+        ) : install.data ? (
+          <ConnectedEmailProfile
+            projectId={projectId}
+            connectorSlug={connector.slug}
+            installation={install.data}
+            onRemoved={onRemoved}
+          />
+        ) : (
+          <EmailConnectForm
+            projectId={projectId}
+            connectorSlug={connector.slug}
+            onConnected={onChanged}
+          />
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -1181,7 +1178,7 @@ function ConnectedEmailProfile({
                 )
               }
             >
-              {disconnect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+              {disconnect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
               Disconnect
             </Button>
           </>
@@ -1591,7 +1588,7 @@ export function EmailConnectForm({
       {error ? <InfoBanner tone="destructive">{error}</InfoBanner> : null}
       <div className="flex justify-end">
         <Button size="sm" onClick={submit} disabled={connect.isPending || mode.isLoading}>
-          {connect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+          {connect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
           Create inbox
         </Button>
       </div>
@@ -1610,22 +1607,25 @@ function SlackChannelProfile({
 }) {
   const install = useSlackInstall(projectId);
   return (
-    <SectionCard
-      title="Slack connection"
-      description="Slack workspace assigned to this connector profile."
-    >
-      {install.isLoading ? (
-        <Skeleton className="h-24 w-full rounded-2xl" />
-      ) : install.data ? (
-        <ConnectedSlackProfile
-          projectId={projectId}
-          installation={install.data}
-          onRemoved={onRemoved}
-        />
-      ) : (
-        <SlackConnectForm projectId={projectId} onConnected={onChanged} />
-      )}
-    </SectionCard>
+    <section className="space-y-4">
+      <Label>Slack connection</Label>
+      <p className="text-muted-foreground -mt-2 text-xs">
+        Slack workspace assigned to this connector profile.
+      </p>
+      <div className="bg-popover rounded-md border px-4 py-5">
+        {install.isLoading ? (
+          <Skeleton className="h-24 w-full rounded-2xl" />
+        ) : install.data ? (
+          <ConnectedSlackProfile
+            projectId={projectId}
+            installation={install.data}
+            onRemoved={onRemoved}
+          />
+        ) : (
+          <SlackConnectForm projectId={projectId} onConnected={onChanged} />
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -1668,7 +1668,7 @@ function ConnectedSlackProfile({
                 })
               }
             >
-              {disconnect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+              {disconnect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
               Disconnect
             </Button>
           </>
@@ -1879,7 +1879,7 @@ export function SlackConnectForm({
                   onClick={submit}
                   disabled={connect.isPending || !botToken.trim() || !signingSecret.trim()}
                 >
-                  {connect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+                  {connect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
                   Connect custom Slack app
                 </Button>
               </div>
@@ -1975,48 +1975,51 @@ function ConnectionSection({
   });
 
   return (
-    <SectionCard
-      title="Connection"
-      description={tI18nHardcoded.raw(
-        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionHowa31daf50',
-      )}
-    >
-      {configQuery.isError ? (
-        <InfoBanner
-          tone="destructive"
-          title={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleCouldn277b73a0',
-          )}
-          action={
-            <Button size="sm" variant="outline" onClick={() => configQuery.refetch()}>
-              Retry
-            </Button>
-          }
-        >
-          {(configQuery.error as Error)?.message ?? 'Unknown error'}
-        </InfoBanner>
-      ) : configQuery.isLoading || !draft ? (
-        <div className="space-y-3">
-          <Skeleton className="h-9 w-full rounded-2xl" />
-          <Skeleton className="h-9 w-2/3 rounded-2xl" />
-          <Skeleton className="h-9 w-full rounded-2xl" />
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <ConnectorConfigFields draft={draft} onChange={setDraft} />
-          <SaveBar
-            dirty={dirty}
-            saving={save.isPending}
-            disabled={!connectionValid(draft)}
-            onSave={() => save.mutate()}
-            onReset={reset}
-            label={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSave8c6f945f',
+    <section className="space-y-4">
+      <Label>Connection</Label>
+      <p className="text-muted-foreground -mt-2 text-xs">
+        {tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionHowa31daf50',
+        )}
+      </p>
+      <div className="bg-popover rounded-md border px-4 py-5">
+        {configQuery.isError ? (
+          <InfoBanner
+            tone="destructive"
+            title={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleCouldn277b73a0',
             )}
-          />
-        </div>
-      )}
-    </SectionCard>
+            action={
+              <Button size="sm" variant="outline" onClick={() => configQuery.refetch()}>
+                Retry
+              </Button>
+            }
+          >
+            {(configQuery.error as Error)?.message ?? 'Unknown error'}
+          </InfoBanner>
+        ) : configQuery.isLoading || !draft ? (
+          <div className="space-y-3">
+            <Skeleton className="h-9 w-full rounded-2xl" />
+            <Skeleton className="h-9 w-2/3 rounded-2xl" />
+            <Skeleton className="h-9 w-full rounded-2xl" />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <ConnectorConfigFields draft={draft} onChange={setDraft} />
+            <SaveBar
+              dirty={dirty}
+              saving={save.isPending}
+              disabled={!connectionValid(draft)}
+              onSave={() => save.mutate()}
+              onReset={reset}
+              label={tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSave8c6f945f',
+              )}
+            />
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -2262,14 +2265,18 @@ function PermissionsSection({
   };
 
   return (
-    <SectionCard
-      title="Permissions"
-      description={tI18nHardcoded.raw(
-        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionWhat4e375237',
-      )}
-      action={
-        tools.length > 6 ? (
-          <div className="relative w-48">
+    <section className="space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-medium">Permissions</h3>
+          <p className="text-muted-foreground mt-1 text-xs">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionWhat4e375237',
+            )}
+          </p>
+        </div>
+        {tools.length > 6 ? (
+          <div className="relative w-48 shrink-0">
             <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
             <Input
               value={search}
@@ -2280,10 +2287,10 @@ function PermissionsSection({
               className="h-8 pl-8 text-sm"
             />
           </div>
-        ) : undefined
-      }
-    >
-      <div className="space-y-4">
+        ) : null}
+      </div>
+      <div className="bg-popover rounded-md border px-4 py-5">
+        <div className="space-y-4">
         <div className="space-y-2">
           <Label>Default</Label>
           <RadioGroup
@@ -2610,18 +2617,19 @@ function PermissionsSection({
             )}
           </div>
         )}
-      </div>
+        </div>
 
-      <SaveBar
-        dirty={dirty}
-        saving={save.isPending}
-        onSave={() => save.mutate()}
-        onReset={reset}
-        label={tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSave783950c7',
-        )}
-      />
-    </SectionCard>
+        <SaveBar
+          dirty={dirty}
+          saving={save.isPending}
+          onSave={() => save.mutate()}
+          onReset={reset}
+          label={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSave783950c7',
+          )}
+        />
+      </div>
+    </section>
   );
 }
 
@@ -2821,16 +2829,16 @@ function AddEmailProfileCard({
           agent should run.
         </p>
       </button>
-      <Dialog open={open} onOpenChange={(next) => !add.isPending && setOpen(next)}>
-        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-          <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
-            <DialogTitle>Add Email inbox</DialogTitle>
-            <DialogDescription>
+      <Modal open={open} onOpenChange={(next) => !add.isPending && setOpen(next)}>
+        <ModalContent className="lg:max-w-md">
+          <ModalHeader>
+            <ModalTitle>Add Email inbox</ModalTitle>
+            <ModalDescription>
               Create a separate connector profile. You choose the AgentMail address when connecting
               it.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 px-6 py-5">
+            </ModalDescription>
+          </ModalHeader>
+          <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
             <Field>
               <Input
                 id="email-profile-name"
@@ -2856,18 +2864,18 @@ function AddEmailProfileCard({
                 Used as the first choice for the AgentMail address, for example support@agentmail.
               </p>
             </Field>
-          </div>
-          <DialogFooter className="border-border/60 bg-muted/30 flex items-center justify-end gap-2 border-t px-6 py-3">
-            <Button variant="ghost" onClick={() => setOpen(false)} disabled={add.isPending}>
+          </ModalBody>
+          <ModalFooter className="sm:justify-between">
+            <Button variant="outline-ghost" onClick={() => setOpen(false)} disabled={add.isPending}>
               Cancel
             </Button>
             <Button onClick={() => add.mutate()} disabled={add.isPending} className="gap-1.5">
-              {add.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {add.isPending ? <Loading className="size-4 shrink-0" /> : null}
               Add inbox
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </>
   );
 }
@@ -2900,20 +2908,20 @@ function AddSlackProfileCard({
           Add Kortix to Slack so mentions and threaded replies route into Kortix agent sessions.
         </p>
       </button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-2xl">
-          <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
-            <DialogTitle>Add Kortix to Slack</DialogTitle>
-            <DialogDescription>
+      <Modal open={open} onOpenChange={setOpen}>
+        <ModalContent className="lg:max-w-2xl">
+          <ModalHeader>
+            <ModalTitle>Add Kortix to Slack</ModalTitle>
+            <ModalDescription>
               Connect the built-in Slack channel. The connector profile appears automatically after
               installation.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="max-h-[75vh] overflow-y-auto px-6 py-5">
+            </ModalDescription>
+          </ModalHeader>
+          <ModalBody className="max-h-[60vh] overflow-y-auto">
             <SlackConnectForm projectId={projectId} onConnected={handleConnected} />
-          </div>
-        </DialogContent>
-      </Dialog>
+          </ModalBody>
+        </ModalContent>
+      </Modal>
     </>
   );
 }
@@ -3047,7 +3055,7 @@ function AppCatalogue({
                 >
                   {appsQuery.isFetchingNextPage ? (
                     <>
-                      <Loading className="size-4 animate-spin" />
+                      <Loading className="size-4 shrink-0" />
                       {tI18nHardcoded.raw(
                         'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextLoading7131cc18',
                       )}
@@ -3380,7 +3388,7 @@ export function CustomConnectorForm({
               disabled={!draft.slug || save.isPending || !connectionValid(draft, emailChannelEnabled)}
               className="gap-1.5"
             >
-              {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              {save.isPending && <Loading className="size-4 shrink-0" />}
               {tI18nHardcoded.raw(
                 'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddConnectore01e22fc',
               )}
@@ -3472,7 +3480,7 @@ function SetCredentialModal({
               Cancel
             </Button>
             <Button type="submit" size="sm" disabled={!value || save.isPending} className="gap-1.5">
-              {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}Save
+              {save.isPending && <Loading className="size-4 shrink-0" />}Save
             </Button>
           </ModalFooter>
         </form>

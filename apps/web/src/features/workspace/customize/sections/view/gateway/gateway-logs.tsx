@@ -16,6 +16,7 @@ import { forwardRef, type ReactNode, useEffect, useRef, useState } from 'react';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import Hint from '@/components/ui/hint';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useGatewayLog, useGatewayLogs } from '@/hooks/projects/use-project-gateway';
 import type { GatewayLogRow } from '@/lib/projects-gateway-client';
 import { cn } from '@/lib/utils';
@@ -222,8 +223,8 @@ function GatewayLogDetail({
       </div>
       {isLoading || !data ? (
         <div className="space-y-3 p-5">
-          <div className="h-24 animate-pulse rounded-2xl bg-muted" />
-          <div className="h-40 animate-pulse rounded-2xl bg-muted" />
+          <Skeleton className="h-24 rounded-2xl" />
+          <Skeleton className="h-40 rounded-2xl" />
         </div>
       ) : (
         <div className="flex w-full animate-in fade-in-0 flex-col gap-4 p-5">
@@ -422,12 +423,12 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
           <div className="divide-y divide-border/40">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="flex items-center gap-3 px-4 py-3">
-                <span className="size-2 animate-pulse rounded-full bg-muted" />
+                <Skeleton className="size-2 shrink-0 rounded-full" />
                 <div className="flex-1 space-y-1.5">
-                  <div className="h-3 w-40 animate-pulse rounded-full bg-muted" />
-                  <div className="h-2.5 w-24 animate-pulse rounded-full bg-muted" />
+                  <Skeleton className="h-3 w-40 rounded-full" />
+                  <Skeleton className="h-2.5 w-24 rounded-full" />
                 </div>
-                <div className="h-4 w-14 animate-pulse rounded-full bg-muted" />
+                <Skeleton className="h-4 w-14 rounded-full" />
               </div>
             ))}
           </div>
