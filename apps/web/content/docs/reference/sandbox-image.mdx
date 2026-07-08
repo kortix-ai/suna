@@ -46,7 +46,7 @@ disk       = 20    # optional — GiB
 default = "dev"
 ```
 
-Each entry sets exactly one of `dockerfile` or `image`. Paths must be repo-relative — absolute paths and `..` traversal are rejected. A singular `sandbox` block with image/build keys on it directly (rather than under `templates`) is **legacy and rejected**; image definitions live under `sandbox.templates`, and `sandbox` itself otherwise only carries `default`. Field details: [kortix.toml](/docs/reference/manifest#sandboxtemplates--sandboxtemplates).
+Each entry sets exactly one of `dockerfile` or `image`. Paths must be repo-relative — absolute paths and `..` traversal are rejected. A singular `sandbox` block with image/build keys on it directly (rather than under `templates`) is **legacy and rejected**; image definitions live under `sandbox.templates`, and `sandbox` itself otherwise only carries `default`. Field details: [the manifest reference](/docs/reference/manifest#sandboxtemplates--sandboxtemplates).
 
 ## What the Kortix layer injects
 

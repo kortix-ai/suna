@@ -17,19 +17,29 @@ flow("OAU-1", { domain: "oauth", routes: ["GET /v1/oauth/authorize"] }, async (c
     const r = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize");
     r.status([400, 500]);
   });
-  await ctx.step("authorize: unknown client_id → 400 invalid_client", async () => {
+  await ctx.step("authorize: non-uuid client_id → 400 invalid_client, no DB cast error", async () => {
     const r = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
       query: {
-        client_id: "ke2e-nonexistent-client",
+        client_id: "notreal",
         redirect_uri: "https://example.com/cb",
         response_type: "code",
         code_challenge: "abc123",
         code_challenge_method: "S256",
       },
     });
-    // No matching active client row → invalid_client; local /authorize throws
-    // (oauth provider unconfigured) → 500. Assert the rejection boundary.
-    r.status([400, 500]);
+    r.status(400).body().has("$.error", "invalid_client");
+  });
+  await ctx.step("authorize: unknown uuid client_id → 400 invalid_client", async () => {
+    const r = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
+      query: {
+        client_id: "00000000-0000-4000-a000-000000000000",
+        redirect_uri: "https://example.com/cb",
+        response_type: "code",
+        code_challenge: "abc123",
+        code_challenge_method: "S256",
+      },
+    });
+    r.status(400).body().has("$.error", "invalid_client");
   });
   await ctx.step("authorize: bad code_challenge_method → 400", async () => {
     const r = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
@@ -101,21 +111,33 @@ flow("OAU-3", { domain: "oauth", routes: ["POST /v1/oauth/token"] }, async (ctx)
       .post("/v1/oauth/token", form({ grant_type: "authorization_code" }));
     r.status(400).body().has("$.error", "invalid_request");
   });
-  await ctx.step("token: unknown client_id+secret → 401 invalid_client", async () => {
+  await ctx.step("token: non-uuid client_id → 401 invalid_client, no DB cast error", async () => {
     const r = await ctx.client.as(ctx.P.ANON).post(
       "/v1/oauth/token",
       form({
         grant_type: "authorization_code",
-        client_id: "ke2e-nonexistent-client",
+        client_id: "notreal",
         client_secret: "ke2e-bad-secret",
         code: "x",
         redirect_uri: "https://example.com/cb",
         code_verifier: "y",
       }),
     );
-    // Credentials present but no matching active client → invalid_client; local
-    // throws during the client lookup (500). Assert the rejection boundary.
-    r.status([401, 500]);
+    r.status(401).body().has("$.error", "invalid_client");
+  });
+  await ctx.step("token: unknown uuid client_id+secret → 401 invalid_client", async () => {
+    const r = await ctx.client.as(ctx.P.ANON).post(
+      "/v1/oauth/token",
+      form({
+        grant_type: "authorization_code",
+        client_id: "00000000-0000-4000-a000-000000000000",
+        client_secret: "ke2e-bad-secret",
+        code: "x",
+        redirect_uri: "https://example.com/cb",
+        code_verifier: "y",
+      }),
+    );
+    r.status(401).body().has("$.error", "invalid_client");
   });
   await ctx.step("token: bogus grant_type with creds → 401 (client unknown first)", async () => {
     // client_id/secret are validated before grant_type; since the client is

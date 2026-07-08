@@ -312,7 +312,7 @@ async function selectRowsForTable(table: unknown) {
       name: 'Company OS',
       repoUrl: 'https://github.com/kortix-org/company-os.git',
       defaultBranch: 'main',
-      manifestPath: 'kortix.toml',
+      manifestPath: 'kortix.yaml',
       status: 'active',
       metadata: {},
       lastOpenedAt: null,

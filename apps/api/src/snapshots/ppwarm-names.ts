@@ -10,6 +10,37 @@ import { createHash } from 'node:crypto';
 export const PPWARM_PREFIX = 'kortix-ppwarm-';
 
 /**
+ * Suffix that distinguishes the warm bake's BUILD-LOG row from the template it
+ * layers on top of. `project_snapshot_builds.metadata.slug` records
+ * `<template>-warm` for a warm bake, but no such template exists in
+ * `sandbox_templates` — the warm image is derived, never declared. Anything that
+ * feeds a build slug back into template resolution (rebuild, fix-with-agent)
+ * MUST map it back first via `templateSlugFromBuildSlug`, or it resolves nothing.
+ */
+export const WARM_BUILD_SLUG_SUFFIX = '-warm';
+
+/** The build-log slug recorded for `templateSlug`'s warm bake. */
+export function warmBuildSlug(templateSlug: string): string {
+  return `${templateSlug}${WARM_BUILD_SLUG_SUFFIX}`;
+}
+
+export function isWarmBuildSlug(slug: string): boolean {
+  return slug.endsWith(WARM_BUILD_SLUG_SUFFIX);
+}
+
+/**
+ * Map a build-log slug back to the template slug it was baked from. Note this is
+ * ambiguous by construction: a project MAY declare a real template literally named
+ * `foo-warm`. Callers must therefore try the slug verbatim FIRST and only fall
+ * back to this — see `resolveTemplateForBuildSlug`.
+ */
+export function templateSlugFromBuildSlug(buildSlug: string): string {
+  return isWarmBuildSlug(buildSlug)
+    ? buildSlug.slice(0, -WARM_BUILD_SLUG_SUFFIX.length)
+    : buildSlug;
+}
+
+/**
  * First 8 hex chars of the projectId with dashes stripped — the per-project scope
  * key in a ppwarm name. Matches warm-project.ts's `proj8` so the prefixes line up.
  */

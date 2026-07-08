@@ -76,7 +76,7 @@ export async function runProxy(argv: string[]): Promise<number> {
 
 async function resolveSandboxId(
   sessionId: string | undefined,
-  ctx: NonNullable<ReturnType<typeof resolveProjectContext>>,
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>,
 ): Promise<string | null> {
   if (!sessionId) {
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
@@ -115,7 +115,7 @@ async function proxyShare(
     return 2;
   }
 
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   const sandboxId = await resolveSandboxId(sessionId, ctx);
   if (!sandboxId) return 1;
@@ -150,7 +150,7 @@ async function proxyShare(
 }
 
 async function proxyLs(sessionId: string | undefined, opts: CtxOpts, json = false): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   const sandboxId = await resolveSandboxId(sessionId, ctx);
   if (!sandboxId) return 1;
@@ -207,7 +207,7 @@ async function proxyRm(
     process.stderr.write(`${status.err('Pass the share token.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   const sandboxId = await resolveSandboxId(sessionId, ctx);
   if (!sandboxId) return 1;

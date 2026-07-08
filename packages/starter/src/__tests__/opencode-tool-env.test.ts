@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -33,8 +33,8 @@ async function importFreshHelper() {
 
 describe("opencode tool env helper", () => {
   test("reads Kortix router env from the live agent env file", async () => {
-    tempDir = join(tmpdir(), `kortix-tool-env-${Date.now()}`);
-    mkdirSync(tempDir, { recursive: true });
+    // mkdtemp gives an unpredictable, race-free dir (vs a guessable /tmp path).
+    tempDir = mkdtempSync(join(tmpdir(), "kortix-tool-env-"));
     const envFile = join(tempDir, "agent-env.sh");
     writeFileSync(
       envFile,

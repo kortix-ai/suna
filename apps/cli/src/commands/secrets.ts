@@ -82,7 +82,7 @@ export async function runSecrets(argv: string[]): Promise<number> {
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
 async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: ProjectSecretsResponse;
@@ -94,10 +94,10 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
     return surfaceApiError(err);
   }
 
-  // The server's required/optional come from its mirror of kortix.toml, which
+  // The server's required/optional come from its mirror of kortix.yaml, which
   // is eventually-consistent — right after `kortix ship` it can still be empty
   // ("missing"), which would mislabel freshly-declared secrets as "undeclared".
-  // The local kortix.toml is authoritative + instant, so fall back to it
+  // The local kortix.yaml is authoritative + instant, so fall back to it
   // whenever the cloud mirror isn't loaded yet.
   const local = (() => {
     try {
@@ -201,7 +201,7 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
 }
 
 async function secretsSet(args: string[], opts: CtxOpts): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   if (args.length === 0) {
     process.stderr.write(`${status.err('Pass at least one NAME=VALUE pair.')}\n`);
@@ -263,7 +263,7 @@ async function secretsRequest(rest: string[], opts: CtxOpts, json = false): Prom
     return 2;
   }
 
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: { url: string; names: string[]; scope: string; expires_at: string };
@@ -292,7 +292,7 @@ async function secretsRequest(rest: string[], opts: CtxOpts, json = false): Prom
 }
 
 async function secretsUnset(names: string[], opts: CtxOpts): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   if (names.length === 0) {
     process.stderr.write(`${status.err('Pass at least one secret name to unset.')}\n`);

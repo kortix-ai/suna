@@ -397,7 +397,54 @@ export async function combinedAuth(c: Context, next: Next) {
   // Determine if this is a preview proxy route (for cookie management)
   const isPreviewRoute = c.req.path.startsWith('/v1/p/') || c.req.path === '/v1/p';
 
-  // 0. CLI Personal Access Token — carries a real user_id.
+  // 0. Service-account bearer (non-human IAM principal) — mirrors the
+  // supabaseAuth branch. MUST run before the generic Kortix-token branch:
+  // `kortix_sa_` also matches the `kortix_` prefix, so without this check the
+  // token falls into validateSecretKey and every combinedAuth-mounted route
+  // (preview proxy, cron, secrets, providers, SSE) rejects service accounts
+  // that supabaseAuth-mounted routes accept.
+  if (isServiceAccountToken(token)) {
+    const sa = await validateServiceAccountToken(token);
+    if (!sa.isValid || !sa.serviceAccountId || !sa.accountId) {
+      auditLoginFail({
+        c,
+        reason: sa.error ?? 'invalid_service_account',
+        authType: 'service_account',
+      });
+      throw new HTTPException(401, { message: sa.error || 'Invalid service account' });
+    }
+    if (
+      previewSandboxId &&
+      !(await canAccessPreviewSandbox({ previewSandboxId, accountId: sa.accountId }))
+    ) {
+      auditLoginFail({
+        c,
+        reason: 'preview_sandbox_not_authorized',
+        authType: 'service_account',
+        accountId: sa.accountId,
+      });
+      throw new HTTPException(403, { message: 'Not authorized to access this sandbox' });
+    }
+    c.set('userId', sa.serviceAccountId);
+    c.set('userEmail', '');
+    c.set('authType', 'service_account');
+    c.set('accountId', sa.accountId);
+    c.set('iamTokenId', sa.serviceAccountId);
+    setSentryUser({ id: sa.serviceAccountId, accountId: sa.accountId });
+    setContextField('userId', sa.serviceAccountId);
+    setContextField('accountId', sa.accountId);
+    if (isPreviewRoute) setPreviewSessionCookie(c, token);
+    auditLoginSuccess({
+      c,
+      userId: sa.serviceAccountId,
+      accountId: sa.accountId,
+      authType: 'service_account',
+    });
+    await next();
+    return;
+  }
+
+  // 1. CLI Personal Access Token — carries a real user_id.
   if (isAccountToken(token)) {
     const patResult = await validateAccountToken(token);
     if (!patResult.isValid || !patResult.userId) {
@@ -433,7 +480,7 @@ export async function combinedAuth(c: Context, next: Next) {
     return;
   }
 
-  // 1. Try Kortix token (kortix_ or kortix_sb_) — used by agents inside the sandbox
+  // 2. Try Kortix token (kortix_ or kortix_sb_) — used by agents inside the sandbox
   if (isKortixToken(token)) {
     const result = await validateSecretKey(token);
     if (!result.isValid) {
@@ -478,7 +525,7 @@ export async function combinedAuth(c: Context, next: Next) {
     return;
   }
 
-  // 2. Try Supabase JWT — fast path: local verification (no network roundtrip)
+  // 3. Try Supabase JWT — fast path: local verification (no network roundtrip)
   const local = await verifySupabaseJwt(token);
   if (local.ok) {
     if (previewSandboxId && !(await canAccessPreviewSandbox({

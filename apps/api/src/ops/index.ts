@@ -154,7 +154,7 @@ opsApp.openapi(
       FROM kortix.session_sandboxes
       GROUP BY provider
     `),
-    // Triggers are file-defined (kortix.toml) now; the project_trigger_events
+    // Triggers are file-defined (kortix.yaml) now; the project_trigger_events
     // table is gone and the git path doesn't persist events, so this is always
     // empty. Field kept for dashboard compatibility.
     Promise.resolve<Record<string, number>>({}),

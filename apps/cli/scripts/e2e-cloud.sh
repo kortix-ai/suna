@@ -204,7 +204,7 @@ assert_contains "projects link refuses with hint" "Not a Kortix project" "$out"
 
 # …then scaffold a Kortix project so link CAN succeed.
 $CLI init --name "$(basename "$WORK_DIR")" --primary codex --yes >/dev/null
-[ -f kortix.toml ] && ok "init scaffold wrote kortix.toml" || bad "kortix.toml missing after init"
+[ -f kortix.yaml ] && ok "init scaffold wrote kortix.yaml" || bad "kortix.yaml missing after init"
 
 out=$($CLI projects link "$PROJECT_ID" 2>&1)
 rc=$?

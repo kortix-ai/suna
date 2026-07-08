@@ -1,9 +1,5 @@
 'use client';
 
-import { Check, RotateCcw } from 'lucide-react';
-import { useTranslations } from 'next-intl';
-import { useEffect, useRef, useState } from 'react';
-
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import {
@@ -22,7 +18,11 @@ import {
   type SessionStartStage,
 } from '@kortix/sdk/projects-client';
 import { formatDuration } from '@kortix/sdk/turns';
+import { CheckCircleSolid } from '@mynaui/icons-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { RotateCcw } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * The ONE loader shown while a session's Kortix Computer comes up — full-screen
@@ -33,7 +33,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
  * Visual: super-minimal, perfectly centered. A single kortix-green pulse, the
  * heading, a clean stepped checklist (no connector rails), and one quiet hint.
  */
-const LOADER_DELAY_MS = 700;
+const LOADER_DELAY_MS = 100;
 /**
  * How long we sit in the backend `starting` stage before softly advancing from
  * "Preparing your workspace" to "Starting the agent". Both happen within that
@@ -54,6 +54,20 @@ interface Step {
   label: string;
   description: string;
 }
+
+/**
+ * How the boot steps are laid out:
+ * - `default`  — the full four-step vertical checklist (side-panel resume loader
+ *                + inline thread checklist). Every step is visible; earlier ones
+ *                tick to a green check as the boot advances.
+ * - `switcher` — a single line showing ONLY the current step. When a step
+ *                completes it swaps straight to the next with no transition, so
+ *                the right-side action panel reads as one quiet status message
+ *                advancing ("Provisioning…" → "Preparing…" → …) rather than a
+ *                four-row list. The swap is intentionally instant: a crossfade
+ *                between two one-liners reads as two objects, not one advancing.
+ */
+type BootStepVariant = 'default' | 'stepper';
 
 const STEPS: Step[] = [
   { label: 'Provisioning your computer', description: 'Allocating a secure sandbox' },
@@ -100,11 +114,80 @@ function useBootProgress(stage: SessionStartStage): { active: number; now: numbe
 }
 
 /**
+ * The dotted-ring glyph in two states: `spinning` (kortix-green, rotating, with
+ * a solid center — the in-progress step) and idle (muted, static). Shared by the
+ * default checklist's active/pending rows and the switcher's single row so the
+ * in-progress indicator is pixel-identical across both variants.
+ */
+function StepRing({ spinning }: { spinning: boolean }) {
+  return (
+    <svg
+      height="16"
+      viewBox="0 0 16 16"
+      width="16"
+      strokeLinejoin="round"
+      style={{ color: spinning ? 'var(--kortix-green)' : 'var(--muted-foreground)' }}
+      className={cn(
+        'relative flex shrink-0 items-center justify-center',
+        spinning && 'animate-spin',
+      )}
+      aria-hidden
+    >
+      <circle
+        cx="8"
+        cy="8"
+        r="6.3"
+        stroke="currentColor"
+        fill="none"
+        strokeWidth="1.5"
+        strokeDasharray="3 3.4"
+      />
+      {spinning ? <circle cx="8" cy="8" r="4" fill="currentColor" /> : null}
+    </svg>
+  );
+}
+
+/** The in-progress step's label, with the kortix shimmer sweeping across it. */
+function StepLabelShimmer({ label }: { label: string }) {
+  return (
+    <TextShimmer
+      as="span"
+      duration={1.8}
+      spread={1.25}
+      className="text-[13px] leading-none font-medium tracking-tight"
+    >
+      {label}
+    </TextShimmer>
+  );
+}
+
+/**
  * The stepped checklist itself — one render, shared by the centered panel loader
  * and the inline thread checklist so they can never visually drift. Pure: the
  * caller owns the clock (see {@link useBootProgress}) and passes the active index.
+ *
+ * `variant` picks the layout (see {@link BootStepVariant}): the default renders
+ * the whole four-row checklist; `switcher` renders just the current step's row,
+ * swapping instantly to the next as the boot advances.
  */
-function BootStepList({ active }: { active: number }) {
+function BootStepList({
+  active,
+  variant = 'default',
+}: {
+  active: number;
+  variant?: BootStepVariant;
+}) {
+  if (variant === 'default') {
+    // Only ever the CURRENT step. `active` never exceeds the last index (see
+    // activeStep), but clamp defensively so the row is always resolvable.
+    const step = STEPS[Math.min(active, STEPS.length - 1)];
+    return (
+      <div className="flex h-4 min-w-0 items-center">
+        <StepLabelShimmer key={step.label} label={step.label} />
+      </div>
+    );
+  }
+
   return (
     <Stepper
       value={active}
@@ -123,47 +206,21 @@ function BootStepList({ active }: { active: number }) {
               className="items-center"
               aria-current={current ? 'step' : undefined}
             >
-              <StepperIndicator className="flex size-3.5 shrink-0 items-center justify-center rounded-none bg-transparent text-current">
+              <StepperIndicator className="flex size-3.5 shrink-0 items-center justify-center rounded-none bg-none text-current">
                 {done ? (
-                  <Check className="text-kortix-green size-3.5" strokeWidth={2.5} />
+                  <CheckCircleSolid
+                    className="text-kortix-green bg-background size-3.5"
+                    strokeWidth={2.5}
+                  />
                 ) : (
-                  <svg
-                    height="16"
-                    viewBox="0 0 16 16"
-                    width="16"
-                    strokeLinejoin="round"
-                    style={{ color: current ? 'var(--kortix-green)' : 'var(--muted-foreground)' }}
-                    className={cn(
-                      'relative flex shrink-0 items-center justify-center',
-                      current && 'animate-spin',
-                    )}
-                    aria-hidden
-                  >
-                    <circle
-                      cx="8"
-                      cy="8"
-                      r="6.3"
-                      stroke="currentColor"
-                      fill="none"
-                      strokeWidth="1.5"
-                      strokeDasharray="3 3.4"
-                    />
-                    {current ? <circle cx="8" cy="8" r="4" fill="currentColor" /> : null}
-                  </svg>
+                  <StepRing spinning={current} />
                 )}
               </StepperIndicator>
               <StepperSeparator className="bg-border group-data-[state=completed]/step:bg-kortix-green/40 m-0 my-0.5 group-data-[orientation=vertical]/stepper:min-h-3" />
             </StepperItem>
             <div className="flex h-4 min-w-0 items-center">
               {current ? (
-                <TextShimmer
-                  as="span"
-                  duration={1.8}
-                  spread={1.25}
-                  className="text-[13px] leading-none font-medium tracking-tight"
-                >
-                  {step.label}
-                </TextShimmer>
+                <StepLabelShimmer label={step.label} />
               ) : (
                 <StepperTitle className="text-muted-foreground/50 text-[13px] leading-none tracking-tight transition-colors duration-500">
                   {step.label}
@@ -188,11 +245,16 @@ export function SessionStartingLoader({
    *  embeddings of this loader don't have a project session id in scope. */
   projectId,
   sessionId,
+  /** Checklist layout. The full-screen resume loader keeps the default
+   *  four-step stepper; the side action panel passes `switcher` so it shows a
+   *  single status line advancing one step at a time. */
+  variant = 'stepper',
 }: {
   stage?: SessionStartStage;
   delayMs?: number;
   projectId?: string;
   sessionId?: string;
+  variant?: BootStepVariant;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -252,7 +314,7 @@ export function SessionStartingLoader({
         </div>
 
         {/* Auto-width so the checklist is a centered block under the heading. */}
-        <BootStepList active={active} />
+        <BootStepList active={active} variant={variant} />
 
         <p className="text-muted-foreground text-center text-[11px] leading-relaxed">
           {slow ? 'A cold start can take a little longer.' : 'This usually takes a few seconds.'}
@@ -303,7 +365,7 @@ export function SessionBootChecklistInline({
   return (
     <div className={cn('flex flex-col items-start gap-2', className)}>
       <div
-        className="bg-popover w-full rounded-md border px-4 py-3"
+        // className="bg-popover w-full rounded-md border px-4 py-3"
         aria-label="Starting your Kortix Computer"
       >
         <BootStepList active={active} />

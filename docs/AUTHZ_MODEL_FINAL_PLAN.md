@@ -22,7 +22,7 @@ Verified against the code on `feat/iam-rbac-v1` (merged with `main`). Do **not**
 |---|---|---|
 | Allow-only, deny-by-default engine (`authorizeV2`) | ✅ | `apps/api/src/iam/engine-v2.ts` |
 | Agent-scoped **session token** (agentGrant + serviceAccountId), not user-only | ✅ | `platform/services/session-sandbox.ts` mintExecutorToken; validated `middleware/auth.ts` |
-| **kortix.toml `[[agents]]`** = source of truth for agent scope (env/connectors/kortix_cli) | ✅ | `projects/agents.ts` |
+| **kortix.yaml `agents:`** = source of truth for agent scope (env/connectors/kortix_cli) | ✅ | `projects/agents.ts` |
 | Git auth **never injected** into the sandbox (build-time only) | ✅ | `session-sandbox.ts` resolveGitAuthToken |
 | Custom roles + policies, group→role, per-resource grants, revoke immediacy | ✅ | `iam/engine-v2.ts`, `iam/resource-grants.ts`, `iam/cache-invalidation.ts` |
 | Standing-identity **service accounts** (agents authorize as their SA once activated) | ✅ (opt-in) | `iam/engine-v2.ts` resolveActorV2; `repositories/service-accounts.ts` |
@@ -143,7 +143,7 @@ shape (reuse resource-grants vs new column) and greenlight the per-user removal 
 ## 4. Fully AGENT-based authorization (never user-based within a session)  *(epic)*
 
 **Ask:** "Make everything Agent-based authorization, never user-based within session." +
-"kortix.toml as source of truth, everything defined explicitly."
+"kortix.yaml as source of truth, everything defined explicitly."
 
 **Current state.** Standing identity is **opt-in**: an agent session authorizes as its service
 account only once an admin assigns that SA a role; otherwise it **falls back to the launching

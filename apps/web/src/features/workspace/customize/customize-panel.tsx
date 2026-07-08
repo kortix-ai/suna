@@ -177,10 +177,12 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
       ),
     [caps],
   );
-  // A section is permitted when its GATE leaf resolved to allowed:true. Every
-  // customize section gates on WRITE (editor+) — a plain `member` sees none of
-  // them (Files lives on its own /projects/[id]/files page, not in here). Until
-  // the probe resolves (or if it errored) we permit everything (optimistic).
+  // A section is permitted when its READ leaf resolved to allowed:true — a role
+  // that can read a section SEES it (read-only unless it also holds the write
+  // leaf; edit controls inside each view gate on can_manage separately). A role
+  // that omits a read leaf hides just that section. (Files lives on its own
+  // /projects/[id]/files page, not in here.) Until the probe resolves (or if it
+  // errored) we permit everything (optimistic) — visibility, not security.
   const isSectionAllowed = useCallback(
     (s: CustomizeSection) => {
       if (!capsResolved) return true;

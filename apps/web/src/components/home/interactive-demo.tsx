@@ -3,6 +3,7 @@
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Warp } from '@paper-design/shaders-react';
+import { ShaderSafe } from '@/components/ui/shader-safe';
 import { Blocks, Bot, ChevronRight, Clock, MessageSquare, type LucideIcon } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
@@ -49,8 +50,8 @@ function browserSupportsWebGL(): boolean {
     const canvas = document.createElement('canvas');
     return Boolean(
       canvas.getContext('webgl2') ??
-      canvas.getContext('webgl') ??
-      canvas.getContext('experimental-webgl'),
+        canvas.getContext('webgl') ??
+        canvas.getContext('experimental-webgl'),
     );
   } catch {
     return false;
@@ -367,19 +368,21 @@ export function InteractiveDemo({
       >
         {gradientbg && webGLReady && (
           <div className="absolute inset-0">
-            <Warp
-              speed={4.3}
-              scale={0.9}
-              softness={1.5}
-              proportion={0.64}
-              swirl={0.86}
-              swirlIterations={7}
-              shape="edge"
-              distortion={0.2}
-              shapeScale={0.6}
-              colors={['#A7E58B', '#324472', '#0A180D']}
-              style={{ height: '100%', width: '100%' }}
-            />
+            <ShaderSafe>
+              <Warp
+                speed={4.3}
+                scale={0.9}
+                softness={1.5}
+                proportion={0.64}
+                swirl={0.86}
+                swirlIterations={7}
+                shape="edge"
+                distortion={0.2}
+                shapeScale={0.6}
+                colors={['#A7E58B', '#324472', '#0A180D']}
+                style={{ height: '100%', width: '100%' }}
+              />
+            </ShaderSafe>
 
             <span
               className="absolute inset-0 bg-white mix-blend-color will-change-[clip-path,opacity]"

@@ -1,10 +1,10 @@
 /**
- * E2E for `[[apps]]` CRUD + deploy routes mounted at
+ * E2E for `apps:` CRUD + deploy routes mounted at
  * /v1/projects/:projectId/apps.
  *
  * Mirrors e2e-project-triggers.test.ts: in-memory repo file map +
  * in-memory db mock + stubbed fetch for Freestyle. Every accepted
- * `[[apps]]` config shape is exercised (the user explicitly asked).
+ * `apps:` config shape is exercised (the user explicitly asked).
  */
 import { beforeEach, describe, expect, test, mock } from 'bun:test';
 import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
@@ -20,7 +20,7 @@ import {
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
-const MANIFEST_PATH = 'kortix.toml';
+const MANIFEST_PATH = 'kortix.yaml';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
 // ─── In-memory state ────────────────────────────────────────────────────────
@@ -43,7 +43,7 @@ const projectRow: typeof projects.$inferSelect = {
   name: 'Apps Project',
   repoUrl: 'https://github.com/kortix-ai/apps-project.git',
   defaultBranch: 'main',
-  manifestPath: 'kortix.toml',
+  manifestPath: 'kortix.yaml',
   status: 'active',
   metadata: {},
   lastOpenedAt: null,
@@ -100,7 +100,7 @@ globalThis.fetch = (async (input: any, init?: any) => {
 // Make sure the adapter sees a non-empty API key so it actually hits the
 // stubbed fetch instead of bailing with "key not configured".
 process.env.FREESTYLE_API_KEY = 'test-key';
-// [[apps]] is experimental + off by default. The test suite intentionally
+// apps: config is experimental + off by default. The test suite intentionally
 // flips it on so every route below can be exercised.
 process.env.KORTIX_APPS_EXPERIMENTAL = 'true';
 
@@ -373,13 +373,17 @@ function createApp() {
 }
 
 // ─── Manifest seeding helpers ──────────────────────────────────────────────
+//
+// Manifest fixtures are hand-written v2 YAML (kortix.yaml). Each app block is
+// a `apps:` list-item, pre-indented to slot directly under the top-level
+// `apps:` key that `seedManifest` prepends.
 
-const MANIFEST_PREAMBLE = `kortix_version = 1\n[project]\nname = "Apps Project"\n`;
+const MANIFEST_PREAMBLE = `kortix_version: 1\nproject:\n  name: Apps Project\n`;
 
 function seedManifest(...appBlocks: string[]) {
   const body = appBlocks.length === 0
     ? MANIFEST_PREAMBLE
-    : `${MANIFEST_PREAMBLE}\n${appBlocks.join('\n\n')}\n`;
+    : `${MANIFEST_PREAMBLE}apps:\n${appBlocks.join('\n')}\n`;
   repoFiles.set(MANIFEST_PATH, body);
 }
 
@@ -389,13 +393,12 @@ function seedManifest(...appBlocks: string[]) {
 
 function minimalGitApp(opts: { slug: string; domain: string }): string {
   return [
-    '[[apps]]',
-    `slug = "${opts.slug}"`,
-    `domains = ["${opts.domain}"]`,
-    '',
-    '  [apps.source]',
-    '  type = "git"',
-    '  repo = "https://github.com/me/x"',
+    `  - slug: ${opts.slug}`,
+    '    domains:',
+    `      - ${opts.domain}`,
+    '    source:',
+    '      type: git',
+    '      repo: https://github.com/me/x',
   ].join('\n');
 }
 
@@ -411,28 +414,26 @@ function fullGitApp(opts: {
   buildOutDir?: string;
   env?: Record<string, string>;
 }): string {
-  const lines: string[] = ['[[apps]]', `slug = "${opts.slug}"`];
-  if (opts.name !== undefined) lines.push(`name = "${opts.name}"`);
-  if (opts.enabled !== undefined) lines.push(`enabled = ${opts.enabled}`);
-  if (opts.framework !== undefined) lines.push(`framework = "${opts.framework}"`);
-  lines.push(`domains = ["${opts.domain}"]`);
-  lines.push('');
-  lines.push('  [apps.source]');
-  lines.push('  type = "git"');
-  lines.push('  repo = "https://github.com/me/full"');
-  if (opts.branch !== undefined) lines.push(`  branch = "${opts.branch}"`);
-  if (opts.rootPath !== undefined) lines.push(`  root_path = "${opts.rootPath}"`);
+  const lines: string[] = [`  - slug: ${opts.slug}`];
+  if (opts.name !== undefined) lines.push(`    name: ${opts.name}`);
+  if (opts.enabled !== undefined) lines.push(`    enabled: ${opts.enabled}`);
+  if (opts.framework !== undefined) lines.push(`    framework: ${opts.framework}`);
+  lines.push('    domains:');
+  lines.push(`      - ${opts.domain}`);
+  lines.push('    source:');
+  lines.push('      type: git');
+  lines.push('      repo: https://github.com/me/full');
+  if (opts.branch !== undefined) lines.push(`      branch: ${opts.branch}`);
+  if (opts.rootPath !== undefined) lines.push(`      root_path: ${opts.rootPath}`);
   if (opts.buildCommand || opts.buildOutDir) {
-    lines.push('');
-    lines.push('  [apps.build]');
-    if (opts.buildCommand) lines.push(`  command = "${opts.buildCommand}"`);
-    if (opts.buildOutDir) lines.push(`  out_dir = "${opts.buildOutDir}"`);
+    lines.push('    build:');
+    if (opts.buildCommand) lines.push(`      command: ${opts.buildCommand}`);
+    if (opts.buildOutDir) lines.push(`      out_dir: ${opts.buildOutDir}`);
   }
   if (opts.env && Object.keys(opts.env).length > 0) {
-    lines.push('');
-    lines.push('  [apps.env]');
+    lines.push('    env:');
     for (const [k, v] of Object.entries(opts.env)) {
-      lines.push(`  ${k} = "${v}"`);
+      lines.push(`      ${k}: ${v}`);
     }
   }
   return lines.join('\n');
@@ -440,25 +441,23 @@ function fullGitApp(opts: {
 
 function tarApp(opts: { slug: string; url: string; domain: string }): string {
   return [
-    '[[apps]]',
-    `slug = "${opts.slug}"`,
-    `domains = ["${opts.domain}"]`,
-    '',
-    '  [apps.source]',
-    '  type = "tar"',
-    `  url = "${opts.url}"`,
+    `  - slug: ${opts.slug}`,
+    '    domains:',
+    `      - ${opts.domain}`,
+    '    source:',
+    '      type: tar',
+    `      url: ${opts.url}`,
   ].join('\n');
 }
 
 function gitAppDefaultRepo(opts: { slug: string; domain: string }): string {
   // No `repo` — should fall back to the project's repoUrl at deploy time.
   return [
-    '[[apps]]',
-    `slug = "${opts.slug}"`,
-    `domains = ["${opts.domain}"]`,
-    '',
-    '  [apps.source]',
-    '  type = "git"',
+    `  - slug: ${opts.slug}`,
+    '    domains:',
+    `      - ${opts.domain}`,
+    '    source:',
+    '      type: git',
   ].join('\n');
 }
 
@@ -467,7 +466,7 @@ function gitAppDefaultRepo(opts: { slug: string; domain: string }): string {
 describe('GET /v1/projects/:id/apps — list reflects manifest', () => {
   beforeEach(() => resetState());
 
-  test('empty when no [[apps]] declared', async () => {
+  test('empty when no apps: declared', async () => {
     seedManifest();
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/apps`);
@@ -528,7 +527,7 @@ describe('GET /v1/projects/:id/apps — list reflects manifest', () => {
     seedManifest(
       minimalGitApp({ slug: 'good', domain: 'g.style.dev' }),
       // Bad: missing source block.
-      '[[apps]]\nslug = "bad"\ndomains = ["b.style.dev"]\n',
+      '  - slug: bad\n    domains:\n      - b.style.dev',
     );
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/apps`);
@@ -559,8 +558,8 @@ describe('POST /v1/projects/:id/apps — create commits to manifest', () => {
     expect(commitCalls).toHaveLength(1);
     expect(commitCalls[0]!.path).toBe(MANIFEST_PATH);
     expect(commitCalls[0]!.message).toBe('chore: add app my-site');
-    expect(commitCalls[0]!.content).toContain('[[apps]]');
-    expect(commitCalls[0]!.content).toContain('slug = "my-site"');
+    expect(commitCalls[0]!.content).toContain('apps:');
+    expect(commitCalls[0]!.content).toContain('slug: my-site');
     const body = await res.json();
     expect(body.apps[0]).toMatchObject({ slug: 'my-site', name: 'My Site' });
   });
@@ -588,12 +587,12 @@ describe('POST /v1/projects/:id/apps — create commits to manifest', () => {
     });
     expect(res.status).toBe(201);
     const content = commitCalls[0]!.content;
-    expect(content).toContain('branch = "release"');
-    expect(content).toContain('root_path = "apps/web"');
-    expect(content).toContain('command = "pnpm build"');
-    expect(content).toContain('out_dir = "dist"');
-    expect(content).toContain('FOO = "bar"');
-    expect(content).toContain('framework = "next"');
+    expect(content).toContain('branch: release');
+    expect(content).toContain('root_path: apps/web');
+    expect(content).toContain('command: pnpm build');
+    expect(content).toContain('out_dir: dist');
+    expect(content).toContain('FOO: bar');
+    expect(content).toContain('framework: next');
   });
 
   test('commits a tar app', async () => {
@@ -609,7 +608,7 @@ describe('POST /v1/projects/:id/apps — create commits to manifest', () => {
       }),
     });
     expect(res.status).toBe(201);
-    expect(commitCalls[0]!.content).toContain('type = "tar"');
+    expect(commitCalls[0]!.content).toContain('type: tar');
     expect(commitCalls[0]!.content).toContain('https://example.com/build.tar.gz');
   });
 
@@ -643,9 +642,9 @@ describe('POST /v1/projects/:id/apps — create commits to manifest', () => {
       }),
     });
     expect(res.status).toBe(201);
-    // Committed manifest must NOT contain `provider = ...` even though the
+    // Committed manifest must NOT contain a `provider:` key even though the
     // request tried to set one.
-    expect(commitCalls[0]!.content).not.toContain('provider =');
+    expect(commitCalls[0]!.content).not.toContain('provider:');
   });
 
   test('rejects missing required fields', async () => {
@@ -690,9 +689,9 @@ describe('PATCH /v1/projects/:id/apps/:slug — partial update', () => {
     });
     expect(res.status).toBe(200);
     const content = commitCalls.at(-1)!.content;
-    expect(content).toContain('enabled = false');
-    expect(content).toContain('branch = "main"');
-    expect(content).toContain('FOO = "bar"');
+    expect(content).toContain('enabled: false');
+    expect(content).toContain('branch: main');
+    expect(content).toContain('FOO: bar');
   });
 
   test('404 on unknown slug', async () => {
@@ -719,8 +718,8 @@ describe('DELETE /v1/projects/:id/apps/:slug — removes from manifest', () => {
     const res = await app.request(`/v1/projects/${PROJECT_ID}/apps/drop`, { method: 'DELETE' });
     expect(res.status).toBe(200);
     const content = commitCalls.at(-1)!.content;
-    expect(content).toContain('slug = "keep"');
-    expect(content).not.toContain('slug = "drop"');
+    expect(content).toContain('slug: keep');
+    expect(content).not.toContain('slug: drop');
   });
 });
 
@@ -814,12 +813,10 @@ describe('POST /v1/projects/:id/apps/:slug/deploy — manual deploy', () => {
   test('app with NO domains auto-issues a stable *.style.dev URL', async () => {
     // The zero-config "vibecode an app and ship it" path: no domains declared.
     seedManifest([
-      '[[apps]]',
-      'slug = "nodomain"',
-      '',
-      '  [apps.source]',
-      '  type = "git"',
-      '  repo = "https://github.com/me/x"',
+      '  - slug: nodomain',
+      '    source:',
+      '      type: git',
+      '      repo: https://github.com/me/x',
     ].join('\n'));
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/apps/nodomain/deploy`, { method: 'POST' });
@@ -844,12 +841,10 @@ describe('POST /v1/projects/:id/apps/:slug/deploy — manual deploy', () => {
     seedManifest(
       minimalGitApp({ slug: 'declared', domain: 'declared.style.dev' }),
       [
-        '[[apps]]',
-        'slug = "auto"',
-        '',
-        '  [apps.source]',
-        '  type = "git"',
-        '  repo = "https://github.com/me/x"',
+        '  - slug: auto',
+        '    source:',
+        '      type: git',
+        '      repo: https://github.com/me/x',
       ].join('\n'),
     );
     const app = createApp();

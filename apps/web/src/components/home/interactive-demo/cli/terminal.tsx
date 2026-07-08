@@ -41,7 +41,7 @@ export const KORTIX_CMD_STYLE: CSSProperties = {
 /** Span constructor. `t('Shipped', 'fg')`. */
 export const t = (text: string, c?: Color | 'kortix' | 'cursor'): Span => ({ t: text, c });
 
-/** A green `✓` status line, e.g. `ok(t('kortix.toml verified'))`. */
+/** A green `✓` status line, e.g. `ok(t('kortix.yaml verified'))`. */
 export const ok = (...spans: Span[]): Line => [t('  '), t('✓', 'green'), t('  '), ...spans];
 
 /** A two-column meta row: `  repo  git.kortix.com/…`. */

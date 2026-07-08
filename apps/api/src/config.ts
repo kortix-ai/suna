@@ -82,7 +82,7 @@ const envSchema = z.object({
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
   // Set to true on managed/cloud deployments; leave false for self-host + dev.
   KORTIX_BILLING_INTERNAL_ENABLED:  optBoolFalse,
-  // EXPERIMENTAL: turns on the [[apps]] section in kortix.toml — manifest
+  // EXPERIMENTAL: turns on the `apps:` section in kortix.yaml — manifest
   // parsing, CRUD routes, manual deploy, and the auto-deploy sweep. Off
   // by default until the wire is hardened.
   KORTIX_APPS_EXPERIMENTAL:         optBoolFalse,
@@ -709,21 +709,27 @@ export const config = {
       console.log('[config] Auto-generated INTERNAL_SERVICE_KEY for sandbox auth');
       // Persist to .env so the key survives process restarts (avoids re-sync on every restart)
       try {
-        const { appendFileSync, readFileSync, existsSync } = require('fs');
+        const { appendFileSync, readFileSync } = require('fs');
         const { resolve } = require('path');
         const candidates = [
           resolve(__dirname, '../../.env'),       // from src/config.ts -> ../../.env
           resolve(process.cwd(), '.env'),          // cwd/.env
         ];
         for (const envPath of candidates) {
-          if (existsSync(envPath)) {
-            const content = readFileSync(envPath, 'utf-8');
-            if (!content.includes('INTERNAL_SERVICE_KEY=')) {
-              appendFileSync(envPath, `\n# Auto-generated service key for sandbox auth (do not remove)\nINTERNAL_SERVICE_KEY=${generated}\n`);
-              console.log(`[config] Persisted INTERNAL_SERVICE_KEY to ${envPath}`);
-            }
-            break;
+          // No existsSync-then-write: check-then-act on a path is a TOCTOU race.
+          // The read IS the existence test — a missing/unreadable file throws us
+          // to the next candidate, leaving no gap between check and use.
+          let content: string;
+          try {
+            content = readFileSync(envPath, 'utf-8');
+          } catch {
+            continue;
           }
+          if (!content.includes('INTERNAL_SERVICE_KEY=')) {
+            appendFileSync(envPath, `\n# Auto-generated service key for sandbox auth (do not remove)\nINTERNAL_SERVICE_KEY=${generated}\n`);
+            console.log(`[config] Persisted INTERNAL_SERVICE_KEY to ${envPath}`);
+          }
+          break;
         }
       } catch (err: any) {
         // Non-fatal -- key still works in-memory for this process lifetime

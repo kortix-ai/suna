@@ -391,8 +391,13 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  // Floor is 'read' (project membership); the real gate is the members.manage
+  // leaf below, so a custom role granting ONLY members.manage (no project.write)
+  // works, and — matching the sibling approve/reject routes — a plain editor
+  // (project.write but not members.manage) can't list pending access requests.
+  const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const rows = await db
     .select()
@@ -1121,8 +1126,11 @@ projectsApp.openapi(
     const body = await readBody(c);
     const feature = body.feature;
     const enabled = body.enabled;
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    // Floor 'read' (membership); project.customize.write is the human gate below
+    // (was 'manage' → project.write, so unchecking customize.write did nothing).
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     // Per-agent gate: toggling experimental features is project config. A scoped
     // agent token must hold project.customize.write (no-op for humans/PATs).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
@@ -1179,8 +1187,11 @@ projectsApp.openapi(
     const body = await readBody(c);
     const raw = body.provider ?? body.sandbox_provider;
     const provider = raw === null || raw === undefined || raw === '' ? null : String(raw);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    // Floor 'read'; project.customize.write is the human gate below (was
+    // 'manage' → project.write, so unchecking customize.write did nothing here).
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     if (provider !== null && !config.isProviderEnabled(provider as SandboxProviderName)) {
       return c.json({ error: `Unknown or disabled sandbox provider: ${provider}` }, 400);

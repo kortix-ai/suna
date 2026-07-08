@@ -6,6 +6,7 @@
  */
 
 import type { ApiReviewItem, ReviewVerdict } from '@kortix/sdk/projects-client';
+import { looksLikeMarkdown } from './review-markdown';
 import type {
   ApprovalAction,
   ApprovalActionIcon,
@@ -92,12 +93,22 @@ const lines = (s: string): string[] =>
 
 function changeDetail(d: AnyRec, row: ApiReviewItem): ChangeDetail {
   const adv = rec(d.advanced);
+  // A free-form description that's real markdown (agent-written CR bodies
+  // often are) is carried whole and rendered as markdown in the modal —
+  // line-splitting it into checkmark rows would show raw `##`/`**` noise.
+  // Plain text keeps the designed per-line treatment; a native structured
+  // `whatChanged` array always wins.
+  const description = str(d.description);
+  const native = arrOf<string>(d.whatChanged);
+  const descriptionMarkdown =
+    !native && description && looksLikeMarkdown(description) ? description : undefined;
   const whatChanged =
-    arrOf<string>(d.whatChanged) ??
-    (str(d.description) ? lines(str(d.description) as string) : row.summary ? [row.summary] : []);
+    native ??
+    (descriptionMarkdown ? [] : description ? lines(description) : row.summary ? [row.summary] : []);
   return {
     crId: str(d.cr_id),
     whatChanged,
+    descriptionMarkdown,
     impact: str(d.impact) ?? '',
     verification: arrOf<ChangeDetail['verification'][number]>(d.verification) ?? [],
     previewUrl: str(d.previewUrl) ?? str(d.preview_url),

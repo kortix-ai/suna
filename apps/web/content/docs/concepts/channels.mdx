@@ -10,13 +10,12 @@ from chat. Connect Slack to a project, and a message or mention spawns a
 [session](/docs/concepts/sessions); the agent replies in the thread. Follow-up
 messages in that thread continue the same session.
 
-- **Connect Slack** from the project's Channels page in the dashboard — either
-  one-click via the Kortix-managed Slack app (OAuth), or bring your own Slack
-  app (a bot token + signing secret). From the CLI,
-  [`kortix channels connect`](/docs/reference/cli) supports the bring-your-own-app
-  path only: pass `--bot-token`/`--signing-secret`, set `SLACK_BOT_TOKEN`/
-  `SLACK_SIGNING_SECRET` in the environment, or pipe them via stdin. There's no
-  OAuth option from the CLI.
+- **Connect Slack** with [`kortix channels connect`](/docs/reference/cli) or
+  from the project's Channels page in the dashboard. Both offer the same two
+  modes: one-click via the Kortix-managed Slack app (the CLI prints an
+  "Add to Slack" install link — open it, pick the workspace, click Allow), or
+  bring your own Slack app (`--manual`: a bot token + signing secret, via
+  flags, `SLACK_BOT_TOKEN`/`SLACK_SIGNING_SECRET` env vars, or stdin).
 - **Credentials are stored as project [secrets](/docs/concepts/secrets)** (e.g.
   `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`) — never in the repo.
 - **The agent talks to Slack through the Executor.** Connecting Slack

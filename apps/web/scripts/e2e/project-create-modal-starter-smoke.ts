@@ -122,7 +122,7 @@ async function submitProjectCreate(
         name: payload.name,
         repo_url: 'https://github.com/kortix-managed/test.git',
         default_branch: 'main',
-        manifest_path: 'kortix.toml',
+        manifest_path: 'kortix.yaml',
         status: 'active',
         metadata: {},
         last_opened_at: null,

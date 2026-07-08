@@ -156,6 +156,31 @@ export function opencodeClient(opts: SandboxOpencodeOpts) {
         method: 'POST',
         body: {},
       }),
+    listPermissions: () =>
+      sandboxRequest<OpencodePermissionRequest[]>({ ...base, path: '/permission' }),
+    replyPermission: (requestId: string, reply: 'once' | 'always' | 'reject', message?: string) =>
+      sandboxRequest<boolean>({
+        ...base,
+        path: `/permission/${requestId}/reply`,
+        method: 'POST',
+        body: { reply, ...(message ? { message } : {}) },
+      }),
+    listQuestions: () =>
+      sandboxRequest<OpencodeQuestionRequest[]>({ ...base, path: '/question' }),
+    replyQuestion: (requestId: string, answers: string[][]) =>
+      sandboxRequest<boolean>({
+        ...base,
+        path: `/question/${requestId}/reply`,
+        method: 'POST',
+        body: { answers },
+      }),
+    rejectQuestion: (requestId: string) =>
+      sandboxRequest<boolean>({
+        ...base,
+        path: `/question/${requestId}/reject`,
+        method: 'POST',
+        body: {},
+      }),
   };
 }
 
@@ -203,3 +228,37 @@ export type OpencodePart =
   | { type: 'tool'; tool: string; state?: { status?: string; output?: string } }
   | { type: 'file'; mime?: string; filename?: string; url?: string }
   | { type: string; [k: string]: unknown };
+
+/** A pending tool-permission ask (OpenCode holds the tool call open until
+ *  `/permission/{id}/reply`). */
+export interface OpencodePermissionRequest {
+  id: string;
+  sessionID: string;
+  permission: string;
+  patterns: string[];
+  metadata: Record<string, unknown>;
+  always: string[];
+  tool?: { messageID: string; callID: string };
+}
+
+export interface OpencodeQuestionOption {
+  label: string;
+  value?: string;
+  hint?: string;
+}
+
+export interface OpencodeQuestionInfo {
+  question: string;
+  header: string;
+  options: OpencodeQuestionOption[];
+  multiple?: boolean;
+  custom?: boolean;
+}
+
+/** A pending question the agent asked (blocks the turn until answered). */
+export interface OpencodeQuestionRequest {
+  id: string;
+  sessionID: string;
+  questions: OpencodeQuestionInfo[];
+  tool?: { messageID: string; callID: string };
+}

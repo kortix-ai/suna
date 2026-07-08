@@ -20,7 +20,7 @@ function manifestWith(triggersBlock: string): string {
   ].join('\n');
 }
 
-describe('kortix.toml — schema versioning', () => {
+describe('kortix manifest — schema versioning', () => {
   test('missing kortix_version is treated as v1 (back-compat)', () => {
     const parsed = parseManifestString(MIN_PROJECT);
     expect(parsed.schemaVersion).toBe(1);

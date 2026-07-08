@@ -1,15 +1,6 @@
 'use client';
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { deleteProjectSession } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -38,7 +29,7 @@ export function SessionDeleteModal({
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteProjectSession(projectId, id),
     onSuccess: () => {
-      successToast('Session deleted');
+      successToast(sessionLabel ? `"${sessionLabel}" deleted` : 'Session deleted');
       queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
       onDeleted?.();
       onOpenChange(false);
@@ -54,33 +45,27 @@ export function SessionDeleteModal({
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            {tHardcodedUi.raw('componentsProjectsProjectSessionList.line189JsxTextDeleteSession')}
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            {tHardcodedUi.raw(
-              'componentsProjectsProjectSessionList.line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox',
-            )}{' '}
-            <span className="text-foreground font-medium">{sessionLabel}</span>
-            {tHardcodedUi.raw(
-              'componentsProjectsProjectSessionList.line193JsxTextThisActionCannotBeUndone',
-            )}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            onClick={confirmDelete}
-            disabled={deleteMutation.isPending}
-          >
-            Delete
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!deleteMutation.isPending) onOpenChange(o);
+      }}
+      title={tHardcodedUi.raw('componentsProjectsProjectSessionList.line189JsxTextDeleteSession')}
+      description={
+        <>
+          {tHardcodedUi.raw(
+            'componentsProjectsProjectSessionList.line191JsxTextThisWillPermanentlyDestroyTheBranchAndSandbox',
+          )}{' '}
+          <span className="text-foreground font-medium">{sessionLabel}</span>
+          {tHardcodedUi.raw(
+            'componentsProjectsProjectSessionList.line193JsxTextThisActionCannotBeUndone',
+          )}
+        </>
+      }
+      confirmLabel="Delete"
+      confirmVariant="destructive"
+      isPending={deleteMutation.isPending}
+      onConfirm={confirmDelete}
+    />
   );
 }

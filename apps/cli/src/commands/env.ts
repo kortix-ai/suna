@@ -71,7 +71,7 @@ export async function runEnv(argv: string[]): Promise<number> {
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
 async function envPull(outArg: string | undefined, force: boolean, opts: CtxOpts): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: ProjectSecretsResponse;
@@ -134,7 +134,7 @@ async function envPush(fromArg: string | undefined, opts: CtxOpts): Promise<numb
     process.stderr.write(`${status.err('Pass --from <dotenv-path>.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   const srcPath = resolve(process.cwd(), fromArg);

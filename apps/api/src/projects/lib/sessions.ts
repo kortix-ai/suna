@@ -192,7 +192,7 @@ export async function buildSessionSandboxEnvVars(input: {
    *  negotiation round-trip that still hung for 34s through the flaky dev tunnel
    *  (2026-06-13). Omitted → daemon delta-fetches as before. */
   baseSha?: string;
-  /** Project git context, so the running agent's `secrets` grant in [[agents]]
+  /** Project git context, so the running agent's `secrets` grant in `agents:`
    *  can be resolved and applied by IDENTIFIER — secrets the agent isn't
    *  granted are dropped from the injected env (a prompt-injected agent then
    *  can't read another scope's keys out of $ENV). Optional: when absent, the
@@ -214,7 +214,7 @@ export async function buildSessionSandboxEnvVars(input: {
   // for a v1 project (no `kortix_version: 2`) or any read/parse failure — no
   // KORTIX_COMPILED_AGENT_CONFIG key is emitted below in that case, so a v1
   // project's sandbox env is byte-for-byte unaffected by this. Gated on the
-  // same `defaultBranch` presence as the [[agents]] grant resolution below
+  // same `defaultBranch` presence as the `agents:` grant resolution below
   // (both need git context; optional call sites that omit it get neither).
   let compiledAgentConfig: string | null = null;
   if (input.defaultBranch) {
@@ -222,21 +222,21 @@ export async function buildSessionSandboxEnvVars(input: {
       projectId: input.projectId,
       repoUrl: input.repoUrl,
       defaultBranch: input.defaultBranch,
-      manifestPath: input.manifestPath ?? 'kortix.toml',
+      manifestPath: input.manifestPath ?? 'kortix.yaml',
       gitAuthToken: null,
     }).catch(() => null);
 
-    // Per-agent secret scoping: an agent declared in [[agents]] with a `secrets`
+    // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
     // allowlist receives ONLY those IDENTIFIERS — so a narrowly-scoped agent
     // can't read another scope's API keys/payment creds straight out of $ENV.
     // No-op (undefined → 'all') for back-compat grants and projects without
-    // [[agents]] or git context. This is the ONLY gate on agent secret access —
-    // there is no resource-side allow-list on the secret itself.
+    // an `agents:` map or git context. This is the ONLY gate on agent secret
+    // access — there is no resource-side allow-list on the secret itself.
     const loadedAgents = await loadProjectAgents({
       projectId: input.projectId,
       repoUrl: input.repoUrl,
       defaultBranch: input.defaultBranch,
-      manifestPath: input.manifestPath ?? 'kortix.toml',
+      manifestPath: input.manifestPath ?? 'kortix.yaml',
       gitAuthToken: null,
     }).catch(() => null);
     const grant = loadedAgents ? grantFromLoadedAgents(input.agentName, loadedAgents) : null;
@@ -406,8 +406,9 @@ export async function createProjectSession(input: {
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
   // Explicit request wins; otherwise fall back to the project's default agent
-  // (`[opencode] default_agent` in kortix.toml, synced to project metadata, or a
-  // UI/Slack override), so EVERY session — UI, triggers, channels — inherits the
+  // (a v2 kortix.yaml's top-level `default_agent`, or a legacy v1 kortix.toml's
+  // `[opencode] default_agent` — synced to project metadata, or a UI/Slack
+  // override), so EVERY session — UI, triggers, channels — inherits the
   // project's chosen agent without each caller passing one. Unset → 'default'.
   const projectDefaultAgent = normalizeString(
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
@@ -435,9 +436,10 @@ export async function createProjectSession(input: {
     }
   }
   // Explicit request wins; otherwise fall back to the project's default sandbox
-  // template (`[sandbox] default` in kortix.toml, synced to project metadata),
-  // so EVERY session — UI, triggers, channels — inherits the project's chosen
-  // box without each caller passing `sandbox_slug`. Unset → platform default.
+  // template (`sandbox.default` in kortix.yaml — `[sandbox] default` in a
+  // legacy v1 kortix.toml — synced to project metadata), so EVERY session — UI,
+  // triggers, channels — inherits the project's chosen box without each
+  // caller passing `sandbox_slug`. Unset → platform default.
   const projectDefaultSandboxSlug = normalizeString(
     (project.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_slug,
   );
@@ -569,8 +571,12 @@ export async function createProjectSession(input: {
       .returning();
     sessionRow = row;
   } catch (error) {
-    // (project_id, branch_name) unique index + PK on session_id mean a
-    // randomUUID() collision is the only realistic insert failure here.
+    // Besides a randomUUID() collision on the PK / (project_id, branch_name)
+    // unique index, `sandbox_provider` is an ENUM: a provider this env enables
+    // but the target DB's type is missing fails here with 22P02, not upstream —
+    // resolveSessionProvider validates against config, never against the DB.
+    // (That is how prod, whose faked baseline skipped 'platinum', 500'd every
+    // create on a project pinned to it.) verify-live-schema.ts now gates that drift.
     const message = (error as Error).message || 'Insert failed';
     return { error: { status: 500, body: { error: message, retry: true } } };
   }

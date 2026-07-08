@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Check, Clock, CornerDownRight, KeyRound, Loader2, Mail, MessageSquare, Plug, Plus, RefreshCw, Shield, Sparkles, User, Users, X } from 'lucide-react';
+import { Bot, Check, Clock, CornerDownRight, KeyRound, Mail, MessageSquare, Plug, Plus, RefreshCw, Shield, Sparkles, User, Users, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
@@ -18,16 +18,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -37,9 +27,16 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
-import { List, ListRow } from '@/components/ui/list';
 import Loading from '@/components/ui/loading';
-import { SectionCard } from '@/components/ui/section-card';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -176,7 +173,12 @@ export function MembersView({ projectId }: { projectId: string }) {
         />
       )}
 
-      {project?.account_id && (
+      {/* Resource-access grants and custom-role bindings are manager-only
+          DATA (the grants list and the account policies route both deny
+          non-managers), so the cards hide entirely for viewers who can't
+          read them — an inert husk with an error or empty body is worse
+          than absence. Group access above stays: its list is member-readable. */}
+      {project?.account_id && canManage && (
         <ResourceAccessCard
           projectId={projectId}
           accountId={project.account_id}
@@ -185,7 +187,7 @@ export function MembersView({ projectId }: { projectId: string }) {
         />
       )}
 
-      {project?.account_id && (
+      {project?.account_id && canManage && (
         <ProjectRoleAssignmentsCard
           projectId={projectId}
           accountId={project.account_id}
@@ -1914,187 +1916,208 @@ function ResourceAccessCard({
   const canSubmit = !!pickerType && !!pickerResourceId && !!principalValue && !createMutation.isPending;
 
   return (
-    <SectionCard
-      flush
-      title="Resource access"
-      description="Assign agents to a member or group to control who can USE them. An agent with no assignment is open to everyone with project access; assigning one restricts it to the people or groups you choose — they inherit that agent's declared skills, connectors, and secrets to use in its sessions. This only ever grants USE, never edit: changing the agent, a skill, a connector, or a secret still requires the editor role."
-      count={grants.length}
-      action={
-        canManage && hasResources ? (
-          <Dialog open={dialogOpen} onOpenChange={onDialogOpenChange}>
-            <DialogTrigger asChild>
-              <Button size="sm" variant="outline" className="gap-1.5">
-                <Plus className="h-3.5 w-3.5" />
-                Grant access
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Assign an agent</DialogTitle>
-                <DialogDescription>
-                  Assign an agent to a member or group — they inherit everything that agent
-                  uses (its secrets, connectors, and skills) to USE, not edit. Resources reach
-                  people through agents, not by a direct grant; agents you don't assign stay open
-                  to everyone with project access. Editing the agent or any resource it uses still
-                  requires the editor role.
-                </DialogDescription>
-              </DialogHeader>
+    <>
+      <section className="space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-medium">
+              Resource access
+              {grants.length > 0 ? (
+                <span className="text-muted-foreground ml-1.5 font-normal">({grants.length})</span>
+              ) : null}
+            </h3>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Assign agents to a member or group to control who can USE them. An agent with no
+              assignment is open to everyone with project access; assigning one restricts it to
+              the people or groups you choose — they inherit that agent's declared skills,
+              connectors, and secrets to use in its sessions. This only ever grants USE, never
+              edit: changing the agent, a skill, a connector, or a secret still requires the
+              editor role.
+            </p>
+          </div>
 
-              <form
-                id="grant-resource-form"
-                className="space-y-4 py-1"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!canSubmit) return;
-                  createMutation.mutate();
-                }}
-              >
-                <div className="space-y-1.5">
-                  <span className="text-muted-foreground text-xs font-medium">1. Agent</span>
-                  <Select
-                    value={pickerResourceId}
-                    onValueChange={setPickerResourceId}
-                    disabled={createMutation.isPending}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select an agent" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {activeItems.map((r) => (
-                        <SelectItem key={r.id} value={r.id}>
-                          {r.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {selectedAgentDeclares && <BlastRadiusPreview declares={selectedAgentDeclares} />}
-
-                <div className="space-y-1.5">
-                  <span className="text-muted-foreground text-xs font-medium">2. Grant to</span>
-                  <Select
-                    value={principalValue}
-                    onValueChange={setPrincipalValue}
-                    disabled={createMutation.isPending}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Member or group" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {members.map((m) => (
-                        <SelectItem key={`member:${m.user_id}`} value={`member:${m.user_id}`}>
-                          {userLabel(m)}
-                        </SelectItem>
-                      ))}
-                      {groups.map((g) => (
-                        <SelectItem key={`group:${g.group_id}`} value={`group:${g.group_id}`}>
-                          {g.name} · group
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </form>
-
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button type="button" variant="ghost" size="sm">
-                    Cancel
-                  </Button>
-                </DialogClose>
-                <Button type="submit" form="grant-resource-form" size="sm" disabled={!canSubmit}>
-                  {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Grant access'}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        ) : null
-      }
-    >
-      {grantsQuery.isLoading && (
-        <div className="px-6 py-5">
-          <Skeleton className="h-8 w-full" />
+          {canManage && hasResources ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="shrink-0 gap-1.5"
+              onClick={() => onDialogOpenChange(true)}
+            >
+              <Plus className="size-3.5 shrink-0" />
+              Grant access
+            </Button>
+          ) : null}
         </div>
-      )}
 
-      {!grantsQuery.isLoading && grants.length === 0 && (
-        <div className="text-muted-foreground px-6 py-5 text-xs">
-          {hasResources
-            ? 'Nothing is scoped yet — every agent is open to everyone with project access to use. Grant one above to restrict who can use it. Skills, connectors, and secrets aren’t assigned directly here — they’re governed by the editor role (to edit) and inherited through the agents you assign (to use).'
-            : 'This project has no agents to scope yet. Add one first, then come back here to limit who can use it.'}
-        </div>
-      )}
+        {grantsQuery.isLoading && (
+          <div className="space-y-2">
+            <Skeleton className="h-14 w-full rounded-md" />
+          </div>
+        )}
 
-      {!grantsQuery.isLoading && grants.length > 0 && (
-        <>
-          {grantFilterOptions.length > 2 && (
-            <FilterChips value={resourceFilter} onChange={setResourceFilter} options={grantFilterOptions} />
-          )}
-          <List>
-            {visibleGrants.map((g: ProjectResourceGrant) => {
-              const busy = pendingIds.has(g.grant_id);
-              const displayName = resourceName.get(`${g.resource_type}:${g.resource_id}`) ?? g.resource_id;
-            const ResourceIcon = g.resource_type === 'agent' ? Bot : g.resource_type === 'secret' ? KeyRound : Sparkles;
-            return (
-              <ListRow
-                key={g.grant_id}
-                leading={
-                  <span className="bg-muted/60 flex h-8 w-8 items-center justify-center rounded-full">
-                    <ResourceIcon className="text-muted-foreground h-4 w-4" />
-                  </span>
-                }
-                title={
-                  <span className="flex items-center gap-2">
-                    {displayName}
-                    <Badge variant="outline" size="sm" className="capitalize">
-                      {g.resource_type}
-                    </Badge>
-                    {g.orphaned && (
-                      <Badge
-                        variant="outline"
+        {!grantsQuery.isLoading && grants.length === 0 && (
+          <p className="text-muted-foreground text-xs">
+            {hasResources
+              ? 'Nothing is scoped yet — every agent is open to everyone with project access to use. Grant one above to restrict who can use it. Skills, connectors, and secrets aren’t assigned directly here — they’re governed by the editor role (to edit) and inherited through the agents you assign (to use).'
+              : 'This project has no agents to scope yet. Add one first, then come back here to limit who can use it.'}
+          </p>
+        )}
+
+        {!grantsQuery.isLoading && grants.length > 0 && (
+          <div className="space-y-3">
+            {grantFilterOptions.length > 2 && (
+              <FilterChips value={resourceFilter} onChange={setResourceFilter} options={grantFilterOptions} />
+            )}
+            <ul className="space-y-2">
+              {visibleGrants.map((g: ProjectResourceGrant) => {
+                const busy = pendingIds.has(g.grant_id);
+                const displayName = resourceName.get(`${g.resource_type}:${g.resource_id}`) ?? g.resource_id;
+                const ResourceIcon = g.resource_type === 'agent' ? Bot : g.resource_type === 'secret' ? KeyRound : Sparkles;
+                return (
+                  <li key={g.grant_id} className={MEMBER_ROW}>
+                    <span className="bg-muted/60 flex size-8 shrink-0 items-center justify-center rounded-full">
+                      <ResourceIcon className="text-muted-foreground size-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-foreground truncate text-sm font-medium">
+                          {displayName}
+                        </span>
+                        <Badge variant="outline" size="sm" className="capitalize">
+                          {g.resource_type}
+                        </Badge>
+                        {g.orphaned && (
+                          <Badge
+                            variant="outline"
+                            size="sm"
+                            className="border-kortix-orange/30 text-kortix-orange"
+                            title={`This ${g.resource_type} no longer exists (renamed or deleted). The grant is inert — the restriction has lapsed. Remove it or re-grant the current ${g.resource_type}.`}
+                          >
+                            renamed / removed
+                          </Badge>
+                        )}
+                      </div>
+                      <span className="text-muted-foreground text-xs">
+                        <InlineMeta>
+                          <span>
+                            {g.principal_type === 'group' ? 'Group' : 'Member'}: {g.principal_label}
+                          </span>
+                          <span>Granted {formatDate(g.created_at)}</span>
+                        </InlineMeta>
+                      </span>
+                    </div>
+                    {busy ? (
+                      <Loading className="text-muted-foreground shrink-0" />
+                    ) : canManage ? (
+                      <Button
+                        type="button"
                         size="sm"
-                        className="border-amber-300 text-amber-700 dark:border-amber-500/40 dark:text-amber-400"
-                        title={`This ${g.resource_type} no longer exists (renamed or deleted). The grant is inert — the restriction has lapsed. Remove it or re-grant the current ${g.resource_type}.`}
+                        variant="ghost"
+                        onClick={() => removeMutation.mutate(g.grant_id)}
                       >
-                        renamed / removed
+                        Remove
+                      </Button>
+                    ) : (
+                      <Badge variant="outline" size="sm" className="capitalize">
+                        {g.principal_type}
                       </Badge>
                     )}
-                  </span>
-                }
-                subtitle={
-                  <InlineMeta>
-                    <span>
-                      {g.principal_type === 'group' ? 'Group' : 'Member'}: {g.principal_label}
-                    </span>
-                    <span>Granted {formatDate(g.created_at)}</span>
-                  </InlineMeta>
-                }
-                trailing={
-                  busy ? (
-                    <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
-                  ) : canManage ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => removeMutation.mutate(g.grant_id)}
-                    >
-                      Remove
-                    </Button>
-                  ) : (
-                    <Badge variant="outline" size="sm" className="capitalize">
-                      {g.principal_type}
-                    </Badge>
-                  )
-                }
-              />
-            );
-          })}
-          </List>
-        </>
-      )}
-    </SectionCard>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+      </section>
+
+      <Modal open={dialogOpen} onOpenChange={onDialogOpenChange}>
+        <ModalContent className="sm:max-w-md">
+          <ModalHeader>
+            <ModalTitle>Assign an agent</ModalTitle>
+            <ModalDescription>
+              Assign an agent to a member or group — they inherit everything that agent
+              uses (its secrets, connectors, and skills) to USE, not edit. Resources reach
+              people through agents, not by a direct grant; agents you don't assign stay open
+              to everyone with project access. Editing the agent or any resource it uses still
+              requires the editor role.
+            </ModalDescription>
+          </ModalHeader>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!canSubmit) return;
+              createMutation.mutate();
+            }}
+          >
+            <ModalBody className="space-y-4">
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs font-medium">1. Agent</span>
+                <Select
+                  value={pickerResourceId}
+                  onValueChange={setPickerResourceId}
+                  disabled={createMutation.isPending}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select an agent" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeItems.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {selectedAgentDeclares && <BlastRadiusPreview declares={selectedAgentDeclares} />}
+
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs font-medium">2. Grant to</span>
+                <Select
+                  value={principalValue}
+                  onValueChange={setPrincipalValue}
+                  disabled={createMutation.isPending}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Member or group" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {members.map((m) => (
+                      <SelectItem key={`member:${m.user_id}`} value={`member:${m.user_id}`}>
+                        {userLabel(m)}
+                      </SelectItem>
+                    ))}
+                    {groups.map((g) => (
+                      <SelectItem key={`group:${g.group_id}`} value={`group:${g.group_id}`}>
+                        {g.name} · group
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </ModalBody>
+
+            <ModalFooter className="sm:justify-between">
+              <Button
+                type="button"
+                variant="outline-ghost"
+                size="sm"
+                onClick={() => onDialogOpenChange(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={!canSubmit}>
+                {createMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
+                Grant access
+              </Button>
+            </ModalFooter>
+          </form>
+        </ModalContent>
+      </Modal>
+    </>
   );
 }
 
@@ -2120,6 +2143,10 @@ function ProjectRoleAssignmentsCard({
 
   const policiesQuery = useQuery({
     queryKey: policiesKey,
+    // Gated like every sibling below: the account-IAM policies route asserts
+    // policy.read, which a non-manager doesn't hold — firing it anyway just
+    // 403s for data this card can never show them.
+    enabled: canManage,
     queryFn: () => listPolicies(accountId, { scopeId: projectId }),
     staleTime: 20_000,
   });
@@ -2290,194 +2317,211 @@ function ProjectRoleAssignmentsCard({
   const canSubmit = !!subjectType && !!subjectId && !!roleId && !createMutation.isPending;
 
   return (
-    <SectionCard
-      flush
-      title="Custom roles"
-      description="Grant a custom role to a member, group, or agent on this project. Custom roles are defined on the account Roles page; here you bind them for this project only."
-      count={policies.length}
-      action={
-        canManage && customRoles.length > 0 ? (
-          <Dialog open={dialogOpen} onOpenChange={onDialogOpenChange}>
-            <DialogTrigger asChild>
-              <Button size="sm" variant="outline" className="gap-1.5">
-                <Plus className="h-3.5 w-3.5" />
+    <>
+      <section className="space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-medium">
+              Custom roles
+              {policies.length > 0 ? (
+                <span className="text-muted-foreground ml-1.5 font-normal">({policies.length})</span>
+              ) : null}
+            </h3>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Grant a custom role to a member, group, or agent on this project. Custom roles are
+              defined on the account Roles page; here you bind them for this project only.
+            </p>
+          </div>
+
+          {canManage && customRoles.length > 0 ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="shrink-0 gap-1.5"
+              onClick={() => onDialogOpenChange(true)}
+            >
+              <Plus className="size-3.5 shrink-0" />
+              Assign role
+            </Button>
+          ) : null}
+        </div>
+
+        {policiesQuery.isLoading && (
+          <div className="space-y-2">
+            <Skeleton className="h-14 w-full rounded-md" />
+          </div>
+        )}
+
+        {!policiesQuery.isLoading && policies.length === 0 && (
+          <p className="text-muted-foreground text-xs">
+            {customRoles.length === 0 ? (
+              <>
+                No custom roles exist yet. Create one on the{' '}
+                <a href={`/accounts/${accountId}?tab=roles`} className="underline">
+                  account Roles page
+                </a>
+                , then bind it here for this project.
+              </>
+            ) : (
+              'No custom-role assignments on this project yet. Bind one above to grant a member, group, or agent a custom role here.'
+            )}
+          </p>
+        )}
+
+        {!policiesQuery.isLoading && policies.length > 0 && (
+          <div className="space-y-3">
+            {policyFilterOptions.length > 2 && (
+              <FilterChips value={policyFilter} onChange={setPolicyFilter} options={policyFilterOptions} />
+            )}
+            <ul className="space-y-2">
+              {visiblePolicies.map((p) => {
+                const busy = pendingIds.has(p.policy_id);
+                const { kind, label, missing } = principalLabel(p);
+                return (
+                  <li key={p.policy_id} className={MEMBER_ROW}>
+                    <span className="bg-muted/60 flex size-8 shrink-0 items-center justify-center rounded-full">
+                      <Shield className="text-muted-foreground size-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-foreground truncate text-sm font-medium">
+                          {roleNameById.get(p.role_id) ?? p.role_id}
+                        </span>
+                        <Badge variant="outline" size="sm">
+                          Custom
+                        </Badge>
+                      </div>
+                      <span className="text-muted-foreground text-xs">
+                        <InlineMeta>
+                          <span className="flex items-center gap-1.5">
+                            {kind}: {label}
+                            {missing && (
+                              <Badge
+                                variant="outline"
+                                size="sm"
+                                className="border-kortix-orange/30 text-kortix-orange"
+                                title="This agent no longer exists (deleted or renamed). The binding is stale — remove it or re-assign the current agent."
+                              >
+                                removed
+                              </Badge>
+                            )}
+                          </span>
+                          {p.expires_at ? <span>Expires {formatDate(p.expires_at)}</span> : null}
+                        </InlineMeta>
+                      </span>
+                    </div>
+                    {busy ? (
+                      <Loading className="text-muted-foreground shrink-0" />
+                    ) : canManage ? (
+                      <Button type="button" size="sm" variant="ghost" onClick={() => removeMutation.mutate(p.policy_id)}>
+                        Remove
+                      </Button>
+                    ) : (
+                      <Badge variant="outline" size="sm" className="capitalize">
+                        {kind}
+                      </Badge>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+      </section>
+
+      <Modal open={dialogOpen} onOpenChange={onDialogOpenChange}>
+        <ModalContent className="sm:max-w-md">
+          <ModalHeader>
+            <ModalTitle>Assign a custom role</ModalTitle>
+            <ModalDescription>
+              Bind a custom role to a member, group, or agent on this project only.
+            </ModalDescription>
+          </ModalHeader>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!canSubmit) return;
+              createMutation.mutate();
+            }}
+          >
+            <ModalBody className="space-y-4">
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs font-medium">1. Assign to</span>
+                <div className="flex gap-1.5">
+                  {subjectOptions.map(({ type, label, Icon }) => (
+                    <Button
+                      key={type}
+                      type="button"
+                      size="sm"
+                      variant={subjectType === type ? 'default' : 'outline'}
+                      className="flex-1 gap-1.5"
+                      onClick={() => onSubjectTypeChange(type)}
+                    >
+                      <Icon className="size-3.5 shrink-0" />
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs font-medium">
+                  2. {subjectType === 'group' ? 'Group' : subjectType === 'token' ? 'Agent' : 'Member'}
+                </span>
+                <Select
+                  value={subjectId}
+                  onValueChange={setSubjectId}
+                  disabled={!subjectType || createMutation.isPending}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={subjectType ? 'Select one' : 'Pick a type first'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeSubjects.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs font-medium">3. Custom role</span>
+                <Select value={roleId} onValueChange={setRoleId} disabled={createMutation.isPending}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select a role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customRoles.map((r) => (
+                      <SelectItem key={r.role_id} value={r.role_id}>
+                        {r.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </ModalBody>
+
+            <ModalFooter className="sm:justify-between">
+              <Button
+                type="button"
+                variant="outline-ghost"
+                size="sm"
+                onClick={() => onDialogOpenChange(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={!canSubmit}>
+                {createMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
                 Assign role
               </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Assign a custom role</DialogTitle>
-                <DialogDescription>
-                  Bind a custom role to a member, group, or agent on this project only.
-                </DialogDescription>
-              </DialogHeader>
-
-              <form
-                id="assign-role-form"
-                className="space-y-4 py-1"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!canSubmit) return;
-                  createMutation.mutate();
-                }}
-              >
-                <div className="space-y-1.5">
-                  <span className="text-muted-foreground text-xs font-medium">1. Assign to</span>
-                  <div className="flex gap-1.5">
-                    {subjectOptions.map(({ type, label, Icon }) => (
-                      <Button
-                        key={type}
-                        type="button"
-                        size="sm"
-                        variant={subjectType === type ? 'default' : 'outline'}
-                        className="flex-1 gap-1.5"
-                        onClick={() => onSubjectTypeChange(type)}
-                      >
-                        <Icon className="h-3.5 w-3.5" />
-                        {label}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <span className="text-muted-foreground text-xs font-medium">
-                    2. {subjectType === 'group' ? 'Group' : subjectType === 'token' ? 'Agent' : 'Member'}
-                  </span>
-                  <Select
-                    value={subjectId}
-                    onValueChange={setSubjectId}
-                    disabled={!subjectType || createMutation.isPending}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder={subjectType ? 'Select one' : 'Pick a type first'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {activeSubjects.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>
-                          {s.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <span className="text-muted-foreground text-xs font-medium">3. Custom role</span>
-                  <Select value={roleId} onValueChange={setRoleId} disabled={createMutation.isPending}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select a role" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {customRoles.map((r) => (
-                        <SelectItem key={r.role_id} value={r.role_id}>
-                          {r.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </form>
-
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button type="button" variant="ghost" size="sm">
-                    Cancel
-                  </Button>
-                </DialogClose>
-                <Button type="submit" form="assign-role-form" size="sm" disabled={!canSubmit}>
-                  {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Assign role'}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        ) : null
-      }
-    >
-      {policiesQuery.isLoading && (
-        <div className="px-6 py-5">
-          <Skeleton className="h-8 w-full" />
-        </div>
-      )}
-
-      {!policiesQuery.isLoading && policies.length === 0 && (
-        <div className="text-muted-foreground px-6 py-5 text-xs">
-          {customRoles.length === 0 ? (
-            <>
-              No custom roles exist yet. Create one on the{' '}
-              <a href={`/accounts/${accountId}?tab=roles`} className="underline">
-                account Roles page
-              </a>
-              , then bind it here for this project.
-            </>
-          ) : (
-            'No custom-role assignments on this project yet. Bind one above to grant a member, group, or agent a custom role here.'
-          )}
-        </div>
-      )}
-
-      {!policiesQuery.isLoading && policies.length > 0 && (
-        <>
-          {policyFilterOptions.length > 2 && (
-            <FilterChips value={policyFilter} onChange={setPolicyFilter} options={policyFilterOptions} />
-          )}
-          <List>
-            {visiblePolicies.map((p) => {
-            const busy = pendingIds.has(p.policy_id);
-            const { kind, label, missing } = principalLabel(p);
-            return (
-              <ListRow
-                key={p.policy_id}
-                leading={
-                  <span className="bg-muted/60 flex h-8 w-8 items-center justify-center rounded-full">
-                    <Shield className="text-muted-foreground h-4 w-4" />
-                  </span>
-                }
-                title={
-                  <span className="flex items-center gap-2">
-                    {roleNameById.get(p.role_id) ?? p.role_id}
-                    <Badge variant="outline" size="sm">
-                      Custom
-                    </Badge>
-                  </span>
-                }
-                subtitle={
-                  <InlineMeta>
-                    <span className="flex items-center gap-1.5">
-                      {kind}: {label}
-                      {missing && (
-                        <Badge
-                          variant="outline"
-                          size="sm"
-                          className="border-amber-300 text-amber-700 dark:border-amber-500/40 dark:text-amber-400"
-                          title="This agent no longer exists (deleted or renamed). The binding is stale — remove it or re-assign the current agent."
-                        >
-                          removed
-                        </Badge>
-                      )}
-                    </span>
-                    {p.expires_at ? <span>Expires {formatDate(p.expires_at)}</span> : null}
-                  </InlineMeta>
-                }
-                trailing={
-                  busy ? (
-                    <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
-                  ) : canManage ? (
-                    <Button type="button" size="sm" variant="ghost" onClick={() => removeMutation.mutate(p.policy_id)}>
-                      Remove
-                    </Button>
-                  ) : (
-                    <Badge variant="outline" size="sm" className="capitalize">
-                      {kind}
-                    </Badge>
-                  )
-                }
-              />
-            );
-          })}
-          </List>
-        </>
-      )}
-    </SectionCard>
+            </ModalFooter>
+          </form>
+        </ModalContent>
+      </Modal>
+    </>
   );
 }

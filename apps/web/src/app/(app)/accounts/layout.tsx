@@ -21,10 +21,6 @@ const Layout = ({ children }: LayoutProps) => {
   }
 
   return (
-    // <div className="bg-foreground/5 flex min-h-screen flex-col">
-    //   <AppHeader user={user} breadcrumb="Accounts" />
-    //   <main className="ring-input bg-background px-mobile flex-1 rounded-t-xl py-10 ring sm:py-12">
-
     <div className="flex min-h-screen flex-col">
       <div className="w-full border-b">
         <AppHeader user={user} breadcrumb="Accounts" />

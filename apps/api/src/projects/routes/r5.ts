@@ -8,7 +8,8 @@ import { archiveRepoSubtree, getBranchDiff, getCommit, getCommitDiff, getFileHis
 import { createRoute, z } from '@hono/zod-openapi';
 import { deployments, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { loadProjectForUser, assertProjectCapability } from '../lib/access';
+import { loadProjectForUser, assertProjectCapability, projectCapabilityAllowed } from '../lib/access';
+import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { filterConfigResourcesForUser, denierFromConfig, resourceDenierForRequest } from '../lib/project-resources';
 import { AnyObject, CommitSchema, ProjectSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
@@ -233,15 +234,36 @@ projectsApp.openapi(
   // isolation). Reuses the config already loaded — no extra git round-trip.
   const denier = await denierFromConfig(rawConfig, denierCtx);
   const visibleFiles = denier ? files.filter((f) => !denier.isDenied(f.path)) : files;
+  // Per-CAPABILITY filtering (distinct from the per-resource grants above): the
+  // /detail bundle serves several read surfaces behind ONE project.read floor, so
+  // gate each section on its own leaf. A plain `member` keeps the config sections
+  // it can read but NOT the file list (member lacks project.file.read), and a
+  // custom role that unchecks e.g. project.skill.read gets an empty skills
+  // section — all WITHOUT 403-ing the whole workspace load (which loadProjectForUser
+  // deliberately gates only on project.read so the shell renders for every member).
+  const [canFiles, canAgents, canSkills, canCommands, canCustomize] = await Promise.all([
+    projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ),
+    projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_AGENT_READ),
+    projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SKILL_READ),
+    projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_COMMAND_READ),
+    projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ),
+  ]);
+  const gated = applyDetailCapabilityFilter(config, visibleFiles, {
+    canFiles,
+    canAgents,
+    canSkills,
+    canCommands,
+    canCustomize,
+  });
   return c.json({
     project: serializeProject(loaded.row, {
       projectRole: loaded.projectRole,
       effectiveRole: loaded.effectiveRole,
     }),
     git_connection: serializeProjectGitConnection(await getProjectGitConnection(projectId)),
-    config,
-    file_count: visibleFiles.length,
-    files: visibleFiles.slice(0, 300),
+    config: gated.config,
+    file_count: gated.file_count,
+    files: gated.files,
   });
 },
 );
@@ -757,7 +779,7 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Editing project config (name / default_branch / manifest_path) is a
   // customize-write capability. manifest_path is especially sensitive: it
-  // selects which kortix.toml drives per-agent env scoping, so a custom role
+  // selects which kortix.yaml drives per-agent env scoping, so a custom role
   // can withhold it and a scoped agent must hold it (central fold).
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
@@ -785,9 +807,9 @@ projectsApp.openapi(
 );
 
 // PATCH /v1/projects/:projectId/apps-config
-// Per-project toggle for the experimental [[apps]] deployment surface
+// Per-project toggle for the experimental `apps:` deployment surface
 // (Customize → Settings). DB-only — stored in projects.metadata.apps_enabled,
-// never in kortix.toml. Overrides the operator default KORTIX_APPS_EXPERIMENTAL.
+// never in kortix.yaml. Overrides the operator default KORTIX_APPS_EXPERIMENTAL.
 // `enabled: null` clears the override and falls back to the operator default.
 
 projectsApp.openapi(

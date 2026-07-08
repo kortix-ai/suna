@@ -3,6 +3,7 @@
 import { SandboxTemplateForm } from '@/components/projects/sandbox-template-form';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Disclosure,
   DisclosureBody,
@@ -14,6 +15,7 @@ import { InlineMeta } from '@/components/ui/inline-meta';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -30,7 +32,6 @@ import {
   type SandboxTemplate,
   type SnapshotErrorCategory,
 } from '@kortix/sdk/projects-client';
-import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
   AlarmClockSolid,
@@ -44,7 +45,6 @@ import {
   Container,
   Edit3,
   FileCode,
-  Loader2,
   Package,
   Plus,
   RefreshCw,
@@ -56,6 +56,7 @@ import { useState, type ReactNode } from 'react';
 const SNAPSHOTS_QUERY_KEY = (projectId: string) => ['project-snapshots', projectId];
 
 const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
+  quota: 'Snapshot quota reached',
   dockerfile: 'Dockerfile build failed',
   git: 'Repository access failed',
   tunnel: 'Sandbox callback unreachable',
@@ -82,7 +83,6 @@ const BUILD_STATUS_TILE: Record<
     tileBg: string;
     iconColor: string;
     Icon: typeof CheckCircleSolid;
-    spin?: boolean;
   }
 > = {
   ready: {
@@ -98,7 +98,6 @@ const BUILD_STATUS_TILE: Record<
     tileBg: 'bg-kortix-yellow/15',
     iconColor: 'text-kortix-yellow',
     Icon: Loading,
-    spin: true,
   },
   failed: {
     label: 'failed',
@@ -165,7 +164,7 @@ function BuildRow({ build }: { build: ProjectSnapshotBuild }) {
       <span
         className={cn('flex size-9 shrink-0 items-center justify-center rounded-sm', status.tileBg)}
       >
-        <Icon className={cn('size-5', status.iconColor, status.spin && 'animate-spin')} />
+        <Icon className={cn('size-5 shrink-0', status.iconColor)} />
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
@@ -297,7 +296,7 @@ function LatestFailureBanner({
                     onClick={onFix}
                   >
                     {isFixPending ? (
-                      <Loading className="size-3.5 shrink-0 animate-spin" />
+                      <Loading className="size-3.5 shrink-0" />
                     ) : (
                       <SparklesSolid className="size-3.5 shrink-0" />
                     )}
@@ -349,22 +348,24 @@ function TemplateRow({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const { version: manifestVersion } = useProjectManifestVersion(projectId);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const buildMut = useMutation({
     mutationFn: () => buildSandboxTemplate(projectId, template.template_id!),
     onSuccess: () => {
-      toast.success(`Rebuild started for "${template.name}"`);
+      successToast(`Rebuild started for "${template.name}"`);
       queryClient.invalidateQueries({ queryKey: SNAPSHOTS_QUERY_KEY(projectId) });
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to start build'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to start build'),
   });
   const deleteMut = useMutation({
     mutationFn: () => deleteSandboxTemplate(projectId, template.template_id!),
     onSuccess: () => {
-      toast.success(`Deleted "${template.name}"`);
+      successToast(`Deleted "${template.name}"`);
       queryClient.invalidateQueries({ queryKey: SNAPSHOTS_QUERY_KEY(projectId) });
       queryClient.invalidateQueries({ queryKey: ['project-sandboxes', projectId] });
+      setConfirmDelete(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to delete template'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to delete template'),
   });
 
   const Icon = template.is_default ? Container : template.has_image ? Package : FileCode;
@@ -393,97 +394,105 @@ function TemplateRow({
           : AlarmClockSolid;
 
   return (
-    <li className="bg-popover flex flex-wrap items-center gap-4 overflow-hidden px-4 py-3 text-sm">
-      <div
-        className={cn(
-          'inline-flex size-11 shrink-0 items-center justify-center rounded-sm border',
-          DAYTONA_TONE_ICON_TILE[stateInfo.tone],
-        )}
-      >
-        <Icon className="size-6 shrink-0" />
-      </div>
-      <div className="min-w-0 flex-1 space-y-0.5">
-        <div className="flex items-center gap-2">
-          <span className="font-medium">{template.name}</span>
-          <Badge variant="secondary" size="sm">
-            {template.slug}
-          </Badge>
-          <span className="text-muted-foreground/70 text-[10px] tracking-wide uppercase">
-            {sourceTag}
-          </span>
+    <>
+      <li className="bg-popover flex flex-wrap items-center gap-4 overflow-hidden px-4 py-3 text-sm">
+        <div
+          className={cn(
+            'inline-flex size-11 shrink-0 items-center justify-center rounded-sm border',
+            DAYTONA_TONE_ICON_TILE[stateInfo.tone],
+          )}
+        >
+          <Icon className="size-6 shrink-0" />
         </div>
-        <div className="text-muted-foreground gap-1 truncate text-[13px]">
-          {sub} &bull; {template.cpu} &bull;{' '}
-          {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextVCPU15535b27')}
-          &bull; {template.memory_gb}{' '}
-          {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextGiB9d1e488f')}
-          &bull; {template.disk_gb}{' '}
-          {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextGiBDiskd395296d')}
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{template.name}</span>
+            <Badge variant="secondary" size="sm">
+              {template.slug}
+            </Badge>
+            <span className="text-muted-foreground/70 text-[10px] tracking-wide uppercase">
+              {sourceTag}
+            </span>
+          </div>
+          <div className="text-muted-foreground gap-1 truncate text-[13px]">
+            {sub} &bull; {template.cpu} &bull;{' '}
+            {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextVCPU15535b27')}
+            &bull; {template.memory_gb}{' '}
+            {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextGiB9d1e488f')}
+            &bull; {template.disk_gb}{' '}
+            {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextGiBDiskd395296d')}
+          </div>
         </div>
-      </div>
-      <Badge
-        variant={stateBadge.variant}
-        color={'color' in stateBadge ? stateBadge.color : undefined}
-      >
-        <StateIcon className={cn(stateInfo.tone === 'busy' && 'animate-spin', 'size-4')} />
-        {stateInfo.label}
-      </Badge>
-      {canManage && (
-        <div className="flex items-center gap-1">
-          {template.template_id && !template.is_default && (
-            <>
+        <Badge
+          variant={stateBadge.variant}
+          color={'color' in stateBadge ? stateBadge.color : undefined}
+        >
+          <StateIcon className="size-4 shrink-0" />
+          {stateInfo.label}
+        </Badge>
+        {canManage && (
+          <div className="flex items-center gap-1">
+            {template.template_id && !template.is_default && (
+              <>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="size-7 p-0"
+                  onClick={() => onEdit(template)}
+                  aria-label={tI18nHardcoded.raw(
+                    'autoComponentsProjectsSandboxSnapshotCardJsxAttrAriaLabelEditdc9d24c2',
+                  )}
+                >
+                  <Edit3 className="size-3.5" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive size-7 p-0"
+                  disabled={deleteMut.isPending}
+                  onClick={() => setConfirmDelete(true)}
+                  aria-label={tI18nHardcoded.raw(
+                    'autoComponentsProjectsSandboxSnapshotCardJsxAttrAriaLabelDeleteda0507cf',
+                  )}
+                >
+                  {deleteMut.isPending ? (
+                    <Loading className="size-3.5 shrink-0" />
+                  ) : (
+                    <Trash2 className="size-3.5 shrink-0" />
+                  )}
+                </Button>
+              </>
+            )}
+            {template.template_id && (
               <Button
                 size="sm"
-                variant="ghost"
-                className="size-7 p-0"
-                onClick={() => onEdit(template)}
-                aria-label={tI18nHardcoded.raw(
-                  'autoComponentsProjectsSandboxSnapshotCardJsxAttrAriaLabelEditdc9d24c2',
-                )}
+                variant="outline"
+                className="gap-1.5"
+                disabled={buildMut.isPending}
+                onClick={() => buildMut.mutate()}
               >
-                <Edit3 className="size-3.5" />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-destructive hover:text-destructive size-7 p-0"
-                disabled={deleteMut.isPending}
-                onClick={() => {
-                  if (window.confirm(`Delete sandbox template "${template.name}"?`)) {
-                    deleteMut.mutate();
-                  }
-                }}
-                aria-label={tI18nHardcoded.raw(
-                  'autoComponentsProjectsSandboxSnapshotCardJsxAttrAriaLabelDeleteda0507cf',
-                )}
-              >
-                {deleteMut.isPending ? (
-                  <Loader2 className="size-3.5 animate-spin" />
+                {buildMut.isPending ? (
+                  <Loading className="size-3.5 shrink-0" />
                 ) : (
-                  <Trash2 className="size-3.5" />
+                  <RefreshCw className="size-3.5 shrink-0" />
                 )}
+                Rebuild
               </Button>
-            </>
-          )}
-          {template.template_id && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5"
-              disabled={buildMut.isPending}
-              onClick={() => buildMut.mutate()}
-            >
-              {buildMut.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="h-3.5 w-3.5" />
-              )}
-              Rebuild
-            </Button>
-          )}
-        </div>
-      )}
-    </li>
+            )}
+          </div>
+        )}
+      </li>
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={`Delete sandbox template "${template.name}"?`}
+        description="This removes the template from the project. Sessions already using it are unaffected."
+        confirmLabel="Delete"
+        confirmVariant="destructive"
+        isPending={deleteMut.isPending}
+        onConfirm={() => deleteMut.mutate()}
+      />
+    </>
   );
 }
 

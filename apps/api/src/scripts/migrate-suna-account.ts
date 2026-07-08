@@ -2,7 +2,7 @@
  * Migrate a Suna (legacy agentpress) account's chats + files into ONE new
  * opencode project: 14 chats become 14 sessions in one opencode.db, and each
  * Suna sandbox's /workspace lands under legacy/<slug>/ (his content only — one
- * root kortix.toml for the repo).
+ * root kortix.yaml for the repo).
  *
  *   --plan          READ-ONLY: discover projects/threads, Daytona sandbox state,
  *                   and build the opencode.db locally to prove the conversion.

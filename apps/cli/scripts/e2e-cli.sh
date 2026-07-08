@@ -73,7 +73,7 @@ run_grep "validate"      "valid"             -- "${RUN[@]}" validate
 section "ship (create cloud project)"
 run_grep "ship"          "Shipped"           -- "${RUN[@]}" ship -y -m "e2e: ship"
 # The managed-git mirror is readable a few seconds after the first push.
-run_grep_retry "repo readable (mirror)" "kortix.toml" 20 -- "${RUN[@]}" files ls
+run_grep_retry "repo readable (mirror)" "kortix.yaml" 20 -- "${RUN[@]}" files ls
 
 section "projects"
 run_grep "projects ls"   "e2e-cli"           -- "${RUN[@]}" projects ls
@@ -85,14 +85,14 @@ run_grep "secrets ls"    "E2E_TOKEN"         -- "${RUN[@]}" secrets ls
 run            "env pull"                     -- "${RUN[@]}" env pull
 run            "secrets unset"                -- "${RUN[@]}" secrets unset E2E_TOKEN
 
-section "connectors (config = local kortix.toml; auth/reads = cloud)"
-run_grep "connectors add (local)" "kortix.toml" -- "${RUN[@]}" connectors add e2echk --provider http --base-url https://httpbin.org
-run_grep "→ block in toml"  "slug = \"e2echk\"" -- grep -A2 'e2echk' kortix.toml
+section "connectors (config = local kortix.yaml; auth/reads = cloud)"
+run_grep "connectors add (local)" "kortix.yaml" -- "${RUN[@]}" connectors add e2echk --provider http --base-url https://httpbin.org
+run_grep "→ block in yaml"  "slug: e2echk" -- grep -A2 'e2echk' kortix.yaml
 run            "connectors policy set (local)" -- "${RUN[@]}" connectors policy set --default risk
-run_grep "→ [policy] in toml" "default_mode" -- cat kortix.toml
+run_grep "→ policy in yaml" "default_mode" -- cat kortix.yaml
 run            "ship (push config)"          -- "${RUN[@]}" ship -y -m "e2e: connectors"
-# Reconcile is eventually-consistent: the server mirrors kortix.toml from git on
-# a ~60s throttle, so poll sync→ls until the toml connector materializes.
+# Reconcile is eventually-consistent: the server mirrors kortix.yaml from git on
+# a ~60s throttle, so poll sync→ls until the connector materializes.
 run_grep_retry "connector materialized (cloud)" "e2echk" 35 -- bash -c "${RUN[*]} connectors sync >/dev/null 2>&1; ${RUN[*]} connectors ls"
 run            "connectors credential (cloud)" -- bash -c "printf 'sk-x' | ${RUN[*]} connectors credential e2echk -"
 run            "connectors share (cloud)"     -- "${RUN[@]}" connectors share e2echk --mode project
@@ -100,25 +100,25 @@ run            "connectors policy ls (cloud)" -- "${RUN[@]}" connectors policy l
 run_grep "connectors apps (cloud)"  "slack"  -- "${RUN[@]}" connectors apps slack
 run            "connectors rm (local)"        -- "${RUN[@]}" connectors rm e2echk
 
-section "sandboxes (templates = local kortix.toml; builds = cloud)"
+section "sandboxes (templates = local kortix.yaml; builds = cloud)"
 run_grep "sandboxes ls (cloud)" "default"    -- "${RUN[@]}" sandboxes ls
 run            "sandboxes health (cloud)"     -- "${RUN[@]}" sandboxes health
 run            "sandboxes builds (cloud)"     -- "${RUN[@]}" sandboxes builds
-run_grep "sandboxes add (local)" "toml"      -- "${RUN[@]}" sandboxes add e2eimg --image alpine:3 --cpu 1 --memory 1
-run_grep "→ block in toml"  "slug = \"e2eimg\"" -- grep -A2 'e2eimg' kortix.toml
+run_grep "sandboxes add (local)" "yaml"      -- "${RUN[@]}" sandboxes add e2eimg --image alpine:3 --cpu 1 --memory 1
+run_grep "→ block in yaml"  "slug: e2eimg" -- grep -A2 'e2eimg' kortix.yaml
 run            "sandboxes update (local)"     -- "${RUN[@]}" sandboxes update e2eimg --memory 2
 run            "sandboxes rm (local)"         -- "${RUN[@]}" sandboxes rm e2eimg
 
 section "files (repo browsing)"
-run_grep_retry "files ls"  "kortix.toml" 10  -- "${RUN[@]}" files ls
-run_grep_retry "files cat" "kortix_version" 10 -- "${RUN[@]}" files cat kortix.toml
+run_grep_retry "files ls"  "kortix.yaml" 10  -- "${RUN[@]}" files ls
+run_grep_retry "files cat" "kortix_version" 10 -- "${RUN[@]}" files cat kortix.yaml
 run            "files search"                 -- "${RUN[@]}" files search kortix
 run_grep_retry "files branches" "main" 5     -- "${RUN[@]}" files branches
 run_grep_retry "files commits" "e2e: ship" 10 -- "${RUN[@]}" files commits
 
-section "triggers (config = local kortix.toml)"
-run_grep "triggers add (local)" "kortix.toml" -- "${RUN[@]}" triggers add e2ecron --type cron --cron "0 0 3 * * *" --prompt "daily" --agent kortix
-run_grep "→ block in toml"  "slug = \"e2ecron\"" -- grep -A2 'e2ecron' kortix.toml
+section "triggers (config = local kortix.yaml)"
+run_grep "triggers add (local)" "kortix.yaml" -- "${RUN[@]}" triggers add e2ecron --type cron --cron "0 0 3 * * *" --prompt "daily" --agent kortix
+run_grep "→ block in yaml"  "slug: e2ecron" -- grep -A2 'e2ecron' kortix.yaml
 run            "triggers disable (local)"     -- "${RUN[@]}" triggers disable e2ecron
 run            "triggers enable (local)"      -- "${RUN[@]}" triggers enable e2ecron
 run            "triggers rm (local)"          -- "${RUN[@]}" triggers rm e2ecron
