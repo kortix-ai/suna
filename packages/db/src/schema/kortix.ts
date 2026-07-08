@@ -527,6 +527,37 @@ export const projectSessionVisibilityEnum = kortixSchema.enum('project_session_v
   'restricted',
 ]);
 
+/**
+ * User-created folders for organizing sessions in the project sidebar.
+ * `private` (default) = only the creator sees the folder; `project` = every
+ * project member sees it AND the sessions inside inherit project-wide
+ * visibility (folder sharing by inheritance). Auto-folders (Slack, Email,
+ * Scheduled, Webhooks) are virtual — derived from session metadata, never
+ * stored here.
+ */
+export const sessionFolders = kortixSchema.table(
+  'session_folders',
+  {
+    folderId: uuid('folder_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 120 }).notNull(),
+    visibility: projectSessionVisibilityEnum('visibility').default('private').notNull(),
+    position: integer('position').default(0).notNull(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_session_folders_project').on(table.projectId),
+    index('idx_session_folders_account').on(table.accountId),
+  ],
+);
+
 export const projectSessions = kortixSchema.table(
   'project_sessions',
   {
@@ -549,6 +580,11 @@ export const projectSessions = kortixSchema.table(
     // Session ownership + org-visibility (default private to the creator).
     createdBy: uuid('created_by'),
     visibility: projectSessionVisibilityEnum('visibility').default('private').notNull(),
+    // Manual sidebar folder assignment; null = unfiled (may still group under a
+    // virtual auto-folder client-side). Folder deletion unfiles, never deletes.
+    folderId: uuid('folder_id').references(() => sessionFolders.folderId, {
+      onDelete: 'set null',
+    }),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

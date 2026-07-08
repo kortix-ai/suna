@@ -518,3 +518,212 @@ flow(
     });
   },
 );
+
+flow(
+  "SESS-17",
+  {
+    domain: "sessions",
+    tags: ["sessions", "folders"],
+    routes: [
+      "GET /v1/projects/:projectId/session-folders",
+      "POST /v1/projects/:projectId/session-folders",
+      "PATCH /v1/projects/:projectId/session-folders/:folderId",
+      "DELETE /v1/projects/:projectId/session-folders/:folderId",
+      "PUT /v1/projects/:projectId/sessions/:sessionId/folder",
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const viewer = ctx.client.as(ctx.P.M_VIEWER);
+    let folderId = "";
+
+    await ctx.step("create folder → 201 private by default", async () => {
+      const r = await owner.post(
+        "/v1/projects/:projectId/session-folders",
+        { name: "e2e Growth" },
+        { params: { projectId: p.id } },
+      );
+      r.status(201);
+      r.body().has("$.visibility", "private").exists("$.folder_id");
+      folderId = r.json<any>().folder_id;
+    });
+
+    await ctx.step("empty name → 400; invalid visibility → 400", async () => {
+      const r1 = await owner.post(
+        "/v1/projects/:projectId/session-folders",
+        { name: "  " },
+        { params: { projectId: p.id } },
+      );
+      r1.status(400);
+      const r2 = await owner.post(
+        "/v1/projects/:projectId/session-folders",
+        { name: "x", visibility: "restricted" },
+        { params: { projectId: p.id } },
+      );
+      r2.status(400);
+    });
+
+    await ctx.step("owner list contains the folder", async () => {
+      const r = await owner.get("/v1/projects/:projectId/session-folders", {
+        params: { projectId: p.id },
+      });
+      r.status(200);
+      const rows = r.json<any[]>() ?? [];
+      if (!rows.some((f) => f.folder_id === folderId)) throw new Error("created folder missing from list");
+    });
+
+    await ctx.step("another member's list HIDES the private folder", async () => {
+      const r = await viewer.get("/v1/projects/:projectId/session-folders", {
+        params: { projectId: p.id },
+      });
+      r.status(200);
+      const rows = r.json<any[]>() ?? [];
+      if (rows.some((f) => f.folder_id === folderId)) throw new Error("private folder leaked to non-owner");
+    });
+
+    await ctx.step("non-owner PATCH on a private folder → 404 (hidden)", async () => {
+      const r = await viewer.patch(
+        "/v1/projects/:projectId/session-folders/:folderId",
+        { name: "hijack" },
+        { params: { projectId: p.id, folderId } },
+      );
+      r.status(404);
+    });
+
+    await ctx.step("owner rename + share project-wide → 200", async () => {
+      const r = await owner.patch(
+        "/v1/projects/:projectId/session-folders/:folderId",
+        { name: "e2e Growth 2", visibility: "project" },
+        { params: { projectId: p.id, folderId } },
+      );
+      r.status(200);
+      r.body().has("$.name", "e2e Growth 2").has("$.visibility", "project");
+    });
+
+    await ctx.step("shared folder is now visible to the member, but not manageable → 403", async () => {
+      const list = await viewer.get("/v1/projects/:projectId/session-folders", {
+        params: { projectId: p.id },
+      });
+      list.status(200);
+      const rows = list.json<any[]>() ?? [];
+      if (!rows.some((f) => f.folder_id === folderId)) throw new Error("shared folder not visible to member");
+      const r = await viewer.patch(
+        "/v1/projects/:projectId/session-folders/:folderId",
+        { name: "hijack" },
+        { params: { projectId: p.id, folderId } },
+      );
+      r.status(403);
+    });
+
+    await ctx.step("non-uuid folder id → 400", async () => {
+      const r = await owner.patch(
+        "/v1/projects/:projectId/session-folders/:folderId",
+        { name: "x" },
+        { params: { projectId: p.id, folderId: "not-a-uuid" } },
+      );
+      r.status(400);
+    });
+
+    await ctx.step("session-folder assignment negatives: non-uuid sid → 400, unknown sid → 404", async () => {
+      const r1 = await owner.put(
+        "/v1/projects/:projectId/sessions/:sessionId/folder",
+        { folder_id: folderId },
+        { params: { projectId: p.id, sessionId: "not-a-uuid" } },
+      );
+      r1.status(400);
+      const r2 = await owner.put(
+        "/v1/projects/:projectId/sessions/:sessionId/folder",
+        { folder_id: folderId },
+        { params: { projectId: p.id, sessionId: "00000000-0000-4000-8000-000000000000" } },
+      );
+      r2.status(404);
+    });
+
+    await ctx.step("delete folder → 200", async () => {
+      const r = await owner.del("/v1/projects/:projectId/session-folders/:folderId", {
+        params: { projectId: p.id, folderId },
+      });
+      r.status(200);
+    });
+  },
+);
+
+flow(
+  "SESS-18",
+  {
+    domain: "sessions",
+    requires: ["daytona", "funded"],
+    timeoutMs: 120_000,
+    tags: ["sessions", "folders"],
+    routes: [
+      "PUT /v1/projects/:projectId/sessions/:sessionId/folder",
+      "GET /v1/projects/:projectId/sessions",
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const s = await ctx.fixtures.session(p);
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const viewer = ctx.client.as(ctx.P.M_VIEWER);
+    let folderId = "";
+
+    await ctx.step("create a private folder and file the session into it", async () => {
+      const create = await owner.post(
+        "/v1/projects/:projectId/session-folders",
+        { name: "e2e Inherit" },
+        { params: { projectId: p.id } },
+      );
+      create.status(201);
+      folderId = create.json<any>().folder_id;
+      const r = await owner.put(
+        "/v1/projects/:projectId/sessions/:sessionId/folder",
+        { folder_id: folderId },
+        { params: { projectId: p.id, sessionId: s.id } },
+      );
+      r.status(200);
+      r.body().has("$.folder_id", folderId);
+    });
+
+    await ctx.step("private session in a private folder stays hidden from other members", async () => {
+      const r = await viewer.get("/v1/projects/:projectId/sessions", { params: { projectId: p.id } });
+      r.status(200);
+      const rows = r.json<any[]>() ?? [];
+      if (rows.some((row) => row.session_id === s.id)) throw new Error("private session leaked before folder share");
+    });
+
+    await ctx.step("sharing the FOLDER makes the session visible by inheritance", async () => {
+      const share = await owner.patch(
+        "/v1/projects/:projectId/session-folders/:folderId",
+        { visibility: "project" },
+        { params: { projectId: p.id, folderId } },
+      );
+      share.status(200);
+      const r = await viewer.get("/v1/projects/:projectId/sessions", { params: { projectId: p.id } });
+      r.status(200);
+      const rows = r.json<any[]>() ?? [];
+      if (!rows.some((row) => row.session_id === s.id)) throw new Error("folder-shared session not visible to member");
+    });
+
+    await ctx.step("unfiling (folder_id: null) restores the session's own visibility", async () => {
+      const r = await owner.put(
+        "/v1/projects/:projectId/sessions/:sessionId/folder",
+        { folder_id: null },
+        { params: { projectId: p.id, sessionId: s.id } },
+      );
+      r.status(200);
+      r.body().has("$.folder_id", null);
+      const list = await viewer.get("/v1/projects/:projectId/sessions", { params: { projectId: p.id } });
+      list.status(200);
+      const rows = list.json<any[]>() ?? [];
+      if (rows.some((row) => row.session_id === s.id)) throw new Error("session still visible after unfiling");
+    });
+
+    await ctx.step("cleanup: delete the folder", async () => {
+      const r = await owner.del("/v1/projects/:projectId/session-folders/:folderId", {
+        params: { projectId: p.id, folderId },
+      });
+      r.status(200);
+    });
+  },
+);

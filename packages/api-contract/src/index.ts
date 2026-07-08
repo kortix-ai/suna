@@ -173,10 +173,33 @@ export const ProjectSessionSchema = z.object({
   sharing: SharingIntentSchema,
   is_owner: z.boolean(),
   can_manage_sharing: z.boolean(),
+  /** Manual sidebar folder assignment; null = unfiled. */
+  folder_id: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
 });
 export type ProjectSession = z.infer<typeof ProjectSessionSchema>;
+
+/**
+ * A sidebar session folder. `visibility` is 'private' (creator only) or
+ * 'project' (every member sees the folder; sessions inside inherit
+ * project-wide visibility). The 'restricted' enum value is reserved —
+ * folders don't take member allow-lists yet.
+ */
+export const SessionFolderSchema = z.object({
+  folder_id: z.string(),
+  project_id: z.string(),
+  account_id: z.string(),
+  name: z.string(),
+  visibility: SessionVisibilitySchema,
+  position: z.number(),
+  created_by: z.string().nullable(),
+  is_owner: z.boolean(),
+  can_manage: z.boolean(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type SessionFolder = z.infer<typeof SessionFolderSchema>;
 
 export const SESSION_SANDBOX_STATUSES = [
   'provisioning',

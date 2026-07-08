@@ -13,7 +13,7 @@ import { grantFromLoadedAgents, loadProjectAgents, projectRequiresDeclaredAgents
 import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { projectSessions } from '@kortix/db';
+import { projectSessions, sessionFolders } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Context } from 'hono';
 import { randomUUID } from 'node:crypto';
@@ -545,6 +545,26 @@ export async function createProjectSession(input: {
     ...(input.metadata ?? {}),
   };
 
+  // Optional at-birth sidebar-folder assignment ("new session in this folder").
+  // The folder must live in this project and be usable by the creator (their
+  // own, or project-shared). Anything else is ignored — a stale folder id must
+  // never fail a session create.
+  let folderId: string | null = null;
+  const requestedFolderId = normalizeString(body.folder_id ?? body.folderId);
+  if (requestedFolderId) {
+    const [folder] = await db
+      .select({
+        folderId: sessionFolders.folderId,
+        visibility: sessionFolders.visibility,
+        createdBy: sessionFolders.createdBy,
+      })
+      .from(sessionFolders)
+      .where(and(eq(sessionFolders.folderId, requestedFolderId), eq(sessionFolders.projectId, projectId)));
+    if (folder && (folder.visibility === 'project' || folder.createdBy === userId)) {
+      folderId = folder.folderId;
+    }
+  }
+
   let sessionRow: ProjectSessionRow;
   try {
     const [row] = await db
@@ -563,6 +583,7 @@ export async function createProjectSession(input: {
         // session-header control (visibility = project | restricted).
         createdBy: userId,
         visibility,
+        folderId,
         metadata,
         updatedAt: new Date(),
       })

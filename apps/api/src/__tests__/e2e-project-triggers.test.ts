@@ -365,6 +365,7 @@ mock.module('../shared/db', () => ({
               error: null,
               createdBy: values.createdBy ?? null,
               visibility: values.visibility ?? 'private',
+              folderId: values.folderId ?? null,
               metadata: values.metadata ?? {},
               createdAt: values.createdAt ?? now,
               updatedAt: values.updatedAt ?? now,

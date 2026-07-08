@@ -15,13 +15,14 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountGroups, accountMembers, executorConnectors, executorExecutions, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
+import { accountGroupMembers, accountGroups, accountMembers, executorConnectors, executorExecutions, projectGroupGrants, projectSessions, sessionFolders, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid } from '../lib/access';
 import { AnyObject, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
+import { projectVisibleFolderIds } from '../lib/session-folders';
 import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
 import {
   createSession,
@@ -481,7 +482,16 @@ projectsApp.openapi(
   const grantsBySession = await loadSessionGrants(
     listableRows.filter((r) => r.visibility === 'restricted').map((r) => r.sessionId),
   );
+  // Folder sharing by inheritance: a session inside a project-visible folder
+  // is visible to every member, whatever its own visibility says.
+  const sharedFolderIds = projectVisibleFolderIds(
+    await db
+      .select({ folderId: sessionFolders.folderId, visibility: sessionFolders.visibility })
+      .from(sessionFolders)
+      .where(eq(sessionFolders.projectId, projectId)),
+  );
   let visible = listableRows.filter((r) =>
+    (r.folderId != null && sharedFolderIds.has(r.folderId)) ||
     isSessionVisibleTo(
       r.visibility as 'private' | 'project' | 'restricted',
       r.createdBy,

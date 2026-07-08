@@ -39,6 +39,7 @@ import {
   useCustomizeKeyboardShortcut,
 } from '@/features/workspace/project-sidebar/footer/project-customize-nav';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
+import { FolderNameModal } from '@/features/workspace/project-sidebar/modal/folder-name-modal';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-switcher';
 import { useAdminRole } from '@/hooks/admin';
@@ -52,6 +53,7 @@ import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
   CalendarClock,
+  FolderPlus,
   List,
   Mail,
   MessagesSquare,
@@ -61,7 +63,7 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HiDotsHorizontal } from 'react-icons/hi';
 import { IconType } from 'react-icons/lib';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
@@ -85,6 +87,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const isExpanded = state === 'expanded';
   const isMobile = useIsMobile();
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
 
   // Filter lives in a persisted store (keyed by project) so it survives the
   // project shell remounting on navigation — local state reset to "all" on
@@ -235,6 +238,16 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                       </span>
                     )}
                   </div>
+                  <Hint label="New folder" side="bottom">
+                    <SidebarMenuButton
+                      type="button"
+                      aria-label="New folder"
+                      onClick={() => setNewFolderOpen(true)}
+                      className="text-muted-foreground/90 hover:text-sidebar-foreground flex size-8 shrink-0 items-center justify-center px-2"
+                    >
+                      <FolderPlus className="size-3.5" />
+                    </SidebarMenuButton>
+                  </Hint>
                   <DropdownMenu onOpenChange={holdPeek}>
                     <DropdownMenuContent align="start" className="w-44 p-1">
                       {SESSION_FILTER_OPTIONS.map((option) => {
@@ -296,6 +309,13 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       <SidebarFooter className="space-y-0.5 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]">
         <UserMenu user={user} variant="sidebar" />
       </SidebarFooter>
+
+      <FolderNameModal
+        projectId={projectId}
+        folder={null}
+        open={newFolderOpen}
+        onOpenChange={setNewFolderOpen}
+      />
 
       {/* No resize rail while collapsed — the edge is the hover-peek zone. */}
       {isExpanded && <SidebarRail />}

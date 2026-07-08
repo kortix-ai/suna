@@ -26,6 +26,7 @@ import './routes/r4';
 import './routes/r5';
 import './routes/r6';
 import './routes/r7';
+import './routes/session-folders';
 import './routes/public-shares';
 import './routes/r8';
 import './routes/r9';

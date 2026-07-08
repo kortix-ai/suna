@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 466,
+  "count": 470,
   "routes": [
     {
       "method": "GET",
@@ -68,6 +68,22 @@
     },
     {
       "method": "GET",
+      "path": "/scim/v2/accounts/:accountId/ResourceTypes"
+    },
+    {
+      "method": "GET",
+      "path": "/scim/v2/accounts/:accountId/ResourceTypes/:id"
+    },
+    {
+      "method": "GET",
+      "path": "/scim/v2/accounts/:accountId/Schemas"
+    },
+    {
+      "method": "GET",
+      "path": "/scim/v2/accounts/:accountId/Schemas/:id"
+    },
+    {
+      "method": "GET",
       "path": "/scim/v2/accounts/:accountId/ServiceProviderConfig"
     },
     {
@@ -88,6 +104,10 @@
     },
     {
       "method": "PATCH",
+      "path": "/scim/v2/accounts/:accountId/Users/:userId"
+    },
+    {
+      "method": "PUT",
       "path": "/scim/v2/accounts/:accountId/Users/:userId"
     },
     {
@@ -775,6 +795,18 @@
       "path": "/v1/health/live"
     },
     {
+      "method": "POST",
+      "path": "/v1/llm/chat/completions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/llm/health"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/llm/models"
+    },
+    {
       "method": "GET",
       "path": "/v1/marketplace/items"
     },
@@ -1444,6 +1476,22 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/session-folders"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/session-folders"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/session-folders/:folderId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/session-folders/:folderId"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/sessions"
     },
     {
@@ -1469,6 +1517,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/commit-push"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/folder"
     },
     {
       "method": "GET",
@@ -1673,42 +1725,6 @@
     {
       "method": "POST",
       "path": "/v1/setup-links/secret/:token"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/bootstrap-owner"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/health"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/install-status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/sandbox-providers"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/setup-complete"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/setup-status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/setup-wizard-step"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/setup-wizard-step"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/status"
     },
     {
       "method": "GET",
