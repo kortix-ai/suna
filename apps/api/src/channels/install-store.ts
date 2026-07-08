@@ -16,11 +16,125 @@ export const SLACK_TEAM_NAME = "SLACK_TEAM_NAME";
 
 export const TELEGRAM_BOT_TOKEN = "TELEGRAM_BOT_TOKEN";
 export const TELEGRAM_WEBHOOK_SECRET = "TELEGRAM_WEBHOOK_SECRET";
+export const TELEGRAM_BOT_ID = "TELEGRAM_BOT_ID";
+export const TELEGRAM_BOT_USERNAME = "TELEGRAM_BOT_USERNAME";
+
+const TELEGRAM_KEYS = [
+  TELEGRAM_BOT_TOKEN,
+  TELEGRAM_WEBHOOK_SECRET,
+  TELEGRAM_BOT_ID,
+  TELEGRAM_BOT_USERNAME,
+] as const;
 
 export async function loadTelegramWebhookSecretForProject(
   projectId: string,
 ): Promise<string | null> {
   return readSecret(projectId, TELEGRAM_WEBHOOK_SECRET);
+}
+
+export interface TelegramInstallSummary {
+  /** Numeric bot id (the part before the token's colon). */
+  botId: string;
+  /** Bot @username (no leading @) — shown in the dashboard, used for group
+   *  mention detection. */
+  botUsername: string | null;
+  installedAt: string;
+}
+
+export interface TelegramInstallInput {
+  projectId: string;
+  botToken: string;
+  webhookSecret: string;
+  botId: string;
+  botUsername: string | null;
+}
+
+/**
+ * Persist a Telegram bot install: encrypted secrets + a chat_installs row
+ * (workspaceId = numeric bot id — Telegram has no workspace concept; the bot
+ * IS the integration boundary). Reconnecting with a DIFFERENT bot replaces the
+ * old install row so a stale (platform, workspaceId) mapping can't linger.
+ */
+export async function saveTelegramInstall(
+  input: TelegramInstallInput,
+): Promise<TelegramInstallSummary> {
+  const { projectId } = input;
+  await db
+    .delete(chatInstalls)
+    .where(
+      and(
+        eq(chatInstalls.platform, "telegram"),
+        eq(chatInstalls.projectId, projectId),
+      ),
+    );
+  await db
+    .insert(chatInstalls)
+    .values({ platform: "telegram", workspaceId: input.botId, projectId })
+    .onConflictDoNothing();
+  await upsertSecret(projectId, TELEGRAM_BOT_TOKEN, input.botToken);
+  await upsertSecret(projectId, TELEGRAM_WEBHOOK_SECRET, input.webhookSecret);
+  await upsertSecret(projectId, TELEGRAM_BOT_ID, input.botId);
+  await upsertSecret(projectId, TELEGRAM_BOT_USERNAME, input.botUsername ?? "");
+  return {
+    botId: input.botId,
+    botUsername: input.botUsername,
+    installedAt: new Date().toISOString(),
+  };
+}
+
+export async function deleteTelegramInstall(projectId: string): Promise<void> {
+  for (const name of TELEGRAM_KEYS) {
+    await db
+      .delete(projectSecrets)
+      .where(
+        and(
+          eq(projectSecrets.projectId, projectId),
+          eq(projectSecrets.name, name),
+        ),
+      );
+  }
+  await db
+    .delete(chatInstalls)
+    .where(
+      and(
+        eq(chatInstalls.platform, "telegram"),
+        eq(chatInstalls.projectId, projectId),
+      ),
+    );
+}
+
+export async function loadTelegramInstall(
+  projectId: string,
+): Promise<TelegramInstallSummary | null> {
+  const botId = await readSecret(projectId, TELEGRAM_BOT_ID);
+  if (!botId) return null;
+  const [username, [row]] = await Promise.all([
+    readSecret(projectId, TELEGRAM_BOT_USERNAME),
+    db
+      .select({ updatedAt: projectSecrets.updatedAt })
+      .from(projectSecrets)
+      .where(
+        and(
+          eq(projectSecrets.projectId, projectId),
+          eq(projectSecrets.name, TELEGRAM_BOT_ID),
+          isNull(projectSecrets.ownerUserId),
+        ),
+      )
+      .limit(1),
+  ]);
+  return {
+    botId,
+    botUsername: username || null,
+    installedAt: row?.updatedAt?.toISOString() ?? new Date().toISOString(),
+  };
+}
+
+/** SERVER-SIDE ONLY — feeds telegram-api.ts and the executor gateway's
+ *  credential resolution. Never returned to a sandbox or the dashboard. */
+export async function loadTelegramTokenForProject(
+  projectId: string,
+): Promise<string | null> {
+  return readSecret(projectId, TELEGRAM_BOT_TOKEN);
 }
 
 export const AGENTMAIL_API_KEY = "AGENTMAIL_API_KEY";

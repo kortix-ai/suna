@@ -1,14 +1,27 @@
 import {
   deleteAgentMailInstall,
   deleteSlackInstall,
+  deleteTelegramInstall,
   loadAgentMailInstall,
   loadSlackInstall,
+  loadTelegramInstall,
+  loadTelegramTokenForProject,
   normalizeSenderPolicy,
   saveAgentMailInstall,
   saveSlackInstall,
+  saveTelegramInstall,
   updateAgentMailSenderPolicy,
   type AgentMailSenderPolicy,
 } from "../../channels/install-store";
+import {
+  buildTelegramWebhookUrl,
+  isValidTelegramBotToken,
+  telegramBotIdFromToken,
+  telegramDeleteWebhook,
+  telegramGetMe,
+  telegramSetWebhook,
+} from "../../channels/telegram-api";
+import { randomBytes } from "node:crypto";
 import { reconcileChannelConnectors } from "../../executor/sync";
 import {
   agentMailUpstreamStatus,
@@ -576,6 +589,153 @@ projectsApp.openapi(
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
     await deleteSlackInstall(projectId);
     // Tear down the auto-materialized Slack connector now that the install is gone.
+    await reconcileChannelConnectors(projectId);
+    return c.json({ status: "disconnected" });
+  },
+);
+
+// ─── Telegram install — BYO bot (BotFather), secrets live in project_secrets ─
+//
+// Telegram has no shared-app OAuth: every install is a user-minted bot token.
+// Connect validates the token with getMe, mints a random webhook secret, and
+// points the bot's webhook at /v1/webhooks/telegram/:projectId SERVER-SIDE —
+// the token itself never leaves the API (not in the response, not in a sandbox).
+
+projectsApp.openapi(
+  createRoute({
+    method: "get",
+    path: "/{projectId}/channels/telegram/installation",
+    tags: ["channels"],
+    summary: "GET /:projectId/channels/telegram/installation",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), "OK"),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const install = await loadTelegramInstall(projectId);
+    return c.json(install ?? null);
+  },
+);
+
+// POST /v1/projects/:projectId/channels/telegram/connect
+
+projectsApp.openapi(
+  createRoute({
+    method: "post",
+    path: "/{projectId}/channels/telegram/connect",
+    tags: ["channels"],
+    summary: "POST /:projectId/channels/telegram/connect",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), "OK"),
+      ...errors(400, 404, 502),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    // Connecting a Telegram bot is a connector-write capability — same gate as
+    // Slack: a custom role can withhold it and a scoped agent must hold it.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+
+    let body: { bot_token?: string };
+    try {
+      body = (await c.req.json()) as { bot_token?: string };
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+    const botToken = body.bot_token?.trim() ?? "";
+    if (!botToken || !isValidTelegramBotToken(botToken)) {
+      return c.json(
+        {
+          error:
+            "bot_token is required and must look like <bot_id>:<secret> (from @BotFather)",
+        },
+        400,
+      );
+    }
+
+    const me = await telegramGetMe(botToken);
+    if (!me.ok) {
+      // Distinguish "Telegram said no" (bad token → 400) from "couldn't reach
+      // Telegram" (transport → 502), mirroring the Slack connect split.
+      const transport = me.error === "network_error" || me.error === "timeout";
+      return c.json(
+        { error: `Telegram rejected the token: ${me.error}` },
+        transport ? 502 : 400,
+      );
+    }
+
+    // 64 base64url chars — comfortably inside Telegram's 1-256 [A-Za-z0-9_-]
+    // secret_token contract, unguessable, and unique per connect (a reconnect
+    // rotates it, invalidating any stale webhook config).
+    const webhookSecret = randomBytes(48).toString("base64url");
+    const webhookUrl = buildTelegramWebhookUrl(
+      config.KORTIX_URL || new URL(c.req.url).origin,
+      projectId,
+    );
+    const hook = await telegramSetWebhook(botToken, webhookUrl, webhookSecret);
+    if (!hook.ok) {
+      return c.json(
+        { error: `Telegram refused the webhook: ${hook.error}` },
+        502,
+      );
+    }
+
+    const summary = await saveTelegramInstall({
+      projectId,
+      botToken,
+      webhookSecret,
+      botId: telegramBotIdFromToken(botToken) ?? String(me.bot.id),
+      botUsername: me.bot.username ?? null,
+    });
+    await reconcileChannelConnectors(projectId);
+    return c.json(summary);
+  },
+);
+
+// DELETE /v1/projects/:projectId/channels/telegram/installation
+
+projectsApp.openapi(
+  createRoute({
+    method: "delete",
+    path: "/{projectId}/channels/telegram/installation",
+    tags: ["channels"],
+    summary: "DELETE /:projectId/channels/telegram/installation",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), "OK"),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+    // Best-effort webhook teardown BEFORE the token is purged — a failure here
+    // must not block the disconnect (once the secret is deleted, any updates a
+    // still-configured webhook posts are rejected 404 "Not configured" at our
+    // edge, so nothing leaks either way).
+    const token = await loadTelegramTokenForProject(projectId);
+    if (token) await telegramDeleteWebhook(token).catch(() => {});
+    await deleteTelegramInstall(projectId);
     await reconcileChannelConnectors(projectId);
     return c.json({ status: "disconnected" });
   },
