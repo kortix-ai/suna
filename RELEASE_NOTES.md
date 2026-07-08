@@ -1,7 +1,5 @@
 Marketplace imports, groups and custom roles for every plan, and a sandbox that recovers when a build fails
 
-Marketplace imports, groups and custom roles for every plan, and a sandbox that recovers when a build fails.
-
 ## New
 
 - **Install from the marketplace in one click.** Agents, commands and bundles can now be imported straight into a project. Detail pages show what a bundle actually contains — its files, its capabilities, and what it will be allowed to do — before you install it.
