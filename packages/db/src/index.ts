@@ -72,6 +72,7 @@ export {
   deployments,
   kortixApiKeys,
   accountTokens,
+  subjects,
   workerLeaderLease,
   // Relations
   projectsRelations,

@@ -27,6 +27,12 @@ export interface AccountTokenValidationResult {
    *  authorization (which Kortix CLI/API actions + connectors it may use,
    *  already ∩ the launching user). Null = full access (laptop CLI PAT). */
   agentGrant?: AgentGrant | null;
+  /** Non-null = subject-scoped session token ("Kortix as a backend"): acts on
+   *  behalf of this external end-user (subjects.subject_id). */
+  subjectId?: string | null;
+  /** TRUE = interact-only token whose single-session boundary IS enforced by the
+   *  auth middleware (checkSessionScope). Default false = every ordinary token. */
+  backendScoped?: boolean;
   error?: string;
 }
 
@@ -48,6 +54,13 @@ export interface CreateAccountTokenParams {
    *  authorizes this session AS the SA (its own policies) ∩ agentGrant, not the
    *  launching user. Null = legacy (authorize as the user). */
   serviceAccountId?: string | null;
+  /** Set for subject-scoped session tokens — the external end-user this token acts
+   *  for (subjects.subject_id). Requires backendScoped. */
+  subjectId?: string | null;
+  /** TRUE = mint an interact-only, single-session-enforced token safe for an
+   *  untrusted browser. Callers must also pass the locked grant (lockedSubjectGrant)
+   *  and a sessionId. Default false. */
+  backendScoped?: boolean;
 }
 
 export interface CreateAccountTokenResult {
@@ -167,6 +180,8 @@ export async function createAccountToken(
       expiresAt: params.expiresAt ?? null,
       agentGrant: params.agentGrant ?? null,
       serviceAccountId: params.serviceAccountId ?? null,
+      subjectId: params.subjectId ?? null,
+      backendScoped: params.backendScoped ?? false,
     })
     .returning();
 
@@ -295,6 +310,8 @@ export async function validateAccountToken(
         lastUsedAt: accountTokens.lastUsedAt,
         createdAt: accountTokens.createdAt,
         agentGrant: accountTokens.agentGrant,
+        subjectId: accountTokens.subjectId,
+        backendScoped: accountTokens.backendScoped,
         patIdleRevokeDays: accounts.patIdleRevokeDays,
       })
       .from(accountTokens)
@@ -345,6 +362,8 @@ export async function validateAccountToken(
       projectId: row.projectId,
       sessionId: row.sessionId ?? null,
       agentGrant: row.agentGrant ?? null,
+      subjectId: row.subjectId ?? null,
+      backendScoped: row.backendScoped ?? false,
     };
   } catch (err) {
     console.error('Account token validation error:', err);

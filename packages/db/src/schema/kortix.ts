@@ -1494,6 +1494,19 @@ export const accountTokens = kortixSchema.table(
     serviceAccountId: uuid('service_account_id').references(() => serviceAccounts.serviceAccountId, {
       onDelete: 'cascade',
     }),
+    /** The external end-user (SUBJECT) this session token acts on behalf of, for
+     *  "Kortix as a backend" wrappers. NULL for every ordinary token. Set only on
+     *  subject-scoped session tokens minted by an operator credential. Identity
+     *  only — authorization stays in agentGrant + IAM.
+     *  See docs/specs/2026-07-08-kortix-as-a-backend-subject-identity.md. */
+    subjectId: uuid('subject_id').references(() => subjects.subjectId, {
+      onDelete: 'cascade',
+    }),
+    /** TRUE = a subject-scoped token safe to hand to an untrusted browser: bound to
+     *  exactly one session (the boundary IS enforced — unlike ordinary tokens where
+     *  session_id is mere attribution), carrying the locked interact-only grant.
+     *  Default FALSE preserves every existing token's behavior. */
+    backendScoped: boolean('backend_scoped').default(false).notNull(),
   },
   (table) => [
     uniqueIndex('idx_account_tokens_public_key').on(table.publicKey),
@@ -1501,6 +1514,40 @@ export const accountTokens = kortixSchema.table(
     index('idx_account_tokens_account').on(table.accountId),
     index('idx_account_tokens_user').on(table.userId),
     index('idx_account_tokens_project').on(table.projectId),
+    index('idx_account_tokens_subject').on(table.subjectId),
+  ],
+);
+
+// ─── Subjects (external end-user identities for "Kortix as a backend") ─────────
+//
+// A SUBJECT is an opaque external end-user a wrapper (e.g. a verticalized AI app)
+// asserts through its operator credential. It is NOT a Kortix login, NOT a Supabase
+// auth user, and never a project_members row — that is the whole point: subjects are
+// cheap, headless, and isolatable, where real members require an email invite and can
+// see each other's sessions. A subject carries no ambient authority; it only becomes
+// meaningful through a subject-scoped session token (account_tokens.backend_scoped).
+// See docs/specs/2026-07-08-kortix-as-a-backend-subject-identity.md.
+export const subjects = kortixSchema.table(
+  'subjects',
+  {
+    subjectId: uuid('subject_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** The operator's OWN end-user id (their primary key for this person). Unique
+     *  per project so an operator can idempotently upsert-by-external-ref. */
+    externalRef: varchar('external_ref', { length: 255 }).notNull(),
+    displayName: varchar('display_name', { length: 255 }),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('idx_subjects_project_external_ref').on(table.projectId, table.externalRef),
+    index('idx_subjects_account').on(table.accountId),
   ],
 );
 

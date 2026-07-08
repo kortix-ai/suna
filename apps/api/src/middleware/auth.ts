@@ -2,6 +2,8 @@ import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { validateSecretKey } from '../repositories/api-keys';
 import { validateAccountToken } from '../repositories/account-tokens';
+import type { AccountTokenValidationResult } from '../repositories/account-tokens';
+import { checkSessionScope } from '../subjects/session-scope';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { isKortixToken, isAccountToken, isServiceAccountToken } from '../shared/crypto';
 import { canAccessPreviewSandbox } from '../shared/preview-ownership';
@@ -183,6 +185,7 @@ export async function supabaseAuth(c: Context, next: Next) {
     if (result.projectId) {
       enforceTokenProjectScope(c, result.projectId);
     }
+    enforceBackendSessionScope(c, result);
     c.set('userId', result.userId);
     c.set('userEmail', '');
     c.set('authType', 'pat');
@@ -407,6 +410,7 @@ export async function combinedAuth(c: Context, next: Next) {
     if (patResult.projectId) {
       enforceTokenProjectScope(c, patResult.projectId);
     }
+    enforceBackendSessionScope(c, patResult);
     c.set('userId', patResult.userId);
     c.set('userEmail', '');
     c.set('authType', 'pat');
@@ -609,6 +613,25 @@ function extractPreviewSandboxId(path: string): string | null {
  *
  * Throws HTTPException(403) so the calling middleware aborts the chain.
  */
+/**
+ * Enforce the subject-scoped session boundary for "Kortix as a backend" tokens.
+ * No-op for every ordinary token (backend_scoped = false), so existing behavior is
+ * untouched. For a backend-scoped token, the request must target exactly the token's
+ * own session or it is refused — this is the boundary that makes a subject-scoped
+ * token safe to hand to an untrusted browser (see subjects/session-scope.ts).
+ */
+function enforceBackendSessionScope(c: Context, result: AccountTokenValidationResult): void {
+  if (!result.backendScoped) return;
+  const verdict = checkSessionScope({
+    backendScoped: true,
+    tokenSessionId: result.sessionId,
+    path: c.req.path,
+  });
+  if (!verdict.ok) {
+    throw new HTTPException(403, { message: verdict.reason ?? 'Subject-scoped token out of scope' });
+  }
+}
+
 function enforceTokenProjectScope(c: Context, tokenProjectId: string): void {
   const path = c.req.path;
 

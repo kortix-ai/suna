@@ -165,6 +165,18 @@ const envSchema = z.object({
   // behavior (absence of `[[agents]]` → unrestricted) untouched.
   KORTIX_REQUIRE_DECLARED_AGENTS: optBoolFalse,
 
+  // "Kortix as a backend" (verticalized wrappers / untrusted end-users). Platform
+  // default OFF. When a project runs in backend mode, its sessions are provisioned
+  // secret-less (no plaintext project secrets, no account-privileged PAT, capped LLM
+  // spend), and "no [[agents]] grant" flips from unrestricted to default-DENY. The
+  // subject-scoped session token (account_tokens.backend_scoped) is enforced to a
+  // single session regardless of this flag — the flag governs the RUNTIME hardening,
+  // not the token boundary. Like KORTIX_REQUIRE_DECLARED_AGENTS, this is intended to
+  // become a per-project setting (project.metadata.backend_mode); the platform flag
+  // is the global override for dogfood/testing.
+  // See docs/specs/2026-07-08-kortix-as-a-backend-subject-identity.md.
+  KORTIX_BACKEND_MODE: optBoolFalse,
+
   // ── Legacy migration — reaching legacy JustAVPS VMs + backup storage ──────
   // The new backend has no JustAVPS provider, but it must reach legacy VMs to
   // back them up. VMs are reachable via the CF proxy at {slug}.{proxy domain};
