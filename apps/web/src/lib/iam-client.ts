@@ -93,16 +93,30 @@ function unwrap<T>(response: { data?: T; success: boolean; error?: Error }) {
   return response.data;
 }
 
+/**
+ * All IAM READS go through this instead of `backendApi.get` directly:
+ * `showErrors: false` keeps a capability-denied read (403 "You don't have
+ * permission to perform this action (policy.read)") out of the GLOBAL error
+ * toast. Reads are background queries — when the viewer can't read something,
+ * the UI's job is to gate or hide that surface (react-query still exposes
+ * `isError` to any component that wants an explicit error state), not to
+ * raise a "contact support" toast. Mutations keep full error surfacing —
+ * they're user-initiated and their call sites toast specific messages.
+ */
+function iamGet<T>(path: string) {
+  return backendApi.get<T>(path, { showErrors: false });
+}
+
 // ─── Groups ────────────────────────────────────────────────────────────────
 
 export async function listGroups(accountId: string) {
   return unwrap(
-    await backendApi.get<{ groups: AccountGroup[] }>(`/accounts/${accountId}/iam/groups`),
+    await iamGet<{ groups: AccountGroup[] }>(`/accounts/${accountId}/iam/groups`),
   ).groups;
 }
 
 export async function getGroup(accountId: string, groupId: string) {
-  return unwrap(await backendApi.get<AccountGroup>(`/accounts/${accountId}/iam/groups/${groupId}`));
+  return unwrap(await iamGet<AccountGroup>(`/accounts/${accountId}/iam/groups/${groupId}`));
 }
 
 export async function createGroup(
@@ -134,7 +148,7 @@ export async function deleteGroup(accountId: string, groupId: string) {
 
 export async function listGroupMembers(accountId: string, groupId: string) {
   return unwrap(
-    await backendApi.get<{ members: GroupMember[] }>(
+    await iamGet<{ members: GroupMember[] }>(
       `/accounts/${accountId}/iam/groups/${groupId}/members`,
     ),
   ).members;
@@ -166,7 +180,7 @@ export interface GroupProjectGrant {
 
 export async function listGroupProjectGrants(accountId: string, groupId: string) {
   return unwrap(
-    await backendApi.get<{ grants: GroupProjectGrant[] }>(
+    await iamGet<{ grants: GroupProjectGrant[] }>(
       `/accounts/${accountId}/iam/groups/${groupId}/project-grants`,
     ),
   ).grants;
@@ -190,7 +204,7 @@ export interface MemberGroupSummary {
  *  listGroupMembers — backs the "via groups" panel on member detail. */
 export async function listMemberGroups(accountId: string, userId: string) {
   return unwrap(
-    await backendApi.get<{ groups: MemberGroupSummary[] }>(
+    await iamGet<{ groups: MemberGroupSummary[] }>(
       `/accounts/${accountId}/iam/members/${userId}/groups`,
     ),
   ).groups;
@@ -210,7 +224,7 @@ export interface MemberProjectAccess {
 
 export async function listMemberProjectAccess(accountId: string, userId: string) {
   return unwrap(
-    await backendApi.get<{ projects: MemberProjectAccess[] }>(
+    await iamGet<{ projects: MemberProjectAccess[] }>(
       `/accounts/${accountId}/iam/members/${userId}/project-access`,
     ),
   ).projects;
@@ -235,7 +249,7 @@ export async function listPolicies(accountId: string, filter: ListPoliciesFilter
   }
   const qs = params.toString();
   return unwrap(
-    await backendApi.get<{ policies: IamPolicy[] }>(
+    await iamGet<{ policies: IamPolicy[] }>(
       `/accounts/${accountId}/iam/policies${qs ? `?${qs}` : ''}`,
     ),
   ).policies;
@@ -339,7 +353,7 @@ export async function bulkImportPolicies(accountId: string, policies: BulkImport
 // ─── Roles ─────────────────────────────────────────────────────────────────
 
 export async function listRoles(accountId: string) {
-  return unwrap(await backendApi.get<{ roles: IamRole[] }>(`/accounts/${accountId}/iam/roles`))
+  return unwrap(await iamGet<{ roles: IamRole[] }>(`/accounts/${accountId}/iam/roles`))
     .roles;
 }
 
@@ -354,7 +368,7 @@ export interface AgentIdentity {
 
 export async function listAgentIdentities(accountId: string) {
   return unwrap(
-    await backendApi.get<{ agents: AgentIdentity[] }>(
+    await iamGet<{ agents: AgentIdentity[] }>(
       `/accounts/${accountId}/iam/agent-identities`,
     ),
   ).agents;
@@ -362,7 +376,7 @@ export async function listAgentIdentities(accountId: string) {
 
 export async function getRolePermissions(accountId: string, roleId: string) {
   return unwrap(
-    await backendApi.get<{ role_id: string; key: string; actions: string[] }>(
+    await iamGet<{ role_id: string; key: string; actions: string[] }>(
       `/accounts/${accountId}/iam/roles/${roleId}/permissions`,
     ),
   );
@@ -376,13 +390,13 @@ export interface ActionCatalogEntry {
 
 export async function listActions(accountId: string) {
   return unwrap(
-    await backendApi.get<{ actions: ActionCatalogEntry[] }>(`/accounts/${accountId}/iam/actions`),
+    await iamGet<{ actions: ActionCatalogEntry[] }>(`/accounts/${accountId}/iam/actions`),
   ).actions;
 }
 
 export async function getRoleUsage(accountId: string, roleId: string) {
   return unwrap(
-    await backendApi.get<{ role_id: string; policy_count: number }>(
+    await iamGet<{ role_id: string; policy_count: number }>(
       `/accounts/${accountId}/iam/roles/${roleId}/usage`,
     ),
   );
@@ -473,7 +487,7 @@ export interface CreatedScimToken
 
 export async function listScimTokens(accountId: string) {
   return unwrap(
-    await backendApi.get<{ tokens: ScimToken[] }>(`/accounts/${accountId}/iam/scim/tokens`),
+    await iamGet<{ tokens: ScimToken[] }>(`/accounts/${accountId}/iam/scim/tokens`),
   ).tokens;
 }
 
@@ -519,12 +533,12 @@ export interface MfaRequiredPreview {
 }
 
 export async function getMfaRequired(accountId: string) {
-  return unwrap(await backendApi.get<MfaRequiredStatus>(`/accounts/${accountId}/iam/mfa-required`));
+  return unwrap(await iamGet<MfaRequiredStatus>(`/accounts/${accountId}/iam/mfa-required`));
 }
 
 export async function previewMfaRequired(accountId: string) {
   return unwrap(
-    await backendApi.get<MfaRequiredPreview>(`/accounts/${accountId}/iam/mfa-required/preview`),
+    await iamGet<MfaRequiredPreview>(`/accounts/${accountId}/iam/mfa-required/preview`),
   );
 }
 
@@ -562,7 +576,7 @@ export interface SsoGroupMapping {
 
 export async function getSsoProvider(accountId: string) {
   return unwrap(
-    await backendApi.get<{ provider: SsoProvider | null }>(
+    await iamGet<{ provider: SsoProvider | null }>(
       `/accounts/${accountId}/iam/sso/provider`,
     ),
   ).provider;
@@ -624,7 +638,7 @@ export async function deleteSsoProvider(accountId: string) {
 
 export async function listSsoGroupMappings(accountId: string) {
   return unwrap(
-    await backendApi.get<{ mappings: SsoGroupMapping[] }>(
+    await iamGet<{ mappings: SsoGroupMapping[] }>(
       `/accounts/${accountId}/iam/sso/mappings`,
     ),
   ).mappings;
@@ -670,7 +684,7 @@ export interface ActiveSession {
 }
 
 export async function getSessionPolicy(accountId: string) {
-  return unwrap(await backendApi.get<SessionPolicy>(`/accounts/${accountId}/iam/session-policy`));
+  return unwrap(await iamGet<SessionPolicy>(`/accounts/${accountId}/iam/session-policy`));
 }
 
 export async function updateSessionPolicy(accountId: string, patch: Partial<SessionPolicy>) {
@@ -683,7 +697,7 @@ export async function updateSessionPolicy(accountId: string, patch: Partial<Sess
 
 export async function listAccountSessions(accountId: string) {
   return unwrap(
-    await backendApi.get<{ sessions: ActiveSession[] }>(`/accounts/${accountId}/iam/sessions`),
+    await iamGet<{ sessions: ActiveSession[] }>(`/accounts/${accountId}/iam/sessions`),
   ).sessions;
 }
 
@@ -709,7 +723,7 @@ export interface PatPolicy {
 }
 
 export async function getPatPolicy(accountId: string) {
-  return unwrap(await backendApi.get<PatPolicy>(`/accounts/${accountId}/iam/pat-policy`));
+  return unwrap(await iamGet<PatPolicy>(`/accounts/${accountId}/iam/pat-policy`));
 }
 
 export async function updatePatPolicy(accountId: string, patch: Partial<PatPolicy>) {
@@ -741,7 +755,7 @@ export interface CreatedServiceAccount extends ServiceAccount {
 
 export async function listServiceAccountsApi(accountId: string) {
   return unwrap(
-    await backendApi.get<{ service_accounts: ServiceAccount[] }>(
+    await iamGet<{ service_accounts: ServiceAccount[] }>(
       `/accounts/${accountId}/iam/service-accounts`,
     ),
   ).service_accounts;
@@ -804,7 +818,7 @@ export interface CreatedAuditWebhook extends AuditWebhook {
 
 export async function listAuditWebhooks(accountId: string) {
   return unwrap(
-    await backendApi.get<{ webhooks: AuditWebhook[] }>(`/accounts/${accountId}/audit/webhooks`),
+    await iamGet<{ webhooks: AuditWebhook[] }>(`/accounts/${accountId}/audit/webhooks`),
   ).webhooks;
 }
 
@@ -876,7 +890,7 @@ export async function listAuditEvents(accountId: string, filter: ListAuditFilter
   if (filter.limit) params.set('limit', String(filter.limit));
   const qs = params.toString();
   return unwrap(
-    await backendApi.get<{ events: AuditEvent[]; next_cursor: string | null }>(
+    await iamGet<{ events: AuditEvent[]; next_cursor: string | null }>(
       `/accounts/${accountId}/audit${qs ? `?${qs}` : ''}`,
     ),
   );
@@ -894,7 +908,7 @@ export async function probeEffectivePermission(
   if (args.resourceType) params.set('resourceType', args.resourceType);
   if (args.resourceId) params.set('resourceId', args.resourceId);
   return unwrap(
-    await backendApi.get<EffectivePermissionProbe>(
+    await iamGet<EffectivePermissionProbe>(
       `/accounts/${accountId}/iam/members/${userId}/effective?${params.toString()}`,
     ),
   );
@@ -941,7 +955,7 @@ export async function probeEffectivePermissions(
 
 export async function getEnterpriseDemo(accountId: string): Promise<boolean> {
   return unwrap(
-    await backendApi.get<{ enabled: boolean }>(`/accounts/${accountId}/iam/enterprise-demo`),
+    await iamGet<{ enabled: boolean }>(`/accounts/${accountId}/iam/enterprise-demo`),
   ).enabled;
 }
 
