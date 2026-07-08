@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
 import { Check, Copy, KeyRound, MoreHorizontal, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -58,6 +59,7 @@ export function GatewayKeys({
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [created, setCreated] = useState<CreatedGatewayKey | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<{ key_id: string; name: string } | null>(null);
 
   const keys = data?.keys ?? [];
 
@@ -94,7 +96,7 @@ export function GatewayKeys({
                 API keys
                 <span className="text-muted-foreground font-normal"> ({keys.length})</span>
               </Label>
-              <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+              <p className="text-muted-foreground mt-0.5 text-pretty text-xs">
                 Project-scoped keys for calling the gateway from external apps — every request is
                 logged and billed here.
               </p>
@@ -128,7 +130,7 @@ export function GatewayKeys({
                 return (
                   <li
                     key={k.key_id}
-                    className="group bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors"
+                    className="bg-popover group flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors"
                   >
                     <EntityAvatar icon={KeyRound} size="sm" />
                     <div className="min-w-0 flex-1">
@@ -169,13 +171,7 @@ export function GatewayKeys({
                         <DropdownMenuContent align="end" className="w-44">
                           <DropdownMenuItem
                             variant="destructive"
-                            onClick={() =>
-                              revokeKey.mutate(k.key_id, {
-                                onSuccess: () => successToast('Key revoked'),
-                                onError: (e) =>
-                                  errorToast(e instanceof Error ? e.message : 'Could not revoke'),
-                              })
-                            }
+                            onClick={() => setRevokeTarget({ key_id: k.key_id, name: k.name })}
                           >
                             <Trash2 className="size-3.5 shrink-0" />
                             Revoke key
@@ -230,6 +226,32 @@ export function GatewayKeys({
           onClose={() => setCreated(null)}
         />
       )}
+
+      <ConfirmDialog
+        open={revokeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRevokeTarget(null);
+        }}
+        title="Revoke key"
+        description={
+          revokeTarget
+            ? `Revoke ${revokeTarget.name}? Apps calling the gateway with it stop working immediately.`
+            : ''
+        }
+        confirmLabel="Revoke"
+        confirmVariant="destructive"
+        onConfirm={() => {
+          if (!revokeTarget) return;
+          revokeKey.mutate(revokeTarget.key_id, {
+            onSuccess: () => {
+              setRevokeTarget(null);
+              successToast('Key revoked');
+            },
+            onError: (e) => errorToast(e instanceof Error ? e.message : 'Could not revoke'),
+          });
+        }}
+        isPending={revokeKey.isPending}
+      />
     </div>
   );
 }
