@@ -51,7 +51,7 @@ import { readManifest } from '../../projects/triggers';
 import { resolveAgentGrant } from '../../projects/agents';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 
-// Fallback spec for sandboxes that don't declare [sandbox] in kortix.toml.
+// Fallback spec for sandboxes that don't declare `sandbox:` in kortix.yaml.
 // Mirrors the platform default sandbox size (2 vCPU / 4 GB / 20 GB).
 const DEFAULT_METERING_SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 
@@ -274,7 +274,7 @@ export async function provisionSessionSandbox(opts: {
       title: 'Sandbox Token',
       type: 'sandbox',
     }),
-    // Resolve the per-agent grant from kortix.toml's [[agents]] overlay and mint
+    // Resolve the per-agent grant from kortix.yaml's `agents:` overlay and mint
     // the executor/CLI account token carrying it (best-effort — see helper).
     mintExecutorToken({
       accountId,

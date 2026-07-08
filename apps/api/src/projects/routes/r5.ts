@@ -757,7 +757,7 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Editing project config (name / default_branch / manifest_path) is a
   // customize-write capability. manifest_path is especially sensitive: it
-  // selects which kortix.toml drives per-agent env scoping, so a custom role
+  // selects which kortix.yaml drives per-agent env scoping, so a custom role
   // can withhold it and a scoped agent must hold it (central fold).
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
@@ -785,9 +785,9 @@ projectsApp.openapi(
 );
 
 // PATCH /v1/projects/:projectId/apps-config
-// Per-project toggle for the experimental [[apps]] deployment surface
+// Per-project toggle for the experimental `apps:` deployment surface
 // (Customize → Settings). DB-only — stored in projects.metadata.apps_enabled,
-// never in kortix.toml. Overrides the operator default KORTIX_APPS_EXPERIMENTAL.
+// never in kortix.yaml. Overrides the operator default KORTIX_APPS_EXPERIMENTAL.
 // `enabled: null` clears the override and falls back to the operator default.
 
 projectsApp.openapi(

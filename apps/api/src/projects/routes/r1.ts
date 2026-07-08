@@ -267,7 +267,7 @@ projectsApp.openapi(
 
   const name = normalizeString(body.name) ?? deriveProjectName(repoUrl);
   const defaultBranch = normalizeString(body.default_branch ?? body.defaultBranch) ?? 'main';
-  const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.toml';
+  const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.yaml';
 
   let imported: Awaited<ReturnType<typeof resolveGitHubImport>>;
   try {

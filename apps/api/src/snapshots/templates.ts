@@ -4,7 +4,7 @@
  * The durable identity for "what kind of sandbox a session can boot from."
  * Templates live in `kortix.sandbox_templates`. The platform default is a
  * shared row (project_id NULL, is_shared=true) that any project can boot
- * from. Custom templates can be defined either in `kortix.toml` (synced to
+ * from. Custom templates can be defined either in `kortix.yaml` (synced to
  * the DB on first read for a project) or directly via the UI/CRUD API.
  *
  * Provider-agnostic: each template carries a `provider` column; the matching
@@ -196,7 +196,7 @@ export async function listTemplatesForProject(
 
   const last = tomlSyncCache.get(project.projectId) ?? 0;
   if (opts.forceTomlSync || Date.now() - last > TOML_SYNC_TTL_MS) {
-    await syncTomlTemplatesForProject(project);
+    await syncManifestTemplatesForProject(project);
     tomlSyncCache.set(project.projectId, Date.now());
   }
 
@@ -240,13 +240,13 @@ export async function resolveTemplateBySlug(
 
   // Fast path for the platform default — the overwhelming majority of boots.
   // The default template's identity is a constant (PLATFORM_DEFAULT_USER_DOCKERFILE),
-  // so it does NOT depend on the project's kortix.toml. `listTemplatesForProject`
-  // would run `syncTomlTemplatesForProject` → `readManifest` → a host-side git
+  // so it does NOT depend on the project's kortix.yaml. `listTemplatesForProject`
+  // would run `syncManifestTemplatesForProject` → `readManifest` → a host-side git
   // fetch of the repo (15-30s cold) on every boot once the 60s TTL lapses — and
   // boots are minutes apart, so it lapses every time. Slug "default" is reserved
-  // (the TOML sync skips it and the manifest schema forbids it), so a project can
-  // never shadow it: the shared row is always the answer. Resolve it from the DB
-  // directly and skip the git fetch entirely.
+  // (the manifest sync skips it and the manifest schema forbids it), so a project
+  // can never shadow it: the shared row is always the answer. Resolve it from the
+  // DB directly and skip the git fetch entirely.
   if (target === DEFAULT_SANDBOX_SLUG) {
     return resolveDefaultTemplate();
   }
@@ -650,10 +650,10 @@ function rowToResolved(row: DbSandboxTemplate): ResolvedTemplate {
 }
 
 /**
- * Upsert `[[sandbox.templates]]` entries from the project's kortix.toml into the DB.
+ * Upsert `sandbox.templates` entries from the project's kortix.yaml into the DB.
  * Best-effort: a broken manifest never blocks the boot path.
  */
-async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<void> {
+async function syncManifestTemplatesForProject(project: GitBackedProject): Promise<void> {
   try {
     const parsed = await readManifest(project);
     const tomlTemplates = extractSandboxTemplates(parsed?.raw ?? null);
@@ -691,7 +691,7 @@ async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<v
         });
     }
 
-    // Persist `[sandbox] default` → projects.metadata.default_sandbox_slug, so
+    // Persist `sandbox.default` → projects.metadata.default_sandbox_slug, so
     // session boot can cheaply pick the project's default template without a
     // git fetch. Only honor a default that names a template we just synced
     // (else it would point at nothing); clear it otherwise.
@@ -716,7 +716,7 @@ async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<v
     }
   } catch (err) {
     console.warn(
-      `[templates] TOML sync failed for ${project.projectId}:`,
+      `[templates] manifest sync failed for ${project.projectId}:`,
       err instanceof Error ? err.message : err,
     );
   }

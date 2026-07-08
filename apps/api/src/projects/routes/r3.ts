@@ -405,7 +405,7 @@ projectsApp.openapi(
 
   const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
 
-  // Manifest is optional — a project without kortix.toml just gets empty
+  // Manifest is optional — a project without kortix.yaml just gets empty
   // required/optional lists. We surface loaded/missing/error explicitly so the
   // UI can distinguish "no envs declared" from "we couldn't read the manifest".
   let required: string[] = [];

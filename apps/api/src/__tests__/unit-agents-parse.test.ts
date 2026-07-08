@@ -1,6 +1,7 @@
 /**
- * Parser-level tests for `[[agents]]` in kortix.toml — the per-agent scoping
- * overlay (name + connectors + kortix_cli). Covers happy paths, the kortix_cli
+ * Parser-level tests for the per-agent scoping overlay (name + connectors +
+ * kortix_cli): the legacy v1 `[[agents]]` TOML array (kortix.toml) and the v2
+ * `agents:` name-keyed map (kortix.yaml). Covers happy paths, the kortix_cli
  * enum validation (grantable project actions pass; account-scoped + unknown
  * rejected), the grant-set forms ("all"/"none"/[]/"*"), the round-trip, and the
  * rejection paths.
@@ -405,7 +406,7 @@ describe('[[agents]] — spec/error `path` derives from the manifest\'s own file
     expect(errors[0]?.path).toBe('kortix.yaml');
   });
 
-  test('a toml manifest still says kortix.toml (default, unchanged)', () => {
+  test('a legacy v1 toml manifest still says kortix.toml (default, unchanged)', () => {
     const { specs } = parse(`
 [[agents]]
 name = "release-bot"

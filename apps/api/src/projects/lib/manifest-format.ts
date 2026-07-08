@@ -14,10 +14,12 @@ import { type ManifestFormat, manifestFormatForPath } from '@kortix/manifest-sch
  *      `manifestPath` on record;
  *   3. `toml`, for back-compat with callers that send neither.
  *
- * Note `manifestPath` defaults to `kortix.toml` at project creation and isn't
- * updated when a repo later switches format by hand — the same staleness
- * `readManifest` (triggers.ts) works around by probing the repo directly,
- * which this raw-string endpoint (no file on disk to probe) cannot do.
+ * Note `manifestPath` isn't updated when a repo later switches format by hand
+ * (or for an older project created before the default flipped to
+ * `kortix.yaml`), so it can go stale relative to the real on-disk file — the
+ * same staleness `readManifest` (triggers.ts) works around by probing the
+ * repo directly, which this raw-string endpoint (no file on disk to probe)
+ * cannot do.
  */
 export function resolveManifestValidateFormat(
   manifestPath: string | null | undefined,

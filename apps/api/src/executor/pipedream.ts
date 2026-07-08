@@ -3,7 +3,7 @@
  * for SaaS apps). Adapted from the pre-refactor provider (commit 9078f28e).
  *
  * Model fit: a connector with provider="pipedream" declares `app` + `account` in
- * kortix.toml. The OAuth lives on Pipedream's side; we store only the connected
+ * kortix.yaml. The OAuth lives on Pipedream's side; we store only the connected
  * **account id** as a `scope='connector'` project secret (the binding) — so it's
  * shareable like any connector credential and never injected into the sandbox.
  * The catalog (app actions) is fetched from Pipedream and normalized. Execution

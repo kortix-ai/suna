@@ -56,7 +56,7 @@ interface ProjectMemberRow {
 const baseDate = new Date('2026-01-01T00:00:00Z');
 const repoFiles = [
   { path: 'README.md', type: 'file', size: 18 },
-  { path: 'kortix.toml', type: 'file', size: 42 },
+  { path: 'kortix.yaml', type: 'file', size: 42 },
   { path: '.kortix/opencode/opencode.jsonc', type: 'file', size: 90 },
   { path: '.kortix/opencode/agents/default.md', type: 'file', size: 120 },
 ];
@@ -91,7 +91,7 @@ function projectRow(overrides: Partial<ProjectRow> = {}): ProjectRow {
     name: 'Existing Project',
     repoUrl: 'https://github.com/kortix/existing-project.git',
     defaultBranch: 'main',
-    manifestPath: 'kortix.toml',
+    manifestPath: 'kortix.yaml',
     status: 'active',
     metadata: {},
     lastOpenedAt: null,
@@ -245,7 +245,7 @@ function upsertProject(values: any, set?: Partial<ProjectRow>) {
     name: values.name,
     repoUrl: values.repoUrl,
     defaultBranch: values.defaultBranch ?? 'main',
-    manifestPath: values.manifestPath ?? 'kortix.toml',
+    manifestPath: values.manifestPath ?? 'kortix.yaml',
     status: values.status ?? 'active',
     metadata: values.metadata ?? {},
     lastOpenedAt: null,
@@ -621,7 +621,7 @@ describe('projects API contract', () => {
         repo_url: 'https://github.com/kortix-org/new-project.git/',
         name: 'New Project',
         default_branch: 'trunk',
-        manifest_path: 'config/kortix.toml',
+        manifest_path: 'config/kortix.yaml',
       }),
     });
     expect(res.status).toBe(201);
@@ -631,7 +631,7 @@ describe('projects API contract', () => {
       name: 'New Project',
       repo_url: 'https://github.com/kortix-org/new-project.git',
       default_branch: 'trunk',
-      manifest_path: 'config/kortix.toml',
+      manifest_path: 'config/kortix.yaml',
       status: 'active',
       project_role: 'manager',
       effective_project_role: 'manager',
@@ -800,7 +800,7 @@ describe('projects API contract', () => {
       body: JSON.stringify({
         name: 'Renamed Project',
         default_branch: 'release',
-        manifest_path: 'ops/kortix.toml',
+        manifest_path: 'ops/kortix.yaml',
         repo_url: 'https://github.com/kortix/should-not-change.git',
       }),
     });
@@ -809,7 +809,7 @@ describe('projects API contract', () => {
       project_id: PROJECT_ID,
       name: 'Renamed Project',
       default_branch: 'release',
-      manifest_path: 'ops/kortix.toml',
+      manifest_path: 'ops/kortix.yaml',
       repo_url: beforeRepoUrl,
     });
 

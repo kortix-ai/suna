@@ -7,7 +7,7 @@
  *
  *   Admin (dashboard-facing, user auth + project access):
  *     GET  /v1/executor/projects/:projectId/connectors          — list + status
- *     POST /v1/executor/projects/:projectId/connectors/sync     — re-materialize from kortix.toml
+ *     POST /v1/executor/projects/:projectId/connectors/sync     — re-materialize from kortix.yaml
  *
  * Connectors are project-wide visible — the only access gate is the agent-side
  * `[[agents]].connectors` grant (iam/agent-scope.ts), enforced below.
@@ -163,13 +163,13 @@ export interface ExecutorRouterDeps {
   ): Promise<{ accountId: string; userId: string } | null>;
   listConnectors(projectId: string, viewerUserId: string): Promise<AdminConnectorView[]>;
   syncConnectors(projectId: string, accountId: string): Promise<SyncResult>;
-  /** Create/update a connector in kortix.toml + materialize. */
+  /** Create/update a connector in kortix.yaml + materialize. */
   createConnector?(
     projectId: string,
     accountId: string,
     draft: Record<string, unknown>,
   ): Promise<CrudOutcome>;
-  /** Remove a connector from kortix.toml + drop its rows. */
+  /** Remove a connector from kortix.yaml + drop its rows. */
   deleteConnector?(projectId: string, slug: string): Promise<CrudOutcome>;
   /** Set a connector's credential value (stored scope='connector', never injected). */
   setConnectorCredential?(projectId: string, slug: string, value: string): Promise<CrudOutcome>;
@@ -185,14 +185,14 @@ export interface ExecutorRouterDeps {
     slug: string,
     mode: 'shared',
   ): Promise<CrudOutcome>;
-  /** Toggle a connector's `sensitive` flag (gate reads too) in kortix.toml + re-sync. */
+  /** Toggle a connector's `sensitive` flag (gate reads too) in kortix.yaml + re-sync. */
   setSensitive?(
     projectId: string,
     accountId: string,
     slug: string,
     sensitive: boolean,
   ): Promise<CrudOutcome>;
-  /** Rename a connector (display label) in kortix.toml + re-sync. */
+  /** Rename a connector (display label) in kortix.yaml + re-sync. */
   setConnectorName?(
     projectId: string,
     accountId: string,
@@ -204,7 +204,7 @@ export interface ExecutorRouterDeps {
     projectId: string,
     slug: string,
   ): Promise<{ policies: Array<{ match: string; action: string }> } | null>;
-  /** Read a connector's definition (provider + connection fields) from kortix.toml for editing. */
+  /** Read a connector's definition (provider + connection fields) from kortix.yaml for editing. */
   getConnectorConfig?(
     projectId: string,
     slug: string,
@@ -227,7 +227,7 @@ export interface ExecutorRouterDeps {
       prefix: string | null;
     };
   } | null>;
-  /** Replace a connector's [[connectors.policies]] in kortix.toml + re-sync. */
+  /** Replace a connector's `policies:` list in kortix.yaml + re-sync. */
   setConnectorPolicies?(
     projectId: string,
     accountId: string,
@@ -267,9 +267,9 @@ export interface ExecutorRouterDeps {
     nextCursor?: string;
     hasMore: boolean;
   }>;
-  /** Read project-level [[policies]] + [policy].default_mode from kortix.toml. */
+  /** Read project-level `policies:` list + `policy.default_mode` from kortix.yaml. */
   getProjectPolicies?(projectId: string): Promise<ProjectPoliciesViewResponse | null>;
-  /** Replace project policies + default_mode (CRUD round-trips to kortix.toml). */
+  /** Replace project policies + default_mode (CRUD round-trips to kortix.yaml). */
   setProjectPolicies?(
     projectId: string,
     accountId: string,
@@ -305,7 +305,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       return c.json({ error: 'connector and action are required' }, 400);
     }
     // Per-agent connector assignment: a scoped agent may call only the connector
-    // profiles its kortix.toml overlay lists. Default-deny otherwise.
+    // profiles its kortix.yaml overlay lists. Default-deny otherwise.
     if (!agentMayUseConnector(p.agentGrant ?? null, connectorSlug)) {
       return c.json({ ok: false, status: 'denied', reason: 'connector_not_assigned' }, 403);
     }
@@ -508,13 +508,13 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     },
   );
 
-  // ── Admin: add/update a connector (writes kortix.toml) ───────────────────
+  // ── Admin: add/update a connector (writes kortix.yaml) ───────────────────
   app.openapi(
     createRoute({
       method: 'post',
       path: '/projects/{projectId}/connectors',
       tags: ['executor'],
-      summary: 'Create or update a connector in kortix.toml',
+      summary: 'Create or update a connector in kortix.yaml',
       ...auth,
       request: {
         params: ProjectParam,
@@ -551,7 +551,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       method: 'delete',
       path: '/projects/{projectId}/connectors/{slug}',
       tags: ['executor'],
-      summary: 'Delete a connector from kortix.toml',
+      summary: 'Delete a connector from kortix.yaml',
       ...auth,
       request: { params: ProjectSlugParam },
       responses: {
@@ -695,13 +695,13 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     },
   );
 
-  // ── Admin: re-materialize from kortix.toml ───────────────────────────────
+  // ── Admin: re-materialize from kortix.yaml ───────────────────────────────
   app.openapi(
     createRoute({
       method: 'post',
       path: '/projects/{projectId}/connectors/sync',
       tags: ['executor'],
-      summary: 'Re-materialize connectors from kortix.toml',
+      summary: 'Re-materialize connectors from kortix.yaml',
       ...auth,
       request: { params: ProjectParam },
       responses: {
@@ -895,7 +895,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     },
   );
 
-  // ── Admin: replace a connector's policies (write-through to kortix.toml) ──
+  // ── Admin: replace a connector's policies (write-through to kortix.yaml) ──
   app.openapi(
     createRoute({
       method: 'put',
@@ -1020,7 +1020,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     },
   );
 
-  // ── Admin: replace project policies (write-through to kortix.toml) ──────
+  // ── Admin: replace project policies (write-through to kortix.yaml) ──────
   app.openapi(
     createRoute({
       method: 'put',

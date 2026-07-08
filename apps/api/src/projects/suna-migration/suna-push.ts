@@ -1,7 +1,7 @@
 /**
  * Create ONE managed repo and push the assembled Suna bundle to it:
  *   <bundle>/legacy/<slug>/…   (his content)         + one synthesized root
- *   kortix.toml / Dockerfile / .kortix/opencode       config (buildStarterFiles).
+ *   kortix.yaml / Dockerfile / .kortix/opencode       config (buildStarterFiles).
  *
  * The opencode.db is NOT a repo file — it's chat storage, shipped into the
  * sandbox separately (rehydrate). We move it out of the tree before pushing.

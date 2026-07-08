@@ -3,7 +3,7 @@
  * connector).
  *   • catalog — the tunnel RPC method set normalizes to `tunnel` bindings, with
  *     a `computer` machine selector on relayed actions and a meta list_computers.
- *   • parse   — `provider="computer"` cannot be declared in kortix.toml (it is
+ *   • parse   — `provider="computer"` cannot be declared in kortix.yaml (it is
  *     synth-only; connecting a machine materializes it).
  *   • gateway — a computer call routes through executeComputerCall (NOT an HTTP
  *     call); the `computer` selector is pulled out of args; a permission_required
@@ -75,16 +75,16 @@ describe('computerCatalog()', () => {
 /* ─── parse ───────────────────────────────────────────────────────────────── */
 
 function parse(body: string) {
-  const src = [`kortix_version = ${KNOWN_SCHEMA_VERSION}`, '\n[project]\nname = "t"\n', body].join('\n');
-  return extractConnectors(parseManifestString(src));
+  const src = [`kortix_version: ${KNOWN_SCHEMA_VERSION}`, 'project:\n  name: t', body].join('\n');
+  return extractConnectors(parseManifestString(src, 'yaml', 'kortix.yaml'));
 }
 
-describe('[[connectors]] provider="computer"', () => {
-  test('cannot be declared in kortix.toml (synth-only)', () => {
+describe('connectors: provider="computer"', () => {
+  test('cannot be declared in kortix.yaml (synth-only)', () => {
     const { specs, errors } = parse(`
-[[connectors]]
-slug = "computer"
-provider = "computer"
+connectors:
+  - slug: computer
+    provider: computer
 `);
     expect(specs).toEqual([]);
     expect(errors[0]!.error).toMatch(/managed automatically|cannot be declared/);

@@ -1,15 +1,20 @@
 // Agent-scope CRUD — the dashboard surface for the inheritance PYRAMID's first
 // step: bind specific secrets + connectors to a specific agent. Writes the
-// `[[agents]].env` / `.connectors` allowlists straight into kortix.toml (same
+// `[[agents]].env` / `.connectors` allowlists straight into the manifest (same
 // git round-trip the connector/policy editors use), so a non-technical admin
 // never hand-edits config. The agent's declared scope is what members assigned
 // to it (Members → Resource access) inherit.
+//
+// NOTE: `applyAgentScope` (agents.ts) operates on the `[[agents]]` array shape
+// — a legacy v1 kortix.toml manifest. A v2 kortix.yaml's `agents:` map isn't
+// an array, so `manifest.raw.agents` here reads as `[]` and this route 404s
+// with "agent not found" for v2 projects (see below).
 //
 // Manager-gated: an agent's scope decides what flows to everyone who inherits
 // it, so it's a governance control, not an editor convenience.
 //
 // `kortix_cli` is intentionally NOT editable here — granting Kortix-CLI powers
-// is a sharper escalation; it stays a kortix.toml change.
+// is a sharper escalation; it stays a manifest change.
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json } from '../../openapi';

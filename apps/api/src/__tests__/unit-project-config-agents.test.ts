@@ -19,7 +19,7 @@ const nativeAgents = [
 ];
 
 describe('project config agent discovery', () => {
-  test('no [[agents]] keeps legacy OpenCode discovery', () => {
+  test('no agents: keeps legacy OpenCode discovery', () => {
     const result = resolveConfigAgents(nativeAgents, { specs: [], errors: [] });
 
     expect(result.agent_discovery).toBe('opencode');
@@ -29,13 +29,13 @@ describe('project config agent discovery', () => {
     ]);
   });
 
-  test('[[agents]] becomes the launchable server-side roster', () => {
+  test('agents: becomes the launchable server-side roster', () => {
     const loaded: LoadedAgents = {
       errors: [],
       specs: [
         {
           name: 'kortix',
-          path: 'kortix.toml#agents.kortix',
+          path: 'kortix.yaml#agents.kortix',
           enabled: true,
           connectors: 'all',
           kortixCli: 'all',
@@ -45,7 +45,7 @@ describe('project config agent discovery', () => {
         },
         {
           name: 'triage',
-          path: 'kortix.toml#agents.triage',
+          path: 'kortix.yaml#agents.triage',
           enabled: true,
           connectors: [],
           kortixCli: [],
@@ -55,7 +55,7 @@ describe('project config agent discovery', () => {
         },
         {
           name: 'disabled',
-          path: 'kortix.toml#agents.disabled',
+          path: 'kortix.yaml#agents.disabled',
           enabled: false,
           connectors: [],
           kortixCli: [],
@@ -97,7 +97,7 @@ describe('project config agent discovery', () => {
       specs: [
         {
           name: 'support_bot',
-          path: 'kortix.toml#agents.support_bot',
+          path: 'kortix.yaml#agents.support_bot',
           enabled: true,
           connectors: ['stripe'],
           kortixCli: ['project.read'],
@@ -118,17 +118,17 @@ describe('project config agent discovery', () => {
     });
   });
 
-  test('OpenCode-discovered agents carry no [[agents]] scope', () => {
+  test('OpenCode-discovered agents carry no agents: scope', () => {
     const result = resolveConfigAgents(nativeAgents, { specs: [], errors: [] });
     expect(result.agents.every((a) => a.scope === undefined)).toBe(true);
   });
 
-  test('invalid [agents] adoption disables legacy discovery instead of silently exposing all agents', () => {
+  test('invalid agents: adoption disables legacy discovery instead of silently exposing all agents', () => {
     const result = resolveConfigAgents(nativeAgents, {
       specs: [],
       errors: [{
         name: '(top-level)',
-        path: 'kortix.toml',
+        path: 'kortix.yaml',
         error: '`agents` must use [[agents]]',
       }],
     });
