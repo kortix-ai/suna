@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
@@ -9,7 +10,7 @@ import {
   startProjectProviderOAuth,
 } from '@kortix/sdk/projects-client';
 import { useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ExternalLink, Loader2 } from 'lucide-react';
+import { AlertCircle, ExternalLink } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -169,14 +170,14 @@ export function ChatGptSubscriptionConnect({
             </div>
           )}
           <div className="text-muted-foreground mt-3 flex items-center gap-2 text-xs">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loading className="size-3.5 shrink-0" />
             {challenge ? 'Waiting for you to finish in the browser…' : 'Connecting to OpenAI…'}
           </div>
         </div>
       )}
 
       {phase === 'done' && (
-        <div className="text-foreground/80 mt-3 flex items-start gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-2.5 text-xs">
+        <div className="text-foreground/80 border-kortix-green/20 bg-kortix-green/[0.06] mt-3 flex items-start gap-2 rounded-2xl border px-3 py-2.5 text-xs">
           {tHardcodedUi.raw(
             'autoComponentsProjectsProjectProviderModalJsxTextChatGPTSubscriptionConnectedcf12bc87',
           )}

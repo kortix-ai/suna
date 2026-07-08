@@ -141,7 +141,7 @@ export function ProjectProviderModal({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {secretsQuery.isLoading && (
           <div className="flex min-h-[200px] items-center justify-center">
-            <Loading className="text-muted-foreground h-4 w-4 animate-spin" />
+            <Loading className="text-muted-foreground size-4 shrink-0" />
           </div>
         )}
 
