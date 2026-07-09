@@ -28,9 +28,9 @@ import {
   type RegistryLoaderOptions,
 } from '@kortix/registry';
 import { emitJson, resolveProjectContext, surfaceApiError } from '../command-helpers.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 
-const HELP = `Usage: kortix registry <subcommand> [options]
+const HELP = help`Usage: kortix registry <subcommand> [options]
 
 Author and inspect Kortix registries (shadcn-compatible registry.json).
 

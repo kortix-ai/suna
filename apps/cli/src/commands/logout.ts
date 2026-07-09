@@ -1,8 +1,8 @@
 import { authFileLocation, clearAuth } from '../api/auth.ts';
 import { activeHostName, getHost } from '../api/config.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 
-const HELP = `Usage: kortix logout [options]
+const HELP = help`Usage: kortix logout [options]
 
 Remove the Kortix auth token for one host.
 

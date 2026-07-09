@@ -9,7 +9,7 @@ import { takeFlagValue, takeFlagBool } from '../command-helpers.ts';
 import { selectFromList } from '../tui-select.ts';
 import { confirm, prompt, promptSecret } from '../prompts.ts';
 import { loadLocalManifest, lintManifest, type EnvSpec, type LocalManifest } from '../manifest.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 import { projectWebUrl } from '../web-url.ts';
 import type {
   ProjectSummary,
@@ -18,7 +18,7 @@ import type {
   ProjectSecretsResponse,
 } from '../api/types.ts';
 
-const HELP = `Usage: kortix ship [options]
+const HELP = help`Usage: kortix ship [options]
 
 Stage everything, commit, and push your current branch to the project's git
 repo — in one command. Run it once to create the project, then run it again

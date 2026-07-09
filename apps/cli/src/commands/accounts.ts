@@ -8,10 +8,10 @@ import {
 import { ApiError, clientFromAuth } from '../api/client.ts';
 import { selectFromList } from '../tui-select.ts';
 import { emitJson, takeFlagBool } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 import type { AccountMembership, MeResponse } from '../api/types.ts';
 
-const HELP = `Usage: kortix accounts <subcommand> [options]
+const HELP = help`Usage: kortix accounts <subcommand> [options]
 
 One Kortix login can belong to many accounts (your personal account, a
 company account, …). Exactly one is "active" — every account-scoped

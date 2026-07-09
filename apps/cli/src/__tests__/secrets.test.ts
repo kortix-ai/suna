@@ -247,14 +247,14 @@ describe('kortix secrets ls — identifier-first', () => {
     const code = await runSecrets(['ls', '--json']);
     expect(code).toBe(0);
     const parsed = JSON.parse(stdout);
-    const backup = parsed.secrets.find((s: any) => s.identifier === 'GMAPS-backup');
+    const backup = parsed.secrets.find((s: { identifier: string }) => s.identifier === 'GMAPS-backup');
     expect(backup).toEqual({
       identifier: 'GMAPS-backup',
       key: 'GOOGLE_MAPS_API_KEY',
       has_value: true,
       source: 'undeclared',
     });
-    const stripe = parsed.secrets.find((s: any) => s.identifier === 'STRIPE_API_KEY');
+    const stripe = parsed.secrets.find((s: { identifier: string }) => s.identifier === 'STRIPE_API_KEY');
     expect(stripe).toEqual({
       identifier: 'STRIPE_API_KEY',
       key: 'STRIPE_API_KEY',

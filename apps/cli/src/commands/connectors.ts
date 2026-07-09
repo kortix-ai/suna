@@ -12,7 +12,7 @@ import {
   removeArrayBlock,
   setTableScalar,
 } from '../manifest-edit.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 // ── Shapes (mirror apps/api/src/executor) ───────────────────────────────────
 
@@ -45,7 +45,7 @@ interface SyncResult {
 
 const PROVIDERS: readonly Provider[] = ['pipedream', 'mcp', 'openapi', 'graphql', 'http'];
 
-const HELP = `Usage: kortix connectors <subcommand> [options]
+const HELP = help`Usage: kortix connectors <subcommand> [options]
 
 Manage the project's connectors — the integrations agents call as tools
 (Pipedream apps, MCP servers, OpenAPI/GraphQL/HTTP endpoints). Mirrors the
