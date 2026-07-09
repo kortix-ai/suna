@@ -22,6 +22,7 @@ describe('isExperimentalFeatureKey', () => {
     expect(isExperimentalFeatureKey('agent_tunnel')).toBe(true);
     expect(isExperimentalFeatureKey('agentmail_email')).toBe(true);
     expect(isExperimentalFeatureKey('llm_gateway')).toBe(true);
+    expect(isExperimentalFeatureKey('work_submission')).toBe(true);
     expect(isExperimentalFeatureKey('nope')).toBe(false);
     expect(isExperimentalFeatureKey(undefined)).toBe(false);
     expect(isExperimentalFeatureKey(42)).toBe(false);
@@ -188,5 +189,17 @@ describe('applyExperimentalOverride', () => {
     const next = applyExperimentalOverride({ apps_enabled: true }, 'apps', null);
     expect((next as Record<string, unknown>).apps_enabled).toBeUndefined();
     expect(next.experimental).toBeUndefined();
+  });
+});
+
+describe('work_submission feature', () => {
+  test('off by default, always available, opt-in per project', () => {
+    const f = findCatalogFeature('work_submission');
+    expect(f.available).toBe(true);
+    expect(f.enabled).toBe(false);
+    expect(resolveExperimentalFeature({}, 'work_submission')).toBe(false);
+    expect(
+      resolveExperimentalFeature({ experimental: { work_submission: true } }, 'work_submission'),
+    ).toBe(true);
   });
 });

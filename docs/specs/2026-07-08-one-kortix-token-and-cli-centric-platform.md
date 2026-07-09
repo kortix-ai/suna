@@ -3,6 +3,9 @@
 Status: working document
 Date: 2026-07-08
 Owner: Kortix product/infra
+Umbrella: `docs/specs/2026-07-08-kortix-control-plane-and-auth.md` — the north-star
+(one control-plane API; CLI/MCP as thin auth-gated clients; self-describing CLI) that
+absorbs this doc's identity model as-is and resolves its open questions #1 and #3.
 Related: `docs/specs/2026-06-28-token-session-agent-identity.md`,
 `docs/specs/2026-06-28-project-authorization-runtime-governance.md`,
 `docs/specs/2026-07-05-agent-first-config-unification.md`

@@ -137,6 +137,18 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     // Explicit opt-in: hidden unless a project enables it in Settings.
     platformDefault: () => false,
   },
+  {
+    key: 'work_submission',
+    name: 'Work Submission',
+    description:
+      "Let sessions submit finished work for review with `kortix submit` — a title, a description, and attachments, pinned in git and surfaced as review items (pairs with the Review Center inbox). The submission surface is still expanding.",
+    stability: 'experimental',
+    // Pure API/git surface — the route + keep-ref machinery ship with the app, so
+    // no operator env gates it. Always available; a project opts in per Settings.
+    available: () => true,
+    // Explicit opt-in: off unless a project enables it in Settings.
+    platformDefault: () => false,
+  },
 ];
 
 const FEATURE_BY_KEY: Record<ExperimentalFeatureKey, ExperimentalFeatureDef> = Object.fromEntries(

@@ -65,6 +65,51 @@ export async function getReviewItem(projectId: string, reviewItemId: string) {
   );
 }
 
+// ── Work submissions (kind: output, structured detail) ─────────────────────
+// The `kortix submit` payload: artifacts pinned in git under a server-created
+// keep-ref (refs/kortix/submissions/<id>) or small inline content, plus the
+// agent's claims. `trace` is server-stapled — never send it.
+
+export interface SubmissionFileRef {
+  path: string;
+  kind?: string;
+  bytes?: number;
+}
+
+export interface SubmissionGitDetail {
+  commit_sha: string;
+  branch?: string;
+  /** Server-assigned on create — read-only. */
+  keep_ref?: string;
+  files: SubmissionFileRef[];
+}
+
+export interface SubmissionTraceAction {
+  action: string;
+  connector: string | null;
+  risk: string;
+  status: string;
+  at: string;
+}
+
+export interface SubmissionTrace {
+  transcript_ref: string;
+  audit: SubmissionTraceAction[];
+  audit_truncated: boolean;
+  cost: { tokens: number; llm_cost: number; compute_cost: number } | null;
+}
+
+export interface OutputSubmissionDetail {
+  submission_version: 1;
+  storage: 'git' | 'inline';
+  artifact_kind?: string;
+  git?: SubmissionGitDetail;
+  content?: string;
+  claims?: string[];
+  /** Server-assigned on create — read-only. */
+  trace?: SubmissionTrace;
+}
+
 export async function submitReviewItem(
   projectId: string,
   input: {
@@ -78,6 +123,26 @@ export async function submitReviewItem(
   },
 ) {
   return unwrap(await backendApi.post<ApiReviewItem>(`/projects/${projectId}/review/items`, input));
+}
+
+/** Submit a work output for human review with the structured detail payload. */
+export async function submitWorkOutput(
+  projectId: string,
+  input: {
+    title: string;
+    summary?: string;
+    risk?: ReviewItemRisk;
+    agent?: string;
+    session_id?: string;
+    detail: Omit<OutputSubmissionDetail, 'trace'>;
+  },
+) {
+  const { detail, ...rest } = input;
+  return submitReviewItem(projectId, {
+    ...rest,
+    kind: 'output',
+    detail: detail as unknown as Record<string, unknown>,
+  });
 }
 
 export async function actReviewItem(

@@ -167,14 +167,59 @@ function approvalDetail(d: AnyRec, row: ApiReviewItem): ApprovalDetail {
   };
 }
 
-function outputDetail(d: AnyRec, row: ApiReviewItem): OutputDetail {
+function submissionTrace(d: AnyRec): OutputDetail['trace'] {
+  const t = rec(d.trace);
+  if (Object.keys(t).length === 0) return undefined;
+  const costRec = rec(t.cost);
   return {
-    artifactKind: (str(d.artifactKind) as OutputDetail['artifactKind']) ?? 'document',
-    artifactLabel: str(d.artifactLabel) ?? 'Output',
+    transcriptRef: str(t.transcript_ref) ?? '',
+    audit: (arrOf<AnyRec>(t.audit) ?? []).map((a) => ({
+      action: str(a.action) ?? '',
+      connector: str(a.connector) ?? null,
+      risk: str(a.risk) ?? 'none',
+      status: str(a.status) ?? '',
+      at: str(a.at) ?? '',
+    })),
+    auditTruncated: t.audit_truncated === true,
+    cost:
+      Object.keys(costRec).length > 0
+        ? {
+            tokens: num(costRec.tokens),
+            llmCost: num(costRec.llm_cost),
+            computeCost: num(costRec.compute_cost),
+          }
+        : null,
+  };
+}
+
+function outputDetail(d: AnyRec, row: ApiReviewItem): OutputDetail {
+  // Structured work submissions (kortix submit, submission_version: 1) carry
+  // storage + claims + the server-stapled trace; legacy free-form output
+  // details keep the original passthrough fields.
+  const structured = d.submission_version === 1;
+  const git = rec(d.git);
+  return {
+    artifactKind:
+      (str(d.artifactKind) as OutputDetail['artifactKind']) ??
+      (str(d.artifact_kind) as OutputDetail['artifactKind']) ??
+      'document',
+    artifactLabel: str(d.artifactLabel) ?? str(d.artifact_kind) ?? 'Output',
     previewUrl: str(d.previewUrl) ?? str(d.preview_url),
     preview: str(d.preview),
-    files: arrOf<NonNullable<OutputDetail['files']>[number]>(d.files),
+    files:
+      arrOf<NonNullable<OutputDetail['files']>[number]>(d.files) ??
+      arrOf<NonNullable<OutputDetail['files']>[number]>(git.files),
     note: str(d.note) ?? row.summary ?? '',
+    ...(structured
+      ? {
+          claims: arrOf<string>(d.claims),
+          storage: d.storage === 'git' || d.storage === 'inline' ? d.storage : undefined,
+          content: str(d.content),
+          keepRef: str(git.keep_ref),
+          commitSha: str(git.commit_sha),
+          trace: submissionTrace(d),
+        }
+      : { trace: submissionTrace(d) }),
   };
 }
 

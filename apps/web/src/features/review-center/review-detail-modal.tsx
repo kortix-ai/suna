@@ -39,6 +39,12 @@ import remarkGfm from 'remark-gfm';
 import { ChangeFilesModal } from './change-files';
 import { formatItemAgeLong } from './review-actions';
 import {
+  SubmissionClaims,
+  SubmissionFiles,
+  SubmissionInlineContent,
+  SubmissionTraceDetails,
+} from './submission-artifacts';
+import {
   APPROVAL_ACTION_ICON,
   KIND_META,
   RISK_META,
@@ -556,6 +562,7 @@ function ApprovalBody({
 // ── output ────────────────────────────────────────────────────────────────
 function OutputBody({ item }: { item: Extract<ReviewItem, { kind: 'output' }> }) {
   const d = item.detail;
+  const hasTraceDetails = Boolean(d.trace || d.keepRef || d.commitSha);
   return (
     <>
       <Panel>
@@ -564,6 +571,11 @@ function OutputBody({ item }: { item: Extract<ReviewItem, { kind: 'output' }> })
           <span>{d.note}</span>
         </div>
       </Panel>
+      {d.claims && d.claims.length > 0 && (
+        <Panel>
+          <SubmissionClaims claims={d.claims} />
+        </Panel>
+      )}
       <Panel>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -582,17 +594,28 @@ function OutputBody({ item }: { item: Extract<ReviewItem, { kind: 'output' }> })
             </Button>
           )}
         </div>
-        {d.files && d.files.length > 0 && (
-          <div className="mt-3 space-y-1">
-            {d.files.map((f) => (
-              <div key={f.path} className="flex items-center gap-2 text-xs">
-                <span className="text-foreground truncate font-mono">{f.path}</span>
-                {f.note && <span className="text-muted-foreground/60">— {f.note}</span>}
-              </div>
-            ))}
-          </div>
+        {d.storage === 'inline' && d.content && <SubmissionInlineContent content={d.content} />}
+        {d.storage === 'git' && d.keepRef && d.files && d.files.length > 0 ? (
+          <SubmissionFiles files={d.files} keepRef={d.keepRef} />
+        ) : (
+          d.files &&
+          d.files.length > 0 && (
+            <div className="mt-3 space-y-1">
+              {d.files.map((f) => (
+                <div key={f.path} className="flex items-center gap-2 text-xs">
+                  <span className="text-foreground truncate font-mono">{f.path}</span>
+                  {f.note && <span className="text-muted-foreground/60">— {f.note}</span>}
+                </div>
+              ))}
+            </div>
+          )
         )}
       </Panel>
+      {hasTraceDetails && (
+        <AdvancedDisclosure>
+          <SubmissionTraceDetails detail={d} />
+        </AdvancedDisclosure>
+      )}
     </>
   );
 }

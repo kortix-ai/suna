@@ -200,6 +200,10 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
   await runGit(['remote', 'set-url', 'origin', project.repoUrl], repoPath);
   // Heal any legacy single-branch clones by widening the refspec.
   await runGit(['config', 'remote.origin.fetch', '+refs/heads/*:refs/heads/*'], repoPath, false);
+  // Submission keep-refs (refs/kortix/*) pin review-item artifacts independently
+  // of branch lifecycle — without this refspec a keep-ref created after the
+  // mirror was cloned is invisible to files-at-ref reads.
+  await runGit(['config', '--add', 'remote.origin.fetch', '+refs/kortix/*:refs/kortix/*'], repoPath, false);
   await runGit(['fetch', '--prune', 'origin'], repoPath, true, authToken, undefined, authHost);
   lastRefreshAt.set(project.projectId, Date.now());
   return repoPath;

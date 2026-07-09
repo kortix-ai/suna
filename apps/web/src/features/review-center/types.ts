@@ -104,14 +104,40 @@ export interface ApprovalDetail {
   actions: ApprovalAction[];
 }
 
+/** One governed action from the submission's server-stapled trace. */
+export interface SubmissionTraceAction {
+  action: string;
+  connector: string | null;
+  risk: string;
+  status: string;
+  at: string;
+}
+
+/** The tamper-proof "what the session actually did" half of a submission. */
+export interface SubmissionTrace {
+  transcriptRef: string;
+  audit: SubmissionTraceAction[];
+  auditTruncated: boolean;
+  cost: { tokens: number; llmCost: number; computeCost: number } | null;
+}
+
 /** kind: 'output' — an artifact the agent submits for feedback. */
 export interface OutputDetail {
   artifactKind: 'page' | 'document' | 'api_result' | 'image' | 'data';
   artifactLabel: string; // "Landing page"
   previewUrl?: string;
   preview?: string; // text / snippet
-  files?: { path: string; note?: string }[];
+  files?: { path: string; note?: string; kind?: string; bytes?: number }[];
   note: string; // what the agent is asking
+  /** Structured work submission (kortix submit) — v1 payload. */
+  claims?: string[]; // the agent's checkable statements about the work
+  storage?: 'git' | 'inline';
+  /** Inline result body (storage: inline) — rendered as markdown. */
+  content?: string;
+  /** Keep-ref pinning the artifact commit (storage: git) — file reads resolve here. */
+  keepRef?: string;
+  commitSha?: string;
+  trace?: SubmissionTrace;
 }
 
 /** kind: 'decision' — the agent is blocked on a human choice. */

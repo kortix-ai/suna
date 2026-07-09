@@ -327,6 +327,54 @@ title. Sorted newest first.
 | `1`  | Operation failed (CR not found, merge failed, etc.). |
 | `2`  | Bad flag / missing required arg. |
 
+### Work submission (`submit`)
+
+The standardized verb for recording finished work for human review in
+the project's **Review Center**. It's shaped like opening a change
+request — a **title, a description, and attachments** — but for anything,
+not just code. A CR is for code that should land on `main`; `submit` is
+for **everything else a human should review or keep** — reports,
+documents, analyses, answers, generated assets. The `show` tool only
+*presents* (its cards die with the sandbox); `submit` *records*:
+attachments are committed on the current session branch, pushed, and
+pinned server-side under `refs/kortix/submissions/<id>`, so they outlive
+the sandbox forever.
+
+| Command | Effect |
+| --- | --- |
+| `kortix submit --title "<text>" --attach <path> [--attach <path> …]` | Commit + push the attached files on the current branch and submit them for review. Repeatable `--attach` (alias `--attachment`); 25MB per-file cap. |
+| `kortix submit --title "<text>" --description "<text>"` | Submit a note — just a title + description, no files. |
+| `… --description "<text>"` | What it is / what to review (alias `--body`). Shown with the submission; doubles as the note body when there are no attachments. |
+| `… --session <id>` | Attribute the submission to a session. Only needed with a non-session token (e.g. a laptop CLI); inside a sandbox the session is read from your token automatically. |
+| `… --await [--await-timeout <sec>]` | Block until a human verdict. Exit `0` approved, `3` changes requested, `4` rejected, `5` timeout. |
+| `… --json` | Print the created review item (or, with `--await`, the resolved item) as JSON. |
+
+The submission binds to your **session from the token itself** — inside a
+sandbox the session executor token carries it, so nothing is self-reported and
+you can't attribute a submission to a session you aren't in (a laptop CLI, whose
+token has no session, uses `--session <id>`). The server also staples a
+tamper-proof trace (transcript pointer, the governed actions you took, cost so
+far) — you don't and can't send those yourself.
+Human feedback on the submission comes back to you as a follow-up
+turn, exactly like a CR review or an answered question.
+
+**Requires the project's Work Submission experimental feature** to be
+enabled (Customize → Settings → Experimental). If it's off, `kortix
+submit` fails with a clear message pointing there.
+
+**When to submit:** any finished deliverable the user asked for. Rule
+of thumb — in-progress glances → `show`; finished work a human should
+review or keep → `kortix submit`; code that should land on `main` →
+commit, push, `kortix cr open`.
+
+```sh
+# Typical flow: a research report with supporting data
+kortix submit \
+  --title "Q2 churn analysis" \
+  --description "Cohort analysis across 4 segments; churn concentrated in trial-to-paid." \
+  --attach out/churn-analysis.md --attach out/cohorts.csv
+```
+
 > See `change-requests.md` (alongside this file) for the full
 > data model, REST API, and the "MUST open a CR" agent mandate.
 
