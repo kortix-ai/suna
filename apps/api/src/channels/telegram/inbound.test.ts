@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  describeAttachments,
+  messageAttachments,
   parseTelegramCommand,
   renderTelegramAgentPrompt,
   renderTelegramFollowUpPrompt,
@@ -120,5 +122,43 @@ describe('prompt rendering', () => {
   test('non-text payloads degrade gracefully', () => {
     const p = renderTelegramAgentPrompt(msg({ text: undefined, caption: undefined }), BOT);
     expect(p).toContain('(non-text payload)');
+  });
+});
+
+describe('attachments', () => {
+  test('photos collapse to the largest rendition; every kind surfaces', () => {
+    const files = messageAttachments(
+      msg({
+        document: { file_id: 'DOC1', file_name: 'report.pdf', file_size: 2048 },
+        photo: [
+          { file_id: 'P-small', file_size: 100 },
+          { file_id: 'P-large', file_size: 90000 },
+        ],
+        voice: { file_id: 'V1', file_size: 5000 },
+      }),
+    );
+    expect(files.map((f) => f.file.file_id)).toEqual(['DOC1', 'P-large', 'V1']);
+  });
+
+  test('describeAttachments names files, sizes, ids, and the download hint', () => {
+    const d = describeAttachments(
+      msg({ document: { file_id: 'DOC1', file_name: 'report.pdf', file_size: 2 * 1024 * 1024 } }),
+    );
+    expect(d).toContain('document "report.pdf" (2.0 MB) — file_id: DOC1');
+    expect(d).toContain('telegram download --file-id');
+  });
+
+  test('a caption-only file message flows into the prompt with its attachment block', () => {
+    const p = renderTelegramAgentPrompt(
+      msg({ text: undefined, caption: 'please summarize', document: { file_id: 'DOC9', file_name: 'notes.txt' } }),
+      BOT,
+    );
+    expect(p).toContain('please summarize');
+    expect(p).toContain('file_id: DOC9');
+  });
+
+  test('no attachments → no attachment block', () => {
+    expect(describeAttachments(msg())).toBe('');
+    expect(renderTelegramAgentPrompt(msg(), BOT)).not.toContain('Attached files');
   });
 });

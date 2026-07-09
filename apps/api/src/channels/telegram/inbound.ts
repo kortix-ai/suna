@@ -19,6 +19,13 @@ export interface TelegramUser {
   is_bot?: boolean;
 }
 
+export interface TelegramFileRef {
+  file_id: string;
+  file_size?: number;
+  file_name?: string;
+  mime_type?: string;
+}
+
 export interface TelegramMessage {
   message_id: number;
   chat: TelegramChat;
@@ -26,6 +33,50 @@ export interface TelegramMessage {
   text?: string;
   caption?: string;
   reply_to_message?: { from?: TelegramUser };
+  document?: TelegramFileRef;
+  /** Telegram sends multiple resolutions — the last is the largest. */
+  photo?: TelegramFileRef[];
+  video?: TelegramFileRef;
+  audio?: TelegramFileRef;
+  voice?: TelegramFileRef;
+}
+
+/** Normalize a message's attachments into promptable lines. Photos collapse to
+ *  the largest rendition. */
+export function messageAttachments(
+  message: TelegramMessage,
+): Array<{ kind: string; file: TelegramFileRef }> {
+  const out: Array<{ kind: string; file: TelegramFileRef }> = [];
+  if (message.document) out.push({ kind: 'document', file: message.document });
+  if (message.photo?.length) out.push({ kind: 'photo', file: message.photo[message.photo.length - 1] });
+  if (message.video) out.push({ kind: 'video', file: message.video });
+  if (message.audio) out.push({ kind: 'audio', file: message.audio });
+  if (message.voice) out.push({ kind: 'voice', file: message.voice });
+  return out;
+}
+
+function humanSize(bytes: number | undefined): string {
+  if (!bytes || bytes <= 0) return '';
+  if (bytes < 1024) return ` (${bytes} B)`;
+  if (bytes < 1024 * 1024) return ` (${Math.round(bytes / 1024)} KB)`;
+  return ` (${(bytes / (1024 * 1024)).toFixed(1)} MB)`;
+}
+
+/** The attachment section of a prompt — file ids + the download hint. Empty
+ *  string when the message carries no files. */
+export function describeAttachments(message: TelegramMessage): string {
+  const files = messageAttachments(message);
+  if (files.length === 0) return '';
+  const lines = files.map(
+    ({ kind, file }) =>
+      `- ${kind}${file.file_name ? ` "${file.file_name}"` : ''}${humanSize(file.file_size)} — file_id: ${file.file_id}`,
+  );
+  return [
+    'Attached files:',
+    ...lines,
+    'Download any of them into your workspace with:',
+    '  telegram download --file-id <file_id> --out <path>',
+  ].join('\n');
 }
 
 export interface TelegramUpdate {
@@ -148,8 +199,11 @@ const TURN_INSTRUCTIONS = [
   '- Need to ask the user something? Ask it via `telegram send`, then END your',
   '  turn — their reply arrives as a fresh message in this conversation. The',
   '  built-in `question` tool has no answerer in a chat; do not use it.',
-  '- Files & metadata: use the `kortix_telegram` executor connector actions',
-  '  (send_document by file_id/URL, get_file, get_chat) — also token-free.',
+  '- Files: `telegram download --file-id <id> --out <path>` pulls a received',
+  '  file into your workspace; `telegram send --file <path> [--caption "…"]`',
+  '  sends a workspace file to the chat. Both are token-free (server-side',
+  '  proxy). Chat metadata: the `kortix_telegram` executor connector',
+  '  (get_chat, get_file, send_document by file_id/URL).',
 ].join('\n');
 
 function senderLabel(from: TelegramUser | undefined): string {
@@ -164,6 +218,7 @@ export function renderTelegramAgentPrompt(
   botUsername: string | null,
 ): string {
   const text = stripBotMention(message.text ?? message.caption ?? '(non-text payload)', botUsername);
+  const attachments = describeAttachments(message);
   return [
     "You're answering a message from Telegram.",
     '',
@@ -173,6 +228,7 @@ export function renderTelegramAgentPrompt(
     '',
     'Message:',
     text,
+    ...(attachments ? ['', attachments] : []),
     '',
     TURN_INSTRUCTIONS,
   ].join('\n');
@@ -183,10 +239,12 @@ export function renderTelegramFollowUpPrompt(
   botUsername: string | null,
 ): string {
   const text = stripBotMention(message.text ?? message.caption ?? '(non-text payload)', botUsername);
+  const attachments = describeAttachments(message);
   return [
     `New message from ${senderLabel(message.from)} in the same Telegram chat:`,
     '',
     text,
+    ...(attachments ? ['', attachments] : []),
     '',
     TURN_INSTRUCTIONS,
   ].join('\n');

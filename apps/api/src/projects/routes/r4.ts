@@ -29,6 +29,10 @@ import {
   relayTelegramTurnStep,
   telegramTurnExists,
 } from "../../channels/telegram/turn";
+import {
+  downloadTelegramFile,
+  uploadTelegramFile,
+} from "../../channels/telegram/file-proxy";
 import { randomBytes } from "node:crypto";
 import { reconcileChannelConnectors } from "../../executor/sync";
 import {
@@ -1421,6 +1425,98 @@ projectsApp.openapi(
     if (!result.ok)
       return c.json({ error: result.error }, result.status as 400 | 404);
     return c.json({ ok: true, files: result.files });
+  },
+);
+
+// GET /v1/projects/:projectId/channels/telegram/file?file_id=...
+// Server-side download proxy: resolve the file_id + fetch the bytes with the
+// bot token (URL constructed server-side; file_path validated) so the sandbox
+// never holds the token. Backs `telegram download`.
+projectsApp.openapi(
+  createRoute({
+    method: "get",
+    path: "/{projectId}/channels/telegram/file",
+    tags: ["channels"],
+    summary: "GET /:projectId/channels/telegram/file (download proxy)",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      query: z.object({ file_id: z.string() }),
+    },
+    responses: {
+      200: {
+        description: "File bytes",
+        content: { "application/octet-stream": { schema: z.any() } },
+      },
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const result = await downloadTelegramFile(
+      projectId,
+      c.req.query("file_id") ?? "",
+    );
+    if (!result.ok)
+      return c.json({ error: result.error }, result.status as 400 | 404);
+    return new Response(result.body, {
+      status: 200,
+      headers: {
+        "content-type": result.contentType,
+        ...(result.fileName
+          ? { "x-telegram-file-name": encodeURIComponent(result.fileName) }
+          : {}),
+      },
+    });
+  },
+);
+
+// POST /v1/projects/:projectId/channels/telegram/file/upload
+// Server-side upload proxy: multipart sendDocument, bot token server-side.
+// Backs `telegram send --file`.
+projectsApp.openapi(
+  createRoute({
+    method: "post",
+    path: "/{projectId}/channels/telegram/file/upload",
+    tags: ["channels"],
+    summary: "POST /:projectId/channels/telegram/file/upload (upload proxy)",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), message_id: z.any() }).passthrough(),
+        "Uploaded",
+      ),
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    // A SEND primitive (posts into the chat with the project's bot token) — the
+    // same connector-write capability that gates Slack's upload proxy, connect/
+    // disconnect, and the bindings route.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+    const body = await readBody(c);
+    const result = await uploadTelegramFile(projectId, {
+      chatId: String(body.chat_id ?? body.chatId ?? ""),
+      filename: String(body.filename ?? ""),
+      contentBase64: String(body.content_base64 ?? body.contentBase64 ?? ""),
+      caption: typeof body.caption === "string" ? body.caption : undefined,
+      replyToMessageId:
+        typeof body.reply_to_message_id === "number"
+          ? body.reply_to_message_id
+          : undefined,
+    });
+    if (!result.ok)
+      return c.json({ error: result.error }, result.status as 400 | 404);
+    return c.json({ ok: true, message_id: result.messageId });
   },
 );
 
