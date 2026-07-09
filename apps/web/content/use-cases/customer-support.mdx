@@ -1,6 +1,6 @@
 ---
-title: "How we run customer support with an agent that resolves the issue, not just the ticket"
-description: A step-by-step look at the support agent we run on Kortix — connected to Plain, our codebase, and Stripe, with human gates on anything sensitive. Every inbound thread triages, investigates, and resolves itself before a human opens the tab.
+title: "How we run customer support with an AI agent"
+description: The support agent we run on Kortix — connected to Plain, our codebase, and Stripe. It triages and resolves inbound threads, and stops for human approval on anything sensitive.
 date: "2026-07-03"
 author: team
 tags:
@@ -9,15 +9,15 @@ tags:
   - Enterprise
 ---
 
-Support is the hardest place to put AI to work — and the most tempting. It's
-where product knowledge, engineering context, and billing all collide. A
-chatbot bolted onto a help center can recite documentation, but it can't read
-the code a customer is hitting a bug in, confirm whether their subscription
-actually renewed, or take a safe, scoped action to fix the problem.
+We run our own customer support on Kortix with an AI agent connected to Plain
+(our support tool), our codebase, and Stripe. Most support questions need
+product knowledge, engineering context, and billing data at the same time: a
+help-center chatbot can quote documentation but can't read the code behind a
+bug, confirm whether a subscription renewed, or take a scoped action on an
+account.
 
-So we built one that can. This is exactly how we run our own customer support on
-Kortix — every decision, every connection, every guardrail — laid out so you can
-build the same thing for your team.
+This write-up covers how the setup works: the connections, the session model,
+and the guardrails.
 
 <KeyFacts>
   <Fact label="Team">Kortix — the company behind this platform</Fact>
@@ -28,143 +28,119 @@ build the same thing for your team.
 
 ## The problem
 
-Every growing product hits the same wall. Support volume climbs faster than the
-team. The questions that matter most are the ones a canned macro can't
-answer — "why was I charged twice?", "this button does nothing", "does your API
-support X?" Each one needs someone who understands the product, can read the
-code, and can check the customer's account. That's a senior engineer's time,
-spent on a queue that never empties.
+Support volume grows faster than the team. The questions that matter most are
+the ones a canned macro can't answer: "why was I charged twice?", "this button
+does nothing", "does your API support X?" Each one needs someone who understands
+the product, can read the code, and can check the customer's account — usually a
+senior engineer.
 
-The usual fixes all fall short. A help-desk bot deflects the easy questions and
-frustrates everyone on the hard ones. Hiring scales linearly with tickets.
-And handing a generic AI assistant real access to your systems is a security
-review nobody wants to sign off on.
-
-<PullQuote>
-  The goal was never to deflect tickets. It was to resolve the underlying issue
-  — safely — before a human ever opens the tab.
-</PullQuote>
+A help-desk bot handles the easy questions but not these. Hiring scales linearly
+with tickets. And giving a generic AI assistant real access to production
+systems is hard to justify in a security review.
 
 ## What we built
 
-On Kortix, our support inbox in **Plain** is wired to an agent that runs like a
-member of the team. Every inbound thread spawns its own isolated session — a
-real cloud computer — with scoped reach into exactly the systems a support issue
-can touch: the product's knowledge, the codebase, and Stripe. It investigates,
-resolves what it can, and stops at a human for anything sensitive.
+Our support inbox in **Plain** is connected to an agent running on Kortix. Every
+inbound thread spawns its own isolated session with scoped access to the systems
+a support issue can touch: the product's knowledge, the codebase, and Stripe. It
+investigates, resolves what it can, and stops at a human for sensitive actions.
 
 <Figure
-  caption="The support agent replying inside a Plain thread"
-  aspect="16/9"
+  src="/usecases/support/support_1.JPEG"
+  alt="The support agent replying inside a Plain thread"
 />
 
-Here's the whole thing, step by step.
-
-## How we did it — step by step
+## How it works
 
 <Steps>
 <Step title="Connect Plain as the trigger">
 
-We pointed a signed webhook from Plain at the project. Every new thread — or new
-customer reply — fires it, and each firing spawns a fresh **session** in its own
-isolated sandbox. One customer, one thread, one disposable machine. Nothing
-leaks between conversations, and a busy inbox just means more sessions running in
-parallel.
+A signed webhook from Plain points at the project. Every new thread or customer
+reply fires it, and each firing spawns a fresh **session** in its own isolated
+sandbox. One customer, one thread, one sandbox. Sessions don't share state, and a
+busy inbox means more sessions running in parallel.
 
 </Step>
 <Step title="Give the agent the product's knowledge">
 
-Product understanding lives as **skills** and **memory** that ride into every
-session: how the product works, our support playbook, the tone we reply in, and
-the resolutions that worked before. The agent doesn't guess from a stale help
-center — it reasons from the same knowledge our team does, and it gets sharper
-every time a thread is resolved.
+Product knowledge lives as **skills** and **memory** loaded into every session:
+how the product works, our support playbook, the reply tone, and resolutions that
+worked before. The knowledge is updated as threads are resolved.
 
 </Step>
 <Step title="Connect the systems an issue can touch">
 
-Through scoped **connectors**, brokered server-side so no raw token ever reaches
-the model, the agent can:
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
 
-- **Search the codebase** — when someone reports a bug, it finds the exact code
-  path, checks recent changes, and confirms whether it's already known.
-- **Look up Stripe** — plan, invoices, and subscription state, so billing
-  questions get answered with facts instead of guesses.
-- **Read and reply in Plain** — full thread context in, a resolved reply out.
+- **Search the codebase** — for a reported bug, find the relevant code path,
+  check recent changes, and see whether it's already known.
+- **Look up Stripe** — plan, invoices, and subscription state, to answer billing
+  questions from account data.
+- **Read and reply in Plain** — full thread context in, a reply out.
 
 </Step>
 <Step title="Set the guardrails">
 
-Reach without restraint is a liability, so this step matters most. The agent is
-**read-mostly by default**: it investigates freely, but every write is scoped
-tight. Refunds, plan changes — anything that touches a customer's money or
-account — stop at a **human approval gate**. Credentials are encrypted in the
-Secrets Manager and injected at runtime, never shown to the model or written to
+The agent is **read-mostly by default**: it investigates freely, but writes are
+scoped. Refunds, plan changes, and anything touching a customer's money or
+account stop at a **human approval gate**. Credentials are encrypted in the
+secrets manager and injected at runtime, never shown to the model or written to
 logs.
 
 </Step>
-<Step title="Let each thread run itself">
+<Step title="Let each thread run">
 
-With that in place, an inbound thread triages, investigates across all three
-systems, and either resolves directly or hands off to a human with the work
-already done and the context attached. A "why was I charged twice?" becomes a
-Stripe lookup with a real answer. A "this button does nothing" becomes a
-codebase search that either explains the behavior or files a clean bug report
-for engineering.
+An inbound thread triages, investigates across the three systems, and either
+resolves directly or hands off to a human with the work done and context
+attached. "Why was I charged twice?" becomes a Stripe lookup with an answer.
+"This button does nothing" becomes a codebase search that either explains the
+behavior or files a bug report for engineering.
 
 </Step>
 </Steps>
 
-<Callout title="The pattern, in one line" tone="accent">
+<Callout title="Summary" tone="accent">
   Connect the support platform via a **trigger**, give the agent scoped
-  **connectors** into the systems an issue can touch, encode the product
-  knowledge as **skills** and **memory**, and gate every sensitive action behind
-  a human. Then let each inbound thread run itself.
+  **connectors** into the systems an issue can touch, encode product knowledge as
+  **skills** and **memory**, and gate sensitive actions behind a human. Each
+  inbound thread then runs in its own session.
 </Callout>
 
-## Guardrails: safe enough for production
+## Guardrails
 
-Handing an agent your codebase, Stripe, and your support inbox at once is a
-security question, not just a product one. It's answerable on Kortix because the
-controls are built in, not bolted on:
+Giving an agent access to the codebase, Stripe, and the support inbox is a
+security question as much as a product one. The controls on Kortix:
 
-- **Isolation.** Every thread runs in its own microVM sandbox on its own branch.
-  A session can install, run, and experiment to reproduce a bug — and only what
-  it's explicitly allowed to send ever leaves.
-- **Scoped secrets.** The Plain, Stripe, and GitHub credentials live encrypted in
-  the Secrets Manager, injected into the sandbox at runtime, never exposed to the
-  model or the logs.
-- **Human approval gates.** The irreversible actions — money, account state —
-  don't happen without a person clicking approve.
-- **Everything is code.** The agent's persona, its skills, and its permissions
-  are files in the repo — reviewable, versioned, and changed only through a
-  reviewed **change request**, never a hidden dashboard setting.
+- **Isolation.** Each thread runs in its own microVM sandbox on its own branch. A
+  session can install, run, and experiment to reproduce a bug, and only what it's
+  explicitly allowed to send leaves the sandbox.
+- **Scoped secrets.** The Plain, Stripe, and GitHub credentials are encrypted in
+  the secrets manager and injected into the sandbox at runtime, never exposed to
+  the model or the logs.
+- **Human approval gates.** Irreversible actions (money, account state) require a
+  person to approve.
+- **Everything is code.** The agent's persona, skills, and permissions are files
+  in the repo — versioned and changed through a reviewed **change request**
+  rather than a dashboard setting.
 
 <Figure
   caption="A refund held at a human approval gate before it executes"
-  aspect="16/9"
+  src="/usecases/support/support_2.JPEG"
 />
 
 ## The outcome
 
 <StatGrid>
-  <Stat value="24/7" label="Coverage, without a night shift" />
-  <Stat value="First-touch" label="Most inbound threads resolved before a human opens them" />
-  <Stat value="3 systems" label="Product knowledge, Stripe, and the codebase — in one agent" />
+  <Stat value="24/7" label="Coverage without a night shift" />
+  <Stat value="First-touch" label="Many inbound threads resolved before a human opens them" />
+  <Stat value="3 systems" label="Product knowledge, Stripe, and the codebase in one agent" />
 </StatGrid>
 
-The support queue stopped being a tax on engineering. The agent handles the long
-tail of "needs real investigation" tickets that used to pull a senior engineer
-off their work — and when it does escalate, it escalates with the diagnosis
-already done. Customers get an answer to the actual question, fast, at any hour.
+The agent handles the investigation-heavy tickets that used to pull a senior
+engineer off their work, and when it escalates, it escalates with the diagnosis
+attached. Customers get an answer to the question at any hour.
 
-## Why this is hard to build anywhere else
-
-A help-desk bot can read your docs. It can't safely be handed the codebase,
-Stripe, and your support inbox at once — because it has no isolation to contain a
-session, no secrets manager to broker the tokens, no approval gates to hold back
-the irreversible actions, and no memory to get better with every resolved thread.
-
-Kortix has all four. That's what turns "a chatbot on the help center" into a
-member of the support team that actually closes the loop — and it's the same
-foundation you'd build your own support agent on.
+The setup relies on four pieces: sandbox isolation to contain each session, a
+secrets manager to broker tokens, human approval gates for irreversible actions,
+and memory that improves as threads are resolved.

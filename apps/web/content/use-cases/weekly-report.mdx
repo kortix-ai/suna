@@ -1,0 +1,146 @@
+---
+title: "How we auto-generate the weekly metrics report"
+description: The reporting agent we run on Kortix — connected to our Postgres database and Slack. Every Monday it queries the metrics, writes the report with commentary on what moved, and posts it.
+date: "2026-05-20"
+author: team
+tags:
+  - Data
+  - Case Study
+  - Ops
+---
+
+Every team has a weekly metrics report, and someone spends part of their Monday
+building it: running the same queries, dropping the numbers into a template, and
+writing a line or two about what changed. It's routine, it's on a schedule, and
+it's exactly the kind of thing that gets skipped the week it's most needed.
+
+We run a reporting agent on Kortix that builds it. A Monday cron queries the
+metrics from our Postgres database, writes the weekly report with commentary on
+what moved and why, and posts it to Slack. Access to the database is read-only.
+This write-up covers how the setup works: the trigger, the session model, and the
+guardrails.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">A Monday cron</Fact>
+  <Fact label="Connected systems">Postgres · Slack</Fact>
+  <Fact label="Mode">Cron-driven · read-only database access</Fact>
+</KeyFacts>
+
+## The problem
+
+The weekly report is low-skill, high-consistency work: the same queries, the same
+layout, every week. Done by hand it eats an hour of someone's Monday, and the week
+things are busiest is the week it's most likely to slip — which is usually the
+week the numbers most needed a look.
+
+The common fixes are incomplete. A static dashboard shows the numbers but doesn't
+say what moved or why, so someone still has to read it and write the summary. A
+scheduled SQL job can post the figures but not the commentary. The interpretation
+— what changed, whether it matters — is the part that takes a person, and it's the
+part that gets dropped.
+
+## What we built
+
+On Kortix, a Monday cron triggers a reporting agent. Each run spawns an isolated
+session (a cloud sandbox) with scoped, read-only access to the Postgres database
+and permission to post to one Slack channel. The agent runs the metric queries,
+compares them against the prior weeks, writes commentary on what moved, and posts
+the report to Slack. It cannot write to the database.
+
+<Figure
+  caption="The reporting agent posting the weekly metrics report to Slack"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Connect a Monday cron as the trigger">
+
+A scheduled **trigger** fires the project every Monday morning. Each firing spawns
+a fresh **session** in its own sandbox. One run, one disposable machine, so
+nothing carries over between weeks and the report is built from scratch each time.
+
+</Step>
+<Step title="Give the agent the report playbook">
+
+What the report contains lives as **skills** and **memory** that travel with the
+agent: the metric definitions, the queries, the layout, and what counts as a
+notable move worth calling out. As the metrics we care about change, we write it
+down and the agent picks it up on the next run.
+
+</Step>
+<Step title="Connect the systems the report needs">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Query Postgres read-only** — run the metric queries against a read-only role,
+  pulling this week's numbers and the prior weeks for comparison.
+- **Compute the deltas** — compare against recent history to find what moved and
+  by how much, inside the sandbox.
+- **Write the commentary** — turn the deltas into plain-language notes on what
+  changed and whether it's worth attention.
+- **Post to Slack** — the report and its commentary land in the team channel as a
+  single message.
+
+</Step>
+<Step title="Set the guardrails">
+
+The database connector is **read-only**: the agent queries but cannot insert,
+update, or delete, and its role is scoped to the metrics tables. It posts to one
+Slack channel and nothing else. Credentials are encrypted in the secrets manager
+and injected at runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Let each Monday build its own report">
+
+With that in place, every Monday the agent runs the queries, computes the deltas
+against recent weeks, writes commentary on what moved, and posts the report to
+Slack before the team logs on — the numbers and a plain-language read of them in
+one message. No one spends their Monday assembling it.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A Monday **trigger** spawns a session with scoped **connectors**: a read-only
+  role into Postgres and a single Slack channel out. The report playbook is encoded
+  as **skills** and **memory**. The agent queries, interprets, and posts — with no
+  path to write to the database.
+</Callout>
+
+## Guardrails
+
+The agent reads production data, so the access is scoped and contained:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session queries
+  the metrics and drafts the report; only the Slack message leaves the sandbox.
+- **Scoped secrets.** The Postgres and Slack credentials are encrypted in the
+  secrets manager and injected into the sandbox at runtime, never exposed to the
+  model or the logs.
+- **Read-only database access.** The database role can select and nothing else —
+  no insert, update, or delete — and it's scoped to the metrics tables. The report
+  cannot change the data it reports on.
+- **Everything is code.** The agent's configuration, skills, and permissions are
+  files in the repo, versioned and changed through a reviewed **change request**
+  rather than a dashboard setting.
+
+<Figure
+  caption="The weekly report in Slack with commentary on what moved"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every Monday" label="The report built and posted before the team logs on" />
+  <Stat value="With commentary" label="What moved and whether it matters, not just numbers" />
+  <Stat value="Read-only" label="Production metrics queried, never written" />
+</StatGrid>
+
+The weekly report stops depending on someone having a free Monday, and it arrives
+with a read of what changed rather than a table to interpret. The team starts the
+week looking at the movement that matters instead of assembling the numbers by
+hand.

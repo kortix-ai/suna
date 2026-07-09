@@ -1,0 +1,150 @@
+---
+title: "How we turn feedback into a roadmap"
+description: On a schedule, an agent gathers feedback from support, public reviews, and a Slack channel, clusters it into themes with representative quotes and counts, and creates or updates a Linear issue per theme.
+date: "2026-05-20"
+author: team
+tags:
+  - Product
+  - Case Study
+  - Team
+---
+
+Product feedback arrives everywhere: support threads, public reviews, a Slack
+channel where people drop what they hear. The same request shows up in all three,
+worded differently each time, and never gets counted. A theme that a hundred
+people asked for looks the same as a one-off, because nothing pulls the mentions
+together.
+
+We run a feedback agent on Kortix that gathers those sources on a schedule,
+clusters them into themes, and keeps a Linear issue per theme up to date. It reads
+the feedback and writes to Linear; people still own prioritization. This is how we
+keep our own roadmap grounded in what users actually ask for.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Scheduled cron</Fact>
+  <Fact label="Connected systems">Plain · G2 / app stores · Slack · Linear</Fact>
+  <Fact label="Mode">Reads feedback · writes Linear issues</Fact>
+</KeyFacts>
+
+## The problem
+
+Feedback is scattered across support threads in Plain, public reviews on G2 and
+the app stores, and an internal Slack feedback channel. The same underlying
+request appears in all of them, phrased differently, so it never gets counted. A
+theme that keeps recurring is indistinguishable from a single loud comment.
+
+The common approaches don't add up to a roadmap. Reading each source by hand is
+slow and inconsistent, and whoever reads it weighs it differently. A tag in the
+support tool captures support but not reviews or Slack. A spreadsheet of feature
+requests goes stale the moment someone stops maintaining it, and it still doesn't
+tell you how many people asked for the same thing.
+
+## What we built
+
+On Kortix, a scheduled cron triggers an agent. It spawns an isolated session (a
+cloud sandbox) with read access to Plain, the public review sources, and the Slack
+feedback channel, and write access to Linear. It gathers the feedback, clusters it
+into themes with representative quotes and counts, and creates or updates a Linear
+issue per theme, so the same request is deduplicated and quantified instead of
+scattered.
+
+<Figure
+  caption="A Linear issue for a theme with representative quotes and a mention count"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Run on a schedule">
+
+A **cron trigger** fires the agent on a schedule. Each firing spawns a fresh
+**session** in its own sandbox. One run pulls the current feedback, reconciles it
+against the existing themes in Linear, and updates them. Nothing carries over
+between runs except what's written to Linear.
+
+</Step>
+<Step title="Give the agent the clustering rules">
+
+How we group feedback lives as **skills** and **memory** that travel with the
+agent: what makes two differently-worded requests the same theme, how to pick a
+representative quote, how to title an issue, and how to match new feedback to an
+existing theme instead of creating a duplicate. As our themes evolve, we write it
+down and the clustering stays consistent.
+
+</Step>
+<Step title="Connect the sources and Linear">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Read support from Plain** — recent threads, for the requests and complaints
+  users raise directly.
+- **Read public reviews** — G2 and the app stores, for what users say in the open.
+- **Read the Slack feedback channel** — the internal channel where the team drops
+  what they hear.
+- **Write to Linear** — create a new issue for a new theme, or update the count and
+  quotes on an existing one.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent is **read-only** on every source and its only write is to Linear, where
+it creates and updates issues. It does not set priority, assign owners, or close
+issues — those stay with people. Credentials are encrypted in the Secrets Manager
+and injected at runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Keep one issue per theme">
+
+With that in place, each run gathers the latest feedback, clusters it, and keeps
+one Linear issue per theme current: representative quotes, a running count, and
+the sources it came from. The same request stops being scattered across three
+systems and becomes one quantified issue the team can weigh against the rest.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A scheduled **cron** spawns a session with read **connectors** into Plain, the
+  public reviews, and Slack, and a write connector into Linear. The clustering
+  lives as **skills** and **memory**. The agent quantifies the themes; people own
+  what to build.
+</Callout>
+
+## Guardrails
+
+The agent reads several feedback sources and writes to Linear, so its access is
+scoped to exactly that:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session can
+  reach only the sources it's scoped to, and only the Linear writes leave the
+  sandbox.
+- **Scoped secrets.** The Plain, review-source, Slack, and Linear credentials are
+  encrypted in the Secrets Manager and injected into the sandbox at runtime, never
+  exposed to the model or the logs.
+- **Read-only sources, scoped writes.** The feedback sources are read-only; the
+  only write is creating and updating Linear issues. The agent does not prioritize,
+  assign, or close.
+- **Everything is code.** The agent's clustering rules, skills, and per-system
+  permissions are files in the repo, versioned and changed through a reviewed
+  **change request** rather than a dashboard setting.
+
+<Figure
+  caption="Themes ranked by mention count, each linked to its Linear issue"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every run" label="Feedback gathered, clustered, and reconciled to Linear" />
+  <Stat value="One per theme" label="The same request deduplicated instead of scattered" />
+  <Stat value="4 sources" label="Support, reviews, and Slack into one issue tracker" />
+</StatGrid>
+
+Feedback that used to sit unread across support, reviews, and Slack now arrives as
+a set of quantified themes, each a single Linear issue with quotes and a count.
+The agent does the gathering and counting; the team still owns which themes become
+roadmap.

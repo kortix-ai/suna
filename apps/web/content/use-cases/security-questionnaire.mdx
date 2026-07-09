@@ -1,0 +1,156 @@
+---
+title: "How we answer security questionnaires"
+description: An agent we run on Kortix — connected to the inbound questionnaire and our knowledge base of vetted answers and policies. It parses each question, drafts responses in the vendor's format, and flags anything it can't answer confidently.
+date: "2026-04-15"
+author: team
+tags:
+  - Sales
+  - Case Study
+  - Enterprise
+---
+
+Security questionnaires arrive in the middle of a sales cycle and hold the deal up
+until they're answered. The questions are mostly ones we've answered before —
+about our encryption, access controls, data handling, and policies — but they come
+in different formats each time, a SIG one deal, a CAIQ the next, a custom
+spreadsheet after that, and each has to be filled out in its own layout.
+
+We run an agent on Kortix that drafts the answers from our vetted knowledge base.
+This is how we answer our own security questionnaires, including the connections
+and guardrails involved.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Each inbound questionnaire</Fact>
+  <Fact label="Connected systems">Inbound questionnaire · Knowledge base</Fact>
+  <Fact label="Mode">Drafts only · security reviews before it's sent</Fact>
+</KeyFacts>
+
+## The problem
+
+Most of a questionnaire is answers we already have. The same questions about
+encryption at rest, SSO, incident response, and data retention come up on nearly
+every one, and we've written vetted answers for them. But each questionnaire uses
+a different format, so someone has to read every question, find the matching
+approved answer, and paste it into the vendor's own layout — a SIG workbook, a
+CAIQ, or a custom spreadsheet.
+
+The common fixes are incomplete. A shared answer library still needs a person to
+match each question to it by hand. Copying last deal's responses risks pulling an
+answer that no longer fits. A generic AI drafter with no grounding will write
+confident answers that aren't the vetted ones, which is exactly what can't happen
+on a security document.
+
+## What we built
+
+On Kortix, each inbound questionnaire triggers an agent. It spawns an isolated
+session (a cloud sandbox) with access to our knowledge base of vetted answers and
+policy docs. It parses each question, matches it to our approved answers and
+policies, drafts responses in the vendor's own format — SIG, CAIQ, or a custom
+spreadsheet — and flags anything it can't answer confidently for a human. It
+returns a filled draft for security to review before it goes back.
+
+<Figure
+  caption="The agent filling a CAIQ, with low-confidence rows flagged for review"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Trigger on the inbound questionnaire">
+
+A questionnaire arriving as an email, a spreadsheet, or a portal link is the
+**trigger**, and each one spawns a fresh **session** in its own sandbox. The agent
+parses the incoming document, whatever its format, into a list of questions to
+answer. One questionnaire maps to one session on one disposable machine.
+
+</Step>
+<Step title="Ground the agent in our vetted answers">
+
+Our approved answers and policy docs live as **skills** and **memory** that travel
+with the agent: the vetted response to each common question, the policies behind
+them, and the standards we map to. The agent answers only from this grounded set,
+so a drafted answer is one we've already approved rather than one the model
+invented. When a policy changes, we update it and the agent uses the new wording.
+
+</Step>
+<Step title="Connect the questionnaire and the knowledge base">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Read the inbound questionnaire** — from the email, spreadsheet, or portal it
+  arrived in, parsed into individual questions.
+- **Search the knowledge base** — the vetted answers and policy docs to match each
+  question against.
+- **Draft in the vendor's format** — writing each response back into the SIG,
+  CAIQ, or custom layout it came in.
+- **Flag low-confidence questions** — anything without a confident match marked
+  for a person to answer.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent **drafts only**: it fills the questionnaire and flags what it's unsure
+of, and it never sends. Anything it can't answer confidently from the vetted set
+is left for a person rather than guessed. The completed draft stops at a **human
+approval gate** — security reviews it before it goes back to the prospect.
+Credentials are encrypted in the Secrets Manager and injected at runtime, never
+shown to the model or written to logs.
+
+</Step>
+<Step title="Return a filled draft for review">
+
+With that in place, an inbound questionnaire comes back as a filled draft in the
+vendor's own format, with each answer drawn from our vetted set and the
+low-confidence rows flagged. Security reviews the draft, answers the flagged
+questions, and sends it. The matching and formatting are done; the sign-off stays
+with a person.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  An inbound questionnaire is the **trigger** that spawns a session with scoped
+  **connectors** into the document and our knowledge base. The vetted answers and
+  policies are encoded as **skills** and **memory**. The agent drafts and flags;
+  security approves before anything is sent.
+</Callout>
+
+## Guardrails
+
+The agent drafts a security document from our own vetted answers, so the access is
+scoped and contained:
+
+- **Isolation.** Every questionnaire runs in its own per-task microVM sandbox. The
+  session reads the inbound document and the knowledge base it's scoped to, and
+  only the filled draft leaves the sandbox.
+- **Scoped secrets.** The credentials for the questionnaire source and the
+  knowledge base are encrypted in the Secrets Manager and injected into the sandbox
+  at runtime, never exposed to the model or the logs.
+- **Human approval gate.** The completed draft is reviewed by security before it
+  goes back to the prospect, and any low-confidence question is left for a person
+  rather than guessed.
+- **Everything is code.** The agent's configuration, skills, and permissions are
+  files in the repo, versioned and changed through a reviewed **change request**
+  rather than a dashboard setting.
+
+<Figure
+  caption="A returned draft with vetted answers filled and flagged rows left for security"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every questionnaire" label="Parsed, matched, and drafted in the vendor's format" />
+  <Stat value="Grounded" label="Answers drawn only from our vetted set" />
+  <Stat value="Drafts only" label="Security reviews before anything is sent" />
+</StatGrid>
+
+Inbound questionnaires now come back as filled drafts in whatever format they
+arrived, with each answer drawn from our vetted knowledge base and the uncertain
+ones flagged. Security spends its time reviewing and answering the hard questions
+rather than matching and pasting, and nothing goes back to a prospect without a
+person's sign-off.

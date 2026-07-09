@@ -5,9 +5,31 @@ import { PostByline } from '@/components/blog/post-byline';
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import type { Post } from '@/lib/blog';
 import { cn } from '@/lib/utils';
+import { USE_CASE_COVERS } from './covers';
 
-/** Cover image, or a branded gradient field when a use case has none. */
-function Cover({ post, className }: { post: Post; className?: string }) {
+/**
+ * Cover art with three tiers, most specific first:
+ *  1. a custom per-slug cover component (USE_CASE_COVERS) — put anything here;
+ *  2. the frontmatter `cover` image;
+ *  3. a branded gradient placeholder.
+ */
+export function UseCaseCover({
+  post,
+  featured,
+  className,
+}: {
+  post: Post;
+  featured?: boolean;
+  className?: string;
+}) {
+  const Custom = USE_CASE_COVERS[post.slug];
+  if (Custom) {
+    return (
+      <div className={cn('bg-muted relative overflow-hidden', className)}>
+        <Custom post={post} featured={featured} />
+      </div>
+    );
+  }
   if (post.data.cover) {
     return (
       <div className={cn('bg-muted relative overflow-hidden', className)}>
@@ -43,15 +65,16 @@ export function UseCaseCard({ post, featured = false }: { post: Post; featured?:
     <Link
       href={post.url}
       className={cn(
-        'group border-border bg-card hover:border-foreground/20 flex flex-col overflow-hidden rounded-sm border transition-colors duration-200',
+        'group border-border bg-card hover:border-foreground/20 flex flex-col overflow-hidden rounded-2xl border transition-colors duration-200',
         featured && 'md:flex-row',
       )}
     >
-      <Cover
+      <UseCaseCover
         post={post}
+        featured={featured}
         className={cn(
           'shrink-0',
-          featured ? 'aspect-[16/10] md:aspect-auto md:w-1/2' : 'aspect-[16/9]',
+          featured ? 'aspect-[16/10] md:aspect-auto md:w-1/2' : 'aspect-[4/3]',
         )}
       />
       <div className={cn('flex flex-1 flex-col p-6', featured && 'md:justify-center md:p-10')}>

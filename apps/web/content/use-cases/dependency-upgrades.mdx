@@ -1,0 +1,145 @@
+---
+title: "How we keep dependencies up to date"
+description: The upgrade agent we run on Kortix — a weekly cron that opens dependency PRs, runs the full suite in a sandbox, and only opens the PR when it's green.
+date: "2026-02-11"
+author: team
+tags:
+  - Engineering
+  - Case Study
+  - DevTools
+---
+
+Dependencies drift. Left alone, a project falls months behind, security patches
+pile up, and the eventual upgrade turns into a large, risky change nobody wants
+to own. The usual bots open a PR for every bump and leave a human to work out
+whether each one is safe, which mostly means the PRs sit unreviewed.
+
+We run an upgrade agent on Kortix that does the checking before it asks for a
+review. A weekly cron proposes upgrades, applies them in an isolated sandbox,
+runs the full suite, and only opens a PR when the change is green. This write-up
+covers how the setup works: the trigger, the session model, and the guardrails.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">A weekly cron</Fact>
+  <Fact label="Connected systems">GitHub · CI</Fact>
+  <Fact label="Mode">Cron-driven · PR opened only when green</Fact>
+</KeyFacts>
+
+## The problem
+
+Keeping dependencies current is work no one schedules. A version-bump bot opens a
+PR per package, but it can't tell whether the bump breaks anything — that check
+still falls to a person, so the PRs queue up and the project drifts anyway.
+
+The common fixes are incomplete. Ignoring upgrades until something forces the
+issue turns a routine bump into a migration. Merging bot PRs on green CI trusts
+whatever tests already exist, not that the upgrade is actually safe. Doing it by
+hand is reliable but slow, and it's the first thing dropped when the team is busy.
+
+## What we built
+
+On Kortix, a weekly cron triggers an upgrade agent. Each run spawns an isolated
+session (a cloud sandbox) with scoped access to the repository and CI. The agent
+checks which dependencies are behind, applies the upgrades on a branch, installs
+clean, and runs the full suite inside the sandbox. It opens a PR only when the
+change is green; a human merges.
+
+<Figure
+  caption="The upgrade agent opening a green dependency PR"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Connect a weekly cron as the trigger">
+
+A scheduled **trigger** fires the project once a week. Each firing spawns a fresh
+**session** in its own sandbox, seeded with a clean checkout of the default
+branch. One run, one disposable machine, so nothing carries over between weeks and
+independent upgrade sets can run in parallel.
+
+</Step>
+<Step title="Give the agent the upgrade playbook">
+
+How we handle upgrades lives as **skills** and **memory** that travel with the
+agent: which packages are pinned on purpose, how to run the suite, the order to
+apply major versions in, and migrations that have bitten us before. When an
+upgrade needs a manual step, we write it down and the agent applies it on the next
+run.
+
+</Step>
+<Step title="Connect the systems the upgrade needs">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Read the manifests** — resolve which dependencies are behind and how far,
+  separating patch and minor bumps from majors.
+- **Apply and install in the sandbox** — update the lockfile and install clean on
+  a branch, with the resolution output captured in full.
+- **Run the full suite** — unit, integration, and e2e inside the sandbox, so a
+  bump that breaks a path fails here rather than in review.
+- **Open a PR on GitHub** — the branch, the changelog for each bump, and the green
+  result post as a pull request.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent opens a PR only when the suite passes; a failing upgrade is dropped or
+split, not pushed for a human to debug. It never merges — the merge is a **human
+approval gate**. Credentials are encrypted in the secrets manager and injected at
+runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Let the weekly run happen">
+
+With that in place, each week the agent finds what's behind, applies the upgrades,
+runs the suite in the sandbox, and opens a PR that's already been proven green —
+with the bumps grouped and the changelog attached. A bump that breaks a test never
+becomes a PR; it comes back flagged with the failure instead.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A weekly **trigger** spawns a session with scoped **connectors** into the repo
+  and CI. The upgrade playbook is encoded as **skills** and **memory**. The agent
+  proves the change green in its sandbox and a human owns the merge.
+</Callout>
+
+## Guardrails
+
+The agent changes dependencies and runs code, so the access is scoped and
+contained:
+
+- **Isolation.** Every run happens in its own microVM sandbox on its own branch.
+  The session can install, resolve, and run the suite to prove an upgrade; only
+  the branch and result leave the sandbox.
+- **Scoped secrets.** The GitHub and CI credentials are encrypted in the secrets
+  manager and injected into the sandbox at runtime, never exposed to the model or
+  the logs.
+- **PR-gated.** The agent opens a pull request and stops. It never merges and
+  never pushes to the default branch; a human owns the merge.
+- **Everything is code.** The agent's configuration, skills, and permissions are
+  files in the repo, versioned and changed through a reviewed **change request**
+  rather than a dashboard setting.
+
+<Figure
+  caption="A merged upgrade PR with the suite green and the changelog attached"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Weekly" label="Upgrades proposed on a schedule, not when something breaks" />
+  <Stat value="Green-only" label="PRs opened only after the full suite passes" />
+  <Stat value="Human merge" label="The agent proves the change; the team decides" />
+</StatGrid>
+
+Dependencies stay current without anyone scheduling the work, and the upgrade PRs
+that land in review have already been run against the full suite. Reviewers see a
+green change with the changelog attached instead of a bump they have to check out
+and test by hand.

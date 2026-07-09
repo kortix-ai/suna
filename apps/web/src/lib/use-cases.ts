@@ -31,13 +31,23 @@ function readingTimeFor(contentDir: string, slug: string): number {
 }
 
 function toPost(page: any): Post {
-  const data = page.data as PostFrontmatter;
+  const d = page.data as PostFrontmatter;
   const slug = page.slugs[0] ?? '';
+  // Pick only serializable frontmatter — fumadocs `page.data` also carries the
+  // compiled MDX `body` (a function), which can't cross into a Client Component.
   return {
     slug,
     url: page.url,
-    data,
-    author: resolveAuthor(data.author),
+    data: {
+      title: d.title,
+      description: d.description,
+      date: d.date,
+      author: d.author,
+      tags: d.tags,
+      cover: d.cover,
+      draft: d.draft,
+    },
+    author: resolveAuthor(d.author),
     readingTime: readingTimeFor(USE_CASES_DIR, slug),
   };
 }

@@ -1,0 +1,151 @@
+---
+title: "How we turn meetings into notes and action items"
+description: The meeting agent we run on Kortix — connected to Google Calendar, the call transcript, and Linear. After each call it writes structured notes and files action items as tickets assigned to the right people.
+date: "2026-04-01"
+author: team
+tags:
+  - Productivity
+  - Case Study
+  - Team
+---
+
+Most of what a meeting decides is lost within a day. The notes get taken by
+whoever remembers to, the action items live in someone's head, and the follow-up
+happens only if a person turns the conversation into tasks afterward — which is
+the step that gets skipped when the next meeting starts.
+
+We handle this by putting an agent on the calendar. After each call it writes
+structured notes and files the action items as tickets, assigned to the people
+who own them. This writes up how we run that on Kortix — the connections, the
+steps, and the guardrails.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Connected systems">Google Calendar · Transcript · Linear</Fact>
+  <Fact label="Trigger">Meeting ends</Fact>
+  <Fact label="Mode">Trigger-driven · assignee-routed</Fact>
+</KeyFacts>
+
+## The problem
+
+Turning a conversation into notes and tasks is real work, and it lands on
+whoever's least busy at the end of the call — which on a small team is nobody.
+Decisions get made, owners get named out loud, and then the meeting ends and none
+of it is written down. A week later the thing everyone agreed on hasn't started
+because it was never a task.
+
+Recording the call solves the record but not the follow-up: nobody rewatches an
+hour of video to find the three things they agreed to do. The gap is between the
+transcript and the tickets, and closing it by hand is exactly the chore that
+falls off.
+
+## What we built
+
+Our calendar in **Google Calendar** is connected to an agent running on Kortix.
+When a call ends, it spawns its own isolated session — a cloud sandbox — with
+scoped access to what note-taking needs: the event, the transcript, and Linear.
+It writes structured notes, pulls out the action items, and files each one as a
+ticket assigned to the person who owns it.
+
+<Figure
+  caption="The meeting agent turning a transcript into notes and tickets"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Connect the calendar as the trigger">
+
+A signed webhook tied to Google Calendar points at the project. When a meeting
+ends, it fires, and each firing spawns a fresh **session** in its own sandbox,
+seeded with the event and its transcript. One meeting, one session, one
+disposable machine. Sessions don't share state, and back-to-back calls run as
+parallel sessions.
+
+</Step>
+<Step title="Give the agent our conventions">
+
+How we take notes lives as **skills** and **memory** loaded into every session:
+our notes structure, how we phrase an action item, who owns which area, and past
+meetings for context. The agent writes to that standard rather than inventing
+one, and the memory updates as projects move.
+
+</Step>
+<Step title="Connect what note-taking can touch">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Read the event and transcript** — attendees, agenda, and the full record of
+  what was said.
+- **Write structured notes** — decisions, discussion, and next steps in our
+  format, attached where the team looks.
+- **File tickets in Linear** — each action item becomes a ticket assigned to its
+  owner, linked back to the meeting.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent writes notes and files tickets, but it only creates — it doesn't close,
+reassign, or touch existing work. An action item it can't confidently assign gets
+flagged for a person rather than routed to a guess. Credentials are encrypted in
+the secrets manager and injected at runtime, never shown to the model or written
+to logs.
+
+</Step>
+<Step title="Let each meeting run">
+
+With that in place, a finished call turns into a set of notes and a handful of
+tickets before the next meeting starts. "Sarah will handle the migration" becomes
+a ticket assigned to Sarah. "We decided to ship Friday" becomes a line in the
+notes. The follow-up exists as tasks instead of as a memory that fades.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  Connect the calendar via a **trigger** on meeting end, give the agent scoped
+  **connectors** into the transcript, the notes, and Linear, encode our notes
+  conventions as **skills** and **memory**, and route each action item to the
+  person who owns it.
+</Callout>
+
+## Guardrails
+
+Giving an agent the ability to file tickets and assign work is a trust question.
+The relevant controls on Kortix:
+
+- **Isolation.** Each meeting runs in its own microVM sandbox. The session can
+  read the transcript and context it needs, and only the notes and tickets it
+  produces leave the sandbox.
+- **Scoped secrets.** The Calendar and Linear credentials are encrypted in the
+  secrets manager and injected into the sandbox at runtime, never exposed to the
+  model or the logs.
+- **Human approval gate.** An action item the agent can't confidently assign is
+  flagged for a person instead of routed to a guess.
+- **Everything is code.** The agent's persona, skills, and permissions are files
+  in the repo — versioned and changed through a reviewed **change request**, not a
+  dashboard setting.
+
+<Figure
+  caption="An unassignable action item flagged for a person rather than guessed"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every call" label="Notes written and action items filed" />
+  <Stat value="Assigned" label="Tickets routed to the person who owns them" />
+  <Stat value="3 systems" label="The calendar, the transcript, and Linear in one agent" />
+</StatGrid>
+
+The follow-up that used to depend on someone remembering now arrives as notes and
+tickets minutes after the call ends. The team reads a clean summary and finds
+their tasks already in Linear, instead of reconstructing the meeting from memory a
+week later.
+
+The setup relies on four pieces: sandbox isolation per meeting, a secrets manager
+to broker the Calendar and Linear tokens, a flag for anything the agent can't
+confidently assign, and memory that carries context forward across meetings.

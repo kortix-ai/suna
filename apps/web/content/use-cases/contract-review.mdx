@@ -1,0 +1,146 @@
+---
+title: "How we do first-pass contract review"
+description: A new contract in a Drive folder triggers an agent to summarize it, flag non-standard clauses against our playbook, and post the summary to the legal channel, drafting redlines for a lawyer to sign off.
+date: "2026-06-17"
+author: team
+tags:
+  - Legal
+  - Case Study
+  - Enterprise
+---
+
+Contracts arrive faster than they can be read closely. A vendor agreement, an
+NDA, or an order form lands in a shared Drive folder, and someone on the legal
+team has to open it, read it against what we consider standard, flag the clauses
+that deviate, and summarize it for whoever's driving the deal. The first pass is
+mechanical but time-consuming, and it's the step that stands between a contract
+arriving and a lawyer being able to focus on what actually matters in it.
+
+We handle this by tying the first pass to the event that starts it: a new file in
+the folder. This writes up how we run that on Kortix — the connections, the
+steps, and the guardrails — so you can set up the same review.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Trigger">A new contract in a Drive folder</Fact>
+  <Fact label="Connected systems">Google Drive · Slack</Fact>
+  <Fact label="Mode">Trigger-driven · Lawyer-gated</Fact>
+</KeyFacts>
+
+## The problem
+
+The common approaches each fall short. A shared inbox where contracts pile up
+means the first pass waits on whoever has time. A generic AI summarizer produces
+a readout that doesn't know our positions, so it flags nothing that matters to
+us. And skipping the first pass entirely puts a lawyer straight into a full read
+of every contract, including the routine ones.
+
+We wanted each contract summarized and checked against our own playbook the
+moment it lands, with the summary where the team works and the redlines left for
+a lawyer to sign off.
+
+## What we built
+
+On Kortix, a new contract in a Drive folder triggers an agent. Each contract runs
+in its own isolated session — a cloud sandbox — with scoped access to Drive and
+Slack. The agent reads the contract, summarizes it, flags clauses that deviate
+from our playbook, and posts the summary to the legal channel. It drafts redlines
+on the non-standard clauses, but a lawyer signs off before anything goes back to
+the counterparty.
+
+<Figure
+  caption="The agent summarizing a new contract and flagging non-standard clauses against our playbook"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Connect the Drive folder as the trigger">
+
+A signed webhook watches the contracts folder in Drive. A new file fires it, and
+each firing spawns a fresh **session** in its own sandbox, seeded with the
+document. One contract, one session, one disposable machine. Nothing carries over
+between runs.
+
+</Step>
+<Step title="Give the agent our contract playbook">
+
+Our standard positions — which clauses are routine, which terms we push back on,
+what an acceptable liability cap or notice period looks like — are stored as
+**skills** and **memory** that load into every session. The agent checks each
+contract against that playbook rather than a generic notion of "standard," and it
+updates as our positions change.
+
+</Step>
+<Step title="Connect what a review can touch">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Read the contract in Drive** — the full document, not just an excerpt.
+- **Draft redlines** — proposed edits on the clauses that deviate from the
+  playbook.
+- **Post to Slack** — the summary and flags filed to the legal channel.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent produces a first pass, not a decision. Redlines are drafted, never
+sent — every one stops at a **human approval gate** for a lawyer to sign off
+before it reaches the counterparty. It reads the contract and writes its summary
+and drafts; it doesn't act on the deal. Credentials are encrypted in the secrets
+manager and injected at runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Let each contract come back reviewed">
+
+With that in place, a contract landing in the folder comes back as a summary in
+the legal channel, the non-standard clauses flagged against our playbook, and
+draft redlines attached for a lawyer to review. A vendor agreement becomes a
+readout and a set of proposed edits; the lawyer starts from the flags instead of
+a blank read.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  Connect the Drive folder via a **trigger**, give the agent scoped
+  **connectors** into Drive and Slack, encode the contract playbook as **skills**
+  and **memory**, and gate every redline behind a lawyer.
+</Callout>
+
+## Guardrails
+
+Giving an agent a first pass on contracts is a trust question. The relevant
+controls on Kortix:
+
+- **Isolation.** Every contract runs in its own microVM sandbox on its own
+  branch. The session can reach only what it's scoped to, and only the summary
+  and drafts it produces leave the sandbox.
+- **Scoped secrets.** Each credential is encrypted in the secrets manager,
+  injected into the sandbox at runtime, and never exposed to the model or the
+  logs.
+- **Human approval gate.** Redlines are drafted, never sent; a lawyer reviews and
+  signs off before anything reaches the counterparty.
+- **Everything is code.** The agent's persona, skills, and permissions are files
+  in the repo — versioned and changed through a reviewed **change request**, not
+  a dashboard setting.
+
+<Figure
+  caption="Draft redlines held for a lawyer to sign off before anything goes back"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every contract" label="Summarized and checked against the playbook on arrival" />
+  <Stat value="Lawyer-gated" label="Redlines drafted, never sent without sign-off" />
+  <Stat value="2 systems" label="Drive and Slack — one agent" />
+</StatGrid>
+
+The first pass that used to wait on whoever had time now arrives as a summary and
+a set of playbook-checked flags the moment a contract lands, with draft redlines
+attached. The lawyer starts from the flags instead of a cold read, and routine
+contracts stop consuming the time the tricky ones deserve.

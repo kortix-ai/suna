@@ -1,0 +1,148 @@
+---
+title: "How we follow up with every inbound lead"
+description: The sales agent we run on Kortix — connected to HubSpot, email, and Google Calendar. It researches each new lead, drafts a personalized follow-up, and offers a call slot, with a human approving the send.
+date: "2026-03-18"
+author: team
+tags:
+  - Sales
+  - Case Study
+  - Growth
+---
+
+Inbound leads have a short half-life. A form filled out on Tuesday is worth far
+more if the follow-up goes out Tuesday than if it goes out Friday, but a good
+follow-up takes research — who the company is, what they do, why they might have
+signed up — and that research is exactly what gets skipped when the pipeline is
+full.
+
+We handle this by putting an agent on every new lead. It researches the company,
+drafts a personalized follow-up, and offers a time to talk. This writes up how we
+run that on Kortix — the connections, the steps, and the guardrails.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Connected systems">HubSpot · Email · Google Calendar</Fact>
+  <Fact label="Trigger">New lead in HubSpot</Fact>
+  <Fact label="Mode">Trigger-driven · human-gated</Fact>
+</KeyFacts>
+
+## The problem
+
+The follow-up that converts is the one that shows we read the form and understood
+the company. That takes a few minutes of research per lead, and a few minutes
+times every inbound is more time than a growing team has. So follow-ups either go
+out generic or go out late, and both lose deals.
+
+Templates make the sending fast but not the personalization, which is the part
+that matters. Booking the call adds another round of back-and-forth on top. The
+work that moves a lead forward is the work that keeps slipping.
+
+## What we built
+
+Our lead pipeline in **HubSpot** is connected to an agent running on Kortix.
+Every new lead spawns its own isolated session — a cloud sandbox — with scoped
+access to what a follow-up needs: the lead record, the web for research, our
+email, and the team calendar. It researches the company, drafts a personalized
+message, and proposes a call slot. A human approves before it sends.
+
+<Figure
+  caption="The sales agent drafting a personalized follow-up from a new lead"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Connect HubSpot as the trigger">
+
+A signed webhook from HubSpot points at the project. Every new lead fires it, and
+each firing spawns a fresh **session** in its own sandbox, seeded with the lead
+record. One lead, one session, one disposable machine. Sessions don't share
+state, and a busy pipeline means more sessions running in parallel.
+
+</Step>
+<Step title="Give the agent our playbook">
+
+How we follow up lives as **skills** and **memory** loaded into every session:
+our positioning, the tone we write in, what a good qualifying question looks
+like, and follow-ups that landed before. The agent writes to that standard rather
+than inventing one, and the memory updates as deals move.
+
+</Step>
+<Step title="Connect what a follow-up can touch">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Research the company** — it reads the lead's site and public information to
+  understand what they do and why they signed up.
+- **Read and update HubSpot** — full lead context in, research notes back on the
+  record.
+- **Draft the email** — a personalized follow-up written to our playbook, ready
+  to send.
+- **Offer a slot on Google Calendar** — it checks real availability and proposes
+  a specific time to talk.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent researches and drafts freely, but nothing goes out on its own: every
+follow-up stops at a **human approval gate** as a draft for a person to review
+and send. Credentials are encrypted in the secrets manager and injected at
+runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Let each lead run">
+
+With that in place, a new lead arrives already worked: the company researched,
+the record updated, a personalized email drafted, and a call slot proposed
+against real availability. The person on sales reviews the draft, adjusts if they
+want, and sends — instead of starting each follow-up from a blank page.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  Connect the CRM via a **trigger** on new leads, give the agent scoped
+  **connectors** into HubSpot, email, and the calendar, encode the sales playbook
+  as **skills** and **memory**, and gate every send behind a human.
+</Callout>
+
+## Guardrails
+
+Giving an agent the ability to reach out to leads is a brand question as much as
+a sales one. The relevant controls on Kortix:
+
+- **Isolation.** Each lead runs in its own microVM sandbox. The session can
+  research and draft with the context it needs, and only the draft it produces
+  leaves the sandbox.
+- **Scoped secrets.** The HubSpot, email, and Calendar credentials are encrypted
+  in the secrets manager and injected into the sandbox at runtime, never exposed
+  to the model or the logs.
+- **Human approval gate.** No message reaches a lead without a person reviewing
+  the draft and sending it.
+- **Everything is code.** The agent's persona, skills, and permissions are files
+  in the repo — versioned and changed through a reviewed **change request**, not a
+  dashboard setting.
+
+<Figure
+  caption="A follow-up draft held at a human approval gate before it sends"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every lead" label="Researched and followed up, not just the easy ones" />
+  <Stat value="Same-day" label="Personalized follow-up ready while the lead is still warm" />
+  <Stat value="3 systems" label="HubSpot, email, and the calendar in one agent" />
+</StatGrid>
+
+Every inbound lead now arrives with the research done, a personalized draft
+written, and a call slot offered — waiting for a person to approve rather than
+sitting untouched. The team spends its time deciding which leads to push instead
+of doing the same research over and over.
+
+The setup relies on four pieces: sandbox isolation per lead, a secrets manager to
+broker the HubSpot, email, and Calendar tokens, a human approval gate before
+anything reaches a lead, and memory that improves as deals move.

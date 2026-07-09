@@ -1,0 +1,149 @@
+---
+title: "How we flag at-risk accounts"
+description: A daily cron scores accounts on leading churn signals across product usage, support, and billing, then posts a ranked at-risk list to Slack with a reason and a suggested next step for each.
+date: "2026-04-28"
+author: team
+tags:
+  - Customer Success
+  - Case Study
+  - Enterprise
+---
+
+Churn is usually visible before it happens. Usage tapers off, support threads get
+more frequent and more frustrated, a payment fails, a renewal approaches. The
+signals are there, but they sit in different systems, and no one is watching all
+of them at once. By the time an account cancels, the warning signs had been
+accumulating for weeks.
+
+We run a churn-risk agent on Kortix that reads those signals every day and posts a
+ranked at-risk list to our customer-success Slack channel. It only reads customer
+data; the single output is the Slack post. This is how we watch our own accounts.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Daily cron</Fact>
+  <Fact label="Connected systems">Postgres · Plain · Stripe · Slack</Fact>
+  <Fact label="Mode">Read-only · one Slack post per day</Fact>
+</KeyFacts>
+
+## The problem
+
+The signals that predict churn live in separate systems: product usage in
+Postgres, support friction in Plain, payment health in Stripe, renewal dates in
+billing. Each one is a partial view. An account with declining usage might be
+fine; an account with declining usage, a rising support load, and a renewal next
+month is not.
+
+The common approaches don't combine them. A usage dashboard shows one signal and
+leaves the reader to correlate the rest. A health score baked into one tool only
+sees that tool's data. Manual account reviews are thorough but happen quarterly,
+long after the signals first appeared, and depend on someone remembering to look.
+
+## What we built
+
+On Kortix, a daily cron triggers an agent. It spawns an isolated session (a cloud
+sandbox) with read-only access to Postgres, Plain, and Stripe, scores every
+account on leading churn signals — declining usage, rising support friction,
+missed or failed payments, an upcoming renewal — and posts a ranked at-risk list
+to the customer-success Slack channel, with the reason for each account and a
+suggested next step. It writes nothing back to customer systems.
+
+<Figure
+  caption="The daily at-risk list posted to the customer-success channel"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Run on a daily cron">
+
+A **cron trigger** fires the agent once a day. Each firing spawns a fresh
+**session** in its own sandbox. One day maps to one run on one disposable machine,
+so the score is recomputed from the current state every time and nothing carries
+over.
+
+</Step>
+<Step title="Give the agent the scoring rules">
+
+How we weigh the signals lives as **skills** and **memory** that travel with the
+agent: what counts as a usage decline, which support patterns matter, how a failed
+payment and an upcoming renewal combine, and what a good next step looks like for
+each kind of risk. When we learn which signals actually preceded a churn, we write
+it down and the scoring improves.
+
+</Step>
+<Step title="Connect the signal sources read-only">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent reads:
+
+- **Product usage from Postgres** — activity trends per account, to catch a decline
+  before it bottoms out.
+- **Support signals from Plain** — thread volume and tone, to catch rising
+  friction.
+- **Billing from Stripe** — missed or failed payments and the upcoming renewal
+  date.
+- **Posts to Slack** — the ranked at-risk list, with a reason and a suggested next
+  step per account.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent is **read-only** across every customer system. It has no write access to
+Postgres, Plain, or Stripe, so it cannot change an account, a ticket, or a
+subscription. Its only output is the Slack post. Credentials are encrypted in the
+Secrets Manager and injected at runtime, never shown to the model or written to
+logs.
+
+</Step>
+<Step title="Post the ranked list">
+
+With that in place, each morning brings one Slack post: accounts ranked by risk,
+each with the signals that put it there — the usage drop, the support thread, the
+failed payment, the renewal date — and a suggested next step. The customer-success
+team reads it and decides what to do. Nothing is written back automatically.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A daily **cron** spawns a session with read-only **connectors** into Postgres,
+  Plain, and Stripe. The scoring lives as **skills** and **memory**. The agent
+  reads everything and writes nothing but the Slack post.
+</Callout>
+
+## Guardrails
+
+The agent reads across every customer system, so its access is scoped and
+one-directional:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session can
+  reach only the systems it's scoped to, and only the Slack post leaves the
+  sandbox.
+- **Scoped secrets.** The Postgres, Plain, and Stripe credentials are encrypted in
+  the Secrets Manager and injected into the sandbox at runtime, never exposed to
+  the model or the logs.
+- **Read-only.** The connectors into customer data are read-only. The agent cannot
+  change an account, a ticket, or a subscription; it can only report.
+- **Everything is code.** The agent's scoring rules, skills, and per-system
+  permissions are files in the repo, versioned and changed through a reviewed
+  **change request** rather than a dashboard setting.
+
+<Figure
+  caption="An account's entry with its contributing signals and suggested next step"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every day" label="Accounts rescored on the current state of the data" />
+  <Stat value="Read-only" label="Nothing written back to any customer system" />
+  <Stat value="4 signals" label="Usage, support, billing, and renewal in one score" />
+</StatGrid>
+
+Churn signals that used to sit in four separate systems now arrive as one ranked
+list in the channel where the team already works, each account carrying the reason
+it surfaced and a suggested next step. The agent only reads; the people decide
+what to do about each account.

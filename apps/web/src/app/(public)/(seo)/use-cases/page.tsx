@@ -2,9 +2,8 @@ import type { Metadata } from 'next';
 
 import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
-import { UseCaseCard } from '@/components/use-cases/use-case-card';
+import { UseCasesBrowser } from '@/components/use-cases/use-cases-browser';
 import { UseCasesCta } from '@/components/use-cases/use-cases-cta';
 import { getAllUseCases } from '@/lib/use-cases';
 import { siteMetadata } from '@/lib/site-metadata';
@@ -48,7 +47,6 @@ export const metadata: Metadata = {
 
 export default function UseCasesIndexPage() {
   const useCases = getAllUseCases();
-  const [featured, ...rest] = useCases;
 
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -80,7 +78,7 @@ export default function UseCasesIndexPage() {
       />
 
       {/* Hero — animated letter field backdrop, like the marketing pages. */}
-      <section className="relative overflow-hidden px-6 pt-32 pb-12 sm:pt-36">
+      <section className="relative overflow-hidden px-5 pt-32 pb-12 sm:pt-36">
         <div className="absolute inset-0 z-0 mask-y-to-95%">
           <KortixLetterField seed={7412} />
         </div>
@@ -99,29 +97,10 @@ export default function UseCasesIndexPage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-6 py-10 sm:py-14 lg:px-0">
-        {useCases.length === 0 ? (
-          <EmptyState
-            title="No use cases yet"
-            description="Case studies and use cases are on the way. Check back soon."
-          />
-        ) : (
-          <div className="flex flex-col gap-4">
-            <Reveal>
-              <UseCaseCard post={featured} featured />
-            </Reveal>
-
-            {rest.length > 0 && (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {rest.map((post, i) => (
-                  <Reveal key={post.slug} delay={Math.min(i * 0.05, 0.2)}>
-                    <UseCaseCard post={post} />
-                  </Reveal>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+      <section className="px-5 py-10 sm:py-14">
+        <div className="mx-auto max-w-6xl">
+          <UseCasesBrowser posts={useCases} />
+        </div>
       </section>
 
       <UseCasesCta />

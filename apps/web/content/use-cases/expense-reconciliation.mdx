@@ -1,0 +1,148 @@
+---
+title: "How we reconcile expenses every month"
+description: The finance agent we run on Kortix — connected to Stripe, the bank feed, and Google Sheets. Each month it matches transactions against invoices, flags mismatches, and posts a summary, escalating anything it can't match.
+date: "2026-04-15"
+author: team
+tags:
+  - Finance
+  - Case Study
+  - SMB
+---
+
+Monthly reconciliation is the kind of task that's simple to describe and tedious
+to do: line up what came in and went out against what was supposed to, find the
+things that don't match, and explain them. On a small team it lands on one person
+for an afternoon, and it's the same afternoon every month.
+
+We handle this with a scheduled agent. Once a month it reconciles transactions
+against invoices, flags what doesn't line up, and posts a summary. This writes up
+how we run that on Kortix — the connections, the steps, and the guardrails.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Connected systems">Stripe · Bank feed · Google Sheets</Fact>
+  <Fact label="Trigger">Monthly cron</Fact>
+  <Fact label="Mode">Scheduled · human-escalated</Fact>
+</KeyFacts>
+
+## The problem
+
+Reconciliation is mechanical until it isn't. Most lines match cleanly, and the
+value is entirely in the handful that don't: a payment that never landed, a fee
+that doesn't tie out, an invoice with no matching deposit. Finding those means
+going through everything, which is slow and easy to get wrong when it's the same
+repetitive comparison hundreds of times.
+
+A spreadsheet formula catches the exact matches but not the near ones, and the
+near ones are where the problems hide. So the check either runs shallow and
+misses things, or runs deep and eats a person's day. Either way it only happens
+as often as someone has time for it.
+
+## What we built
+
+On Kortix, a monthly **cron** triggers a reconciliation agent. Each run spawns
+its own isolated session — a cloud sandbox — with scoped access to what
+reconciliation needs: Stripe, the bank feed, and the Google Sheet we track in. It
+matches transactions against invoices, flags the mismatches, posts a summary to
+the sheet, and escalates anything it can't match to a person.
+
+<Figure
+  caption="The finance agent matching transactions and flagging mismatches"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Connect a monthly cron as the trigger">
+
+A **cron** trigger fires the project on a schedule — once a month, after the
+period closes. Each firing spawns a fresh **session** in its own sandbox. One
+run, one session, one disposable machine, with nothing carried over from the last
+month's run.
+
+</Step>
+<Step title="Give the agent our reconciliation rules">
+
+How we reconcile lives as **skills** and **memory** loaded into every session:
+what counts as a match, the tolerances we allow on fees and timing, the accounts
+we track, and mismatches we've explained before. The agent works to that standard
+rather than inventing one, and the memory updates as patterns recur.
+
+</Step>
+<Step title="Connect what reconciliation can touch">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Read Stripe** — charges, payouts, and fees for the period.
+- **Read the bank feed** — deposits and withdrawals to match against Stripe and
+  invoices.
+- **Read and write the Google Sheet** — the ledger it reconciles against and the
+  summary it posts back.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent reads the financial systems and writes only to the tracking sheet — it
+never moves money or touches Stripe or the bank beyond reading. Anything it can't
+match within tolerance is **escalated to a person** rather than force-fit or
+written off. Credentials are encrypted in the secrets manager and injected at
+runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Let each month run">
+
+With that in place, the monthly run produces a reconciled sheet and a summary
+without anyone starting it. Clean matches tie out silently. A payout that's short
+by a fee gets explained. An invoice with no matching deposit gets flagged and
+sent to a person to chase, with the two records it couldn't reconcile attached.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  Fire the project on a monthly **cron**, give the agent read access to Stripe
+  and the bank feed and write access to the sheet through scoped **connectors**,
+  encode the reconciliation rules as **skills** and **memory**, and escalate
+  anything it can't match to a person.
+</Callout>
+
+## Guardrails
+
+Giving an agent access to financial systems is a security question first. The
+relevant controls on Kortix:
+
+- **Isolation.** Each run happens in its own microVM sandbox. The session can
+  read the accounts it needs, and only the summary it writes to the sheet leaves
+  the sandbox.
+- **Scoped secrets.** The Stripe, bank, and Sheets credentials are encrypted in
+  the secrets manager and injected into the sandbox at runtime, never exposed to
+  the model or the logs.
+- **Human approval gate.** Anything the agent can't match within tolerance is
+  escalated to a person rather than force-fit, and the agent never moves money.
+- **Everything is code.** The agent's persona, skills, and permissions are files
+  in the repo — versioned and changed through a reviewed **change request**, not a
+  dashboard setting.
+
+<Figure
+  caption="An unmatched transaction escalated to a person to resolve"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every month" label="Reconciliation run on schedule, not when there's time" />
+  <Stat value="Mismatches only" label="A person looks at the exceptions, not every line" />
+  <Stat value="3 systems" label="Stripe, the bank feed, and the sheet in one agent" />
+</StatGrid>
+
+The afternoon that used to go to comparing hundreds of lines now goes to
+resolving the few the agent couldn't match. The reconciliation runs every month
+whether or not anyone has time, and the summary is waiting when the finance
+person opens the sheet.
+
+The setup relies on four pieces: sandbox isolation per run, a secrets manager to
+broker the Stripe, bank, and Sheets tokens, an escalation path for anything
+unmatched, and memory that carries recurring explanations forward month to month.
