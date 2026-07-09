@@ -174,23 +174,44 @@ export async function telegramSetMyCommands(
  * slow success can't become a duplicate (429 still retries; it wasn't
  * processed). Returns the new message id, or null on failure.
  */
+export interface TelegramInlineButton {
+  text: string;
+  url: string;
+}
+
+export interface TelegramSendOptions {
+  replyToMessageId?: number;
+  parseMode?: 'HTML';
+  /** One row of URL buttons under the message (e.g. "Open in Kortix"). */
+  buttons?: TelegramInlineButton[];
+  disableWebPagePreview?: boolean;
+}
+
+function sendPayload(chatId: number | string, text: string, opts: TelegramSendOptions) {
+  return {
+    chat_id: chatId,
+    text,
+    ...(opts.parseMode ? { parse_mode: opts.parseMode } : {}),
+    ...(opts.replyToMessageId
+      ? { reply_parameters: { message_id: opts.replyToMessageId, allow_sending_without_reply: true } }
+      : {}),
+    ...(opts.buttons?.length
+      ? { reply_markup: { inline_keyboard: [opts.buttons.map((b) => ({ text: b.text, url: b.url }))] } }
+      : {}),
+    ...(opts.disableWebPagePreview ? { link_preview_options: { is_disabled: true } } : {}),
+  };
+}
+
 export async function telegramSendMessage(
   token: string,
   chatId: number | string,
   text: string,
-  opts: { replyToMessageId?: number; parseMode?: 'HTML' } = {},
+  opts: TelegramSendOptions = {},
 ): Promise<number | null> {
   const r = await telegramApiCall<{ message_id?: number }>(
     token,
     'sendMessage',
-    {
-      chat_id: chatId,
-      text,
-      ...(opts.parseMode ? { parse_mode: opts.parseMode } : {}),
-      ...(opts.replyToMessageId
-        ? { reply_parameters: { message_id: opts.replyToMessageId, allow_sending_without_reply: true } }
-        : {}),
-    },
+    sendPayload(chatId, text, opts),
     { idempotent: false },
   );
   if (!r.ok) {
@@ -198,4 +219,46 @@ export async function telegramSendMessage(
     return null;
   }
   return typeof r.result?.message_id === 'number' ? r.result.message_id : null;
+}
+
+/**
+ * Edit a message the bot sent — the live-status repaint primitive. Edits are
+ * idempotent, so ambiguous failures retry freely. Telegram answers 400
+ * "message is not modified" when the text is unchanged — treated as success.
+ */
+export async function telegramEditMessageText(
+  token: string,
+  chatId: number | string,
+  messageId: number,
+  text: string,
+  opts: Pick<TelegramSendOptions, 'parseMode' | 'buttons' | 'disableWebPagePreview'> = {},
+): Promise<boolean> {
+  const r = await telegramApiCall(
+    token,
+    'editMessageText',
+    {
+      chat_id: chatId,
+      message_id: messageId,
+      text,
+      ...(opts.parseMode ? { parse_mode: opts.parseMode } : {}),
+      ...(opts.buttons?.length
+        ? { reply_markup: { inline_keyboard: [opts.buttons.map((b) => ({ text: b.text, url: b.url }))] } }
+        : {}),
+      ...(opts.disableWebPagePreview ? { link_preview_options: { is_disabled: true } } : {}),
+    },
+    { retries: 1 },
+  );
+  if (r.ok) return true;
+  if ((r.description ?? '').includes('message is not modified')) return true;
+  console.warn('[telegram-api] editMessageText failed', { error: redactToken(r.description ?? 'unknown') });
+  return false;
+}
+
+/** Fire-and-forget liveness cue ("typing…" for ~5s). Never throws. */
+export async function telegramSendChatAction(
+  token: string,
+  chatId: number | string,
+  action = 'typing',
+): Promise<void> {
+  await telegramApiCall(token, 'sendChatAction', { chat_id: chatId, action }).catch(() => {});
 }

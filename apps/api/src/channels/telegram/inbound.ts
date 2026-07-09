@@ -132,13 +132,24 @@ export const TELEGRAM_NEW_TEXT =
 
 const TURN_INSTRUCTIONS = [
   'How to work:',
-  '- You are answering a Telegram message as a helpful teammate. Your final',
-  '  answer is delivered back to the same chat automatically when the turn',
-  '  ends — write it as a direct reply to the user.',
-  '- Keep replies chat-sized: lead with the answer, keep structure light',
-  '  (short paragraphs, simple lists). Telegram renders basic formatting only.',
-  '- If you must ask the user something, ask it as your final answer and end',
-  '  the turn — their reply arrives as a fresh message in this conversation.',
+  '- The `telegram` CLI needs **no token** — everything relays through Kortix',
+  '  (the bot token stays server-side). The chat shows a live status message.',
+  '- Post a short progress checkpoint before each major step:',
+  '    telegram step "Reading the incident logs"',
+  '  Keep them human and brief — a few per task — but DO post one before',
+  '  anything slow (installs, builds, long searches) so the status message',
+  '  never sits stale.',
+  '- Deliver the final answer with:',
+  '    telegram send "…"',
+  '  Markdown renders: **bold**, *italic*, `code`, fenced code blocks,',
+  '  [links](https://…). Keep it chat-sized — lead with the answer, light',
+  '  structure. Long answers are chunked automatically.',
+  '- One `telegram send` per turn — it finalizes the live status message.',
+  '- Need to ask the user something? Ask it via `telegram send`, then END your',
+  '  turn — their reply arrives as a fresh message in this conversation. The',
+  '  built-in `question` tool has no answerer in a chat; do not use it.',
+  '- Files & metadata: use the `kortix_telegram` executor connector actions',
+  '  (send_document by file_id/URL, get_file, get_chat) — also token-free.',
 ].join('\n');
 
 function senderLabel(from: TelegramUser | undefined): string {

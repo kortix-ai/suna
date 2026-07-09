@@ -105,7 +105,10 @@ describe('prompt rendering', () => {
     expect(p).toContain('@ivan');
     expect(p).toContain('check the deploy');
     expect(p).not.toContain(`@${BOT}`);
-    expect(p).toContain('delivered back to the same chat automatically');
+    // The turn contract: progress via `telegram step`, answer via `telegram send`.
+    expect(p).toContain('telegram step');
+    expect(p).toContain('telegram send');
+    expect(p).toContain('no token');
   });
 
   test('follow-up prompt names the sender and keeps instructions', () => {

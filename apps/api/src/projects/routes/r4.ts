@@ -23,6 +23,12 @@ import {
   telegramSetWebhook,
 } from "../../channels/telegram-api";
 import { TELEGRAM_BOT_COMMANDS } from "../../channels/telegram/inbound";
+import {
+  relayTelegramTurnAnswer,
+  relayTelegramTurnEnd,
+  relayTelegramTurnStep,
+  telegramTurnExists,
+} from "../../channels/telegram/turn";
 import { randomBytes } from "node:crypto";
 import { reconcileChannelConnectors } from "../../executor/sync";
 import {
@@ -1257,7 +1263,9 @@ projectsApp.openapi(
                   : undefined,
             }
           : undefined;
-      const ok = await relayTurnEnd(sessionId, status, errorInfo);
+      const ok = (await telegramTurnExists(sessionId))
+        ? await relayTelegramTurnEnd(sessionId, status, errorInfo)
+        : await relayTurnEnd(sessionId, status, errorInfo);
       return c.json({ ok });
     }
 
@@ -1303,6 +1311,17 @@ projectsApp.openapi(
       Array.isArray(body.blocks) && body.blocks.length > 0
         ? body.blocks
         : undefined;
+
+    // The turn-stream is platform-agnostic transport; the turn row itself says
+    // which channel opened it (Slack stays the default for missing rows so its
+    // warn-path diagnostics keep working).
+    if (await telegramTurnExists(sessionId)) {
+      const ok =
+        body.kind === "answer"
+          ? await relayTelegramTurnAnswer(sessionId, text)
+          : await relayTelegramTurnStep(sessionId, text);
+      return c.json({ ok });
+    }
 
     const ok =
       body.kind === "answer"

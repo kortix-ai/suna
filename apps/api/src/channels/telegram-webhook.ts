@@ -44,6 +44,14 @@ import {
   type TelegramMessage,
   type TelegramUpdate,
 } from './telegram/inbound';
+import {
+  finalizeTelegramTurnDirect,
+  restartTelegramTurnForFollowUp,
+  saveTelegramTurn,
+  startTelegramTurn,
+  telegramQueuedMessage,
+  telegramStartErrorMessage,
+} from './telegram/turn';
 import { makeOpenApiApp, json, errors } from '../openapi';
 
 export const telegramWebhookApp = makeOpenApiApp();
@@ -182,15 +190,22 @@ async function createOrJoinChatSession(input: {
     return;
   }
 
-  // Existing conversation → follow up into it.
-  const existing = await chatSessionId(botId, chatId);
-  if (existing) {
+  // Follow-ups get their own fresh placeholder (live-edited into the reply),
+  // then continue the existing session.
+  const followUp = async (sessionId: string) => {
+    await restartTelegramTurnForFollowUp(sessionId, projectId, botId, message);
     await continueSession({
       source: 'telegram',
-      sessionId: existing,
+      sessionId,
       text: renderTelegramFollowUpPrompt(message, botUsername),
       userId,
     });
+  };
+
+  // Existing conversation → follow up into it.
+  const existing = await chatSessionId(botId, chatId);
+  if (existing) {
+    await followUp(existing);
     return;
   }
 
@@ -199,12 +214,7 @@ async function createOrJoinChatSession(input: {
   if (!(await claimOnce(claimKey))) {
     const sessionId = await waitForChatSession(botId, chatId);
     if (sessionId) {
-      await continueSession({
-        source: 'telegram',
-        sessionId,
-        text: renderTelegramFollowUpPrompt(message, botUsername),
-        userId,
-      });
+      await followUp(sessionId);
     } else {
       console.warn('[telegram-webhook] lost chat-create claim but winner never published a session', {
         botId,
@@ -218,14 +228,13 @@ async function createOrJoinChatSession(input: {
   // own this chat. Never create a second session; follow up instead.
   const raced = await chatSessionId(botId, chatId);
   if (raced) {
-    await continueSession({
-      source: 'telegram',
-      sessionId: raced,
-      text: renderTelegramFollowUpPrompt(message, botUsername),
-      userId,
-    });
+    await followUp(raced);
     return;
   }
+
+  // Instant feedback while the sandbox spins up: typing cue + the placeholder
+  // message the turn relay will live-edit into steps and finally the answer.
+  const turnHandle = await startTelegramTurn(projectId, botId, message);
 
   // Surface the chat in the dashboard's Channels → Bindings list on first
   // contact, so its agent/model/policy can be tuned like a Slack channel.
@@ -275,6 +284,27 @@ async function createOrJoinChatSession(input: {
 
   if (result.error) {
     console.error('[telegram-webhook] createProjectSession failed', result.error.body);
+    if (turnHandle) {
+      await finalizeTelegramTurnDirect(
+        turnHandle,
+        telegramStartErrorMessage(result.error.status, result.error.body?.error),
+      );
+    }
+    return;
+  }
+
+  if (result.status === 'queued' || result.status === 'pending') {
+    if (turnHandle) {
+      await finalizeTelegramTurnDirect(turnHandle, telegramQueuedMessage(result.reason));
+    }
+    return;
+  }
+
+  // Session is live — persist the turn under its id so the /turn-stream
+  // relays (steps, answer, end) can find and live-edit the placeholder.
+  if (result.sessionId && turnHandle) {
+    turnHandle.sessionId = result.sessionId;
+    await saveTelegramTurn(turnHandle);
   }
 }
 
