@@ -98,6 +98,19 @@ is registered **with Supabase**, and Kortix stores the resulting provider id.
 > any successful SSO sign-in from `primary_domain` self-provision a baseline
 > `member` (they still get **no** project access until a group grant applies).
 
+> **Email claim — the #1 Entra gotcha.** Entra maps the SAML email to `user.mail`,
+> which is **empty** for accounts without a mailbox (e.g. any `*.onmicrosoft.com`
+> user, or unlicensed accounts). An empty email means the user signs in but can't
+> be identified. In the Enterprise App → **Single sign-on → Attributes & Claims**,
+> edit the `…/emailaddress` claim and set its **Source attribute** to
+> **`user.userprincipalname`** — the UPN is always populated and email-formatted.
+
+> **You do NOT touch Supabase's attribute mapping.** Kortix registers the IdP with
+> the group-claim `attribute_mapping` automatically (from `group_claim_name`), so
+> the group values reach the token. If you registered a provider via the operator
+> `supabase sso add` path, re-save the SSO config once in the dashboard and Kortix
+> will (re)apply the mapping for you.
+
 ---
 
 ## Part B — emit group claims from Entra
@@ -107,8 +120,16 @@ Entra does not send groups by default. In the Enterprise App → *Single sign-on
 
 - Choose which groups to emit (Security groups / Groups assigned to the app —
   prefer the latter to keep the claim small).
-- **Source attribute**: by default Entra emits group **Object IDs (GUIDs)**. You
-  can switch to `sAMAccountName` / group display names if you'd rather map by name.
+- **Source attribute**: by default Entra emits group **Object IDs (GUIDs)**, not
+  names — so a mapping's *claim value* is the group's **Object ID** unless you
+  change this. To map by readable **name** instead, you must (a) set the claim to
+  **"Groups assigned to the application"**, (b) pick source attribute **"Cloud-only
+  group display names"** (it is greyed out for "Security groups"), and (c) **assign
+  each group to the enterprise app**. ⚠️ **Assigning a *group* to an app requires
+  Entra ID P1/P2** — on the **Free** plan you can only assign users, so Free-tier
+  tenants are **GUID-only**. Either way works: Kortix matches GUIDs and names
+  identically (case/space-insensitive) — GUID mapping is actually more robust since
+  IDs never change.
 - Ensure the claim **name** is what you set as `group_claim_name` (default
   `memberOf`).
 

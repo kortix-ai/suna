@@ -122,6 +122,9 @@ export async function runWhoami(argv: string[]): Promise<number> {
     if (ctx?.kortix_cli != null) {
       process.stdout.write(`  ${C.dim}kortix_cli ${C.reset}${formatGrant(ctx.kortix_cli)}\n`);
     }
+    if (ctx?.env != null) {
+      process.stdout.write(`  ${C.dim}env       ${C.reset}${formatGrant(ctx.env)}\n`);
+    }
     process.stdout.write('\n');
     return 0;
   }

@@ -579,6 +579,15 @@ function EditProviderDialog({
               <span className="font-mono">memberOf</span>{' '}
               {tHardcodedUi.raw('componentsIamSsoCard.line394JsxTextAzureAD')}
             </p>
+            <p className="text-muted-foreground text-[11px] leading-relaxed">
+              <span className="text-kortix-yellow">Entra tip:</span> set your SAML{' '}
+              <span className="font-mono">emailaddress</span> claim source to{' '}
+              <span className="font-mono">userPrincipalName</span> — onmicrosoft.com
+              users have no <span className="font-mono">mail</span>, and an empty email
+              breaks sign-in. Entra also emits group <span className="font-mono">Object IDs</span>{' '}
+              by default: map those, or emit names via “Groups assigned to the
+              application” (needs Entra ID P1/P2).
+            </p>
           </div>
 
           <label className="text-foreground flex cursor-pointer items-start gap-2 text-sm">

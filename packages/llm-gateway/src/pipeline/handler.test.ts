@@ -751,4 +751,98 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(traces[0].ok).toBe(false);
     expect(traces[0].errorCode).toBe("empty_completion");
   });
+
+  // An otherwise-200 stream that carries a structured `{error:{...}}` frame and no
+  // content is a real upstream failure (overloaded, request too large, ...). It
+  // must surface the real error — not be retried in place and buried under a
+  // generic empty_completion.
+  const errorSse =
+    'data: {"error":{"message":"Overloaded","type":"overloaded_error","code":"overloaded_error"}}\n\n' +
+    "data: [DONE]\n\n";
+
+  test("streaming: an upstream error frame surfaces as 502 upstream_error with the real message — no same-candidate retry storm", async () => {
+    const { hooks, traces, usage } = makeHooks({ resolveUpstream: async () => [managed] });
+    let calls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      calls += 1;
+      return sseResponse(errorSse);
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+    });
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.code).toBe("upstream_error");
+    expect(body.error).toBe("Overloaded");
+    expect(body.upstream_code).toBe("overloaded_error");
+    expect(calls).toBe(1); // the error candidate is excluded at once, not retried 3×
+    await flush();
+    expect(usage).toHaveLength(0);
+    expect(traces[0].ok).toBe(false);
+    expect(traces[0].errorCode).toBe("upstream_error");
+    expect(traces[0].candidatesTried).toEqual(["openrouter"]);
+  });
+
+  test("streaming: an error frame from candidate A still fails over to a healthy candidate B", async () => {
+    const a: UpstreamDescriptor = { ...managed, provider: "a", baseUrl: "https://a.test/v1" };
+    const b: UpstreamDescriptor = { ...managed, provider: "b", baseUrl: "https://b.test/v1" };
+    const { hooks, traces } = makeHooks({ resolveUpstream: async () => [a, b] });
+    const fetchImpl: FetchImpl = async (url) =>
+      sseResponse(new URL(url).hostname === "a.test" ? errorSse : goodSse);
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true}',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await new Response(res.body).text()).toBe(goodSse);
+    await flush();
+    expect(traces.find((t) => t.ok)?.provider).toBe("b");
+  });
+});
+
+describe("gateway.chatCompletions — request size guard", () => {
+  test("a body over maxRequestBytes is rejected with 413 before any upstream dispatch", async () => {
+    const { hooks, traces } = makeHooks({ resolveUpstream: async () => [managed] });
+    let dispatched = false;
+    const fetchImpl: FetchImpl = async () => {
+      dispatched = true;
+      return new Response(JSON.stringify({ choices: [{ message: { content: "x" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const rawBody = `{"model":"x","pad":"${"z".repeat(500)}"}`;
+    const res = await createGateway(
+      hooks,
+      { maxRequestBytes: 100 },
+      { fetchImpl },
+    ).chatCompletions({ authorization: "Bearer good", rawBody });
+
+    expect(res.status).toBe(413);
+    expect((await res.json()).code).toBe("request_too_large");
+    expect(dispatched).toBe(false); // rejected up front — no upstream call
+    await flush();
+    expect(traces[0].ok).toBe(false);
+    expect(traces[0].errorCode).toBe("request_too_large");
+  });
+
+  test("the guard is off by default — a large body dispatches normally", async () => {
+    const { hooks } = makeHooks({ resolveUpstream: async () => [managed] });
+    const res = await createGateway(
+      hooks,
+      {},
+      { fetchImpl: okFetch({ choices: [{ message: { content: "ok" } }] }) },
+    ).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: `{"model":"x","pad":"${"z".repeat(5000)}"}`,
+    });
+
+    expect(res.status).toBe(200);
+  });
 });

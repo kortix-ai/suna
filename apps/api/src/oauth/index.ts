@@ -5,6 +5,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { eq, and, inArray, isNull } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { randomAlphanumeric, verifySecretKey } from '../shared/crypto';
+import { hashOauthToken, oauthTokenHashCandidates } from './token-hash';
 import { supabaseAuth } from '../middleware/auth';
 import { config } from '../config';
 import {
@@ -17,11 +18,8 @@ import {
 } from '@kortix/db';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 
-// ─── Token Hashing ──────────────────────────────────────────────────────────
-
-function hashToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
-}
+// Token hashing lives in ./token-hash (hashOauthToken for minting,
+// oauthTokenHashCandidates for dual-read lookup during the legacy window).
 
 // ─── Rate Limiter (in-memory, per client_id) ────────────────────────────────
 
@@ -68,7 +66,6 @@ async function oauthTokenAuth(c: Context, next: Next) {
     throw new HTTPException(401, { message: 'Missing token' });
   }
 
-  const tokenHash = hashToken(token);
   const now = new Date();
 
   const [row] = await db
@@ -76,7 +73,7 @@ async function oauthTokenAuth(c: Context, next: Next) {
     .from(oauthAccessTokens)
     .where(
       and(
-        eq(oauthAccessTokens.tokenHash, tokenHash),
+        inArray(oauthAccessTokens.tokenHash, oauthTokenHashCandidates(token)),
         isNull(oauthAccessTokens.revokedAt),
       ),
     )
@@ -209,8 +206,8 @@ async function issueTokenPair(params: {
 }) {
   const accessToken = generateAccessToken();
   const refreshToken = generateRefreshToken();
-  const accessTokenHash = hashToken(accessToken);
-  const refreshTokenHash = hashToken(refreshToken);
+  const accessTokenHash = hashOauthToken(accessToken);
+  const refreshTokenHash = hashOauthToken(refreshToken);
 
   const now = new Date();
   const accessExpiresAt = new Date(now.getTime() + 3600 * 1000);
@@ -627,14 +624,12 @@ async function handleRefreshTokenGrant(c: Context, body: Record<string, any>, cl
     return c.json({ error: 'invalid_request', error_description: 'Missing refresh_token' }, 400);
   }
 
-  const refreshTokenHash = hashToken(refreshTokenRaw);
-
   const [refreshRow] = await db
     .select()
     .from(oauthRefreshTokens)
     .where(
       and(
-        eq(oauthRefreshTokens.tokenHash, refreshTokenHash),
+        inArray(oauthRefreshTokens.tokenHash, oauthTokenHashCandidates(refreshTokenRaw)),
         eq(oauthRefreshTokens.clientId, client.clientId),
         isNull(oauthRefreshTokens.revokedAt),
       ),

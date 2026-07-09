@@ -400,7 +400,6 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 
 `RTR-1` `POST /router/web-search {query}` · `POST /router/image-search` → `APIKEY` → 200; `ANON`/JWT → 401.
 `RTR-2` `POST /router/chat/completions {model,messages,stream}` (OpenAI-compat) · `GET /router/models` · `GET /router/models/:model` · `POST /router/messages` (Anthropic-style).
-`RTR-3` session-LLM: `POST /router/llm/chat/completions` (session-LLM token in Authorization) · `GET /router/llm/models`.
 `RTR-4` billed proxy passthrough `ALL /router/:service[/*]` for `tavily|serper|firecrawl|replicate|context7|anthropic|openai|xai|gemini|groq` — Kortix token → managed keys; user key + `X-Kortix-Token` → passthrough; disallowed service/route → 4xx.
 
 ---
