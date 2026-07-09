@@ -16,7 +16,7 @@
  * /turn-stream route by the session's source.
  */
 
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { chatTurnStreams } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
@@ -246,30 +246,25 @@ export async function relayTelegramTurnAnswer(sessionId: string, text: string): 
     // chat clean); fall back to a fresh reply, and to plain text if Telegram
     // rejects the HTML.
     const opts = { parseMode: 'HTML' as const, buttons, disableWebPagePreview: true };
-    let delivered = false;
+    const plain = text.slice(0, TELEGRAM_MAX_MESSAGE);
+    let edited = false;
     if (handle.statusMessageId != null) {
-      delivered = await telegramEditMessageText(token, handle.chatId, handle.statusMessageId, html, opts);
-      if (!delivered) {
-        delivered = await telegramEditMessageText(
-          token,
-          handle.chatId,
-          handle.statusMessageId,
-          text.slice(0, TELEGRAM_MAX_MESSAGE),
-          { buttons },
-        );
-      }
+      edited =
+        (await telegramEditMessageText(token, handle.chatId, handle.statusMessageId, html, opts)) ||
+        // Telegram rejected the HTML — retry the same edit as plain text.
+        (await telegramEditMessageText(token, handle.chatId, handle.statusMessageId, plain, { buttons }));
     }
-    if (!delivered) {
-      const sent =
-        (await telegramSendMessage(token, handle.chatId, html, {
-          ...opts,
-          replyToMessageId: handle.triggerMessageId,
-        })) ??
-        (await telegramSendMessage(token, handle.chatId, text.slice(0, TELEGRAM_MAX_MESSAGE), {
+    if (!edited) {
+      const sent = await telegramSendMessage(token, handle.chatId, html, {
+        ...opts,
+        replyToMessageId: handle.triggerMessageId,
+      });
+      if (sent == null) {
+        await telegramSendMessage(token, handle.chatId, plain, {
           buttons,
           replyToMessageId: handle.triggerMessageId,
-        }));
-      delivered = sent != null;
+        });
+      }
     }
   } else {
     // Long answer: plain-text chunks (splitting can't break HTML pairs that
@@ -318,21 +313,28 @@ export async function relayTelegramTurnEnd(
   if (!token) return false;
 
   const buttons = openInKortixButtons(handle.projectId, sessionId);
-  const text =
+  // Build the HTML and the plain-text fallback SEPARATELY from the same parts —
+  // never regex-strip tags out of the HTML (incomplete against nested tags).
+  const errorLine = turnErrorLine(errorInfo);
+  const html =
     status === 'error'
-      ? `❌ <b>The run failed.</b>\n${escapeForStatus(turnErrorLine(errorInfo))}\nOpen the session in Kortix for the full log, then send your message again.`
+      ? `❌ <b>The run failed.</b>\n${escapeForStatus(errorLine)}\nOpen the session in Kortix for the full log, then send your message again.`
       : '✅ <b>Done.</b> The result is in the session — open it in Kortix to review.';
+  const plain =
+    status === 'error'
+      ? `❌ The run failed.\n${errorLine}\nOpen the session in Kortix for the full log, then send your message again.`
+      : '✅ Done. The result is in the session — open it in Kortix to review.';
 
   if (handle.statusMessageId != null) {
-    const ok = await telegramEditMessageText(token, handle.chatId, handle.statusMessageId, text, {
+    const ok = await telegramEditMessageText(token, handle.chatId, handle.statusMessageId, html, {
       parseMode: 'HTML',
       buttons,
     });
     if (!ok) {
-      await telegramSendMessage(token, handle.chatId, text.replace(/<[^>]+>/g, ''), { buttons });
+      await telegramSendMessage(token, handle.chatId, plain, { buttons });
     }
   } else {
-    await telegramSendMessage(token, handle.chatId, text, { parseMode: 'HTML', buttons });
+    await telegramSendMessage(token, handle.chatId, html, { parseMode: 'HTML', buttons });
   }
   await deleteTurn(sessionId);
   return true;
