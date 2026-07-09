@@ -534,27 +534,21 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
           </h1>
         ),
         h2: ({ children }: { children?: React.ReactNode }) => (
-          <h2 className="text-foreground mt-8 mb-3 text-lg font-semibold first:mt-0">
-            {children}
-          </h2>
+          <h2 className="text-foreground mt-8 mb-3 text-xl font-semibold first:mt-0">{children}</h2>
         ),
         h3: ({ children }: { children?: React.ReactNode }) => (
-          <h3 className="text-foreground mt-6 mb-2 text-base font-semibold first:mt-0">
-            {children}
-          </h3>
+          <h3 className="text-foreground mt-6 mb-2 text-lg font-semibold first:mt-0">{children}</h3>
         ),
         h4: ({ children }: { children?: React.ReactNode }) => (
-          <h4 className="text-foreground mt-6 mb-2 text-base font-medium first:mt-0">
-            {children}
-          </h4>
+          <h4 className="text-foreground mt-6 mb-2 text-lg font-semibold first:mt-0">{children}</h4>
         ),
         h5: ({ children }: { children?: React.ReactNode }) => (
-          <h5 className="text-muted-foreground mt-4 mb-1 text-base font-medium first:mt-0">
+          <h5 className="text-foreground mt-4 mb-1 text-base font-semibold first:mt-0">
             {children}
           </h5>
         ),
         h6: ({ children }: { children?: React.ReactNode }) => (
-          <h6 className="text-muted-foreground mt-4 mb-1 text-base font-medium tracking-wide first:mt-0">
+          <h6 className="text-foreground mt-4 mb-1 text-base font-semibold tracking-wide first:mt-0">
             {children}
           </h6>
         ),
