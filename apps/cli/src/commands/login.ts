@@ -12,11 +12,11 @@ import {
 import { ApiError, createApiClient } from '../api/client.ts';
 import { startCallbackServer } from '../api/browser-auth.ts';
 import { ensureDefaultProjectBinding } from '../project-bind.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 import { webDashboardUrl } from '../web-url.ts';
 import type { MeResponse } from '../api/types.ts';
 
-const HELP = `Usage: kortix login [options]
+const HELP = help`Usage: kortix login [options]
 
 Authenticate the CLI against the Kortix cloud. Browser opens to the
 dashboard, one click authorizes this CLI, the token is sent back to a

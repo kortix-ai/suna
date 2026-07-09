@@ -2,10 +2,10 @@ import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { activeHostName, defaultProject, listHosts } from '../api/config.ts';
 import { ApiError, clientFromAuth } from '../api/client.ts';
 import { emitJson } from '../command-helpers.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 import type { MeResponse } from '../api/types.ts';
 
-const HELP = `Usage: kortix whoami [options]
+const HELP = help`Usage: kortix whoami [options]
 
 Print the currently authenticated user + active account on the
 selected host.

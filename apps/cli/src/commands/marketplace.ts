@@ -7,7 +7,7 @@
 import { loadAuth, loadAuthForHost, type Auth } from '../api/auth.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { emitJson, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 import { runMarketplaceInstall } from './marketplace-install.ts';
 
 interface CatalogItem {
@@ -80,7 +80,7 @@ interface MarketplaceFlags {
   dryRun: boolean;
 }
 
-const HELP = `Usage: kortix marketplace <subcommand> [options]
+const HELP = help`Usage: kortix marketplace <subcommand> [options]
 
 Browse and install items from the Kortix marketplace.
 
