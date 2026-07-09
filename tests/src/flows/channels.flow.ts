@@ -584,3 +584,186 @@ flow(
     });
   },
 );
+
+// ─── Telegram (optional channel — BYO bot, token server-side) ────────────────
+//
+// Behavior confirmed against apps/api/src/channels/telegram-* + r4:
+// - installation/connect/file routes are user-authed project routes (read vs
+//   manage + project.connector.write) → 404 to non-members.
+// - connect shape-checks the token LOCALLY (400 before any Telegram call), then
+//   validates via getMe → live suites without a real bot expect 400 (Telegram
+//   rejects the fake token) or 502 (unreachable).
+// - The file proxy fails CLOSED without an install: 404 "not connected" before
+//   any outbound call — the send/read/file mechanics themselves (token-in-path
+//   isolation, catalog, path validation, chunked relay) are pinned by unit
+//   tests (telegram-connector.test.ts, telegram/*.test.ts) since live suites
+//   have no real bot to talk to.
+// - Inbound webhook gates (secret missing→404 / mismatch→401 → spawn) are
+//   CHN-8/CHN-9, exercised via the security/cr-channels backlog flows.
+
+// CHN-21 — Telegram installation status (read ACL).
+flow(
+  "CHN-21",
+  {
+    domain: "channels",
+    routes: ["GET /v1/projects/:projectId/channels/telegram/installation"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("OWNER reads install status → 200 (null when not connected)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/channels/telegram/installation", { params: { projectId: p.id } });
+      r.status(200);
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/projects/:projectId/channels/telegram/installation", { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/channels/telegram/installation", { params: { projectId: p.id } });
+      r.status(401);
+    });
+  },
+);
+
+// CHN-22 — Telegram connect: local token shape-check + manage ACL.
+flow(
+  "CHN-22",
+  {
+    domain: "channels",
+    routes: ["POST /v1/projects/:projectId/channels/telegram/connect"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("garbage token shape → 400 BEFORE any Telegram call", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/telegram/connect", {
+          params: { projectId: p.id },
+          body: { bot_token: "not-a-telegram-token" },
+        });
+      r.status(400);
+    });
+    await ctx.step("well-shaped but fake token → 400 (Telegram rejects) or 502 (unreachable)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/telegram/connect", {
+          params: { projectId: p.id },
+          body: { bot_token: "1234567890:AAF0eXaMpLeToKeNBoDy_1234-abcdEFGHijk" },
+        });
+      r.status([400, 502]);
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post("/v1/projects/:projectId/channels/telegram/connect", {
+          params: { projectId: p.id },
+          body: { bot_token: "1234567890:AAF0eXaMpLeToKeNBoDy_1234-abcdEFGHijk" },
+        });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/projects/:projectId/channels/telegram/connect", {
+          params: { projectId: p.id },
+          body: { bot_token: "1234567890:AAF0eXaMpLeToKeNBoDy_1234-abcdEFGHijk" },
+        });
+      r.status(401);
+    });
+  },
+);
+
+// CHN-23 — Telegram disconnect (manage ACL); idempotent.
+flow(
+  "CHN-23",
+  {
+    domain: "channels",
+    routes: ["DELETE /v1/projects/:projectId/channels/telegram/installation"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("OWNER disconnect → 200 (idempotent)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/projects/:projectId/channels/telegram/installation", { params: { projectId: p.id } });
+      r.status(200).body().has("$.status", "disconnected");
+    });
+    await ctx.step("NONMEMBER cannot disconnect → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .del("/v1/projects/:projectId/channels/telegram/installation", { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .del("/v1/projects/:projectId/channels/telegram/installation", { params: { projectId: p.id } });
+      r.status(401);
+    });
+  },
+);
+
+// CHN-24 — Telegram file proxy (the send/read/file HTTP surface): fails CLOSED
+// without an install, gated like every channel send primitive.
+flow(
+  "CHN-24",
+  {
+    domain: "channels",
+    routes: [
+      "GET /v1/projects/:projectId/channels/telegram/file",
+      "POST /v1/projects/:projectId/channels/telegram/file/upload",
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("read: download with no install → 404 not connected (no outbound call)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/channels/telegram/file?file_id=ABC-123", {
+          params: { projectId: p.id },
+        });
+      r.status(404);
+    });
+    await ctx.step("send: upload with no install → 404 not connected", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/telegram/file/upload", {
+          params: { projectId: p.id },
+          body: { chat_id: "1", filename: "x.txt", content_base64: "aGk=" },
+        });
+      r.status(404);
+    });
+    await ctx.step("upload with missing required fields → 400 (validated before any token use)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/telegram/file/upload", {
+          params: { projectId: p.id },
+          body: {},
+        });
+      r.status(400);
+    });
+    await ctx.step("NONMEMBER upload → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post("/v1/projects/:projectId/channels/telegram/file/upload", {
+          params: { projectId: p.id },
+          body: { chat_id: "1", filename: "x.txt", content_base64: "aGk=" },
+        });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON download → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/channels/telegram/file?file_id=ABC-123", {
+          params: { projectId: p.id },
+        });
+      r.status(401);
+    });
+  },
+);
