@@ -525,34 +525,36 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
     // only the changed block re-renders during streaming (preserves text selection).
     const components = useMemo(
       () => ({
-        // Headings — flat, uniform (same weight/size at every level, no h1 border).
+        // Headings — graduated hierarchy bounded by text-base (h6) → text-xl (h1).
+        // Only 3 named sizes live in that range, so deeper levels step down via
+        // weight, colour, and top-margin instead.
         h1: ({ children }: { children?: React.ReactNode }) => (
           <h1 className="text-foreground mt-10 mb-4 text-xl font-semibold first:mt-0">
             {children}
           </h1>
         ),
         h2: ({ children }: { children?: React.ReactNode }) => (
-          <h2 className="text-foreground mt-10 mb-4 text-xl font-semibold first:mt-0">
+          <h2 className="text-foreground mt-8 mb-3 text-lg font-semibold first:mt-0">
             {children}
           </h2>
         ),
         h3: ({ children }: { children?: React.ReactNode }) => (
-          <h3 className="text-foreground mt-10 mb-4 text-xl font-semibold first:mt-0">
+          <h3 className="text-foreground mt-6 mb-2 text-base font-semibold first:mt-0">
             {children}
           </h3>
         ),
         h4: ({ children }: { children?: React.ReactNode }) => (
-          <h4 className="text-foreground mt-10 mb-4 text-xl font-semibold first:mt-0">
+          <h4 className="text-foreground mt-6 mb-2 text-base font-medium first:mt-0">
             {children}
           </h4>
         ),
         h5: ({ children }: { children?: React.ReactNode }) => (
-          <h5 className="text-foreground mt-10 mb-4 text-xl font-semibold first:mt-0">
+          <h5 className="text-muted-foreground mt-4 mb-1 text-base font-medium first:mt-0">
             {children}
           </h5>
         ),
         h6: ({ children }: { children?: React.ReactNode }) => (
-          <h6 className="text-foreground mt-10 mb-4 text-xl font-semibold first:mt-0">
+          <h6 className="text-muted-foreground mt-4 mb-1 text-base font-medium tracking-wide first:mt-0">
             {children}
           </h6>
         ),
