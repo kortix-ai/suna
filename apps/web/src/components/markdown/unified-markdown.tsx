@@ -19,7 +19,13 @@ import { isMermaidCode } from '@/lib/mermaid-utils';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
-import { looksLikeFilePath as sharedLooksLikeFilePath } from '@/lib/utils/path-detection';
+import {
+  isInternalUrl,
+  languageLabel,
+  looksLikeFilePath,
+  looksLikeUrl,
+  normalizeLanguage,
+} from '@/components/markdown/unified-markdown-utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getActivePanelSessionId, openFileInSessionPanel } from '@/stores/session-browser-store';
 import { autoLinkUrls } from '@kortix/shared';
@@ -44,13 +50,6 @@ const MermaidRenderer = lazy(() =>
     default: mod.MermaidRenderer,
   })),
 );
-
-function isInternalUrl(href: string | undefined): boolean {
-  if (!href) return false;
-  if (href.startsWith('http://') || href.startsWith('https://')) return false;
-  if (href.includes('://')) return false;
-  return href.startsWith('/') || href.startsWith('#');
-}
 
 function handleHashClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
   if (!href.startsWith('#')) return;
@@ -112,24 +111,6 @@ export const SHIKI_THEME_DARK = 'plastic';
 export const SHIKI_THEME_LIGHT = 'slack-ochin';
 
 const SHIKI_MAX_LENGTH = 50_000;
-
-function normalizeLanguage(lang: string): string {
-  const map: Record<string, string> = {
-    htm: 'html',
-    js: 'javascript',
-    ts: 'typescript',
-    jsx: 'jsx',
-    tsx: 'tsx',
-    py: 'python',
-    rb: 'ruby',
-    yml: 'yaml',
-    sh: 'bash',
-    shell: 'bash',
-    zsh: 'bash',
-    md: 'markdown',
-  };
-  return map[lang.toLowerCase()] || lang.toLowerCase();
-}
 
 // Pre-loaded at init; anything else lazy-loads on first use. `text` lets no-hint
 // fences flow through Shiki so they pick up the same editor foreground as the rest.
@@ -321,24 +302,6 @@ export function HighlightedCode({
   return <code className="font-mono text-sm leading-[1.65] whitespace-pre">{children}</code>;
 }
 
-function languageLabel(language: string): string {
-  if (!language) return 'text';
-  const lower = language.toLowerCase();
-  const display: Record<string, string> = {
-    js: 'javascript',
-    ts: 'typescript',
-    py: 'python',
-    rb: 'ruby',
-    sh: 'bash',
-    shell: 'bash',
-    zsh: 'bash',
-    yml: 'yaml',
-    md: 'markdown',
-    htm: 'html',
-  };
-  return display[lower] || lower;
-}
-
 // Flat code card: rounded-lg surface, dashed header (language + copy), highlighted body.
 function CodeBlock({
   code,
@@ -411,24 +374,8 @@ function KaTeXBlock({ math }: { math: string }) {
 }
 
 // ─── Inline code ─────────────────────────────────────────────────────────────
-const FILE_EXTENSION_RE = /\.\w{1,10}$/;
-const COMMON_NON_FILES = new Set(['e.g.', 'i.e.', 'etc.', 'vs.', 'v1.', 'v2.']);
 const INLINE_CODE =
   'rounded-sm border bg-muted px-1.5 py-[0.1rem] font-mono text-[0.9rem] text-foreground/95 dark:bg-card';
-
-function looksLikeUrl(text: string): boolean {
-  return /^[a-z][a-z0-9+.-]*:\/\/\S+$/i.test(text);
-}
-
-function looksLikeFilePath(text: string): boolean {
-  if (!text || text.length < 3 || text.length > 300) return false;
-  if (text.includes(' ') || text.includes('\n')) return false;
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return false;
-  if (COMMON_NON_FILES.has(text.toLowerCase())) return false;
-  if (!text.includes('/')) return false;
-  if (FILE_EXTENSION_RE.test(text)) return true;
-  return sharedLooksLikeFilePath(text);
-}
 
 // Inline code that becomes a link (URLs) or opens a file preview (absolute paths).
 function ClickableInlineCode({ children }: { children: React.ReactNode }) {
