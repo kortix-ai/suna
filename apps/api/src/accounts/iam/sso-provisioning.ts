@@ -13,11 +13,33 @@ export interface SamlMetadataInput {
   metadataUrl?: string;
   /** Email domains this IdP is authoritative for (routes sign-in). */
   domains: string[];
+  /** The account's group-claim attribute name (Entra `memberOf`, Okta `groups`).
+   *  Defaults to `groups`. Drives the attribute_mapping below. */
+  groupClaimName?: string;
 }
 
 export type ProvisionResult =
   | { ok: true; providerId: string }
   | { ok: false; error: string; status: number };
+
+/**
+ * Build the Supabase GoTrue `attribute_mapping` that surfaces the IdP's group
+ * claim into the JWT. Supabase DROPS every non-standard SAML attribute unless it
+ * is named here, so WITHOUT this the group claim never reaches
+ * `user_metadata.custom_claims.<name>` and SSO group→role sync silently no-ops —
+ * login still works (GoTrue maps email by default, even with a mapping present),
+ * which is exactly why the bug hid. We deliberately omit an `email` key:
+ * hardcoding one attribute name would break IdPs that emit email under a
+ * different name, and GoTrue's default email extraction already covers it.
+ * `array: true` because a user belongs to many groups. Mirrors the shape a
+ * working `supabase sso add` provider carries.
+ */
+export function buildSamlAttributeMapping(groupClaimName: string): {
+  keys: Record<string, { name: string; array: boolean }>;
+} {
+  const name = groupClaimName.trim() || 'groups';
+  return { keys: { [name]: { name, array: true } } };
+}
 
 /**
  * Register a SAML IdP with Supabase Auth and return its provider UUID. Never
@@ -43,7 +65,13 @@ export async function registerSupabaseSamlProvider(
     return { ok: false, error: 'At least one email domain is required', status: 400 };
   }
 
-  const body: Record<string, unknown> = { type: 'saml', domains: input.domains };
+  const body: Record<string, unknown> = {
+    type: 'saml',
+    domains: input.domains,
+    // Without this, Supabase strips the group claim and SSO group→role sync
+    // silently no-ops (login still works). See buildSamlAttributeMapping.
+    attribute_mapping: buildSamlAttributeMapping(input.groupClaimName ?? 'groups'),
+  };
   if (xml) body.metadata_xml = xml;
   else body.metadata_url = url;
 
@@ -85,4 +113,53 @@ export async function registerSupabaseSamlProvider(
     return { ok: false, error: 'Supabase did not return a provider id', status: 502 };
   }
   return { ok: true, providerId: data.id };
+}
+
+/**
+ * Re-apply the group-claim `attribute_mapping` to an already-registered Supabase
+ * SAML provider. Called whenever the account's SSO config is saved so a changed
+ * group-claim name — or a provider registered out-of-band via the operator
+ * (`supabase sso add`) path — ends up with the mapping the login-time group sync
+ * depends on. Best-effort and non-throwing: returns a typed result the caller
+ * logs; a failure never blocks saving the (already-persisted) Kortix config.
+ */
+export async function syncSupabaseSamlAttributeMapping(
+  supabaseProviderId: string,
+  groupClaimName: string,
+): Promise<ProvisionResult> {
+  if (!config.SUPABASE_URL || !config.SUPABASE_SERVICE_ROLE_KEY) {
+    return {
+      ok: false,
+      error: 'SSO provisioning is not configured on this deployment',
+      status: 501,
+    };
+  }
+  const base = config.SUPABASE_URL.replace(/\/+$/, '');
+  let resp: Response;
+  try {
+    resp = await fetch(`${base}/auth/v1/admin/sso/providers/${supabaseProviderId}`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        apikey: config.SUPABASE_SERVICE_ROLE_KEY,
+        authorization: `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+      body: JSON.stringify({ attribute_mapping: buildSamlAttributeMapping(groupClaimName) }),
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      error: `Could not reach Supabase auth: ${(e as Error).message}`,
+      status: 502,
+    };
+  }
+  if (!resp.ok) {
+    const detail = (await resp.text().catch(() => '')).slice(0, 400);
+    return {
+      ok: false,
+      error: detail ? `Supabase rejected the mapping update: ${detail}` : `Supabase rejected the mapping update (${resp.status})`,
+      status: 400,
+    };
+  }
+  return { ok: true, providerId: supabaseProviderId };
 }

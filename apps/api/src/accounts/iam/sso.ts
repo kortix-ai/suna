@@ -22,7 +22,7 @@ import {
   SsoMappingSchema,
 } from './app';
 import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
-import { registerSupabaseSamlProvider } from './sso-provisioning';
+import { registerSupabaseSamlProvider, syncSupabaseSamlAttributeMapping } from './sso-provisioning';
 
 function ssoProviderResponse(p: NonNullable<Awaited<ReturnType<typeof getSsoProvider>>>) {
   return {
@@ -117,6 +117,22 @@ iamRouter.openapi(
     autoProvisionGroups: typeof autoProvisionGroups === 'boolean' ? autoProvisionGroups : undefined,
     createdBy: userId,
   });
+
+  // Keep Supabase's attribute_mapping in step with the (possibly changed) group
+  // claim name, so the IdP's group values actually reach the JWT — Supabase drops
+  // any SAML attribute not named in the mapping. Best-effort: the Kortix config is
+  // already persisted, so a Supabase hiccup here must not fail the save.
+  if (provider.supabaseSsoProviderId) {
+    const synced = await syncSupabaseSamlAttributeMapping(
+      provider.supabaseSsoProviderId,
+      provider.groupClaimName,
+    );
+    if (!synced.ok) {
+      console.warn(
+        `[sso] attribute_mapping sync failed for account ${accountId}: ${synced.error}`,
+      );
+    }
+  }
 
   await auditIam(c, {
     accountId,
@@ -232,6 +248,9 @@ iamRouter.openapi(
       metadataXml: typeof metadataXml === 'string' ? metadataXml : undefined,
       metadataUrl: typeof metadataUrl === 'string' ? metadataUrl : undefined,
       domains,
+      // Register WITH the group-claim mapping so the claim reaches the JWT from
+      // the very first login (defaults to `groups` when omitted).
+      groupClaimName: typeof groupClaimName === 'string' ? groupClaimName : undefined,
     });
     if (!registered.ok) return c.json({ error: registered.error }, registered.status as 400);
 
