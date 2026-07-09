@@ -9,7 +9,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 import type {
   OauthFlowStartResponse,
   OauthListResponse,
@@ -17,7 +17,7 @@ import type {
   ProjectSecret,
 } from '../api/types.ts';
 
-const HELP = `Usage: kortix providers <subcommand> [options]
+const HELP = help`Usage: kortix providers <subcommand> [options]
 
 Configure LLM providers for the linked Kortix project. Two paths:
 

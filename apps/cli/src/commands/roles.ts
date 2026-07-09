@@ -4,7 +4,7 @@ import { loadAuth } from '../api/auth.ts';
 import { activeAccount } from '../api/config.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { emitJson, surfaceApiError, takeFlagValue, takeFlagBool } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 // Account-scoped IAM custom roles + policy assignments. Mirrors the dashboard's
 // account Roles tab + per-project "Custom roles" card, and wraps the same
@@ -41,7 +41,7 @@ interface ActionCatalogEntry {
   resource_type: string;
 }
 
-const HELP = `Usage: kortix roles <subcommand> [options]
+const HELP = help`Usage: kortix roles <subcommand> [options]
 
 Manage account-level custom roles + their policy assignments — the CLI face
 of the dashboard's Roles tab and a project's "Custom roles" card. Built-in

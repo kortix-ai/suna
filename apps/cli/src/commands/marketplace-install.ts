@@ -28,7 +28,7 @@ import {
 } from '@kortix/registry';
 import { emitJson, resolveProjectContext, surfaceApiError } from '../command-helpers.ts';
 import { resolveLocalManifest } from '../manifest.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 
 /** Shape returned by GET /v1/marketplace/items. */
 interface CatalogItem {
@@ -50,7 +50,7 @@ interface InstallResponse {
   capabilities: { secrets: string[]; connectors: string[]; tools: string[]; network: string[] };
 }
 
-const HELP = `Usage: kortix marketplace install <item> [options]
+const HELP = help`Usage: kortix marketplace install <item> [options]
 
 Install a marketplace item into this project. Items can be skills, agents,
 commands, tools, files, folders, or bundles.

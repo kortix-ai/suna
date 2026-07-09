@@ -6,7 +6,7 @@ import {
   takeFlagValue,
   takeFlagBool,
 } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 // ── Shapes (mirror apps/api/src/projects apps routes) ───────────────────────
 
@@ -50,7 +50,7 @@ function experimentalGateMessage(): string {
   );
 }
 
-const HELP = `Usage: kortix apps <subcommand> [options]
+const HELP = help`Usage: kortix apps <subcommand> [options]
 
 Manage deployable apps (experimental) — mirrors the dashboard's Apps surface.
 Apps are declared in \`[[apps]]\` in kortix.yaml and deployed to a provider

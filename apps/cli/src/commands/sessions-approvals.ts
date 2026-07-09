@@ -3,12 +3,12 @@ import type {
   OpencodeQuestionRequest,
 } from '../api/sandbox-proxy.ts';
 import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 import { loadSessionForChat, type ResolvedSession } from './sessions-chat.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
-const PENDING_HELP = `Usage: kortix sessions pending <session-id> [options]
+const PENDING_HELP = help`Usage: kortix sessions pending <session-id> [options]
 
 List the session's open interactive prompts — tool-permission asks and
 questions the agent is blocked on. Answer them with
@@ -21,7 +21,7 @@ Options:
   -h, --help       Show this help.
 `;
 
-const APPROVE_HELP = `Usage: kortix sessions approve <session-id> [<request-id>] [options]
+const APPROVE_HELP = help`Usage: kortix sessions approve <session-id> [<request-id>] [options]
 
 Answer a pending tool-permission ask. With no <request-id>, acts on the
 session's single pending permission (errors if there are several).
@@ -35,7 +35,7 @@ Options:
   -h, --help         Show this help.
 `;
 
-const ANSWER_HELP = `Usage: kortix sessions answer <session-id> [<request-id>] [options]
+const ANSWER_HELP = help`Usage: kortix sessions answer <session-id> [<request-id>] [options]
 
 Answer a pending question the agent asked. With no <request-id>, acts on
 the session's single pending question (errors if there are several).
