@@ -2,16 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
-import Link from 'next/link';
-import { Streamdown } from 'streamdown';
-import { Check, Copy } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
-import { codeToHtml, getSingletonHighlighter, type Highlighter, type ShikiTransformer } from 'shiki';
-import { useTheme } from 'next-themes';
-import { cn } from '@/lib/utils';
-import katex from 'katex';
-import 'katex/dist/katex.min.css';
+import { wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import {
   buildKatexRehypePlugins,
   isKatexClassName,
@@ -21,20 +12,31 @@ import {
   normalizeClassName,
   prepareMarkdownForKatex,
 } from '@/components/markdown/katex-markdown';
-import { isMermaidCode } from '@/lib/mermaid-utils';
-import { autoLinkUrls } from '@kortix/shared';
-import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
-import { useFilePreviewStore } from '@/stores/file-preview-store';
-import {
-  getActivePanelSessionId,
-  openFileInSessionPanel,
-} from '@/stores/session-browser-store';
-import { wrapChildrenWithPaths } from '@/components/common/clickable-path';
-import { looksLikeFilePath as sharedLooksLikeFilePath } from '@/lib/utils/path-detection';
-import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
-import { toast } from '@/lib/toast';
-import { parseSetupLinkHref } from '@/components/setup-links/util';
 import { SetupLinkButton } from '@/components/setup-links/setup-link-button';
+import { parseSetupLinkHref } from '@/components/setup-links/util';
+import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { isMermaidCode } from '@/lib/mermaid-utils';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
+import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
+import { looksLikeFilePath as sharedLooksLikeFilePath } from '@/lib/utils/path-detection';
+import { useFilePreviewStore } from '@/stores/file-preview-store';
+import { getActivePanelSessionId, openFileInSessionPanel } from '@/stores/session-browser-store';
+import { autoLinkUrls } from '@kortix/shared';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+import { Check, Copy } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useTheme } from 'next-themes';
+import Link from 'next/link';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  codeToHtml,
+  getSingletonHighlighter,
+  type Highlighter,
+  type ShikiTransformer,
+} from 'shiki';
+import { Streamdown } from 'streamdown';
 
 // Mermaid pulls in a multi-hundred-KB renderer; load it only once a diagram exists.
 const MermaidRenderer = lazy(() =>
@@ -91,7 +93,7 @@ function CopyButton({ code }: { code: string }) {
             className="absolute inset-0 inline-flex items-center justify-center"
           >
             {copied ? (
-              <Check className="size-3.5 text-kortix-green" />
+              <Check className="text-kortix-green size-3.5" />
             ) : (
               <Copy className="size-3.5" />
             )}
@@ -113,8 +115,18 @@ const SHIKI_MAX_LENGTH = 50_000;
 
 function normalizeLanguage(lang: string): string {
   const map: Record<string, string> = {
-    htm: 'html', js: 'javascript', ts: 'typescript', jsx: 'jsx', tsx: 'tsx',
-    py: 'python', rb: 'ruby', yml: 'yaml', sh: 'bash', shell: 'bash', zsh: 'bash', md: 'markdown',
+    htm: 'html',
+    js: 'javascript',
+    ts: 'typescript',
+    jsx: 'jsx',
+    tsx: 'tsx',
+    py: 'python',
+    rb: 'ruby',
+    yml: 'yaml',
+    sh: 'bash',
+    shell: 'bash',
+    zsh: 'bash',
+    md: 'markdown',
   };
   return map[lang.toLowerCase()] || lang.toLowerCase();
 }
@@ -122,28 +134,40 @@ function normalizeLanguage(lang: string): string {
 // Pre-loaded at init; anything else lazy-loads on first use. `text` lets no-hint
 // fences flow through Shiki so they pick up the same editor foreground as the rest.
 const PRELOAD_LANGS = [
-  'text', 'javascript', 'typescript', 'jsx', 'tsx',
-  'python', 'bash', 'json', 'css', 'html', 'markdown', 'yaml',
+  'text',
+  'javascript',
+  'typescript',
+  'jsx',
+  'tsx',
+  'python',
+  'bash',
+  'json',
+  'css',
+  'html',
+  'markdown',
+  'yaml',
 ];
 
 // Strip Shiki's wrapper background/tabindex and any per-token font-weight/style —
 // forcing a uniform weight keeps highlighted DOM the same width as plain text, so
 // the colour swap never shifts glyphs horizontally.
-const shikiTransformers: ShikiTransformer[] = [{
-  pre(node) {
-    if (typeof node.properties.style === 'string') {
-      node.properties.style = node.properties.style.replace(/background-color:[^;]+;?/g, '');
-    }
-    delete node.properties.tabindex;
+const shikiTransformers: ShikiTransformer[] = [
+  {
+    pre(node) {
+      if (typeof node.properties.style === 'string') {
+        node.properties.style = node.properties.style.replace(/background-color:[^;]+;?/g, '');
+      }
+      delete node.properties.tabindex;
+    },
+    span(node) {
+      if (typeof node.properties.style === 'string') {
+        node.properties.style = node.properties.style
+          .replace(/font-weight:[^;]+;?/g, '')
+          .replace(/font-style:[^;]+;?/g, '');
+      }
+    },
   },
-  span(node) {
-    if (typeof node.properties.style === 'string') {
-      node.properties.style = node.properties.style
-        .replace(/font-weight:[^;]+;?/g, '')
-        .replace(/font-style:[^;]+;?/g, '');
-    }
-  },
-}];
+];
 
 // Singleton highlighter — kicked off at module init so the grammar is usually
 // ready by first render, letting us highlight synchronously (no plain→colour flash).
@@ -154,22 +178,31 @@ const langLoadPromises = new Map<string, Promise<void>>();
 const highlighterPromise: Promise<Highlighter> = getSingletonHighlighter({
   themes: [SHIKI_THEME_DARK, SHIKI_THEME_LIGHT],
   langs: PRELOAD_LANGS,
-}).then((h) => {
-  highlighterReady = h;
-  return h;
-}).catch((err) => {
-  console.warn('[unified-markdown] Shiki highlighter init failed:', err);
-  throw err;
-});
+})
+  .then((h) => {
+    highlighterReady = h;
+    return h;
+  })
+  .catch((err) => {
+    console.warn('[unified-markdown] Shiki highlighter init failed:', err);
+    throw err;
+  });
 
 function ensureLangLoaded(h: Highlighter, lang: string): Promise<void> {
   if (loadedLangs.has(lang)) return Promise.resolve();
   const existing = langLoadPromises.get(lang);
   if (existing) return existing;
-  const p = h.loadLanguage(lang as never)
-    .then(() => { loadedLangs.add(lang); })
-    .catch((err) => console.warn(`[unified-markdown] failed to load Shiki lang "${lang}":`, err?.message || err))
-    .finally(() => { langLoadPromises.delete(lang); });
+  const p = h
+    .loadLanguage(lang as never)
+    .then(() => {
+      loadedLangs.add(lang);
+    })
+    .catch((err) =>
+      console.warn(`[unified-markdown] failed to load Shiki lang "${lang}":`, err?.message || err),
+    )
+    .finally(() => {
+      langLoadPromises.delete(lang);
+    });
   langLoadPromises.set(lang, p);
   return p;
 }
@@ -208,7 +241,11 @@ function highlightSync(code: string, language: string, theme: string): string | 
   if (cached) return cached;
   if (!highlighterReady || !loadedLangs.has(lang)) return null;
   try {
-    const html = highlighterReady.codeToHtml(clampCode(code), { lang, theme, transformers: shikiTransformers });
+    const html = highlighterReady.codeToHtml(clampCode(code), {
+      lang,
+      theme,
+      transformers: shikiTransformers,
+    });
     cacheHtml(key, html);
     return html;
   } catch {
@@ -230,7 +267,11 @@ function highlightAsync(code: string, language: string, theme: string): Promise<
       return h.codeToHtml(clampCode(code), { lang, theme, transformers: shikiTransformers });
     })
     .catch(() => codeToHtml(clampCode(code), { lang, theme, transformers: shikiTransformers }))
-    .then((html) => { cacheHtml(key, html); shikiPending.delete(key); return html; })
+    .then((html) => {
+      cacheHtml(key, html);
+      shikiPending.delete(key);
+      return html;
+    })
     .catch((err) => {
       console.warn(`[unified-markdown] Shiki failed for lang="${lang}":`, err?.message || err);
       shikiPending.delete(key);
@@ -246,31 +287,54 @@ const SHIKI_RESET = cn(
   '[&_.line]:m-0 [&_.line]:p-0 [&_.line]:border-none [&_.line]:outline-none [&_.line]:shadow-none',
 );
 
-export function HighlightedCode({ code, language, children }: { code: string; language: string; children: React.ReactNode }) {
+export function HighlightedCode({
+  code,
+  language,
+  children,
+}: {
+  code: string;
+  language: string;
+  children: React.ReactNode;
+}) {
   const { resolvedTheme } = useTheme();
   const theme = resolvedTheme === 'dark' ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT;
   const [html, setHtml] = useState<string | null>(() => highlightSync(code, language, theme));
 
   useEffect(() => {
     const sync = highlightSync(code, language, theme);
-    if (sync) { setHtml(sync); return; }
+    if (sync) {
+      setHtml(sync);
+      return;
+    }
     let alive = true;
-    highlightAsync(code, language, theme).then((result) => { if (alive && result) setHtml(result); });
-    return () => { alive = false; };
+    highlightAsync(code, language, theme).then((result) => {
+      if (alive && result) setHtml(result);
+    });
+    return () => {
+      alive = false;
+    };
   }, [code, language, theme]);
 
   if (html) {
     return <code className={SHIKI_RESET} dangerouslySetInnerHTML={{ __html: html }} />;
   }
-  return <code className="text-sm font-mono leading-[1.65] whitespace-pre">{children}</code>;
+  return <code className="font-mono text-sm leading-[1.65] whitespace-pre">{children}</code>;
 }
 
 function languageLabel(language: string): string {
   if (!language) return 'text';
   const lower = language.toLowerCase();
   const display: Record<string, string> = {
-    js: 'javascript', ts: 'typescript', py: 'python', rb: 'ruby',
-    sh: 'bash', shell: 'bash', zsh: 'bash', yml: 'yaml', md: 'markdown', htm: 'html',
+    js: 'javascript',
+    ts: 'typescript',
+    py: 'python',
+    rb: 'ruby',
+    sh: 'bash',
+    shell: 'bash',
+    zsh: 'bash',
+    yml: 'yaml',
+    md: 'markdown',
+    htm: 'html',
   };
   return display[lower] || lower;
 }
@@ -290,9 +354,14 @@ function CodeBlock({
   className?: string;
 }) {
   return (
-    <div className={cn('group not-prose relative my-5 overflow-hidden rounded-lg bg-muted dark:bg-card', className)}>
-      <div className="flex items-center justify-between gap-2 border-b border-dashed border-border/70 py-1 pl-4 pr-1.5">
-        <span className="select-none text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <div
+      className={cn(
+        'group not-prose bg-muted dark:bg-card relative my-5 overflow-hidden rounded-lg border',
+        className,
+      )}
+    >
+      <div className="border-border/70 flex items-center justify-between gap-2 border-b border-dashed py-1 pr-1.5 pl-4">
+        <span className="text-muted-foreground text-xs font-medium tracking-wide uppercase select-none">
           {languageLabel(language)}
         </span>
         {code && !isStreaming && <CopyButton code={code} />}
@@ -300,9 +369,9 @@ function CodeBlock({
       <pre
         className={cn(
           'max-h-[520px] overflow-auto py-4',
-          'text-sm font-mono leading-[1.65] text-foreground',
+          'text-foreground font-mono text-sm leading-[1.65]',
           '[&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit',
-          '[&_.shiki]:!bg-transparent [&_span]:!bg-transparent [&_span]:border-none [&_span]:outline-none',
+          '[&_.shiki]:!bg-transparent [&_span]:border-none [&_span]:!bg-transparent [&_span]:outline-none',
         )}
       >
         {children}
@@ -315,7 +384,10 @@ function CodeBlock({
 function KaTeXBlock({ math }: { math: string }) {
   const rendered = useMemo(() => {
     try {
-      const html = katex.renderToString(math.trim(), { ...KATEX_RENDER_OPTIONS, displayMode: true });
+      const html = katex.renderToString(math.trim(), {
+        ...KATEX_RENDER_OPTIONS,
+        displayMode: true,
+      });
       return { html, error: null as string | null };
     } catch {
       return { html: null as string | null, error: math.trim() };
@@ -324,7 +396,7 @@ function KaTeXBlock({ math }: { math: string }) {
 
   if (!rendered.html) {
     return (
-      <pre className="katex-math-block my-5 overflow-x-auto rounded-md border border-border bg-muted px-4 py-3 text-sm font-mono text-muted-foreground">
+      <pre className="katex-math-block border-border bg-muted text-muted-foreground my-5 overflow-x-auto rounded-md border px-4 py-3 font-mono text-sm">
         {rendered.error}
       </pre>
     );
@@ -341,7 +413,8 @@ function KaTeXBlock({ math }: { math: string }) {
 // ─── Inline code ─────────────────────────────────────────────────────────────
 const FILE_EXTENSION_RE = /\.\w{1,10}$/;
 const COMMON_NON_FILES = new Set(['e.g.', 'i.e.', 'etc.', 'vs.', 'v1.', 'v2.']);
-const INLINE_CODE = 'rounded-sm border bg-muted px-1.5 py-[0.1rem] font-mono text-[0.9rem] text-foreground/95 dark:bg-card';
+const INLINE_CODE =
+  'rounded-sm border bg-muted px-1.5 py-[0.1rem] font-mono text-[0.9rem] text-foreground/95 dark:bg-card';
 
 function looksLikeUrl(text: string): boolean {
   return /^[a-z][a-z0-9+.-]*:\/\/\S+$/i.test(text);
@@ -373,7 +446,7 @@ function ClickableInlineCode({ children }: { children: React.ReactNode }) {
         target="_blank"
         rel="noopener noreferrer"
         title={`Open ${text} in a new tab`}
-        className={cn(INLINE_CODE, 'cursor-pointer transition-colors hover:text-kortix-blue')}
+        className={cn(INLINE_CODE, 'hover:text-kortix-blue cursor-pointer transition-colors')}
       >
         {children}
       </Link>
@@ -398,7 +471,7 @@ function ClickableInlineCode({ children }: { children: React.ReactNode }) {
         className={cn(
           INLINE_CODE,
           'transition-colors',
-          isAbsolute ? 'cursor-pointer hover:text-kortix-blue' : 'cursor-not-allowed opacity-70',
+          isAbsolute ? 'hover:text-kortix-blue cursor-pointer' : 'cursor-not-allowed opacity-70',
         )}
       >
         {children}
@@ -406,7 +479,7 @@ function ClickableInlineCode({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <code className={INLINE_CODE}>{children}</code>;
+  return <code className={cn(INLINE_CODE, 'text-[0.8rem]')}>{children}</code>;
 }
 
 // Standalone highlighted code block — bypasses the markdown parser. Used by tool
@@ -442,251 +515,297 @@ export interface UnifiedMarkdownProps {
 
 // Single source of truth for markdown rendering across the app — clean, minimal,
 // readable in both themes.
-export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
-  content,
-  className,
-  isStreaming = false,
-  allowHtml = true,
-}) => {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const { proxyUrl } = useSandboxProxy();
-  const proxy = useCallback((url: string | undefined) => proxyUrl(url), [proxyUrl]);
+export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
+  ({ content, className, isStreaming = false, allowHtml = true }) => {
+    const tHardcodedUi = useTranslations('hardcodedUi');
+    const { proxyUrl } = useSandboxProxy();
+    const proxy = useCallback((url: string | undefined) => proxyUrl(url), [proxyUrl]);
 
-  // Memoize the components object so Block's React.memo sees stable references and
-  // only the changed block re-renders during streaming (preserves text selection).
-  const components = useMemo(() => ({
-    // Headings — flat, uniform (same weight/size at every level, no h1 border).
-    h1: ({ children }: { children?: React.ReactNode }) => (
-      <h1 className="mt-10 mb-4 text-xl font-semibold text-foreground first:mt-0">{children}</h1>
-    ),
-    h2: ({ children }: { children?: React.ReactNode }) => (
-      <h2 className="mt-10 mb-4 text-xl font-semibold text-foreground first:mt-0">{children}</h2>
-    ),
-    h3: ({ children }: { children?: React.ReactNode }) => (
-      <h3 className="mt-10 mb-4 text-xl font-semibold text-foreground first:mt-0">{children}</h3>
-    ),
-    h4: ({ children }: { children?: React.ReactNode }) => (
-      <h4 className="mt-10 mb-4 text-xl font-semibold text-foreground first:mt-0">{children}</h4>
-    ),
-    h5: ({ children }: { children?: React.ReactNode }) => (
-      <h5 className="mt-10 mb-4 text-xl font-semibold text-foreground first:mt-0">{children}</h5>
-    ),
-    h6: ({ children }: { children?: React.ReactNode }) => (
-      <h6 className="mt-10 mb-4 text-xl font-semibold text-foreground first:mt-0">{children}</h6>
-    ),
-
-    p: ({ children }: { children?: React.ReactNode }) => (
-      <div className="my-4 font-medium leading-relaxed text-foreground/95 first:mt-0 last:mb-0 [&:has(img)]:my-0">
-        {wrapChildrenWithPaths(children)}
-      </div>
-    ),
-
-    ul: ({ children }: { children?: React.ReactNode }) => (
-      <ul className="my-4 space-y-1 pl-6 list-outside list-disc marker:text-muted-foreground/60 first:mt-0 last:mb-0 [&_p]:mb-2 [&_p]:last:mb-0">
-        {children}
-      </ul>
-    ),
-    ol: ({ children }: { children?: React.ReactNode }) => (
-      <ol className="my-4 space-y-1 pl-6 list-outside list-decimal marker:font-medium marker:text-muted-foreground/80 first:mt-0 last:mb-0 [&_p]:mb-2 [&_p]:last:mb-0">
-        {children}
-      </ol>
-    ),
-    li: ({ children }: { children?: React.ReactNode }) => (
-      <li className="font-medium leading-relaxed text-foreground/95">
-        {wrapChildrenWithPaths(children)}
-      </li>
-    ),
-
-    // Links — brand-blue, routed through next/link. Setup links open an in-app modal.
-    a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
-      const setupLink = parseSetupLinkHref(href);
-      if (setupLink) {
-        return (
-          <SetupLinkButton kind={setupLink.kind} token={setupLink.token}>
+    // Memoize the components object so Block's React.memo sees stable references and
+    // only the changed block re-renders during streaming (preserves text selection).
+    const components = useMemo(
+      () => ({
+        // Headings — flat, uniform (same weight/size at every level, no h1 border).
+        h1: ({ children }: { children?: React.ReactNode }) => (
+          <h1 className="text-foreground mt-10 mb-4 text-xl font-semibold first:mt-0">
             {children}
-          </SetupLinkButton>
-        );
-      }
-
-      const resolvedHref = proxy(href) ?? href ?? '#';
-      const isHash = resolvedHref.startsWith('#');
-      const isExternal = !isInternalUrl(resolvedHref);
-      const linkClass = cn(
-        'font-medium text-kortix-blue',
-        'underline decoration-kortix-blue/40 decoration-[1px] underline-offset-[3px]',
-        'transition-colors hover:decoration-kortix-blue',
-      );
-
-      return (
-        <Link
-          href={resolvedHref}
-          onClick={isHash ? (e) => handleHashClick(e, resolvedHref) : undefined}
-          className={linkClass}
-          {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-        >
-          {children}
-        </Link>
-      );
-    },
-
-    // Code — Mermaid and KaTeX fences render their own chrome; everything else goes
-    // through the shared card. `language || 'text'` routes no-hint fences via Shiki.
-    code: ({ children, className: codeClassName }: { children?: React.ReactNode; className?: string }) => {
-      const match = /language-(\w+)/.exec(codeClassName || '');
-      const language = match ? match[1] : '';
-      const code = String(children).replace(/\n$/, '');
-      const isBlock = codeClassName?.includes('language-') || code.includes('\n');
-
-      if (isBlock) {
-        if (isMermaidCode(language, code)) {
-          return (
-            <Suspense fallback={null}>
-              <MermaidRenderer chart={code} className="my-5" />
-            </Suspense>
-          );
-        }
-        if (KATEX_FENCE_LANGUAGES.has(language.toLowerCase())) {
-          return <KaTeXBlock math={code} />;
-        }
-        return (
-          <CodeBlock code={code} language={language} isStreaming={isStreaming}>
-            <HighlightedCode code={code} language={language || 'text'}>
-              {children}
-            </HighlightedCode>
-          </CodeBlock>
-        );
-      }
-
-      return <ClickableInlineCode>{children}</ClickableInlineCode>;
-    },
-    // `code` returns the fully-styled block; collapse the default `<pre>` wrapper.
-    pre: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
-
-    blockquote: ({ children }: { children?: React.ReactNode }) => (
-      <blockquote className="my-5 border-l-2 border-border pl-6 italic text-muted-foreground [&>p]:my-2">
-        {wrapChildrenWithPaths(children)}
-      </blockquote>
-    ),
-
-    hr: () => <hr className="my-6 h-px border-0 border-t border-border/60" />,
-
-    table: ({ children }: { children?: React.ReactNode }) => (
-      <div className="my-5 overflow-x-auto rounded-md border border-border">
-        <table className="w-full text-sm !m-0">{children}</table>
-      </div>
-    ),
-    thead: ({ children }: { children?: React.ReactNode }) => (
-      <thead className="border-b border-border bg-muted">{children}</thead>
-    ),
-    tbody: ({ children }: { children?: React.ReactNode }) => (
-      <tbody className="divide-y divide-border">{children}</tbody>
-    ),
-    tr: ({ children }: { children?: React.ReactNode }) => <tr>{children}</tr>,
-    th: ({ children }: { children?: React.ReactNode }) => (
-      <th className="px-4 py-2 text-left font-semibold text-foreground">{children}</th>
-    ),
-    td: ({ children }: { children?: React.ReactNode }) => (
-      <td className="px-4 py-2 text-left font-normal text-foreground">
-        {wrapChildrenWithPaths(children)}
-      </td>
-    ),
-
-    img: ({ src, alt }: { src?: string; alt?: string }) => {
-      if (!src) return null;
-      const resolvedSrc = proxy(src) ?? src;
-      return (
-        <span className="my-5 block">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={resolvedSrc}
-            alt={alt || ''}
-            loading="lazy"
-            className="h-auto max-w-full rounded-lg outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
-          />
-        </span>
-      );
-    },
-
-    strong: ({ children }: { children?: React.ReactNode }) => (
-      <strong className="font-semibold text-foreground">{children}</strong>
-    ),
-    em: ({ children }: { children?: React.ReactNode }) => (
-      <em className="italic text-foreground/90">{children}</em>
-    ),
-    del: ({ children }: { children?: React.ReactNode }) => (
-      <del className="text-muted-foreground line-through decoration-muted-foreground/50">{children}</del>
-    ),
-
-    // GFM task-list checkbox.
-    input: ({ checked, ...props }: React.InputHTMLAttributes<HTMLInputElement>) => (
-      <input
-        type="checkbox"
-        checked={checked}
-        readOnly
-        className="relative -top-[1px] mr-2 size-4 cursor-default rounded border-border align-middle accent-secondary"
-        {...props}
-      />
-    ),
-
-    // Raw HTML passthrough (GFM) — leave KaTeX-owned nodes untouched.
-    div: ({ children, style, className: divClassName, ...props }: React.HTMLAttributes<HTMLDivElement>) => {
-      if (isKatexClassName(divClassName)) {
-        return (
-          <div className={normalizeClassName(divClassName)} style={style as React.CSSProperties} {...props}>
+          </h1>
+        ),
+        h2: ({ children }: { children?: React.ReactNode }) => (
+          <h2 className="text-foreground mt-10 mb-4 text-xl font-semibold first:mt-0">
             {children}
+          </h2>
+        ),
+        h3: ({ children }: { children?: React.ReactNode }) => (
+          <h3 className="text-foreground mt-10 mb-4 text-xl font-semibold first:mt-0">
+            {children}
+          </h3>
+        ),
+        h4: ({ children }: { children?: React.ReactNode }) => (
+          <h4 className="text-foreground mt-10 mb-4 text-xl font-semibold first:mt-0">
+            {children}
+          </h4>
+        ),
+        h5: ({ children }: { children?: React.ReactNode }) => (
+          <h5 className="text-foreground mt-10 mb-4 text-xl font-semibold first:mt-0">
+            {children}
+          </h5>
+        ),
+        h6: ({ children }: { children?: React.ReactNode }) => (
+          <h6 className="text-foreground mt-10 mb-4 text-xl font-semibold first:mt-0">
+            {children}
+          </h6>
+        ),
+
+        p: ({ children }: { children?: React.ReactNode }) => (
+          <div className="text-foreground/95 my-4 leading-relaxed font-medium first:mt-0 last:mb-0 [&:has(img)]:my-0">
+            {wrapChildrenWithPaths(children)}
           </div>
-        );
-      }
+        ),
+
+        ul: ({ children }: { children?: React.ReactNode }) => (
+          <ul className="marker:text-muted-foreground/60 my-4 list-outside list-disc space-y-1 pl-6 first:mt-0 last:mb-0 [&_p]:mb-2 [&_p]:last:mb-0">
+            {children}
+          </ul>
+        ),
+        ol: ({ children }: { children?: React.ReactNode }) => (
+          <ol className="marker:text-muted-foreground/80 my-4 list-outside list-decimal space-y-1 pl-6 marker:font-medium first:mt-0 last:mb-0 [&_p]:mb-2 [&_p]:last:mb-0">
+            {children}
+          </ol>
+        ),
+        li: ({ children }: { children?: React.ReactNode }) => (
+          <li className="text-foreground/95 leading-relaxed font-medium">
+            {wrapChildrenWithPaths(children)}
+          </li>
+        ),
+
+        // Links — brand-blue, routed through next/link. Setup links open an in-app modal.
+        a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
+          const setupLink = parseSetupLinkHref(href);
+          if (setupLink) {
+            return (
+              <SetupLinkButton kind={setupLink.kind} token={setupLink.token}>
+                {children}
+              </SetupLinkButton>
+            );
+          }
+
+          const resolvedHref = proxy(href) ?? href ?? '#';
+          const isHash = resolvedHref.startsWith('#');
+          const isExternal = !isInternalUrl(resolvedHref);
+          const linkClass = cn(
+            'font-medium text-kortix-blue',
+            'underline decoration-kortix-blue/40 decoration-[1px] underline-offset-[3px]',
+            'transition-colors hover:decoration-kortix-blue',
+          );
+
+          return (
+            <Link
+              href={resolvedHref}
+              onClick={isHash ? (e) => handleHashClick(e, resolvedHref) : undefined}
+              className={linkClass}
+              {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+            >
+              {children}
+            </Link>
+          );
+        },
+
+        // Code — Mermaid and KaTeX fences render their own chrome; everything else goes
+        // through the shared card. `language || 'text'` routes no-hint fences via Shiki.
+        code: ({
+          children,
+          className: codeClassName,
+        }: {
+          children?: React.ReactNode;
+          className?: string;
+        }) => {
+          const match = /language-(\w+)/.exec(codeClassName || '');
+          const language = match ? match[1] : '';
+          const code = String(children).replace(/\n$/, '');
+          const isBlock = codeClassName?.includes('language-') || code.includes('\n');
+
+          if (isBlock) {
+            if (isMermaidCode(language, code)) {
+              return (
+                <Suspense fallback={null}>
+                  <MermaidRenderer chart={code} className="my-5" />
+                </Suspense>
+              );
+            }
+            if (KATEX_FENCE_LANGUAGES.has(language.toLowerCase())) {
+              return <KaTeXBlock math={code} />;
+            }
+            return (
+              <CodeBlock code={code} language={language} isStreaming={isStreaming}>
+                <HighlightedCode code={code} language={language || 'text'}>
+                  {children}
+                </HighlightedCode>
+              </CodeBlock>
+            );
+          }
+
+          return <ClickableInlineCode>{children}</ClickableInlineCode>;
+        },
+        // `code` returns the fully-styled block; collapse the default `<pre>` wrapper.
+        pre: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+
+        blockquote: ({ children }: { children?: React.ReactNode }) => (
+          <blockquote className="border-border text-muted-foreground my-5 border-l-2 pl-6 italic [&>p]:my-2">
+            {wrapChildrenWithPaths(children)}
+          </blockquote>
+        ),
+
+        hr: () => <hr className="border-border/60 my-6 h-px border-0 border-t" />,
+
+        table: ({ children }: { children?: React.ReactNode }) => (
+          <div className="border-border my-5 overflow-x-auto rounded-md border">
+            <table className="!m-0 w-full text-sm">{children}</table>
+          </div>
+        ),
+        thead: ({ children }: { children?: React.ReactNode }) => (
+          <thead className="border-border bg-muted border-b">{children}</thead>
+        ),
+        tbody: ({ children }: { children?: React.ReactNode }) => (
+          <tbody className="divide-border divide-y">{children}</tbody>
+        ),
+        tr: ({ children }: { children?: React.ReactNode }) => <tr>{children}</tr>,
+        th: ({ children }: { children?: React.ReactNode }) => (
+          <th className="text-foreground px-4 py-2 text-left font-semibold">{children}</th>
+        ),
+        td: ({ children }: { children?: React.ReactNode }) => (
+          <td className="text-foreground px-4 py-2 text-left font-normal">
+            {wrapChildrenWithPaths(children)}
+          </td>
+        ),
+
+        img: ({ src, alt }: { src?: string; alt?: string }) => {
+          if (!src) return null;
+          const resolvedSrc = proxy(src) ?? src;
+          return (
+            <span className="my-5 block">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={resolvedSrc}
+                alt={alt || ''}
+                loading="lazy"
+                className="h-auto max-w-full rounded-lg outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
+              />
+            </span>
+          );
+        },
+
+        strong: ({ children }: { children?: React.ReactNode }) => (
+          <strong className="text-foreground font-semibold">{children}</strong>
+        ),
+        em: ({ children }: { children?: React.ReactNode }) => (
+          <em className="text-foreground/90 italic">{children}</em>
+        ),
+        del: ({ children }: { children?: React.ReactNode }) => (
+          <del className="text-muted-foreground decoration-muted-foreground/50 line-through">
+            {children}
+          </del>
+        ),
+
+        // GFM task-list checkbox.
+        input: ({ checked, ...props }: React.InputHTMLAttributes<HTMLInputElement>) => (
+          <input
+            type="checkbox"
+            checked={checked}
+            readOnly
+            className="border-border accent-secondary relative -top-[1px] mr-2 size-4 cursor-default rounded align-middle"
+            {...props}
+          />
+        ),
+
+        // Raw HTML passthrough (GFM) — leave KaTeX-owned nodes untouched.
+        div: ({
+          children,
+          style,
+          className: divClassName,
+          ...props
+        }: React.HTMLAttributes<HTMLDivElement>) => {
+          if (isKatexClassName(divClassName)) {
+            return (
+              <div
+                className={normalizeClassName(divClassName)}
+                style={style as React.CSSProperties}
+                {...props}
+              >
+                {children}
+              </div>
+            );
+          }
+          return (
+            <div
+              className={cn('text-foreground text-sm', divClassName)}
+              style={style as React.CSSProperties}
+              {...props}
+            >
+              {children}
+            </div>
+          );
+        },
+        span: ({
+          children,
+          style,
+          className: spanClassName,
+          ...props
+        }: React.HTMLAttributes<HTMLSpanElement>) => {
+          if (isKatexClassName(spanClassName)) {
+            return (
+              <span
+                className={normalizeClassName(spanClassName)}
+                style={style as React.CSSProperties}
+                {...props}
+              >
+                {children}
+              </span>
+            );
+          }
+          return (
+            <span
+              className={cn('text-foreground', spanClassName)}
+              style={style as React.CSSProperties}
+              {...props}
+            >
+              {children}
+            </span>
+          );
+        },
+      }),
+      [isStreaming, proxy],
+    );
+
+    const safeContent = typeof content === 'string' ? content : content ? String(content) : '';
+
+    if (!safeContent) {
       return (
-        <div className={cn('text-sm text-foreground', divClassName)} style={style as React.CSSProperties} {...props}>
-          {children}
+        <div className={cn('text-muted-foreground text-sm', className)}>
+          {tHardcodedUi.raw('componentsMarkdownUnifiedMarkdown.line1115JsxTextNoContent')}
         </div>
       );
-    },
-    span: ({ children, style, className: spanClassName, ...props }: React.HTMLAttributes<HTMLSpanElement>) => {
-      if (isKatexClassName(spanClassName)) {
-        return (
-          <span className={normalizeClassName(spanClassName)} style={style as React.CSSProperties} {...props}>
-            {children}
-          </span>
-        );
-      }
-      return (
-        <span className={cn('text-foreground', spanClassName)} style={style as React.CSSProperties} {...props}>
-          {children}
-        </span>
-      );
-    },
-  }), [isStreaming, proxy]);
+    }
 
-  const safeContent = typeof content === 'string' ? content : (content ? String(content) : '');
+    const finalContent = autoLinkUrls(stripKortixSystemTags(prepareMarkdownForKatex(safeContent)));
 
-  if (!safeContent) {
     return (
-      <div className={cn('text-sm text-muted-foreground', className)}>
-        {tHardcodedUi.raw('componentsMarkdownUnifiedMarkdown.line1115JsxTextNoContent')}
+      <div
+        className={cn('kortix-markdown text-[15px]', isStreaming && 'streaming-active', className)}
+        data-streaming={isStreaming ? 'true' : 'false'}
+      >
+        <Streamdown
+          isAnimating={isStreaming}
+          mode="static"
+          components={components as any}
+          remarkPlugins={katexRemarkPlugins}
+          rehypePlugins={allowHtml ? buildKatexRehypePlugins(true) : buildKatexRehypePlugins(false)}
+        >
+          {finalContent}
+        </Streamdown>
       </div>
     );
-  }
-
-  const finalContent = autoLinkUrls(stripKortixSystemTags(prepareMarkdownForKatex(safeContent)));
-
-  return (
-    <div
-      className={cn('kortix-markdown text-[15px]', isStreaming && 'streaming-active', className)}
-      data-streaming={isStreaming ? 'true' : 'false'}
-    >
-      <Streamdown
-        isAnimating={isStreaming}
-        mode="static"
-        components={components as any}
-        remarkPlugins={katexRemarkPlugins}
-        rehypePlugins={allowHtml ? buildKatexRehypePlugins(true) : buildKatexRehypePlugins(false)}
-      >
-        {finalContent}
-      </Streamdown>
-    </div>
-  );
-});
+  },
+);
 
 UnifiedMarkdown.displayName = 'UnifiedMarkdown';
