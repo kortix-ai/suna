@@ -15,6 +15,7 @@ import {
   ModalBody,
   ModalContent,
   ModalDescription,
+  ModalFooter,
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
@@ -48,14 +49,18 @@ import {
 } from '@/hooks/channels/use-channel-bindings';
 import {
   useConnectSlack,
+  useConnectTelegram,
   useDisconnectEmail,
   useDisconnectSlack,
+  useDisconnectTelegram,
   useEmailInstall,
   useSlackInstall,
   useSlackManifest,
   useSlackMode,
+  useTelegramInstall,
   type EmailInstallation,
   type SlackInstallation,
+  type TelegramInstallation,
 } from '@/hooks/channels/use-channels-installations';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
@@ -69,7 +74,7 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { Check, CheckCircleSolid, ExternalLinkSolid } from '@mynaui/icons-react';
-import { Copy, Mail, MessageSquare, X } from 'lucide-react';
+import { Copy, Mail, MessageSquare, Send, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
@@ -88,12 +93,17 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
   const emailChannelEnabled = projectQuery.data?.experimental?.agentmail_email === true;
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
   const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
+  const { data: telegramInstall, isLoading: loadingTelegram } = useTelegramInstall(projectId);
   const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
     emailChannelEnabled ? projectId : null,
     EMAIL_CONNECTOR_SLUG,
   );
   const loading =
-    loadingInstall || loadingMode || projectQuery.isLoading || (emailChannelEnabled && loadingEmail);
+    loadingInstall ||
+    loadingMode ||
+    loadingTelegram ||
+    projectQuery.isLoading ||
+    (emailChannelEnabled && loadingEmail);
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
   const canWrite =
     useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
@@ -142,6 +152,27 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
               )}
             />
             <BringYourOwnPanel projectId={projectId} inline />
+            {/* Telegram stays reachable regardless of the Slack install state —
+                it's an optional channel with its own BYO-bot connect flow. */}
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Platform</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Bot</TableHead>
+                  <TableHead className="w-[120px]">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TelegramChannelRow
+                  projectId={projectId}
+                  installation={telegramInstall ?? null}
+                  canWrite={canWrite}
+                />
+              </TableBody>
+            </Table>
           </div>
         ) : (
           <>
@@ -172,6 +203,11 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                   projectId={projectId}
                   installation={install ?? null}
                   oauthInstallUrl={oauthInstallUrl}
+                  canWrite={canWrite}
+                />
+                <TelegramChannelRow
+                  projectId={projectId}
+                  installation={telegramInstall ?? null}
                   canWrite={canWrite}
                 />
                 {emailChannelEnabled ? (
@@ -513,6 +549,201 @@ function SlackChannelRow({
         ) : null}
       </TableCell>
     </TableRow>
+  );
+}
+
+function TelegramChannelRow({
+  projectId,
+  installation,
+  canWrite,
+}: {
+  projectId: string;
+  installation: TelegramInstallation | null;
+  canWrite: boolean;
+}) {
+  const disconnect = useDisconnectTelegram();
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  const connected = Boolean(installation);
+
+  return (
+    <>
+      <TableRow className="hover:bg-transparent">
+        <TableCell>
+          <div className="flex items-center gap-2.5">
+            <Send className="text-muted-foreground size-5 shrink-0" />
+            <span className="text-sm font-medium">Telegram</span>
+            <Badge variant="muted" size="xs">
+              Optional
+            </Badge>
+          </div>
+        </TableCell>
+        <TableCell>
+          {connected ? (
+            <Badge variant="success" size="sm">
+              Connected
+            </Badge>
+          ) : (
+            <Badge variant="outline" size="sm" className="text-muted-foreground">
+              Not connected
+            </Badge>
+          )}
+        </TableCell>
+        <TableCell className="text-muted-foreground text-sm">
+          {connected ? (
+            <code className="text-foreground font-mono text-xs">
+              {installation?.botUsername ? `@${installation.botUsername}` : installation?.botId}
+            </code>
+          ) : (
+            '—'
+          )}
+        </TableCell>
+        <TableCell>
+          {!canWrite ? null : connected ? (
+            confirming ? (
+              <div className="flex items-center justify-end gap-1">
+                <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={disconnect.isPending}
+                  onClick={() =>
+                    disconnect.mutate(projectId, {
+                      onSuccess: () => {
+                        setConfirming(false);
+                        successToast('Telegram disconnected');
+                      },
+                      onError: (err) =>
+                        errorToast(err instanceof Error ? err.message : 'Failed to disconnect'),
+                    })
+                  }
+                >
+                  {disconnect.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+                  Disconnect
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setConfirming(true)}
+              >
+                <X className="size-3.5 shrink-0" />
+                Disconnect
+              </Button>
+            )
+          ) : (
+            <Button size="sm" variant="secondary" onClick={() => setConnectOpen(true)}>
+              Connect
+            </Button>
+          )}
+        </TableCell>
+      </TableRow>
+      <TelegramConnectModal
+        projectId={projectId}
+        open={connectOpen}
+        onOpenChange={setConnectOpen}
+      />
+    </>
+  );
+}
+
+function TelegramConnectModal({
+  projectId,
+  open,
+  onOpenChange,
+}: {
+  projectId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const connect = useConnectTelegram();
+  const [token, setToken] = useState('');
+
+  const close = (next: boolean) => {
+    if (connect.isPending) return; // don't lose the in-flight connect
+    if (!next) setToken('');
+    onOpenChange(next);
+  };
+
+  const submit = () => {
+    const bot_token = token.trim();
+    if (!bot_token) return;
+    connect.mutate(
+      { projectId, bot_token },
+      {
+        onSuccess: (result) => {
+          successToast(
+            `Telegram connected${result.botUsername ? ` — @${result.botUsername}` : ''}`,
+            { description: 'Message your bot to start a session; replies land in the chat.' },
+          );
+          setToken('');
+          onOpenChange(false);
+        },
+        onError: (err) =>
+          errorToast(err instanceof Error ? err.message : 'Failed to connect Telegram'),
+      },
+    );
+  };
+
+  return (
+    <Modal open={open} onOpenChange={close}>
+      <ModalContent className="lg:max-w-lg">
+        <ModalHeader>
+          <ModalTitle>Connect Telegram</ModalTitle>
+          <ModalDescription>
+            Paste a bot token from{' '}
+            <a
+              href="https://t.me/BotFather"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-foreground underline underline-offset-2"
+            >
+              @BotFather
+            </a>
+            {' '}(<code className="font-mono text-xs">/newbot</code>). Kortix validates it, points
+            the bot&apos;s webhook at this project, and keeps the token server-side — it never
+            reaches a sandbox.
+          </ModalDescription>
+        </ModalHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          <ModalBody className="space-y-2">
+            <Label htmlFor="telegram-bot-token">Bot token</Label>
+            <Input
+              id="telegram-bot-token"
+              type="password"
+              autoComplete="off"
+              placeholder="1234567890:AA…"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              disabled={connect.isPending}
+            />
+            <p className="text-muted-foreground text-xs">
+              Optional channel — you can disconnect at any time; disconnecting removes the webhook
+              and deletes the stored token.
+            </p>
+          </ModalBody>
+          <ModalFooter className="sm:justify-between">
+            <Button type="button" variant="outline-ghost" onClick={() => close(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={connect.isPending || !token.trim()}>
+              {connect.isPending ? <Loading className="size-4 shrink-0" /> : null}
+              Connect
+            </Button>
+          </ModalFooter>
+        </form>
+      </ModalContent>
+    </Modal>
   );
 }
 

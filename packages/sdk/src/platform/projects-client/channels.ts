@@ -38,6 +38,55 @@ export async function connectSlack(
   );
 }
 
+// ─── Telegram (optional channel — BYO bot from @BotFather) ──────────────────
+
+export interface TelegramInstallation {
+  botId: string;
+  botUsername: string | null;
+  installedAt: string;
+}
+
+export async function getTelegramInstallation(
+  projectId: string,
+): Promise<TelegramInstallation | null> {
+  const res = await backendApi.get<TelegramInstallation | null>(
+    `/projects/${encodeURIComponent(projectId)}/channels/telegram/installation`,
+    { showErrors: false },
+  );
+  if (!res.success) return null;
+  return res.data ?? null;
+}
+
+export interface ConnectTelegramInput {
+  bot_token: string;
+}
+
+/** Validates the token with Telegram and registers the webhook server-side —
+ *  the token never comes back in the response. */
+export async function connectTelegram(
+  projectId: string,
+  input: ConnectTelegramInput,
+): Promise<TelegramInstallation> {
+  return unwrap(
+    await backendApi.post<TelegramInstallation>(
+      `/projects/${encodeURIComponent(projectId)}/channels/telegram/connect`,
+      input,
+      { showErrors: false },
+    ),
+    'Failed to connect',
+  );
+}
+
+export async function disconnectTelegram(projectId: string): Promise<void> {
+  await unwrap(
+    await backendApi.delete<{ status: string }>(
+      `/projects/${encodeURIComponent(projectId)}/channels/telegram/installation`,
+      { showErrors: false },
+    ),
+    'Failed to disconnect',
+  );
+}
+
 export interface SlackMode {
   oauth_available: boolean;
   install_url: string | null;
