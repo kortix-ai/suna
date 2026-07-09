@@ -52,9 +52,7 @@ export function SearchBar({
         onChangeText={onChangeText}
         placeholder={placeholder}
         returnKeyType="search"
-        containerClassName="flex-1 mx-2"
-        wrapperClassName="bg-transparent border-0 rounded-none"
-        inputClassName="px-0 text-base font-roobert-medium"
+        className="flex-1 mx-2 h-full rounded-none bg-transparent px-0 text-base shadow-none"
         accessibilityLabel={`Search ${placeholder.toLowerCase()}`}
         accessibilityHint={`Type to search through your ${placeholder.toLowerCase()}`}
       />

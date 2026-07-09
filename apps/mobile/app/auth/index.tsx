@@ -1,45 +1,39 @@
 /**
- * Auth Screen — login only.
+ * Auth Screen — login only (photo-hero lock screen).
  *
  * Mobile supports sign-in only; new accounts are created on the web. The email
  * auth method (magic link or password) and social providers render based on env
  * (see lib/auth/auth-config), never hardcoded:
  *   EXPO_PUBLIC_AUTH_METHODS    "magic" / "password"
  *   EXPO_PUBLIC_AUTH_PROVIDERS  "google" / "apple"
+ *
+ * Layout: full-bleed hero image on top, brand + provider pills below on a dark
+ * base. Always-dark, independent of the app theme.
  */
 
 import * as React from 'react';
-import {
-  View,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  TouchableOpacity,
-  ActivityIndicator,
-  Linking,
-} from 'react-native';
+import { View, Dimensions, Platform, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
-import { useColorScheme } from 'nativewind';
+import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 
-import { Text } from '@/components/ui/text';
+import { Mail } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
+
+import { KortixCurrents } from '@/components/animations/kortix-currents';
+import { AppleIcon, GoogleIcon } from '@/components/icons/auth-icons';
 import { KortixLogo } from '@/components/ui/KortixLogo';
-import { AuthButton } from '@/components/auth/AuthButton';
-import { AuthInput } from '@/components/auth/AuthInput';
+import { Text } from '@/components/ui/text';
+import { Icon } from '@/components/ui/icon';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Sheet, SheetBody, type SheetRef } from '@/components/ui/sheet';
 import { useAuthContext } from '@/contexts';
 import { supabase } from '@/api/supabase';
-import { getFrontendUrl } from '@/api/config';
 import { log } from '@/lib/logger';
-import { createAuthCallbackState } from '@/lib/auth/callback-state';
-import { buildMobileRegistrationUrl } from '@/lib/auth/web-registration-handoff';
-import {
-  magicLinkEnabled,
-  passwordEnabled,
-  googleEnabled,
-  appleEnabled,
-  type AuthMethod,
-} from '@/lib/auth/auth-config';
+import { magicLinkEnabled, passwordEnabled, type AuthMethod } from '@/lib/auth/auth-config';
+import { useThemeStore } from '@/stores/theme-store';
 
 const friendlySignInError = (msg?: string): string => {
   if (!msg) return 'Could not sign in';
@@ -57,14 +51,60 @@ const friendlyMagicError = (msg?: string): string => {
   return msg;
 };
 
+// ── Lock-screen palette (fixed — always dark) ────────────────────────────────
+const BG_DARK = '#000000';
+const PILL_LIGHT_TEXT = '#0A0A0A'; // ActivityIndicator + Apple glyph on white pills
+const TEXT_ON_DARK = '#FFFFFF'; // ActivityIndicator on dark pills
+
+const SCREEN_H = Dimensions.get('window').height;
+const HERO_H = Math.round(SCREEN_H * 0.8);
+
+/**
+ * Full-width auth pill built on the shared Button + Text primitives.
+ * Uses `inverted` so light mode → dark pill / light text, dark mode → light
+ * pill / dark text. Icon + spinner colors follow the resolved theme.
+ */
+function AuthPill({
+  label,
+  onPress,
+  disabled,
+  loading,
+  leading,
+  variant = 'white',
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+  leading?: React.ReactNode;
+  variant?: React.ComponentProps<typeof Button>['variant'];
+}) {
+  const resolvedTheme = useThemeStore((s) => s.resolvedTheme);
+  // Inverted: light mode = dark fill → light glyph; dark mode = light fill → dark glyph
+  const onInverted = resolvedTheme === 'dark' ? PILL_LIGHT_TEXT : TEXT_ON_DARK;
+
+  return (
+    <Button
+      onPress={onPress}
+      disabled={disabled}
+      variant={variant}
+      size="lg"
+      className="h-14 w-full text-base">
+      {loading ? <ActivityIndicator size="small" color={onInverted} /> : (leading ?? null)}
+      <Text variant="large">{label}</Text>
+    </Button>
+  );
+}
+
 export default function AuthScreen() {
   const router = useRouter();
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
+  const resolvedTheme = useThemeStore((s) => s.resolvedTheme);
+  const toggleTheme = useThemeStore((s) => s.toggle);
   const {
     isAuthenticated,
     signIn,
+    signUp,
     signInWithMagicLink,
     signInWithOAuth,
     resetPassword,
@@ -72,10 +112,18 @@ export default function AuthScreen() {
     clearOauthRejection,
   } = useAuthContext();
 
+  const handleThemeToggle = React.useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void toggleTheme();
+  }, [toggleTheme]);
+
+  // Email sheet: sign in vs create account (registration happens in-app).
+  const [mode, setMode] = React.useState<'signin' | 'signup'>('signin');
   const [method, setMethod] = React.useState<AuthMethod>(magicLinkEnabled ? 'magic' : 'password');
 
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
+  const [confirmPassword, setConfirmPassword] = React.useState('');
 
   const [loading, setLoading] = React.useState(false);
   const [oauthLoading, setOauthLoading] = React.useState<'google' | 'apple' | null>(null);
@@ -87,14 +135,10 @@ export default function AuthScreen() {
   const [otpCode, setOtpCode] = React.useState('');
   const [verifying, setVerifying] = React.useState(false);
 
-  const passwordRef = React.useRef<TextInput>(null);
+  const emailSheetRef = React.useRef<SheetRef>(null);
+  const [emailSheetOpen, setEmailSheetOpen] = React.useState(false);
 
   const awaitingCode = method === 'magic' && !!sentEmail;
-  const showProviders = googleEnabled || (appleEnabled && Platform.OS === 'ios');
-
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
 
   // Already-signed-in users never see auth.
   React.useEffect(() => {
@@ -115,16 +159,54 @@ export default function AuthScreen() {
     setInfo(null);
     setSentEmail(null);
     setOtpCode('');
+    setConfirmPassword('');
   }, []);
 
-  const openWebRegister = React.useCallback(async () => {
+  // ── Create account (in-app registration, password) ────────────────────────
+  const handleSignUp = React.useCallback(async () => {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !trimmedEmail.includes('@')) {
+      setErrorMessage('Please enter a valid email address.');
+      return;
+    }
+    if (!password || password.length < 6) {
+      setErrorMessage('Password must be at least 6 characters.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setErrorMessage('Passwords do not match.');
+      return;
+    }
+    setLoading(true);
+    setErrorMessage(null);
+    setInfo(null);
     try {
-      const state = await createAuthCallbackState();
-      const registrationUrl = buildMobileRegistrationUrl(getFrontendUrl(), state);
-      await Linking.openURL(registrationUrl);
+      const res = await signUp({ email: trimmedEmail, password });
+      if (!res?.success) {
+        setErrorMessage(res?.error?.message || 'Could not create your account.');
+        return;
+      }
+      if (res.requiresEmailConfirmation) {
+        setInfo('Check your email to confirm your account, then sign in.');
+        return;
+      }
+      router.replace('/projects');
+    } catch (err: any) {
+      log.error('Sign-up exception:', err);
+      setErrorMessage(err?.message || 'An unexpected error occurred.');
+    } finally {
+      setLoading(false);
+    }
+  }, [email, password, confirmPassword, signUp, router]);
+
+  const openLegal = React.useCallback(async (tab: 'privacy' | 'terms') => {
+    try {
+      const WebBrowser = await import('expo-web-browser');
+      await WebBrowser.openBrowserAsync(`https://www.kortix.com/legal?tab=${tab}`, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+      });
     } catch (error) {
-      log.warn('Unable to open web registration:', error);
-      setErrorMessage('Could not open registration. Please try again.');
+      log.warn('Unable to open legal page:', error);
     }
   }, []);
 
@@ -246,245 +328,327 @@ export default function AuthScreen() {
     [signInWithOAuth]
   );
 
-  const submitLabel = method === 'magic' ? 'Email me a sign-in code' : 'Sign in';
   const submitLoadingLabel = method === 'magic' ? 'Sending code...' : 'Signing in...';
+
+  // Signing up always needs a password; signing in may use a code instead.
+  const isSignup = mode === 'signup';
+  const showPasswordField = isSignup || method === 'password';
+  const canSwitchMethod = !isSignup && magicLinkEnabled && passwordEnabled;
+
+  const toggleMode = React.useCallback(() => {
+    void Haptics.selectionAsync();
+    setMode((m) => (m === 'signin' ? 'signup' : 'signin'));
+    resetTransient();
+  }, [resetTransient]);
+
+  const toggleMethod = React.useCallback(() => {
+    void Haptics.selectionAsync();
+    // The password field is about to unmount — don't keep its value around.
+    setPassword('');
+    setMethod((m) => (m === 'magic' ? 'password' : 'magic'));
+    resetTransient();
+  }, [resetTransient]);
+
+  // Continue stays inert until the form can actually be submitted:
+  // muted pill → solid pill the moment the email is valid.
+  const emailValid = /\S+@\S+\.\S+/.test(email.trim());
+  const canSubmit = isSignup
+    ? emailValid && password.length >= 6 && confirmPassword.length >= 6
+    : method === 'password'
+      ? emailValid && password.length >= 6
+      : emailValid;
+
+  const statusBanner = errorMessage ? (
+    <View
+      className="mb-3 w-full rounded-2xl px-4 py-3"
+      style={{ backgroundColor: 'rgba(255,69,58,0.16)' }}>
+      <Text variant="small" className="text-center text-destructive">
+        {errorMessage}
+      </Text>
+    </View>
+  ) : info ? (
+    <View
+      className="mb-3 w-full rounded-2xl px-4 py-3"
+      style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+      <Text variant="muted" className="text-center">
+        {info}
+      </Text>
+    </View>
+  ) : null;
 
   return (
     <>
       <Stack.Screen options={{ headerShown: false, gestureEnabled: false }} />
-      <KeyboardAvoidingView
-        className="flex-1 bg-background"
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <View
-          className="flex-1 justify-center px-8"
-          style={{ paddingTop: insets.top, paddingBottom: insets.bottom + 32 }}>
-          {/* Logo + heading */}
-          <View className="mb-8 items-start">
-            <KortixLogo variant="symbol" size={36} color={isDark ? 'dark' : 'light'} />
-            <Text className="mt-5 font-roobert-semibold text-[28px] leading-tight text-foreground">
-              {awaitingCode ? 'Check your\nemail' : 'Sign in to\nKortix'}
-            </Text>
-            <Text className="mt-2 font-roobert text-[15px] text-muted-foreground">
-              {awaitingCode
-                ? `We sent a code to ${(sentEmail ?? email).trim()}`
-                : 'Your AI Computer'}
-            </Text>
-          </View>
+      <StatusBar style="light" />
+      <View style={{ flex: 1, backgroundColor: BG_DARK }}>
+        {/* Hero — the Kortix mark forming out of a flow field (top half) */}
+        <View style={{ height: HERO_H, width: '100%' }}>
+          {/* The hero runs 80% of the screen, so a centred mark lands near the
+              middle. Bias it up into the field's clear upper half. */}
+          <KortixCurrents markCenterY={0.4} />
+          {/* Fade the field into the dark base */}
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.35)', 'rgba(0,0,0,0.85)', BG_DARK]}
+            locations={[0, 0.35, 0.78, 1]}
+            style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: HERO_H * 0.5 }}
+            pointerEvents="none"
+          />
+        </View>
 
-          {/* Banners */}
-          {errorMessage && (
-            <View className="mb-4 rounded-2xl bg-destructive/10 px-4 py-3">
-              <Text className="text-center font-roobert text-sm text-destructive">
-                {errorMessage}
-              </Text>
+        {/* Bottom content */}
+        <View
+          style={{
+            flex: 1,
+            paddingHorizontal: 24,
+            paddingBottom: insets.bottom + 14,
+            justifyContent: 'flex-end',
+          }}>
+          {/* Brand + actions + footer */}
+          <View style={{ width: '100%' }}>
+            {/* The symbol is already forming in the field above, so this is the
+                logomark — never the symbol a second time. */}
+            <View style={{ alignItems: 'center', marginBottom: 28 }}>
+              <KortixLogo variant="text" size={28} color="dark" />
             </View>
-          )}
-          {info && !errorMessage && (
+
+            {!emailSheetOpen && statusBanner}
+
+            <View style={{ gap: 12 }}>
+              {/* Apple — iOS only */}
+              {Platform.OS === 'ios' && (
+                <AuthPill
+                  label={oauthLoading === 'apple' ? 'Signing in…' : 'Continue with Apple'}
+                  loading={oauthLoading === 'apple'}
+                  disabled={!!oauthLoading}
+                  onPress={() => handleOAuth('apple')}
+                  leading={<AppleIcon size={19} color={PILL_LIGHT_TEXT} />}
+                />
+              )}
+
+              {/* Google — both platforms */}
+              <AuthPill
+                label={oauthLoading === 'google' ? 'Opening Google…' : 'Continue with Google'}
+                loading={oauthLoading === 'google'}
+                disabled={!!oauthLoading}
+                onPress={() => handleOAuth('google')}
+                leading={<GoogleIcon size={19} />}
+              />
+
+              {/* Email — both platforms */}
+              <AuthPill
+                variant="secondary"
+                label="Continue with email"
+                disabled={!!oauthLoading}
+                onPress={() => {
+                  setEmailSheetOpen(true);
+                  emailSheetRef.current?.open();
+                }}
+              />
+            </View>
+
+            {/* Footer — legal */}
             <View
-              className="mb-4 rounded-2xl px-4 py-3"
-              style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}>
-              <Text className="text-center font-roobert text-sm" style={{ color: muted }}>
-                {info}
-              </Text>
+              style={{
+                marginTop: 22,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 28,
+              }}>
+              <TouchableOpacity onPress={() => openLegal('privacy')} hitSlop={8}>
+                <Text variant="muted" className="text-white/50">
+                  Privacy policy
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => openLegal('terms')} hitSlop={8}>
+                <Text variant="muted" className="text-white/50">
+                  Terms of service
+                </Text>
+              </TouchableOpacity>
             </View>
-          )}
+          </View>
+        </View>
+      </View>
+
+      {/* Email auth sheet — full screen. With the back chevron gone, the swipe
+          gesture is the only way out, so it has to be enabled. */}
+      <Sheet
+        ref={emailSheetRef}
+        fullScreen
+        enablePanDownToClose
+        onDismiss={() => setEmailSheetOpen(false)}>
+        <SheetBody className="flex-1 pt-4">
+          {statusBanner}
 
           {awaitingCode ? (
             /* ── OTP code phase ── */
-            <View className="w-full">
-              <View className="mb-5">
-                <AuthInput
-                  value={otpCode}
-                  onChangeText={setOtpCode}
-                  placeholder="Enter 6-digit code"
-                  keyboardType="numeric"
-                  autoComplete="one-time-code"
-                  returnKeyType="go"
-                  onSubmitEditing={handleVerifyOtp}
-                />
+            <View className="flex-1">
+              <View className="items-center gap-3 pt-6">
+                <View className="h-16 w-16 items-center justify-center rounded-full bg-card">
+                  <Icon as={Mail} size={26} className="text-muted-foreground" />
+                </View>
+                <Text variant="large">Check your email</Text>
+                <Text variant="muted" className="text-center">
+                  A temporary sign-in code has been sent to {(sentEmail ?? email).trim()}
+                </Text>
               </View>
-              <AuthButton
-                label="Verify code"
-                loadingLabel="Verifying..."
-                onPress={handleVerifyOtp}
-                isLoading={verifying}
-                variant="primary"
-                showArrow={false}
+
+              <Input
+                value={otpCode}
+                onChangeText={setOtpCode}
+                placeholder="Enter code"
+                keyboardType="numeric"
+                autoComplete="one-time-code"
+                returnKeyType="go"
+                onSubmitEditing={handleVerifyOtp}
+                className="mt-8 text-center"
               />
-              <View
-                style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 16, gap: 16 }}>
-                <TouchableOpacity onPress={handleSubmit} disabled={loading}>
-                  <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>
-                    Resend code
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={resetTransient}>
-                  <Text style={{ fontSize: 14, fontFamily: 'Roobert', color: muted }}>
-                    Use a different email
-                  </Text>
-                </TouchableOpacity>
+
+              <View className="flex-1" />
+
+              <Button
+                size="lg"
+                variant="default"
+                className="h-14 w-full"
+                onPress={handleVerifyOtp}
+                disabled={verifying || otpCode.trim().length < 6}>
+                {verifying && <ActivityIndicator size="small" color="#FFFFFF" />}
+                <Text>{verifying ? 'Verifying...' : 'Continue'}</Text>
+              </Button>
+
+              <View className="mt-4 flex-row items-center justify-center gap-6">
+                <Button variant="transparent" onPress={handleSubmit} disabled={loading}>
+                  <Text>Resend code</Text>
+                </Button>
+                <Button variant="transparent" onPress={resetTransient}>
+                  <Text>Use a different email</Text>
+                </Button>
               </View>
             </View>
           ) : (
-            /* ── Email + (password) form ── */
-            <View className="w-full">
-              <View className="mb-3">
-                <AuthInput
+            /* ── Sign in / Create account ── */
+            <View className="flex-1">
+              {/* The heading carries the mode, so the form needs no tab bar. */}
+              <View className="gap-1.5 pb-7">
+                <Text variant="h3" className="font-roobert-semibold">
+                  {isSignup ? 'Create account' : 'Sign in'}
+                </Text>
+                <Text variant="muted">
+                  {isSignup
+                    ? 'Choose a password to finish setting up your account.'
+                    : showPasswordField
+                      ? 'Enter your email and password to continue.'
+                      : 'We’ll email you a 6-digit code — no password needed.'}
+                </Text>
+              </View>
+
+              <View className="gap-3">
+                <Input
                   value={email}
                   onChangeText={setEmail}
-                  placeholder="Email address"
+                  placeholder="Email"
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoComplete="email"
-                  returnKeyType={method === 'password' ? 'next' : 'go'}
-                  onSubmitEditing={() =>
-                    method === 'password' ? passwordRef.current?.focus() : handleSubmit()
-                  }
+                  returnKeyType={showPasswordField ? 'next' : 'go'}
+                  onSubmitEditing={() => {
+                    if (!showPasswordField) handleSubmit();
+                  }}
                 />
-              </View>
 
-              {method === 'password' && (
-                <View className="mb-3">
-                  <AuthInput
+                {showPasswordField && (
+                  <Input
                     value={password}
                     onChangeText={setPassword}
                     placeholder="Password"
                     secureTextEntry
-                    autoComplete="password"
-                    returnKeyType="go"
-                    onSubmitEditing={handleSubmit}
+                    autoComplete={isSignup ? 'new-password' : 'password'}
+                    returnKeyType={isSignup ? 'next' : 'go'}
+                    onSubmitEditing={() => {
+                      if (!isSignup) handleSubmit();
+                    }}
                   />
-                </View>
-              )}
+                )}
 
-              <View className="mt-2">
-                <AuthButton
-                  label={submitLabel}
-                  loadingLabel={submitLoadingLabel}
-                  onPress={handleSubmit}
-                  isLoading={loading}
-                  variant="primary"
-                  showArrow={false}
-                />
+                {isSignup && (
+                  <Input
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    placeholder="Confirm password"
+                    secureTextEntry
+                    autoComplete="new-password"
+                    returnKeyType="go"
+                    onSubmitEditing={handleSignUp}
+                  />
+                )}
               </View>
 
-              {/* Method toggle (only when both email methods enabled) */}
-              {magicLinkEnabled && passwordEnabled && (
-                <TouchableOpacity
-                  onPress={() => {
-                    setMethod(method === 'magic' ? 'password' : 'magic');
-                    resetTransient();
-                  }}
-                  style={{ marginTop: 16, alignSelf: 'center' }}>
-                  <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>
+              {/* Recovery belongs to the password field it sits under. */}
+              {!isSignup && showPasswordField && (
+                <Button
+                  variant="transparent"
+                  size="sm"
+                  className="mt-1 self-end"
+                  onPress={handleForgotPassword}>
+                  <Text variant="small">Forgot password?</Text>
+                </Button>
+              )}
+
+              {/* Push the primary action to the bottom of the sheet */}
+              <View className="flex-1" />
+
+              <Button
+                size="lg"
+                variant="default"
+                className="h-14 w-full"
+                onPress={isSignup ? handleSignUp : handleSubmit}
+                disabled={loading || !canSubmit}>
+                {loading && <ActivityIndicator size="small" color="#FFFFFF" />}
+                <Text>
+                  {isSignup
+                    ? loading
+                      ? 'Creating account…'
+                      : 'Create account'
+                    : loading
+                      ? submitLoadingLabel
+                      : 'Continue'}
+                </Text>
+              </Button>
+
+              {/* The method switch is an alternative to the button above it, so
+                  that is where it lives — not floating among the inputs. */}
+              {canSwitchMethod && (
+                <Button
+                  variant="transparent"
+                  className="mt-2 self-center"
+                  disabled={loading}
+                  onPress={toggleMethod}>
+                  <Text variant="small">
                     {method === 'magic' ? 'Use password instead' : 'Use email code instead'}
                   </Text>
-                </TouchableOpacity>
+                </Button>
               )}
 
-              {/* Forgot password (password method only) */}
-              {method === 'password' && (
-                <TouchableOpacity
-                  onPress={handleForgotPassword}
-                  style={{ marginTop: 12, alignSelf: 'center' }}>
-                  <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>
-                    Forgot your password?
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-              {/* Social providers */}
-              {showProviders && (
-                <>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 20 }}>
-                    <View style={{ flex: 1, height: 1, backgroundColor: border }} />
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontFamily: 'Roobert',
-                        color: muted,
-                        marginHorizontal: 12,
-                      }}>
-                      or
-                    </Text>
-                    <View style={{ flex: 1, height: 1, backgroundColor: border }} />
-                  </View>
-
-                  {googleEnabled && (
-                    <TouchableOpacity
-                      onPress={() => handleOAuth('google')}
-                      disabled={!!oauthLoading}
-                      activeOpacity={0.7}
-                      style={providerButtonStyle(isDark, border, oauthLoading, 'google')}>
-                      {oauthLoading === 'google' ? (
-                        <ActivityIndicator size="small" color={fg} style={{ marginRight: 2 }} />
-                      ) : (
-                        <Ionicons name="logo-google" size={18} color={fg} />
-                      )}
-                      <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}>
-                        {oauthLoading === 'google' ? 'Opening Google...' : 'Continue with Google'}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-
-                  {appleEnabled && Platform.OS === 'ios' && (
-                    <TouchableOpacity
-                      onPress={() => handleOAuth('apple')}
-                      disabled={!!oauthLoading}
-                      activeOpacity={0.7}
-                      style={{
-                        ...providerButtonStyle(isDark, border, oauthLoading, 'apple'),
-                        marginTop: 10,
-                      }}>
-                      {oauthLoading === 'apple' ? (
-                        <ActivityIndicator size="small" color={fg} style={{ marginRight: 2 }} />
-                      ) : (
-                        <Ionicons name="logo-apple" size={20} color={fg} />
-                      )}
-                      <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}>
-                        {oauthLoading === 'apple' ? 'Signing in...' : 'Continue with Apple'}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </>
-              )}
-
-              {/* Register lives on the web */}
-              <View
-                style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 24, gap: 5 }}>
-                <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>
-                  New to Kortix?
+              {/* Mode toggle — replaces the tab bar. */}
+              <View className="mt-3 flex-row items-center justify-center gap-1">
+                <Text variant="muted">
+                  {isSignup ? 'Already have an account?' : 'New to Kortix?'}
                 </Text>
-                <TouchableOpacity onPress={openWebRegister}>
-                  <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>
-                    Register on the web
+                <Button
+                  variant="transparent"
+                  size="sm"
+                  className="px-1"
+                  disabled={loading}
+                  onPress={toggleMode}>
+                  <Text variant="small" className="font-roobert-medium text-foreground">
+                    {isSignup ? 'Sign in' : 'Create account'}
                   </Text>
-                </TouchableOpacity>
+                </Button>
               </View>
             </View>
           )}
-        </View>
-      </KeyboardAvoidingView>
+        </SheetBody>
+      </Sheet>
     </>
   );
-}
-
-function providerButtonStyle(
-  isDark: boolean,
-  border: string,
-  oauthLoading: 'google' | 'apple' | null,
-  self: 'google' | 'apple'
-) {
-  return {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    gap: 10,
-    height: 52,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: border,
-    backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
-    opacity: oauthLoading && oauthLoading !== self ? 0.5 : 1,
-  };
 }

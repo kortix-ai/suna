@@ -40,7 +40,6 @@ import { supabase } from '@/api/supabase';
 import * as Updates from 'expo-updates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { log } from '@/lib/logger';
-import { useAppearanceStore } from '@/stores/appearance-store';
 import { useThemeStore } from '@/stores/theme-store';
 import { installHapticsGate } from '@/lib/haptics';
 import { configureKortix } from '@kortix/sdk';
@@ -87,7 +86,6 @@ export { ErrorBoundary } from 'expo-router';
 
 export default function RootLayout() {
   const { colorScheme, setColorScheme } = useColorScheme();
-  const appearanceThemeId = useAppearanceStore((s) => s.themeId);
   const [i18nInitialized, setI18nInitialized] = useState(false);
   const router = useRouter();
 
@@ -588,7 +586,6 @@ export default function RootLayout() {
   }
 
   const activeColorScheme = colorScheme ?? 'light';
-  const appearanceThemeClass = `theme-${appearanceThemeId}`;
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -608,97 +605,65 @@ export default function RootLayout() {
                                 <StatusBar
                                   style={activeColorScheme === 'dark' ? 'light' : 'dark'}
                                 />
-                                <View className={`flex-1 ${appearanceThemeClass}`}>
+                                <View className="flex-1">
                                   <AuthProtection>
+                                    {/* One default for the whole app: pushing a screen
+                                        slides it in from the right, popping slides it
+                                        back out. `fade` is reserved for root swaps —
+                                        screens with no spatial relationship to each
+                                        other (auth ⇄ tabs, onboarding). */}
                                     <Stack
                                       screenOptions={{
                                         headerShown: false,
-                                        animation: 'fade',
+                                        animation: 'slide_from_right',
+                                        gestureEnabled: true,
                                       }}>
                                       <Stack.Screen name="index" options={{ animation: 'none' }} />
-                                      <Stack.Screen name="setting-up" />
-                                      <Stack.Screen name="onboarding" />
                                       <Stack.Screen
-                                        name="home"
-                                        options={{
-                                          gestureEnabled: false,
-                                        }}
+                                        name="setting-up"
+                                        options={{ animation: 'fade', gestureEnabled: false }}
                                       />
                                       <Stack.Screen
-                                        name="projects"
-                                        options={{
-                                          gestureEnabled: false,
-                                        }}
+                                        name="onboarding"
+                                        options={{ animation: 'fade', gestureEnabled: false }}
+                                      />
+                                      <Stack.Screen
+                                        name="(tabs)"
+                                        options={{ animation: 'fade', gestureEnabled: false }}
                                       />
                                       <Stack.Screen
                                         name="auth"
-                                        options={{
-                                          gestureEnabled: false,
-                                          animation: 'fade',
-                                        }}
+                                        options={{ animation: 'fade', gestureEnabled: false }}
+                                      />
+                                      <Stack.Screen
+                                        name="projects/[id]"
+                                        options={{ fullScreenGestureEnabled: true }}
                                       />
                                       <Stack.Screen
                                         name="(settings)"
                                         options={{
-                                          animation:
-                                            Platform.OS === 'ios' ? 'default' : 'slide_from_right',
-                                          gestureEnabled: true,
-                                          fullScreenGestureEnabled: true,
                                           presentation: 'card',
+                                          fullScreenGestureEnabled: true,
                                         }}
                                       />
-                                      <Stack.Screen
-                                        name="plans"
-                                        options={{
-                                          animation: 'slide_from_right',
-                                          gestureEnabled: true,
-                                        }}
-                                      />
-                                      <Stack.Screen
-                                        name="billing"
-                                        options={{
-                                          animation: 'slide_from_right',
-                                          gestureEnabled: true,
-                                        }}
-                                      />
-                                      <Stack.Screen
-                                        name="usage"
-                                        options={{
-                                          animation: 'slide_from_right',
-                                          gestureEnabled: true,
-                                        }}
-                                      />
+                                      <Stack.Screen name="plans" />
+                                      <Stack.Screen name="billing" />
+                                      <Stack.Screen name="usage" />
                                       <Stack.Screen
                                         name="accounts/index"
-                                        options={{
-                                          animation: 'slide_from_right',
-                                          gestureEnabled: true,
-                                          fullScreenGestureEnabled: true,
-                                        }}
+                                        options={{ fullScreenGestureEnabled: true }}
                                       />
                                       <Stack.Screen
                                         name="accounts/[id]"
-                                        options={{
-                                          animation: 'slide_from_right',
-                                          gestureEnabled: true,
-                                          fullScreenGestureEnabled: true,
-                                        }}
+                                        options={{ fullScreenGestureEnabled: true }}
                                       />
                                       <Stack.Screen
                                         name="accounts/[id]/groups/[groupId]"
-                                        options={{
-                                          animation: 'slide_from_right',
-                                          gestureEnabled: true,
-                                          fullScreenGestureEnabled: true,
-                                        }}
+                                        options={{ fullScreenGestureEnabled: true }}
                                       />
                                       <Stack.Screen
                                         name="accounts/[id]/members/[userId]"
-                                        options={{
-                                          animation: 'slide_from_right',
-                                          gestureEnabled: true,
-                                          fullScreenGestureEnabled: true,
-                                        }}
+                                        options={{ fullScreenGestureEnabled: true }}
                                       />
                                       <Stack.Screen name="trigger-detail" />
                                       <Stack.Screen name="worker-config" />

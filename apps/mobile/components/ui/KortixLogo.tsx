@@ -1,14 +1,15 @@
 import * as React from 'react';
 import { View, type ViewProps, type ViewStyle } from 'react-native';
-import { useColorScheme } from 'nativewind';
 import KortixSymbolBlack from '@/assets/brand/kortix-symbol.svg';
 import KortixSymbolWhite from '@/assets/brand/Symbol.svg';
 import LogomarkBlack from '@/assets/brand/Logomark-Black.svg';
 import LogomarkWhite from '@/assets/brand/Logomark-White.svg';
+import LogomarkTextBlack from '@/assets/brand/Logomark-Text-Black.svg';
+import LogomarkTextWhite from '@/assets/brand/Logomark-Text-White.svg';
 
 interface KortixLogoProps extends Omit<ViewProps, 'style'> {
   size?: number;
-  variant?: 'symbol' | 'logomark';
+  variant?: 'symbol' | 'logomark' | 'text';
   className?: string;
   style?: ViewStyle;
   color?: 'light' | 'dark';
@@ -22,33 +23,37 @@ export function KortixLogo({
   color = 'dark',
   ...props 
 }: KortixLogoProps) {
-  const { colorScheme } = useColorScheme();
-  
-  const isDark = colorScheme === 'dark';
+  // Logomark is wide (112x22 ≈ 5:1), text logomark is 74x22 ≈ 3.36:1, symbol is almost square
+  if (variant === 'logomark' || variant === 'text') {
+    const aspectRatio = variant === 'text' ? 74 / 22 : 5;
+    const logoWidth = size * aspectRatio;
+    const logoHeight = size;
 
-  // Logomark is wide (708x142 = ~5:1 ratio), symbol is almost square (35x30)
-  if (variant === 'logomark') {
-    // For logomark, size = height, width scales proportionally (5:1 ratio)
-    const logomarkWidth = size * 5;
-    const logomarkHeight = size;
-    
-  const containerStyle: ViewStyle = {
-      width: logomarkWidth,
-      height: logomarkHeight,
-    flexShrink: 0,
-    ...style,
-  };
+    const containerStyle: ViewStyle = {
+      width: logoWidth,
+      height: logoHeight,
+      flexShrink: 0,
+      ...style,
+    };
 
-    const LogomarkComponent = color === 'dark' ? LogomarkWhite : LogomarkBlack;
+    const LogoComponent =
+      variant === 'text'
+        ? color === 'dark'
+          ? LogomarkTextWhite
+          : LogomarkTextBlack
+        : color === 'dark'
+          ? LogomarkWhite
+          : LogomarkBlack;
+
     return (
-      <View 
+      <View
         className={className}
         style={containerStyle}
         {...props}
       >
-        <LogomarkComponent 
-          width={logomarkWidth} 
-          height={logomarkHeight}
+        <LogoComponent
+          width={logoWidth}
+          height={logoHeight}
         />
       </View>
     );
