@@ -33,3 +33,37 @@ describe('SSO card — no internal provider plumbing in the UI', () => {
     expect(source).toContain('importSsoProviderFromMetadata');
   });
 });
+
+describe('SSO card — service provider details block', () => {
+  test('renders a "Service provider details" block', () => {
+    expect(source).toContain('Service provider details');
+  });
+
+  test('surfaces the Entity ID (metadata) and ACS (reply URL) paths', () => {
+    expect(source).toContain('/auth/v1/sso/saml/metadata');
+    expect(source).toContain('/auth/v1/sso/saml/acs');
+  });
+
+  test('uses neutral labels, never naming the delegated identity provider', () => {
+    expect(source).toContain('Identifier (Entity ID)');
+    expect(source).toContain('Reply URL (ACS)');
+    expect(source).not.toContain('Supabase Studio');
+    expect(source).not.toContain('SupabaseStudio');
+  });
+
+  test('offers a copy affordance for each SP value', () => {
+    expect(source).toContain('Copy Identifier (Entity ID)');
+    expect(source).toContain('Copy Reply URL (ACS)');
+    expect(source).toContain('copyToClipboard');
+  });
+
+  test('renders the block before a provider is configured, and inside the configure/edit dialog', () => {
+    expect(source).toContain('{!provider && spUrls && <SpDetails');
+    expect(source).toContain('{spUrls && (\n          <SpDetails');
+  });
+
+  test('hides the block rather than render a broken URL when the origin is unavailable', () => {
+    expect(source).toContain('function buildSamlSpUrls(');
+    expect(source).toContain('return null');
+  });
+});
