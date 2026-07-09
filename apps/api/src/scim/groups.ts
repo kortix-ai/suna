@@ -2,8 +2,8 @@
 // rename), DELETE. Registers onto the shared scimRouter via side effect.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountGroups, accountMembers } from '@kortix/db';
-import { and, eq, inArray } from 'drizzle-orm';
+import { accountGroupMembers, accountGroups, accountInvitations, accountMembers } from '@kortix/db';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { invalidateIamCacheForGroup, invalidateIamCacheForUsers } from '../iam/cache-invalidation';
 import { scimError } from '../middleware/scim-auth';
 import { errors, json } from '../openapi';
@@ -17,6 +17,64 @@ import {
   scimAudit,
   scimRouter,
 } from './app';
+
+/**
+ * Add SCIM-referenced members to a group. The IdP references each member by the
+ * SCIM `id` we handed back at user provisioning — which is the user_id for a real
+ * member, but the invitation_id for a user who hasn't logged in yet. A real
+ * member joins account_group_members immediately; a pending invite can't (no user
+ * row exists) so we park the group on the invite's bootstrap_grants and it
+ * materializes on acceptance (accounts/invites.ts applyBootstrapGrants), the same
+ * ride-along used for project grants. Values matching neither are ignored (RFC
+ * 7644 tolerates unknown members). Insert-only — removals are handled by the
+ * caller.
+ */
+async function addGroupMembersOrDeferInvites(
+  accountId: string,
+  groupId: string,
+  memberValues: string[],
+): Promise<void> {
+  if (memberValues.length === 0) return;
+
+  const realMembers = await db
+    .select({ userId: accountMembers.userId })
+    .from(accountMembers)
+    .where(
+      and(eq(accountMembers.accountId, accountId), inArray(accountMembers.userId, memberValues)),
+    );
+  const memberSet = new Set(realMembers.map((m) => m.userId));
+
+  const rows = memberValues.filter((v) => memberSet.has(v)).map((v) => ({ groupId, userId: v }));
+  if (rows.length > 0) {
+    await db.insert(accountGroupMembers).values(rows).onConflictDoNothing();
+  }
+
+  // Anything not a real member may be a pending invite (SCIM id = invite_id) —
+  // record the group on the invite so it lands when they accept.
+  const unmatched = memberValues.filter((v) => !memberSet.has(v));
+  if (unmatched.length === 0) return;
+  const invites = await db
+    .select({
+      inviteId: accountInvitations.inviteId,
+      bootstrapGrants: accountInvitations.bootstrapGrants,
+    })
+    .from(accountInvitations)
+    .where(
+      and(
+        eq(accountInvitations.accountId, accountId),
+        inArray(accountInvitations.inviteId, unmatched),
+        isNull(accountInvitations.acceptedAt),
+      ),
+    );
+  for (const inv of invites) {
+    const existing = inv.bootstrapGrants ?? [];
+    if (existing.some((g) => 'group_id' in g && g.group_id === groupId)) continue;
+    await db
+      .update(accountInvitations)
+      .set({ bootstrapGrants: [...existing, { group_id: groupId }] })
+      .where(eq(accountInvitations.inviteId, inv.inviteId));
+  }
+}
 
 // ─── Groups ───────────────────────────────────────────────────────────────
 
@@ -289,26 +347,10 @@ scimRouter.openapi(
           const userIds = (v.members as Array<{ value?: unknown }>)
             .map((m) => (typeof m.value === 'string' ? m.value : null))
             .filter((u): u is string => !!u);
-          // Wholesale replace: drop existing, insert new (validated members only).
+          // Wholesale replace: drop existing, then add the new set — real members
+          // join now, pending invites ride their bootstrap_grants until accept.
           await db.delete(accountGroupMembers).where(eq(accountGroupMembers.groupId, groupId));
-          if (userIds.length > 0) {
-            const valid = await db
-              .select({ userId: accountMembers.userId })
-              .from(accountMembers)
-              .where(
-                and(
-                  eq(accountMembers.accountId, accountId),
-                  inArray(accountMembers.userId, userIds),
-                ),
-              );
-            const validSet = new Set(valid.map((vv) => vv.userId));
-            const rows = userIds
-              .filter((u) => validSet.has(u))
-              .map((u) => ({ groupId, userId: u }));
-            if (rows.length > 0) {
-              await db.insert(accountGroupMembers).values(rows).onConflictDoNothing();
-            }
-          }
+          await addGroupMembersOrDeferInvites(accountId, groupId, userIds);
         }
         continue;
       }
@@ -318,18 +360,7 @@ scimRouter.openapi(
         const userIds = (op.value as Array<{ value?: unknown }>)
           .map((m) => (typeof m.value === 'string' ? m.value : null))
           .filter((u): u is string => !!u);
-        if (userIds.length === 0) continue;
-        const valid = await db
-          .select({ userId: accountMembers.userId })
-          .from(accountMembers)
-          .where(
-            and(eq(accountMembers.accountId, accountId), inArray(accountMembers.userId, userIds)),
-          );
-        const validSet = new Set(valid.map((v) => v.userId));
-        const rows = userIds.filter((u) => validSet.has(u)).map((u) => ({ groupId, userId: u }));
-        if (rows.length > 0) {
-          await db.insert(accountGroupMembers).values(rows).onConflictDoNothing();
-        }
+        await addGroupMembersOrDeferInvites(accountId, groupId, userIds);
         continue;
       }
 

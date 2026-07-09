@@ -1,30 +1,22 @@
-Marketplace 1-click imports, groups and custom roles for every plan, and a sandbox that recovers when a build fails
+Agents now always answer your first message, plus SSO and gateway fixes
 
-## New
+This release fixes a timing bug that could make an agent miss the very first message of a session, tightens single sign-on for teams, makes gateway errors say what actually went wrong, and hardens how OAuth tokens are stored.
 
-- **Marketplace imports.** Agents, commands and bundles install into a project in one click. The detail view now shows what a listing actually contains — bundle contents, capability badges, type-aware copy — before you add it.
-- **Groups and custom roles on every plan.** Previously limited by tier; now available to all accounts.
-- **Answer permission prompts from the CLI.** Sessions that pause for approval can be resolved without leaving the terminal.
-- **One-click Slack connect** via `kortix channels connect` — no manual app setup.
-- **Review center approvals.** Approve and deny executor requests for real, with change descriptions rendered as markdown.
-- **OAuth1 connectors** for OpenAPI and HTTP.
-- **Always-bound project CLI.** `login` binds a default project; unbound commands recover interactively instead of failing.
+### Fixed
+- **Agents now reliably reply to your first message.** On a fast cold start, the agent could fire your opening prompt before it had finished subscribing to its own event stream — so a quick first turn finished in that gap and the reply was lost (most visible as a silent first message in Slack). The agent now subscribes first, reconciles anything it missed on connect, and delivers each turn's end exactly once.
+- **Clearer gateway errors instead of a generic failure.** When an upstream model provider failed mid-response (for example, an overloaded or request-too-large error on an otherwise-started stream), the gateway used to bury it as a generic "empty completion" and retry the same failing provider until it gave up. It now surfaces the real upstream error and message, drops the failed provider immediately, and fails over to another one when available.
+- **SSO group-to-role sync now works for SAML.** SAML providers weren't registered with a group-claim mapping, so the group attribute never reached the token and group-driven role assignment silently did nothing (login still worked). Providers now register with the correct mapping, and the SSO setup card documents the common identity-provider gotchas.
+- **SCIM group membership applies to pending invites.** A user provisioned via SCIM but not yet signed in was silently dropped from pushed groups. Their group is now recorded on the invite and applied automatically when they accept, matching how project access already works.
 
-## Improved
+### Improved
+- **Sandbox templates show which provider they use.** Each template card and recent build now carries a small provider chip (Daytona, Platinum, Managed), and the templates section is tidier and less cluttered.
+- **CLI secrets match the web app.** `kortix secrets set --identifier KEY=VALUE` lets you store more than one value under the same key from the terminal, and `kortix secrets ls` now lists by identifier and flags any missing required keys — bringing the CLI in line with the web Add-secret experience.
+- **CLI token context shows your environment grant.** `kortix token` / `whoami --token-only` now include the `env` part of an agent grant (not just connectors and CLI access), and a bound default project points you at `kortix projects use` to switch.
 
-- `kortix.toml` is now `kortix.yaml` (TOML stays supported as v1 legacy), with format-aware manifest errors and agent-scope/trigger-path parity.
-- Destructive actions are confirm-gated: deleting secrets, revoking gateway keys, deleting sandbox templates and sessions, archiving projects.
-- Loading states unified across the app; onboarding moves Skip into the footer per step.
-- Upgrades are surfaced with an accent card and a Recommended badge.
-- A complete IAM administrator's guide: SSO/SAML, SCIM, roles, groups, custom roles, agents, audit.
+### Behind the scenes
+- OAuth server access and refresh tokens are now stored with peppered scrypt, matching every other credential (previously plain SHA-256). Existing tokens keep working until they expire.
+- All OpenRouter usage now attributes to one canonical app (www.kortix.com) instead of splitting across per-environment entries.
+- Removed an unused internal session-LLM route that no client called.
+- Trimmed frontend build spend by skipping builds that don't touch the frontend and gating preview builds.
 
-## Fixed
-
-- **Sessions on projects pinned to the Platinum sandbox provider could not start.** Production's `sandbox_provider` type was missing the `platinum` value, so every session create failed at the database. The value is now added; a sandbox that fails to start also raises properly so provisioning retries.
-- **Retry build / Fix with agent** works again, snapshot quota cleanup can fire, and the prewarm cache is bounded with an alarm when cleanup falls behind.
-- **Permission leaks closed.** Project detail sections are filtered by read capability, previously ungated project endpoints now check their capability leaf, member management gates on the leaf rather than a broad write floor, and viewers no longer see error toasts for surfaces they cannot read. Read-only users get a degraded view instead of a broken one, and the floor member role can fire triggers again.
-- Service-account bearer tokens are accepted wherever user tokens are.
-- Unknown CLI commands now error with a suggestion instead of silently scaffolding a project named after the typo.
-- The model picker updates immediately after connecting a provider, and setup links render as clean CTA chips rather than raw token URLs.
-- Resolved high-severity CodeQL findings (ReDoS, temp-file handling, TOCTOU, CLI opener).
-- Rename dialogs no longer close mid-save; sessions and projects show honest error, empty and retry states.
+Kortix is open and source-available.

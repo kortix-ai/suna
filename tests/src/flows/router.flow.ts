@@ -8,7 +8,6 @@
  * Confirmed in apps/api/src/router/index.ts:
  *   - /web-search/*, /image-search/*  → apiKeyAuth
  *   - /chat/*, /messages, /models, /models/*  → apiKeyAuth
- *   - /llm/*  (session-llm) → its own session-LLM-token bearer (not a JWT)
  * Router routes are guarded by API key/session auth boundaries.
  *
  * We do not hold a kortix_ API key principal here, so we assert the negative
@@ -104,30 +103,6 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .get("/v1/router/models/:model", { params: { model: "anthropic/claude-3.5-sonnet" } });
-      r.status(401);
-    });
-  },
-);
-
-flow(
-  "LLM-1",
-  {
-    domain: "router",
-    routes: [
-      "GET /v1/router/llm/models",
-      "POST /v1/router/llm/chat/completions",
-    ],
-  },
-  async (ctx) => {
-    await ctx.step("session LLM models: missing bearer never succeeds", async () => {
-      const r = await ctx.client.get("/v1/router/llm/models", { timeoutMs: 10_000 });
-      r.status(401);
-    });
-    await ctx.step("session LLM chat/completions: missing bearer never succeeds", async () => {
-      const r = await ctx.client.post("/v1/router/llm/chat/completions", {
-        model: "openai/gpt-4o-mini",
-        messages: [{ role: "user", content: "hi" }],
-      });
       r.status(401);
     });
   },

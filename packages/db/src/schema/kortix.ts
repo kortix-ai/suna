@@ -209,12 +209,17 @@ export const accountInvitations = kortixSchema.table(
      *  Multiple grants are allowed — the same email could be invited
      *  to several projects at once via repeated calls (they upsert).
      *  Legacy rows may carry the retired 'user'/'viewer' role; readers
-     *  fold both into 'member' via parseProjectRole. */
-    bootstrapGrants: jsonb('bootstrap_grants').$type<Array<{
-      project_id: string;
-      role: 'manager' | 'editor' | 'member';
-      expires_at?: string | null;
-    }>>(),
+     *  fold both into 'member' via parseProjectRole.
+     *  Also carries `{ group_id }` entries: a SCIM Group membership pushed for a
+     *  user who hasn't logged in yet (a pending invite, no user row) is parked
+     *  here and materialized into account_group_members on acceptance — same
+     *  ride-along pattern as project grants. */
+    bootstrapGrants: jsonb('bootstrap_grants').$type<
+      Array<
+        | { project_id: string; role: 'manager' | 'editor' | 'member'; expires_at?: string | null }
+        | { group_id: string }
+      >
+    >(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true })

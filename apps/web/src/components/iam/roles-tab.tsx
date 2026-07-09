@@ -369,15 +369,21 @@ function RoleRow({
               </>
             ) : (
               <Hint
-                label={rbacEnabled ? `Duplicate ${role.name} into a new custom role` : RBAC_UPSELL_MESSAGE}
+                label={
+                  rbacEnabled
+                    ? `Start a custom role from ${role.name}'s capability set`
+                    : RBAC_UPSELL_MESSAGE
+                }
                 side="top"
                 className={rbacEnabled ? undefined : 'max-w-xs'}
               >
                 <span className="inline-flex">
+                  {/* Labeled (not icon-only): "Duplicate" is the documented path to
+                      "editor minus X" — it must be findable at a glance. */}
                   <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 gap-1.5 px-2.5 text-xs"
                     onClick={handleDuplicate}
                     disabled={duplicating || !rbacEnabled}
                     aria-label={`Duplicate role ${role.name}`}
@@ -387,6 +393,7 @@ function RoleRow({
                     ) : (
                       <Copy className="h-3.5 w-3.5" />
                     )}
+                    Duplicate
                   </Button>
                 </span>
               </Hint>
